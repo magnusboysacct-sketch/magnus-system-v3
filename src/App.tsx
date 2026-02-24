@@ -1,0 +1,99 @@
+﻿import React, { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import SidebarLayout from "./layout/SidebarLayout";
+
+import DashboardPage from "./pages/DashboardPage";
+import ClientsPage from "./pages/ClientsPage";
+import ProjectsPage from "./pages/ProjectsPage";
+import EstimatesPage from "./pages/EstimatesPage";
+import BOQPage from "./pages/BOQPage";
+import RatesPage from "./pages/RatesPage";
+import TakeoffPage from "./pages/TakeoffPage";
+import ProcurementPage from "./pages/ProcurementPage";
+import FinancePage from "./pages/FinancePage";
+import ReportsPage from "./pages/ReportsPage";
+import SettingsPage from "./pages/SettingsPage";
+import SettingsMasterListsPage from "./pages/SettingsMasterListsPage";
+import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
+import LoginPage from "./pages/LoginPage";
+import { supabase } from "./lib/supabase";
+
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const loc = useLocation();
+  const [checking, setChecking] = useState(true);
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function check() {
+      const { data } = await supabase.auth.getSession();
+      if (!alive) return;
+      setAuthed(!!data.session);
+      setChecking(false);
+    }
+
+    check();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!alive) return;
+      setAuthed(!!session);
+      setChecking(false);
+    });
+
+    return () => {
+      alive = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (checking) {
+    return <div className="p-6 text-sm opacity-70">Loading...</div>;
+  }
+
+  if (!authed) {
+    const next = encodeURIComponent(loc.pathname + loc.search);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
+
+  return <>{children}</>;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        {/* Public route (no sidebar) */}
+        <Route path="/login" element={<LoginPage />} />
+
+        {/* Protected routes (with sidebar) */}
+        <Route
+          element={
+            <RequireAuth>
+              <SidebarLayout />
+            </RequireAuth>
+          }
+        >
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/clients" element={<ClientsPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/estimates" element={<EstimatesPage />} />
+          <Route path="/boq" element={<BOQPage />} />
+          <Route path="/rates" element={<RatesPage />} />
+          <Route path="/takeoff" element={<TakeoffPage />} />
+          <Route path="/procurement" element={<ProcurementPage />} />
+          <Route path="/finance" element={<FinancePage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/master-categories" element={<SettingsMasterCategoriesPage />} />
+          <Route path="/settings/master-lists" element={<SettingsMasterListsPage />} />
+          <Route path="/settings/users" element={<Navigate to="/settings" replace />} />
+          <Route path="/settings/company" element={<Navigate to="/settings" replace />} />
+        </Route>
+
+        {/* fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}

@@ -1,0 +1,1655 @@
+﻿import React, { useEffect, useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "../lib/supabase";
+
+type Project = {
+  id: string;
+  name: string;
+};
+
+type BOQHeader = {
+  id: string;
+  project_id: string;
+  title: string;
+  status: string;
+  version: number;
+  created_at: string;
+  updated_at?: string | null;
+  project_scope?: string | null;
+};
+
+type LaborOption = { id: string; item_name: string; description: string | null; unit: string | null; unit_rate: number | null; item_type: string | null; };
+
+type CatalogRow = {
+  id: string;
+  item_name: string;
+  description: string | null;
+  unit: string | null;
+  category: string | null;
+  item_type: string | null;
+  current_rate: number | null;
+};
+
+export default function BOQPage() {
+  const navigate = useNavigate();
+  const fmtMoney = (n: any) =>
+    "J$" +
+    new Intl.NumberFormat("en-JM", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(n ?? 0) || 0);
+
+  const fmtNumber = (n: any) =>
+    new Intl.NumberFormat("en-JM", { maximumFractionDigits: 2 }).format(
+      Number(n ?? 0) || 0
+    );
+
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [boqHeaders, setBoqHeaders] = useState<BOQHeader[]>([]);
+  const [activeBoq, setActiveBoq] = useState<BOQHeader | null>(null);
+  const [activeBoqId, setActiveBoqId] = useState<string | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [sections, setSections] = useState<any[]>([]);
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
+  const [myRole, setMyRole] = useState<string | null>(null);
+  const [bannerError, setBannerError] = useState<string | null>(null);
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<any | null>(null);
+  const [selectedClient, setSelectedClient] = useState<any | null>(null);
+  const [projectScope, setProjectScope] = useState<string>("");
+  const [laborOptions, setLaborOptions] = useState<LaborOption[]>([]);
+  const [catalog, setCatalog] = useState<CatalogRow[]>([]);
+
+  // Computed totals
+  const sectionTotal = useMemo(
+    () => (sectionId: string) => {
+      const sectionItems = items.filter((item) => item.section_id === sectionId);
+      return sectionItems.reduce((total, item) => {
+        const amount = Number(item.amount ?? 0) || 0;
+        return total + amount;
+      }, 0);
+    },
+    [items]
+  );
+
+  const grandTotal = useMemo(() => {
+    return items.reduce((total, item) => {
+      const amount = Number(item.amount ?? 0) || 0;
+      return total + amount;
+    }, 0);
+  }, [items]);
+
+  // Load user role on mount
+  useEffect(() => {
+    async function loadUserRole() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          const { data, error } = await supabase
+            .from("user_profiles")
+            .select("role")
+            .eq("id", user.id)
+            .single();
+
+          if (error) throw error;
+          setMyRole(data?.role || null);
+        }
+      } catch (err) {
+        console.error("Failed to load user role:", err);
+      }
+    }
+
+    loadUserRole();
+  }, []);
+
+  // Load company logo on mount
+  useEffect(() => {
+    async function loadCompanyLogo() {
+      try {
+        const { data } = await supabase
+          .from("company_settings")
+          .select("logo_url")
+          .eq("id", 1)
+          .single();
+
+        setCompanyLogoUrl(data?.logo_url || null);
+      } catch (err) {
+        console.error("Failed to load company logo:", err);
+      }
+    }
+
+    loadCompanyLogo();
+  }, []);
+
+  // Load labor options on mount
+  useEffect(() => {
+    async function loadLaborOptions() {
+      try {
+        const { data, error } = await supabase
+          .from("cost_items")
+          .select("id,item_name,description,unit,unit_rate,item_type")
+          .ilike("item_type","lab%")
+          .order("item_name", { ascending: true });
+
+        if (error) throw error;
+        setLaborOptions(data || []);
+      } catch (err) {
+        console.error("Failed to load labor options:", err);
+      }
+    }
+
+    loadLaborOptions();
+  }, []);
+
+  // Load catalog on mount
+  useEffect(() => {
+    async function loadCatalog() {
+      try {
+        const { data, error } = await supabase
+          .from("v_cost_items_current")
+          .select("id,item_name,description,unit,category,item_type,current_rate")
+          .order("item_name", { ascending: true });
+
+        if (error) throw error;
+        setCatalog(data || []);
+      } catch (err) {
+        console.error("Failed to load catalog:", err);
+      }
+    }
+
+    loadCatalog();
+  }, []);
+
+  // Helper functions
+  function norm(s: any) {
+    const t = String(s ?? "").trim();
+    return t ? t : "";
+  }
+
+  function titleCase(s: string) {
+    return s.replace(/\w\S*/g, (t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+  }
+
+  // Load selected project and client when selectedProjectId changes
+  useEffect(() => {
+    async function loadSelectedProjectAndClient() {
+      if (!selectedProjectId) {
+        setSelectedProject(null);
+        setSelectedClient(null);
+        return;
+      }
+
+      try {
+        const { data: projectData, error: projectError } = await supabase
+          .from("projects")
+          .select("id, name, site_address, client_id")
+          .eq("id", selectedProjectId)
+          .single();
+
+        if (projectError) throw projectError;
+
+        setSelectedProject(projectData);
+
+        if (projectData?.client_id) {
+          const { data: clientData, error: clientError } = await supabase
+            .from("clients")
+            .select("id, name, phone, email, address")
+            .eq("id", projectData.client_id)
+            .single();
+
+          if (clientError) throw clientError;
+          setSelectedClient(clientData);
+        } else {
+          setSelectedClient(null);
+        }
+      } catch (err) {
+        console.error("Failed to load project/client:", err);
+        setSelectedProject(null);
+        setSelectedClient(null);
+      }
+    }
+
+    loadSelectedProjectAndClient();
+  }, [selectedProjectId]);
+
+  // Load projects on page load
+  useEffect(() => {
+    async function loadProjects() {
+      try {
+        const { data, error } = await supabase
+          .from("projects")
+          .select("id, name")
+          .order("name");
+
+        if (error) throw error;
+        setProjects(data || []);
+      } catch (err) {
+        console.error("Failed to load projects:", err);
+        setError("Failed to load projects");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadProjects();
+  }, []);
+
+  // ✅ Reusable loader (used by effects + Start BOQ + Clone)
+  async function loadBoqHeaders(projectId: string, preferBoqId?: string) {
+    try {
+      setError("");
+      const { data, error } = await supabase
+        .from("boq_headers")
+        .select("id, project_id, title, status, version, created_at, updated_at, project_scope")
+        .eq("project_id", projectId)
+        .order("version", { ascending: false });
+
+      if (error) throw error;
+
+      const headers = (data || []) as BOQHeader[];
+      setBoqHeaders(headers);
+
+      const chosen =
+        (preferBoqId ? headers.find((h) => h.id === preferBoqId) : null) ||
+        (headers.length > 0 ? headers[0] : null);
+
+      setActiveBoq(chosen);
+      setActiveBoqId(chosen?.id || null);
+      setSelectedVersionId(chosen?.id || null);
+      setProjectScope(chosen?.project_scope || "");
+    } catch (err) {
+      console.error("Failed to load BOQ headers:", err);
+      setError("Failed to load BOQs");
+      setBoqHeaders([]);
+      setActiveBoq(null);
+      setActiveBoqId(null);
+      setSelectedVersionId(null);
+      setProjectScope("");
+    }
+  }
+
+  // Load BOQ headers when project changes
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setBoqHeaders([]);
+      setActiveBoq(null);
+      setActiveBoqId(null);
+      setSelectedVersionId(null);
+      setProjectScope("");
+      return;
+    }
+    loadBoqHeaders(selectedProjectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProjectId]);
+
+  // Handle version selection change
+  useEffect(() => {
+    if (selectedVersionId) {
+      setActiveBoqId(selectedVersionId);
+      const selectedHeader = boqHeaders.find((h) => h.id === selectedVersionId) || null;
+      setActiveBoq(selectedHeader);
+      setProjectScope(selectedHeader?.project_scope || "");
+    }
+  }, [selectedVersionId, boqHeaders]);
+
+  // Extracted functions for reuse
+  async function loadSections(boqIdOverride?: string | null) {
+    const boqId = boqIdOverride ?? activeBoqId;
+    if (!boqId) {
+      setSections([]);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("boq_sections")
+        .select("*")
+        .eq("boq_id", boqId)
+        .order("section_no", { ascending: true });
+
+      if (error) throw error;
+      setSections(data || []);
+    } catch (err) {
+      console.error("Failed to load sections:", err);
+      setError("Failed to load sections");
+    }
+  }
+
+  async function loadItems(boqIdOverride?: string | null) {
+    const boqId = boqIdOverride ?? activeBoqId;
+    if (!boqId) {
+      setItems([]);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("boq_items")
+        .select("*")
+        .eq("boq_id", boqId)
+        .order("section_id", { ascending: true })
+        .order("line_no", { ascending: true });
+
+      if (error) throw error;
+      setItems(data || []);
+    } catch (err) {
+      console.error("Failed to load items:", err);
+      setError("Failed to load items");
+    }
+  }
+
+  // Load sections/items when active BOQ changes
+  useEffect(() => {
+    loadSections();
+    loadItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBoqId]);
+
+  async function handlePrimaryAction() {
+    if (!selectedProjectId) {
+      setError("Select a project");
+      return;
+    }
+
+    if (activeBoqId) {
+      console.log("Active BOQ:", activeBoqId);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("boq_headers")
+        .insert({
+          project_id: selectedProjectId,
+          title: "BOQ",
+          status: "draft",
+          version: 1,
+        })
+        .select("id")
+        .single();
+
+      if (error) throw error;
+
+      await loadBoqHeaders(selectedProjectId, data.id);
+      await loadSections(data.id);
+      await loadItems(data.id);
+    } catch (err) {
+      console.error("Failed to create BOQ:", err);
+      setError("Failed to create BOQ");
+    }
+  }
+
+  async function handleAddSection() {
+    if (!activeBoqId) return;
+
+    try {
+      const nextSectionNo = sections.length + 1;
+      const { error } = await supabase.from("boq_sections").insert({
+        boq_id: activeBoqId,
+        title: "New Section",
+        section_no: nextSectionNo,
+      });
+
+      if (error) throw error;
+      await loadSections();
+    } catch (err) {
+      console.error("Failed to add section:", err);
+    }
+  }
+
+  async function handleAddItem(sectionId: string) {
+    if (!activeBoqId) return;
+
+    try {
+      const sectionItems = items.filter((item) => item.section_id === sectionId);
+      const nextLineNo = sectionItems.length + 1;
+
+      const insertPayload: any = {
+        boq_id: activeBoqId,
+        section_id: sectionId,
+        line_no: nextLineNo,
+        item: "New Item",
+        description: "",
+        qty: 0,
+        rate: 0,
+        amount: 0,
+        item_type: "",
+        category: "",
+      };
+
+      const { error } = await supabase.from("boq_items").insert(insertPayload);
+
+      if (error) {
+        // If insert errors due to missing columns, retry without them
+        if (error.message?.includes('column') || error.message?.includes('does not exist')) {
+          const fallbackPayload = {
+            boq_id: activeBoqId,
+            section_id: sectionId,
+            line_no: nextLineNo,
+            item: "New Item",
+            description: "",
+            qty: 0,
+            rate: 0,
+            amount: 0,
+          };
+          await supabase.from("boq_items").insert(fallbackPayload);
+        } else {
+          throw error;
+        }
+      }
+
+      await loadItems();
+    } catch (err) {
+      console.error("Failed to add item:", err);
+    }
+  }
+
+  async function handleItemChange(itemId: string, field: string, value: any) {
+    setItems((prevItems) =>
+      prevItems.map((item) => {
+        if (item.id === itemId) {
+          const updatedItem = { ...item, [field]: value };
+
+          if (field === "qty" || field === "rate") {
+            const qty = field === "qty" ? value : item.qty;
+            const rate = field === "rate" ? value : item.rate;
+            updatedItem.amount = (Number(qty) || 0) * (Number(rate) || 0);
+          }
+
+          return updatedItem;
+        }
+        return item;
+      })
+    );
+  }
+
+  async function handleLaborSelect(itemId: string, itemName: string) {
+    const selected = laborOptions.find(o => o.item_name === itemName);
+    if (!selected) return;
+
+    // Update item name
+    await handleItemChange(itemId, "item", selected.item_name);
+    
+    // Update description if empty
+    const item = items.find(i => i.id === itemId);
+    if (item && (!item.description || item.description.trim() === "")) {
+      await handleItemChange(itemId, "description", selected.description ?? "");
+    }
+    
+    // Update rate if 0 or empty
+    if (item && (!item.rate || item.rate === 0)) {
+      await handleItemChange(itemId, "rate", Number(selected.unit_rate ?? 0));
+    }
+    
+    // Save the item
+    await saveItem(itemId);
+  }
+
+  async function saveItem(itemId: string) {
+    const item = items.find((i) => i.id === itemId);
+    if (!item) return;
+
+    try {
+      const updatePayload: any = {
+        item: item.item,
+        description: item.description,
+        qty: item.qty,
+        rate: item.rate,
+        amount: item.amount,
+      };
+
+      // Include item_type and category if they exist on the item
+      if (item.item_type !== undefined) updatePayload.item_type = item.item_type;
+      if (item.category !== undefined) updatePayload.category = item.category;
+
+      const { error } = await supabase
+        .from("boq_items")
+        .update(updatePayload)
+        .eq("id", itemId);
+
+      if (error) {
+        // If error mentions missing columns, retry without them
+        if (error.message?.includes('column') || error.message?.includes('does not exist')) {
+          const fallbackPayload = {
+            item: item.item,
+            description: item.description,
+            qty: item.qty,
+            rate: item.rate,
+            amount: item.amount,
+          };
+          await supabase
+            .from("boq_items")
+            .update(fallbackPayload)
+            .eq("id", itemId);
+        } else {
+          throw error;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to save item:", err);
+    }
+  }
+
+  async function approveAndLock() {
+    if (!activeBoqId) return;
+
+    setBannerError(null);
+
+    if (myRole !== "director") {
+      setBannerError("Only Director can approve and lock a BOQ.");
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("boq_headers")
+        .update({ status: "approved" })
+        .eq("id", activeBoqId);
+
+      if (error) {
+        setBannerError(error.message);
+        throw error;
+      }
+
+      await loadBoqHeaders(selectedProjectId, activeBoqId);
+    } catch (err) {
+      console.error("Failed to approve BOQ:", err);
+      setBannerError((prev) => prev ?? "Failed to approve BOQ");
+    }
+  }
+
+  async function cloneNewVersion() {
+    if (!selectedProjectId || !activeBoq || !activeBoqId) return;
+
+    try {
+      setBannerError(null);
+
+      const maxVersion = boqHeaders.length > 0 ? boqHeaders[0].version : 0;
+      const newVersion = maxVersion + 1;
+
+      const { data: newBoq, error: headerError } = await supabase
+        .from("boq_headers")
+        .insert({
+          project_id: selectedProjectId,
+          title: activeBoq.title,
+          status: "draft",
+          version: newVersion,
+          project_scope: activeBoq.project_scope ?? "",
+        })
+        .select("*")
+        .single();
+
+      if (headerError) throw headerError;
+      const newBoqId = newBoq.id as string;
+
+      // Load old sections
+      const { data: oldSections, error: oldSectionsErr } = await supabase
+        .from("boq_sections")
+        .select("*")
+        .eq("boq_id", activeBoqId)
+        .order("section_no");
+
+      if (oldSectionsErr) throw oldSectionsErr;
+
+      const sectionMap = new Map<string, string>();
+
+      if (oldSections && oldSections.length > 0) {
+        const { data: insertedSections, error: insertSectionsErr } = await supabase
+          .from("boq_sections")
+          .insert(
+            oldSections.map((s: any) => ({
+              boq_id: newBoqId,
+              title: s.title,
+              section_no: s.section_no,
+              scope: s.scope ?? "",
+            }))
+          )
+          .select("*");
+
+        if (insertSectionsErr) throw insertSectionsErr;
+
+        (oldSections as any[]).forEach((oldS, idx) => {
+          const newS = (insertedSections as any[])[idx];
+          if (newS) sectionMap.set(oldS.id, newS.id);
+        });
+      }
+
+      // Load old items
+      const { data: oldItems, error: oldItemsErr } = await supabase
+        .from("boq_items")
+        .select("*")
+        .eq("boq_id", activeBoqId)
+        .order("section_id")
+        .order("line_no");
+
+      if (oldItemsErr) throw oldItemsErr;
+
+      if (oldItems && oldItems.length > 0) {
+        const rows = (oldItems as any[]).map((it) => ({
+          boq_id: newBoqId,
+          section_id: sectionMap.get(it.section_id) || it.section_id,
+          line_no: it.line_no,
+          item: it.item,
+          description: it.description,
+          qty: it.qty,
+          rate: it.rate,
+          amount: it.amount,
+        }));
+
+        const { error: insertItemsErr } = await supabase.from("boq_items").insert(rows);
+        if (insertItemsErr) throw insertItemsErr;
+      }
+
+      // Switch UI to new BOQ version
+      await loadBoqHeaders(selectedProjectId, newBoqId);
+      await loadSections(newBoqId);
+      await loadItems(newBoqId);
+    } catch (err) {
+      console.error("Failed to clone new version:", err);
+      setBannerError("Failed to clone new version");
+    }
+  }
+
+  async function deleteItem(itemId: string, sectionId: string) {
+    if (!activeBoqId) return;
+
+    try {
+      const { error: deleteError } = await supabase.from("boq_items").delete().eq("id", itemId);
+      if (deleteError) throw deleteError;
+
+      await loadItems();
+
+      const { data: sectionItems, error: sectionItemsErr } = await supabase
+        .from("boq_items")
+        .select("*")
+        .eq("boq_id", activeBoqId)
+        .eq("section_id", sectionId)
+        .order("line_no", { ascending: true });
+
+      if (sectionItemsErr) throw sectionItemsErr;
+
+      if (sectionItems) {
+        for (let i = 0; i < sectionItems.length; i++) {
+          await supabase.from("boq_items").update({ line_no: i + 1 }).eq("id", sectionItems[i].id);
+        }
+      }
+
+      await loadItems();
+    } catch (err) {
+      console.error("Failed to delete item:", err);
+      setBannerError("Failed to delete item");
+    }
+  }
+
+  async function deleteSection(sectionId: string) {
+    if (!activeBoqId) return;
+
+    try {
+      const { error: itemsError } = await supabase.from("boq_items").delete().eq("section_id", sectionId);
+      if (itemsError) throw itemsError;
+
+      const { error: sectionError } = await supabase.from("boq_sections").delete().eq("id", sectionId);
+      if (sectionError) throw sectionError;
+
+      await loadSections();
+      await loadItems();
+
+      const { data: remainingSections, error: remainingErr } = await supabase
+        .from("boq_sections")
+        .select("*")
+        .eq("boq_id", activeBoqId)
+        .order("section_no", { ascending: true });
+
+      if (remainingErr) throw remainingErr;
+
+      if (remainingSections) {
+        for (let i = 0; i < remainingSections.length; i++) {
+          await supabase.from("boq_sections").update({ section_no: i + 1 }).eq("id", remainingSections[i].id);
+        }
+      }
+
+      await loadSections();
+    } catch (err) {
+      console.error("Failed to delete section:", err);
+      setBannerError("Failed to delete section");
+    }
+  }
+
+  function handleSectionScopeChange(sectionId: string, scope: string) {
+    setSections((prev) => prev.map((s) => (s.id === sectionId ? { ...s, scope } : s)));
+  }
+
+  async function saveSectionScope(sectionId: string) {
+    try {
+      const section = sections.find((s) => s.id === sectionId);
+      if (!section) return;
+
+      const { error } = await supabase.from("boq_sections").update({ scope: section.scope }).eq("id", sectionId);
+      if (error) throw error;
+    } catch (err) {
+      console.error("Failed to save section scope:", err);
+      setBannerError("Failed to save section scope");
+    }
+  }
+
+  function handlePrint() {
+    if (!activeBoq || activeBoq.status !== "approved") {
+      setBannerError("Printing is only allowed for an APPROVED BOQ. Please approve and lock this BOQ first.");
+      return;
+    }
+
+    const printHtml = buildPrintHtml();
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(printHtml);
+      printWindow.document.close();
+      printWindow.print();
+    }
+  }
+
+  async function handleStartBoq() {
+    if (!selectedProjectId) return;
+
+    try {
+      setBannerError(null);
+
+      // If a BOQ already exists, do nothing (UI should hide this button anyway)
+      if (boqHeaders.length > 0) return;
+
+      const { data, error } = await supabase
+        .from("boq_headers")
+        .insert({
+          project_id: selectedProjectId,
+          title: "BOQ",
+          status: "draft",
+          version: 1,
+          project_scope: "",
+        })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+
+      await loadBoqHeaders(selectedProjectId, data.id);
+      await loadSections(data.id);
+      await loadItems(data.id);
+    } catch (err: any) { console.error("Failed to start BOQ:", err); setBannerError("Failed to start BOQ: " + (err?.message ?? JSON.stringify(err))); }
+  }
+
+  async function saveProjectScope() {
+    if (!activeBoqId) return;
+
+    try {
+      const { error } = await supabase.from("boq_headers").update({ project_scope: projectScope }).eq("id", activeBoqId);
+      if (error) throw error;
+    } catch (err) {
+      console.error("Failed to save project scope:", err);
+      setBannerError("Failed to save project scope");
+    }
+  }
+
+  function buildPrintHtml() {
+    const chosenProject = projects.find((p) => p.id === selectedProjectId);
+    const projectTitle = chosenProject?.name || "Unknown Project";
+    const boqTitle = activeBoq?.title || "Untitled BOQ";
+    const boqVersion = activeBoq?.version || 1;
+    const boqStatus = activeBoq?.status || "draft";
+    const scopeForTerms = activeBoq?.project_scope || "";
+
+    const termsHtml = `
+<div class="terms-page">
+  <h2>Terms & Conditions</h2>
+
+  <h3>1. Scope of Work</h3>
+  <p>${
+    scopeForTerms
+      ? scopeForTerms.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      : "The works described in this Bill of Quantities (BOQ) are based on the project information provided. Any additional works not included herein will be treated as a variation and may affect cost and time."
+  }</p>
+
+  <h3>2. Validity</h3>
+  <p>This BOQ and pricing are valid for 14 days from the printed date unless otherwise stated, due to market price fluctuations.</p>
+
+  <h3>3. Variations</h3>
+  <p>All variations must be approved in writing before execution. Variation costs will be priced based on current rates and materials at the time of approval.</p>
+
+  <h3>4. Payment Terms</h3>
+  <p>Payments are due according to the agreed payment schedule. Late payments may impact delivery timelines and work progress.</p>
+
+  <h3>5. Materials & Procurement</h3>
+  <p>Materials are subject to availability. Where substitutions are required, materials of similar quality will be proposed for approval.</p>
+
+  <h3>6. Workmanship</h3>
+  <p>All works will be carried out in accordance with accepted construction standards and good practice.</p>
+
+  <h3>7. Programme / Time</h3>
+  <p>Estimated durations are indicative and may change due to weather, site conditions, supply delays, or approved variations.</p>
+
+  <h3>8. Warranty / Defects</h3>
+  <p>A defects liability period applies as agreed. Defects arising from misuse, third-party works, or lack of maintenance are excluded.</p>
+
+  <h3>9. Health & Safety</h3>
+  <p>All persons on site must comply with safety requirements. The contractor may stop work if unsafe conditions persist.</p>
+
+  <h3>10. Acceptance</h3>
+  <p>By signing, the client confirms acceptance of this BOQ, its terms, and authorization to proceed under the agreed conditions.</p>
+</div>
+`;
+
+    let html = `<!DOCTYPE html>
+<html>
+<head>
+  <title>${projectTitle} - ${boqTitle} v${boqVersion}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { text-align: center; }
+    .header { text-align: center; margin-bottom: 30px; }
+    .section { margin-bottom: 20px; }
+    .section-title { font-weight: bold; font-size: 14px; margin-bottom: 10px; }
+    .section-total { font-size: 12px; color: #666; margin-bottom: 10px; }
+    .scope { margin: 6px 0 10px; font-size: 12px; white-space: pre-wrap; }
+    .items-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    .items-table th, .items-table td { border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 12px; }
+    .items-table th { background-color: #f5f5f5; }
+    .grand-total { font-weight: bold; font-size: 14px; text-align: right; margin-top: 20px; }
+    .status { text-align: center; font-style: italic; color: #666; margin-top: 10px; }
+    .cover { page-break-after: always; text-align: center; padding-top: 120px; }
+    .cover h1 { font-size: 28px; margin: 0; }
+    .cover h2 { font-size: 18px; margin: 16px 0 0; }
+    .cover .meta { margin-top: 30px; font-size: 12px; }
+    .cover .logo { max-width: 140px; max-height: 140px; width: auto; height: auto; display: block; margin: 0 auto 14px; object-fit: contain; }
+    .terms-page { page-break-before: always; padding: 60px 10px 0; }
+    .terms-page h2 { text-align: center; margin-bottom: 24px; }
+    .terms-page h3 { margin: 16px 0 6px; font-size: 14px; }
+    .terms-page p { margin: 0 0 10px; font-size: 12px; line-height: 1.4; }
+    .signature-page { page-break-before: always; padding-top: 120px; }
+    .signature-page h2 { text-align: center; margin-bottom: 80px; }
+    .sig-block { margin-bottom: 80px; }
+    .sig-line { border-bottom: 1px solid #000; height: 40px; margin-bottom: 10px; }
+    .sig-label { font-weight: 600; margin-bottom: 8px; }
+    .sig-date { font-size: 12px; }
+    .project-info { margin: 20px 0; padding: 15px; border: 1px solid #ccc; background-color: #f9f9f9; }
+    .project-info h3 { margin: 0 0 10px; font-size: 14px; text-align: center; }
+    .project-info p { margin: 5px 0; font-size: 12px; }
+    .project-info .label { font-weight: 600; }
+    .payment-page { page-break-before: always; padding-top: 80px; }
+    .payment-page h2 { text-align: center; margin-bottom: 40px; }
+    .payment-table { width: 60%; margin: 0 auto; border-collapse: collapse; }
+    .payment-table td { padding: 10px; border-bottom: 1px solid #000; }
+    .payment-table .right { text-align: right; font-weight: 600; }
+    .payment-total td { font-weight: 700; border-top: 2px solid #000; }
+  </style>
+</head>
+<body>
+  <div class="cover">
+    ${
+      companyLogoUrl
+        ? `
+      <img class="logo" src="${new URL(companyLogoUrl, window.location.origin).toString()}" alt="Company logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+      <div style="display:none;">Magnus Boys Construction</div>
+    `
+        : "<h1>Magnus Boys Construction</h1>"
+    }
+    <h2>${projectTitle}</h2>
+    <h2>Bill of Quantities (BOQ)</h2>
+
+    <div class="project-info">
+      <h3>Project Information</h3>
+      <p><span class="label">Client:</span> ${selectedClient?.name ?? "—"}</p>
+      <p><span class="label">Project:</span> ${selectedProject?.name ?? projectTitle}</p>
+      <p><span class="label">Project Address:</span> ${selectedProject?.site_address ?? "—"}</p>
+      ${selectedClient?.email ? `<p><span class="label">Client Email:</span> ${selectedClient.email}</p>` : ""}
+      ${selectedClient?.phone ? `<p><span class="label">Client Phone:</span> ${selectedClient.phone}</p>` : ""}
+    </div>
+
+    <div class="meta">
+      <div>Version ${boqVersion}</div>
+      <div>Status: ${boqStatus}</div>
+      <div>Printed: ${new Date().toLocaleDateString()}</div>
+    </div>
+  </div>
+  <div class="header">
+    <h1>${projectTitle}</h1>
+    <h2>${boqTitle} - Version ${boqVersion}</h2>
+    <div class="status">Status: ${boqStatus}</div>
+  </div>`;
+
+    sections.forEach((section: any) => {
+      const sectionItems = items.filter((item) => item.section_id === section.id);
+      const total = sectionItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+      html += `<div class="section">
+  <div class="section-title">Section ${section.section_no} - ${section.title}</div>
+  <div class="section-total">Section Total: ${fmtMoney(total)}</div>
+  ${
+    section.scope
+      ? `<div class="scope"><strong>Scope:</strong> ${String(section.scope).replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`
+      : ""
+  }`;
+
+      if (sectionItems.length > 0) {
+        html += `<table class="items-table">
+    <thead>
+      <tr>
+        <th>Line</th>
+        <th>Item</th>
+        <th>Description</th>
+        <th>Qty</th>
+        <th>Rate</th>
+        <th>Amount</th>
+      </tr>
+    </thead>
+    <tbody>`;
+
+        sectionItems.forEach((item: any) => {
+          html += `<tr>
+        <td>${item.line_no}</td>
+        <td>${item.item || ""}</td>
+        <td>${item.description || ""}</td>
+        <td>${item.qty || 0}</td>
+        <td>${fmtMoney(item.rate)}</td>
+        <td>${fmtMoney(item.amount)}</td>
+      </tr>`;
+        });
+
+        html += `</tbody>
+  </table>`;
+      } else {
+        html += "<p>No items in this section</p>";
+      }
+
+      html += "</div>";
+    });
+
+    const grandTotalValue = items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const deposit = grandTotalValue * 0.3;
+    const stage = grandTotalValue * 0.4;
+    const finalPayment = grandTotalValue * 0.3;
+
+    html += `<div class="grand-total">
+  Grand Total: ${fmtMoney(grandTotalValue)}
+</div>
+
+${termsHtml}
+
+<div class="payment-page">
+  <h2>Payment Schedule</h2>
+
+  <table class="payment-table">
+    <tr>
+      <td>Initial Deposit (30%)</td>
+      <td class="right">${fmtMoney(deposit)}</td>
+    </tr>
+    <tr>
+      <td>Mid-Stage Payment (40%)</td>
+      <td class="right">${fmtMoney(stage)}</td>
+    </tr>
+    <tr>
+      <td>Final Payment (30%)</td>
+      <td class="right">${fmtMoney(finalPayment)}</td>
+    </tr>
+    <tr class="payment-total">
+      <td>Total Contract Value</td>
+      <td class="right">${fmtMoney(grandTotalValue)}</td>
+    </tr>
+  </table>
+</div>
+
+<div class="signature-page">
+  <h2>Approval & Signatures</h2>
+
+  <div class="sig-block">
+    <div class="sig-line"></div>
+    <div class="sig-label">
+      Client Name & Signature
+    </div>
+    <div class="sig-date">Date: ____________________</div>
+  </div>
+
+  <div class="sig-block">
+    <div class="sig-line"></div>
+    <div class="sig-label">
+      Director – Magnus Boys Construction
+    </div>
+    <div class="sig-date">Date: ____________________</div>
+  </div>
+</div>
+</body>
+</html>`;
+
+    return html;
+  }
+
+  const canStartBoq = selectedProjectId && boqHeaders.length === 0 && !loading;
+  const canPrint = !!(activeBoq && activeBoq.status === "approved");
+
+  function CascadingPicker(props: {
+    disabled?: boolean;
+    item: any;
+    catalog: any[];
+    onPick: (picked: { item_type: string; category: string; item_name: string; row: any | null }) => void;
+  }) {
+    const { disabled, item, catalog, onPick } = props;
+    const [open, setOpen] = React.useState(false);
+    const [hoverType, setHoverType] = React.useState<string>("");
+    const [hoverCat, setHoverCat] = React.useState<string>("");
+
+    const btnRef = React.useRef<HTMLButtonElement | null>(null);
+    const popRef = React.useRef<HTMLDivElement | null>(null);
+
+    React.useEffect(() => {
+      function onDoc(e: MouseEvent) {
+        if (!open) return;
+        const t = e.target as any;
+        if (popRef.current && popRef.current.contains(t)) return;
+        if (btnRef.current && btnRef.current.contains(t)) return;
+        setOpen(false);
+      }
+      document.addEventListener("mousedown", onDoc);
+    try {
+      const resp = await supabase.rpc("create_estimate_from_boq", { p_boq_id: activeBoqId });
+
+      if (resp.error) {
+        console.error("create_estimate_from_boq error:", resp.error);
+        try { setBannerError(resp.error.message || "Failed to generate estimate"); } catch {}
+        return;
+      }
+
+      const newEstimateId = resp.data;
+      console.log(" Generated estimate id:", newEstimateId);
+
+      // Success message (re-using banner)
+      try { setBannerError(" Estimate created from BOQ."); } catch {}
+
+      // Optional: go to estimates page
+      // navigate("/estimates");
+    } catch (err) {
+      console.error("Failed to generate estimate:", err);
+      try { setBannerError("Failed to generate estimate"); } catch {}
+    }
+  }
+
+  return () => document.removeEventListener("mousedown", onDoc);
+    }, [open]);
+
+    const currentLabel = (() => {
+  const t = (item.item_type || "").toString();
+  return t ? titleCase(t) : "Select...";
+})();
+
+    const types = Array.from(
+      new Set(
+        catalog
+          .map((r) => norm(r.item_type))
+          .filter(Boolean)
+          .map((t) => t.toLowerCase())
+      )
+    ).sort();
+
+    const cats = hoverType
+      ? Array.from(
+          new Set(
+            catalog
+              .filter((r) => norm(r.item_type).toLowerCase() === hoverType.toLowerCase())
+              .map((r) => norm(r.category))
+              .filter(Boolean)
+          )
+        ).sort((a, b) => a.localeCompare(b))
+      : [];
+
+    const items = hoverType && hoverCat
+      ? catalog
+          .filter((r) => norm(r.item_type).toLowerCase() === hoverType.toLowerCase())
+          .filter((r) => norm(r.category) === norm(hoverCat))
+          .map((r) => r.item_name)
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b))
+      : [];
+    try {
+      const resp = await supabase.rpc("create_estimate_from_boq", { p_boq_id: activeBoqId });
+
+      if (resp.error) {
+        console.error("create_estimate_from_boq error:", resp.error);
+        try { setBannerError(resp.error.message || "Failed to generate estimate"); } catch {}
+        return;
+      }
+
+      const newEstimateId = resp.data;
+      console.log(" Generated estimate id:", newEstimateId);
+
+      // Success message (re-using banner)
+      try { setBannerError(" Estimate created from BOQ."); } catch {}
+
+      // Optional: go to estimates page
+      // navigate("/estimates");
+    } catch (err) {
+      console.error("Failed to generate estimate:", err);
+      try { setBannerError("Failed to generate estimate"); } catch {}
+    }
+  }
+
+  return (<div className="relative">
+        <button
+          ref={btnRef}
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (disabled) return;
+            setOpen((v) => {
+              const next = !v;
+              if (next) {
+                const t = (item.item_type || "").toString();
+                const c = (item.category || "").toString();
+                setHoverType(t ? t.toLowerCase() : "");
+                setHoverCat(c || "");
+              }
+              return next;
+            });
+          }}
+          className="w-full text-left bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-xs disabled:opacity-50"
+          title={currentLabel}
+        >
+          {currentLabel}
+        </button>
+
+        {open && (
+          <div
+            ref={popRef}
+            className="absolute z-50 mt-1 w-[760px] max-w-[80vw] rounded-lg border border-slate-700 bg-slate-900 shadow-xl p-2"
+          >
+            <div className="grid grid-cols-3 gap-2">
+              {/* TYPE */}
+              <div className="rounded-md border border-slate-800 bg-slate-950/40 p-1 max-h-[260px] overflow-auto">
+                <div className="px-2 py-1 text-[11px] text-slate-400">Type</div>
+                {types.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onMouseEnter={() => {
+                      setHoverType(t);
+                      setHoverCat("");
+                    }}
+                    onClick={() => {
+                      setHoverType(t);
+                      setHoverCat("");
+                    }}
+                    className={
+                      "w-full text-left px-2 py-1 rounded text-xs hover:bg-slate-800/60 " +
+                      (hoverType?.toLowerCase() === t.toLowerCase() ? "bg-slate-800/60" : "")
+                    }
+                  >
+                    {titleCase(t)}
+                  </button>
+                ))}
+              </div>
+
+              {/* CATEGORY */}
+              <div className="rounded-md border border-slate-800 bg-slate-950/40 p-1 max-h-[260px] overflow-auto">
+                <div className="px-2 py-1 text-[11px] text-slate-400">Category</div>
+                {!hoverType ? (
+                  <div className="px-2 py-2 text-xs text-slate-500">Pick a type…</div>
+                ) : cats.length === 0 ? (
+                  <div className="px-2 py-2 text-xs text-slate-500">No categories</div>
+                ) : (
+                  cats.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onMouseEnter={() => setHoverCat(c)}
+                      onClick={() => setHoverCat(c)}
+                      className={
+                        "w-full text-left px-2 py-1 rounded text-xs hover:bg-slate-800/60 " +
+                        (norm(hoverCat) === norm(c) ? "bg-slate-800/60" : "")
+                      }
+                    >
+                      {c}
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {/* ITEM */}
+              <div className="rounded-md border border-slate-800 bg-slate-950/40 p-1 max-h-[260px] overflow-auto">
+                <div className="px-2 py-1 text-[11px] text-slate-400">Item</div>
+                {!hoverType || !hoverCat ? (
+                  <div className="px-2 py-2 text-xs text-slate-500">Pick a category…</div>
+                ) : items.length === 0 ? (
+                  <div className="px-2 py-2 text-xs text-slate-500">No items</div>
+                ) : (
+                  items.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => {
+                        const row =
+                          catalog.find((r) =>
+                            norm(r.item_name) === norm(name) &&
+                            norm(r.category) === norm(hoverCat) &&
+                            norm(r.item_type).toLowerCase() === hoverType.toLowerCase()
+                          ) || null;
+
+                        onPick({
+                          item_type: hoverType,
+                          category: hoverCat,
+                          item_name: name,
+                          row,
+                        });
+
+                        setOpen(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded text-xs hover:bg-slate-800/60"
+                      title={name}
+                    >
+                      {name}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+    try {
+      const resp = await supabase.rpc("create_estimate_from_boq", { p_boq_id: activeBoqId });
+
+      if (resp.error) {
+        console.error("create_estimate_from_boq error:", resp.error);
+        try { setBannerError(resp.error.message || "Failed to generate estimate"); } catch {}
+        return;
+      }
+
+      const newEstimateId = resp.data;
+      console.log(" Generated estimate id:", newEstimateId);
+
+      // Success message (re-using banner)
+      try { setBannerError(" Estimate created from BOQ."); } catch {}
+
+      // Optional: go to estimates page
+      // navigate("/estimates");
+    } catch (err) {
+      console.error("Failed to generate estimate:", err);
+      try { setBannerError("Failed to generate estimate"); } catch {}
+    }
+  }
+
+    async function generateEstimateFromBoq() {
+    if (!activeBoqId) return;
+
+    // Only allow from APPROVED BOQ
+    if (!activeBoq || activeBoq.status !== "approved") {
+      try {
+        setBannerError("Generate Estimate is only allowed for an APPROVED BOQ. Please approve and lock this BOQ first.");
+      } catch {}
+      return;
+    }
+
+    try {
+      const resp = await supabase.rpc("create_estimate_from_boq", { p_boq_id: activeBoqId });
+
+      if (resp.error) {
+        console.error("create_estimate_from_boq error:", resp.error);
+        try { setBannerError(resp.error.message || "Failed to generate estimate"); } catch {}
+        return;
+      }
+
+      const newEstimateId = resp.data;
+      console.log("✅ Generated estimate id:", newEstimateId);
+
+      // Optional: show a quick success message
+      try { setBannerError("✅ Estimate created from BOQ."); } catch {}
+
+      // Optional: navigate later if you want
+      // navigate("/estimates");
+    } catch (err) {
+      console.error("Failed to generate estimate:", err);
+      try { setBannerError("Failed to generate estimate"); } catch {}
+    }
+  }
+  return (<div className="p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">BOQ Builder</h1>
+          <p className="text-slate-400 mt-1">Draft/approve BOQs, sections, items, printing packets.</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={approveAndLock}
+            className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+          >
+            Primary Action
+          </button>
+          <button
+            onClick={cloneNewVersion}
+            className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm"
+          >
+            Secondary
+          </button>
+          {activeBoqId && (
+            <button
+              onClick={generateEstimateFromBoq}
+              disabled={!(activeBoq && activeBoq.status === "approved")}
+              className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Create an Estimate from this approved BOQ"
+            >
+              Generate Estimate
+            </button>
+          )}
+
+          {canStartBoq && (
+            <button
+              onClick={handleStartBoq}
+              className="px-3 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-sm"
+            >
+              Start BOQ
+            </button>
+          )}
+
+          {activeBoqId && (
+            <button
+              onClick={handlePrint}
+              disabled={!canPrint}
+              className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Print
+            </button>
+          )}
+
+          {!canPrint && activeBoqId && (
+            <div className="text-xs text-slate-500 mt-2">Approve BOQ to enable printing.</div>
+          )}
+
+          {selectedProjectId && boqHeaders.length > 0 && (
+            <div className="text-xs text-slate-500 mt-2">
+              BOQ already started for this project. Use Clone to create a new version.
+            </div>
+          )}
+
+          {canStartBoq && (
+            <div className="text-xs text-slate-500 mt-2">Click Start BOQ to begin.</div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+        {loading ? (
+          <p className="text-sm text-slate-300">Loading projects...</p>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-slate-400">Select Project</label>
+              <select
+                value={selectedProjectId}
+                onChange={(e) => {
+                  setSelectedProjectId(e.target.value);
+                  setError("");
+                  setBannerError(null);
+                }}
+                className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Choose a project...</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {error && <p className="text-xs text-red-400">{error}</p>}
+            {bannerError && <p className="text-xs text-red-400">{bannerError}</p>}
+
+            {selectedProjectId && (
+              <div className="space-y-2">
+                <p className="text-sm text-slate-300">
+                  {boqHeaders.length > 0
+                    ? `Found ${boqHeaders.length} BOQ version(s) for this project`
+                    : "No BOQs found for this project. Create one above."}
+                </p>
+
+                {/* Master Scope of Work */}
+                <div className="mt-3">
+                  <label className="text-xs text-slate-400">Scope of Work</label>
+                  <textarea
+                    value={projectScope}
+                    onChange={(e) => setProjectScope(e.target.value)}
+                    onBlur={() => saveProjectScope()}
+                    disabled={!activeBoq || activeBoq?.status === "approved"}
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs resize-none"
+                    rows={3}
+                    placeholder="Enter master scope of work for this BOQ..."
+                  />
+                  {activeBoq && activeBoq?.status !== "approved" && (
+                    <button
+                      onClick={saveProjectScope}
+                      className="mt-2 px-2 py-1 bg-slate-700 hover:bg-slate-600 text-xs rounded transition-colors"
+                    >
+                      Save Scope
+                    </button>
+                  )}
+                </div>
+
+                {boqHeaders.length > 0 && (
+                  <div>
+                    <label className="text-xs text-slate-400">Select Version</label>
+                    <select
+                      value={selectedVersionId || ""}
+                      onChange={(e) => setSelectedVersionId(e.target.value)}
+                      className="w-full mt-1 px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-300"
+                    >
+                      {boqHeaders.map((h) => (
+                        <option key={h.id} value={h.id}>
+                          v{h.version} ({h.status})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {activeBoq && (
+                  <p className="text-xs text-slate-400">
+                    Active: v{activeBoq.version} ({activeBoq.status})
+                  </p>
+                )}
+                {activeBoq && (
+                  <p className="text-[11px] text-slate-500">
+                    Last Updated:{" "}
+                    {new Date((activeBoq.updated_at || activeBoq.created_at) as string).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <p className="text-sm text-slate-300">Skeleton ready. Next we wire Supabase tables + live CRUD.</p>
+
+            {/* Sections List */}
+            {activeBoqId && (
+              <div className="mt-4 space-y-2">
+                <div className="text-xs text-slate-400 font-medium">BOQ Sections</div>
+
+                {sections.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic">No sections yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {sections.map((section) => {
+                      const sectionItems = items.filter((item) => item.section_id === section.id);
+    try {
+      const resp = await supabase.rpc("create_estimate_from_boq", { p_boq_id: activeBoqId });
+
+      if (resp.error) {
+        console.error("create_estimate_from_boq error:", resp.error);
+        try { setBannerError(resp.error.message || "Failed to generate estimate"); } catch {}
+        return;
+      }
+
+      const newEstimateId = resp.data;
+      console.log(" Generated estimate id:", newEstimateId);
+
+      // Success message (re-using banner)
+      try { setBannerError(" Estimate created from BOQ."); } catch {}
+
+      // Optional: go to estimates page
+      // navigate("/estimates");
+    } catch (err) {
+      console.error("Failed to generate estimate:", err);
+      try { setBannerError("Failed to generate estimate"); } catch {}
+    }
+  }
+
+  return (<div key={section.id} className="space-y-2">
+                          <div className="text-sm text-slate-300 font-medium flex justify-between items-center">
+                            <span>
+                              Section {section.section_no} - {section.title}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-500">Total: {fmtMoney(sectionTotal(section.id))}</span>
+                              {activeBoq?.status !== "approved" && (
+                                <button
+                                  onClick={() => deleteSection(section.id)}
+                                  className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-xs rounded transition-colors"
+                                >
+                                  Delete Section
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Scope of Work / Remarks */}
+                          <div className="ml-4 mb-3">
+                            <label className="text-xs text-slate-400">Scope of Work / Remarks</label>
+                            <textarea
+                              value={section.scope || ""}
+                              onChange={(e) => handleSectionScopeChange(section.id, e.target.value)}
+                              onBlur={() => saveSectionScope(section.id)}
+                              disabled={activeBoq?.status === "approved"}
+                              className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs resize-none"
+                              rows={2}
+                              placeholder="Enter scope of work or remarks for this section..."
+                            />
+                          </div>
+
+                          {/* Items for this section */}
+                          <div className="ml-4 space-y-1">
+                            {sectionItems.length === 0 ? (
+                              <p className="text-xs text-slate-500 italic">No items yet</p>
+                            ) : (
+                              <div className="space-y-1">
+                                {sectionItems.map((item) => (
+                                  <div key={item.id} className="text-xs text-slate-400 grid grid-cols-7 gap-2">
+                                    <div>Line {item.line_no}</div>
+
+                                    <CascadingPicker
+                                      disabled={activeBoq?.status === "approved"}
+                                      item={item}
+                                      catalog={catalog}
+                                      onPick={({ item_type, category, item_name, row }) => {
+                                        handleItemChange(item.id, "item_type", item_type);
+                                        handleItemChange(item.id, "category", category);
+                                        handleItemChange(item.id, "item", item_name);
+
+                                        if (row) {
+                                          if (!norm(item.description)) {
+                                            handleItemChange(item.id, "description", row.description ?? "");
+                                          }
+                                          handleItemChange(item.id, "rate", Number(row.current_rate ?? 0));
+                                        }
+                                        saveItem(item.id);
+                                      }}
+                                    />
+
+                                    <input
+                                      type="text"
+                                      value={item.description}
+                                      onChange={(e) => handleItemChange(item.id, "description", e.target.value)}
+                                      onBlur={() => saveItem(item.id)}
+                                      disabled={activeBoq?.status === "approved"}
+                                      className="bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-xs w-full"
+                                    />
+
+                                    <input
+                                      type="number"
+                                      value={item.qty}
+                                      onChange={(e) => handleItemChange(item.id, "qty", parseFloat(e.target.value) || 0)}
+                                      onBlur={() => saveItem(item.id)}
+                                      disabled={activeBoq?.status === "approved"}
+                                      className="bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-xs w-full"
+                                    />
+
+                                    <input
+                                      type="number"
+                                      value={item.rate}
+                                      onChange={(e) => handleItemChange(item.id, "rate", parseFloat(e.target.value) || 0)}
+                                      onBlur={() => saveItem(item.id)}
+                                      disabled={activeBoq?.status === "approved"}
+                                      className="bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-xs w-full"
+                                    />
+
+                                    <div className="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-xs w-full">
+                                      {fmtMoney(item.amount)}
+                                    </div>
+
+                                    {activeBoq?.status !== "approved" && (
+                                      <button
+                                        onClick={() => deleteItem(item.id, section.id)}
+                                        className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-xs rounded transition-colors w-[90px]"
+                                      >
+                                        Delete
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {activeBoq?.status !== "approved" && (
+                              <button
+                                onClick={() => handleAddItem(section.id)}
+                                className="mt-1 px-2 py-0.5 bg-slate-600 hover:bg-slate-500 text-xs rounded transition-colors"
+                              >
+                                Add Item
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {activeBoq?.status !== "approved" && (
+                  <button
+                    onClick={handleAddSection}
+                    className="mt-2 px-3 py-1 bg-slate-700 hover:bg-slate-600 text-xs rounded transition-colors"
+                  >
+                    Add Section
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Grand Total */}
+            {activeBoqId && items.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-700">
+                <div className="text-sm font-medium text-slate-200">Grand Total: {fmtMoney(grandTotal)}</div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+
+
+
+
