@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import MasterCategorySelect from "../components/master/MasterCategorySelect";
-import MasterUnitSelect from "../components/master/MasterUnitSelect";
+import MasterCategorySelect from "../components/master/MasterCategorySelect.tsx";
+import MasterUnitSelect from "../components/master/MasterUnitSelect.tsx";
 
 // ✅ Standard construction categories (future-proof baseline)
 const STANDARD_CATEGORIES = [
@@ -881,7 +881,7 @@ export default function RatesPage() {
     async function load() {
       setLoading(true);
       
-      const baseSelect = "id,item_name,unit,category,item_type,updated_at,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
+     const baseSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
       const fullSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
 
       let resp = await supabase
@@ -942,7 +942,7 @@ export default function RatesPage() {
     async function load() {
       setLoading(true);
       
-      const baseSelect = "id,item_name,unit,category,item_type,updated_at,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
+      const baseSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
       const fullSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
 
       let resp = await supabase
@@ -1018,7 +1018,7 @@ export default function RatesPage() {
   // ✅ Options: standard first (stable order), then extras (alphabetical)
   const categoryOptions = useMemo(() => {
     const base = [...STANDARD_CATEGORIES];
-    const baseSet = new Set(base);
+    const baseSet = new Set<string>(base);
     const extras: string[] = [];
 
     for (const it of items) {
@@ -1035,7 +1035,7 @@ export default function RatesPage() {
 
   const unitOptions = useMemo(() => {
     const base = Array.from(new Set(STANDARD_UNITS as unknown as string[]));
-    const baseSet = new Set(base);
+    const baseSet = new Set<string>(base);
     const extras: string[] = [];
 
     for (const it of items) {
@@ -2286,3 +2286,5 @@ export default function RatesPage() {
     </div>
   );
 }
+
+

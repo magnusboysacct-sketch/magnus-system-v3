@@ -7,6 +7,8 @@ import ClientsPage from "./pages/ClientsPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import EstimatesPage from "./pages/EstimatesPage";
 import BOQPage from "./pages/BOQPage";
+
+import AssembliesPage from "./pages/AssembliesPage.tsx";
 import RatesPage from "./pages/RatesPage";
 import TakeoffPage from "./pages/TakeoffPage";
 import ProcurementPage from "./pages/ProcurementPage";
@@ -79,7 +81,9 @@ export default function App() {
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/estimates" element={<EstimatesPage />} />
           <Route path="/boq" element={<BOQPage />} />
-          <Route path="/rates" element={<RatesPage />} />
+          
+        <Route path="/assemblies" element={<AssembliesPage />} />
+<Route path="/rates" element={<RatesPage />} />
           <Route path="/takeoff" element={<TakeoffPage />} />
           <Route path="/procurement" element={<ProcurementPage />} />
           <Route path="/finance" element={<FinancePage />} />
@@ -97,3 +101,6 @@ export default function App() {
     </BrowserRouter>
   );
 }
+
+
+

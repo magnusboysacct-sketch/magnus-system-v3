@@ -2,8 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { useMasterLists } from "../hooks/useMasterLists.ts";
-import { saveBoq as persistBoq, loadLatestBoqForProject as loadLatestBoqForProjectFromDb, type BoqStatus } from "../boq/boqPersistence.ts";
+import { useMasterLists } from "../hooks/useMasterLists";
 
 type RateItem = {
   id: string;
@@ -438,66 +437,190 @@ export default function BOQPage() {
   }
 
   // -----------------------------
-// Persistence
-// -----------------------------
-async function loadLatestBoqForProject(projectId: string) {
-  setPersistLoading(true);
-  setPersistError(null);
+  // Persistence
+  // -----------------------------
+  async function loadLatestBoqForProject(projectId: string) {
+    setPersistLoading(true);
+    setPersistError(null);
 
-  try {
-    const loaded = await loadLatestBoqForProjectFromDb(projectId);
-    if (!loaded) {
-      setBoqId(null);
-      setStatus("draft");
-      setSections([]);
+    try {
+      const { data: headers, error: headerErr } = await supabase
+        .from("boqs")
+        .select("id,project_id,status,version,updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .order("version", { ascending: false })
+        .limit(1);
+
+      if (headerErr) throw headerErr;
+
+      const header = Array.isArray(headers) ? (headers[0] as BoqHeaderRow | undefined) : undefined;
+      if (!header) {
+        setBoqId(null);
+        setStatus("draft");
+        setSections([]);
+        return;
+      }
+
+      setBoqId(header.id);
+      setStatus(header.status);
+
+      const { data: secRows, error: secErr } = await supabase
+        .from("boq_sections")
+        .select("id,boq_id,sort_order,master_category_id,title,scope")
+        .eq("boq_id", header.id)
+        .order("sort_order", { ascending: true });
+
+      if (secErr) throw secErr;
+
+      const secList = Array.isArray(secRows) ? secRows : [];
+      const sectionIds = secList.map((s: any) => s.id).filter(Boolean);
+
+      const itemsBySection = new Map<string, any[]>();
+
+      if (sectionIds.length > 0) {
+        const { data: itemRows, error: itemErr } = await supabase
+          .from("boq_section_items")
+          .select(
+            "id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate"
+          )
+          .in("section_id", sectionIds)
+          .order("sort_order", { ascending: true });
+
+        if (itemErr) throw itemErr;
+
+        const list = Array.isArray(itemRows) ? itemRows : [];
+        for (const r of list) {
+          const sid = String((r as any).section_id ?? "");
+          if (!sid) continue;
+          if (!itemsBySection.has(sid)) itemsBySection.set(sid, []);
+          itemsBySection.get(sid)!.push(r);
+        }
+      }
+
+      const rebuilt: Section[] = secList.map((s: any) => {
+        const sid = String(s.id);
+        const itemsRaw = itemsBySection.get(sid) ?? [];
+        const items: BOQItemRow[] = itemsRaw.map((r: any) => ({
+          id: String(r.id ?? safeId()),
+          pick_type: String(r.pick_type ?? ""),
+          pick_category: String(r.pick_category ?? ""),
+          pick_item: String(r.pick_item ?? ""),
+          pick_variant: String(r.pick_variant ?? ""),
+          cost_item_id: r.cost_item_id ? String(r.cost_item_id) : null,
+          item_name: String(r.item_name ?? ""),
+          description: String(r.description ?? ""),
+          unit_id: r.unit_id ? String(r.unit_id) : null,
+          qty: numOr(r.qty, 0),
+          rate: numOr(r.rate, 0),
+        }));
+
+        return {
+          id: sid,
+          masterCategoryId: s.master_category_id ? String(s.master_category_id) : null,
+          title: String(s.title ?? "New Section"),
+          scope: String(s.scope ?? ""),
+          items,
+        };
+      });
+
+      setSections(rebuilt);
+    } catch (e: any) {
+      console.error("loadLatestBoqForProject failed:", e);
+      setPersistError(e?.message ?? "Failed to load BOQ");
+    } finally {
+      setPersistLoading(false);
+    }
+  }
+
+  async function saveBoqToSupabase(nextStatus: "draft" | "approved") {
+    const projectId = activeProjectId ?? resolveProjectId();
+    if (!projectId) {
+      alert("Please select or create a project first.");
       return;
     }
 
-    setBoqId(loaded.header.id);
-    setStatus(loaded.header.status);
-    setSections(loaded.sections as any);
-  } catch (e: any) {
-    console.error("loadLatestBoqForProject failed:", e);
-    setPersistError(e?.message ?? "Failed to load BOQ");
-  } finally {
-    setPersistLoading(false);
+    setPersistLoading(true);
+    setPersistError(null);
+
+    try {
+      let headerId = boqId;
+
+      if (!headerId) {
+        const { data: ins, error: insErr } = await supabase
+          .from("boqs")
+          .insert([{ project_id: projectId, status: nextStatus, version: 1 }])
+          .select("id")
+          .single();
+
+        if (insErr) throw insErr;
+        headerId = String((ins as any).id);
+        setBoqId(headerId);
+      } else {
+        const { error: upErr } = await supabase.from("boqs").update({ status: nextStatus }).eq("id", headerId);
+        if (upErr) throw upErr;
+      }
+
+      const { error: delSecErr } = await supabase.from("boq_sections").delete().eq("boq_id", headerId);
+      if (delSecErr) throw delSecErr;
+
+      const sectionPayload = sections.map((s, idx) => ({
+        id: s.id,
+        boq_id: headerId,
+        sort_order: idx,
+        master_category_id: s.masterCategoryId,
+        title: s.title ?? "New Section",
+        scope: s.scope ?? "",
+      }));
+
+      const { error: secInsErr } = await supabase.from("boq_sections").insert(sectionPayload);
+      if (secInsErr) throw secInsErr;
+
+      const itemPayload: any[] = [];
+      for (const s of sections) {
+        for (let i = 0; i < s.items.length; i++) {
+          const it = s.items[i];
+          itemPayload.push({
+            id: it.id,
+            section_id: s.id,
+            sort_order: i,
+
+            pick_type: it.pick_type ?? "",
+            pick_category: it.pick_category ?? "",
+            pick_item: it.pick_item ?? "",
+            pick_variant: it.pick_variant ?? "",
+
+            cost_item_id: it.cost_item_id,
+
+            item_name: it.item_name ?? "",
+            description: it.description ?? "",
+            unit_id: it.unit_id,
+
+            qty: numOr(it.qty, 0),
+            rate: numOr(it.rate, 0),
+          });
+        }
+      }
+
+      if (itemPayload.length > 0) {
+        const { error: itemInsErr } = await supabase.from("boq_section_items").insert(itemPayload);
+        if (itemInsErr) throw itemInsErr;
+      }
+
+      setStatus(nextStatus);
+
+      // light touch: update autosave indicator if user is using auto-save
+      if (autoSaveOn) setLastAutoSaveAt(new Date().toLocaleString());
+    } catch (e: any) {
+      console.error("saveBoqToSupabase failed:", e);
+      setPersistError(e?.message ?? "Failed to save BOQ");
+      alert(e?.message ?? "Failed to save BOQ");
+    } finally {
+      setPersistLoading(false);
+    }
   }
-}
 
-async function saveBoqToSupabase(nextStatus: "draft" | "approved") {
-  const projectId = activeProjectId ?? resolveProjectId();
-  if (!projectId) {
-    alert("Please select or create a project first.");
-    return;
-  }
-
-  setPersistLoading(true);
-  setPersistError(null);
-
-  try {
-    const savedId = await persistBoq({
-      boqId: boqId ?? null,
-      projectId,
-      status: nextStatus as BoqStatus,
-      sections: sections as any,
-    });
-
-    setBoqId(savedId);
-    setStatus(nextStatus);
-
-    // reload from DB (captures computed qty_calculated)
-    await loadLatestBoqForProject(projectId);
-
-    if (autoSaveOn) setLastAutoSaveAt(new Date().toLocaleString());
-  } catch (e: any) {
-    console.error("saveBoqToSupabase failed:", e);
-    setPersistError(e?.message ?? "Failed to save BOQ");
-    alert(e?.message ?? "Failed to save BOQ");
-  } finally {
-    setPersistLoading(false);
-  }
-}
-async function setActiveProject(projectId: string | null) {
+  async function setActiveProject(projectId: string | null) {
     const next = projectId && projectId.trim() ? projectId.trim() : null;
     setActiveProjectId(next);
 
@@ -1474,11 +1597,3 @@ async function setActiveProject(projectId: string | null) {
     </div>
   );
 }
-
-
-
-
-
-
-
-

@@ -22,7 +22,9 @@ const nav = [
   { to: "/projects", label: "Projects", icon: BriefcaseBusiness },
   { to: "/estimates", label: "Estimates", icon: FileSpreadsheet },
   { to: "/boq", label: "BOQ Builder", icon: Layers },
-  { to: "/rates", label: "Rate Library", icon: Layers },
+  
+  { to: "/assemblies", label: "Assemblies", icon: Layers },
+{ to: "/rates", label: "Rate Library", icon: Layers },
   { to: "/takeoff", label: "Takeoff", icon: Ruler },
   { to: "/procurement", label: "Procurement", icon: ShoppingCart },
   { to: "/finance", label: "Finance", icon: Landmark },
@@ -182,3 +184,6 @@ export default function SidebarLayout() {
     </div>
   );
 }
+
+
+

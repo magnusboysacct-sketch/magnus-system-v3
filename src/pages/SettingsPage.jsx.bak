@@ -1,0 +1,43 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = SettingsPage;
+var react_1 = require("react");
+var react_router_dom_1 = require("react-router-dom");
+var SettingsCompanyPage_1 = require("./SettingsCompanyPage");
+var SettingsUsersPage_1 = require("./SettingsUsersPage");
+function SettingsPage() {
+    var _a = (0, react_1.useState)("company"), activeTab = _a[0], setActiveTab = _a[1];
+    return (<div className="p-6">
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-xl font-semibold">Settings</h1>
+          <div className="text-sm opacity-70">Manage your system configuration and preferences.</div>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-1 mb-6 border-b border-white/10">
+        <button onClick={function () { return setActiveTab("company"); }} className={"px-4 py-2 text-sm font-medium transition border-b-2 ".concat(activeTab === "company"
+            ? "border-white text-white bg-white/5"
+            : "border-transparent text-white/60 hover:text-white hover:bg-white/5")}>
+          Company
+        </button>
+        <button onClick={function () { return setActiveTab("users"); }} className={"px-4 py-2 text-sm font-medium transition border-b-2 ".concat(activeTab === "users"
+            ? "border-white text-white bg-white/5"
+            : "border-transparent text-white/60 hover:text-white hover:bg-white/5")}>
+          Users
+        </button>
+        <react_router_dom_1.Link to="/settings/master-lists" className={"px-4 py-2 text-sm font-medium transition border-b-2 ".concat(activeTab === "master-lists"
+            ? "border-white text-white bg-white/5"
+            : "border-transparent text-white/60 hover:text-white hover:bg-white/5")}>
+          Master Lists
+        </react_router_dom_1.Link>
+      </div>
+
+      {/* Tab Content */}
+      <div className="min-h-[400px]">
+        {activeTab === "company" && <SettingsCompanyPage_1.default />}
+        {activeTab === "users" && <SettingsUsersPage_1.default />}
+      </div>
+    </div>);
+}
