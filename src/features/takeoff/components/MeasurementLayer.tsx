@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from "react";
 import type { Measurement } from "../types/takeoff.types";
+import { centroid } from "../utils/geometry";
 
 type MeasurementLayerProps = {
   measurements: Measurement[];
@@ -76,6 +77,39 @@ export function MeasurementLayer({
           ctx.arc(point.x, point.y, 4 / scale, 0, Math.PI * 2);
           ctx.fill();
         }
+
+        const center = centroid(measurement.points);
+        const centerX = center.x;
+        const centerY = center.y;
+
+        const labelText = `${measurement.result.toFixed(2)} ${measurement.unit}`;
+        ctx.font = `${14 / scale}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        const textWidth = ctx.measureText(labelText).width;
+        const padding = 8 / scale;
+        const labelHeight = 24 / scale;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillRect(
+          centerX - textWidth / 2 - padding,
+          centerY - labelHeight / 2,
+          textWidth + padding * 2,
+          labelHeight
+        );
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1 / scale;
+        ctx.strokeRect(
+          centerX - textWidth / 2 - padding,
+          centerY - labelHeight / 2,
+          textWidth + padding * 2,
+          labelHeight
+        );
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(labelText, centerX, centerY);
       } else if (measurement.type === "point" && measurement.points.length > 0) {
         for (const point of measurement.points) {
           ctx.beginPath();

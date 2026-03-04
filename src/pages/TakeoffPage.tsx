@@ -364,12 +364,15 @@ function TakeoffPageInner() {
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const activePointerIdRef = useRef<number | null>(null);
 
-  type ToolMode = "select" | "line";
+  type ToolMode = "select" | "line" | "area";
   const [tool, setTool] = useState<ToolMode>("select");
 
   const [lineStart, setLineStart] = useState<Point | null>(null);
   const [lineEnd, setLineEnd] = useState<Point | null>(null);
   const [hoverPt, setHoverPt] = useState<Point | null>(null);
+
+  const [areaPoints, setAreaPoints] = useState<Point[]>([]);
+  const [areaHoverPt, setAreaHoverPt] = useState<Point | null>(null);
   const [feetPerPdfUnit, setFeetPerPdfUnit] = useState<number | null>(null);
 
   const [canvasWidth, setCanvasWidth] = useState(0);
@@ -436,6 +439,8 @@ function TakeoffPageInner() {
       setLineStart(null);
       setLineEnd(null);
       setHoverPt(null);
+      setAreaPoints([]);
+      setAreaHoverPt(null);
 
       fitScaleRef.current = null;
 
@@ -544,6 +549,40 @@ function TakeoffPageInner() {
 
       ctx.restore();
     }
+
+    if (tool === "area" && areaPoints.length > 0) {
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#a78bfa";
+      ctx.fillStyle = "rgba(167,139,250,0.2)";
+
+      ctx.beginPath();
+      ctx.moveTo(areaPoints[0].x, areaPoints[0].y);
+      for (let i = 1; i < areaPoints.length; i++) {
+        ctx.lineTo(areaPoints[i].x, areaPoints[i].y);
+      }
+
+      if (areaHoverPt && areaPoints.length >= 1) {
+        ctx.lineTo(areaHoverPt.x, areaHoverPt.y);
+        ctx.lineTo(areaPoints[0].x, areaPoints[0].y);
+      }
+
+      if (areaPoints.length >= 3) {
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      ctx.stroke();
+
+      ctx.fillStyle = "#a78bfa";
+      for (const p of areaPoints) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
   }
 
   async function render() {
@@ -627,13 +666,25 @@ function TakeoffPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [pdf, pageNumber, panZoom.zoom, panZoom.panX, panZoom.panY, calPoints.length, calibPoints.length, tool, lineStart?.x, lineStart?.y, lineEnd?.x, lineEnd?.y, hoverPt?.x, hoverPt?.y]);
+  }, [pdf, pageNumber, panZoom.zoom, panZoom.panX, panZoom.panY, calPoints.length, calibPoints.length, tool, lineStart?.x, lineStart?.y, lineEnd?.x, lineEnd?.y, hoverPt?.x, hoverPt?.y, areaPoints.length, areaHoverPt?.x, areaHoverPt?.y]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") {
         e.preventDefault();
         isSpaceDownRef.current = true;
+      }
+
+      if (tool === "area") {
+        if (e.code === "Enter" && areaPoints.length >= 3) {
+          e.preventDefault();
+          finishAreaPolygon();
+        }
+        if (e.code === "Escape") {
+          e.preventDefault();
+          setAreaPoints([]);
+          setAreaHoverPt(null);
+        }
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -649,7 +700,7 @@ function TakeoffPageInner() {
       window.removeEventListener("keydown", onKeyDown as any);
       window.removeEventListener("keyup", onKeyUp as any);
     };
-  }, []);
+  }, [tool, areaPoints]);
 
   useEffect(() => {
     function onWheel(e: WheelEvent) {
@@ -680,6 +731,8 @@ function TakeoffPageInner() {
       setLineStart(null);
       setLineEnd(null);
       setHoverPt(null);
+      setAreaPoints([]);
+      setAreaHoverPt(null);
       setCalPoints([]);
       setCalibrating(false);
       setIsCalibrating(false);
@@ -694,6 +747,8 @@ function TakeoffPageInner() {
       setLineStart(null);
       setLineEnd(null);
       setHoverPt(null);
+      setAreaPoints([]);
+      setAreaHoverPt(null);
       setCalPoints([]);
       setCalibrating(false);
       setIsCalibrating(false);
@@ -869,13 +924,34 @@ function TakeoffPageInner() {
       setLineEnd(null);
       return;
     }
+
+    if (tool === "area") {
+      const p = canvasPointFromEvent(e);
+      setAreaPoints((prev) => [...prev, p]);
+      return;
+    }
+  }
+
+  function onCanvasDoubleClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (tool === "area" && areaPoints.length >= 3) {
+      e.preventDefault();
+      e.stopPropagation();
+      finishAreaPolygon();
+    }
   }
 
   function onCanvasMove(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (tool !== "line") return;
-    if (!lineStart) return;
-    if (lineEnd) return;
-    setHoverPt(canvasPointFromEvent(e));
+    if (tool === "line") {
+      if (!lineStart) return;
+      if (lineEnd) return;
+      setHoverPt(canvasPointFromEvent(e));
+      return;
+    }
+
+    if (tool === "area" && areaPoints.length > 0) {
+      setAreaHoverPt(canvasPointFromEvent(e));
+      return;
+    }
   }
 
   function applyScaleFromModal(realFeet: number, opts: { applyAllPages: boolean; autoDimLine: boolean }) {
@@ -932,6 +1008,36 @@ function TakeoffPageInner() {
     setCalibPoints([]);
     setPendingCalibLength(null);
     setScaleModalOpen(false);
+  }
+
+  function finishAreaPolygon() {
+    if (areaPoints.length < 3) return;
+
+    if (feetPerPixel && feetPerPixel > 0) {
+      const pixelsPerUnit = 1 / feetPerPixel;
+
+      let areaPixels = 0;
+      for (let i = 0; i < areaPoints.length; i++) {
+        const j = (i + 1) % areaPoints.length;
+        areaPixels += areaPoints[i].x * areaPoints[j].y;
+        areaPixels -= areaPoints[j].x * areaPoints[i].y;
+      }
+      areaPixels = Math.abs(areaPixels / 2);
+
+      const areaFt2 = areaPixels / (pixelsPerUnit * pixelsPerUnit);
+
+      addMeasurement({
+        type: "area",
+        points: [...areaPoints],
+        pixelsPerUnit,
+        unit: "ft²",
+        label: `Area ${measurements.length + 1}`,
+        color: "#a78bfa",
+      });
+    }
+
+    setAreaPoints([]);
+    setAreaHoverPt(null);
   }
 
   const canConfirmCalibration = calibPoints.length === 2;
@@ -1009,6 +1115,8 @@ function TakeoffPageInner() {
             setLineStart(null);
             setLineEnd(null);
             setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
           }}
           className={"px-3 py-2 rounded-xl text-sm border " + (tool === "select" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
         >
@@ -1021,15 +1129,32 @@ function TakeoffPageInner() {
             setLineStart(null);
             setLineEnd(null);
             setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
           }}
           className={"px-3 py-2 rounded-xl text-sm border " + (tool === "line" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
         >
           Line
         </button>
 
+        <button
+          onClick={() => {
+            setTool("area");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "area" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Area
+        </button>
+
         <div className="flex-1" />
 
         {tool === "line" && <div className="text-xs text-slate-400">Click 2 points to measure. 3rd click starts new line.</div>}
+        {tool === "area" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points). ESC to cancel.</div>}
         {measurements.length > 0 && (
           <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
             {measurements.length} measurement{measurements.length === 1 ? '' : 's'}
@@ -1111,8 +1236,9 @@ function TakeoffPageInner() {
               <canvas
                 ref={canvasRef}
                 onClick={onCanvasClick}
+                onDoubleClick={onCanvasDoubleClick}
                 onMouseMove={onCanvasMove}
-                className={calibrating || isPanningRef.current ? "cursor-crosshair" : tool === "line" ? "cursor-crosshair" : "cursor-default"}
+                className={calibrating || isPanningRef.current ? "cursor-crosshair" : (tool === "line" || tool === "area") ? "cursor-crosshair" : "cursor-default"}
                 style={{ userSelect: "none" }}
               />
 
