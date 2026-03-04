@@ -1,6 +1,9 @@
-﻿import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { usePanZoom } from "../features/takeoff/hooks/usePanZoom";
+import { useMeasurements } from "../features/takeoff/hooks/useMeasurements";
+import { MeasurementLayer } from "../features/takeoff/components/MeasurementLayer";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -20,7 +23,6 @@ function dist(a: Point, b: Point) {
 function parseFraction(input: string): number | null {
   const s = input.trim();
   if (!s) return 0;
-  // Accept: "1/2", "3/8", "0.25"
   if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
   const m = s.match(/^(\d+)\s*\/\s*(\d+)$/);
   if (!m) return null;
@@ -104,7 +106,6 @@ function ScaleModal(props: {
       return;
     }
 
-    // Two-phase calibration: if calibrating, start point picking mode
     if (isCalibrating) {
       if (onCalibrationOk) {
         onCalibrationOk(feet);
@@ -112,7 +113,6 @@ function ScaleModal(props: {
       return;
     }
 
-    // Original behavior: apply scale directly
     onApply(feet, { applyAllPages, autoDimLine });
   }
 
@@ -271,7 +271,7 @@ function ScaleModal(props: {
 
           {!(isCalibrating ? canConfirmCalibration : canApply) && (
             <div className="pb-5 text-xs text-slate-500">
-              {isCalibrating 
+              {isCalibrating
                 ? `Click ${2 - calibPointsCount} more point${calibPointsCount === 1 ? '' : 's'} on the drawing first, then press OK.`
                 : "Click two points on the drawing first, then press OK."
               }
@@ -323,9 +323,19 @@ function TakeoffPageInner() {
   const [pageNumber, setPageNumber] = useState(1);
   const [numPages, setNumPages] = useState(0);
 
-  const [scale, setScale] = useState(1.0);
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
+  const panZoom = usePanZoom({
+    minZoom: 0.2,
+    maxZoom: 6,
+    zoomSpeed: 0.08,
+    initialZoom: 1.0,
+  });
+
+  const {
+    measurements,
+    addMeasurement,
+    removeMeasurement,
+    updateMeasurement,
+  } = useMeasurements();
 
   const [calibrating, setCalibrating] = useState(false);
   const [calPoints, setCalPoints] = useState<Point[]>([]);
@@ -336,7 +346,6 @@ function TakeoffPageInner() {
   const [pendingCalibLength, setPendingCalibLength] = useState<number | null>(null);
 
   function getEnteredFeet(): number {
-    // This needs to be passed from ScaleModal - for now return 1 as placeholder
     return 1;
   }
 
@@ -350,7 +359,6 @@ function TakeoffPageInner() {
 
   const fitScaleRef = useRef<number | null>(null);
 
-  // PlanSwift navigation refs
   const isSpaceDownRef = useRef(false);
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
@@ -364,13 +372,15 @@ function TakeoffPageInner() {
   const [hoverPt, setHoverPt] = useState<Point | null>(null);
   const [feetPerPdfUnit, setFeetPerPdfUnit] = useState<number | null>(null);
 
+  const [canvasWidth, setCanvasWidth] = useState(0);
+  const [canvasHeight, setCanvasHeight] = useState(0);
+
   function distFeet(a:{x:number;y:number}, b:{x:number;y:number}) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const d = Math.sqrt(dx*dx + dy*dy);
     if (!d) return 0;
 
-    // If calibration state is feetPerPdfUnit:
     if (!feetPerPdfUnit) return 0;
     return d * feetPerPdfUnit;
   }
@@ -382,7 +392,6 @@ function TakeoffPageInner() {
     const inches = Math.floor(inchesTotal);
     const frac = inchesTotal - inches;
 
-    // round to nearest 1/16
     const denom = 16;
     let num = Math.round(frac * denom);
     let fFeet = feet;
@@ -420,8 +429,8 @@ function TakeoffPageInner() {
       setIsCalibrating(false);
       setCalPoints([]);
       setCalibPoints([]);
-      setPanX(0);
-      setPanY(0);
+
+      panZoom.resetView();
 
       setTool("select");
       setLineStart(null);
@@ -429,7 +438,6 @@ function TakeoffPageInner() {
       setHoverPt(null);
 
       fitScaleRef.current = null;
-      setScale(1.0);
 
       if (viewerRef.current) {
         viewerRef.current.scrollLeft = 0;
@@ -554,17 +562,25 @@ function TakeoffPageInner() {
         const fit = await computeFitScale();
         if (fit != null) {
           fitScaleRef.current = fit;
-          setScale(fit);
+          panZoom.fitToView(
+            page.getViewport({ scale: 1 }).width,
+            page.getViewport({ scale: 1 }).height,
+            viewer.clientWidth,
+            viewer.clientHeight
+          );
           return;
         }
       }
 
-      const viewport = page.getViewport({ scale });
+      const viewport = page.getViewport({ scale: panZoom.zoom });
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
+
+      setCanvasWidth(canvas.width);
+      setCanvasHeight(canvas.height);
 
       canvas.style.width = canvas.width + "px";
       canvas.style.height = canvas.height + "px";
@@ -594,8 +610,6 @@ function TakeoffPageInner() {
       if (seq !== renderSeqRef.current) return;
 
       drawOverlay(ctx);
-
-      // Remove old scroll positioning - now using CSS transform pan
     } catch (e: any) {
       setError("Render failed: " + (e?.message || String(e)));
     }
@@ -613,15 +627,11 @@ function TakeoffPageInner() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdf, pageNumber, scale, panX, panY, calPoints.length, calibPoints.length, tool, lineStart?.x, lineStart?.y, lineEnd?.x, lineEnd?.y, hoverPt?.x, hoverPt?.y]);
-
-  // Remove old zoom anchor logic - now using pan system
+  }, [pdf, pageNumber, panZoom.zoom, panZoom.panX, panZoom.panY, calPoints.length, calibPoints.length, tool, lineStart?.x, lineStart?.y, lineEnd?.x, lineEnd?.y, hoverPt?.x, hoverPt?.y]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") {
-        // prevent page scrolling when space is pressed
         e.preventDefault();
         isSpaceDownRef.current = true;
       }
@@ -721,28 +731,22 @@ function TakeoffPageInner() {
     };
   }
 
-  
-  // PlanSwift navigation handlers
   function shouldStartPan(e: React.PointerEvent) {
     const LEFT = 0;
     const MIDDLE = 1;
 
-    // Middle mouse drag pans
     if (e.button === MIDDLE) return true;
 
-    // Space + left drag pans
     if (e.button === LEFT && isSpaceDownRef.current) return true;
 
     return false;
   }
 
   function onViewerPointerDown(e: React.PointerEvent) {
-    // If calibration click-mode is ON, we must NOT pan unless it's explicitly a pan gesture
-    // (space+drag or middle drag). Normal click should record points (your existing logic).
     const el = viewerRef.current;
     if (!el) return;
 
-    if (!shouldStartPan(e)) return; // let normal click flow continue
+    if (!shouldStartPan(e)) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -751,12 +755,7 @@ function TakeoffPageInner() {
     activePointerIdRef.current = e.pointerId;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 
-    panStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      panX,
-      panY,
-    };
+    panZoom.startPan(e.clientX, e.clientY);
   }
 
   function onViewerPointerMove(e: React.PointerEvent) {
@@ -765,12 +764,7 @@ function TakeoffPageInner() {
 
     e.preventDefault();
 
-    const dx = e.clientX - panStartRef.current.x;
-    const dy = e.clientY - panStartRef.current.y;
-
-    // Pan in screen pixels
-    setPanX(panStartRef.current.panX + dx);
-    setPanY(panStartRef.current.panY + dy);
+    panZoom.updatePan(e.clientX, e.clientY);
   }
 
   function endPan(e?: React.PointerEvent) {
@@ -780,6 +774,7 @@ function TakeoffPageInner() {
       try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
     }
     activePointerIdRef.current = null;
+    panZoom.endPan();
   }
 
   function onViewerPointerUp(e: React.PointerEvent) {
@@ -797,44 +792,20 @@ function TakeoffPageInner() {
     const el = viewerRef.current;
     if (!el) return;
 
-    // Prevent page scroll when interacting with drawing
     e.preventDefault();
 
-    // Trackpads usually emit small deltas; normalize zoom with a gentle factor
-    const isZoomGesture = e.ctrlKey; // ctrl+wheel commonly equals pinch-to-zoom on trackpads
+    const isZoomGesture = e.ctrlKey;
 
     if (!isZoomGesture) {
-      // Two-finger scroll pans the drawing (PlanSwift feel)
-      setPanX((v) => v - e.deltaX);
-      setPanY((v) => v - e.deltaY);
+      panZoom.updatePan(e.clientX + e.deltaX, e.clientY + e.deltaY);
       return;
     }
 
-    // Zoom to cursor: keep content point under cursor stable
     const rect = el.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    // current content coords under cursor
-    const cx = (mx - panX) / scale;
-    const cy = (my - panY) / scale;
-
-    // Zoom step
-    const direction = e.deltaY > 0 ? -1 : 1; // invert if needed
-    const factor = Math.exp(direction * 0.08); // smooth
-    const nextZoom = clamp(scale * factor, 0.2, 6); // adjust if you have your own bounds
-
-    // new pan to keep (cx,cy) under cursor
-    const nextPanX = mx - cx * nextZoom;
-    const nextPanY = my - cy * nextZoom;
-
-    setScale(nextZoom);
-    setPanX(nextPanX);
-    setPanY(nextPanY);
+    panZoom.handleWheel(e.nativeEvent, rect);
   }
 
   function onCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    // Don't record calibration points when panning
     if (isPanningRef.current) return;
 
     if (isCalibrating) {
@@ -848,17 +819,17 @@ function TakeoffPageInner() {
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
 
-      const x = (mx - panX) / scale;
-      const y = (my - panY) / scale;
+      const x = (mx - panZoom.panX) / panZoom.zoom;
+      const y = (my - panZoom.panY) / panZoom.zoom;
 
       const newPoint = { x, y };
 
       setCalibPoints((prev) => {
-        if (prev.length >= 2) return [newPoint]; // restart if third click
+        if (prev.length >= 2) return [newPoint];
         return [...prev, newPoint];
       });
 
-      return; // IMPORTANT: stop normal takeoff logic
+      return;
     }
 
     if (calibrating) {
@@ -879,6 +850,19 @@ function TakeoffPageInner() {
       }
       if (!lineEnd) {
         setLineEnd(p);
+
+        if (feetPerPixel && feetPerPixel > 0) {
+          const pixelsPerUnit = 1 / feetPerPixel;
+          addMeasurement({
+            type: "line",
+            points: [lineStart, p],
+            pixelsPerUnit,
+            unit: "ft",
+            label: `Line measurement ${measurements.length + 1}`,
+            color: "#60a5fa",
+          });
+        }
+
         return;
       }
       setLineStart(p);
@@ -895,7 +879,6 @@ function TakeoffPageInner() {
   }
 
   function applyScaleFromModal(realFeet: number, opts: { applyAllPages: boolean; autoDimLine: boolean }) {
-    // Clear scale
     if (realFeet === 0) {
       setFeetPerPixel(null);
       setCalibrating(false);
@@ -907,7 +890,6 @@ function TakeoffPageInner() {
       return;
     }
 
-    // Use new calibration points if in calibration mode, otherwise use old points
     const pointsToUse = isCalibrating ? calibPoints : calPoints;
     const pointsLength = isCalibrating ? calibPoints.length : calPoints.length;
 
@@ -925,15 +907,11 @@ function TakeoffPageInner() {
     const fpp = realFeet / pixelDist;
     setFeetPerPixel(fpp);
 
-    // NOTE: opts.applyAllPages and opts.autoDimLine are stored later when we save takeoff to DB.
-    // For now, this is just UI behavior (we'll persist it in the next upgrade).
     setCalibrating(false);
     setIsCalibrating(false);
     setScaleModalOpen(false);
     setError(null);
 
-    // keep overlay showing the 2 points until next click
-    // (this feels like PlanSwift's "dimension line" behavior)
     if (!opts.autoDimLine) {
       setCalPoints([]);
       setCalibPoints([]);
@@ -958,7 +936,6 @@ function TakeoffPageInner() {
 
   const canConfirmCalibration = calibPoints.length === 2;
 
-  // Auto-apply when 2 points are selected
   useEffect(() => {
     if (!isCalibrating) return;
     if (calibPoints.length !== 2) return;
@@ -970,12 +947,10 @@ function TakeoffPageInner() {
     const pixelDist = Math.sqrt(dx*dx + dy*dy);
     if (!pixelDist || pixelDist <= 0) return;
 
-    // Apply scale: feet per pixel
     const newFeetPerPixel = pendingCalibLength / pixelDist;
     setFeetPerPixel(newFeetPerPixel);
     setFeetPerPdfUnit(newFeetPerPixel);
 
-    // Done
     setIsCalibrating(false);
     setPendingCalibLength(null);
     setCalibPoints([]);
@@ -1051,6 +1026,11 @@ function TakeoffPageInner() {
         <div className="flex-1" />
 
         {tool === "line" && <div className="text-xs text-slate-400">Click 2 points to measure. 3rd click starts new line.</div>}
+        {measurements.length > 0 && (
+          <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
+            {measurements.length} measurement{measurements.length === 1 ? '' : 's'}
+          </div>
+        )}
       </div>
 
       {error && (
@@ -1086,7 +1066,7 @@ function TakeoffPageInner() {
           )}
 
           <div className="w-3" />
-          <span className="text-sm">{Math.round(scale * 100)}%</span>
+          <span className="text-sm">{Math.round(panZoom.zoom * 100)}%</span>
 
           <button
             onClick={async () => {
@@ -1094,9 +1074,12 @@ function TakeoffPageInner() {
               const fit = await computeFitScale();
               if (fit != null) {
                 fitScaleRef.current = fit;
-                setScale(fit);
-                setPanX(0);
-                setPanY(0);
+                const page = await pdf.getPage(pageNumber);
+                const v = page.getViewport({ scale: 1 });
+                const viewer = viewerRef.current;
+                if (viewer) {
+                  panZoom.fitToView(v.width, v.height, viewer.clientWidth, viewer.clientHeight);
+                }
               }
             }}
             className="ml-2 px-3 py-2 bg-slate-800 rounded-lg text-sm"
@@ -1117,10 +1100,10 @@ function TakeoffPageInner() {
             onWheel={onViewerWheel}
             onMouseEnter={() => setOverViewer(true)}
             onMouseLeave={() => setOverViewer(false)}
-            className="p-3 h-full"
+            className="p-3 h-full relative"
             style={{ touchAction: "none", cursor: "default" }}
           >
-            <div style={{ display: "inline-block", transform: `translate(${panX}px, ${panY}px)` }}>
+            <div style={{ display: "inline-block", transform: `translate(${panZoom.panX}px, ${panZoom.panY}px)` }}>
               <canvas
                 ref={canvasRef}
                 onClick={onCanvasClick}
@@ -1128,10 +1111,22 @@ function TakeoffPageInner() {
                 className={calibrating || isPanningRef.current ? "cursor-crosshair" : tool === "line" ? "cursor-crosshair" : "cursor-default"}
                 style={{ userSelect: "none" }}
               />
+
+              <MeasurementLayer
+                measurements={measurements}
+                scale={panZoom.zoom}
+                offsetX={0}
+                offsetY={0}
+                width={canvasWidth}
+                height={canvasHeight}
+                onMeasurementClick={(id) => {
+                  console.log("Clicked measurement:", id);
+                }}
+              />
             </div>
 
             <div className="mt-2 text-xs text-slate-400">
-              {isCalibrating 
+              {isCalibrating
                 ? `Calibration: click 2 points on drawing (${calibPoints.length}/2).`
                 : "Calibrate: open Scale, click 2 points on drawing, then OK."
               }
@@ -1152,5 +1147,3 @@ export default function TakeoffPage() {
     </TakeoffErrorBoundary>
   );
 }
-
-
