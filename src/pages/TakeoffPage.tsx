@@ -970,6 +970,10 @@ function TakeoffPageInner() {
         onCalibrationCancel={onCalibrationCancel}
       />
 
+      <div className="mb-4 px-4 py-2 bg-yellow-500 text-black rounded-xl font-bold text-center text-sm">
+        ⚡ TAKEOFF ENGINE ACTIVE (Phase 2) ⚡
+      </div>
+
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Takeoff</h1>
