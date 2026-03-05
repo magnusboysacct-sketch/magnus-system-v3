@@ -112,6 +112,60 @@ export function MeasurementLayer({
 
         ctx.fillStyle = "#ffffff";
         ctx.fillText(labelText, centerX, centerY);
+      } else if (measurement.type === "volume" && measurement.points.length >= 3) {
+        ctx.beginPath();
+        ctx.moveTo(measurement.points[0].x, measurement.points[0].y);
+        for (let i = 1; i < measurement.points.length; i++) {
+          ctx.lineTo(measurement.points[i].x, measurement.points[i].y);
+        }
+        ctx.closePath();
+
+        ctx.globalAlpha = 0.2;
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.stroke();
+
+        for (const point of measurement.points) {
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 4 / scale, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        const center = centroid(measurement.points);
+        const centerX = center.x;
+        const centerY = center.y;
+
+        const volumeYd3 = measurement.result.toFixed(2);
+        const volumeM3 = measurement.meta?.volumeM3?.toFixed(2) || "0.00";
+        const labelText = `${volumeYd3} ${measurement.unit} (${volumeM3} m³)`;
+
+        ctx.font = `${14 / scale}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        const textWidth = ctx.measureText(labelText).width;
+        const padding = 8 / scale;
+        const labelHeight = 24 / scale;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillRect(
+          centerX - textWidth / 2 - padding,
+          centerY - labelHeight / 2,
+          textWidth + padding * 2,
+          labelHeight
+        );
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1 / scale;
+        ctx.strokeRect(
+          centerX - textWidth / 2 - padding,
+          centerY - labelHeight / 2,
+          textWidth + padding * 2,
+          labelHeight
+        );
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(labelText, centerX, centerY);
       } else if (measurement.type === "point" && measurement.points.length > 0) {
         for (const point of measurement.points) {
           ctx.beginPath();
@@ -188,7 +242,7 @@ export function MeasurementLayer({
             return;
           }
         }
-      } else if (m.type === "area" && m.points.length >= 3) {
+      } else if ((m.type === "area" || m.type === "volume") && m.points.length >= 3) {
         if (isPointInPolygon({ x: clickX, y: clickY }, m.points)) {
           onMeasurementClick(m.id);
           return;

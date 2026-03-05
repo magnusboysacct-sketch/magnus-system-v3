@@ -11,7 +11,8 @@ export type TakeoffTool =
   | "line"
   | "area"
   | "point"
-  | "count";
+  | "count"
+  | "volume";
 
 export type Measurement = {
   id: string;
@@ -23,6 +24,11 @@ export type Measurement = {
   groupId?: string;
   color?: string;
   timestamp: number;
+  meta?: {
+    depthInches?: number;
+    [key: string]: any;
+  };
+  pixelsPerUnit?: number;
 };
 
 export type MeasurementGroup = {

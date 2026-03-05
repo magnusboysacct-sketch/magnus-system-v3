@@ -364,7 +364,7 @@ function TakeoffPageInner() {
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const activePointerIdRef = useRef<number | null>(null);
 
-  type ToolMode = "select" | "line" | "area" | "count";
+  type ToolMode = "select" | "line" | "area" | "count" | "volume";
   const [tool, setTool] = useState<ToolMode>("select");
 
   const [lineStart, setLineStart] = useState<Point | null>(null);
@@ -375,6 +375,11 @@ function TakeoffPageInner() {
   const [areaHoverPt, setAreaHoverPt] = useState<Point | null>(null);
 
   const [countPoints, setCountPoints] = useState<Point[]>([]);
+
+  const [volumePoints, setVolumePoints] = useState<Point[]>([]);
+  const [volumeHoverPt, setVolumeHoverPt] = useState<Point | null>(null);
+  const [showDepthPrompt, setShowDepthPrompt] = useState(false);
+  const [depthInput, setDepthInput] = useState("4");
   const [feetPerPdfUnit, setFeetPerPdfUnit] = useState<number | null>(null);
 
   const [canvasWidth, setCanvasWidth] = useState(0);
@@ -444,6 +449,9 @@ function TakeoffPageInner() {
       setAreaPoints([]);
       setAreaHoverPt(null);
       setCountPoints([]);
+      setVolumePoints([]);
+      setVolumeHoverPt(null);
+      setShowDepthPrompt(false);
 
       fitScaleRef.current = null;
 
@@ -586,6 +594,40 @@ function TakeoffPageInner() {
 
       ctx.restore();
     }
+
+    if (tool === "volume" && volumePoints.length > 0) {
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#10b981";
+      ctx.fillStyle = "rgba(16,185,129,0.2)";
+
+      ctx.beginPath();
+      ctx.moveTo(volumePoints[0].x, volumePoints[0].y);
+      for (let i = 1; i < volumePoints.length; i++) {
+        ctx.lineTo(volumePoints[i].x, volumePoints[i].y);
+      }
+
+      if (volumeHoverPt && volumePoints.length >= 1) {
+        ctx.lineTo(volumeHoverPt.x, volumeHoverPt.y);
+        ctx.lineTo(volumePoints[0].x, volumePoints[0].y);
+      }
+
+      if (volumePoints.length >= 3) {
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      ctx.stroke();
+
+      ctx.fillStyle = "#10b981";
+      for (const p of volumePoints) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
   }
 
   async function render() {
@@ -669,7 +711,7 @@ function TakeoffPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [pdf, pageNumber, panZoom.zoom, panZoom.panX, panZoom.panY, calPoints.length, calibPoints.length, tool, lineStart?.x, lineStart?.y, lineEnd?.x, lineEnd?.y, hoverPt?.x, hoverPt?.y, areaPoints.length, areaHoverPt?.x, areaHoverPt?.y]);
+  }, [pdf, pageNumber, panZoom.zoom, panZoom.panX, panZoom.panY, calPoints.length, calibPoints.length, tool, lineStart?.x, lineStart?.y, lineEnd?.x, lineEnd?.y, hoverPt?.x, hoverPt?.y, areaPoints.length, areaHoverPt?.x, areaHoverPt?.y, volumePoints.length, volumeHoverPt?.x, volumeHoverPt?.y]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -696,6 +738,19 @@ function TakeoffPageInner() {
           setCountPoints([]);
         }
       }
+
+      if (tool === "volume") {
+        if (e.code === "Enter" && volumePoints.length >= 3) {
+          e.preventDefault();
+          finishVolumePolygon();
+        }
+        if (e.code === "Escape") {
+          e.preventDefault();
+          setVolumePoints([]);
+          setVolumeHoverPt(null);
+          setShowDepthPrompt(false);
+        }
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === "Space") {
@@ -710,7 +765,7 @@ function TakeoffPageInner() {
       window.removeEventListener("keydown", onKeyDown as any);
       window.removeEventListener("keyup", onKeyUp as any);
     };
-  }, [tool, areaPoints, countPoints]);
+  }, [tool, areaPoints, countPoints, volumePoints]);
 
   useEffect(() => {
     function onWheel(e: WheelEvent) {
@@ -744,6 +799,9 @@ function TakeoffPageInner() {
       setAreaPoints([]);
       setAreaHoverPt(null);
       setCountPoints([]);
+      setVolumePoints([]);
+      setVolumeHoverPt(null);
+      setShowDepthPrompt(false);
       setCalPoints([]);
       setCalibrating(false);
       setIsCalibrating(false);
@@ -761,6 +819,9 @@ function TakeoffPageInner() {
       setAreaPoints([]);
       setAreaHoverPt(null);
       setCountPoints([]);
+      setVolumePoints([]);
+      setVolumeHoverPt(null);
+      setShowDepthPrompt(false);
       setCalPoints([]);
       setCalibrating(false);
       setIsCalibrating(false);
@@ -943,6 +1004,12 @@ function TakeoffPageInner() {
       return;
     }
 
+    if (tool === "volume") {
+      const p = canvasPointFromEvent(e);
+      setVolumePoints((prev) => [...prev, p]);
+      return;
+    }
+
     if (tool === "count") {
       const p = canvasPointFromEvent(e);
 
@@ -967,6 +1034,12 @@ function TakeoffPageInner() {
       e.stopPropagation();
       finishAreaPolygon();
     }
+
+    if (tool === "volume" && volumePoints.length >= 3) {
+      e.preventDefault();
+      e.stopPropagation();
+      finishVolumePolygon();
+    }
   }
 
   function onCanvasMove(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -979,6 +1052,11 @@ function TakeoffPageInner() {
 
     if (tool === "area" && areaPoints.length > 0) {
       setAreaHoverPt(canvasPointFromEvent(e));
+      return;
+    }
+
+    if (tool === "volume" && volumePoints.length > 0) {
+      setVolumeHoverPt(canvasPointFromEvent(e));
       return;
     }
   }
@@ -1069,6 +1147,57 @@ function TakeoffPageInner() {
     setAreaHoverPt(null);
   }
 
+  function finishVolumePolygon() {
+    if (volumePoints.length < 3) return;
+    setShowDepthPrompt(true);
+  }
+
+  function confirmVolumeWithDepth() {
+    if (volumePoints.length < 3) return;
+
+    const depthInches = parseFloat(depthInput);
+    if (!depthInches || depthInches <= 0) {
+      alert("Please enter a valid depth in inches");
+      return;
+    }
+
+    if (feetPerPixel && feetPerPixel > 0) {
+      const pixelsPerUnit = 1 / feetPerPixel;
+
+      let areaPixels = 0;
+      for (let i = 0; i < volumePoints.length; i++) {
+        const j = (i + 1) % volumePoints.length;
+        areaPixels += volumePoints[i].x * volumePoints[j].y;
+        areaPixels -= volumePoints[j].x * volumePoints[i].y;
+      }
+      areaPixels = Math.abs(areaPixels / 2);
+
+      const areaFt2 = areaPixels / (pixelsPerUnit * pixelsPerUnit);
+      const depthFt = depthInches / 12;
+      const volumeFt3 = areaFt2 * depthFt;
+      const volumeYd3 = volumeFt3 / 27;
+      const volumeM3 = volumeFt3 * 0.028316846592;
+
+      addMeasurement({
+        type: "volume",
+        points: [...volumePoints],
+        pixelsPerUnit,
+        unit: "yd³",
+        label: `Volume ${measurements.length + 1}`,
+        color: "#10b981",
+        meta: {
+          depthInches,
+          volumeM3,
+        },
+      });
+    }
+
+    setVolumePoints([]);
+    setVolumeHoverPt(null);
+    setShowDepthPrompt(false);
+    setDepthInput("4");
+  }
+
   const canConfirmCalibration = calibPoints.length === 2;
 
   useEffect(() => {
@@ -1147,6 +1276,9 @@ function TakeoffPageInner() {
             setAreaPoints([]);
             setAreaHoverPt(null);
             setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
           }}
           className={"px-3 py-2 rounded-xl text-sm border " + (tool === "select" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
         >
@@ -1162,6 +1294,9 @@ function TakeoffPageInner() {
             setAreaPoints([]);
             setAreaHoverPt(null);
             setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
           }}
           className={"px-3 py-2 rounded-xl text-sm border " + (tool === "line" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
         >
@@ -1177,6 +1312,9 @@ function TakeoffPageInner() {
             setAreaPoints([]);
             setAreaHoverPt(null);
             setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
           }}
           className={"px-3 py-2 rounded-xl text-sm border " + (tool === "area" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
         >
@@ -1192,10 +1330,31 @@ function TakeoffPageInner() {
             setAreaPoints([]);
             setAreaHoverPt(null);
             setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
           }}
           className={"px-3 py-2 rounded-xl text-sm border " + (tool === "count" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
         >
           Count
+        </button>
+
+        <button
+          onClick={() => {
+            setTool("volume");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "volume" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Volume
         </button>
 
         <div className="flex-1" />
@@ -1203,12 +1362,46 @@ function TakeoffPageInner() {
         {tool === "line" && <div className="text-xs text-slate-400">Click 2 points to measure. 3rd click starts new line.</div>}
         {tool === "area" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points). ESC to cancel.</div>}
         {tool === "count" && <div className="text-xs text-slate-400">Click to place count markers. ESC to cancel.</div>}
+        {tool === "volume" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points), then enter depth. ESC to cancel.</div>}
         {measurements.length > 0 && (
           <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
             {measurements.length} measurement{measurements.length === 1 ? '' : 's'}
           </div>
         )}
       </div>
+
+      {showDepthPrompt && (
+        <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/30 p-4">
+          <div className="text-sm font-semibold text-emerald-200 mb-2">Enter Depth</div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={depthInput}
+              onChange={(e) => setDepthInput(e.target.value)}
+              className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm w-24"
+              placeholder="4"
+              autoFocus
+            />
+            <span className="text-sm text-slate-400">inches</span>
+            <button
+              onClick={confirmVolumeWithDepth}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => {
+                setShowDepthPrompt(false);
+                setVolumePoints([]);
+                setVolumeHoverPt(null);
+              }}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mt-4 rounded-xl border border-red-900/40 bg-red-950/30 p-3 text-sm text-red-200">
@@ -1286,7 +1479,7 @@ function TakeoffPageInner() {
                 onClick={onCanvasClick}
                 onDoubleClick={onCanvasDoubleClick}
                 onMouseMove={onCanvasMove}
-                className={calibrating || isPanningRef.current ? "cursor-crosshair" : (tool === "line" || tool === "area" || tool === "count") ? "cursor-crosshair" : "cursor-default"}
+                className={calibrating || isPanningRef.current ? "cursor-crosshair" : (tool === "line" || tool === "area" || tool === "count" || tool === "volume") ? "cursor-crosshair" : "cursor-default"}
                 style={{ userSelect: "none" }}
               />
 

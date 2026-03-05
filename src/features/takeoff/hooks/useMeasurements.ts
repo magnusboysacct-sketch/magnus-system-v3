@@ -6,6 +6,18 @@ import {
   calculateCount,
 } from "../utils/measurements";
 
+function calculateAreaInPixels(points: Point[]): number {
+  if (points.length < 3) return 0;
+
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    area += points[i].x * points[j].y;
+    area -= points[j].x * points[i].y;
+  }
+  return Math.abs(area / 2);
+}
+
 export type AddMeasurementParams = {
   type: MeasurementType;
   points: Point[];
@@ -14,6 +26,11 @@ export type AddMeasurementParams = {
   label?: string;
   groupId?: string;
   color?: string;
+  meta?: {
+    depthInches?: number;
+    volumeM3?: number;
+    [key: string]: any;
+  };
 };
 
 export function useMeasurements() {
@@ -21,7 +38,7 @@ export function useMeasurements() {
 
   const addMeasurement = useCallback(
     (params: AddMeasurementParams): Measurement => {
-      const { type, points, pixelsPerUnit, unit, label, groupId, color } = params;
+      const { type, points, pixelsPerUnit, unit, label, groupId, color, meta } = params;
 
       let result = 0;
 
@@ -39,7 +56,13 @@ export function useMeasurements() {
           result = 1;
           break;
         case "volume":
-          result = 0;
+          if (meta?.depthInches) {
+            const areaPixels = calculateAreaInPixels(points);
+            const areaFt2 = areaPixels / (pixelsPerUnit * pixelsPerUnit);
+            const depthFt = meta.depthInches / 12;
+            const volumeFt3 = areaFt2 * depthFt;
+            result = volumeFt3 / 27;
+          }
           break;
         default:
           result = 0;
@@ -55,6 +78,8 @@ export function useMeasurements() {
         groupId,
         color: color || "#3b82f6",
         timestamp: Date.now(),
+        meta,
+        pixelsPerUnit,
       };
 
       setMeasurements((prev) => [...prev, newMeasurement]);
