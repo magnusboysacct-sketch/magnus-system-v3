@@ -6,6 +6,7 @@ import { useMasterLists } from "../hooks/useMasterLists.ts";
 import { saveBoq as persistBoq, loadLatestBoqForProject as loadLatestBoqForProjectFromDb, type BoqStatus } from "../boq/boqPersistence.ts";
 import { usePlan } from "../hooks/usePlan";
 import PaywallModal from "../components/PaywallModal";
+import { generateBOQPacket, printBOQPacket } from "../boq/printPacket";
 
 type RateItem = {
   id: string;
@@ -132,6 +133,11 @@ export default function BOQPage() {
   const [showPaywall, setShowPaywall] = useState(false);
   const [paywallFeature, setPaywallFeature] = useState("");
 
+  // Company and user info for export
+  const [companyName, setCompanyName] = useState<string>("Company Name");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string>("");
+
   // Persistence state
   const [boqId, setBoqId] = useState<string | null>(null);
   const [persistLoading, setPersistLoading] = useState(false);
@@ -165,6 +171,38 @@ export default function BOQPage() {
     const arr = Array.isArray(masterUnits) ? masterUnits : [];
     return arr.filter((u: any) => !!getUnitId(u));
   }, [masterUnits]);
+
+  // Load company settings and user info
+  useEffect(() => {
+    let alive = true;
+
+    async function loadCompanyAndUser() {
+      try {
+        const [companyRes, userRes] = await Promise.all([
+          supabase.from("company_settings").select("company_name,logo_url").single(),
+          supabase.auth.getUser()
+        ]);
+
+        if (!alive) return;
+
+        if (companyRes.data) {
+          setCompanyName(companyRes.data.company_name || "Company Name");
+          setLogoUrl(companyRes.data.logo_url || null);
+        }
+
+        if (userRes.data?.user) {
+          setUserEmail(userRes.data.user.email || "");
+        }
+      } catch (e) {
+        console.error("Failed to load company/user info:", e);
+      }
+    }
+
+    loadCompanyAndUser();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Load projects
   useEffect(() => {
@@ -698,6 +736,43 @@ async function setActiveProject(projectId: string | null) {
     });
   }
 
+  async function handleExportPacket() {
+    if (!hasFeature("takeoffExport")) {
+      setPaywallFeature("Export Packet (PDF)");
+      setShowPaywall(true);
+      return;
+    }
+
+    const currentProject = projects.find(p => p.id === activeProjectId);
+    const projectName = currentProject?.name || "Untitled Project";
+
+    let clientName = "Client Name";
+    if (activeProjectId) {
+      try {
+        const { data } = await supabase
+          .from("projects")
+          .select("client_id, clients(name)")
+          .eq("id", activeProjectId)
+          .single();
+
+        if (data && data.clients && typeof data.clients === "object" && "name" in data.clients) {
+          clientName = (data.clients as any).name || "Client Name";
+        }
+      } catch (e) {
+        console.error("Failed to fetch client name:", e);
+      }
+    }
+
+    const html = generateBOQPacket(
+      sections,
+      { name: companyName, logoUrl },
+      { name: projectName, clientName },
+      userEmail
+    );
+
+    printBOQPacket(html);
+  }
+
   function linkItemToTakeoff() {
     const { sectionId, itemId, selectedGroupId, selectedMetric } = takeoffLinkModal;
     if (!sectionId || !itemId || !selectedGroupId) return;
@@ -1068,6 +1143,14 @@ async function setActiveProject(projectId: string | null) {
             className="px-3 py-2 rounded bg-blue-700 text-white disabled:opacity-50"
           >
             Generate Estimate
+          </button>
+
+          <button
+            onClick={handleExportPacket}
+            disabled={!activeProjectId || sections.length === 0}
+            className="px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-800 text-white disabled:opacity-50 disabled:hover:bg-emerald-700"
+          >
+            Export Packet (PDF)
           </button>
         </div>
       </div>
