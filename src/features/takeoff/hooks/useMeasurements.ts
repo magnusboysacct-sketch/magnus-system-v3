@@ -159,6 +159,10 @@ export function useMeasurements() {
     [measurements]
   );
 
+  const setAllMeasurements = useCallback((newMeasurements: Measurement[]) => {
+    setMeasurements(newMeasurements);
+  }, []);
+
   return {
     measurements,
     addMeasurement,
@@ -172,5 +176,6 @@ export function useMeasurements() {
     duplicateMeasurement,
     getTotalCount,
     getTotalByType,
+    setAllMeasurements,
   };
 }

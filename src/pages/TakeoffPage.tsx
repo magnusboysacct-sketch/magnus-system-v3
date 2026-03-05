@@ -4,6 +4,12 @@ import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { usePanZoom } from "../features/takeoff/hooks/usePanZoom";
 import { useMeasurements } from "../features/takeoff/hooks/useMeasurements";
 import { MeasurementLayer } from "../features/takeoff/components/MeasurementLayer";
+import {
+  getOrCreateSession,
+  loadTakeoff,
+  saveTakeoffDebounced,
+  cancelPendingSave,
+} from "../features/takeoff/persistence/takeoffPersistence";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -335,6 +341,7 @@ function TakeoffPageInner() {
     addMeasurement,
     removeMeasurement,
     updateMeasurement,
+    setAllMeasurements,
   } = useMeasurements();
 
   const [calibrating, setCalibrating] = useState(false);
@@ -392,6 +399,17 @@ function TakeoffPageInner() {
     visible: boolean;
     sortOrder: number;
   }>>([]);
+
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(() => {
+    const keys = ["active_project_id", "selected_project_id", "project_id"];
+    for (const k of keys) {
+      const v = localStorage.getItem(k);
+      if (v && v.trim()) return v.trim();
+    }
+    return null;
+  });
+  const [dbLoaded, setDbLoaded] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
   const [showNewGroupForm, setShowNewGroupForm] = useState(false);
@@ -463,6 +481,23 @@ function TakeoffPageInner() {
       setIsCalibrating(false);
       setCalPoints([]);
       setCalibPoints([]);
+
+      if (activeProjectId) {
+        const session = await getOrCreateSession(activeProjectId, file.name);
+        if (session) {
+          setSessionId(session.id);
+          const data = await loadTakeoff(session.id);
+          if (data && !dbLoaded) {
+            if (data.groups && data.groups.length > 0) {
+              setGroups(data.groups);
+            }
+            if (data.measurements && data.measurements.length > 0) {
+              setAllMeasurements(data.measurements);
+            }
+            setDbLoaded(true);
+          }
+        }
+      }
 
       panZoom.resetView();
 
@@ -1341,6 +1376,33 @@ function TakeoffPageInner() {
     }));
     localStorage.setItem("takeoff_groups", JSON.stringify(groupsMetadata));
   }, [measurements, groups]);
+
+  useEffect(() => {
+    if (!sessionId || !dbLoaded) return;
+
+    const calibrationData = feetPerPixel ? {
+      isCalibrated: true,
+      point1: calPoints[0] || null,
+      point2: calPoints[1] || null,
+      realDistance: 0,
+      unit: "ft" as const,
+      pixelsPerUnit: 1 / (feetPerPixel || 1),
+    } : null;
+
+    saveTakeoffDebounced(sessionId, {
+      groups: groups.map(g => ({
+        ...g,
+        locked: false,
+        trade: undefined,
+      })),
+      measurements,
+      calibration: calibrationData,
+    }, 800);
+
+    return () => {
+      cancelPendingSave();
+    };
+  }, [sessionId, measurements, groups, feetPerPixel, dbLoaded]);
 
   return (
     <div className="p-6 h-full flex gap-6">
