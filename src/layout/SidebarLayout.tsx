@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
+import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
 
@@ -10,13 +10,14 @@ const nav = [
   { to: "/projects", label: "Projects", icon: BriefcaseBusiness },
   { to: "/estimates", label: "Estimates", icon: FileSpreadsheet },
   { to: "/boq", label: "BOQ Builder", icon: Layers },
-  
+
   { to: "/assemblies", label: "Assemblies", icon: Layers },
 { to: "/rates", label: "Rate Library", icon: Layers },
   { to: "/takeoff", label: "Takeoff", icon: Ruler },
   { to: "/procurement", label: "Procurement", icon: ShoppingCart },
   { to: "/finance", label: "Finance", icon: Landmark },
   { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/billing", label: "Billing", icon: CreditCard },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

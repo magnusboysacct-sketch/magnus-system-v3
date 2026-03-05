@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists.ts";
 import { saveBoq as persistBoq, loadLatestBoqForProject as loadLatestBoqForProjectFromDb, type BoqStatus } from "../boq/boqPersistence.ts";
+import { usePlan } from "../hooks/usePlan";
+import PaywallModal from "../components/PaywallModal";
 
 type RateItem = {
   id: string;
@@ -125,6 +127,10 @@ export default function BOQPage() {
 
   const [status, setStatus] = useState<"draft" | "approved">("draft");
   const [sections, setSections] = useState<Section[]>([]);
+
+  const { hasFeature } = usePlan();
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [paywallFeature, setPaywallFeature] = useState("");
 
   // Persistence state
   const [boqId, setBoqId] = useState<string | null>(null);
@@ -674,6 +680,12 @@ async function setActiveProject(projectId: string | null) {
   }
 
   function openTakeoffLinkModal(sectionId: string, itemId: string) {
+    if (!hasFeature("boqTakeoffLinking")) {
+      setPaywallFeature("BOQ ↔ Takeoff Linking");
+      setShowPaywall(true);
+      return;
+    }
+
     const section = sections.find(s => s.id === sectionId);
     const item = section?.items.find(it => it.id === itemId);
 
@@ -1751,6 +1763,12 @@ async function setActiveProject(projectId: string | null) {
           </div>
         </div>
       ) : null}
+
+      <PaywallModal
+        isOpen={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        featureName={paywallFeature}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import SidebarLayout from "./layout/SidebarLayout";
 
@@ -17,6 +17,7 @@ import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
 import SettingsMasterListsPage from "./pages/SettingsMasterListsPage";
 import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
+import BillingPage from "./pages/BillingPage";
 import LoginPage from "./pages/LoginPage";
 import { supabase } from "./lib/supabase";
 
@@ -88,6 +89,7 @@ export default function App() {
           <Route path="/procurement" element={<ProcurementPage />} />
           <Route path="/finance" element={<FinancePage />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/billing" element={<BillingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/master-categories" element={<SettingsMasterCategoriesPage />} />
           <Route path="/settings/master-lists" element={<SettingsMasterListsPage />} />

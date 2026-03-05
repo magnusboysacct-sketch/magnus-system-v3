@@ -10,6 +10,8 @@ import {
   saveTakeoffDebounced,
   cancelPendingSave,
 } from "../features/takeoff/persistence/takeoffPersistence";
+import { usePlan } from "../hooks/usePlan";
+import PaywallModal from "../components/PaywallModal";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -416,6 +418,10 @@ function TakeoffPageInner() {
 
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { hasFeature, features } = usePlan();
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [paywallFeature, setPaywallFeature] = useState("");
 
   function distFeet(a:{x:number;y:number}, b:{x:number;y:number}) {
     const dx = b.x - a.x;
@@ -1299,6 +1305,13 @@ function TakeoffPageInner() {
   function addNewGroup() {
     if (!newGroupName.trim()) return;
 
+    const maxGroups = features.maxTakeoffGroups;
+    if (maxGroups !== null && groups.length >= maxGroups) {
+      setPaywallFeature("Unlimited Takeoff Groups");
+      setShowPaywall(true);
+      return;
+    }
+
     const colors = ["#ef4444", "#84cc16", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
 
@@ -1320,6 +1333,39 @@ function TakeoffPageInner() {
     if (activeGroupId === groupId) {
       setActiveGroupId(groups.find(g => g.id !== groupId)?.id || null);
     }
+  }
+
+  function exportToCSV() {
+    if (!hasFeature("takeoffExport")) {
+      setPaywallFeature("Export Takeoff to CSV");
+      setShowPaywall(true);
+      return;
+    }
+
+    const rows = [["Group", "Type", "Label", "Result", "Unit"]];
+
+    groups.forEach(group => {
+      const groupMeasurements = measurements.filter(m => m.groupId === group.id);
+      groupMeasurements.forEach(m => {
+        const unit = m.type === "line" ? "ft" : m.type === "area" ? "ft²" : m.type === "volume" ? "ft³" : "count";
+        rows.push([
+          group.name,
+          m.type,
+          m.label || "",
+          m.result.toFixed(2),
+          unit
+        ]);
+      });
+    });
+
+    const csv = rows.map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "takeoff-export.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function changeMeasurementGroup(measurementId: string, newGroupId: string | null) {
@@ -1473,12 +1519,20 @@ function TakeoffPageInner() {
           </label>
 
           {pdf && (
-            <button
-              onClick={startCalibrate}
-              className="px-3 py-2 rounded-xl bg-emerald-900/25 hover:bg-emerald-900/40 border border-emerald-900/40 text-sm"
-            >
-              Calibrate Scale
-            </button>
+            <>
+              <button
+                onClick={startCalibrate}
+                className="px-3 py-2 rounded-xl bg-emerald-900/25 hover:bg-emerald-900/40 border border-emerald-900/40 text-sm"
+              >
+                Calibrate Scale
+              </button>
+              <button
+                onClick={exportToCSV}
+                className="px-3 py-2 rounded-xl bg-blue-900/25 hover:bg-blue-900/40 border border-blue-900/40 text-sm"
+              >
+                Export CSV
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1936,6 +1990,12 @@ function TakeoffPageInner() {
         )}
       </div>
     </div>
+
+    <PaywallModal
+      isOpen={showPaywall}
+      onClose={() => setShowPaywall(false)}
+      featureName={paywallFeature}
+    />
   </div>
   );
 }
