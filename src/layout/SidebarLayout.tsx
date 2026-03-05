@@ -1,21 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import {
-  LayoutDashboard,
-  Users,
-  BriefcaseBusiness,
-  FileSpreadsheet,
-  Layers,
-  Ruler,
-  ShoppingCart,
-  Landmark,
-  BarChart3,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-  Sun,
-  Moon,
-} from "lucide-react";
+import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
 
