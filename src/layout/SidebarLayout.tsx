@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -13,8 +13,11 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { useTheme } from "../hooks/useTheme";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -37,6 +40,7 @@ export default function SidebarLayout() {
   const [userEmail, setUserEmail] = useState<string>("");
   const [companyName, setCompanyName] = useState<string>("");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const v = localStorage.getItem("mb_sidebar_collapsed");
@@ -176,7 +180,14 @@ export default function SidebarLayout() {
         </aside>
 
         <main className="flex-1 bg-slate-950">
-          <div className="h-full overflow-auto">
+          <div className="h-full overflow-auto relative">
+            <button
+              onClick={toggleTheme}
+              className="fixed top-4 right-4 z-50 p-2 rounded-xl border border-slate-700 bg-slate-900/80 hover:bg-slate-800/80 backdrop-blur-sm transition-colors"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
             <Outlet />
           </div>
         </main>
