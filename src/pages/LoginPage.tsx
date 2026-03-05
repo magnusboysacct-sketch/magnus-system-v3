@@ -67,7 +67,11 @@ export default function LoginPage() {
       });
 
       if (error) {
-        setErr(error.message);
+        if (error.message.toLowerCase().includes('invalid') && error.message.toLowerCase().includes('credentials')) {
+          setErr("Invalid email/password. If you're using Bolt, create users in Project Settings → User Management.");
+        } else {
+          setErr(error.message);
+        }
         return;
       }
 
@@ -141,6 +145,12 @@ export default function LoginPage() {
           >
             {busy ? "Signing in..." : "Sign In"}
           </button>
+
+          <div className="mt-4 pt-4 border-t border-white/10 text-center">
+            <p className="text-xs opacity-60">
+              Admins are created in Bolt → Project Settings → User Management.
+            </p>
+          </div>
         </form>
       </div>
     </div>
