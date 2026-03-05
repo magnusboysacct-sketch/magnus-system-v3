@@ -414,6 +414,9 @@ function TakeoffPageInner() {
   const [newGroupName, setNewGroupName] = useState("");
   const [showNewGroupForm, setShowNewGroupForm] = useState(false);
 
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   function distFeet(a:{x:number;y:number}, b:{x:number;y:number}) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
@@ -1349,32 +1352,53 @@ function TakeoffPageInner() {
   });
 
   useEffect(() => {
-    const groupTotalsMap: Record<string, {
-      line_ft: number;
-      area_ft2: number;
-      volume_yd3: number;
-      count_ea: number;
-    }> = {};
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
 
-    groups.forEach(group => {
-      const totals = getGroupTotals(group.id);
-      groupTotalsMap[group.id] = {
-        line_ft: totals.line,
-        area_ft2: totals.area,
-        volume_yd3: totals.volume,
-        count_ea: totals.count,
-      };
-    });
+    setSaveStatus("saving");
 
-    localStorage.setItem("takeoff_group_totals", JSON.stringify(groupTotalsMap));
+    saveTimeoutRef.current = setTimeout(() => {
+      try {
+        const groupTotalsMap: Record<string, {
+          line_ft: number;
+          area_ft2: number;
+          volume_yd3: number;
+          count_ea: number;
+        }> = {};
 
-    const groupsMetadata = groups.map(g => ({
-      id: g.id,
-      name: g.name,
-      color: g.color,
-      visible: g.visible,
-    }));
-    localStorage.setItem("takeoff_groups", JSON.stringify(groupsMetadata));
+        groups.forEach(group => {
+          const totals = getGroupTotals(group.id);
+          groupTotalsMap[group.id] = {
+            line_ft: totals.line,
+            area_ft2: totals.area,
+            volume_yd3: totals.volume,
+            count_ea: totals.count,
+          };
+        });
+
+        localStorage.setItem("takeoff_group_totals", JSON.stringify(groupTotalsMap));
+
+        const groupsMetadata = groups.map(g => ({
+          id: g.id,
+          name: g.name,
+          color: g.color,
+          visible: g.visible,
+        }));
+        localStorage.setItem("takeoff_groups", JSON.stringify(groupsMetadata));
+
+        setSaveStatus("saved");
+      } catch (err) {
+        console.error("Save failed:", err);
+        setSaveStatus("error");
+      }
+    }, 400);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [measurements, groups]);
 
   useEffect(() => {
@@ -1419,10 +1443,6 @@ function TakeoffPageInner() {
           onCalibrationCancel={onCalibrationCancel}
         />
 
-        <div className="mb-4 px-4 py-2 bg-yellow-500 text-black rounded-xl font-bold text-center text-sm">
-          ⚡ TAKEOFF ENGINE ACTIVE (Phase 2) ⚡
-        </div>
-
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Takeoff</h1>
@@ -1430,6 +1450,18 @@ function TakeoffPageInner() {
         </div>
 
         <div className="flex items-center gap-2">
+          <div
+            className={`px-3 py-1 rounded-lg text-xs font-medium ${
+              saveStatus === "saved"
+                ? "bg-emerald-900/20 text-emerald-300 border border-emerald-900/30"
+                : saveStatus === "saving"
+                ? "bg-slate-800/50 text-slate-400 border border-slate-700"
+                : "bg-red-900/20 text-red-300 border border-red-900/30"
+            }`}
+          >
+            {saveStatus === "saved" ? "Saved ✓" : saveStatus === "saving" ? "Saving…" : "Save failed"}
+          </div>
+
           <label className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm cursor-pointer">
             Upload PDF
             <input
