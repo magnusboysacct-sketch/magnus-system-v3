@@ -385,6 +385,17 @@ function TakeoffPageInner() {
   const [canvasWidth, setCanvasWidth] = useState(0);
   const [canvasHeight, setCanvasHeight] = useState(0);
 
+  const [groups, setGroups] = useState<Array<{
+    id: string;
+    name: string;
+    color: string;
+    visible: boolean;
+    sortOrder: number;
+  }>>([]);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [showNewGroupForm, setShowNewGroupForm] = useState(false);
+
   function distFeet(a:{x:number;y:number}, b:{x:number;y:number}) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
@@ -413,6 +424,19 @@ function TakeoffPageInner() {
     const fracStr = num === 0 ? "" : ` ${num}/${denom}`;
     return `${fFeet}' ${fIn}"${fracStr}`;
   }
+
+  useEffect(() => {
+    if (groups.length === 0) {
+      const defaultGroups = [
+        { id: crypto.randomUUID(), name: "Concrete", color: "#10b981", visible: true, sortOrder: 0 },
+        { id: crypto.randomUUID(), name: "Masonry", color: "#f59e0b", visible: true, sortOrder: 1 },
+        { id: crypto.randomUUID(), name: "Electrical", color: "#3b82f6", visible: true, sortOrder: 2 },
+        { id: crypto.randomUUID(), name: "Plumbing", color: "#06b6d4", visible: true, sortOrder: 3 },
+      ];
+      setGroups(defaultGroups);
+      setActiveGroupId(defaultGroups[0].id);
+    }
+  }, []);
 
   async function onPickFile(file: File | null) {
     setError(null);
@@ -981,13 +1005,15 @@ function TakeoffPageInner() {
 
         if (feetPerPixel && feetPerPixel > 0) {
           const pixelsPerUnit = 1 / feetPerPixel;
+          const activeGroup = groups.find(g => g.id === activeGroupId);
           addMeasurement({
             type: "line",
             points: [lineStart, p],
             pixelsPerUnit,
             unit: "ft",
             label: `Line measurement ${measurements.length + 1}`,
-            color: "#60a5fa",
+            color: activeGroup?.color || "#60a5fa",
+            groupId: activeGroupId || undefined,
           });
         }
 
@@ -1015,13 +1041,15 @@ function TakeoffPageInner() {
 
       if (feetPerPixel && feetPerPixel > 0) {
         const pixelsPerUnit = 1 / feetPerPixel;
+        const activeGroup = groups.find(g => g.id === activeGroupId);
         addMeasurement({
           type: "count",
           points: [p],
           pixelsPerUnit,
           unit: "ea",
           label: `Count ${measurements.length + 1}`,
-          color: "#f59e0b",
+          color: activeGroup?.color || "#f59e0b",
+          groupId: activeGroupId || undefined,
         });
       }
       return;
@@ -1133,13 +1161,15 @@ function TakeoffPageInner() {
 
       const areaFt2 = areaPixels / (pixelsPerUnit * pixelsPerUnit);
 
+      const activeGroup = groups.find(g => g.id === activeGroupId);
       addMeasurement({
         type: "area",
         points: [...areaPoints],
         pixelsPerUnit,
         unit: "ft²",
         label: `Area ${measurements.length + 1}`,
-        color: "#a78bfa",
+        color: activeGroup?.color || "#a78bfa",
+        groupId: activeGroupId || undefined,
       });
     }
 
@@ -1178,13 +1208,15 @@ function TakeoffPageInner() {
       const volumeYd3 = volumeFt3 / 27;
       const volumeM3 = volumeFt3 * 0.028316846592;
 
+      const activeGroup = groups.find(g => g.id === activeGroupId);
       addMeasurement({
         type: "volume",
         points: [...volumePoints],
         pixelsPerUnit,
         unit: "yd³",
         label: `Volume ${measurements.length + 1}`,
-        color: "#10b981",
+        color: activeGroup?.color || "#10b981",
+        groupId: activeGroupId || undefined,
         meta: {
           depthInches,
           volumeM3,
@@ -1220,23 +1252,85 @@ function TakeoffPageInner() {
     setCalibPoints([]);
   }, [isCalibrating, calibPoints, pendingCalibLength]);
 
-  return (
-    <div className="p-6 h-full flex flex-col">
-      <ScaleModal
-        open={scaleModalOpen}
-        onClose={onCalibrationCancel}
-        onApply={applyScaleFromModal}
-        canApply={calPoints && calPoints.length === 2}
-        isCalibrating={isCalibrating}
-        calibPointsCount={calibPoints.length}
-        canConfirmCalibration={canConfirmCalibration}
-        onCalibrationOk={handleCalibrationOk}
-        onCalibrationCancel={onCalibrationCancel}
-      />
+  function toggleGroupVisibility(groupId: string) {
+    setGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, visible: !g.visible } : g
+    ));
+  }
 
-      <div className="mb-4 px-4 py-2 bg-yellow-500 text-black rounded-xl font-bold text-center text-sm">
-        ⚡ TAKEOFF ENGINE ACTIVE (Phase 2) ⚡
-      </div>
+  function addNewGroup() {
+    if (!newGroupName.trim()) return;
+
+    const colors = ["#ef4444", "#84cc16", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+    const newGroup = {
+      id: crypto.randomUUID(),
+      name: newGroupName.trim(),
+      color: randomColor,
+      visible: true,
+      sortOrder: groups.length,
+    };
+
+    setGroups(prev => [...prev, newGroup]);
+    setNewGroupName("");
+    setShowNewGroupForm(false);
+  }
+
+  function deleteGroup(groupId: string) {
+    setGroups(prev => prev.filter(g => g.id !== groupId));
+    if (activeGroupId === groupId) {
+      setActiveGroupId(groups.find(g => g.id !== groupId)?.id || null);
+    }
+  }
+
+  function changeMeasurementGroup(measurementId: string, newGroupId: string | null) {
+    updateMeasurement(measurementId, { groupId: newGroupId || undefined });
+  }
+
+  function getGroupTotals(groupId: string) {
+    const groupMeasurements = measurements.filter(m => m.groupId === groupId);
+
+    return {
+      line: groupMeasurements
+        .filter(m => m.type === "line")
+        .reduce((sum, m) => sum + m.result, 0),
+      area: groupMeasurements
+        .filter(m => m.type === "area")
+        .reduce((sum, m) => sum + m.result, 0),
+      volume: groupMeasurements
+        .filter(m => m.type === "volume")
+        .reduce((sum, m) => sum + m.result, 0),
+      count: groupMeasurements
+        .filter(m => m.type === "count")
+        .reduce((sum, m) => sum + m.result, 0),
+    };
+  }
+
+  const visibleMeasurements = measurements.filter(m => {
+    if (!m.groupId) return true;
+    const group = groups.find(g => g.id === m.groupId);
+    return group?.visible !== false;
+  });
+
+  return (
+    <div className="p-6 h-full flex gap-6">
+      <div className="flex-1 flex flex-col min-w-0">
+        <ScaleModal
+          open={scaleModalOpen}
+          onClose={onCalibrationCancel}
+          onApply={applyScaleFromModal}
+          canApply={calPoints && calPoints.length === 2}
+          isCalibrating={isCalibrating}
+          calibPointsCount={calibPoints.length}
+          canConfirmCalibration={canConfirmCalibration}
+          onCalibrationOk={handleCalibrationOk}
+          onCalibrationCancel={onCalibrationCancel}
+        />
+
+        <div className="mb-4 px-4 py-2 bg-yellow-500 text-black rounded-xl font-bold text-center text-sm">
+          ⚡ TAKEOFF ENGINE ACTIVE (Phase 2) ⚡
+        </div>
 
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -1370,6 +1464,33 @@ function TakeoffPageInner() {
         )}
       </div>
 
+      {groups.length > 0 && (
+        <div className="mt-4 flex items-center gap-2">
+          <label className="text-sm text-slate-400">Group:</label>
+          <select
+            value={activeGroupId || ""}
+            onChange={(e) => setActiveGroupId(e.target.value || null)}
+            className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm"
+          >
+            <option value="">None</option>
+            {groups.map(group => (
+              <option key={group.id} value={group.id}>
+                {group.name}
+              </option>
+            ))}
+          </select>
+          {activeGroupId && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-slate-800 rounded-lg text-xs">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: groups.find(g => g.id === activeGroupId)?.color }}
+              />
+              <span>{groups.find(g => g.id === activeGroupId)?.name}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {showDepthPrompt && (
         <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/30 p-4">
           <div className="text-sm font-semibold text-emerald-200 mb-2">Enter Depth</div>
@@ -1484,7 +1605,7 @@ function TakeoffPageInner() {
               />
 
               <MeasurementLayer
-                measurements={measurements}
+                measurements={visibleMeasurements}
                 scale={panZoom.zoom}
                 offsetX={0}
                 offsetY={0}
@@ -1508,6 +1629,191 @@ function TakeoffPageInner() {
         )}
       </div>
     </div>
+
+    <div className="w-80 flex-shrink-0 border-l border-slate-800 pl-6 flex flex-col overflow-hidden">
+      <div className="mb-4 flex-shrink-0">
+        <h2 className="text-xl font-semibold mb-2">Groups</h2>
+        <p className="text-slate-400 text-xs">Organize measurements by trade or category</p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+        {groups.map(group => {
+          const totals = getGroupTotals(group.id);
+          const hasData = totals.line > 0 || totals.area > 0 || totals.volume > 0 || totals.count > 0;
+          const groupMeasurements = measurements.filter(m => m.groupId === group.id);
+
+          return (
+            <div
+              key={group.id}
+              className={`rounded-lg border p-3 ${
+                activeGroupId === group.id
+                  ? "bg-slate-800/50 border-slate-700"
+                  : "bg-slate-900/30 border-slate-800 hover:bg-slate-900/50"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <button
+                  onClick={() => toggleGroupVisibility(group.id)}
+                  className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-slate-700"
+                >
+                  {group.visible ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  )}
+                </button>
+
+                <div
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: group.color }}
+                />
+
+                <button
+                  onClick={() => setActiveGroupId(group.id)}
+                  className="flex-1 text-left text-sm font-medium"
+                >
+                  {group.name}
+                </button>
+
+                {groupMeasurements.length > 0 && (
+                  <div className="px-2 py-0.5 bg-slate-700/50 rounded-full text-xs text-slate-300">
+                    {groupMeasurements.length}
+                  </div>
+                )}
+
+                <button
+                  onClick={() => deleteGroup(group.id)}
+                  className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-red-900/30 text-slate-400 hover:text-red-400"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {hasData && (
+                <div className="mt-2 pt-2 border-t border-slate-700/50 space-y-1 text-xs">
+                  {totals.line > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Line:</span>
+                      <span className="font-mono">{totals.line.toFixed(2)} ft</span>
+                    </div>
+                  )}
+                  {totals.area > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Area:</span>
+                      <span className="font-mono">{totals.area.toFixed(2)} ft²</span>
+                    </div>
+                  )}
+                  {totals.volume > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Volume:</span>
+                      <span className="font-mono">{totals.volume.toFixed(2)} yd³</span>
+                    </div>
+                  )}
+                  {totals.count > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Count:</span>
+                      <span className="font-mono">{totals.count} ea</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {measurements.filter(m => !m.groupId).length > 0 && (
+          <div className="mt-4 pt-4 border-t border-slate-700/50">
+            <div className="text-xs font-semibold text-slate-400 mb-2">Ungrouped Measurements</div>
+            <div className="space-y-1">
+              {measurements.filter(m => !m.groupId).map(m => (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-2 p-2 bg-slate-900/30 rounded text-xs"
+                >
+                  <div className="flex-1 truncate">
+                    <div className="font-medium">{m.label || `${m.type} measurement`}</div>
+                    <div className="text-slate-400">
+                      {m.result.toFixed(2)} {m.unit}
+                    </div>
+                  </div>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        changeMeasurementGroup(m.id, e.target.value);
+                      }
+                    }}
+                    className="px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs"
+                  >
+                    <option value="">Move to...</option>
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-slate-800 flex-shrink-0">
+        {showNewGroupForm ? (
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addNewGroup();
+                if (e.key === "Escape") {
+                  setShowNewGroupForm(false);
+                  setNewGroupName("");
+                }
+              }}
+              placeholder="Group name"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={addNewGroup}
+                className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => {
+                  setShowNewGroupForm(false);
+                  setNewGroupName("");
+                }}
+                className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowNewGroupForm(true)}
+            className="w-full px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm flex items-center justify-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Group
+          </button>
+        )}
+      </div>
+    </div>
+  </div>
   );
 }
 
