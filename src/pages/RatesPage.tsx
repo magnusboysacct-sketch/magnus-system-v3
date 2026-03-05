@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import MasterCategorySelect from "../components/master/MasterCategorySelect.tsx";
 import MasterUnitSelect from "../components/master/MasterUnitSelect.tsx";
+import { buildDefaultVars, computeQuantity } from "../lib/calculatorEngine";
 
 // ✅ Standard construction categories (future-proof baseline)
 const STANDARD_CATEGORIES = [
@@ -1529,221 +1530,244 @@ export default function RatesPage() {
               </thead>
 
               <tbody>
-                {filteredItems.map((item) => (
-                  <tr key={item.id} className="border-b border-white/5">
-                    <td className="py-3 px-4">{item.item_name}</td>
+  {filteredItems.map((item) => {
+    const previewQty = computeQuantity(
+      (item as any).formula || "",
+      buildDefaultVars({
+        length: 10,
+        width: 10,
+        depth: 1,
+        count: 1,
+      }),
+      {
+        wastePercent: (item as any).waste_percent ?? 0,
+        roundTo: 2,
+        clampZero: true,
+      }
+    );
 
-                    {/* Description */}
-                    <td className="py-3 px-4">
-                      {editingDescId === item.id ? (
-                        <input
-                          autoFocus
-                          value={editingDescValue}
-                          onChange={(e) => setEditingDescValue(e.target.value)}
-                          onBlur={() => setEditingDescId(null)}
-                          onKeyDown={async (e) => {
-                            if (e.key === "Escape") return setEditingDescId(null);
-                            if (e.key === "Enter") {
-                              await saveDescription(item.id, editingDescValue);
-                              setEditingDescId(null);
-                            }
-                          }}
-                          className="bg-white/5 border border-white/10 rounded px-2 py-1 w-[320px] max-w-[45vw] outline-none focus:ring-1 focus:ring-white/20"
-                          placeholder="—"
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            setEditingDescId(item.id);
-                            setEditingDescValue(item.description || "");
-                          }}
-                          className="text-left cursor-pointer hover:opacity-80 disabled:opacity-50 w-[320px] max-w-[45vw] truncate"
-                          title={item.description || ""}
-                        >
-                          {item.description ? item.description : "—"}
-                        </button>
-                      )}
-                    </td>
+    return (
+      <tr key={item.id} className="border-b border-white/5">
+        {/* Item */}
+        <td className="py-3 px-4">
+          <div className="font-medium">{item.item_name}</div>
 
-                    {/* Variant */}
-                    <td className="py-3 px-4">
-                      {item.variant || "—"}
-                    </td>
+          {/* ✅ Preview line (small) */}
+          {(item as any).formula ? (
+            <div className="mt-1 text-[11px] opacity-70">
+              Calc preview (10×10×1): <span className="opacity-100">{String(previewQty)}</span>
+            </div>
+          ) : (
+            <div className="mt-1 text-[11px] opacity-40">No formula</div>
+          )}
+        </td>
 
-                    {/* Cost Code */}
-                    <td className="py-3 px-4">
-                      {editingCodeId === item.id ? (
-                        <input
-                          autoFocus
-                          value={editingCodeValue}
-                          onChange={(e) => setEditingCodeValue(e.target.value)}
-                          onBlur={() => setEditingCodeId(null)}
-                          onKeyDown={async (e) => {
-                            if (e.key === "Escape") return setEditingCodeId(null);
-                            if (e.key === "Enter") {
-                              await saveCostCode(item.id, editingCodeValue.trim());
-                              setEditingCodeId(null);
-                            }
-                          }}
-                          className="bg-white/5 border border-white/10 rounded px-2 py-1 w-44 outline-none focus:ring-1 focus:ring-white/20"
-                          placeholder="—"
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            setEditingCodeId(item.id);
-                            setEditingCodeValue(item.cost_code || "");
-                          }}
-                          className="cursor-pointer hover:opacity-80 disabled:opacity-50"
-                          title="Click to edit cost code"
-                        >
-                          {item.cost_code ? item.cost_code : "—"}
-                        </button>
-                      )}
-                    </td>
+        {/* Description */}
+        <td className="py-3 px-4">
+          {editingDescId === item.id ? (
+            <input
+              autoFocus
+              value={editingDescValue}
+              onChange={(e) => setEditingDescValue(e.target.value)}
+              onBlur={() => setEditingDescId(null)}
+              onKeyDown={async (e) => {
+                if (e.key === "Escape") return setEditingDescId(null);
+                if (e.key === "Enter") {
+                  await saveDescription(item.id, editingDescValue);
+                  setEditingDescId(null);
+                }
+              }}
+              className="bg-white/5 border border-white/10 rounded px-2 py-1 w-[320px] max-w-[45vw] outline-none focus:ring-1 focus:ring-white/20"
+              placeholder="—"
+            />
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setEditingDescId(item.id);
+                setEditingDescValue(item.description || "");
+              }}
+              className="text-left cursor-pointer hover:opacity-80 disabled:opacity-50 w-[320px] max-w-[45vw] truncate"
+              title={item.description || ""}
+            >
+              {item.description ? item.description : "—"}
+            </button>
+          )}
+        </td>
 
-                    {/* Category */}
-                    <td className="py-3 px-4">
-                      {editingCatId === item.id ? (
-                        <select
-                          autoFocus
-                          value={editingCatValue}
-                          onChange={(e) => setEditingCatValue(e.target.value)}
-                          onBlur={() => setEditingCatId(null)}
-                          onKeyDown={async (e) => {
-                            if (e.key === "Escape") setEditingCatId(null);
-                            if (e.key === "Enter") {
-                              const v = (editingCatValue || "").trim() || "Uncategorized";
-                              await saveCategory(item.id, v);
-                              setEditingCatId(null);
-                            }
-                          }}
-                          className="bg-[#0b1220] border border-white/10 rounded px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                        >
-                          {categoryOptions.map((c) => (
-                            <option key={c} value={c}>
-                              {c}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            setEditingCatId(item.id);
-                            setEditingCatValue(normCategory(item.category));
-                          }}
-                          className="cursor-pointer hover:opacity-80 disabled:opacity-50"
-                          title="Click to edit category"
-                        >
-                          {normCategory(item.category)}
-                        </button>
-                      )}
-                    </td>
+        {/* Variant */}
+        <td className="py-3 px-4">{item.variant || "—"}</td>
 
-                    {/* Type */}
-                    <td className="py-3 px-4">
-                      {editingTypeId === item.id ? (
-                        <select
-                          autoFocus
-                          value={editingTypeValue}
-                          onChange={(e) => setEditingTypeValue(e.target.value)}
-                          onBlur={() => setEditingTypeId(null)}
-                          onKeyDown={async (e) => {
-                            if (e.key === "Escape") setEditingTypeId(null);
-                            if (e.key === "Enter") {
-                              await saveItemType(item.id, editingTypeValue || "Other");
-                              setEditingTypeId(null);
-                            }
-                          }}
-                          className="bg-[#0b1220] border border-white/10 rounded px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                        >
-                          {ITEM_TYPES.map((t) => (
-                            <option key={t} value={t}>
-                              {t}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            setEditingTypeId(item.id);
-                            setEditingTypeValue(item.item_type || "Material");
-                          }}
-                          className="cursor-pointer hover:opacity-80 disabled:opacity-50"
-                          title="Click to edit type"
-                        >
-                          {item.item_type || "-"}
-                        </button>
-                      )}
-                    </td>
+        {/* Cost Code */}
+        <td className="py-3 px-4">
+          {editingCodeId === item.id ? (
+            <input
+              autoFocus
+              value={editingCodeValue}
+              onChange={(e) => setEditingCodeValue(e.target.value)}
+              onBlur={() => setEditingCodeId(null)}
+              onKeyDown={async (e) => {
+                if (e.key === "Escape") return setEditingCodeId(null);
+                if (e.key === "Enter") {
+                  await saveCostCode(item.id, editingCodeValue.trim());
+                  setEditingCodeId(null);
+                }
+              }}
+              className="bg-white/5 border border-white/10 rounded px-2 py-1 w-44 outline-none focus:ring-1 focus:ring-white/20"
+              placeholder="—"
+            />
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setEditingCodeId(item.id);
+                setEditingCodeValue(item.cost_code || "");
+              }}
+              className="cursor-pointer hover:opacity-80 disabled:opacity-50"
+              title="Click to edit cost code"
+            >
+              {item.cost_code ? item.cost_code : "—"}
+            </button>
+          )}
+        </td>
 
-                    {/* Unit (display for now) */}
-                    <td className="py-3 px-4">{item.unit || "-"}</td>
+        {/* Category */}
+        <td className="py-3 px-4">
+          {editingCatId === item.id ? (
+            <select
+              autoFocus
+              value={editingCatValue}
+              onChange={(e) => setEditingCatValue(e.target.value)}
+              onBlur={() => setEditingCatId(null)}
+              onKeyDown={async (e) => {
+                if (e.key === "Escape") setEditingCatId(null);
+                if (e.key === "Enter") {
+                  const v = (editingCatValue || "").trim() || "Uncategorized";
+                  await saveCategory(item.id, v);
+                  setEditingCatId(null);
+                }
+              }}
+              className="bg-[#0b1220] border border-white/10 rounded px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-white/20"
+            >
+              {categoryOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setEditingCatId(item.id);
+                setEditingCatValue(normCategory(item.category));
+              }}
+              className="cursor-pointer hover:opacity-80 disabled:opacity-50"
+              title="Click to edit category"
+            >
+              {normCategory(item.category)}
+            </button>
+          )}
+        </td>
 
-                    {/* Rate */}
-                    <td className="py-3 px-4">
-                      {formatMoney(item.current_rate)}
-                    </td>
+        {/* Type */}
+        <td className="py-3 px-4">
+          {editingTypeId === item.id ? (
+            <select
+              autoFocus
+              value={editingTypeValue}
+              onChange={(e) => setEditingTypeValue(e.target.value)}
+              onBlur={() => setEditingTypeId(null)}
+              onKeyDown={async (e) => {
+                if (e.key === "Escape") setEditingTypeId(null);
+                if (e.key === "Enter") {
+                  await saveItemType(item.id, editingTypeValue || "Other");
+                  setEditingTypeId(null);
+                }
+              }}
+              className="bg-[#0b1220] border border-white/10 rounded px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-white/20"
+            >
+              {ITEM_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setEditingTypeId(item.id);
+                setEditingTypeValue(item.item_type || "Material");
+              }}
+              className="cursor-pointer hover:opacity-80 disabled:opacity-50"
+              title="Click to edit type"
+            >
+              {item.item_type || "-"}
+            </button>
+          )}
+        </td>
 
-                    {/* Actions */}
-                    <td className="py-3 px-4">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-3 py-1 text-xs"
-                          onClick={() => openEdit(item)}
-                          disabled={busy}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-3 py-1 text-xs"
-                          onClick={async () => {
-                            if (!confirm("Delete this rate?")) return;
-                            setBusy(true);
-                            try {
-                              const { error } = await supabase
-                                .from("cost_items")
-                                .delete()
-                                .eq("id", item.id);
-                              if (error) {
-                                console.error("Delete error:", error);
-                                return;
-                              }
-                              setItems((prev) => prev.filter((r) => r.id !== item.id));
-                            } finally {
-                              setBusy(false);
-                            }
-                          }}
-                          disabled={busy}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
+        {/* Unit */}
+        <td className="py-3 px-4">{item.unit || "-"}</td>
 
-                    <td className="py-3 px-4">{formatDate(item.updated_at)}</td>
-                  </tr>
-                ))}
+        {/* Rate */}
+        <td className="py-3 px-4">{formatMoney(item.current_rate)}</td>
 
-                {filteredItems.length === 0 && (
-                  <tr>
-                    <td className="py-8 px-4 text-sm opacity-70" colSpan={9}>
-                      No results.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+        {/* Actions */}
+        <td className="py-3 px-4">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-3 py-1 text-xs"
+              onClick={() => openEdit(item)}
+              disabled={busy}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-3 py-1 text-xs"
+              onClick={async () => {
+                if (!confirm("Delete this rate?")) return;
+                setBusy(true);
+                try {
+                  const { error } = await supabase.from("cost_items").delete().eq("id", item.id);
+                  if (error) {
+                    console.error("Delete error:", error);
+                    return;
+                  }
+                  setItems((prev) => prev.filter((r) => r.id !== item.id));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy}
+            >
+              Delete
+            </button>
+          </div>
+        </td>
+
+        {/* Last Updated */}
+        <td className="py-3 px-4">{formatDate(item.updated_at)}</td>
+      </tr>
+    );
+  })}
+
+  {filteredItems.length === 0 && (
+    <tr>
+      <td className="py-8 px-4 text-sm opacity-70" colSpan={10}>
+        No results.
+      </td>
+    </tr>
+  )}
+</tbody>
+          </table>
           </div>
         )}
       </div>
