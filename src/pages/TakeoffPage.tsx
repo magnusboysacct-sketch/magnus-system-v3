@@ -364,7 +364,7 @@ function TakeoffPageInner() {
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const activePointerIdRef = useRef<number | null>(null);
 
-  type ToolMode = "select" | "line" | "area";
+  type ToolMode = "select" | "line" | "area" | "count";
   const [tool, setTool] = useState<ToolMode>("select");
 
   const [lineStart, setLineStart] = useState<Point | null>(null);
@@ -373,6 +373,8 @@ function TakeoffPageInner() {
 
   const [areaPoints, setAreaPoints] = useState<Point[]>([]);
   const [areaHoverPt, setAreaHoverPt] = useState<Point | null>(null);
+
+  const [countPoints, setCountPoints] = useState<Point[]>([]);
   const [feetPerPdfUnit, setFeetPerPdfUnit] = useState<number | null>(null);
 
   const [canvasWidth, setCanvasWidth] = useState(0);
@@ -441,6 +443,7 @@ function TakeoffPageInner() {
       setHoverPt(null);
       setAreaPoints([]);
       setAreaHoverPt(null);
+      setCountPoints([]);
 
       fitScaleRef.current = null;
 
@@ -686,6 +689,13 @@ function TakeoffPageInner() {
           setAreaHoverPt(null);
         }
       }
+
+      if (tool === "count") {
+        if (e.code === "Escape") {
+          e.preventDefault();
+          setCountPoints([]);
+        }
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === "Space") {
@@ -700,7 +710,7 @@ function TakeoffPageInner() {
       window.removeEventListener("keydown", onKeyDown as any);
       window.removeEventListener("keyup", onKeyUp as any);
     };
-  }, [tool, areaPoints]);
+  }, [tool, areaPoints, countPoints]);
 
   useEffect(() => {
     function onWheel(e: WheelEvent) {
@@ -733,6 +743,7 @@ function TakeoffPageInner() {
       setHoverPt(null);
       setAreaPoints([]);
       setAreaHoverPt(null);
+      setCountPoints([]);
       setCalPoints([]);
       setCalibrating(false);
       setIsCalibrating(false);
@@ -749,6 +760,7 @@ function TakeoffPageInner() {
       setHoverPt(null);
       setAreaPoints([]);
       setAreaHoverPt(null);
+      setCountPoints([]);
       setCalPoints([]);
       setCalibrating(false);
       setIsCalibrating(false);
@@ -928,6 +940,23 @@ function TakeoffPageInner() {
     if (tool === "area") {
       const p = canvasPointFromEvent(e);
       setAreaPoints((prev) => [...prev, p]);
+      return;
+    }
+
+    if (tool === "count") {
+      const p = canvasPointFromEvent(e);
+
+      if (feetPerPixel && feetPerPixel > 0) {
+        const pixelsPerUnit = 1 / feetPerPixel;
+        addMeasurement({
+          type: "count",
+          points: [p],
+          pixelsPerUnit,
+          unit: "ea",
+          label: `Count ${measurements.length + 1}`,
+          color: "#f59e0b",
+        });
+      }
       return;
     }
   }
@@ -1117,6 +1146,7 @@ function TakeoffPageInner() {
             setHoverPt(null);
             setAreaPoints([]);
             setAreaHoverPt(null);
+            setCountPoints([]);
           }}
           className={"px-3 py-2 rounded-xl text-sm border " + (tool === "select" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
         >
@@ -1131,6 +1161,7 @@ function TakeoffPageInner() {
             setHoverPt(null);
             setAreaPoints([]);
             setAreaHoverPt(null);
+            setCountPoints([]);
           }}
           className={"px-3 py-2 rounded-xl text-sm border " + (tool === "line" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
         >
@@ -1145,16 +1176,33 @@ function TakeoffPageInner() {
             setHoverPt(null);
             setAreaPoints([]);
             setAreaHoverPt(null);
+            setCountPoints([]);
           }}
           className={"px-3 py-2 rounded-xl text-sm border " + (tool === "area" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
         >
           Area
         </button>
 
+        <button
+          onClick={() => {
+            setTool("count");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "count" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Count
+        </button>
+
         <div className="flex-1" />
 
         {tool === "line" && <div className="text-xs text-slate-400">Click 2 points to measure. 3rd click starts new line.</div>}
         {tool === "area" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points). ESC to cancel.</div>}
+        {tool === "count" && <div className="text-xs text-slate-400">Click to place count markers. ESC to cancel.</div>}
         {measurements.length > 0 && (
           <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
             {measurements.length} measurement{measurements.length === 1 ? '' : 's'}
@@ -1238,7 +1286,7 @@ function TakeoffPageInner() {
                 onClick={onCanvasClick}
                 onDoubleClick={onCanvasDoubleClick}
                 onMouseMove={onCanvasMove}
-                className={calibrating || isPanningRef.current ? "cursor-crosshair" : (tool === "line" || tool === "area") ? "cursor-crosshair" : "cursor-default"}
+                className={calibrating || isPanningRef.current ? "cursor-crosshair" : (tool === "line" || tool === "area" || tool === "count") ? "cursor-crosshair" : "cursor-default"}
                 style={{ userSelect: "none" }}
               />
 

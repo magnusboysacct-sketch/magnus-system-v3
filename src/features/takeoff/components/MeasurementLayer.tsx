@@ -38,6 +38,8 @@ export function MeasurementLayer({
     ctx.translate(offsetX, offsetY);
     ctx.scale(scale, scale);
 
+    const countMeasurements = measurements.filter(m => m.type === "count");
+
     for (const measurement of measurements) {
       const isSelected = selectedId === measurement.id;
       const color = measurement.color || "#3b82f6";
@@ -121,20 +123,25 @@ export function MeasurementLayer({
           ctx.stroke();
         }
       } else if (measurement.type === "count" && measurement.points.length > 0) {
-        let counter = 1;
+        const countIndex = countMeasurements.indexOf(measurement);
+        const displayNumber = countIndex + 1;
+
         for (const point of measurement.points) {
+          const radius = 10 / scale;
+
           ctx.beginPath();
-          ctx.arc(point.x, point.y, 8 / scale, 0, Math.PI * 2);
+          ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
           ctx.fill();
 
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2 / scale;
+          ctx.stroke();
+
           ctx.fillStyle = "#ffffff";
-          ctx.font = `${12 / scale}px sans-serif`;
+          ctx.font = `bold ${14 / scale}px sans-serif`;
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText(String(counter), point.x, point.y);
-          ctx.fillStyle = color;
-
-          counter++;
+          ctx.fillText(String(displayNumber), point.x, point.y);
         }
       }
     }
