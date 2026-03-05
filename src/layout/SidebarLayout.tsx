@@ -78,18 +78,18 @@ export default function SidebarLayout() {
   }
 
   return (
-    <div className="h-full w-full bg-slate-950 text-slate-100">
+    <div className="h-full w-full bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       <div className="flex h-full">
         <aside
           className={[
-            "relative border-r border-slate-800 bg-slate-950 transition-all duration-200",
+            "relative border-r border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 transition-all duration-200",
             collapsed ? "w-20" : "w-72",
           ].join(" ")}
         >
           {/* Collapse Toggle Button */}
           <button
             onClick={() => setCollapsed((v) => !v)}
-            className="absolute top-3 right-3 z-20 shrink-0 rounded-xl border border-slate-800 bg-slate-900/40 hover:bg-slate-800/50 p-2"
+            className="absolute top-3 right-3 z-20 shrink-0 rounded-xl border border-slate-300 dark:border-slate-800 bg-slate-200/40 dark:bg-slate-900/40 hover:bg-slate-300/50 dark:hover:bg-slate-800/50 p-2"
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
@@ -102,10 +102,10 @@ export default function SidebarLayout() {
               <img
                 src={logoUrl}
                 alt="Company logo"
-                className={`${collapsed ? "w-8 h-8" : "w-10 h-10"} rounded-lg object-cover border border-slate-700 bg-slate-800/50 flex-shrink-0`}
+                className={`${collapsed ? "w-8 h-8" : "w-10 h-10"} rounded-lg object-cover border border-slate-300 dark:border-slate-700 bg-slate-200/50 dark:bg-slate-800/50 flex-shrink-0`}
               />
             ) : (
-              <div className={`${collapsed ? "w-8 h-8" : "w-10 h-10"} rounded-lg border border-slate-700 bg-slate-800/50 flex items-center justify-center text-xs opacity-60 flex-shrink-0`}>
+              <div className={`${collapsed ? "w-8 h-8" : "w-10 h-10"} rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-200/50 dark:bg-slate-800/50 flex items-center justify-center text-xs opacity-60 flex-shrink-0`}>
                 LOGO
               </div>
             )}
@@ -113,10 +113,10 @@ export default function SidebarLayout() {
             {/* Company Name (only when expanded) */}
             {!collapsed && (
               <div className="min-w-0">
-                <div className="text-lg font-semibold tracking-wide truncate">
+                <div className="text-lg font-semibold tracking-wide truncate text-slate-900 dark:text-slate-100">
                   {companyName || "Magnus Boys System"}
                 </div>
-                <div className="text-xs text-slate-400">Fresh build • future-ready</div>
+                <div className="text-xs text-slate-600 dark:text-slate-400">Fresh build • future-ready</div>
               </div>
             )}
           </div>
@@ -132,8 +132,8 @@ export default function SidebarLayout() {
                     [
                       "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition",
                       isActive
-                        ? "bg-slate-800/60 text-white"
-                        : "text-slate-300 hover:bg-slate-800/30 hover:text-white",
+                        ? "bg-slate-300/60 dark:bg-slate-800/60 text-slate-900 dark:text-white"
+                        : "text-slate-600 dark:text-slate-300 hover:bg-slate-200/30 dark:hover:bg-slate-800/30 hover:text-slate-900 dark:hover:text-white",
                       collapsed ? "justify-center" : "",
                     ].join(" ")
                   }
@@ -146,29 +146,29 @@ export default function SidebarLayout() {
             })}
           </nav>
 
-          <div className="mt-auto border-t border-slate-800 p-3">
-            <div className="text-xs text-slate-400 truncate">{userEmail || "Signed in"}</div>
+          <div className="mt-auto border-t border-slate-200 dark:border-slate-800 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400 truncate">{userEmail || "Signed in"}</div>
             <button
               type="button"
               onClick={doLogout}
-              className="mt-2 w-full bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700 rounded-md px-3 py-2 text-sm transition"
+              className="mt-2 w-full bg-slate-200/50 dark:bg-slate-800/50 hover:bg-slate-300/50 dark:hover:bg-slate-700/50 border border-slate-300 dark:border-slate-700 rounded-md px-3 py-2 text-sm transition"
             >
               Logout
             </button>
           </div>
 
           {!collapsed && (
-            <div className="p-4 text-xs text-slate-500 border-t border-slate-800">
+            <div className="p-4 text-xs text-slate-500 dark:text-slate-500 border-t border-slate-200 dark:border-slate-800">
               Tip: keep commits small + push often.
             </div>
           )}
         </aside>
 
-        <main className="flex-1 bg-slate-950">
+        <main className="flex-1 bg-white dark:bg-slate-950">
           <div className="h-full overflow-auto relative">
             <button
               onClick={toggleTheme}
-              className="fixed top-4 right-4 z-50 p-2 rounded-xl border border-slate-700 bg-slate-900/80 hover:bg-slate-800/80 backdrop-blur-sm transition-colors"
+              className="fixed top-4 right-4 z-50 p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-900/80 hover:bg-slate-200/80 dark:hover:bg-slate-800/80 backdrop-blur-sm transition-colors text-slate-900 dark:text-slate-100"
               title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             >
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}

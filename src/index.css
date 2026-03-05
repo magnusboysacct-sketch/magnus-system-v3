@@ -1,6 +1,16 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+html, body {
+  background: white;
+  color: #0f172a;
+}
+
+html.dark, html.dark body {
+  background: #020617;
+  color: #f1f5f9;
+}
 
 html, body, #root {
   height: 100%;

@@ -14,12 +14,8 @@ export function useTheme() {
   useEffect(() => {
     const root = document.documentElement;
 
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else {
-      root.classList.remove("dark");
-    }
-
+    root.classList.toggle("dark", theme === "dark");
+    root.dataset.theme = theme;
     localStorage.setItem("theme", theme);
   }, [theme]);
 
@@ -28,7 +24,11 @@ export function useTheme() {
   };
 
   const toggleTheme = () => {
-    setThemeState(prev => prev === "dark" ? "light" : "dark");
+    setThemeState(prev => {
+      const nextTheme = prev === "dark" ? "light" : "dark";
+      console.log("[theme] toggled to", nextTheme);
+      return nextTheme;
+    });
   };
 
   return { theme, setTheme, toggleTheme };
