@@ -56,9 +56,14 @@ export default function LoginPage() {
     setBusy(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
+      });
+
+      console.log("signInWithPassword result:", {
+        ok: !!data?.session,
+        error: error ? { message: error.message, status: (error as any).status } : null
       });
 
       if (error) {
