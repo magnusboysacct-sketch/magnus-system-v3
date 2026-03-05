@@ -1,4 +1,4 @@
-﻿// src/pages/BOQPage.tsx
+// src/pages/BOQPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -34,6 +34,10 @@ type BOQItemRow = {
   unit_id: string | null;
   qty: number;
   rate: number;
+
+  qty_source?: "manual" | "takeoff";
+  takeoff_group_id?: string;
+  takeoff_metric?: "line_ft" | "area_ft2" | "volume_yd3" | "count_ea";
 };
 
 type Section = {
@@ -272,6 +276,78 @@ export default function BOQPage() {
     selectedAssemblyId: "",
     qty: "1",
   });
+
+  type TakeoffLinkModalState = {
+    open: boolean;
+    sectionId: string | null;
+    itemId: string | null;
+    selectedGroupId: string;
+    selectedMetric: "line_ft" | "area_ft2" | "volume_yd3" | "count_ea";
+  };
+
+  const [takeoffLinkModal, setTakeoffLinkModal] = useState<TakeoffLinkModalState>({
+    open: false,
+    sectionId: null,
+    itemId: null,
+    selectedGroupId: "",
+    selectedMetric: "area_ft2",
+  });
+
+  const [takeoffGroups, setTakeoffGroups] = useState<Array<{
+    id: string;
+    name: string;
+    color: string;
+  }>>([]);
+
+  const [takeoffTotals, setTakeoffTotals] = useState<Record<string, {
+    line_ft: number;
+    area_ft2: number;
+    volume_yd3: number;
+    count_ea: number;
+  }>>({});
+
+  useEffect(() => {
+    function loadTakeoffData() {
+      try {
+        const groupsStr = localStorage.getItem("takeoff_groups");
+        const totalsStr = localStorage.getItem("takeoff_group_totals");
+
+        if (groupsStr) {
+          setTakeoffGroups(JSON.parse(groupsStr));
+        }
+
+        if (totalsStr) {
+          setTakeoffTotals(JSON.parse(totalsStr));
+        }
+      } catch (e) {
+        console.error("Failed to load takeoff data:", e);
+      }
+    }
+
+    loadTakeoffData();
+
+    const interval = setInterval(loadTakeoffData, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    setSections(prev => prev.map(section => ({
+      ...section,
+      items: section.items.map(item => {
+        if (item.qty_source === "takeoff" && item.takeoff_group_id && item.takeoff_metric) {
+          const groupTotal = takeoffTotals[item.takeoff_group_id];
+          if (groupTotal) {
+            const newQty = groupTotal[item.takeoff_metric] || 0;
+            if (newQty !== item.qty) {
+              return { ...item, qty: newQty };
+            }
+          }
+        }
+        return item;
+      })
+    })));
+  }, [takeoffTotals]);
 
   useEffect(() => {
     let alive = true;
@@ -595,6 +671,50 @@ async function setActiveProject(projectId: string | null) {
         s.id !== sectionId ? s : { ...s, items: s.items.map((it) => (it.id === itemId ? { ...it, ...patch } : it)) }
       )
     );
+  }
+
+  function openTakeoffLinkModal(sectionId: string, itemId: string) {
+    const section = sections.find(s => s.id === sectionId);
+    const item = section?.items.find(it => it.id === itemId);
+
+    setTakeoffLinkModal({
+      open: true,
+      sectionId,
+      itemId,
+      selectedGroupId: item?.takeoff_group_id || (takeoffGroups[0]?.id || ""),
+      selectedMetric: item?.takeoff_metric || "area_ft2",
+    });
+  }
+
+  function linkItemToTakeoff() {
+    const { sectionId, itemId, selectedGroupId, selectedMetric } = takeoffLinkModal;
+    if (!sectionId || !itemId || !selectedGroupId) return;
+
+    const groupTotal = takeoffTotals[selectedGroupId];
+    const qty = groupTotal ? (groupTotal[selectedMetric] || 0) : 0;
+
+    updateItem(sectionId, itemId, {
+      qty_source: "takeoff",
+      takeoff_group_id: selectedGroupId,
+      takeoff_metric: selectedMetric,
+      qty,
+    });
+
+    setTakeoffLinkModal({
+      open: false,
+      sectionId: null,
+      itemId: null,
+      selectedGroupId: "",
+      selectedMetric: "area_ft2",
+    });
+  }
+
+  function unlinkItemFromTakeoff(sectionId: string, itemId: string) {
+    updateItem(sectionId, itemId, {
+      qty_source: "manual",
+      takeoff_group_id: undefined,
+      takeoff_metric: undefined,
+    });
   }
 
   function approveAndLock() {
@@ -1179,14 +1299,72 @@ async function setActiveProject(projectId: string | null) {
                         </div>
 
                         <div className="col-span-6 md:col-span-1">
-                          <div className="text-xs text-slate-400 mb-1">Qty</div>
-                          <input
-                            type="number"
-                            value={Number.isFinite(it.qty) ? it.qty : 0}
-                            disabled={!canEdit}
-                            onChange={(e) => updateItem(s.id, it.id, { qty: numOr(e.target.value, 0) })}
-                            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
-                          />
+                          <div className="text-xs text-slate-400 mb-1 flex items-center justify-between">
+                            <span>Qty</span>
+                            {it.qty_source === "takeoff" && (
+                              it.takeoff_group_id && !takeoffGroups.find(g => g.id === it.takeoff_group_id) ? (
+                                <span className="text-amber-400 text-[10px] flex items-center gap-1" title="Linked group not found">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                  </svg>
+                                  Missing
+                                </span>
+                              ) : (
+                                <span className="text-emerald-400 text-[10px] flex items-center gap-1">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                  </svg>
+                                  Linked
+                                </span>
+                              )
+                            )}
+                          </div>
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              value={Number.isFinite(it.qty) ? it.qty : 0}
+                              disabled={!canEdit || it.qty_source === "takeoff"}
+                              onChange={(e) => updateItem(s.id, it.id, { qty: numOr(e.target.value, 0) })}
+                              className={`flex-1 px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50 ${
+                                it.qty_source === "takeoff" ? "bg-emerald-950/30 border-emerald-900/40" : ""
+                              }`}
+                              title={
+                                it.qty_source === "takeoff" && it.takeoff_group_id
+                                  ? `Linked to: ${takeoffGroups.find(g => g.id === it.takeoff_group_id)?.name || 'Unknown'} - ${
+                                      it.takeoff_metric === "line_ft" ? "Line (ft)" :
+                                      it.takeoff_metric === "area_ft2" ? "Area (ft²)" :
+                                      it.takeoff_metric === "volume_yd3" ? "Volume (yd³)" :
+                                      "Count (ea)"
+                                    }`
+                                  : undefined
+                              }
+                            />
+                            {canEdit && (
+                              it.qty_source === "takeoff" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => unlinkItemFromTakeoff(s.id, it.id)}
+                                  className="px-2 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs"
+                                  title="Unlink from takeoff"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                  </svg>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openTakeoffLinkModal(s.id, it.id)}
+                                  className="px-2 py-2 rounded bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-900/40 text-emerald-200 text-xs"
+                                  title="Link to takeoff"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                  </svg>
+                                </button>
+                              )
+                            )}
+                          </div>
                         </div>
 
                         <div className="col-span-6 md:col-span-1">
@@ -1467,6 +1645,108 @@ async function setActiveProject(projectId: string | null) {
                   Add Assembly Lines
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Takeoff Link Modal */}
+      {takeoffLinkModal.open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded border border-slate-700 bg-slate-950 text-white shadow-xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+              <div className="space-y-1">
+                <div className="text-sm font-semibold">Link to Takeoff</div>
+                <div className="text-xs text-slate-400">Connect this BOQ item quantity to a takeoff group total</div>
+              </div>
+              <button
+                onClick={() => setTakeoffLinkModal({ ...takeoffLinkModal, open: false })}
+                className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-white text-sm"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="px-4 py-4 space-y-4">
+              {takeoffGroups.length === 0 ? (
+                <div className="text-sm text-amber-400 bg-amber-950/30 border border-amber-900/40 rounded p-3">
+                  No takeoff data found. Please create measurements in the Takeoff page first.
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-400">Takeoff Group</label>
+                    <select
+                      value={takeoffLinkModal.selectedGroupId}
+                      onChange={(e) => setTakeoffLinkModal({ ...takeoffLinkModal, selectedGroupId: e.target.value })}
+                      className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
+                    >
+                      <option value="">Select group...</option>
+                      {takeoffGroups.map(group => (
+                        <option key={group.id} value={group.id}>
+                          {group.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-400">Metric</label>
+                    <select
+                      value={takeoffLinkModal.selectedMetric}
+                      onChange={(e) => setTakeoffLinkModal({
+                        ...takeoffLinkModal,
+                        selectedMetric: e.target.value as "line_ft" | "area_ft2" | "volume_yd3" | "count_ea"
+                      })}
+                      className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
+                    >
+                      <option value="line_ft">Line (ft)</option>
+                      <option value="area_ft2">Area (ft²)</option>
+                      <option value="volume_yd3">Volume (yd³)</option>
+                      <option value="count_ea">Count (ea)</option>
+                    </select>
+                  </div>
+
+                  {takeoffLinkModal.selectedGroupId && (
+                    <div className="bg-slate-900/50 border border-slate-800 rounded p-3">
+                      <div className="text-xs text-slate-400 mb-1">Preview Value</div>
+                      <div className="text-lg font-semibold text-emerald-400">
+                        {(() => {
+                          const total = takeoffTotals[takeoffLinkModal.selectedGroupId];
+                          if (!total) return "0";
+                          const value = total[takeoffLinkModal.selectedMetric] || 0;
+                          return value.toFixed(2);
+                        })()}
+                        <span className="text-sm text-slate-400 ml-2">
+                          {takeoffLinkModal.selectedMetric === "line_ft" && "ft"}
+                          {takeoffLinkModal.selectedMetric === "area_ft2" && "ft²"}
+                          {takeoffLinkModal.selectedMetric === "volume_yd3" && "yd³"}
+                          {takeoffLinkModal.selectedMetric === "count_ea" && "ea"}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        from: {takeoffGroups.find(g => g.id === takeoffLinkModal.selectedGroupId)?.name}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      onClick={() => setTakeoffLinkModal({ ...takeoffLinkModal, open: false })}
+                      className="px-4 py-2 rounded bg-slate-800 hover:bg-slate-700 text-white text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={linkItemToTakeoff}
+                      disabled={!takeoffLinkModal.selectedGroupId}
+                      className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium"
+                    >
+                      Link
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

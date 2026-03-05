@@ -1313,6 +1313,35 @@ function TakeoffPageInner() {
     return group?.visible !== false;
   });
 
+  useEffect(() => {
+    const groupTotalsMap: Record<string, {
+      line_ft: number;
+      area_ft2: number;
+      volume_yd3: number;
+      count_ea: number;
+    }> = {};
+
+    groups.forEach(group => {
+      const totals = getGroupTotals(group.id);
+      groupTotalsMap[group.id] = {
+        line_ft: totals.line,
+        area_ft2: totals.area,
+        volume_yd3: totals.volume,
+        count_ea: totals.count,
+      };
+    });
+
+    localStorage.setItem("takeoff_group_totals", JSON.stringify(groupTotalsMap));
+
+    const groupsMetadata = groups.map(g => ({
+      id: g.id,
+      name: g.name,
+      color: g.color,
+      visible: g.visible,
+    }));
+    localStorage.setItem("takeoff_groups", JSON.stringify(groupsMetadata));
+  }, [measurements, groups]);
+
   return (
     <div className="p-6 h-full flex gap-6">
       <div className="flex-1 flex flex-col min-w-0">
