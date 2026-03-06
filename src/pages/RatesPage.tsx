@@ -906,14 +906,14 @@ export default function RatesPage() {
       if (!alive) return;
 
       // Merge variant data from cost_items
-      const items = resp.data as CostItem[];
+      const items = resp.data as any[];
       if (items && items.length > 0) {
         const ids = items.map(item => item.id);
         const variants = await supabase
           .from("cost_items")
           .select("id,variant")
           .in("id", ids);
-        
+
         if (variants.data && !variants.error) {
           const variantMap = new Map(variants.data.map((v: any) => [v.id, v.variant]));
           const itemsWithVariants = items.map(item => ({
@@ -922,10 +922,14 @@ export default function RatesPage() {
           }));
           setItems(itemsWithVariants as CostItem[]);
         } else {
-          setItems(items);
+          const itemsWithVariants = items.map(item => ({
+            ...item,
+            variant: "" as string
+          }));
+          setItems(itemsWithVariants as CostItem[]);
         }
       } else {
-        setItems(items || []);
+        setItems([]);
       }
       setLoading(false);
     }
@@ -969,14 +973,14 @@ export default function RatesPage() {
       if (!alive) return;
 
       // Merge variant data from cost_items
-      const items = resp.data as CostItem[];
+      const items = resp.data as any[];
       if (items && items.length > 0) {
         const ids = items.map(item => item.id);
         const variants = await supabase
           .from("cost_items")
           .select("id,variant")
           .in("id", ids);
-        
+
         if (variants.data && !variants.error) {
           const variantMap = new Map(variants.data.map((v: any) => [v.id, v.variant]));
           const itemsWithVariants = items.map(item => ({
@@ -985,10 +989,14 @@ export default function RatesPage() {
           }));
           setItems(itemsWithVariants as CostItem[]);
         } else {
-          setItems(items);
+          const itemsWithVariants = items.map(item => ({
+            ...item,
+            variant: "" as string
+          }));
+          setItems(itemsWithVariants as CostItem[]);
         }
       } else {
-        setItems(items || []);
+        setItems([]);
       }
       setLoading(false);
     }
@@ -1772,6 +1780,10 @@ export default function RatesPage() {
     </tr>
   )}
 </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Modal */}
       {isModalOpen && (
