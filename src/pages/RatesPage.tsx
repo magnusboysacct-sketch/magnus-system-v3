@@ -1531,20 +1531,16 @@ export default function RatesPage() {
 
               <tbody>
   {filteredItems.map((item) => {
-    const previewQty = computeQuantity(
-      (item as any).formula || "",
-      buildDefaultVars({
-        length: 10,
-        width: 10,
-        depth: 1,
-        count: 1,
-      }),
-      {
-        wastePercent: (item as any).waste_percent ?? 0,
-        roundTo: 2,
-        clampZero: true,
-      }
-    );
+    const formula = (item as any).formula || "";
+    const waste = (item as any).waste_percent ?? 0;
+
+    const preview = formula
+      ? computeQuantity(
+          formula,
+          buildDefaultVars({ length: 10, width: 10, depth: 1, count: 1 }),
+          { wastePercent: waste, roundTo: 2, clampZero: true }
+        )
+      : null;
 
     return (
       <tr key={item.id} className="border-b border-white/5">
@@ -1552,10 +1548,16 @@ export default function RatesPage() {
         <td className="py-3 px-4">
           <div className="font-medium">{item.item_name}</div>
 
-          {/* ✅ Preview line (small) */}
-          {(item as any).formula ? (
+          {/* Preview line */}
+          {formula ? (
             <div className="mt-1 text-[11px] opacity-70">
-              Calc preview (10×10×1): <span className="opacity-100">{String(previewQty)}</span>
+              Calc preview (10×10×1):{" "}
+              <span className="opacity-100">
+                {preview?.ok ? String(preview.value) : "ERR"}
+              </span>
+              {!preview?.ok && preview?.error ? (
+                <span className="ml-2 opacity-70">({preview.error})</span>
+              ) : null}
             </div>
           ) : (
             <div className="mt-1 text-[11px] opacity-40">No formula</div>
@@ -1736,7 +1738,10 @@ export default function RatesPage() {
                 if (!confirm("Delete this rate?")) return;
                 setBusy(true);
                 try {
-                  const { error } = await supabase.from("cost_items").delete().eq("id", item.id);
+                  const { error } = await supabase
+                    .from("cost_items")
+                    .delete()
+                    .eq("id", item.id);
                   if (error) {
                     console.error("Delete error:", error);
                     return;
@@ -1767,10 +1772,6 @@ export default function RatesPage() {
     </tr>
   )}
 </tbody>
-          </table>
-          </div>
-        )}
-      </div>
 
       {/* Modal */}
       {isModalOpen && (
