@@ -20,6 +20,7 @@ import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import BillingPage from "./pages/BillingPage";
 import LoginPage from "./pages/LoginPage";
 import { supabase } from "./lib/supabase";
+import AcceptInvitePage from "./pages/AcceptInvitePage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
@@ -68,6 +69,7 @@ export default function App() {
       <Routes>
         {/* Public route (no sidebar) */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
         {/* Protected routes (with sidebar) */}
         <Route
