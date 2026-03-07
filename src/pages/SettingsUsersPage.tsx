@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
 type Role =
@@ -40,7 +40,6 @@ function cleanEmail(s: string) {
 }
 
 async function safeSelectProfiles(): Promise<{ rows: ProfileRow[]; note?: string }> {
-  // Tries common table names/views. If none exist, it returns empty with note.
   const candidates = ["user_profiles", "profiles", "v_user_profiles"];
 
   for (const name of candidates) {
@@ -69,10 +68,8 @@ export default function SettingsUsersPage() {
   const [rows, setRows] = useState<ProfileRow[]>([]);
   const [tableNote, setTableNote] = useState<string>("");
 
-  // toolbar
   const [q, setQ] = useState("");
 
-  // invite modal
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("estimator");
@@ -80,18 +77,19 @@ export default function SettingsUsersPage() {
   const [inviteErr, setInviteErr] = useState<string>("");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
 
-  // page messages
   const [msg, setMsg] = useState<string>("");
   const [err, setErr] = useState<string>("");
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
     if (!qq) return rows;
+
     return rows.filter((r) => {
       const email = (r.email || "").toLowerCase();
       const name = (r.full_name || "").toLowerCase();
       const role = (r.role || "").toLowerCase();
       const status = (r.status || "").toLowerCase();
+
       return (
         email.includes(qq) ||
         name.includes(qq) ||
@@ -106,10 +104,16 @@ export default function SettingsUsersPage() {
     setErr("");
     setMsg("");
 
-    const { rows: data, note } = await safeSelectProfiles();
-    setRows(data);
-    setTableNote(note || "");
-    setLoading(false);
+    try {
+      const { rows: data, note } = await safeSelectProfiles();
+      setRows(data);
+      setTableNote(note || "");
+    } catch (e: any) {
+      console.error("Load users failed:", e);
+      setErr(e?.message || "Failed to load users.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -126,20 +130,23 @@ export default function SettingsUsersPage() {
   }
 
   function closeInvite() {
+    if (busy) return;
     setInviteOpen(false);
   }
 
   async function copyToClipboard(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      // You could add a toast notification here if you want
-    } catch (err) {
-      console.error("Failed to copy:", err);
+      setInviteMsg("Invite link copied.");
+    } catch (e) {
+      console.error("Failed to copy:", e);
+      setInviteErr("Failed to copy invite link.");
     }
   }
 
   async function doInvite() {
     const email = cleanEmail(inviteEmail);
+
     if (!email.includes("@") || email.length < 6) {
       setInviteErr("Enter a valid email.");
       return;
@@ -148,36 +155,53 @@ export default function SettingsUsersPage() {
     setBusy(true);
     setInviteErr("");
     setInviteMsg("");
+    setInviteLink(null);
+    setErr("");
+    setMsg("");
 
     try {
       const { data, error } = await supabase.functions.invoke("admin-invite-user", {
-        body: { email: inviteEmail.trim(), role: inviteRole },
+        body: {
+          email,
+          role: inviteRole,
+          redirectTo: `${window.location.origin}/accept-invite`,
+        },
       });
 
       if (error) {
-        setInviteErr(error.message);
-        console.log("invite error:", error);
+        console.error("Invite error:", error);
+        setInviteErr(error.message || "Failed to send invite.");
         return;
       }
 
-      // Edge function returns { ok: true, invited: email, inviteLink: url } on success
-      if (data?.ok) {
-        setInviteMsg("Invite sent.");
-        setMsg(`Invite sent to ${data.invited}`);
-        
-        // Show invite link if available
+      if (!data) {
+        setInviteErr("Unexpected empty response from server.");
+        return;
+      }
+
+      if (data.success || data.ok) {
+        const invitedEmail = data.invited || data?.invitation?.email || email;
+
+        setInviteMsg("Invite sent successfully.");
+        setMsg(`Invite sent to ${invitedEmail}`);
+
         if (data.inviteLink) {
-          console.log("Invite link:", data.inviteLink);
           setInviteLink(data.inviteLink);
         }
-        
-        // DO NOT auto-close modal if inviteLink exists
-        // refresh list (if your profile table exists)
+
         await load();
-      } else if (data?.error) {
+        return;
+      }
+
+      if (data.error) {
         setInviteErr(String(data.error));
         return;
       }
+
+      setInviteErr("Unknown invite response.");
+    } catch (e: any) {
+      console.error("Invite crash:", e);
+      setInviteErr(e?.message || "Invite failed.");
     } finally {
       setBusy(false);
     }
@@ -185,13 +209,18 @@ export default function SettingsUsersPage() {
 
   async function doResend(email: string | null, role: Role | null) {
     if (!email) return;
+
     setBusy(true);
     setErr("");
     setMsg("");
 
     try {
       const { data, error } = await supabase.functions.invoke("admin-invite-user", {
-        body: { email: cleanEmail(email), role: role || "estimator" },
+        body: {
+          email: cleanEmail(email),
+          role: role || "estimator",
+          redirectTo: `${window.location.origin}/accept-invite`,
+        },
       });
 
       if (error) {
@@ -199,21 +228,27 @@ export default function SettingsUsersPage() {
         return;
       }
 
-      // Edge function returns { ok: true, invited: email } on success
-      if (data?.ok) {
-        setMsg(`Invite resent to ${data.invited}`);
-      } else if (data?.error) {
+      if (data?.success || data?.ok) {
+        setMsg(`Invite resent to ${data.invited || cleanEmail(email)}`);
+        await load();
+        return;
+      }
+
+      if (data?.error) {
         setErr(String(data.error));
         return;
       }
+
+      setErr("Unknown resend response.");
+    } catch (e: any) {
+      console.error("Resend crash:", e);
+      setErr(e?.message || "Resend failed.");
     } finally {
       setBusy(false);
     }
   }
 
   async function doToggleStatus(r: ProfileRow) {
-    // This only works if you have a profiles table/view that supports updates.
-    // If not, we show a friendly message (no crash).
     if (!r.id) return;
 
     setBusy(true);
@@ -223,7 +258,6 @@ export default function SettingsUsersPage() {
     const next: Status = (r.status || "active") === "active" ? "disabled" : "active";
 
     try {
-      // try update across common tables
       const candidates = ["user_profiles", "profiles"];
       let ok = false;
 
@@ -249,15 +283,18 @@ export default function SettingsUsersPage() {
 
       setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: next } : x)));
       setMsg(`User ${next === "active" ? "enabled" : "disabled"}.`);
+    } catch (e: any) {
+      console.error("Toggle status failed:", e);
+      setErr(e?.message || "Failed to update status.");
     } finally {
       setBusy(false);
     }
   }
 
   async function doDelete(r: ProfileRow) {
-    // Deleting auth users must be done server-side (Edge Function).
-    // For now we only delete profile row if possible.
-    if (!confirm("Delete this user profile row? (Auth user deletion is a later upgrade)")) return;
+    if (!confirm("Delete this user profile row? (Auth user deletion is a later upgrade)")) {
+      return;
+    }
 
     setBusy(true);
     setErr("");
@@ -289,6 +326,9 @@ export default function SettingsUsersPage() {
 
       setRows((prev) => prev.filter((x) => x.id !== r.id));
       setMsg("Deleted.");
+    } catch (e: any) {
+      console.error("Delete failed:", e);
+      setErr(e?.message || "Delete failed.");
     } finally {
       setBusy(false);
     }
@@ -296,20 +336,18 @@ export default function SettingsUsersPage() {
 
   return (
     <div className="p-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-5">
+      <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">Settings</h1>
           <div className="text-sm opacity-70">Users and access management.</div>
         </div>
 
-        {/* Buttons */}
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={openInvite}
             disabled={busy}
-            className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-3 py-2 text-sm transition disabled:opacity-60"
+            className="rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm transition hover:bg-white/15 disabled:opacity-60"
           >
             Invite User
           </button>
@@ -318,86 +356,86 @@ export default function SettingsUsersPage() {
             type="button"
             onClick={load}
             disabled={busy}
-            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-3 py-2 text-sm transition disabled:opacity-60"
+            className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm transition hover:bg-white/10 disabled:opacity-60"
           >
             Refresh
           </button>
         </div>
       </div>
 
-      {/* Tabs (simple now, users-only; you already have Company tab in your Settings page) */}
       <div className="mb-4">
-        <div className="inline-flex rounded-lg border border-white/10 bg-white/5 overflow-hidden">
-          <div className="px-4 py-2 text-sm bg-white/10">Users</div>
+        <div className="inline-flex overflow-hidden rounded-lg border border-white/10 bg-white/5">
+          <div className="bg-white/10 px-4 py-2 text-sm">Users</div>
         </div>
       </div>
 
-      {/* Messages */}
       {(msg || err || tableNote) && (
         <div className="mb-4 space-y-2">
           {tableNote && (
-            <div className="text-xs opacity-70 border border-white/10 bg-white/5 rounded-md p-3">
+            <div className="rounded-md border border-white/10 bg-white/5 p-3 text-xs opacity-70">
               {tableNote}
             </div>
           )}
+
           {msg && (
-            <div className="text-sm border border-emerald-500/30 bg-emerald-500/10 rounded-md p-3">
+            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm">
               {msg}
             </div>
           )}
+
           {err && (
-            <div className="text-sm border border-red-500/30 bg-red-500/10 rounded-md p-3">
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm">
               {err}
             </div>
           )}
         </div>
       )}
 
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="text-sm opacity-80">Search</div>
+
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search by email, name, role, or status…"
-          className="flex-1 min-w-[260px] bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
+          className="min-w-[260px] flex-1 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
         />
 
-        <div className="text-sm opacity-70 ml-auto">
+        <div className="ml-auto text-sm opacity-70">
           {filtered.length} user{filtered.length === 1 ? "" : "s"}
         </div>
       </div>
 
-      {/* Table */}
-      <div className="border border-white/10 rounded-lg overflow-hidden">
+      <div className="overflow-hidden rounded-lg border border-white/10">
         {loading ? (
           <div className="p-6 text-sm opacity-70">Loading users...</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-white/5">
-                <tr className="text-left border-b border-white/10">
-                  <th className="py-3 px-4">Email</th>
-                  <th className="py-3 px-4">Name</th>
-                  <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Created</th>
-                  <th className="py-3 px-4">Actions</th>
+                <tr className="border-b border-white/10 text-left">
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Role</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Created</th>
+                  <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
+
               <tbody>
                 {filtered.map((r) => (
                   <tr key={r.id} className="border-b border-white/5">
-                    <td className="py-3 px-4">{r.email || "-"}</td>
-                    <td className="py-3 px-4">{r.full_name || "-"}</td>
-                    <td className="py-3 px-4">
+                    <td className="px-4 py-3">{r.email || "-"}</td>
+                    <td className="px-4 py-3">{r.full_name || "-"}</td>
+                    <td className="px-4 py-3">
                       {r.role
                         ? ROLE_OPTIONS.find((x) => x.value === r.role)?.label || r.role
                         : "-"}
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="px-4 py-3">
                       <span
-                        className={`inline-flex items-center px-2 py-1 rounded-md text-xs border ${
+                        className={`inline-flex items-center rounded-md border px-2 py-1 text-xs ${
                           (r.status || "active") === "active"
                             ? "border-emerald-500/30 bg-emerald-500/10"
                             : "border-orange-500/30 bg-orange-500/10"
@@ -406,14 +444,14 @@ export default function SettingsUsersPage() {
                         {r.status || "active"}
                       </span>
                     </td>
-                    <td className="py-3 px-4">{formatDate(r.created_at)}</td>
-                    <td className="py-3 px-4">
+                    <td className="px-4 py-3">{formatDate(r.created_at)}</td>
+                    <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
                           disabled={busy}
                           onClick={() => doResend(r.email, r.role)}
-                          className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-3 py-1 text-xs disabled:opacity-60"
+                          className="rounded-md border border-white/10 bg-white/10 px-3 py-1 text-xs disabled:opacity-60"
                         >
                           Resend
                         </button>
@@ -422,7 +460,7 @@ export default function SettingsUsersPage() {
                           type="button"
                           disabled={busy}
                           onClick={() => doToggleStatus(r)}
-                          className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-3 py-1 text-xs disabled:opacity-60"
+                          className="rounded-md border border-white/10 bg-white/5 px-3 py-1 text-xs disabled:opacity-60"
                         >
                           {(r.status || "active") === "active" ? "Disable" : "Enable"}
                         </button>
@@ -431,7 +469,7 @@ export default function SettingsUsersPage() {
                           type="button"
                           disabled={busy}
                           onClick={() => doDelete(r)}
-                          className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-3 py-1 text-xs disabled:opacity-60"
+                          className="rounded-md border border-white/10 bg-white/5 px-3 py-1 text-xs disabled:opacity-60"
                         >
                           Delete
                         </button>
@@ -442,7 +480,7 @@ export default function SettingsUsersPage() {
 
                 {filtered.length === 0 && (
                   <tr>
-                    <td className="py-8 px-4 text-sm opacity-70" colSpan={6}>
+                    <td className="px-4 py-8 text-sm opacity-70" colSpan={6}>
                       No users found.
                     </td>
                   </tr>
@@ -453,11 +491,10 @@ export default function SettingsUsersPage() {
         )}
       </div>
 
-      {/* Invite Modal */}
       {inviteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-xl rounded-xl border border-white/10 bg-[#0b1220] shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
               <div className="text-base font-semibold">Invite User</div>
               <button
                 type="button"
@@ -468,29 +505,34 @@ export default function SettingsUsersPage() {
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
-              {(inviteMsg || inviteErr) && (
+            <div className="space-y-4 p-5">
+              {(inviteMsg || inviteErr || inviteLink) && (
                 <>
                   {inviteMsg && (
-                    <div className="text-sm border border-emerald-500/30 bg-emerald-500/10 rounded-md p-3">
+                    <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm">
                       {inviteMsg}
                     </div>
                   )}
+
                   {inviteErr && (
-                    <div className="text-sm border border-red-500/30 bg-red-500/10 rounded-md p-3">
+                    <div className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-sm">
                       {inviteErr}
                     </div>
                   )}
-                  
-                  {/* Show invite link if available */}
+
                   {inviteLink && (
-                    <div className="mt-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-md">
-                      <div className="text-xs text-blue-200 mb-2">Invite Link (click to copy):</div>
+                    <div className="mt-3 rounded-md border border-blue-500/30 bg-blue-500/10 p-3">
+                      <div className="mb-2 text-xs text-blue-200">
+                        Invite Link (click to copy):
+                      </div>
+
                       <div className="flex items-center justify-between gap-2">
-                        <div className="text-sm font-mono break-all flex-1">{inviteLink}</div>
+                        <div className="flex-1 break-all font-mono text-sm">{inviteLink}</div>
+
                         <button
+                          type="button"
                           onClick={() => copyToClipboard(inviteLink)}
-                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                          className="rounded px-3 py-1 text-xs text-white transition-colors bg-blue-600 hover:bg-blue-700"
                         >
                           Copy Link
                         </button>
@@ -501,44 +543,46 @@ export default function SettingsUsersPage() {
               )}
 
               <div>
-                <div className="text-xs opacity-70 mb-1">Email</div>
+                <div className="mb-1 text-xs opacity-70">Email</div>
                 <input
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   placeholder="name@company.com"
-                  className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
+                  className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <div className="text-xs opacity-70 mb-1">Role</div>
+                  <div className="mb-1 text-xs opacity-70">Role</div>
                   <select
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value as Role)}
-                    className="w-full bg-[#0b1220] border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
+                    className="w-full rounded-md border border-white/10 bg-[#0b1220] px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
                   >
-                    {ROLE_OPTIONS.map((r) => (
-                      <option key={r.value} value={r.value}>
-                        {r.label}
-                      </option>
-                    ))}
+                    {ROLE_OPTIONS
+                      .filter((r) => r.value !== "director")
+                      .map((r) => (
+                        <option key={r.value} value={r.value}>
+                          {r.label}
+                        </option>
+                      ))}
                   </select>
                 </div>
 
-                <div className="text-xs opacity-70 flex items-end">
-                  <div className="border border-white/10 bg-white/5 rounded-md p-3 w-full">
+                <div className="flex items-end text-xs opacity-70">
+                  <div className="w-full rounded-md border border-white/10 bg-white/5 p-3">
                     Invites are sent by email via Edge Function. User sets password from invite link.
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/10">
+            <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-4">
               <button
                 type="button"
                 onClick={closeInvite}
-                className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-4 py-2 text-sm"
+                className="rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm hover:bg-white/10"
                 disabled={busy}
               >
                 Cancel
@@ -547,7 +591,7 @@ export default function SettingsUsersPage() {
               <button
                 type="button"
                 onClick={doInvite}
-                className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-4 py-2 text-sm"
+                className="rounded-md border border-white/10 bg-white/10 px-4 py-2 text-sm hover:bg-white/15"
                 disabled={busy || !inviteEmail.trim()}
               >
                 {busy ? "Sending..." : "Send Invite"}
