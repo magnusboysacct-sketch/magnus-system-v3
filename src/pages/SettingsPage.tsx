@@ -1,10 +1,9 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import SettingsCompanyPage from "./SettingsCompanyPage";
-import SettingsUsersPage from "./SettingsUsersPage";
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<"company" | "users" | "master-lists">("company");
+  const [activeTab, setActiveTab] = useState<"company" | "master-lists">("company");
 
   return (
     <div className="p-6">
@@ -27,23 +26,9 @@ export default function SettingsPage() {
         >
           Company
         </button>
-        <button
-          onClick={() => setActiveTab("users")}
-          className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
-            activeTab === "users"
-              ? "border-white text-white bg-white/5"
-              : "border-transparent text-white/60 hover:text-white hover:bg-white/5"
-          }`}
-        >
-          Users
-        </button>
         <Link
           to="/settings/master-lists"
-          className={`px-4 py-2 text-sm font-medium transition border-b-2 ${
-            activeTab === "master-lists"
-              ? "border-white text-white bg-white/5"
-              : "border-transparent text-white/60 hover:text-white hover:bg-white/5"
-          }`}
+          className={`px-4 py-2 text-sm font-medium transition border-b-2 border-transparent text-white/60 hover:text-white hover:bg-white/5`}
         >
           Master Lists
         </Link>
@@ -52,7 +37,6 @@ export default function SettingsPage() {
       {/* Tab Content */}
       <div className="min-h-[400px]">
         {activeTab === "company" && <SettingsCompanyPage />}
-        {activeTab === "users" && <SettingsUsersPage />}
       </div>
     </div>
   );
