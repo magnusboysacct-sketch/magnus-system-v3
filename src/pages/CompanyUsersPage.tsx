@@ -11,6 +11,17 @@ type CompanyUserRow = {
   company_id: string;
 };
 
+type PendingInviteRow = {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: "director" | "admin" | "estimator" | "supervisor" | "client";
+  status: string;
+  company_id: string;
+  invited_by: string | null;
+  created_at: string;
+};
+
 type MyProfile = {
   id: string;
   role: string | null;
@@ -26,11 +37,20 @@ const ROLE_OPTIONS: CompanyUserRow["role"][] = [
   "client",
 ];
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString();
+}
+
 export default function CompanyUsersPage() {
   const [me, setMe] = useState<MyProfile | null>(null);
   const [rows, setRows] = useState<CompanyUserRow[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInviteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [inviteActionId, setInviteActionId] = useState<string | null>(null);
   const [error, setError] = useState<string>("");
 
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -65,18 +85,27 @@ export default function CompanyUsersPage() {
 
       if (myProfile?.role !== "director") {
         setRows([]);
+        setPendingInvites([]);
         setError("Only directors can access Company User Manager.");
         return;
       }
 
-      const { data, error: rpcError } = await supabase.rpc("get_company_users");
+      const [{ data: usersData, error: usersError }, { data: invitesData, error: invitesError }] =
+        await Promise.all([
+          supabase.rpc("get_company_users"),
+          supabase.rpc("get_company_pending_invites"),
+        ]);
 
-      if (rpcError) throw rpcError;
-      setRows((data || []) as CompanyUserRow[]);
+      if (usersError) throw usersError;
+      if (invitesError) throw invitesError;
+
+      setRows((usersData || []) as CompanyUserRow[]);
+      setPendingInvites((invitesData || []) as PendingInviteRow[]);
     } catch (err: any) {
       console.error("CompanyUsersPage load error:", err);
       setError(err?.message || "Failed to load company users.");
       setRows([]);
+      setPendingInvites([]);
     } finally {
       setLoading(false);
     }
@@ -159,6 +188,7 @@ export default function CompanyUsersPage() {
         setInviteEmail("");
         setInviteRole("estimator");
 
+        await loadPage();
         alert(data?.message || "Invite sent successfully.");
       } catch (err: any) {
         console.error("invite error:", err);
@@ -167,8 +197,55 @@ export default function CompanyUsersPage() {
         setInviteLoading(false);
       }
     },
-    [inviteEmail, inviteName, inviteRole]
+    [inviteEmail, inviteName, inviteRole, loadPage]
   );
+
+  const resendInvite = useCallback(
+    async (invite: PendingInviteRow) => {
+      try {
+        setInviteActionId(invite.id);
+
+        const { data, error: fnError } = await supabase.functions.invoke("admin-invite-user", {
+          body: {
+            email: invite.email,
+            full_name: invite.full_name || null,
+            role: invite.role,
+          },
+        });
+
+        if (fnError) throw fnError;
+        if (data?.error) throw new Error(data.error);
+
+        await loadPage();
+        alert(data?.message || "Invite resent successfully.");
+      } catch (err: any) {
+        console.error("resend invite error:", err);
+        alert(err?.message || "Failed to resend invite.");
+      } finally {
+        setInviteActionId(null);
+      }
+    },
+    [loadPage]
+  );
+
+  const cancelInvite = useCallback(async (inviteId: string) => {
+    try {
+      setInviteActionId(inviteId);
+
+      const { error: rpcError } = await supabase.rpc("cancel_company_invite", {
+        p_invitation_id: inviteId,
+      });
+
+      if (rpcError) throw rpcError;
+
+      setPendingInvites((prev) => prev.filter((x) => x.id !== inviteId));
+    } catch (err: any) {
+      console.error("cancel invite error:", err);
+      alert(err?.message || "Failed to cancel invite.");
+    } finally {
+      setInviteActionId(null);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -200,7 +277,7 @@ export default function CompanyUsersPage() {
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">Company User Manager</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Manage users for your company only.
+              Manage users and invites for your company only.
             </p>
           </div>
 
@@ -240,6 +317,11 @@ export default function CompanyUsersPage() {
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-4 py-4">
+          <h2 className="text-lg font-semibold text-slate-900">Company Users</h2>
+          <p className="mt-1 text-sm text-slate-500">Active and disabled members in this company.</p>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse">
             <thead className="bg-slate-50">
@@ -337,6 +419,94 @@ export default function CompanyUsersPage() {
                               Reactivate
                             </button>
                           )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-4 py-4">
+          <h2 className="text-lg font-semibold text-slate-900">Pending Invites</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Invites sent but not yet accepted.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-collapse">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Name
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Email
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Role
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Sent
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {pendingInvites.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                    No pending invites.
+                  </td>
+                </tr>
+              ) : (
+                pendingInvites.map((invite) => {
+                  const busy = inviteActionId === invite.id;
+
+                  return (
+                    <tr key={invite.id} className="border-t border-slate-100">
+                      <td className="px-4 py-4 text-sm text-slate-900">
+                        {invite.full_name?.trim() || "—"}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-slate-700">{invite.email}</td>
+                      <td className="px-4 py-4 text-sm text-slate-700">{invite.role}</td>
+                      <td className="px-4 py-4 text-sm text-slate-700">
+                        {formatDateTime(invite.created_at)}
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
+                          {invite.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => resendInvite(invite)}
+                            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Resend
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => cancelInvite(invite.id)}
+                            className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
                         </div>
                       </td>
                     </tr>
