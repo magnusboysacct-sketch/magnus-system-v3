@@ -27,6 +27,7 @@ export default function SidebarLayout() {
   const [userEmail, setUserEmail] = useState<string>("");
   const [companyName, setCompanyName] = useState<string>("");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
