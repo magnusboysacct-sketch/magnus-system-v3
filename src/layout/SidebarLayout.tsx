@@ -42,25 +42,26 @@ export default function SidebarLayout() {
     let alive = true;
 
     async function loadUser() {
-      const { data } = await supabase.auth.getUser();
-      if (!alive) return;
-      setUserEmail(data.user?.email || "");
-    }
+  const { data } = await supabase.auth.getUser();
+  const user = data.user;
 
-    async function loadCompany() {
-      const { data } = await supabase
-        .from("company_settings")
-        .select("company_name,logo_url")
-        .eq("id", 1)
-        .single();
-      
-      if (!alive) return;
-      if (data) {
-        setCompanyName(data.company_name || "");
-        setLogoUrl(data.logo_url || null);
-      }
-    }
+  if (!alive) return;
 
+  setUserEmail(user?.email || "");
+
+  if (!user) return;
+
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (profile) {
+    setUserRole(profile.role);
+  }
+}
+    
     loadUser();
     loadCompany();
 
@@ -125,7 +126,14 @@ export default function SidebarLayout() {
           </div>
 
           <nav className="p-3 space-y-1">
-            {nav.map((item) => {
+            {{nav
+  .filter((item) => {
+    if (item.to === "/settings/users" && userRole !== "director") {
+      return false;
+    }
+    return true;
+  })
+  .map((item) => {
               const Icon = item.icon;
               return (
                 <NavLink
