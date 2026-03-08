@@ -43,9 +43,7 @@ const PROJECT_MEMBER_ROLES = [
 
 function prettyRole(value: string | null | undefined) {
   if (!value) return "—";
-  return value
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (m) => m.toUpperCase());
+  return value.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
 export default function ProjectsPage() {
@@ -274,7 +272,6 @@ export default function ProjectsPage() {
 
     setAssignableUsers((assignableResp.data ?? []) as AssignableUserRow[]);
     setProjectMembers((membersResp.data ?? []) as ProjectMemberRow[]);
-
     setTeamLoading(false);
   }
 
@@ -301,6 +298,7 @@ export default function ProjectsPage() {
 
   async function addTeamMember() {
     if (!teamProject) return;
+
     if (!selectedUserId) {
       setTeamError("Please select a user.");
       return;
@@ -384,7 +382,6 @@ export default function ProjectsPage() {
         )}
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Add Project */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
             <div className="text-sm font-semibold mb-3">Add Project</div>
 
@@ -439,6 +436,7 @@ export default function ProjectsPage() {
                     <option value="cancelled">cancelled</option>
                   </select>
                 </div>
+
                 <div>
                   <label className="text-xs text-slate-400">Start Date</label>
                   <input
@@ -474,12 +472,11 @@ export default function ProjectsPage() {
             </div>
           </div>
 
-          {/* Project List */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold">Project List</div>
               <div className="text-xs text-slate-400">
-                {loading ? "Loading..." : projects.length + " projects"}
+                {loading ? "Loading..." : `${projects.length} projects`}
               </div>
             </div>
 
@@ -491,7 +488,6 @@ export default function ProjectsPage() {
               ) : (
                 projects.map((p) => {
                   const isEditing = editingId === p.id;
-                  const memberCount = projectMembers.filter((m) => teamProject?.id === p.id && m.user_id).length;
 
                   return (
                     <div
@@ -592,22 +588,22 @@ export default function ProjectsPage() {
                                   " • " +
                                   p.status}
                               </div>
+
                               {p.site_address && (
                                 <div className="text-xs text-slate-500 mt-1">{p.site_address}</div>
                               )}
+
                               {(p.start_date || p.end_date) && (
                                 <div className="text-xs text-slate-500 mt-1">
                                   {p.start_date || "—"} to {p.end_date || "—"}
                                 </div>
                               )}
+
                               {p.notes && (
                                 <div className="text-xs text-slate-300 mt-2 whitespace-pre-wrap">
                                   {p.notes}
                                 </div>
                               )}
-                              <div className="text-[11px] text-slate-500 mt-2">
-                                Team: {teamProject?.id === p.id ? projectMembers.length : memberCount}
-                              </div>
                             </>
                           )}
                         </div>
@@ -649,10 +645,7 @@ export default function ProjectsPage() {
 
       {teamOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/60"
-            onClick={closeTeamModal}
-          />
+          <div className="absolute inset-0 bg-black/60" onClick={closeTeamModal} />
           <div className="relative z-10 w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl">
             <div className="flex items-start justify-between gap-4 border-b border-slate-800 p-4">
               <div>
@@ -661,13 +654,23 @@ export default function ProjectsPage() {
                   {teamProject?.name || "Selected project"}
                 </p>
               </div>
-              <button
-                onClick={closeTeamModal}
-                disabled={teamSaving}
-                className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm disabled:opacity-50"
-              >
-                Close
-              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => teamProject && loadProjectTeam(teamProject.id)}
+                  disabled={teamLoading || teamSaving || !teamProject}
+                  className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm disabled:opacity-50"
+                >
+                  Refresh
+                </button>
+                <button
+                  onClick={closeTeamModal}
+                  disabled={teamSaving}
+                  className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm disabled:opacity-50"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             {teamError && (
@@ -758,17 +761,19 @@ export default function ProjectsPage() {
                             <div className="text-sm font-medium truncate">
                               {member.full_name?.trim() || member.email || member.user_id}
                             </div>
+
                             {member.email && (
                               <div className="text-xs text-slate-400 mt-1 truncate">
                                 {member.email}
                               </div>
                             )}
+
                             <div className="text-xs text-slate-500 mt-1">
                               Company role: {prettyRole(member.company_role)}
                             </div>
                           </div>
 
-                          <div className="w-[180px]">
+                          <div className="w-[190px]">
                             <label className="text-[11px] text-slate-500">Project role</label>
                             <select
                               value={member.project_role ?? "viewer"}
