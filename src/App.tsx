@@ -27,6 +27,7 @@ import BillingPage from "./pages/BillingPage";
 import LoginPage from "./pages/LoginPage";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
 import { supabase } from "./lib/supabase";
+import CompanyUsersPage from "./pages/CompanyUsersPage";
 
 function AuthHashRouter() {
   const nav = useNavigate();
