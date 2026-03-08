@@ -113,6 +113,11 @@ export default function App() {
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:projectId" element={<ProjectDashboardPage />} />
+          <Route path="/projects/:projectId/boq" element={<BOQPage />} />
+          <Route path="/projects/:projectId/takeoff" element={<TakeoffPage />} />
+          <Route path="/projects/:projectId/procurement" element={<ProcurementPage />} />
+          <Route path="/projects/:projectId/finance" element={<FinancePage />} />
+          <Route path="/projects/:projectId/reports" element={<ReportsPage />} />
           <Route path="/estimates" element={<EstimatesPage />} />
           <Route path="/boq" element={<BOQPage />} />
           <Route path="/assemblies" element={<AssembliesPage />} />

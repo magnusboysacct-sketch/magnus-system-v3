@@ -212,13 +212,13 @@ export default function ProjectDashboardPage() {
             Back
           </button>
           <button
-            onClick={() => navigate("/boq")}
+            onClick={() => navigate(`/projects/${projectId}/boq`)}
             className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
           >
             Open BOQ
           </button>
           <button
-            onClick={() => navigate("/takeoff")}
+            onClick={() => navigate(`/projects/${projectId}/takeoff`)}
             className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm"
           >
             Open Takeoff
@@ -299,7 +299,7 @@ export default function ProjectDashboardPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           <button
-            onClick={() => navigate("/boq")}
+            onClick={() => navigate(`/projects/${projectId}/boq`)}
             className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
           >
             <div className="text-sm font-semibold">BOQ</div>
@@ -309,7 +309,7 @@ export default function ProjectDashboardPage() {
           </button>
 
           <button
-            onClick={() => navigate("/takeoff")}
+            onClick={() => navigate(`/projects/${projectId}/takeoff`)}
             className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
           >
             <div className="text-sm font-semibold">Takeoff</div>
@@ -319,7 +319,7 @@ export default function ProjectDashboardPage() {
           </button>
 
           <button
-            onClick={() => navigate("/procurement")}
+            onClick={() => navigate(`/projects/${projectId}/procurement`)}
             className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
           >
             <div className="text-sm font-semibold">Procurement</div>
@@ -329,7 +329,7 @@ export default function ProjectDashboardPage() {
           </button>
 
           <button
-            onClick={() => navigate("/finance")}
+            onClick={() => navigate(`/projects/${projectId}/finance`)}
             className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
           >
             <div className="text-sm font-semibold">Finance</div>
@@ -339,7 +339,7 @@ export default function ProjectDashboardPage() {
           </button>
 
           <button
-            onClick={() => navigate("/reports")}
+            onClick={() => navigate(`/projects/${projectId}/reports`)}
             className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
           >
             <div className="text-sm font-semibold">Reports</div>
