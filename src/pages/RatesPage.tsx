@@ -886,10 +886,8 @@ export default function RatesPage() {
       setLoading(true);
       const baseSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
       const fullSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-      
 
       let resp = await supabase
-        await supabase
         .from("v_cost_items_current")
         .select(fullSelect)
         .order("item_name", { ascending: true });
@@ -898,8 +896,7 @@ export default function RatesPage() {
         console.error("RatesPage load error (fullSelect):", resp.error);
         alert("Rates load failed: " + (resp.error.message || JSON.stringify(resp.error)));
         resp = await supabase
-        await supabase
-        .from("v_cost_items_current")
+          .from("v_cost_items_current")
           .select(baseSelect)
           .order("item_name", { ascending: true });
         if (resp.error) {
@@ -953,17 +950,8 @@ export default function RatesPage() {
       setLoading(true);
       const baseSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
       const fullSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-      
-<<<<<<< Updated upstream
-      const baseSelect =
-"id,item_name,description,cost_code,unit,category,item_type,updated_at,item_size,measurement_type,formula,formula_variables,waste_percent,labor_formula,material_formula,equipment_formula,calculator_notes,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-   const fullSelect =
-"id,item_name,description,cost_code,unit,category,item_type,updated_at,item_size,measurement_type,formula,formula_variables,waste_percent,labor_formula,material_formula,equipment_formula,calculator_notes,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-=======
->>>>>>> Stashed changes
 
       let resp = await supabase
-        await supabase
         .from("v_cost_items_current")
         .select(fullSelect)
         .order("item_name", { ascending: true });
@@ -972,8 +960,7 @@ export default function RatesPage() {
         console.error("RatesPage load error (fullSelect):", resp.error);
         alert("Rates load failed: " + (resp.error.message || JSON.stringify(resp.error)));
         resp = await supabase
-        await supabase
-        .from("v_cost_items_current")
+          .from("v_cost_items_current")
           .select(baseSelect)
           .order("item_name", { ascending: true });
         if (resp.error) {
