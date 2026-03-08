@@ -179,6 +179,9 @@ export default function ProjectDashboardPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <div className="text-xs text-yellow-400 mb-2">
+        Route Project ID: {projectId || "NONE"}
+      </div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mb-2">

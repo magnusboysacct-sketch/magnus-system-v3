@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+
+type ClientRow = { id: string; name: string };
 
 type ProjectRow = {
   id: string;
@@ -15,9 +17,12 @@ type ProjectRow = {
   updated_at: string;
 };
 
-type ClientRow = {
-  id: string;
-  name: string;
+type AssignableUserRow = {
+  user_id: string;
+  email: string | null;
+  full_name: string | null;
+  role: string | null;
+  status: string | null;
 };
 
 type ProjectMemberRow = {
@@ -28,325 +33,771 @@ type ProjectMemberRow = {
   project_role: string | null;
 };
 
+const PROJECT_MEMBER_ROLES = [
+  "project_manager",
+  "site_supervisor",
+  "estimator",
+  "procurement",
+  "accounts",
+  "viewer",
+] as const;
+
 function prettyRole(value: string | null | undefined) {
   if (!value) return "—";
-  return value.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-export default function ProjectDashboardPage() {
-  const { projectId } = useParams();
+export default function ProjectsPage() {
   const navigate = useNavigate();
-
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [project, setProject] = useState<ProjectRow | null>(null);
-  const [client, setClient] = useState<ClientRow | null>(null);
-  const [members, setMembers] = useState<ProjectMemberRow[]>([]);
+  const [clients, setClients] = useState<ClientRow[]>([]);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
 
-  const projectStatusTone = useMemo(() => {
-    switch (project?.status) {
-      case "active":
-        return "bg-emerald-900/20 text-emerald-300 border border-emerald-900/40";
-      case "planning":
-        return "bg-sky-900/20 text-sky-300 border border-sky-900/40";
-      case "on_hold":
-        return "bg-amber-900/20 text-amber-300 border border-amber-900/40";
-      case "completed":
-        return "bg-violet-900/20 text-violet-300 border border-violet-900/40";
-      case "cancelled":
-        return "bg-red-900/20 text-red-300 border border-red-900/40";
-      default:
-        return "bg-slate-900/20 text-slate-300 border border-slate-800";
+  // New project form
+  const [clientId, setClientId] = useState<string>("");
+  const [name, setName] = useState("");
+  const [siteAddress, setSiteAddress] = useState("");
+  const [status, setStatus] = useState<ProjectRow["status"]>("planning");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [notes, setNotes] = useState("");
+
+  // Edit state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [eClientId, setEClientId] = useState<string>("");
+  const [eName, setEName] = useState("");
+  const [eSiteAddress, setESiteAddress] = useState("");
+  const [eStatus, setEStatus] = useState<ProjectRow["status"]>("planning");
+  const [eStartDate, setEStartDate] = useState("");
+  const [eEndDate, setEEndDate] = useState("");
+  const [eNotes, setENotes] = useState("");
+
+  // Team modal state
+  const [teamOpen, setTeamOpen] = useState(false);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [teamSaving, setTeamSaving] = useState(false);
+  const [teamError, setTeamError] = useState<string | null>(null);
+  const [teamProject, setTeamProject] = useState<ProjectRow | null>(null);
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUserRow[]>([]);
+  const [projectMembers, setProjectMembers] = useState<ProjectMemberRow[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedProjectRole, setSelectedProjectRole] = useState<string>("viewer");
+
+  const clientNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    clients.forEach((c) => map.set(c.id, c.name));
+    return map;
+  }, [clients]);
+
+  const assignedUserIds = useMemo(() => {
+    return new Set(projectMembers.map((m) => m.user_id));
+  }, [projectMembers]);
+
+  const availableUsers = useMemo(() => {
+    return assignableUsers.filter((u) => !assignedUserIds.has(u.user_id));
+  }, [assignableUsers, assignedUserIds]);
+
+  async function loadAll() {
+    setLoading(true);
+    setError(null);
+
+    const c = await supabase
+      .from("clients")
+      .select("id,name")
+      .order("name", { ascending: true });
+
+    if (c.error) {
+      setError(c.error.message);
+      setLoading(false);
+      return;
     }
-  }, [project?.status]);
+    setClients((c.data ?? []) as ClientRow[]);
+
+    const p = await supabase
+      .from("projects")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (p.error) {
+      setError(p.error.message);
+      setProjects([]);
+      setLoading(false);
+      return;
+    }
+    setProjects((p.data ?? []) as ProjectRow[]);
+
+    setLoading(false);
+  }
 
   useEffect(() => {
-    async function loadProjectDashboard() {
-      if (!projectId) {
-        setError("Missing project ID.");
-        setLoading(false);
-        return;
-      }
+    loadAll();
+  }, []);
 
-      setLoading(true);
-      setError(null);
-
-      const projectResp = await supabase
-        .from("projects")
-        .select("*")
-        .eq("id", projectId)
-        .single();
-
-      if (projectResp.error) {
-        setError(projectResp.error.message);
-        setProject(null);
-        setClient(null);
-        setMembers([]);
-        setLoading(false);
-        return;
-      }
-
-      const projectData = projectResp.data as ProjectRow;
-      setProject(projectData);
-
-      if (projectData.client_id) {
-        const clientResp = await supabase
-          .from("clients")
-          .select("id,name")
-          .eq("id", projectData.client_id)
-          .single();
-
-        if (!clientResp.error && clientResp.data) {
-          setClient(clientResp.data as ClientRow);
-        } else {
-          setClient(null);
-        }
-      } else {
-        setClient(null);
-      }
-
-      const membersResp = await supabase.rpc("get_project_members", {
-        p_project_id: projectId,
-      });
-
-      if (membersResp.error) {
-        setError(membersResp.error.message);
-        setMembers([]);
-        setLoading(false);
-        return;
-      }
-
-      setMembers((membersResp.data ?? []) as ProjectMemberRow[]);
-      setLoading(false);
+  async function addProject() {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Project name is required.");
+      return;
     }
 
-    loadProjectDashboard();
-  }, [projectId]);
+    setSaving(true);
+    setError(null);
 
-  if (loading) {
-    return <div className="p-6 text-sm text-slate-400">Loading project dashboard...</div>;
+    const { error } = await supabase.from("projects").insert({
+      client_id: clientId || null,
+      name: trimmed,
+      site_address: siteAddress.trim() || null,
+      status,
+      start_date: startDate || null,
+      end_date: endDate || null,
+      notes: notes.trim() || null,
+    });
+
+    if (error) {
+      setError(error.message);
+      setSaving(false);
+      return;
+    }
+
+    setClientId("");
+    setName("");
+    setSiteAddress("");
+    setStatus("planning");
+    setStartDate("");
+    setEndDate("");
+    setNotes("");
+
+    await loadAll();
+    setSaving(false);
   }
 
-  if (error) {
-    return (
-      <div className="p-6 space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Project Dashboard</h1>
-          <p className="text-slate-400 mt-1">Unable to load this project.</p>
-        </div>
-
-        <div className="rounded-xl border border-red-900/40 bg-red-950/30 p-4 text-sm text-red-200">
-          {error}
-        </div>
-
-        <button
-          onClick={() => navigate("/projects")}
-          className="px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 text-sm"
-        >
-          Back to Projects
-        </button>
-      </div>
-    );
+  function startEdit(p: ProjectRow) {
+    setEditingId(p.id);
+    setEClientId(p.client_id ?? "");
+    setEName(p.name ?? "");
+    setESiteAddress(p.site_address ?? "");
+    setEStatus(p.status);
+    setEStartDate(p.start_date ?? "");
+    setEEndDate(p.end_date ?? "");
+    setENotes(p.notes ?? "");
+    setError(null);
   }
 
-  if (!project) {
-    return (
-      <div className="p-6 space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Project Dashboard</h1>
-          <p className="text-slate-400 mt-1">Project not found.</p>
-        </div>
+  function cancelEdit() {
+    setEditingId(null);
+    setError(null);
+  }
 
-        <button
-          onClick={() => navigate("/projects")}
-          className="px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 text-sm"
-        >
-          Back to Projects
-        </button>
-      </div>
-    );
+  async function saveEdit() {
+    if (!editingId) return;
+
+    const trimmed = eName.trim();
+    if (!trimmed) {
+      setError("Project name is required.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        client_id: eClientId || null,
+        name: trimmed,
+        site_address: eSiteAddress.trim() || null,
+        status: eStatus,
+        start_date: eStartDate || null,
+        end_date: eEndDate || null,
+        notes: eNotes.trim() || null,
+      })
+      .eq("id", editingId);
+
+    if (error) {
+      setError(error.message);
+      setSaving(false);
+      return;
+    }
+
+    setEditingId(null);
+    await loadAll();
+    setSaving(false);
+  }
+
+  async function deleteProject(id: string) {
+    const ok = confirm("Delete this project? This cannot be undone.");
+    if (!ok) return;
+
+    setSaving(true);
+    setError(null);
+
+    const { error } = await supabase.from("projects").delete().eq("id", id);
+
+    if (error) {
+      setError(error.message);
+      setSaving(false);
+      return;
+    }
+
+    if (editingId === id) setEditingId(null);
+    await loadAll();
+    setSaving(false);
+  }
+
+  async function loadProjectTeam(projectId: string) {
+    setTeamLoading(true);
+    setTeamError(null);
+
+    const [assignableResp, membersResp] = await Promise.all([
+      supabase.rpc("get_company_assignable_users"),
+      supabase.rpc("get_project_members", { p_project_id: projectId }),
+    ]);
+
+    if (assignableResp.error) {
+      setAssignableUsers([]);
+      setProjectMembers([]);
+      setTeamLoading(false);
+      setTeamError(assignableResp.error.message);
+      return;
+    }
+
+    if (membersResp.error) {
+      setAssignableUsers([]);
+      setProjectMembers([]);
+      setTeamLoading(false);
+      setTeamError(membersResp.error.message);
+      return;
+    }
+
+    setAssignableUsers((assignableResp.data ?? []) as AssignableUserRow[]);
+    setProjectMembers((membersResp.data ?? []) as ProjectMemberRow[]);
+
+    setTeamLoading(false);
+  }
+
+  async function openTeamModal(project: ProjectRow) {
+    setTeamProject(project);
+    setTeamOpen(true);
+    setSelectedUserId("");
+    setSelectedProjectRole("viewer");
+    setTeamError(null);
+    await loadProjectTeam(project.id);
+  }
+
+  function closeTeamModal() {
+    if (teamSaving) return;
+    setTeamOpen(false);
+    setTeamProject(null);
+    setAssignableUsers([]);
+    setProjectMembers([]);
+    setSelectedUserId("");
+    setSelectedProjectRole("viewer");
+    setTeamError(null);
+    setTeamLoading(false);
+  }
+
+  async function addTeamMember() {
+    if (!teamProject) return;
+    if (!selectedUserId) {
+      setTeamError("Please select a user.");
+      return;
+    }
+
+    setTeamSaving(true);
+    setTeamError(null);
+
+    const { error } = await supabase.rpc("upsert_project_member", {
+      p_project_id: teamProject.id,
+      p_user_id: selectedUserId,
+      p_role: selectedProjectRole,
+    });
+
+    if (error) {
+      setTeamError(error.message);
+      setTeamSaving(false);
+      return;
+    }
+
+    setSelectedUserId("");
+    setSelectedProjectRole("viewer");
+    await loadProjectTeam(teamProject.id);
+    setTeamSaving(false);
+  }
+
+  async function updateMemberRole(userId: string, role: string) {
+    if (!teamProject) return;
+
+    setTeamSaving(true);
+    setTeamError(null);
+
+    const { error } = await supabase.rpc("upsert_project_member", {
+      p_project_id: teamProject.id,
+      p_user_id: userId,
+      p_role: role,
+    });
+
+    if (error) {
+      setTeamError(error.message);
+      setTeamSaving(false);
+      return;
+    }
+
+    await loadProjectTeam(teamProject.id);
+    setTeamSaving(false);
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mb-2">
-            <Link to="/projects" className="hover:text-slate-300">
-              Projects
-            </Link>
-            <span>›</span>
-            <span className="text-slate-400">{project.name}</span>
+    <>
+      <div className="p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Projects</h1>
+            <p className="text-slate-400 mt-1">
+              Track jobs, statuses, BOQs, takeoffs, procurement, and payments.
+            </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-semibold">{project.name}</h1>
-            <span className={`px-2.5 py-1 rounded-full text-xs ${projectStatusTone}`}>
-              {project.status}
-            </span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={addProject}
+              disabled={saving}
+              className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm disabled:opacity-50"
+            >
+              {saving ? "Saving..." : "+ New Project"}
+            </button>
+            <button
+              onClick={loadAll}
+              className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm"
+            >
+              Refresh
+            </button>
           </div>
-
-          <p className="text-slate-400 mt-1">
-            Project workspace for BOQ, takeoff, procurement, finance, documents, and team.
-          </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => navigate("/projects")}
-            className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm"
-          >
-            Back
-          </button>
-          <button
-            onClick={() => navigate("/boq")}
-            className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
-          >
-            Open BOQ
-          </button>
-          <button
-            onClick={() => navigate("/takeoff")}
-            className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm"
-          >
-            Open Takeoff
-          </button>
+        {error && (
+          <div className="mt-4 rounded-xl border border-red-900/40 bg-red-950/30 p-3 text-sm text-red-200">
+            {error}
+          </div>
+        )}
+
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Add Project */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+            <div className="text-sm font-semibold mb-3">Add Project</div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400">Client (optional)</label>
+                <select
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                >
+                  <option value="">— No client selected —</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400">Project Name *</label>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                  placeholder="e.g., Brown House Extension"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400">Site Address</label>
+                <input
+                  value={siteAddress}
+                  onChange={(e) => setSiteAddress(e.target.value)}
+                  className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400">Status</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as ProjectRow["status"])}
+                    className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                  >
+                    <option value="planning">planning</option>
+                    <option value="active">active</option>
+                    <option value="on_hold">on_hold</option>
+                    <option value="completed">completed</option>
+                    <option value="cancelled">cancelled</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400">Start Date</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400">End Date</label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                  />
+                </div>
+                <div />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400">Notes</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600 min-h-[90px]"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Project List */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold">Project List</div>
+              <div className="text-xs text-slate-400">
+                {loading ? "Loading..." : projects.length + " projects"}
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {loading ? (
+                <div className="text-sm text-slate-400">Loading…</div>
+              ) : projects.length === 0 ? (
+                <div className="text-sm text-slate-400">No projects yet.</div>
+              ) : (
+                projects.map((p) => {
+                  const isEditing = editingId === p.id;
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="rounded-xl border border-slate-800 bg-slate-950/40 p-3"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          {isEditing ? (
+                            <div className="space-y-2">
+                              <select
+                                value={eClientId}
+                                onChange={(e) => setEClientId(e.target.value)}
+                                className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                              >
+                                <option value="">— No client selected —</option>
+                                {clients.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                              </select>
+
+                              <input
+                                value={eName}
+                                onChange={(e) => setEName(e.target.value)}
+                                className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                              />
+
+                              <input
+                                value={eSiteAddress}
+                                onChange={(e) => setESiteAddress(e.target.value)}
+                                placeholder="Site address"
+                                className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                              />
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <select
+                                  value={eStatus}
+                                  onChange={(e) => setEStatus(e.target.value as ProjectRow["status"])}
+                                  className="rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                                >
+                                  <option value="planning">planning</option>
+                                  <option value="active">active</option>
+                                  <option value="on_hold">on_hold</option>
+                                  <option value="completed">completed</option>
+                                  <option value="cancelled">cancelled</option>
+                                </select>
+
+                                <input
+                                  type="date"
+                                  value={eStartDate}
+                                  onChange={(e) => setEStartDate(e.target.value)}
+                                  className="rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                                />
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <input
+                                  type="date"
+                                  value={eEndDate}
+                                  onChange={(e) => setEEndDate(e.target.value)}
+                                  className="rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                                />
+                                <div />
+                              </div>
+
+                              <textarea
+                                value={eNotes}
+                                onChange={(e) => setENotes(e.target.value)}
+                                placeholder="Notes"
+                                className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600 min-h-[70px]"
+                              />
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={saveEdit}
+                                  disabled={saving}
+                                  className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm disabled:opacity-50"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={cancelEdit}
+                                  className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="font-semibold text-sm truncate">{p.name}</div>
+                              <div className="text-xs text-slate-400 mt-1">
+                                {(p.client_id
+                                  ? clientNameById.get(p.client_id) || "Unknown client"
+                                  : "No client") +
+                                  " • " +
+                                  p.status}
+                              </div>
+                              {p.site_address && (
+                                <div className="text-xs text-slate-500 mt-1">{p.site_address}</div>
+                              )}
+                              {(p.start_date || p.end_date) && (
+                                <div className="text-xs text-slate-500 mt-1">
+                                  {p.start_date || "—"} to {p.end_date || "—"}
+                                </div>
+                              )}
+                              {p.notes && (
+                                <div className="text-xs text-slate-300 mt-2 whitespace-pre-wrap">
+                                  {p.notes}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        {!isEditing && (
+                          <div className="flex items-center gap-2 flex-wrap justify-end">
+                            <button
+                              onClick={() => navigate(`/projects/${p.id}`)}
+                              className="px-3 py-2 rounded-xl bg-blue-900/20 hover:bg-blue-900/35 border border-blue-900/40 text-sm"
+                            >
+                              Open
+                            </button>
+
+                            <button
+                              onClick={() => openTeamModal(p)}
+                              className="px-3 py-2 rounded-xl bg-indigo-900/20 hover:bg-indigo-900/35 border border-indigo-900/40 text-sm"
+                            >
+                              Team
+                            </button>
+
+                            <button
+                              onClick={() => startEdit(p)}
+                              className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm"
+                            >
+                              Edit
+                            </button>
+
+                            <button
+                              onClick={() => deleteProject(p.id)}
+                              disabled={saving}
+                              className="px-3 py-2 rounded-xl bg-red-900/20 hover:bg-red-900/35 border border-red-900/40 text-sm disabled:opacity-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="text-sm font-semibold mb-4">Overview</div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-              <div className="text-xs text-slate-500">Client</div>
-              <div className="mt-1 text-sm font-medium">{client?.name || "No client"}</div>
+      {teamOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={closeTeamModal}
+          />
+          <div className="relative z-10 w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-800 p-4">
+              <div>
+                <h2 className="text-lg font-semibold">Project Team</h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  {teamProject?.name || "Selected project"}
+                </p>
+              </div>
+              <button
+                onClick={closeTeamModal}
+                disabled={teamSaving}
+                className="px-3 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm disabled:opacity-50"
+              >
+                Close
+              </button>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-              <div className="text-xs text-slate-500">Site Address</div>
-              <div className="mt-1 text-sm font-medium">{project.site_address || "—"}</div>
-            </div>
+            {teamError && (
+              <div className="mx-4 mt-4 rounded-xl border border-red-900/40 bg-red-950/30 p-3 text-sm text-red-200">
+                {teamError}
+              </div>
+            )}
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-              <div className="text-xs text-slate-500">Start Date</div>
-              <div className="mt-1 text-sm font-medium">{project.start_date || "—"}</div>
-            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                <div className="text-sm font-semibold mb-3">Add Team Member</div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-              <div className="text-xs text-slate-500">End Date</div>
-              <div className="mt-1 text-sm font-medium">{project.end_date || "—"}</div>
-            </div>
-          </div>
+                {teamLoading ? (
+                  <div className="text-sm text-slate-400">Loading team data...</div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs text-slate-400">User</label>
+                      <select
+                        value={selectedUserId}
+                        onChange={(e) => setSelectedUserId(e.target.value)}
+                        className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                      >
+                        <option value="">— Select a user —</option>
+                        {availableUsers.map((u) => (
+                          <option key={u.user_id} value={u.user_id}>
+                            {u.full_name?.trim()
+                              ? `${u.full_name} (${u.email ?? "no email"})`
+                              : u.email ?? u.user_id}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-            <div className="text-xs text-slate-500">Notes</div>
-            <div className="mt-2 text-sm text-slate-300 whitespace-pre-wrap">
-              {project.notes || "No notes added yet."}
-            </div>
-          </div>
-        </div>
+                    <div>
+                      <label className="text-xs text-slate-400">Project Role</label>
+                      <select
+                        value={selectedProjectRole}
+                        onChange={(e) => setSelectedProjectRole(e.target.value)}
+                        className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                      >
+                        {PROJECT_MEMBER_ROLES.map((role) => (
+                          <option key={role} value={role}>
+                            {prettyRole(role)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-sm font-semibold">Project Team</div>
-            <div className="text-xs text-slate-400">{members.length} members</div>
-          </div>
+                    <button
+                      onClick={addTeamMember}
+                      disabled={teamSaving || teamLoading || !selectedUserId}
+                      className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm disabled:opacity-50"
+                    >
+                      {teamSaving ? "Saving..." : "Add to Project"}
+                    </button>
 
-          {members.length === 0 ? (
-            <div className="text-sm text-slate-400">No team members assigned yet.</div>
-          ) : (
-            <div className="space-y-2">
-              {members.map((member) => (
-                <div
-                  key={member.user_id}
-                  className="rounded-xl border border-slate-800 bg-slate-950/40 p-3"
-                >
-                  <div className="text-sm font-medium">
-                    {member.full_name?.trim() || member.email || member.user_id}
+                    {availableUsers.length === 0 && (
+                      <div className="text-xs text-slate-500">
+                        No more assignable users available for this project.
+                      </div>
+                    )}
                   </div>
-                  {member.email && (
-                    <div className="text-xs text-slate-400 mt-1">{member.email}</div>
-                  )}
-                  <div className="text-xs text-slate-500 mt-2">
-                    Company role: {prettyRole(member.company_role)}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">
-                    Project role: {prettyRole(member.project_role)}
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm font-semibold">Assigned Members</div>
+                  <div className="text-xs text-slate-400">
+                    {teamLoading ? "Loading..." : `${projectMembers.length} members`}
                   </div>
                 </div>
-              ))}
+
+                {teamLoading ? (
+                  <div className="text-sm text-slate-400">Loading members...</div>
+                ) : projectMembers.length === 0 ? (
+                  <div className="text-sm text-slate-400">No team members assigned yet.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {projectMembers.map((member) => (
+                      <div
+                        key={member.user_id}
+                        className="rounded-xl border border-slate-800 bg-slate-900/40 p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium truncate">
+                              {member.full_name?.trim() || member.email || member.user_id}
+                            </div>
+                            {member.email && (
+                              <div className="text-xs text-slate-400 mt-1 truncate">
+                                {member.email}
+                              </div>
+                            )}
+                            <div className="text-xs text-slate-500 mt-1">
+                              Company role: {prettyRole(member.company_role)}
+                            </div>
+                          </div>
+
+                          <div className="w-[180px]">
+                            <label className="text-[11px] text-slate-500">Project role</label>
+                            <select
+                              value={member.project_role ?? "viewer"}
+                              onChange={(e) => updateMemberRole(member.user_id, e.target.value)}
+                              disabled={teamSaving}
+                              className="mt-1 w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600 disabled:opacity-50"
+                            >
+                              {PROJECT_MEMBER_ROLES.map((role) => (
+                                <option key={role} value={role}>
+                                  {prettyRole(role)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+          </div>
         </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
-        <div className="text-sm font-semibold mb-4">Workspace</div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          <button
-            onClick={() => navigate("/boq")}
-            className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
-          >
-            <div className="text-sm font-semibold">BOQ</div>
-            <div className="text-xs text-slate-400 mt-1">
-              Build and manage bills of quantities for this project.
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate("/takeoff")}
-            className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
-          >
-            <div className="text-sm font-semibold">Takeoff</div>
-            <div className="text-xs text-slate-400 mt-1">
-              Open the measurement workspace and drawing tools.
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate("/procurement")}
-            className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
-          >
-            <div className="text-sm font-semibold">Procurement</div>
-            <div className="text-xs text-slate-400 mt-1">
-              Track materials, suppliers, and purchasing activity.
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate("/finance")}
-            className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
-          >
-            <div className="text-sm font-semibold">Finance</div>
-            <div className="text-xs text-slate-400 mt-1">
-              Monitor project costs, valuations, and payment status.
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate("/reports")}
-            className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
-          >
-            <div className="text-sm font-semibold">Reports</div>
-            <div className="text-xs text-slate-400 mt-1">
-              Generate project summaries and management reports.
-            </div>
-          </button>
-
-          <button
-            onClick={() => navigate("/projects")}
-            className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 text-left hover:bg-slate-900/60 transition"
-          >
-            <div className="text-sm font-semibold">Manage Projects</div>
-            <div className="text-xs text-slate-400 mt-1">
-              Return to the full projects list and edit project details.
-            </div>
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
