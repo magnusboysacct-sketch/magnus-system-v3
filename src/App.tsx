@@ -124,6 +124,7 @@ export default function App() {
           <Route
             path="/settings/master-categories"
             element={<SettingsMasterCategoriesPage />}
+            <Route path="/settings/users" element={<CompanyUsersPage />} />
           />
           <Route
             path="/settings/master-lists"
