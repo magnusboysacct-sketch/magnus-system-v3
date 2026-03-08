@@ -19,6 +19,7 @@ const nav = [
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/billing", label: "Billing", icon: CreditCard },
   { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/settings/users", label: "User Manager", icon: Users },
 ];
 
 export default function SidebarLayout() {
