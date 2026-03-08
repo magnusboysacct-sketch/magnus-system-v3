@@ -12,6 +12,7 @@ import SidebarLayout from "./layout/SidebarLayout";
 import DashboardPage from "./pages/DashboardPage";
 import ClientsPage from "./pages/ClientsPage";
 import ProjectsPage from "./pages/ProjectsPage";
+import ProjectDashboardPage from "./pages/ProjectDashboardPage";
 import EstimatesPage from "./pages/EstimatesPage";
 import BOQPage from "./pages/BOQPage";
 import AssembliesPage from "./pages/AssembliesPage.tsx";
@@ -111,6 +112,7 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/:projectId" element={<ProjectDashboardPage />} />
           <Route path="/estimates" element={<EstimatesPage />} />
           <Route path="/boq" element={<BOQPage />} />
           <Route path="/assemblies" element={<AssembliesPage />} />
@@ -122,13 +124,8 @@ export default function App() {
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/master-categories" element={<SettingsMasterCategoriesPage />} />
+          <Route path="/settings/master-lists" element={<SettingsMasterListsPage />} />
           <Route path="/settings/users" element={<CompanyUsersPage />} />
-          
-          <Route
-            path="/settings/master-lists"
-            element={<SettingsMasterListsPage />}
-          />
-          <Route path="/settings/users" element={<Navigate to="/settings" replace />} />
           <Route path="/settings/company" element={<Navigate to="/settings" replace />} />
         </Route>
 
