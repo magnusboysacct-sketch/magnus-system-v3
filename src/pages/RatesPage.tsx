@@ -875,17 +875,21 @@ export default function RatesPage() {
   const [fType, setFType] = useState<string>(ITEM_TYPES[0]);
   const [fUnit, setFUnit] = useState<string>("each");
   const [fRate, setFRate] = useState<string>("");
+  const [fCalcJson, setFCalcJson] = useState<string>("");
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
+  const [previewMsg, setPreviewMsg] = useState<string>("");
 
   useEffect(() => {
     let alive = true;
 
     async function load() {
       setLoading(true);
+      const baseSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
+      const fullSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
       
-     const baseSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-      const fullSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
 
       let resp = await supabase
+        await supabase
         .from("v_cost_items_current")
         .select(fullSelect)
         .order("item_name", { ascending: true });
@@ -894,7 +898,8 @@ export default function RatesPage() {
         console.error("RatesPage load error (fullSelect):", resp.error);
         alert("Rates load failed: " + (resp.error.message || JSON.stringify(resp.error)));
         resp = await supabase
-          .from("v_cost_items_current")
+        await supabase
+        .from("v_cost_items_current")
           .select(baseSelect)
           .order("item_name", { ascending: true });
         if (resp.error) {
@@ -946,13 +951,19 @@ export default function RatesPage() {
 
     async function load() {
       setLoading(true);
+      const baseSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
+      const fullSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
       
+<<<<<<< Updated upstream
       const baseSelect =
 "id,item_name,description,cost_code,unit,category,item_type,updated_at,item_size,measurement_type,formula,formula_variables,waste_percent,labor_formula,material_formula,equipment_formula,calculator_notes,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
    const fullSelect =
 "id,item_name,description,cost_code,unit,category,item_type,updated_at,item_size,measurement_type,formula,formula_variables,waste_percent,labor_formula,material_formula,equipment_formula,calculator_notes,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
+=======
+>>>>>>> Stashed changes
 
       let resp = await supabase
+        await supabase
         .from("v_cost_items_current")
         .select(fullSelect)
         .order("item_name", { ascending: true });
@@ -961,7 +972,8 @@ export default function RatesPage() {
         console.error("RatesPage load error (fullSelect):", resp.error);
         alert("Rates load failed: " + (resp.error.message || JSON.stringify(resp.error)));
         resp = await supabase
-          .from("v_cost_items_current")
+        await supabase
+        .from("v_cost_items_current")
           .select(baseSelect)
           .order("item_name", { ascending: true });
         if (resp.error) {
@@ -1905,6 +1917,80 @@ export default function RatesPage() {
 
               <div>
                 <div className="text-xs opacity-70 mb-1">Description</div>
+              {/* Advanced: Calculator Engine */}
+              <div className="mt-3 border border-white/10 rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((v: boolean) => !v)}
+                  className="w-full px-4 py-3 flex items-center justify-between bg-white/5 hover:bg-white/10 transition"
+                >
+                  <div className="text-sm font-semibold">Advanced</div>
+                  <div className="opacity-70">{showAdvanced ? "▾" : "▸"}</div>
+                </button>
+
+                {showAdvanced && (
+                  <div className="p-4 bg-[#07101d] space-y-3">
+                    <div>
+                      <div className="text-xs opacity-70 mb-1">Calculator JSON (saved on this item)</div>
+                      <textarea
+                        value={fCalcJson}
+                        onChange={(e) => setFCalcJson(e.target.value)}
+                        placeholder='{"version":1,"vars":[{"key":"Area","default":0}],"consts":{},"formulas":{},"qty_expr":"Area","qty_rounding":{"mode":"round","decimals":0}}'
+                        className="w-full h-[220px] bg-white/5 border border-white/10 rounded-md p-3 text-xs font-mono outline-none focus:ring-1 focus:ring-white/20"
+                      />
+                      <div className="text-[11px] opacity-60 mt-2">
+                        Tip: Put your calculator JSON here. Preview will validate the JSON format (next step we’ll add real math preview).
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            if (!fCalcJson.trim()) {
+                              setPreviewMsg("No calculator JSON entered.");
+                              return;
+                            }
+                            JSON.parse(fCalcJson);
+                            setPreviewMsg("✅ JSON is valid. Next step: run actual qty preview using the engine.");
+                          } catch (e:any) {
+                            setPreviewMsg("❌ Invalid JSON: " + (e?.message || String(e)));
+                          }
+                        }}
+                        className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-4 py-2 text-sm"
+                      >
+                        Preview
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFCalcJson(JSON.stringify({
+                            version: 1,
+                            vars: [{ key: "Area", label: "Wall Area", unit: "ft²", default: 0, min: 0 }],
+                            consts: { WastePct: 0.05, BlockFaceArea: 0.8889 },
+                            formulas: {
+                              BaseQty: "Area / BlockFaceArea",
+                              WithWaste: "BaseQty * (1 + WastePct)"
+                            },
+                            qty_expr: "WithWaste",
+                            qty_rounding: { mode: "ceil" },
+                            outputs: { BaseQty: "BaseQty", WithWaste: "WithWaste" }
+                          }, null, 2));
+                          setPreviewMsg("Example loaded.");
+                        }}
+                        className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-4 py-2 text-sm"
+                      >
+                        Load Example
+                      </button>
+
+                      <div className="text-xs opacity-70 ml-auto truncate">{previewMsg}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
                 <input
                   value={fDesc}
                   onChange={(e) => setFDesc(e.target.value)}
@@ -1942,6 +2028,14 @@ export default function RatesPage() {
                     unit: (fUnit || "each").trim(),
                     updated_at: new Date().toISOString(),
                   };
+
+                  // Calculator Engine JSON (optional)
+                  let calc_engine_json: any = null;
+                  if (fCalcJson && fCalcJson.trim()) {
+                    try { calc_engine_json = JSON.parse(fCalcJson); } catch { calc_engine_json = null; }
+                  }
+
+                  (payload as any).calc_engine_json = calc_engine_json;
 
                   setBusy(true);
                   try {
@@ -2325,5 +2419,13 @@ export default function RatesPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
 
 

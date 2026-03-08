@@ -19,7 +19,7 @@ function normalizeUnits(rows: any[]): MasterUnit[] {
   return (rows || []).map((r) => ({
     id: r.id,
     name: r.name ?? "",
-    unit_type: r.unit_type ?? null, // REQUIRED
+    unit_type: r.unit_type ?? null, // ✅ REQUIRED by MasterUnit
     is_active: typeof r.is_active === "boolean" ? r.is_active : true,
     sort_order: Number.isFinite(Number(r.sort_order)) ? Number(r.sort_order) : 0,
   }));

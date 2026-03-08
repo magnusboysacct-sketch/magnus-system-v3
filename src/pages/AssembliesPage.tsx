@@ -157,57 +157,58 @@ export default function AssembliesPage() {
   }, []);
 
   // Load components for active assembly
-  useEffect(() => {
-    if (!activeAssemblyId) {
-      setComponents([]);
-      return;
-    }
-    let alive = true;
+  async function loadComponents() {
+  if (!activeAssemblyId) {
+    setComponents([]);
+    return;
+  }
 
-    const loadComponents = async () => {
-      setComponentsLoading(true);
-      setComponentsError(null);
-      try {
-        const { data, error } = await supabase
-          .from("assembly_components")
-          .select("id,assembly_id,cost_item_id,line_type,quantity_factor,waste_percent,sort_order,notes")
-          .eq("assembly_id", activeAssemblyId)
-          .order("sort_order", { ascending: true });
+  setComponentsLoading(true);
+  setComponentsError(null);
 
-        if (error) throw error;
+  try {
+    const { data, error } = await supabase
+      .from("assembly_components")
+      .select("id,assembly_id,cost_item_id,line_type,quantity_factor,waste_percent,sort_order,notes")
+      .eq("assembly_id", activeAssemblyId)
+      .order("sort_order", { ascending: true });
 
-        // attach cost item info
-        const list = (data ?? []) as ComponentRow[];
-        const ids = uniqSorted(list.map((x) => x.cost_item_id));
-        let byId = new Map<string, CostItem>();
-        if (ids.length > 0) {
-          const { data: ci, error: ciErr } = await supabase
-            .from("cost_items")
-            .select("id,item_name,description,variant,unit,category,item_type")
-            .in("id", ids);
+    if (error) throw error;
 
-          if (ciErr) throw ciErr;
-          for (const r of (ci ?? []) as CostItem[]) byId.set(r.id, r);
-        }
+    const list = (data ?? []) as ComponentRow[];
+    const ids = uniqSorted(list.map((x) => x.cost_item_id));
 
-        const merged = list.map((c) => ({ ...c, cost_item: byId.get(c.cost_item_id) ?? null }));
-        if (!alive) return;
-        setComponents(merged);
-      } catch (e: any) {
-        console.error(e);
-        if (!alive) return;
-        setComponentsError(e?.message ?? "Failed to load components");
-        setComponents([]);
-      } finally {
-        if (alive) setComponentsLoading(false);
-      }
+    const byId = new Map<string, CostItem>();
+
+    if (ids.length > 0) {
+      const { data: ci, error: ciErr } = await supabase
+        .from("cost_items")
+        .select("id,item_name,description,variant,unit,category,item_type")
+        .in("id", ids);
+
+      if (ciErr) throw ciErr;
+
+      for (const r of (ci ?? []) as CostItem[]) byId.set(r.id, r);
     }
 
-    loadComponents();
-    return () => {
-      alive = false;
-    };
-  }, [activeAssemblyId]);
+    const merged = list.map((c) => ({
+      ...c,
+      cost_item: byId.get(c.cost_item_id) ?? null,
+    }));
+
+    setComponents(merged);
+  } catch (e: any) {
+    console.error(e);
+    setComponentsError(e?.message ?? "Failed to load components");
+    setComponents([]);
+  } finally {
+    setComponentsLoading(false);
+  }
+}
+
+useEffect(() => {
+  void loadComponents();
+}, [activeAssemblyId]);
 
   async function createAssembly() {
     const name = newName.trim();

@@ -4,9 +4,13 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists.ts";
 import { saveBoq as persistBoq, loadLatestBoqForProject as loadLatestBoqForProjectFromDb, type BoqStatus } from "../boq/boqPersistence.ts";
+<<<<<<< Updated upstream
 import { usePlan } from "../hooks/usePlan";
 import PaywallModal from "../components/PaywallModal";
 import { generateBOQPacket, printBOQPacket } from "../boq/printPacket";
+=======
+import { runBoqCalc } from "../lib/boqCalc";
+>>>>>>> Stashed changes
 
 type RateItem = {
   id: string;
@@ -16,6 +20,8 @@ type RateItem = {
   unit: string | null;
   category: string | null;
   item_type: string | null;
+  calculator_json?: any | null
+  calculator_inputs?: Record<string, number> | null;
 
   // from v_cost_items_current only
   current_rate?: number | null;
@@ -25,6 +31,7 @@ type RateItem = {
 type BOQItemRow = {
   id: string;
 
+  // picker selections
   pick_type: string;
   pick_category: string;
   pick_item: string;
@@ -38,9 +45,13 @@ type BOQItemRow = {
   qty: number;
   rate: number;
 
+<<<<<<< Updated upstream
   qty_source?: "manual" | "takeoff";
   takeoff_group_id?: string;
   takeoff_metric?: "line_ft" | "area_ft2" | "volume_yd3" | "count_ea";
+=======
+  calculator_inputs?: Record<string, number> | null;
+>>>>>>> Stashed changes
 };
 
 type Section = {
@@ -51,25 +62,46 @@ type Section = {
   items: BOQItemRow[];
 };
 
+type BoqHeaderRow = {
+  id: string;
+  project_id: string;
+  status: "draft" | "approved";
+  version: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type ProjectRow = {
+  id: string;
+  name: string | null;
+};
+
+// ----- Assemblies (PlanSwift-style) -----
 type AssemblyRow = {
   id: string;
   name: string;
-  description: string | null;
-  unit: string | null;
-  category: string | null;
-  is_active?: boolean | null;
+  description?: string | null;
+  unit_id?: string | null; // optional
 };
 
 type AssemblyComponentRow = {
-  id: string;
+  id?: string;
   assembly_id: string;
   cost_item_id: string;
-  line_type: string; // material/labour/equipment/subcontract/other
-  quantity_factor: number;
-  waste_percent: number;
-  sort_order: number;
-  notes: string | null;
+  qty: number;
+  sort_order?: number | null;
 };
+
+// UUID v4 fallback (still valid for uuid columns)
+function uuidv4Fallback() {
+  // RFC4122 version 4 compliant-ish
+  // https://stackoverflow.com/a/2117523 (classic pattern), adapted without crypto requirement
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 function safeId() {
   try {
@@ -77,7 +109,7 @@ function safeId() {
     const c: any = typeof crypto !== "undefined" ? crypto : null;
     if (c?.randomUUID) return c.randomUUID();
   } catch {}
-  return `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  return uuidv4Fallback();
 }
 
 function numOr(v: unknown, fallback = 0) {
@@ -109,11 +141,6 @@ function getUnitLabel(u: any): string {
   return String(u?.name ?? "Unit");
 }
 
-type ProjectRow = {
-  id: string;
-  name: string | null;
-};
-
 function resolveProjectId(): string | null {
   const keys = ["active_project_id", "selected_project_id", "project_id"];
   for (const k of keys) {
@@ -123,11 +150,43 @@ function resolveProjectId(): string | null {
   return null;
 }
 
+function buildCalcInputsFromItem(it: any) {
+  // Best-effort: map common BOQ fields into calc variables
+  // Keep item + description separate; we do NOT duplicate text.
+  const num = (v: any) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  return {
+    // common takeoff vars (adjust later if your BOQ uses different keys)
+    Length: num(it.length ?? it.Length ?? it.qty_length),
+    Width: num(it.width ?? it.Width ?? it.qty_width),
+    Height: num(it.height ?? it.Height ?? it.qty_height),
+    Depth: num(it.depth ?? it.Depth ?? it.qty_depth),
+
+    Area: num(it.area ?? it.Area ?? it.qty_area),
+    Volume: num(it.volume ?? it.Volume ?? it.qty_volume),
+
+    Count: num(it.count ?? it.Count ?? it.qty_count),
+
+    // allow manual qty to be used by formulas if needed
+    Qty: num(it.qty ?? it.Qty),
+
+    // optional knobs
+    Waste: num(it.waste_pct ?? it.waste ?? it.Waste),
+    Multiply: num(it.multiply ?? it.Multiplier ?? it.multiplier),
+  };
+}
+
 export default function BOQPage() {
   const nav = useNavigate();
 
   const [status, setStatus] = useState<"draft" | "approved">("draft");
   const [sections, setSections] = useState<Section[]>([]);
+  const [calculatorItem, setCalculatorItem] = useState<RateItem | null>(null);
+  const [calculatorInputs, setCalculatorInputs] = useState<Record<string, number>>({});
+  const [calculatorTarget, setCalculatorTarget] = useState<{ sectionId: string; rowId: string } | null>(null);
 
   const { hasFeature } = usePlan();
   const [showPaywall, setShowPaywall] = useState(false);
@@ -149,8 +208,8 @@ export default function BOQPage() {
   const [projectsError, setProjectsError] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(() => resolveProjectId());
 
-  // Auto-save state (UI only right now)
-  const [autoSaveOn, setAutoSaveOn] = useState(true);
+  // Auto-save indicator (UI only for now)
+  const [autoSaveOn] = useState(true);
   const [lastAutoSaveAt, setLastAutoSaveAt] = useState<string | null>(null);
 
   const {
@@ -249,16 +308,16 @@ export default function BOQPage() {
       setRateError(null);
 
       try {
-        const { data, error } = await supabase
-          .from("v_cost_items_current")
-          .select("id,item_name,description,variant,unit,category,item_type,current_rate,current_currency")
-          .order("item_name", { ascending: true })
-          .limit(5000);
+       const { data, error } = await supabase
+  .from("v_cost_items_current")
+  .select("id,item_name,description,unit,category,item_type,calculator_json,current_rate,current_currency")
+  .order("item_name", { ascending: true })
+  .limit(5000);
 
         if (error) throw error;
         if (!alive) return;
 
-        setRateItems((data ?? []) as RateItem[]);
+        setRateItems((data ?? []) as unknown as RateItem[]);
         setRateSource("v_cost_items_current");
         return;
       } catch (e: any) {
@@ -269,16 +328,16 @@ export default function BOQPage() {
 
       try {
         setRateLoading(true);
-        const { data, error } = await supabase
-          .from("cost_items")
-          .select("id,item_name,description,variant,unit,category,item_type")
-          .order("item_name", { ascending: true })
-          .limit(5000);
+       const { data, error } = await supabase
+  .from("assemblies")
+  .select("id,name,description")
+  .order("name", { ascending: true })
+  .limit(5000);
 
         if (error) throw error;
         if (!alive) return;
 
-        setRateItems((data ?? []) as RateItem[]);
+        setRateItems((data ?? []) as unknown as RateItem[]);
         setRateSource("cost_items");
       } catch (e: any) {
         console.error("Failed to load rate items:", e);
@@ -297,29 +356,10 @@ export default function BOQPage() {
     };
   }, []);
 
-  // -----------------------------
-  // Assemblies (PlanSwift-style)
-  // -----------------------------
+  // ----- Assemblies load -----
   const [assemblies, setAssemblies] = useState<AssemblyRow[]>([]);
-  const [assemblyComponents, setAssemblyComponents] = useState<AssemblyComponentRow[]>([]);
-  const [assemblyLoading, setAssemblyLoading] = useState(false);
-  const [assemblyError, setAssemblyError] = useState<string | null>(null);
-
-  type AssemblyModalState = {
-    open: boolean;
-    sectionId: string | null;
-    search: string;
-    selectedAssemblyId: string;
-    qty: string; // keep as string for input
-  };
-
-  const [asmModal, setAsmModal] = useState<AssemblyModalState>({
-    open: false,
-    sectionId: null,
-    search: "",
-    selectedAssemblyId: "",
-    qty: "1",
-  });
+  const [asmLoading, setAsmLoading] = useState(false);
+  const [asmError, setAsmError] = useState<string | null>(null);
 
   type TakeoffLinkModalState = {
     open: boolean;
@@ -395,229 +435,225 @@ export default function BOQPage() {
 
   useEffect(() => {
     let alive = true;
-
     async function loadAssemblies() {
-      setAssemblyLoading(true);
-      setAssemblyError(null);
-
+      setAsmLoading(true);
+      setAsmError(null);
       try {
-        const { data: aData, error: aErr } = await supabase
+        const { data, error } = await supabase
           .from("assemblies")
-          .select("id,name,description,unit,category,is_active")
+          .select("id,name,description")
           .order("name", { ascending: true })
           .limit(5000);
 
-        if (aErr) throw aErr;
-
-        const active = (Array.isArray(aData) ? aData : []).filter((a: any) => a?.is_active !== false);
-        const list = active.map((a: any) => ({
-          id: String(a.id),
-          name: String(a.name ?? ""),
-          description: a.description ? String(a.description) : null,
-          unit: a.unit ? String(a.unit) : null,
-          category: a.category ? String(a.category) : null,
-          is_active: a.is_active ?? true,
-        })) as AssemblyRow[];
-
-        const { data: cData, error: cErr } = await supabase
-          .from("assembly_components")
-          .select("id,assembly_id,cost_item_id,line_type,quantity_factor,waste_percent,sort_order,notes")
-          .order("assembly_id", { ascending: true })
-          .order("sort_order", { ascending: true })
-          .limit(20000);
-
-        if (cErr) throw cErr;
-
-        const comps = (Array.isArray(cData) ? cData : []).map((c: any) => ({
-          id: String(c.id),
-          assembly_id: String(c.assembly_id),
-          cost_item_id: String(c.cost_item_id),
-          line_type: String(c.line_type ?? "material"),
-          quantity_factor: numOr(c.quantity_factor, 1),
-          waste_percent: numOr(c.waste_percent, 0),
-          sort_order: Number.isFinite(Number(c.sort_order)) ? Number(c.sort_order) : 0,
-          notes: c.notes ? String(c.notes) : null,
-        })) as AssemblyComponentRow[];
-
+        if (error) throw error;
         if (!alive) return;
-        setAssemblies(list);
-        setAssemblyComponents(comps);
+        setAssemblies((data ?? []) as AssemblyRow[]);
       } catch (e: any) {
-        console.error("loadAssemblies failed:", e);
+        console.warn("loadAssemblies failed:", e?.message ?? e);
         if (!alive) return;
-        setAssemblyError(e?.message ?? "Failed to load assemblies");
+        setAsmError(e?.message ?? "Failed to load assemblies");
         setAssemblies([]);
-        setAssemblyComponents([]);
       } finally {
-        if (alive) setAssemblyLoading(false);
+        if (alive) setAsmLoading(false);
       }
     }
-
     loadAssemblies();
     return () => {
       alive = false;
     };
   }, []);
 
-  function openAssemblyModal(sectionId: string) {
-    setAsmModal({
-      open: true,
-      sectionId,
-      search: "",
-      selectedAssemblyId: "",
-      qty: "1",
-    });
+  async function loadLatestBoqForProject(projectId: string) {
+    setPersistLoading(true);
+    setPersistError(null);
+
+    try {
+      const { data: headers, error: headerErr } = await supabase
+        .from("boqs")
+        .select("id,project_id,status,version,updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .order("version", { ascending: false })
+        .limit(1);
+
+      if (headerErr) throw headerErr;
+
+      const header = Array.isArray(headers) ? (headers[0] as BoqHeaderRow | undefined) : undefined;
+      if (!header) {
+        setBoqId(null);
+        setStatus("draft");
+        setSections([]);
+        return;
+      }
+
+      setBoqId(header.id);
+      setStatus(header.status);
+
+      const { data: secRows, error: secErr } = await supabase
+        .from("boq_sections")
+        .select("id,boq_id,sort_order,master_category_id,title,scope")
+        .eq("boq_id", header.id)
+        .order("sort_order", { ascending: true });
+
+      if (secErr) throw secErr;
+
+      const secList = Array.isArray(secRows) ? secRows : [];
+      const sectionIds = secList.map((s: any) => s.id).filter(Boolean);
+
+      const itemsBySection = new Map<string, any[]>();
+
+      if (sectionIds.length > 0) {
+        const { data: itemRows, error: itemErr } = await supabase
+         .from("boq_section_items")
+.select(
+  "id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate,calculator_inputs"
+)
+          .in("section_id", sectionIds)
+          .order("sort_order", { ascending: true });
+
+        if (itemErr) throw itemErr;
+
+        const list = Array.isArray(itemRows) ? itemRows : [];
+        for (const r of list) {
+          const sid = String((r as any).section_id ?? "");
+          if (!sid) continue;
+          if (!itemsBySection.has(sid)) itemsBySection.set(sid, []);
+          itemsBySection.get(sid)!.push(r);
+        }
+      }
+
+      const rebuilt: Section[] = secList.map((s: any) => {
+        const sid = String(s.id);
+        const itemsRaw = itemsBySection.get(sid) ?? [];
+        const items: BOQItemRow[] = itemsRaw.map((r: any) => ({
+          id: String(r.id ?? safeId()),
+          pick_type: String(r.pick_type ?? ""),
+          pick_category: String(r.pick_category ?? ""),
+          pick_item: String(r.pick_item ?? ""),
+          pick_variant: String(r.pick_variant ?? ""),
+          cost_item_id: r.cost_item_id ? String(r.cost_item_id) : null,
+          item_name: String(r.item_name ?? ""),
+          description: String(r.description ?? ""),
+          unit_id: r.unit_id ? String(r.unit_id) : null,
+          qty: numOr(r.qty, 0),
+          rate: numOr(r.rate, 0),
+          calculator_inputs: r.calculator_inputs ?? null,
+        }));
+
+        return {
+          id: sid,
+          masterCategoryId: s.master_category_id ? String(s.master_category_id) : null,
+          title: String(s.title ?? "New Section"),
+          scope: String(s.scope ?? ""),
+          items,
+        };
+      });
+
+      setSections(rebuilt);
+    } catch (e: any) {
+      console.error("loadLatestBoqForProject failed:", e);
+      setPersistError(e?.message ?? "Failed to load BOQ");
+    } finally {
+      setPersistLoading(false);
+    }
   }
 
-  function closeAssemblyModal() {
-    setAsmModal({
-      open: false,
-      sectionId: null,
-      search: "",
-      selectedAssemblyId: "",
-      qty: "1",
-    });
-  }
-
-  function mapLineTypeToPickType(lineType: string) {
-    const t = (lineType ?? "").toLowerCase();
-    if (t === "material") return "Material";
-    if (t === "labour" || t === "labor") return "Labor";
-    if (t === "equipment") return "Equipment";
-    if (t === "subcontract") return "Subcontract";
-    return "Other";
-  }
-
-  function matchUnitIdByName(unitName: string | null) {
-    if (!unitName) return null;
-    const u = usableUnits.find((x: any) => getUnitLabel(x).toLowerCase() === unitName.toLowerCase());
-    return u ? getUnitId(u) : null;
-  }
-
-  function addAssemblyToSectionUI(sectionId: string, assemblyId: string, qtyStr: string) {
-    const qtyBase = numOr(qtyStr, 0);
-    if (!sectionId || !assemblyId || qtyBase <= 0) {
-      alert("Pick an assembly and enter a quantity greater than 0.");
+  async function saveBoqToSupabase(nextStatus: "draft" | "approved") {
+    const projectId = activeProjectId ?? resolveProjectId();
+    if (!projectId) {
+      alert("Please select or create a project first.");
       return;
     }
 
-    const comps = assemblyComponents
-      .filter((c) => c.assembly_id === assemblyId)
-      .slice()
-      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    setPersistLoading(true);
+    setPersistError(null);
 
-    if (comps.length === 0) {
-      alert("This assembly has no components yet.");
-      return;
+    try {
+      let headerId = boqId;
+
+      if (!headerId) {
+        const { data: ins, error: insErr } = await supabase
+          .from("boqs")
+          .insert([{ project_id: projectId, status: nextStatus, version: 1 }])
+          .select("id")
+          .single();
+
+        if (insErr) throw insErr;
+        headerId = String((ins as any).id);
+        setBoqId(headerId);
+      } else {
+        const { error: upErr } = await supabase.from("boqs").update({ status: nextStatus }).eq("id", headerId);
+        if (upErr) throw upErr;
+      }
+
+      // ? IMPORTANT: delete items FIRST (avoids FK failures if no cascade)
+      const existingSectionIds = sections.map((s) => s.id).filter(Boolean);
+      if (existingSectionIds.length > 0) {
+        const { error: delItemsErr } = await supabase.from("boq_section_items").delete().in("section_id", existingSectionIds);
+        if (delItemsErr) throw delItemsErr;
+      }
+
+      const { error: delSecErr } = await supabase.from("boq_sections").delete().eq("boq_id", headerId);
+      if (delSecErr) throw delSecErr;
+
+      // Ensure section ids are valid UUIDs if your DB uses uuid
+      const sectionPayload = sections.map((s, idx) => ({
+        id: s.id || safeId(),
+        boq_id: headerId,
+        sort_order: idx,
+        master_category_id: s.masterCategoryId,
+        title: s.title ?? "New Section",
+        scope: s.scope ?? "",
+      }));
+
+      const { error: secInsErr } = await supabase.from("boq_sections").insert(sectionPayload);
+      if (secInsErr) throw secInsErr;
+
+      const itemPayload: any[] = [];
+      for (const s of sections) {
+        for (let i = 0; i < s.items.length; i++) {
+          const it = s.items[i];
+          itemPayload.push({
+            id: it.id || safeId(),
+            section_id: s.id,
+            sort_order: i,
+
+            pick_type: it.pick_type ?? "",
+            pick_category: it.pick_category ?? "",
+            pick_item: it.pick_item ?? "",
+            pick_variant: it.pick_variant ?? "",
+
+            cost_item_id: it.cost_item_id,
+
+            item_name: it.item_name ?? "",
+            description: it.description ?? "",
+            unit_id: it.unit_id,
+
+            qty: numOr(it.qty, 0),
+            rate: numOr(it.rate, 0),
+
+            calculator_inputs: it.calculator_inputs ?? null,
+          });
+        }
+      }
+
+      if (itemPayload.length > 0) {
+        const { error: itemInsErr } = await supabase.from("boq_section_items").insert(itemPayload);
+        if (itemInsErr) throw itemInsErr;
+      }
+
+      setStatus(nextStatus);
+      setLastAutoSaveAt(new Date().toLocaleTimeString());
+    } catch (e: any) {
+      console.error("saveBoqToSupabase failed:", e);
+      setPersistError(e?.message ?? "Failed to save BOQ");
+      alert(e?.message ?? "Failed to save BOQ");
+    } finally {
+      setPersistLoading(false);
     }
-
-    const newRows: BOQItemRow[] = comps.map((c) => {
-      const r = rateItems.find((x) => x.id === c.cost_item_id) ?? null;
-
-      const pickType = mapLineTypeToPickType(c.line_type);
-      const pickCategory = (r?.category ?? "").trim();
-      const pickItem = (r?.item_name ?? "").trim();
-      const pickVariant = (r?.variant ?? "").trim();
-
-      const unitName = r?.unit ?? null;
-      const unitId = matchUnitIdByName(unitName);
-
-      const waste = numOr(c.waste_percent, 0);
-      const factor = numOr(c.quantity_factor, 1);
-      const finalQty = qtyBase * factor * (1 + waste / 100);
-
-      const viewRate = numOr(r?.current_rate ?? 0, 0);
-
-      return {
-        id: safeId(),
-
-        pick_type: pickType,
-        pick_category: pickCategory,
-        pick_item: pickItem,
-        pick_variant: pickVariant,
-
-        cost_item_id: c.cost_item_id,
-
-        item_name: r?.item_name ?? "",
-        description: (r?.description ?? "").trim() ? (r?.description ?? "") : c.notes ?? "",
-        unit_id: unitId,
-
-        qty: Number.isFinite(finalQty) ? finalQty : 0,
-        rate: viewRate,
-      };
-    });
-
-    setSections((prev) =>
-      prev.map((s) => {
-        if (s.id !== sectionId) return s;
-        return { ...s, items: [...s.items, ...newRows] };
-      })
-    );
-
-    closeAssemblyModal();
   }
 
-  // -----------------------------
-// Persistence
-// -----------------------------
-async function loadLatestBoqForProject(projectId: string) {
-  setPersistLoading(true);
-  setPersistError(null);
-
-  try {
-    const loaded = await loadLatestBoqForProjectFromDb(projectId);
-    if (!loaded) {
-      setBoqId(null);
-      setStatus("draft");
-      setSections([]);
-      return;
-    }
-
-    setBoqId(loaded.header.id);
-    setStatus(loaded.header.status);
-    setSections(loaded.sections as any);
-  } catch (e: any) {
-    console.error("loadLatestBoqForProject failed:", e);
-    setPersistError(e?.message ?? "Failed to load BOQ");
-  } finally {
-    setPersistLoading(false);
-  }
-}
-
-async function saveBoqToSupabase(nextStatus: "draft" | "approved") {
-  const projectId = activeProjectId ?? resolveProjectId();
-  if (!projectId) {
-    alert("Please select or create a project first.");
-    return;
-  }
-
-  setPersistLoading(true);
-  setPersistError(null);
-
-  try {
-    const savedId = await persistBoq({
-      boqId: boqId ?? null,
-      projectId,
-      status: nextStatus as BoqStatus,
-      sections: sections as any,
-    });
-
-    setBoqId(savedId);
-    setStatus(nextStatus);
-
-    // reload from DB (captures computed qty_calculated)
-    await loadLatestBoqForProject(projectId);
-
-    if (autoSaveOn) setLastAutoSaveAt(new Date().toLocaleString());
-  } catch (e: any) {
-    console.error("saveBoqToSupabase failed:", e);
-    setPersistError(e?.message ?? "Failed to save BOQ");
-    alert(e?.message ?? "Failed to save BOQ");
-  } finally {
-    setPersistLoading(false);
-  }
-}
-async function setActiveProject(projectId: string | null) {
+  async function setActiveProject(projectId: string | null) {
     const next = projectId && projectId.trim() ? projectId.trim() : null;
     setActiveProjectId(next);
 
@@ -704,9 +740,7 @@ async function setActiveProject(projectId: string | null) {
   }
 
   function deleteItem(sectionId: string, itemId: string) {
-    setSections((prev) =>
-      prev.map((s) => (s.id !== sectionId ? s : { ...s, items: s.items.filter((it) => it.id !== itemId) }))
-    );
+    setSections((prev) => prev.map((s) => (s.id !== sectionId ? s : { ...s, items: s.items.filter((it) => it.id !== itemId) })));
   }
 
   function updateItem(sectionId: string, itemId: string, patch: Partial<BOQItemRow>) {
@@ -820,6 +854,12 @@ async function setActiveProject(projectId: string | null) {
     nav("/settings/master-lists");
   }
 
+  function matchUnitIdByName(unitName: string | null) {
+    if (!unitName) return null;
+    const u = usableUnits.find((x: any) => getUnitLabel(x).toLowerCase() === unitName.toLowerCase());
+    return u ? getUnitId(u) : null;
+  }
+
   async function fetchLatestRate(costItemId: string): Promise<number | null> {
     try {
       const { data, error } = await supabase
@@ -892,7 +932,7 @@ async function setActiveProject(projectId: string | null) {
   }
 
   // -----------------------------
-  // Modern Step Picker (Type ‚Üí Category ‚Üí Item ‚Üí Variant)
+  // Modern Step Picker (Type ? Category ? Item ? Variant)
   // -----------------------------
   type PickerStep = "type" | "category" | "item" | "variant";
   type PickerState = {
@@ -1030,7 +1070,7 @@ async function setActiveProject(projectId: string | null) {
     if (picker.category) parts.push(picker.category);
     if (picker.item) parts.push(picker.item);
     if (picker.variant) parts.push(picker.variant);
-    return parts.join(" ‚Üí ");
+    return parts.join(" ? ");
   }
 
   const pickerOptions = useMemo(() => {
@@ -1081,7 +1121,115 @@ async function setActiveProject(projectId: string | null) {
     const r = findFinalRateItem(finalType, finalCategory, finalItem, finalVariant ? finalVariant : null);
     await applyRateItem(sectionId, rowId, r);
 
+    console.log("FINAL PICK:", {
+  picked: { finalType, finalCategory, finalItem, finalVariant },
+  found: r?.item_name,
+  calcType: typeof (r as any)?.calculator_json,
+  calcValue: (r as any)?.calculator_json,
+});
+    if (r?.calculator_json) {
+  setCalculatorItem(r);
+  setCalculatorTarget({ sectionId, rowId });
+  setCalculatorInputs({});
+}
+
     closePicker();
+  }
+
+  // -----------------------------
+  // Assemblies Picker (expand to items)
+  // -----------------------------
+  type AssemblyPickerState = {
+    open: boolean;
+    sectionId: string | null;
+    search: string;
+  };
+
+  const [asmPicker, setAsmPicker] = useState<AssemblyPickerState>({
+    open: false,
+    sectionId: null,
+    search: "",
+  });
+
+  function openAssemblyPicker(sectionId: string) {
+    setAsmPicker({ open: true, sectionId, search: "" });
+  }
+  function closeAssemblyPicker() {
+    setAsmPicker({ open: false, sectionId: null, search: "" });
+  }
+
+  const filteredAssemblies = useMemo(() => {
+    const q = asmPicker.search.trim().toLowerCase();
+    const list = assemblies ?? [];
+    if (!q) return list;
+    return list.filter((a) => (a.name ?? "").toLowerCase().includes(q));
+  }, [assemblies, asmPicker.search]);
+
+  async function addAssemblyToSection(sectionId: string, assemblyId: string) {
+    try {
+      const asm = assemblies.find((a) => a.id === assemblyId);
+      if (!asm) return;
+
+      const { data, error } = await supabase
+        .from("assembly_components")
+        .select("assembly_id,cost_item_id,qty,sort_order")
+        .eq("assembly_id", assemblyId)
+        .order("sort_order", { ascending: true });
+
+      if (error) throw error;
+
+      const comps = (data ?? []) as AssemblyComponentRow[];
+      if (comps.length === 0) {
+        alert("This assembly has no components yet.");
+        return;
+      }
+
+      const newRows: BOQItemRow[] = comps.map((c) => {
+        const r = rateItems.find((x) => x.id === c.cost_item_id) ?? null;
+        const pickedUnitId = matchUnitIdByName(r?.unit ?? null);
+
+        return {
+          id: safeId(),
+
+          pick_type: r?.item_type ?? "Assembly",
+          pick_category: r?.category ?? "",
+          pick_item: r?.item_name ?? asm.name,
+          pick_variant: r?.variant ?? "",
+
+          cost_item_id: r?.id ?? c.cost_item_id,
+
+          item_name: r?.item_name ?? asm.name,
+          description: String(r?.description ?? asm.description ?? ""),
+          unit_id: pickedUnitId ?? null,
+          qty: numOr(c.qty, 1),
+          rate: numOr(r?.current_rate ?? 0, 0),
+        };
+      });
+
+      setSections((prev) => prev.map((s) => (s.id !== sectionId ? s : { ...s, items: [...s.items, ...newRows] })));
+
+      for (const row of newRows) {
+        if (!row.cost_item_id) continue;
+        if (numOr(row.rate) !== 0) continue;
+        const latest = await fetchLatestRate(row.cost_item_id);
+        if (!latest) continue;
+
+        setSections((prev) =>
+          prev.map((s) => {
+            if (s.id !== sectionId) return s;
+            return {
+              ...s,
+              items: s.items.map((it) => (it.id === row.id ? { ...it, rate: latest } : it)),
+            };
+          })
+        );
+      }
+
+      closeAssemblyPicker();
+    } catch (e: any) {
+      console.error("addAssemblyToSection failed:", e);
+      alert(e?.message ?? "Failed to add assembly");
+    }
   }
 
   const totals = useMemo(() => {
@@ -1107,9 +1255,7 @@ async function setActiveProject(projectId: string | null) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-white">BOQ Builder</h1>
-          <div className="text-xs text-slate-400 mt-1">
-            Simple + stable version (separate buttons, no popover/event-listener code)
-          </div>
+          <div className="text-xs text-slate-400 mt-1">Stable BOQ + Step Picker + Assemblies</div>
         </div>
 
         <div className="flex gap-2">
@@ -1164,7 +1310,7 @@ async function setActiveProject(projectId: string | null) {
             onChange={(e) => void setActiveProject(e.target.value || null)}
             className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
           >
-            <option value="">Select a project‚Ä¶</option>
+            <option value="">Select a projectÖ</option>
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name ?? p.id}
@@ -1180,23 +1326,18 @@ async function setActiveProject(projectId: string | null) {
       </div>
 
       <div className="text-sm text-slate-400">
-        Status: <span className="font-semibold">{status}</span> ‚Ä¢ Sections:{" "}
-        <span className="font-semibold">{sections.length}</span> ‚Ä¢ Subtotal:{" "}
+        Status: <span className="font-semibold">{status}</span> ï Sections:{" "}
+        <span className="font-semibold">{sections.length}</span> ï Subtotal:{" "}
         <span className="font-semibold">{totals.subtotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
       </div>
 
-      <div className="text-xs text-slate-500">
+      <div className="text-sm text-slate-400">
         Auto-save: <span className="font-semibold">{autoSaveOn ? "On" : "Off"}</span>
-        {lastAutoSaveAt ? (
-          <>
-            {" "}
-            ‚Ä¢ Last: <span className="font-semibold">{lastAutoSaveAt}</span>
-          </>
-        ) : null}
+        {lastAutoSaveAt ? <span className="text-slate-500"> ï Last: {lastAutoSaveAt}</span> : null}
       </div>
 
       {persistLoading ? (
-        <div className="text-xs text-slate-500">Saving/Loading BOQ‚Ä¶</div>
+        <div className="text-xs text-slate-500">Saving/Loading BOQÖ</div>
       ) : persistError ? (
         <div className="text-xs text-red-400">BOQ persistence error: {persistError}</div>
       ) : boqId ? (
@@ -1208,35 +1349,31 @@ async function setActiveProject(projectId: string | null) {
       )}
 
       {masterLoading ? (
-        <div className="text-sm text-slate-400">Loading master lists‚Ä¶</div>
+        <div className="text-sm text-slate-400">Loading master listsÖ</div>
       ) : masterError ? (
         <div className="text-sm text-red-400">Master lists failed: {masterError}</div>
       ) : (
         <div className="text-xs text-slate-500">
-          Categories: {usableCategories.length} ‚Ä¢ Units: {usableUnits.length}
+          Categories: {usableCategories.length} ï Units: {usableUnits.length}
         </div>
       )}
 
       {rateLoading ? (
-        <div className="text-xs text-slate-500">Loading rate items‚Ä¶</div>
+        <div className="text-xs text-slate-500">Loading rate itemsÖ</div>
       ) : rateError ? (
         <div className="text-xs text-red-400">Rate items failed: {rateError}</div>
       ) : (
         <div className="text-xs text-slate-500">
           Rate items: {rateItems.length}
-          {rateSource ? ` ‚Ä¢ source: ${rateSource}` : ""}
+          {rateSource ? ` ï source: ${rateSource}` : ""}
         </div>
       )}
 
-      {assemblyLoading ? (
-        <div className="text-xs text-slate-500">Loading assemblies‚Ä¶</div>
-      ) : assemblyError ? (
-        <div className="text-xs text-red-400">Assemblies failed: {assemblyError}</div>
-      ) : (
-        <div className="text-xs text-slate-500">
-          Assemblies: {assemblies.length} ‚Ä¢ Components: {assemblyComponents.length}
-        </div>
-      )}
+      <div className="text-xs text-slate-500">
+        Assemblies: {assemblies.length} ï Components: (loaded on pick)
+        {asmLoading ? " ï loadingÖ" : ""}
+        {asmError ? <span className="text-red-400"> ï {asmError}</span> : null}
+      </div>
 
       <div className="flex gap-2">
         <button
@@ -1269,7 +1406,7 @@ async function setActiveProject(projectId: string | null) {
                   onChange={(e) => onPickMasterCategory(s.id, e.target.value)}
                   className="w-full lg:max-w-[320px] px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
                 >
-                  <option value="">Select‚Ä¶</option>
+                  <option value="">SelectÖ</option>
                   {usableCategories.map((c: any) => (
                     <option key={getCategoryId(c)} value={getCategoryId(c)}>
                       {getCategoryLabel(c)}
@@ -1295,10 +1432,10 @@ async function setActiveProject(projectId: string | null) {
                   </button>
 
                   <button
-                    onClick={() => openAssemblyModal(s.id)}
-                    disabled={!canEdit || assemblyLoading}
+                    onClick={() => openAssemblyPicker(s.id)}
+                    disabled={!canEdit || asmLoading}
                     className="px-3 py-2 rounded bg-slate-800 text-white disabled:opacity-50"
-                    title="Add from Assembly (PlanSwift-style)"
+                    title="Pick an assembly and expand its components into BOQ items"
                   >
                     Add Assembly
                   </button>
@@ -1328,7 +1465,7 @@ async function setActiveProject(projectId: string | null) {
               <div className="space-y-3">
                 {s.items.length === 0 ? (
                   <div className="text-sm text-slate-400">
-                    No items yet. Click <strong>Add Item</strong>.
+                    No items yet. Click <strong>Add Item</strong> (or <strong>Add Assembly</strong>).
                   </div>
                 ) : (
                   s.items.map((it) => {
@@ -1336,7 +1473,7 @@ async function setActiveProject(projectId: string | null) {
                     const pickLabel = [it.pick_type, it.pick_category, it.pick_item, it.pick_variant]
                       .map((x) => (x ?? "").trim())
                       .filter(Boolean)
-                      .join(" ‚Üí ");
+                      .join(" ? ");
 
                     return (
                       <div key={it.id} className="grid grid-cols-12 gap-3 items-start">
@@ -1346,11 +1483,11 @@ async function setActiveProject(projectId: string | null) {
                             onClick={() => openPicker(s.id, it.id)}
                             disabled={!canEdit || rateLoading}
                             className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50 text-left"
-                            title="Pick from Rate Library (Type ‚Üí Category ‚Üí Item ‚Üí Variant)"
+                            title="Pick from Rate Library (Type ? Category ? Item ? Variant)"
                           >
-                            Pick item‚Ä¶
+                            Pick itemÖ
                           </button>
-                          <div className="text-[11px] text-slate-400 break-words">{pickLabel || "‚Äî"}</div>
+                          <div className="text-[11px] text-slate-400 break-words">{pickLabel || "ó"}</div>
                         </div>
 
                         <div className="col-span-12 md:col-span-2">
@@ -1377,14 +1514,14 @@ async function setActiveProject(projectId: string | null) {
                         </div>
 
                         <div className="col-span-12 md:col-span-2">
-                          <div className="text-xs text-slate-400 mb-1">Unit‚Ä¶</div>
+                          <div className="text-xs text-slate-400 mb-1">UnitÖ</div>
                           <select
                             value={it.unit_id ?? ""}
                             disabled={!canEdit}
                             onChange={(e) => updateItem(s.id, it.id, { unit_id: e.target.value || null })}
                             className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
                           >
-                            <option value="">Unit‚Ä¶</option>
+                            <option value="">UnitÖ</option>
                             {usableUnits.map((u: any) => (
                               <option key={getUnitId(u)} value={getUnitId(u)}>
                                 {getUnitLabel(u)}
@@ -1488,7 +1625,7 @@ async function setActiveProject(projectId: string | null) {
                             className="h-[42px] w-[42px] rounded bg-red-700 text-white disabled:opacity-50"
                             title="Delete item"
                           >
-                            √ó
+                            ◊
                           </button>
                         </div>
 
@@ -1505,7 +1642,7 @@ async function setActiveProject(projectId: string | null) {
         )}
       </div>
 
-      {/* Picker modal */}
+      {/* Step Picker Modal */}
       {picker.open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-3xl rounded border border-slate-700 bg-slate-950 text-white shadow-xl">
@@ -1513,7 +1650,7 @@ async function setActiveProject(projectId: string | null) {
               <div className="space-y-1">
                 <div className="text-sm font-semibold">Pick Item</div>
                 <div className="text-xs text-slate-400">
-                  {pickerBreadcrumb() ? pickerBreadcrumb() : "Type ‚Üí Category ‚Üí Item ‚Üí Variant"}
+                  {pickerBreadcrumb() ? pickerBreadcrumb() : "Type ? Category ? Item ? Variant"}
                 </div>
               </div>
               <button onClick={closePicker} className="px-3 py-2 rounded bg-slate-800 text-white">
@@ -1529,7 +1666,7 @@ async function setActiveProject(projectId: string | null) {
                     picker.step === "type" ? "bg-slate-800 border-slate-600" : "bg-slate-900 border-slate-800"
                   }`}
                 >
-                  1. Type{stepDone("type") ? " ‚úì" : ""}
+                  1. Type{stepDone("type") ? " ?" : ""}
                 </button>
 
                 <button
@@ -1539,7 +1676,7 @@ async function setActiveProject(projectId: string | null) {
                     picker.step === "category" ? "bg-slate-800 border-slate-600" : "bg-slate-900 border-slate-800"
                   }`}
                 >
-                  2. Category{stepDone("category") ? " ‚úì" : ""}
+                  2. Category{stepDone("category") ? " ?" : ""}
                 </button>
 
                 <button
@@ -1549,7 +1686,7 @@ async function setActiveProject(projectId: string | null) {
                     picker.step === "item" ? "bg-slate-800 border-slate-600" : "bg-slate-900 border-slate-800"
                   }`}
                 >
-                  3. Item{stepDone("item") ? " ‚úì" : ""}
+                  3. Item{stepDone("item") ? " ?" : ""}
                 </button>
 
                 <button
@@ -1570,11 +1707,11 @@ async function setActiveProject(projectId: string | null) {
                     value={picker.search}
                     onChange={(e) => setPicker((p) => ({ ...p, search: e.target.value }))}
                     className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
-                    placeholder={`Search ${stepTitle(picker.step)}‚Ä¶`}
+                    placeholder={`Search ${stepTitle(picker.step)}Ö`}
                     autoFocus
                   />
                 </div>
-                <div className="text-xs text-slate-500">{rateLoading ? "Loading rate items‚Ä¶" : `${rateItems.length} rate items`}</div>
+                <div className="text-xs text-slate-500">{rateLoading ? "Loading rate itemsÖ" : `${rateItems.length} rate items`}</div>
               </div>
 
               <div className="border border-slate-800 rounded overflow-hidden">
@@ -1587,7 +1724,7 @@ async function setActiveProject(projectId: string | null) {
                   {picker.step === "variant" && pickerOptions.hasNone ? (
                     <div className="p-3">
                       <div className="text-sm text-slate-200">No variants found for this item.</div>
-                      <div className="text-xs text-slate-400 mt-1">Continue with ‚ÄúNo variant‚Äù.</div>
+                      <div className="text-xs text-slate-400 mt-1">Continue with ìNo variantî.</div>
                       <div className="mt-3">
                         <button onClick={() => void finalizePick("")} className="px-3 py-2 rounded bg-blue-700 text-white">
                           Use No Variant
@@ -1639,107 +1776,161 @@ async function setActiveProject(projectId: string | null) {
         </div>
       ) : null}
 
-      {/* Assembly modal */}
-      {asmModal.open ? (
+      {/* Calculator Modal */}
+{calculatorItem && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="w-full max-w-md rounded border border-slate-700 bg-slate-950 text-white shadow-xl">
+
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+        <div className="text-sm font-semibold">
+          {calculatorItem.item_name}
+        </div>
+
+        <button
+          onClick={() => setCalculatorItem(null)}
+          className="px-3 py-1 rounded bg-slate-800"
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="p-4 space-y-3">
+        <div className="px-4 pb-4 flex justify-end gap-2">
+
+  <button
+    onClick={() => setCalculatorItem(null)}
+    className="px-3 py-2 rounded bg-slate-800 text-white"
+  >
+    Cancel
+  </button>
+
+  <button
+    onClick={() => {
+      if (!calculatorTarget) return;
+
+      const { sectionId, rowId } = calculatorTarget;
+
+      if (!calculatorItem?.calculator_json) return;
+
+const result = (runBoqCalc(
+  calculatorItem.calculator_json,
+  calculatorInputs
+) ?? { ok:false, qty:0, outputs:{}, errors:[], warnings:[] });if (!result.ok) {
+  alert("Calculator error: " + result.errors?.join(", "));
+  return;
+}
+
+const qty = result.qty;
+      setSections((prev) =>
+        prev.map((s) =>
+          s.id !== sectionId
+            ? s
+            : {
+                ...s,
+                items: s.items.map((it) =>
+                  it.id !== rowId
+                    ? it
+                    : {
+                        ...it,
+                       qty: Math.round(qty),
+    calculator_inputs: calculatorInputs,
+                      }
+                ),
+              }
+        )
+      );
+
+      setCalculatorItem(null);
+      setCalculatorTarget(null);
+    }}
+    className="px-3 py-2 rounded bg-blue-700 text-white"
+  >
+    Apply
+  </button>
+
+</div>
+
+
+        {calculatorItem.calculator_json?.inputs?.map((inp: any) => {
+  const k = inp.key ?? inp.name;
+  return (
+    <div key={k} className="space-y-1">
+      <div className="text-xs text-slate-400">{inp.label || k}</div>
+
+      <input
+        type="number"
+        value={calculatorInputs[k] ?? ""}
+        onChange={(e) =>
+          setCalculatorInputs((prev) => ({
+            ...prev,
+            [k]: Number(e.target.value),
+          }))
+        }
+        className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
+      />
+    </div>
+  );
+})}
+
+      </div>
+    </div>
+  </div>
+)}
+
+      {/* Assembly Picker Modal */}
+      {asmPicker.open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-3xl rounded border border-slate-700 bg-slate-950 text-white shadow-xl">
+          <div className="w-full max-w-2xl rounded border border-slate-700 bg-slate-950 text-white shadow-xl">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
               <div className="space-y-1">
-                <div className="text-sm font-semibold">Add From Assembly</div>
-                <div className="text-xs text-slate-400">Select an assembly and quantity, then explode into BOQ lines.</div>
+                <div className="text-sm font-semibold">Pick Assembly</div>
+                <div className="text-xs text-slate-400">Choose an assembly to expand into BOQ items</div>
               </div>
-              <button onClick={closeAssemblyModal} className="px-3 py-2 rounded bg-slate-800 text-white">
+              <button onClick={closeAssemblyPicker} className="px-3 py-2 rounded bg-slate-800 text-white">
                 Close
               </button>
             </div>
 
-            <div className="px-4 py-4 space-y-4">
-              {assemblyError ? <div className="text-xs text-red-400">Assemblies error: {assemblyError}</div> : null}
-
-              <div className="grid grid-cols-12 gap-3">
-                <div className="col-span-12 md:col-span-8 space-y-1">
-                  <div className="text-xs text-slate-400">Search Assembly</div>
+            <div className="px-4 py-4 space-y-3">
+              <div className="flex flex-col md:flex-row md:items-end gap-3">
+                <div className="flex-1 space-y-1">
+                  <div className="text-xs text-slate-400">Search Assemblies</div>
                   <input
-                    value={asmModal.search}
-                    onChange={(e) => setAsmModal((p) => ({ ...p, search: e.target.value }))}
+                    value={asmPicker.search}
+                    onChange={(e) => setAsmPicker((p) => ({ ...p, search: e.target.value }))}
                     className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
-                    placeholder="Search assembly‚Ä¶"
+                    placeholder="Search assembliesÖ"
                     autoFocus
                   />
                 </div>
-
-                <div className="col-span-12 md:col-span-4 space-y-1">
-                  <div className="text-xs text-slate-400">Assembly Qty</div>
-                  <input
-                    value={asmModal.qty}
-                    onChange={(e) => setAsmModal((p) => ({ ...p, qty: e.target.value }))}
-                    className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
-                    placeholder="1"
-                  />
-                </div>
+                <div className="text-xs text-slate-500">{asmLoading ? "LoadingÖ" : `${assemblies.length} assemblies`}</div>
               </div>
 
               <div className="border border-slate-800 rounded overflow-hidden">
-                <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 text-sm font-medium">
-                  Assemblies ({assemblies.length})
-                </div>
-
-                <div className="max-h-[360px] overflow-auto">
-                  {assemblies
-                    .filter((a) => {
-                      const q = asmModal.search.trim().toLowerCase();
-                      if (!q) return true;
-                      return (
-                        (a.name ?? "").toLowerCase().includes(q) ||
-                        (a.category ?? "").toLowerCase().includes(q) ||
-                        (a.description ?? "").toLowerCase().includes(q)
-                      );
-                    })
-                    .map((a) => {
-                      const selected = asmModal.selectedAssemblyId === a.id;
-                      const compCount = assemblyComponents.filter((c) => c.assembly_id === a.id).length;
-
-                      return (
+                <div className="max-h-[420px] overflow-auto">
+                  {filteredAssemblies.length === 0 ? (
+                    <div className="p-3 text-sm text-slate-400">No matches.</div>
+                  ) : (
+                    <div className="divide-y divide-slate-800">
+                      {filteredAssemblies.map((a) => (
                         <button
                           key={a.id}
-                          onClick={() => setAsmModal((p) => ({ ...p, selectedAssemblyId: a.id }))}
-                          className={`w-full text-left px-3 py-3 hover:bg-slate-900 border-b border-slate-800 ${
-                            selected ? "bg-slate-900" : ""
-                          }`}
+                          onClick={() => {
+                            if (!asmPicker.sectionId) return;
+                            void addAssemblyToSection(asmPicker.sectionId, a.id);
+                          }}
+                          className="w-full text-left px-3 py-3 hover:bg-slate-900"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="text-sm font-medium">{a.name}</div>
-                              <div className="text-xs text-slate-400">
-                                {(a.category ? `${a.category} ‚Ä¢ ` : "")}
-                                {compCount} lines
-                                {a.unit ? ` ‚Ä¢ unit: ${a.unit}` : ""}
-                              </div>
-                              {a.description ? <div className="text-xs text-slate-500 mt-1">{a.description}</div> : null}
-                            </div>
-                            {selected ? <div className="text-xs text-blue-400">Selected</div> : null}
-                          </div>
+                          <div className="text-sm font-medium">{a.name}</div>
+                          {a.description ? <div className="text-xs text-slate-400 mt-1">{a.description}</div> : null}
                         </button>
-                      );
-                    })}
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2">
-                <div className="text-xs text-slate-500">{asmModal.selectedAssemblyId ? "Ready to add." : "Select an assembly first."}</div>
-
-                <button
-                  onClick={() =>
-                    asmModal.sectionId && asmModal.selectedAssemblyId
-                      ? addAssemblyToSectionUI(asmModal.sectionId, asmModal.selectedAssemblyId, asmModal.qty)
-                      : null
-                  }
-                  disabled={!asmModal.sectionId || !asmModal.selectedAssemblyId}
-                  className="px-3 py-2 rounded bg-blue-700 text-white disabled:opacity-50"
-                >
-                  Add Assembly Lines
-                </button>
-              </div>
+              <div className="text-xs text-slate-500">Tip: Assemblies expand into items so they save/print like normal BOQ rows.</div>
             </div>
           </div>
         </div>
@@ -1855,11 +2046,3 @@ async function setActiveProject(projectId: string | null) {
     </div>
   );
 }
-
-
-
-
-
-
-
-
