@@ -121,7 +121,7 @@ export default function App() {
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Rout path="/settings/master-categories"element={<SettingsMasterCategoriesPage />} />
+          <Route path="/settings/master-categories" element={<SettingsMasterCategoriesPage />} />
           <Route path="/settings/users" element={<CompanyUsersPage />} />
           
           <Route
