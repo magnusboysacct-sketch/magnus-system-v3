@@ -27,6 +27,7 @@ import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import BillingPage from "./pages/BillingPage";
 import LoginPage from "./pages/LoginPage";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
+import ClientProjectPage from "./pages/ClientProjectPage";
 import { supabase } from "./lib/supabase";
 import CompanyUsersPage from "./pages/CompanyUsersPage";
 
@@ -100,6 +101,16 @@ export default function App() {
         {/* Public routes */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
+
+        {/* Client Portal routes */}
+        <Route
+          path="/client/projects/:projectId"
+          element={
+            <RequireAuth>
+              <ClientProjectPage />
+            </RequireAuth>
+          }
+        />
 
         {/* Protected routes */}
         <Route
