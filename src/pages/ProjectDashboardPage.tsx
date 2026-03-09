@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { getProjectCostSummary } from "../lib/costs";
+import type { CostSummary } from "../lib/costs";
 
 type ProjectRow = {
   id: string;
@@ -52,6 +54,13 @@ export default function ProjectDashboardPage() {
   const [project, setProject] = useState<ProjectRow | null>(null);
   const [client, setClient] = useState<ClientRow | null>(null);
   const [members, setMembers] = useState<ProjectMemberRow[]>([]);
+  const [costSummary, setCostSummary] = useState<CostSummary>({
+    material_cost: 0,
+    labor_cost: 0,
+    equipment_cost: 0,
+    other_cost: 0,
+    total_cost: 0,
+  });
 
   const projectStatusTone = useMemo(() => {
     switch (project?.status) {
@@ -127,6 +136,10 @@ export default function ProjectDashboardPage() {
       }
 
       setMembers((membersResp.data ?? []) as ProjectMemberRow[]);
+
+      const costs = await getProjectCostSummary(projectId);
+      setCostSummary(costs);
+
       setLoading(false);
     }
 
@@ -223,6 +236,47 @@ export default function ProjectDashboardPage() {
           >
             Open Takeoff
           </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+        <div className="text-sm font-semibold mb-4">Project Cost Summary</div>
+
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500">Material Cost</div>
+            <div className="mt-1 text-lg font-semibold text-blue-400">
+              ${costSummary.material_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500">Labor Cost</div>
+            <div className="mt-1 text-lg font-semibold text-amber-400">
+              ${costSummary.labor_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500">Equipment Cost</div>
+            <div className="mt-1 text-lg font-semibold text-purple-400">
+              ${costSummary.equipment_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500">Other Cost</div>
+            <div className="mt-1 text-lg font-semibold text-slate-400">
+              ${costSummary.other_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/40 p-4">
+            <div className="text-xs text-emerald-400">Total Cost</div>
+            <div className="mt-1 text-lg font-semibold text-emerald-300">
+              ${costSummary.total_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
         </div>
       </div>
 

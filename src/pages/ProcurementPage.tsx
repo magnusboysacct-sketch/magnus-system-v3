@@ -6,6 +6,7 @@ import {
   deleteProcurementItem,
 } from "../lib/procurement";
 import type { ProcurementItemWithSource } from "../lib/procurement";
+import { createProjectCost } from "../lib/costs";
 
 export default function ProcurementPage() {
   const { projectId } = useParams<{ projectId?: string }>();
@@ -40,10 +41,46 @@ export default function ProcurementPage() {
     itemId: string,
     status: "pending" | "ordered" | "received"
   ) {
+    const item = items.find((i) => i.id === itemId);
+    if (!item) return;
+
+    if (status === "received" && item.status !== "received") {
+      const unitCostStr = window.prompt(
+        `Enter unit cost for ${item.material_name} (${item.unit || "unit"}):`
+      );
+
+      if (unitCostStr === null) {
+        return;
+      }
+
+      const unitCost = parseFloat(unitCostStr);
+      if (isNaN(unitCost) || unitCost < 0) {
+        alert("Invalid unit cost entered");
+        return;
+      }
+
+      const totalAmount = Number(item.quantity) * unitCost;
+      const description = `${item.material_name} - ${item.quantity} ${item.unit || "units"}`;
+
+      const costResult = await createProjectCost(
+        item.project_id,
+        "material",
+        description,
+        totalAmount,
+        item.id,
+        `Unit cost: ${unitCost} per ${item.unit || "unit"}`
+      );
+
+      if (!costResult.success) {
+        alert("Failed to create cost record");
+        return;
+      }
+    }
+
     const result = await updateProcurementItemStatus(itemId, status);
     if (result.success) {
       setItems((prev) =>
-        prev.map((item) => (item.id === itemId ? { ...item, status } : item))
+        prev.map((i) => (i.id === itemId ? { ...i, status } : i))
       );
     } else {
       alert("Failed to update status");
