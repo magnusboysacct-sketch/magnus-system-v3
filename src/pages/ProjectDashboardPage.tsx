@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { getBudgetVsActual, createProjectCost, fetchProjectCosts, deleteProjectCost, getProjectFinancialSummary } from "../lib/costs";
 import type { BudgetVsActual, CostType, ProjectCost, FinancialSummary } from "../lib/costs";
+import { fetchProjectTasks, createProjectTask, updateProjectTask, deleteProjectTask } from "../lib/tasks";
+import type { ProjectTask, TaskStatus } from "../lib/tasks";
 
 type ProjectRow = {
   id: string;
@@ -115,6 +117,15 @@ export default function ProjectDashboardPage() {
     profit_margin: 0,
   });
 
+  const [tasks, setTasks] = useState<ProjectTask[]>([]);
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [taskFormData, setTaskFormData] = useState({
+    taskName: "",
+    startDate: "",
+    endDate: "",
+    status: "planned" as TaskStatus,
+  });
+
   const projectStatusTone = useMemo(() => {
     switch (project?.status) {
       case "active":
@@ -148,6 +159,14 @@ export default function ProjectDashboardPage() {
     const result = await fetchProjectCosts(projectId);
     if (result.success && result.data) {
       setCosts(result.data);
+    }
+  }
+
+  async function loadTasks() {
+    if (!projectId) return;
+    const result = await fetchProjectTasks(projectId);
+    if (result.success && result.data) {
+      setTasks(result.data);
     }
   }
 
@@ -219,6 +238,7 @@ export default function ProjectDashboardPage() {
 
       await loadBudgetData();
       await loadCosts();
+      await loadTasks();
 
       setLoading(false);
     }
@@ -277,6 +297,61 @@ export default function ProjectDashboardPage() {
       await loadBudgetData();
     } else {
       alert("Failed to delete cost. Please try again.");
+    }
+  }
+
+  async function handleSubmitTask(e: React.FormEvent) {
+    e.preventDefault();
+    if (!projectId || submitting) return;
+
+    if (!taskFormData.taskName.trim()) {
+      alert("Please enter a task name");
+      return;
+    }
+
+    setSubmitting(true);
+
+    const result = await createProjectTask(
+      projectId,
+      taskFormData.taskName.trim(),
+      taskFormData.startDate || undefined,
+      taskFormData.endDate || undefined,
+      taskFormData.status
+    );
+
+    setSubmitting(false);
+
+    if (result.success) {
+      setTaskFormData({
+        taskName: "",
+        startDate: "",
+        endDate: "",
+        status: "planned",
+      });
+      setShowTaskForm(false);
+      await loadTasks();
+    } else {
+      alert("Failed to add task. Please try again.");
+    }
+  }
+
+  async function handleUpdateTaskStatus(taskId: string, newStatus: TaskStatus) {
+    const result = await updateProjectTask(taskId, { status: newStatus });
+    if (result.success) {
+      await loadTasks();
+    } else {
+      alert("Failed to update task status. Please try again.");
+    }
+  }
+
+  async function handleDeleteTask(taskId: string) {
+    if (!confirm("Are you sure you want to delete this task?")) return;
+
+    const result = await deleteProjectTask(taskId);
+    if (result.success) {
+      await loadTasks();
+    } else {
+      alert("Failed to delete task. Please try again.");
     }
   }
 
@@ -647,6 +722,148 @@ export default function ProjectDashboardPage() {
                   >
                     Delete
                   </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm font-semibold">Project Schedule</div>
+          <button
+            onClick={() => setShowTaskForm(!showTaskForm)}
+            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition"
+          >
+            {showTaskForm ? "Cancel" : "+ Add Task"}
+          </button>
+        </div>
+
+        {showTaskForm && (
+          <form onSubmit={handleSubmitTask} className="mb-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Task Name</label>
+              <input
+                type="text"
+                value={taskFormData.taskName}
+                onChange={(e) => setTaskFormData({ ...taskFormData, taskName: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter task name"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={taskFormData.startDate}
+                  onChange={(e) => setTaskFormData({ ...taskFormData, startDate: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={taskFormData.endDate}
+                  onChange={(e) => setTaskFormData({ ...taskFormData, endDate: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Status</label>
+                <select
+                  value={taskFormData.status}
+                  onChange={(e) => setTaskFormData({ ...taskFormData, status: e.target.value as TaskStatus })}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-700 bg-slate-900/50 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="planned">Planned</option>
+                  <option value="active">Active</option>
+                  <option value="complete">Complete</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? "Adding..." : "Add Task"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTaskForm(false);
+                  setTaskFormData({
+                    taskName: "",
+                    startDate: "",
+                    endDate: "",
+                    status: "planned",
+                  });
+                }}
+                className="px-4 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800/50 text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        <div className="space-y-2">
+          {tasks.length === 0 ? (
+            <div className="text-sm text-slate-400 py-4 text-center">
+              No tasks scheduled yet. Add a task to get started.
+            </div>
+          ) : (
+            tasks.map((task) => (
+              <div
+                key={task.id}
+                className="rounded-xl border border-slate-800 bg-slate-950/40 p-4"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-slate-200 mb-2">{task.task_name}</div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                      <div>
+                        <span className="text-slate-500">Start:</span> {task.start_date ? formatDate(task.start_date) : "—"}
+                      </div>
+                      <div>
+                        <span className="text-slate-500">End:</span> {task.end_date ? formatDate(task.end_date) : "—"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={task.status}
+                      onChange={(e) => handleUpdateTaskStatus(task.id, e.target.value as TaskStatus)}
+                      className={`px-2 py-1 rounded text-xs font-medium border ${
+                        task.status === "complete"
+                          ? "bg-emerald-900/30 text-emerald-300 border-emerald-900/40"
+                          : task.status === "active"
+                          ? "bg-blue-900/30 text-blue-300 border-blue-900/40"
+                          : "bg-slate-800/50 text-slate-300 border-slate-700"
+                      }`}
+                    >
+                      <option value="planned">Planned</option>
+                      <option value="active">Active</option>
+                      <option value="complete">Complete</option>
+                    </select>
+
+                    <button
+                      onClick={() => handleDeleteTask(task.id)}
+                      className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-900/20"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             ))
