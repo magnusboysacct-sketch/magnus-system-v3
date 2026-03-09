@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { usePanZoom } from "../features/takeoff/hooks/usePanZoom";
@@ -12,6 +13,7 @@ import {
 } from "../features/takeoff/persistence/takeoffPersistence";
 import { usePlan } from "../hooks/usePlan";
 import PaywallModal from "../components/PaywallModal";
+import { supabase } from "../lib/supabase";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -321,6 +323,9 @@ class TakeoffErrorBoundary extends React.Component<{ children: React.ReactNode }
 }
 
 function TakeoffPageInner() {
+  const nav = useNavigate();
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewerRef = useRef<HTMLDivElement | null>(null);
 
@@ -404,6 +409,7 @@ function TakeoffPageInner() {
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(() => {
+    if (routeProjectId) return routeProjectId;
     const keys = ["active_project_id", "selected_project_id", "project_id"];
     for (const k of keys) {
       const v = localStorage.getItem(k);
@@ -415,6 +421,8 @@ function TakeoffPageInner() {
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
   const [showNewGroupForm, setShowNewGroupForm] = useState(false);
+
+  const [currentProject, setCurrentProject] = useState<{ id: string; name: string | null } | null>(null);
 
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -451,6 +459,42 @@ function TakeoffPageInner() {
     const fracStr = num === 0 ? "" : ` ${num}/${denom}`;
     return `${fFeet}' ${fIn}"${fracStr}`;
   }
+
+  useEffect(() => {
+    if (routeProjectId && routeProjectId !== activeProjectId) {
+      setActiveProjectId(routeProjectId);
+    }
+  }, [routeProjectId, activeProjectId]);
+
+  useEffect(() => {
+    if (!routeProjectId) {
+      setCurrentProject(null);
+      return;
+    }
+
+    let alive = true;
+    async function loadProject() {
+      try {
+        const { data, error } = await supabase
+          .from("projects")
+          .select("id, name")
+          .eq("id", routeProjectId)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!alive) return;
+        if (data) {
+          setCurrentProject(data);
+        }
+      } catch (e) {
+        console.error("Failed to load project:", e);
+      }
+    }
+    loadProject();
+    return () => {
+      alive = false;
+    };
+  }, [routeProjectId]);
 
   useEffect(() => {
     if (groups.length === 0) {
@@ -1488,6 +1532,35 @@ function TakeoffPageInner() {
           onCalibrationOk={handleCalibrationOk}
           onCalibrationCancel={onCalibrationCancel}
         />
+
+      {routeProjectId ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-xs text-slate-500 mb-1">Project Context</div>
+              <div className="text-sm font-semibold">
+                {currentProject?.name || `Project ${routeProjectId}`}
+              </div>
+              <div className="text-xs text-slate-400 mt-1">
+                Project ID: {routeProjectId}
+              </div>
+            </div>
+            <button
+              onClick={() => nav(`/projects/${routeProjectId}`)}
+              className="px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 text-sm"
+            >
+              Back to Project
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 p-4 mb-4">
+          <div className="text-sm font-semibold text-amber-300">Global Takeoff Mode</div>
+          <div className="text-xs text-amber-400/70 mt-1">
+            No project context. Access takeoff from a project dashboard for project-specific measurements.
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-3">
         <div>
