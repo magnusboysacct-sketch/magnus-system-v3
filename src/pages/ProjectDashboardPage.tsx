@@ -5,6 +5,8 @@ import { getBudgetVsActual, createProjectCost, fetchProjectCosts, deleteProjectC
 import type { BudgetVsActual, CostType, ProjectCost, FinancialSummary } from "../lib/costs";
 import { fetchProjectTasks, createProjectTask, updateProjectTask, deleteProjectTask, getProjectProgress } from "../lib/tasks";
 import type { ProjectTask, TaskStatus, ProjectProgress } from "../lib/tasks";
+import { uploadProjectFile, fetchProjectFiles, deleteProjectFile, downloadProjectFile } from "../lib/documents";
+import type { ProjectDocument } from "../lib/documents";
 
 type ProjectRow = {
   id: string;
@@ -130,6 +132,8 @@ export default function ProjectDashboardPage() {
     completed_tasks: 0,
     progress_percent: 0,
   });
+  const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const projectStatusTone = useMemo(() => {
     switch (project?.status) {
@@ -210,6 +214,14 @@ export default function ProjectDashboardPage() {
     setProgress(progressData);
   }
 
+  async function loadDocuments() {
+    if (!projectId) return;
+    const result = await fetchProjectFiles(projectId);
+    if (result.success && result.data) {
+      setDocuments(result.data);
+    }
+  }
+
   async function loadBudgetData() {
     if (!projectId) return;
     const budgetData = await getBudgetVsActual(projectId);
@@ -280,6 +292,7 @@ export default function ProjectDashboardPage() {
       await loadCosts();
       await loadTasks();
       await loadProgress();
+      await loadDocuments();
 
       setLoading(false);
     }
@@ -396,6 +409,42 @@ export default function ProjectDashboardPage() {
       await loadProgress();
     } else {
       alert("Failed to delete task. Please try again.");
+    }
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!projectId || !e.target.files || e.target.files.length === 0) return;
+
+    const file = e.target.files[0];
+    setUploading(true);
+
+    const result = await uploadProjectFile(projectId, file);
+
+    setUploading(false);
+
+    if (result.success) {
+      await loadDocuments();
+      e.target.value = "";
+    } else {
+      alert("Failed to upload file. Please try again.");
+    }
+  }
+
+  async function handleDeleteDocument(documentId: string, filePath: string, fileName: string) {
+    if (!confirm(`Are you sure you want to delete ${fileName}?`)) return;
+
+    const result = await deleteProjectFile(documentId, filePath);
+    if (result.success) {
+      await loadDocuments();
+    } else {
+      alert("Failed to delete document. Please try again.");
+    }
+  }
+
+  async function handleDownloadDocument(filePath: string, fileName: string) {
+    const result = await downloadProjectFile(filePath, fileName);
+    if (!result.success) {
+      alert("Failed to download file. Please try again.");
     }
   }
 
@@ -941,6 +990,62 @@ export default function ProjectDashboardPage() {
                     <button
                       onClick={() => handleDeleteTask(task.id)}
                       className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-900/20"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm font-semibold">Project Documents</div>
+          <label className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition cursor-pointer">
+            {uploading ? "Uploading..." : "Upload File"}
+            <input
+              type="file"
+              onChange={handleFileUpload}
+              className="hidden"
+              disabled={uploading}
+            />
+          </label>
+        </div>
+
+        <div className="space-y-2">
+          {documents.length === 0 ? (
+            <div className="text-sm text-slate-500 text-center py-8">
+              No documents uploaded yet
+            </div>
+          ) : (
+            documents.map((doc) => (
+              <div
+                key={doc.id}
+                className="rounded-xl border border-slate-800 bg-slate-950/40 p-4"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-slate-200 truncate">
+                      {doc.file_name}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      {new Date(doc.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => handleDownloadDocument(doc.file_url, doc.file_name)}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition"
+                    >
+                      Download
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDocument(doc.id, doc.file_url, doc.file_name)}
+                      className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition"
                     >
                       Delete
                     </button>
