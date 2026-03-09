@@ -1,6 +1,8 @@
-# BOQ Foreign Key Constraint Fix
+# BOQ Save Issues - Complete Fix
 
-## Problem Summary
+## Issue 1: Foreign Key Constraint Violation (FIXED)
+
+### Problem
 Saving a BOQ was failing with:
 ```
 insert or update on table "boq_sections" violates foreign key constraint "boq_sections_boq_id_fkey"
@@ -165,6 +167,31 @@ Example logs:
 - [ ] Console logs show correct flow
 - [ ] Foreign key constraint is satisfied
 
+---
+
+## Issue 2: Duplicate Key Constraint Violation (FIXED)
+
+### Problem
+After fixing Issue 1, saving a BOQ was failing with:
+```
+duplicate key value violates unique constraint "boq_unique_version_per_project"
+```
+
+### Root Cause
+The code was always trying to INSERT with `version: 1` when `boqId` was null, even if a draft already existed in the database. This happened after page refreshes where local state was lost.
+
+### Solution
+Enhanced `saveBoqToSupabase()` to:
+1. Check for existing BOQs before inserting
+2. Reuse existing drafts instead of creating duplicates
+3. Calculate next version number when creating new versions
+4. Add defensive version check before INSERT
+5. Use UPDATE for existing BOQs, INSERT only for truly new ones
+
+See `BOQ_DUPLICATE_KEY_FIX.md` for complete details.
+
+---
+
 ## Future Considerations
 
 The `boqs` table appears to be unused or part of an incomplete migration. Consider:
@@ -180,3 +207,15 @@ The `boqs` table appears to be unused or part of an incomplete migration. Consid
    - Drop the unused `boqs` table
 
 Recommendation: Choose Option A or B to avoid future confusion.
+
+---
+
+## Complete Fix Summary
+
+Both issues have been resolved in `src/pages/BOQPage.tsx`:
+
+✅ **Issue 1 Fix**: Changed from `boqs` table to `boq_headers` table
+✅ **Issue 2 Fix**: Smart INSERT/UPDATE logic with version management
+✅ **Added**: Comprehensive logging throughout save flow
+✅ **Added**: Defensive guards and validation
+✅ **Verified**: Build compiles successfully

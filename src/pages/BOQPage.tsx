@@ -569,50 +569,144 @@ export default function BOQPage() {
     setPersistError(null);
 
     try {
-      console.log("[BOQ Save] Starting save process...");
-      console.log("[BOQ Save] Incoming boqId:", boqId);
+      console.log("[BOQ Save] ========== Starting save process ==========");
+      console.log("[BOQ Save] Current local boqId:", boqId);
       console.log("[BOQ Save] Project ID:", projectId);
-      console.log("[BOQ Save] Status:", nextStatus);
+      console.log("[BOQ Save] Target status:", nextStatus);
       console.log("[BOQ Save] Sections count:", sections.length);
 
       let headerId = boqId;
+      let versionNumber = 1;
+      let operationType: "INSERT" | "UPDATE" = "INSERT";
 
-      // Step 1: Create or update the BOQ header in boq_headers table
+      // Step 1: Determine if we need to INSERT or UPDATE
       if (!headerId) {
-        console.log("[BOQ Save] Creating new BOQ header in boq_headers...");
+        console.log("[BOQ Save] No local boqId - checking for existing BOQ in database...");
+
+        // Check if a BOQ already exists for this project
+        const { data: existingBoqs, error: checkErr } = await supabase
+          .from("boq_headers")
+          .select("id, version, status")
+          .eq("project_id", projectId)
+          .order("version", { ascending: false })
+          .limit(1);
+
+        if (checkErr) {
+          console.error("[BOQ Save] Failed to check for existing BOQs:", checkErr);
+          throw checkErr;
+        }
+
+        const existingBoq = Array.isArray(existingBoqs) && existingBoqs.length > 0 ? existingBoqs[0] : null;
+
+        if (existingBoq) {
+          console.log("[BOQ Save] Found existing BOQ:", existingBoq);
+
+          // If we're saving a draft and a draft already exists, reuse it
+          if (nextStatus === "draft" && existingBoq.status === "draft") {
+            console.log("[BOQ Save] Reusing existing draft BOQ");
+            headerId = String(existingBoq.id);
+            versionNumber = numOr(existingBoq.version, 1);
+            operationType = "UPDATE";
+          } else {
+            // Create a new version
+            versionNumber = numOr(existingBoq.version, 0) + 1;
+            operationType = "INSERT";
+            console.log("[BOQ Save] Creating new version:", versionNumber);
+          }
+        } else {
+          console.log("[BOQ Save] No existing BOQ found - will create first version");
+          versionNumber = 1;
+          operationType = "INSERT";
+        }
+      } else {
+        console.log("[BOQ Save] Have local boqId - will UPDATE existing BOQ");
+        operationType = "UPDATE";
+
+        // Fetch the existing BOQ to get its version number
+        const { data: existingBoq, error: fetchErr } = await supabase
+          .from("boq_headers")
+          .select("id, version, project_id")
+          .eq("id", headerId)
+          .single();
+
+        if (fetchErr) {
+          console.error("[BOQ Save] Failed to fetch existing BOQ:", fetchErr);
+          throw fetchErr;
+        }
+
+        versionNumber = numOr(existingBoq.version, 1);
+        console.log("[BOQ Save] Existing BOQ version:", versionNumber);
+
+        // Verify the BOQ belongs to the current project
+        if (String(existingBoq.project_id) !== projectId) {
+          const errorMsg = `BOQ ${headerId} belongs to a different project!`;
+          console.error("[BOQ Save]", errorMsg);
+          throw new Error(errorMsg);
+        }
+      }
+
+      console.log("[BOQ Save] Operation type:", operationType);
+      console.log("[BOQ Save] Version number:", versionNumber);
+
+      // Step 2: Create or update the BOQ header in boq_headers table
+      if (operationType === "INSERT") {
+        console.log("[BOQ Save] INSERTING new BOQ header with version:", versionNumber);
+
+        // Double-check the version doesn't exist (defensive guard)
+        const { data: versionCheck, error: versionCheckErr } = await supabase
+          .from("boq_headers")
+          .select("id")
+          .eq("project_id", projectId)
+          .eq("version", versionNumber)
+          .maybeSingle();
+
+        if (versionCheckErr) {
+          console.error("[BOQ Save] Version check failed:", versionCheckErr);
+          throw versionCheckErr;
+        }
+
+        if (versionCheck) {
+          const errorMsg = `Cannot INSERT: BOQ version ${versionNumber} already exists for project ${projectId}. This should not happen!`;
+          console.error("[BOQ Save]", errorMsg);
+          throw new Error(errorMsg);
+        }
+
         const { data: ins, error: insErr } = await supabase
           .from("boq_headers")
-          .insert([{ project_id: projectId, status: nextStatus, version: 1 }])
-          .select("id")
+          .insert([{ project_id: projectId, status: nextStatus, version: versionNumber }])
+          .select("id, version")
           .single();
 
         if (insErr) {
-          console.error("[BOQ Save] Failed to create BOQ header:", insErr);
+          console.error("[BOQ Save] Failed to INSERT BOQ header:", insErr);
           throw insErr;
         }
 
         headerId = String((ins as any).id);
-        console.log("[BOQ Save] Created new BOQ header with id:", headerId);
+        versionNumber = numOr((ins as any).version, versionNumber);
+        console.log("[BOQ Save] Successfully INSERTED BOQ header:");
+        console.log("[BOQ Save]   - ID:", headerId);
+        console.log("[BOQ Save]   - Version:", versionNumber);
         setBoqId(headerId);
       } else {
-        console.log("[BOQ Save] Updating existing BOQ header:", headerId);
+        console.log("[BOQ Save] UPDATING existing BOQ header:", headerId);
         const { error: upErr } = await supabase
           .from("boq_headers")
-          .update({ status: nextStatus })
+          .update({ status: nextStatus, updated_at: new Date().toISOString() })
           .eq("id", headerId);
 
         if (upErr) {
-          console.error("[BOQ Save] Failed to update BOQ header:", upErr);
+          console.error("[BOQ Save] Failed to UPDATE BOQ header:", upErr);
           throw upErr;
         }
-        console.log("[BOQ Save] Updated BOQ header successfully");
+        console.log("[BOQ Save] Successfully UPDATED BOQ header");
       }
 
-      // Step 2: Verify the BOQ header exists before inserting sections
+      // Step 3: Verify the BOQ header exists before inserting sections
       console.log("[BOQ Save] Verifying BOQ header exists:", headerId);
       const { data: verifyHeader, error: verifyErr } = await supabase
         .from("boq_headers")
-        .select("id")
+        .select("id, version, project_id")
         .eq("id", headerId)
         .single();
 
@@ -621,9 +715,12 @@ export default function BOQPage() {
         console.error("[BOQ Save]", errorMsg);
         throw new Error(errorMsg);
       }
-      console.log("[BOQ Save] BOQ header verified successfully");
+      console.log("[BOQ Save] BOQ header verified successfully:");
+      console.log("[BOQ Save]   - ID:", verifyHeader.id);
+      console.log("[BOQ Save]   - Version:", verifyHeader.version);
+      console.log("[BOQ Save]   - Project ID:", verifyHeader.project_id);
 
-      // Step 3: Delete existing sections
+      // Step 4: Delete existing sections
       console.log("[BOQ Save] Deleting existing sections for boq_id:", headerId);
       const { error: delSecErr } = await supabase
         .from("boq_sections")
@@ -634,8 +731,9 @@ export default function BOQPage() {
         console.error("[BOQ Save] Failed to delete sections:", delSecErr);
         throw delSecErr;
       }
+      console.log("[BOQ Save] Existing sections deleted");
 
-      // Step 4: Insert sections
+      // Step 5: Insert sections
       if (sections.length > 0) {
         const sectionPayload = sections.map((s, idx) => {
           const payload = {
@@ -646,7 +744,11 @@ export default function BOQPage() {
             title: s.title ?? "New Section",
             scope: s.scope ?? "",
           };
-          console.log("[BOQ Save] Section payload:", payload);
+          console.log("[BOQ Save] Section payload [" + idx + "]:", {
+            id: payload.id,
+            boq_id: payload.boq_id,
+            title: payload.title,
+          });
           return payload;
         });
 
@@ -660,9 +762,11 @@ export default function BOQPage() {
           throw secInsErr;
         }
         console.log("[BOQ Save] Sections inserted successfully");
+      } else {
+        console.log("[BOQ Save] No sections to insert");
       }
 
-      // Step 5: Insert items
+      // Step 6: Insert items
       const itemPayload: any[] = [];
       for (const s of sections) {
         for (let i = 0; i < s.items.length; i++) {
@@ -686,13 +790,23 @@ export default function BOQPage() {
             qty: numOr(it.qty, 0),
             rate: numOr(it.rate, 0),
           };
-          console.log("[BOQ Save] Item payload:", payload);
           itemPayload.push(payload);
         }
       }
 
       if (itemPayload.length > 0) {
         console.log("[BOQ Save] Inserting", itemPayload.length, "items...");
+        itemPayload.forEach((item, idx) => {
+          if (idx < 3) {
+            // Log first 3 items only to avoid console spam
+            console.log("[BOQ Save] Item payload [" + idx + "]:", {
+              id: item.id,
+              section_id: item.section_id,
+              item_name: item.item_name,
+            });
+          }
+        });
+
         const { error: itemInsErr } = await supabase
           .from("boq_section_items")
           .insert(itemPayload);
@@ -702,15 +816,18 @@ export default function BOQPage() {
           throw itemInsErr;
         }
         console.log("[BOQ Save] Items inserted successfully");
+      } else {
+        console.log("[BOQ Save] No items to insert");
       }
 
       setStatus(nextStatus);
-      console.log("[BOQ Save] Save completed successfully!");
+      console.log("[BOQ Save] ========== Save completed successfully! ==========");
 
       // light touch: update autosave indicator if user is using auto-save
       if (autoSaveOn) setLastAutoSaveAt(new Date().toLocaleString());
     } catch (e: any) {
-      console.error("[BOQ Save] Save failed:", e);
+      console.error("[BOQ Save] ========== Save failed! ==========");
+      console.error("[BOQ Save] Error:", e);
       setPersistError(e?.message ?? "Failed to save BOQ");
       alert(e?.message ?? "Failed to save BOQ");
     } finally {
