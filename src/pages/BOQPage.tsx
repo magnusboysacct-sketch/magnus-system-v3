@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists";
 import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
+import { generateProcurementFromBOQ } from "../lib/procurement";
 
 type RateItem = {
   id: string;
@@ -760,6 +761,28 @@ export default function BOQPage() {
     alert("Estimate generated from BOQ (placeholder).");
   }
 
+  async function handleGenerateProcurement() {
+    if (!routeProjectId) {
+      alert("Please select a project first");
+      return;
+    }
+
+    const confirmGenerate = window.confirm(
+      "This will regenerate the procurement list from the current BOQ. Any existing procurement items will be replaced. Continue?"
+    );
+
+    if (!confirmGenerate) return;
+
+    const result = await generateProcurementFromBOQ(routeProjectId);
+
+    if (result.success) {
+      alert(`Successfully generated ${result.count} procurement items`);
+      nav(`/projects/${routeProjectId}/procurement`);
+    } else {
+      alert(`Failed to generate procurement: ${result.error}`);
+    }
+  }
+
   function goEditScopes() {
     nav("/settings/master-lists");
   }
@@ -1127,6 +1150,15 @@ export default function BOQPage() {
             className="px-3 py-2 rounded bg-blue-700 text-white disabled:opacity-50"
           >
             Generate Estimate
+          </button>
+
+          <button
+            onClick={handleGenerateProcurement}
+            disabled={!routeProjectId || sections.length === 0}
+            className="px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-50"
+            title="Generate procurement list from BOQ items"
+          >
+            Generate Procurement
           </button>
         </div>
       </div>
