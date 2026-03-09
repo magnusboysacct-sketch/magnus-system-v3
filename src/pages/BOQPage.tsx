@@ -465,8 +465,10 @@ export default function BOQPage() {
     setPersistError(null);
 
     try {
+      console.log("[BOQ Load] Loading BOQ for project:", projectId);
+
       const { data: headers, error: headerErr } = await supabase
-        .from("boqs")
+        .from("boq_headers")
         .select("id,project_id,status,version,updated_at")
         .eq("project_id", projectId)
         .order("updated_at", { ascending: false })
@@ -477,12 +479,14 @@ export default function BOQPage() {
 
       const header = Array.isArray(headers) ? (headers[0] as BoqHeaderRow | undefined) : undefined;
       if (!header) {
+        console.log("[BOQ Load] No existing BOQ found for project");
         setBoqId(null);
         setStatus("draft");
         setSections([]);
         return;
       }
 
+      console.log("[BOQ Load] Found BOQ header:", header.id);
       setBoqId(header.id);
       setStatus(header.status as "draft" | "approved");
 
@@ -565,43 +569,105 @@ export default function BOQPage() {
     setPersistError(null);
 
     try {
+      console.log("[BOQ Save] Starting save process...");
+      console.log("[BOQ Save] Incoming boqId:", boqId);
+      console.log("[BOQ Save] Project ID:", projectId);
+      console.log("[BOQ Save] Status:", nextStatus);
+      console.log("[BOQ Save] Sections count:", sections.length);
+
       let headerId = boqId;
 
+      // Step 1: Create or update the BOQ header in boq_headers table
       if (!headerId) {
+        console.log("[BOQ Save] Creating new BOQ header in boq_headers...");
         const { data: ins, error: insErr } = await supabase
-          .from("boqs")
+          .from("boq_headers")
           .insert([{ project_id: projectId, status: nextStatus, version: 1 }])
           .select("id")
           .single();
 
-        if (insErr) throw insErr;
+        if (insErr) {
+          console.error("[BOQ Save] Failed to create BOQ header:", insErr);
+          throw insErr;
+        }
+
         headerId = String((ins as any).id);
+        console.log("[BOQ Save] Created new BOQ header with id:", headerId);
         setBoqId(headerId);
       } else {
-        const { error: upErr } = await supabase.from("boqs").update({ status: nextStatus }).eq("id", headerId);
-        if (upErr) throw upErr;
+        console.log("[BOQ Save] Updating existing BOQ header:", headerId);
+        const { error: upErr } = await supabase
+          .from("boq_headers")
+          .update({ status: nextStatus })
+          .eq("id", headerId);
+
+        if (upErr) {
+          console.error("[BOQ Save] Failed to update BOQ header:", upErr);
+          throw upErr;
+        }
+        console.log("[BOQ Save] Updated BOQ header successfully");
       }
 
-      const { error: delSecErr } = await supabase.from("boq_sections").delete().eq("boq_id", headerId);
-      if (delSecErr) throw delSecErr;
+      // Step 2: Verify the BOQ header exists before inserting sections
+      console.log("[BOQ Save] Verifying BOQ header exists:", headerId);
+      const { data: verifyHeader, error: verifyErr } = await supabase
+        .from("boq_headers")
+        .select("id")
+        .eq("id", headerId)
+        .single();
 
-      const sectionPayload = sections.map((s, idx) => ({
-        id: s.id,
-        boq_id: headerId,
-        sort_order: idx,
-        master_category_id: s.masterCategoryId,
-        title: s.title ?? "New Section",
-        scope: s.scope ?? "",
-      }));
+      if (verifyErr || !verifyHeader) {
+        const errorMsg = `BOQ header verification failed! Header ID ${headerId} does not exist in boq_headers table.`;
+        console.error("[BOQ Save]", errorMsg);
+        throw new Error(errorMsg);
+      }
+      console.log("[BOQ Save] BOQ header verified successfully");
 
-      const { error: secInsErr } = await supabase.from("boq_sections").insert(sectionPayload);
-      if (secInsErr) throw secInsErr;
+      // Step 3: Delete existing sections
+      console.log("[BOQ Save] Deleting existing sections for boq_id:", headerId);
+      const { error: delSecErr } = await supabase
+        .from("boq_sections")
+        .delete()
+        .eq("boq_id", headerId);
 
+      if (delSecErr) {
+        console.error("[BOQ Save] Failed to delete sections:", delSecErr);
+        throw delSecErr;
+      }
+
+      // Step 4: Insert sections
+      if (sections.length > 0) {
+        const sectionPayload = sections.map((s, idx) => {
+          const payload = {
+            id: s.id,
+            boq_id: headerId,
+            sort_order: idx,
+            master_category_id: s.masterCategoryId,
+            title: s.title ?? "New Section",
+            scope: s.scope ?? "",
+          };
+          console.log("[BOQ Save] Section payload:", payload);
+          return payload;
+        });
+
+        console.log("[BOQ Save] Inserting", sectionPayload.length, "sections...");
+        const { error: secInsErr } = await supabase
+          .from("boq_sections")
+          .insert(sectionPayload);
+
+        if (secInsErr) {
+          console.error("[BOQ Save] Failed to insert sections:", secInsErr);
+          throw secInsErr;
+        }
+        console.log("[BOQ Save] Sections inserted successfully");
+      }
+
+      // Step 5: Insert items
       const itemPayload: any[] = [];
       for (const s of sections) {
         for (let i = 0; i < s.items.length; i++) {
           const it = s.items[i];
-          itemPayload.push({
+          const payload = {
             id: it.id,
             section_id: s.id,
             sort_order: i,
@@ -619,21 +685,32 @@ export default function BOQPage() {
 
             qty: numOr(it.qty, 0),
             rate: numOr(it.rate, 0),
-          });
+          };
+          console.log("[BOQ Save] Item payload:", payload);
+          itemPayload.push(payload);
         }
       }
 
       if (itemPayload.length > 0) {
-        const { error: itemInsErr } = await supabase.from("boq_section_items").insert(itemPayload);
-        if (itemInsErr) throw itemInsErr;
+        console.log("[BOQ Save] Inserting", itemPayload.length, "items...");
+        const { error: itemInsErr } = await supabase
+          .from("boq_section_items")
+          .insert(itemPayload);
+
+        if (itemInsErr) {
+          console.error("[BOQ Save] Failed to insert items:", itemInsErr);
+          throw itemInsErr;
+        }
+        console.log("[BOQ Save] Items inserted successfully");
       }
 
       setStatus(nextStatus);
+      console.log("[BOQ Save] Save completed successfully!");
 
       // light touch: update autosave indicator if user is using auto-save
       if (autoSaveOn) setLastAutoSaveAt(new Date().toLocaleString());
     } catch (e: any) {
-      console.error("saveBoqToSupabase failed:", e);
+      console.error("[BOQ Save] Save failed:", e);
       setPersistError(e?.message ?? "Failed to save BOQ");
       alert(e?.message ?? "Failed to save BOQ");
     } finally {
