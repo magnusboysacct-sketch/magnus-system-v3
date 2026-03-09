@@ -13,6 +13,12 @@ export interface ProjectTask {
   updated_at: string;
 }
 
+export interface ProjectProgress {
+  total_tasks: number;
+  completed_tasks: number;
+  progress_percent: number;
+}
+
 export async function fetchProjectTasks(projectId: string) {
   try {
     const { data, error } = await supabase
@@ -118,5 +124,41 @@ export async function deleteProjectTask(taskId: string) {
   } catch (e) {
     console.error("Exception deleting project task:", e);
     return { success: false, error: e };
+  }
+}
+
+export async function getProjectProgress(projectId: string): Promise<ProjectProgress> {
+  try {
+    const { data, error } = await supabase
+      .from("project_tasks")
+      .select("status")
+      .eq("project_id", projectId);
+
+    if (error) {
+      console.error("Error fetching project progress:", error);
+      return {
+        total_tasks: 0,
+        completed_tasks: 0,
+        progress_percent: 0,
+      };
+    }
+
+    const tasks = data || [];
+    const total_tasks = tasks.length;
+    const completed_tasks = tasks.filter((task) => task.status === "complete").length;
+    const progress_percent = total_tasks > 0 ? Math.round((completed_tasks / total_tasks) * 100) : 0;
+
+    return {
+      total_tasks,
+      completed_tasks,
+      progress_percent,
+    };
+  } catch (e) {
+    console.error("Exception fetching project progress:", e);
+    return {
+      total_tasks: 0,
+      completed_tasks: 0,
+      progress_percent: 0,
+    };
   }
 }

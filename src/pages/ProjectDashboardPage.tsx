@@ -3,8 +3,8 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { getBudgetVsActual, createProjectCost, fetchProjectCosts, deleteProjectCost, getProjectFinancialSummary } from "../lib/costs";
 import type { BudgetVsActual, CostType, ProjectCost, FinancialSummary } from "../lib/costs";
-import { fetchProjectTasks, createProjectTask, updateProjectTask, deleteProjectTask } from "../lib/tasks";
-import type { ProjectTask, TaskStatus } from "../lib/tasks";
+import { fetchProjectTasks, createProjectTask, updateProjectTask, deleteProjectTask, getProjectProgress } from "../lib/tasks";
+import type { ProjectTask, TaskStatus, ProjectProgress } from "../lib/tasks";
 
 type ProjectRow = {
   id: string;
@@ -125,6 +125,11 @@ export default function ProjectDashboardPage() {
     endDate: "",
     status: "planned" as TaskStatus,
   });
+  const [progress, setProgress] = useState<ProjectProgress>({
+    total_tasks: 0,
+    completed_tasks: 0,
+    progress_percent: 0,
+  });
 
   const projectStatusTone = useMemo(() => {
     switch (project?.status) {
@@ -154,6 +159,35 @@ export default function ProjectDashboardPage() {
     }
   }, [financialSummary.profit_margin]);
 
+  const progressStatus = useMemo(() => {
+    const percent = progress.progress_percent;
+    if (percent > 80) {
+      return {
+        label: "On Track",
+        color: "text-emerald-400",
+        bgColor: "bg-emerald-900/20",
+        borderColor: "border-emerald-900/40",
+        barColor: "bg-emerald-500",
+      };
+    } else if (percent >= 40) {
+      return {
+        label: "In Progress",
+        color: "text-amber-400",
+        bgColor: "bg-amber-900/20",
+        borderColor: "border-amber-900/40",
+        barColor: "bg-amber-500",
+      };
+    } else {
+      return {
+        label: "Early Stage",
+        color: "text-slate-400",
+        bgColor: "bg-slate-900/20",
+        borderColor: "border-slate-800",
+        barColor: "bg-slate-500",
+      };
+    }
+  }, [progress.progress_percent]);
+
   async function loadCosts() {
     if (!projectId) return;
     const result = await fetchProjectCosts(projectId);
@@ -168,6 +202,12 @@ export default function ProjectDashboardPage() {
     if (result.success && result.data) {
       setTasks(result.data);
     }
+  }
+
+  async function loadProgress() {
+    if (!projectId) return;
+    const progressData = await getProjectProgress(projectId);
+    setProgress(progressData);
   }
 
   async function loadBudgetData() {
@@ -239,6 +279,7 @@ export default function ProjectDashboardPage() {
       await loadBudgetData();
       await loadCosts();
       await loadTasks();
+      await loadProgress();
 
       setLoading(false);
     }
@@ -330,6 +371,7 @@ export default function ProjectDashboardPage() {
       });
       setShowTaskForm(false);
       await loadTasks();
+      await loadProgress();
     } else {
       alert("Failed to add task. Please try again.");
     }
@@ -339,6 +381,7 @@ export default function ProjectDashboardPage() {
     const result = await updateProjectTask(taskId, { status: newStatus });
     if (result.success) {
       await loadTasks();
+      await loadProgress();
     } else {
       alert("Failed to update task status. Please try again.");
     }
@@ -350,6 +393,7 @@ export default function ProjectDashboardPage() {
     const result = await deleteProjectTask(taskId);
     if (result.success) {
       await loadTasks();
+      await loadProgress();
     } else {
       alert("Failed to delete task. Please try again.");
     }
@@ -726,6 +770,43 @@ export default function ProjectDashboardPage() {
               </div>
             ))
           )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm font-semibold">Project Progress</div>
+          <div className={`px-2 py-1 rounded text-xs font-medium border ${progressStatus.bgColor} ${progressStatus.color} ${progressStatus.borderColor}`}>
+            {progressStatus.label}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500 mb-1">Total Tasks</div>
+            <div className="text-2xl font-semibold text-slate-200">{progress.total_tasks}</div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500 mb-1">Completed Tasks</div>
+            <div className="text-2xl font-semibold text-slate-200">{progress.completed_tasks}</div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500 mb-1">Progress</div>
+            <div className={`text-2xl font-semibold ${progressStatus.color}`}>
+              {progress.progress_percent}%
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+          <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
+            <div
+              className={`h-full ${progressStatus.barColor} transition-all duration-500`}
+              style={{ width: `${progress.progress_percent}%` }}
+            ></div>
+          </div>
         </div>
       </div>
 
