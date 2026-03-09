@@ -14,6 +14,7 @@ import {
 import { usePlan } from "../hooks/usePlan";
 import PaywallModal from "../components/PaywallModal";
 import { supabase } from "../lib/supabase";
+import { saveMeasurementsToDB } from "../lib/takeoffDB";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -1448,7 +1449,7 @@ function TakeoffPageInner() {
 
     setSaveStatus("saving");
 
-    saveTimeoutRef.current = setTimeout(() => {
+    saveTimeoutRef.current = setTimeout(async () => {
       try {
         const groupTotalsMap: Record<string, {
           line_ft: number;
@@ -1477,6 +1478,15 @@ function TakeoffPageInner() {
         }));
         localStorage.setItem("takeoff_groups", JSON.stringify(groupsMetadata));
 
+        if (activeProjectId && measurements.length > 0) {
+          await saveMeasurementsToDB(
+            activeProjectId,
+            sessionId,
+            measurements,
+            groups
+          );
+        }
+
         setSaveStatus("saved");
       } catch (err) {
         console.error("Save failed:", err);
@@ -1489,7 +1499,7 @@ function TakeoffPageInner() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [measurements, groups]);
+  }, [measurements, groups, activeProjectId, sessionId]);
 
   useEffect(() => {
     if (!sessionId || !dbLoaded) return;

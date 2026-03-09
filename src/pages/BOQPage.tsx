@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists";
+import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
 
 type RateItem = {
   id: string;
@@ -279,6 +280,16 @@ export default function BOQPage() {
     search: "",
     selectedAssemblyId: "",
     qty: "1",
+  });
+
+  const [importTakeoffModal, setImportTakeoffModal] = useState<{
+    open: boolean;
+    sectionId: string | null;
+    itemId: string | null;
+  }>({
+    open: false,
+    sectionId: null,
+    itemId: null,
   });
 
   useEffect(() => {
@@ -727,6 +738,14 @@ export default function BOQPage() {
         s.id !== sectionId ? s : { ...s, items: s.items.map((it) => (it.id === itemId ? { ...it, ...patch } : it)) }
       )
     );
+  }
+
+  function handleImportTakeoff(groupName: string, metric: string, value: number) {
+    if (!importTakeoffModal.sectionId || !importTakeoffModal.itemId) return;
+
+    updateItem(importTakeoffModal.sectionId, importTakeoffModal.itemId, {
+      qty: value,
+    });
   }
 
   function approveAndLock() {
@@ -1352,13 +1371,32 @@ export default function BOQPage() {
 
                         <div className="col-span-6 md:col-span-1">
                           <div className="text-xs text-slate-400 mb-1">Qty</div>
-                          <input
-                            type="number"
-                            value={Number.isFinite(it.qty) ? it.qty : 0}
-                            disabled={!canEdit}
-                            onChange={(e) => updateItem(s.id, it.id, { qty: numOr(e.target.value, 0) })}
-                            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
-                          />
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              value={Number.isFinite(it.qty) ? it.qty : 0}
+                              disabled={!canEdit}
+                              onChange={(e) => updateItem(s.id, it.id, { qty: numOr(e.target.value, 0) })}
+                              className="flex-1 px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
+                            />
+                            {canEdit && routeProjectId && (
+                              <button
+                                onClick={() =>
+                                  setImportTakeoffModal({
+                                    open: true,
+                                    sectionId: s.id,
+                                    itemId: it.id,
+                                  })
+                                }
+                                className="px-2 py-2 rounded bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-900/40 text-emerald-300 text-xs"
+                                title="Import from Takeoff"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
                         </div>
 
                         <div className="col-span-6 md:col-span-1">
@@ -1643,6 +1681,13 @@ export default function BOQPage() {
           </div>
         </div>
       ) : null}
+
+      <ImportTakeoffModal
+        isOpen={importTakeoffModal.open}
+        onClose={() => setImportTakeoffModal({ open: false, sectionId: null, itemId: null })}
+        projectId={routeProjectId || ""}
+        onImport={handleImportTakeoff}
+      />
     </div>
   );
 }
