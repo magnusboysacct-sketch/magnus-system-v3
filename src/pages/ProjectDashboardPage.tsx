@@ -9,6 +9,8 @@ import { uploadProjectFile, fetchProjectFiles, deleteProjectFile, downloadProjec
 import type { ProjectDocument } from "../lib/documents";
 import { fetchDailyLogs, createDailyLog, updateDailyLog, deleteDailyLog } from "../lib/dailyLogs";
 import type { DailyLog } from "../lib/dailyLogs";
+import { uploadProjectPhoto, fetchProjectPhotos, deleteProjectPhoto } from "../lib/photos";
+import type { ProjectPhoto } from "../lib/photos";
 
 type ProjectRow = {
   id: string;
@@ -148,6 +150,9 @@ export default function ProjectDashboardPage() {
     issues: '',
     notes: '',
   });
+  const [photos, setPhotos] = useState<ProjectPhoto[]>([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoCaption, setPhotoCaption] = useState('');
 
   const projectStatusTone = useMemo(() => {
     switch (project?.status) {
@@ -244,6 +249,14 @@ export default function ProjectDashboardPage() {
     }
   }
 
+  async function loadPhotos() {
+    if (!projectId) return;
+    const result = await fetchProjectPhotos(projectId);
+    if (result.success && result.data) {
+      setPhotos(result.data);
+    }
+  }
+
   async function loadBudgetData() {
     if (!projectId) return;
     const budgetData = await getBudgetVsActual(projectId);
@@ -316,6 +329,7 @@ export default function ProjectDashboardPage() {
       await loadProgress();
       await loadDocuments();
       await loadDailyLogs();
+      await loadPhotos();
 
       setLoading(false);
     }
@@ -540,6 +554,53 @@ export default function ProjectDashboardPage() {
       await loadDailyLogs();
     } else {
       alert("Failed to delete log. Please try again.");
+    }
+  }
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!projectId) return;
+
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+
+    if (!file.type.startsWith('image/')) {
+      alert("Please select an image file.");
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert("File size must be less than 10MB.");
+      return;
+    }
+
+    setUploadingPhoto(true);
+
+    const result = await uploadProjectPhoto(file, {
+      project_id: projectId,
+      caption: photoCaption,
+    });
+
+    if (result.success) {
+      await loadPhotos();
+      setPhotoCaption('');
+      e.target.value = '';
+    } else {
+      alert("Failed to upload photo. Please try again.");
+    }
+
+    setUploadingPhoto(false);
+  }
+
+  async function handleDeletePhoto(photoId: string, photoUrl: string) {
+    if (!confirm("Are you sure you want to delete this photo?")) return;
+
+    const result = await deleteProjectPhoto(photoId, photoUrl);
+    if (result.success) {
+      await loadPhotos();
+    } else {
+      alert("Failed to delete photo. Please try again.");
     }
   }
 
@@ -1356,6 +1417,72 @@ export default function ProjectDashboardPage() {
             ))
           )}
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm font-semibold">Project Photo Log</div>
+          <div className="flex items-center gap-3">
+            <input
+              type="text"
+              value={photoCaption}
+              onChange={(e) => setPhotoCaption(e.target.value)}
+              placeholder="Photo caption (optional)"
+              className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+            />
+            <label className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition cursor-pointer">
+              {uploadingPhoto ? "Uploading..." : "Upload Photo"}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                disabled={uploadingPhoto}
+                className="hidden"
+              />
+            </label>
+          </div>
+        </div>
+
+        {photos.length === 0 ? (
+          <div className="text-sm text-slate-500 text-center py-8">
+            No photos uploaded yet
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {photos.map((photo) => (
+              <div
+                key={photo.id}
+                className="rounded-xl border border-slate-800 bg-slate-950/40 overflow-hidden"
+              >
+                <div className="aspect-square bg-slate-900 relative">
+                  <img
+                    src={(photo as any).publicUrl}
+                    alt={photo.caption || 'Project photo'}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="p-3 space-y-2">
+                  {photo.caption && (
+                    <div className="text-sm text-slate-300">{photo.caption}</div>
+                  )}
+                  <div className="text-xs text-slate-500">
+                    {new Date(photo.created_at).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
+                  </div>
+                  <button
+                    onClick={() => handleDeletePhoto(photo.id, photo.photo_url)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
