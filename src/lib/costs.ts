@@ -48,20 +48,27 @@ export async function createProjectCost(
   costType: CostType,
   description: string,
   amount: number,
+  costDate?: string,
   sourceId?: string,
   notes?: string
 ) {
   try {
+    const insertData: any = {
+      project_id: projectId,
+      cost_type: costType,
+      description,
+      amount,
+      source_id: sourceId || null,
+      notes: notes || null,
+    };
+
+    if (costDate) {
+      insertData.cost_date = costDate;
+    }
+
     const { data, error } = await supabase
       .from("project_costs")
-      .insert({
-        project_id: projectId,
-        cost_type: costType,
-        description,
-        amount,
-        source_id: sourceId || null,
-        notes: notes || null,
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -321,6 +328,7 @@ export async function createCostFromProcurement(
     "material",
     description,
     totalAmount,
+    undefined,
     procurementItem.id,
     `Auto-generated from procurement item`
   );

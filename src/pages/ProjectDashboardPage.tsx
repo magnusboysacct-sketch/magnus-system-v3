@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { getBudgetVsActual } from "../lib/costs";
-import type { BudgetVsActual } from "../lib/costs";
+import { getBudgetVsActual, createProjectCost, fetchProjectCosts, deleteProjectCost } from "../lib/costs";
+import type { BudgetVsActual, CostType, ProjectCost } from "../lib/costs";
 
 type ProjectRow = {
   id: string;
@@ -40,6 +40,20 @@ function formatCurrency(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function formatDate(dateString: string | null) {
+  if (!dateString) return "—";
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return dateString;
+  }
 }
 
 export default function ProjectDashboardPage() {
@@ -85,6 +99,16 @@ export default function ProjectDashboardPage() {
     },
   });
 
+  const [costs, setCosts] = useState<ProjectCost[]>([]);
+  const [showCostForm, setShowCostForm] = useState(false);
+  const [costFormData, setCostFormData] = useState({
+    costType: "labor" as CostType,
+    description: "",
+    amount: "",
+    costDate: new Date().toISOString().split("T")[0],
+  });
+  const [submitting, setSubmitting] = useState(false);
+
   const projectStatusTone = useMemo(() => {
     switch (project?.status) {
       case "active":
@@ -101,6 +125,20 @@ export default function ProjectDashboardPage() {
         return "bg-slate-900/20 text-slate-300 border border-slate-800";
     }
   }, [project?.status]);
+
+  async function loadCosts() {
+    if (!projectId) return;
+    const result = await fetchProjectCosts(projectId);
+    if (result.success && result.data) {
+      setCosts(result.data);
+    }
+  }
+
+  async function loadBudgetData() {
+    if (!projectId) return;
+    const budgetData = await getBudgetVsActual(projectId);
+    setBudgetVsActual(budgetData);
+  }
 
   useEffect(() => {
     async function loadProjectDashboard() {
@@ -160,14 +198,68 @@ export default function ProjectDashboardPage() {
 
       setMembers((membersResp.data ?? []) as ProjectMemberRow[]);
 
-      const budgetData = await getBudgetVsActual(projectId);
-      setBudgetVsActual(budgetData);
+      await loadBudgetData();
+      await loadCosts();
 
       setLoading(false);
     }
 
     loadProjectDashboard();
   }, [projectId]);
+
+  async function handleSubmitCost(e: React.FormEvent) {
+    e.preventDefault();
+    if (!projectId || submitting) return;
+
+    const amount = parseFloat(costFormData.amount);
+    if (isNaN(amount) || amount <= 0) {
+      alert("Please enter a valid amount");
+      return;
+    }
+
+    if (!costFormData.description.trim()) {
+      alert("Please enter a description");
+      return;
+    }
+
+    setSubmitting(true);
+
+    const result = await createProjectCost(
+      projectId,
+      costFormData.costType,
+      costFormData.description.trim(),
+      amount,
+      costFormData.costDate
+    );
+
+    setSubmitting(false);
+
+    if (result.success) {
+      setCostFormData({
+        costType: "labor",
+        description: "",
+        amount: "",
+        costDate: new Date().toISOString().split("T")[0],
+      });
+      setShowCostForm(false);
+      await loadCosts();
+      await loadBudgetData();
+    } else {
+      alert("Failed to add cost. Please try again.");
+    }
+  }
+
+  async function handleDeleteCost(costId: string) {
+    if (!confirm("Are you sure you want to delete this cost entry?")) return;
+
+    const result = await deleteProjectCost(costId);
+    if (result.success) {
+      await loadCosts();
+      await loadBudgetData();
+    } else {
+      alert("Failed to delete cost. Please try again.");
+    }
+  }
 
   if (loading) {
     return <div className="p-6 text-sm text-slate-400">Loading project dashboard...</div>;
@@ -362,6 +454,144 @@ export default function ProjectDashboardPage() {
 
         <div className="mt-3 text-xs text-slate-500">
           Positive variance indicates budget remaining. Negative variance indicates over budget.
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm font-semibold">Project Costs</div>
+          <button
+            onClick={() => setShowCostForm(!showCostForm)}
+            className="px-3 py-1.5 rounded-lg bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-300 text-sm border border-emerald-900/40"
+          >
+            {showCostForm ? "Cancel" : "+ Add Cost"}
+          </button>
+        </div>
+
+        {showCostForm && (
+          <form onSubmit={handleSubmitCost} className="mb-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Cost Type</label>
+                <select
+                  value={costFormData.costType}
+                  onChange={(e) =>
+                    setCostFormData({ ...costFormData, costType: e.target.value as CostType })
+                  }
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-800 text-sm"
+                  required
+                >
+                  <option value="material">Material</option>
+                  <option value="labor">Labor</option>
+                  <option value="equipment">Equipment</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Date</label>
+                <input
+                  type="date"
+                  value={costFormData.costDate}
+                  onChange={(e) => setCostFormData({ ...costFormData, costDate: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-800 text-sm"
+                  required
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-xs text-slate-400 mb-1.5">Description</label>
+                <input
+                  type="text"
+                  value={costFormData.description}
+                  onChange={(e) => setCostFormData({ ...costFormData, description: e.target.value })}
+                  placeholder="e.g., Site labor for week ending 3/9"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-800 text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Amount</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={costFormData.amount}
+                  onChange={(e) => setCostFormData({ ...costFormData, amount: e.target.value })}
+                  placeholder="0.00"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-800 text-sm"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-4">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-2 rounded-lg bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-300 text-sm border border-emerald-900/50 disabled:opacity-50"
+              >
+                {submitting ? "Adding..." : "Add Cost"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCostForm(false)}
+                className="px-4 py-2 rounded-lg bg-slate-800/50 hover:bg-slate-800 text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        <div className="space-y-2">
+          {costs.length === 0 ? (
+            <div className="text-sm text-slate-400 py-4 text-center">
+              No costs recorded yet. Add a cost to get started.
+            </div>
+          ) : (
+            costs.map((cost) => (
+              <div
+                key={cost.id}
+                className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 flex items-center justify-between gap-4"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        cost.cost_type === "material"
+                          ? "bg-blue-900/30 text-blue-300 border border-blue-900/40"
+                          : cost.cost_type === "labor"
+                          ? "bg-amber-900/30 text-amber-300 border border-amber-900/40"
+                          : cost.cost_type === "equipment"
+                          ? "bg-purple-900/30 text-purple-300 border border-purple-900/40"
+                          : "bg-slate-800/50 text-slate-300 border border-slate-700"
+                      }`}
+                    >
+                      {cost.cost_type}
+                    </span>
+                    <span className="text-xs text-slate-500">{formatDate(cost.cost_date)}</span>
+                  </div>
+                  <div className="text-sm text-slate-200">{cost.description}</div>
+                  {cost.notes && (
+                    <div className="text-xs text-slate-500 mt-1">{cost.notes}</div>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-sm font-medium text-slate-200">
+                    ${formatCurrency(Number(cost.amount))}
+                  </div>
+                  <button
+                    onClick={() => handleDeleteCost(cost.id)}
+                    className="px-2 py-1 rounded text-xs text-red-400 hover:bg-red-900/20"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
