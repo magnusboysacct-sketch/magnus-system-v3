@@ -23,6 +23,26 @@ export interface CostSummary {
   total_cost: number;
 }
 
+export interface BudgetSummary {
+  material_budget: number;
+  labor_budget: number;
+  equipment_budget: number;
+  other_budget: number;
+  total_budget: number;
+}
+
+export interface BudgetVsActual {
+  budget: BudgetSummary;
+  actual: CostSummary;
+  variance: {
+    material_variance: number;
+    labor_variance: number;
+    equipment_variance: number;
+    other_variance: number;
+    total_variance: number;
+  };
+}
+
 export async function createProjectCost(
   projectId: string,
   costType: CostType,
@@ -116,6 +136,131 @@ export async function getProjectCostSummary(
       total_cost: 0,
     };
   }
+}
+
+export async function getProjectBudgetSummary(
+  projectId: string
+): Promise<BudgetSummary> {
+  try {
+    const { data: boqHeaders, error: headerError } = await supabase
+      .from("boq_headers")
+      .select("id")
+      .eq("project_id", projectId)
+      .order("updated_at", { ascending: false })
+      .order("version", { ascending: false })
+      .limit(1);
+
+    if (headerError || !boqHeaders || boqHeaders.length === 0) {
+      return {
+        material_budget: 0,
+        labor_budget: 0,
+        equipment_budget: 0,
+        other_budget: 0,
+        total_budget: 0,
+      };
+    }
+
+    const boqId = boqHeaders[0].id;
+
+    const { data: items, error: itemsError } = await supabase
+      .from("boq_items")
+      .select("qty, rate, category, item")
+      .eq("boq_id", boqId)
+      .eq("is_section_header", false);
+
+    if (itemsError || !items) {
+      return {
+        material_budget: 0,
+        labor_budget: 0,
+        equipment_budget: 0,
+        other_budget: 0,
+        total_budget: 0,
+      };
+    }
+
+    const summary: BudgetSummary = {
+      material_budget: 0,
+      labor_budget: 0,
+      equipment_budget: 0,
+      other_budget: 0,
+      total_budget: 0,
+    };
+
+    items.forEach((item) => {
+      const qty = Number(item.qty) || 0;
+      const rate = Number(item.rate) || 0;
+      const amount = qty * rate;
+
+      summary.total_budget += amount;
+
+      const category = (item.category || "").toLowerCase();
+      const itemName = (item.item || "").toLowerCase();
+      const combined = `${category} ${itemName}`;
+
+      if (
+        combined.includes("labor") ||
+        combined.includes("labour") ||
+        combined.includes("crew") ||
+        combined.includes("worker")
+      ) {
+        summary.labor_budget += amount;
+      } else if (
+        combined.includes("equipment") ||
+        combined.includes("machinery") ||
+        combined.includes("tool") ||
+        combined.includes("crane") ||
+        combined.includes("excavator")
+      ) {
+        summary.equipment_budget += amount;
+      } else if (
+        combined.includes("material") ||
+        combined.includes("concrete") ||
+        combined.includes("steel") ||
+        combined.includes("brick") ||
+        combined.includes("cement") ||
+        combined.includes("sand") ||
+        combined.includes("aggregate") ||
+        combined.includes("timber") ||
+        combined.includes("paint") ||
+        combined.includes("pipe") ||
+        combined.includes("cable")
+      ) {
+        summary.material_budget += amount;
+      } else {
+        summary.other_budget += amount;
+      }
+    });
+
+    return summary;
+  } catch (e) {
+    console.error("Exception fetching budget summary:", e);
+    return {
+      material_budget: 0,
+      labor_budget: 0,
+      equipment_budget: 0,
+      other_budget: 0,
+      total_budget: 0,
+    };
+  }
+}
+
+export async function getBudgetVsActual(
+  projectId: string
+): Promise<BudgetVsActual> {
+  const budget = await getProjectBudgetSummary(projectId);
+  const actual = await getProjectCostSummary(projectId);
+
+  return {
+    budget,
+    actual,
+    variance: {
+      material_variance: budget.material_budget - actual.material_cost,
+      labor_variance: budget.labor_budget - actual.labor_cost,
+      equipment_variance: budget.equipment_budget - actual.equipment_cost,
+      other_variance: budget.other_budget - actual.other_cost,
+      total_variance: budget.total_budget - actual.total_cost,
+    },
+  };
 }
 
 export async function fetchProjectCosts(projectId: string) {

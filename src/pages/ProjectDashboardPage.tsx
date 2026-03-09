@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { getProjectCostSummary } from "../lib/costs";
-import type { CostSummary } from "../lib/costs";
+import { getBudgetVsActual } from "../lib/costs";
+import type { BudgetVsActual } from "../lib/costs";
 
 type ProjectRow = {
   id: string;
@@ -35,6 +35,13 @@ function prettyRole(value: string | null | undefined) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
+function formatCurrency(value: number) {
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export default function ProjectDashboardPage() {
   const { projectId: routeProjectId } = useParams();
   const location = useLocation();
@@ -54,12 +61,28 @@ export default function ProjectDashboardPage() {
   const [project, setProject] = useState<ProjectRow | null>(null);
   const [client, setClient] = useState<ClientRow | null>(null);
   const [members, setMembers] = useState<ProjectMemberRow[]>([]);
-  const [costSummary, setCostSummary] = useState<CostSummary>({
-    material_cost: 0,
-    labor_cost: 0,
-    equipment_cost: 0,
-    other_cost: 0,
-    total_cost: 0,
+  const [budgetVsActual, setBudgetVsActual] = useState<BudgetVsActual>({
+    budget: {
+      material_budget: 0,
+      labor_budget: 0,
+      equipment_budget: 0,
+      other_budget: 0,
+      total_budget: 0,
+    },
+    actual: {
+      material_cost: 0,
+      labor_cost: 0,
+      equipment_cost: 0,
+      other_cost: 0,
+      total_cost: 0,
+    },
+    variance: {
+      material_variance: 0,
+      labor_variance: 0,
+      equipment_variance: 0,
+      other_variance: 0,
+      total_variance: 0,
+    },
   });
 
   const projectStatusTone = useMemo(() => {
@@ -137,8 +160,8 @@ export default function ProjectDashboardPage() {
 
       setMembers((membersResp.data ?? []) as ProjectMemberRow[]);
 
-      const costs = await getProjectCostSummary(projectId);
-      setCostSummary(costs);
+      const budgetData = await getBudgetVsActual(projectId);
+      setBudgetVsActual(budgetData);
 
       setLoading(false);
     }
@@ -240,43 +263,105 @@ export default function ProjectDashboardPage() {
       </div>
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
-        <div className="text-sm font-semibold mb-4">Project Cost Summary</div>
+        <div className="text-sm font-semibold mb-4">Budget vs Actual</div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-            <div className="text-xs text-slate-500">Material Cost</div>
-            <div className="mt-1 text-lg font-semibold text-blue-400">
-              ${costSummary.material_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-800">
+                <th className="text-left py-2 px-3 font-medium text-slate-400">Category</th>
+                <th className="text-right py-2 px-3 font-medium text-slate-400">Budget</th>
+                <th className="text-right py-2 px-3 font-medium text-slate-400">Actual</th>
+                <th className="text-right py-2 px-3 font-medium text-slate-400">Variance</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-slate-800/50">
+                <td className="py-3 px-3 text-slate-300">Material</td>
+                <td className="py-3 px-3 text-right text-slate-300">
+                  ${formatCurrency(budgetVsActual.budget.material_budget)}
+                </td>
+                <td className="py-3 px-3 text-right text-blue-400">
+                  ${formatCurrency(budgetVsActual.actual.material_cost)}
+                </td>
+                <td className={`py-3 px-3 text-right font-medium ${
+                  budgetVsActual.variance.material_variance >= 0
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}>
+                  ${formatCurrency(budgetVsActual.variance.material_variance)}
+                </td>
+              </tr>
+              <tr className="border-b border-slate-800/50">
+                <td className="py-3 px-3 text-slate-300">Labor</td>
+                <td className="py-3 px-3 text-right text-slate-300">
+                  ${formatCurrency(budgetVsActual.budget.labor_budget)}
+                </td>
+                <td className="py-3 px-3 text-right text-amber-400">
+                  ${formatCurrency(budgetVsActual.actual.labor_cost)}
+                </td>
+                <td className={`py-3 px-3 text-right font-medium ${
+                  budgetVsActual.variance.labor_variance >= 0
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}>
+                  ${formatCurrency(budgetVsActual.variance.labor_variance)}
+                </td>
+              </tr>
+              <tr className="border-b border-slate-800/50">
+                <td className="py-3 px-3 text-slate-300">Equipment</td>
+                <td className="py-3 px-3 text-right text-slate-300">
+                  ${formatCurrency(budgetVsActual.budget.equipment_budget)}
+                </td>
+                <td className="py-3 px-3 text-right text-purple-400">
+                  ${formatCurrency(budgetVsActual.actual.equipment_cost)}
+                </td>
+                <td className={`py-3 px-3 text-right font-medium ${
+                  budgetVsActual.variance.equipment_variance >= 0
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}>
+                  ${formatCurrency(budgetVsActual.variance.equipment_variance)}
+                </td>
+              </tr>
+              <tr className="border-b border-slate-800/50">
+                <td className="py-3 px-3 text-slate-300">Other</td>
+                <td className="py-3 px-3 text-right text-slate-300">
+                  ${formatCurrency(budgetVsActual.budget.other_budget)}
+                </td>
+                <td className="py-3 px-3 text-right text-slate-400">
+                  ${formatCurrency(budgetVsActual.actual.other_cost)}
+                </td>
+                <td className={`py-3 px-3 text-right font-medium ${
+                  budgetVsActual.variance.other_variance >= 0
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}>
+                  ${formatCurrency(budgetVsActual.variance.other_variance)}
+                </td>
+              </tr>
+              <tr className="bg-slate-950/40">
+                <td className="py-3 px-3 font-semibold text-slate-200">Total</td>
+                <td className="py-3 px-3 text-right font-semibold text-slate-200">
+                  ${formatCurrency(budgetVsActual.budget.total_budget)}
+                </td>
+                <td className="py-3 px-3 text-right font-semibold text-emerald-300">
+                  ${formatCurrency(budgetVsActual.actual.total_cost)}
+                </td>
+                <td className={`py-3 px-3 text-right font-bold ${
+                  budgetVsActual.variance.total_variance >= 0
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}>
+                  ${formatCurrency(budgetVsActual.variance.total_variance)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-            <div className="text-xs text-slate-500">Labor Cost</div>
-            <div className="mt-1 text-lg font-semibold text-amber-400">
-              ${costSummary.labor_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-            <div className="text-xs text-slate-500">Equipment Cost</div>
-            <div className="mt-1 text-lg font-semibold text-purple-400">
-              ${costSummary.equipment_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-            <div className="text-xs text-slate-500">Other Cost</div>
-            <div className="mt-1 text-lg font-semibold text-slate-400">
-              ${costSummary.other_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/40 p-4">
-            <div className="text-xs text-emerald-400">Total Cost</div>
-            <div className="mt-1 text-lg font-semibold text-emerald-300">
-              ${costSummary.total_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          </div>
+        <div className="mt-3 text-xs text-slate-500">
+          Positive variance indicates budget remaining. Negative variance indicates over budget.
         </div>
       </div>
 
