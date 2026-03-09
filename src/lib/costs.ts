@@ -43,6 +43,13 @@ export interface BudgetVsActual {
   };
 }
 
+export interface FinancialSummary {
+  total_budget: number;
+  total_cost: number;
+  remaining_budget: number;
+  profit_margin: number;
+}
+
 export async function createProjectCost(
   projectId: string,
   costType: CostType,
@@ -332,4 +339,23 @@ export async function createCostFromProcurement(
     procurementItem.id,
     `Auto-generated from procurement item`
   );
+}
+
+export async function getProjectFinancialSummary(
+  projectId: string
+): Promise<FinancialSummary> {
+  const budget = await getProjectBudgetSummary(projectId);
+  const costs = await getProjectCostSummary(projectId);
+
+  const total_budget = budget.total_budget;
+  const total_cost = costs.total_cost;
+  const remaining_budget = total_budget - total_cost;
+  const profit_margin = total_budget > 0 ? (remaining_budget / total_budget) * 100 : 0;
+
+  return {
+    total_budget,
+    total_cost,
+    remaining_budget,
+    profit_margin,
+  };
 }

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { getBudgetVsActual, createProjectCost, fetchProjectCosts, deleteProjectCost } from "../lib/costs";
-import type { BudgetVsActual, CostType, ProjectCost } from "../lib/costs";
+import { getBudgetVsActual, createProjectCost, fetchProjectCosts, deleteProjectCost, getProjectFinancialSummary } from "../lib/costs";
+import type { BudgetVsActual, CostType, ProjectCost, FinancialSummary } from "../lib/costs";
 
 type ProjectRow = {
   id: string;
@@ -108,6 +108,12 @@ export default function ProjectDashboardPage() {
     costDate: new Date().toISOString().split("T")[0],
   });
   const [submitting, setSubmitting] = useState(false);
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary>({
+    total_budget: 0,
+    total_cost: 0,
+    remaining_budget: 0,
+    profit_margin: 0,
+  });
 
   const projectStatusTone = useMemo(() => {
     switch (project?.status) {
@@ -126,6 +132,17 @@ export default function ProjectDashboardPage() {
     }
   }, [project?.status]);
 
+  const profitMarginColor = useMemo(() => {
+    const margin = financialSummary.profit_margin;
+    if (margin > 20) {
+      return "text-emerald-400";
+    } else if (margin >= 10) {
+      return "text-amber-400";
+    } else {
+      return "text-red-400";
+    }
+  }, [financialSummary.profit_margin]);
+
   async function loadCosts() {
     if (!projectId) return;
     const result = await fetchProjectCosts(projectId);
@@ -138,6 +155,8 @@ export default function ProjectDashboardPage() {
     if (!projectId) return;
     const budgetData = await getBudgetVsActual(projectId);
     setBudgetVsActual(budgetData);
+    const financialData = await getProjectFinancialSummary(projectId);
+    setFinancialSummary(financialData);
   }
 
   useEffect(() => {
@@ -351,6 +370,46 @@ export default function ProjectDashboardPage() {
           >
             Open Takeoff
           </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+        <div className="text-sm font-semibold mb-4">Project Financial Summary</div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500 mb-1">Budget</div>
+            <div className="text-2xl font-semibold text-slate-200">
+              ${formatCurrency(financialSummary.total_budget)}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500 mb-1">Actual Cost</div>
+            <div className="text-2xl font-semibold text-blue-400">
+              ${formatCurrency(financialSummary.total_cost)}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500 mb-1">Remaining Budget</div>
+            <div className={`text-2xl font-semibold ${
+              financialSummary.remaining_budget >= 0 ? "text-emerald-400" : "text-red-400"
+            }`}>
+              ${formatCurrency(financialSummary.remaining_budget)}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <div className="text-xs text-slate-500 mb-1">Profit Margin</div>
+            <div className={`text-2xl font-semibold ${profitMarginColor}`}>
+              {financialSummary.profit_margin.toFixed(1)}%
+            </div>
+            <div className="text-xs text-slate-500 mt-1">
+              {financialSummary.profit_margin > 20 ? "Excellent" :
+               financialSummary.profit_margin >= 10 ? "Good" : "Low"}
+            </div>
+          </div>
         </div>
       </div>
 
