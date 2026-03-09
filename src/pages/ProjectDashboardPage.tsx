@@ -7,6 +7,8 @@ import { fetchProjectTasks, createProjectTask, updateProjectTask, deleteProjectT
 import type { ProjectTask, TaskStatus, ProjectProgress } from "../lib/tasks";
 import { uploadProjectFile, fetchProjectFiles, deleteProjectFile, downloadProjectFile } from "../lib/documents";
 import type { ProjectDocument } from "../lib/documents";
+import { fetchDailyLogs, createDailyLog, updateDailyLog, deleteDailyLog } from "../lib/dailyLogs";
+import type { DailyLog } from "../lib/dailyLogs";
 
 type ProjectRow = {
   id: string;
@@ -134,6 +136,18 @@ export default function ProjectDashboardPage() {
   });
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
+  const [showLogForm, setShowLogForm] = useState(false);
+  const [editingLog, setEditingLog] = useState<DailyLog | null>(null);
+  const [logFormData, setLogFormData] = useState({
+    log_date: new Date().toISOString().split('T')[0],
+    weather: '',
+    workers_count: 0,
+    work_performed: '',
+    deliveries: '',
+    issues: '',
+    notes: '',
+  });
 
   const projectStatusTone = useMemo(() => {
     switch (project?.status) {
@@ -222,6 +236,14 @@ export default function ProjectDashboardPage() {
     }
   }
 
+  async function loadDailyLogs() {
+    if (!projectId) return;
+    const result = await fetchDailyLogs(projectId);
+    if (result.success && result.data) {
+      setDailyLogs(result.data);
+    }
+  }
+
   async function loadBudgetData() {
     if (!projectId) return;
     const budgetData = await getBudgetVsActual(projectId);
@@ -293,6 +315,7 @@ export default function ProjectDashboardPage() {
       await loadTasks();
       await loadProgress();
       await loadDocuments();
+      await loadDailyLogs();
 
       setLoading(false);
     }
@@ -445,6 +468,78 @@ export default function ProjectDashboardPage() {
     const result = await downloadProjectFile(filePath, fileName);
     if (!result.success) {
       alert("Failed to download file. Please try again.");
+    }
+  }
+
+  function handleOpenLogForm(log?: DailyLog) {
+    if (log) {
+      setEditingLog(log);
+      setLogFormData({
+        log_date: log.log_date,
+        weather: log.weather,
+        workers_count: log.workers_count,
+        work_performed: log.work_performed,
+        deliveries: log.deliveries,
+        issues: log.issues,
+        notes: log.notes,
+      });
+    } else {
+      setEditingLog(null);
+      setLogFormData({
+        log_date: new Date().toISOString().split('T')[0],
+        weather: '',
+        workers_count: 0,
+        work_performed: '',
+        deliveries: '',
+        issues: '',
+        notes: '',
+      });
+    }
+    setShowLogForm(true);
+  }
+
+  function handleCloseLogForm() {
+    setShowLogForm(false);
+    setEditingLog(null);
+  }
+
+  async function handleSaveLog() {
+    if (!projectId) return;
+
+    if (editingLog) {
+      const result = await updateDailyLog(editingLog.id, logFormData);
+      if (result.success) {
+        await loadDailyLogs();
+        handleCloseLogForm();
+      } else {
+        alert("Failed to update log. Please try again.");
+      }
+    } else {
+      const result = await createDailyLog({
+        project_id: projectId,
+        ...logFormData,
+      });
+      if (result.success) {
+        await loadDailyLogs();
+        handleCloseLogForm();
+      } else {
+        if ((result.error as any)?.code === '23505') {
+          alert("A log for this date already exists. Please edit the existing log or choose a different date.");
+        } else {
+          alert("Failed to create log. Please try again.");
+        }
+      }
+    }
+  }
+
+  async function handleDeleteLog(logId: string, logDate: string) {
+    if (!confirm(`Are you sure you want to delete the log for ${logDate}?`)) return;
+
+    const result = await deleteDailyLog(logId);
+    if (result.success) {
+      await loadDailyLogs();
+    } else {
+      alert("Failed to delete log. Please try again.");
     }
   }
 
@@ -1050,6 +1145,212 @@ export default function ProjectDashboardPage() {
                       Delete
                     </button>
                   </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm font-semibold">Daily Site Log</div>
+          <button
+            onClick={() => handleOpenLogForm()}
+            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition"
+          >
+            + Add Log
+          </button>
+        </div>
+
+        {showLogForm && (
+          <div className="mb-4 rounded-xl border border-slate-700 bg-slate-950/60 p-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-sm font-medium">
+                {editingLog ? "Edit Log" : "New Log"}
+              </div>
+              <button
+                onClick={handleCloseLogForm}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={logFormData.log_date}
+                    onChange={(e) => setLogFormData({ ...logFormData, log_date: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Weather</label>
+                  <input
+                    type="text"
+                    value={logFormData.weather}
+                    onChange={(e) => setLogFormData({ ...logFormData, weather: e.target.value })}
+                    placeholder="Sunny, Rainy, Cloudy..."
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Workers Count</label>
+                <input
+                  type="number"
+                  value={logFormData.workers_count}
+                  onChange={(e) => setLogFormData({ ...logFormData, workers_count: parseInt(e.target.value) || 0 })}
+                  min="0"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Work Performed</label>
+                <textarea
+                  value={logFormData.work_performed}
+                  onChange={(e) => setLogFormData({ ...logFormData, work_performed: e.target.value })}
+                  placeholder="Describe the work completed today..."
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Deliveries</label>
+                <textarea
+                  value={logFormData.deliveries}
+                  onChange={(e) => setLogFormData({ ...logFormData, deliveries: e.target.value })}
+                  placeholder="Materials and equipment delivered..."
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Issues</label>
+                <textarea
+                  value={logFormData.issues}
+                  onChange={(e) => setLogFormData({ ...logFormData, issues: e.target.value })}
+                  placeholder="Problems or concerns encountered..."
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Notes</label>
+                <textarea
+                  value={logFormData.notes}
+                  onChange={(e) => setLogFormData({ ...logFormData, notes: e.target.value })}
+                  placeholder="Additional notes and observations..."
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-blue-500 resize-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={handleCloseLogForm}
+                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveLog}
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition"
+                >
+                  {editingLog ? "Update" : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {dailyLogs.length === 0 ? (
+            <div className="text-sm text-slate-500 text-center py-8">
+              No daily logs recorded yet
+            </div>
+          ) : (
+            dailyLogs.map((log) => (
+              <div
+                key={log.id}
+                className="rounded-xl border border-slate-800 bg-slate-950/40 p-4"
+              >
+                <div className="flex items-start justify-between gap-4 mb-3">
+                  <div>
+                    <div className="text-sm font-medium text-slate-200">
+                      {new Date(log.log_date).toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      })}
+                    </div>
+                    {log.weather && (
+                      <div className="text-xs text-slate-400 mt-1">
+                        Weather: {log.weather}
+                      </div>
+                    )}
+                    {log.workers_count > 0 && (
+                      <div className="text-xs text-slate-400 mt-1">
+                        Workers: {log.workers_count}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => handleOpenLogForm(log)}
+                      className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium transition"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteLog(log.id, log.log_date)}
+                      className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium transition"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  {log.work_performed && (
+                    <div>
+                      <div className="text-xs text-slate-500 font-medium mb-1">Work Performed</div>
+                      <div className="text-slate-300">{log.work_performed}</div>
+                    </div>
+                  )}
+
+                  {log.deliveries && (
+                    <div>
+                      <div className="text-xs text-slate-500 font-medium mb-1">Deliveries</div>
+                      <div className="text-slate-300">{log.deliveries}</div>
+                    </div>
+                  )}
+
+                  {log.issues && (
+                    <div>
+                      <div className="text-xs text-slate-500 font-medium mb-1">Issues</div>
+                      <div className="text-slate-300">{log.issues}</div>
+                    </div>
+                  )}
+
+                  {log.notes && (
+                    <div>
+                      <div className="text-xs text-slate-500 font-medium mb-1">Notes</div>
+                      <div className="text-slate-300">{log.notes}</div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))
