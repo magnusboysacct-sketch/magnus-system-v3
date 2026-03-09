@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { logActivity } from "./activity";
 
 export interface ProjectDocument {
   id: string;
@@ -57,6 +58,8 @@ export async function uploadProjectFile(
       await supabase.storage.from("project-files").remove([filePath]);
       return { success: false, error: docError };
     }
+
+    await logActivity(projectId, "document_upload", `Uploaded document: ${file.name}`);
 
     return { success: true, data: docData };
   } catch (e) {

@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { logActivity } from "./activity";
 
 export interface DailyLog {
   id: string;
@@ -78,6 +79,13 @@ export async function createDailyLog(logData: CreateDailyLogData) {
       console.error("Error creating daily log:", error);
       return { success: false, error };
     }
+
+    const logDate = new Date(logData.log_date).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+    await logActivity(logData.project_id, "daily_log", `Created daily log for ${logDate}`);
 
     return { success: true, data };
   } catch (e) {

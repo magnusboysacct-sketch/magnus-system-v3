@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { logActivity } from "./activity";
 
 export type TaskStatus = "planned" | "active" | "complete";
 
@@ -67,6 +68,8 @@ export async function createProjectTask(
       return { success: false, error };
     }
 
+    await logActivity(projectId, "task_created", `Created task: ${taskName}`);
+
     return { success: true, data };
   } catch (e) {
     console.error("Exception creating project task:", e);
@@ -84,6 +87,12 @@ export async function updateProjectTask(
   }
 ) {
   try {
+    const { data: existingTask } = await supabase
+      .from("project_tasks")
+      .select("status, task_name, project_id")
+      .eq("id", taskId)
+      .single();
+
     const updateData: any = {
       ...updates,
       updated_at: new Date().toISOString(),
@@ -99,6 +108,12 @@ export async function updateProjectTask(
     if (error) {
       console.error("Error updating project task:", error);
       return { success: false, error };
+    }
+
+    if (existingTask && updates.status === "complete" && existingTask.status !== "complete") {
+      await logActivity(existingTask.project_id, "task_completed", `Completed task: ${existingTask.task_name}`);
+    } else if (existingTask && updates.status && updates.status !== existingTask.status) {
+      await logActivity(existingTask.project_id, "task_updated", `Updated task: ${existingTask.task_name}`);
     }
 
     return { success: true, data };

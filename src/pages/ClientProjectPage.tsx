@@ -10,6 +10,8 @@ import { fetchDailyLogs } from "../lib/dailyLogs";
 import type { DailyLog } from "../lib/dailyLogs";
 import { fetchProjectPhotos } from "../lib/photos";
 import type { ProjectPhoto } from "../lib/photos";
+import { fetchProjectActivity, getActivityIcon, getActivityColor } from "../lib/activity";
+import type { ProjectActivity } from "../lib/activity";
 
 type ProjectRow = {
   id: string;
@@ -51,6 +53,7 @@ export default function ClientProjectPage() {
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
   const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
   const [photos, setPhotos] = useState<ProjectPhoto[]>([]);
+  const [activities, setActivities] = useState<ProjectActivity[]>([]);
 
   useEffect(() => {
     async function loadClientProject() {
@@ -76,6 +79,7 @@ export default function ClientProjectPage() {
       await loadDocuments();
       await loadDailyLogs();
       await loadPhotos();
+      await loadActivities();
 
       setLoading(false);
     }
@@ -150,6 +154,14 @@ export default function ClientProjectPage() {
     const result = await fetchProjectPhotos(projectId);
     if (result.success && result.data) {
       setPhotos(result.data);
+    }
+  }
+
+  async function loadActivities() {
+    if (!projectId) return;
+    const result = await fetchProjectActivity(projectId, 20);
+    if (result.success && result.data) {
+      setActivities(result.data);
     }
   }
 
@@ -446,6 +458,49 @@ export default function ClientProjectPage() {
                         day: 'numeric',
                         year: 'numeric'
                       })}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+          <div className="text-sm font-semibold text-slate-200 mb-4">Recent Activity</div>
+          {activities.length === 0 ? (
+            <div className="text-sm text-slate-500 text-center py-8">
+              No activity yet
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {activities.map((activity) => (
+                <div
+                  key={activity.id}
+                  className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 flex items-start gap-3"
+                >
+                  <div className="text-xl mt-0.5">
+                    {getActivityIcon(activity.activity_type)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-sm font-medium ${getActivityColor(activity.activity_type)}`}>
+                      {activity.message}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      {activity.user_profile && (
+                        <div className="text-xs text-slate-500">
+                          {activity.user_profile.full_name || activity.user_profile.email || 'User'}
+                        </div>
+                      )}
+                      <div className="text-xs text-slate-600">•</div>
+                      <div className="text-xs text-slate-500">
+                        {new Date(activity.created_at).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit'
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>

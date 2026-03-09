@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { logActivity } from "./activity";
 
 export interface ProjectPhoto {
   id: string;
@@ -61,6 +62,9 @@ export async function uploadProjectPhoto(file: File, data: UploadPhotoData) {
       await supabase.storage.from("project-photos").remove([fileName]);
       return { success: false, error: dbError };
     }
+
+    const caption = data.caption ? `: ${data.caption}` : "";
+    await logActivity(data.project_id, "photo_upload", `Uploaded photo${caption}`);
 
     return { success: true, data: { ...photoRecord, publicUrl: photoUrl } };
   } catch (e) {

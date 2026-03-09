@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { logActivity } from "./activity";
 
 export interface ProcurementItem {
   id: string;
@@ -151,6 +152,12 @@ export async function updateProcurementItemStatus(
   status: "pending" | "ordered" | "received"
 ) {
   try {
+    const { data: existingItem } = await supabase
+      .from("procurement_items")
+      .select("status, material_name, project_id")
+      .eq("id", itemId)
+      .single();
+
     const { data, error } = await supabase
       .from("procurement_items")
       .update({ status, updated_at: new Date().toISOString() })
@@ -161,6 +168,10 @@ export async function updateProcurementItemStatus(
     if (error) {
       console.error("Error updating procurement item:", error);
       return { success: false, error };
+    }
+
+    if (existingItem && status === "received" && existingItem.status !== "received") {
+      await logActivity(existingItem.project_id, "procurement_received", `Received: ${existingItem.material_name}`);
     }
 
     return { success: true, data };
