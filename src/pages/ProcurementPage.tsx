@@ -697,9 +697,9 @@ function DocumentView({
   const receivedCount = document.items.filter((i) => i.status === "received").length;
   const urgentCount = document.items.filter((i) => i.priority === "urgent").length;
   const totalValue = document.items.reduce((sum, item) => {
-    const orderedQty = item.ordered_qty || 0;
+    const quantity = item.quantity || 0;
     const unitRate = item.unit_rate || 0;
-    return sum + calculateItemTotal(orderedQty, unitRate);
+    return sum + calculateItemTotal(quantity, unitRate);
   }, 0);
 
   function handleTitleSave() {
@@ -1140,7 +1140,7 @@ function ItemRow({ item, suppliers, selected, onToggleSelect, onUpdate, onDelete
   const [tempValue, setTempValue] = useState<string>("");
 
   const balanceQty = calculateBalanceQty(item.quantity, item.delivered_qty || 0);
-  const totalCost = calculateItemTotal(item.ordered_qty || 0, item.unit_rate || 0);
+  const totalCost = calculateItemTotal(item.quantity || 0, item.unit_rate || 0);
 
   // Check if current supplier exists in directory
   const isSupplierInDirectory = item.supplier && suppliers.some(s => s.supplier_name === item.supplier);
