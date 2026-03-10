@@ -1,0 +1,467 @@
+import { supabase } from "./supabase";
+import { logActivity } from "./activity";
+
+export type PurchaseOrderStatus = "draft" | "issued" | "part_delivered" | "delivered" | "cancelled";
+
+export interface PurchaseOrder {
+  id: string;
+  company_id: string;
+  project_id: string;
+  supplier_id: string | null;
+  supplier_name: string;
+  po_number: string;
+  title: string;
+  status: PurchaseOrderStatus;
+  issue_date: string | null;
+  expected_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  purchase_order_id: string;
+  procurement_item_id: string | null;
+  material_name: string;
+  description: string | null;
+  quantity: number;
+  unit: string | null;
+  unit_rate: number;
+  total_amount: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PurchaseOrderWithItems extends PurchaseOrder {
+  items: PurchaseOrderItem[];
+  itemCount: number;
+  totalValue: number;
+}
+
+export interface CreatePurchaseOrderInput {
+  project_id: string;
+  supplier_id?: string | null;
+  supplier_name: string;
+  po_number: string;
+  title: string;
+  status?: PurchaseOrderStatus;
+  issue_date?: string | null;
+  expected_date?: string | null;
+  notes?: string | null;
+}
+
+export interface CreatePurchaseOrderItemInput {
+  material_name: string;
+  description?: string | null;
+  quantity: number;
+  unit?: string | null;
+  unit_rate?: number;
+  procurement_item_id?: string | null;
+}
+
+export interface CreatePurchaseOrderFromProcurementInput {
+  project_id: string;
+  supplier_id?: string | null;
+  supplier_name: string;
+  po_number: string;
+  title: string;
+  procurement_item_ids: string[];
+  issue_date?: string | null;
+  expected_date?: string | null;
+  notes?: string | null;
+}
+
+export async function listPurchaseOrders(projectId?: string) {
+  try {
+    let query = supabase
+      .from("purchase_orders")
+      .select(`
+        *,
+        items:purchase_order_items(count)
+      `)
+      .order("updated_at", { ascending: false });
+
+    if (projectId) {
+      query = query.eq("project_id", projectId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error listing purchase orders:", error);
+      return [];
+    }
+
+    const enriched: PurchaseOrderWithItems[] = (data || []).map((po: any) => ({
+      ...po,
+      items: [],
+      itemCount: Array.isArray(po.items) ? po.items[0]?.count || 0 : 0,
+      totalValue: 0,
+    }));
+
+    return enriched;
+  } catch (e) {
+    console.error("Exception listing purchase orders:", e);
+    return [];
+  }
+}
+
+export async function getPurchaseOrder(id: string) {
+  try {
+    const { data: po, error: poError } = await supabase
+      .from("purchase_orders")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (poError || !po) {
+      console.error("Error fetching purchase order:", poError);
+      return null;
+    }
+
+    const { data: items, error: itemsError } = await supabase
+      .from("purchase_order_items")
+      .select("*")
+      .eq("purchase_order_id", id)
+      .order("material_name", { ascending: true });
+
+    if (itemsError) {
+      console.error("Error fetching purchase order items:", itemsError);
+      return null;
+    }
+
+    const totalValue = (items || []).reduce(
+      (sum, item) => sum + Number(item.total_amount || 0),
+      0
+    );
+
+    const result: PurchaseOrderWithItems = {
+      ...po,
+      items: items || [],
+      itemCount: items?.length || 0,
+      totalValue,
+    };
+
+    return result;
+  } catch (e) {
+    console.error("Exception getting purchase order:", e);
+    return null;
+  }
+}
+
+export async function createPurchaseOrder(input: CreatePurchaseOrderInput) {
+  try {
+    const { data: userProfile } = await supabase
+      .from("user_profiles")
+      .select("company_id")
+      .eq("id", (await supabase.auth.getUser()).data.user?.id)
+      .single();
+
+    if (!userProfile?.company_id) {
+      return { success: false, error: "Company not found" };
+    }
+
+    const { data, error } = await supabase
+      .from("purchase_orders")
+      .insert({
+        company_id: userProfile.company_id,
+        project_id: input.project_id,
+        supplier_id: input.supplier_id || null,
+        supplier_name: input.supplier_name,
+        po_number: input.po_number,
+        title: input.title,
+        status: input.status || "draft",
+        issue_date: input.issue_date || null,
+        expected_date: input.expected_date || null,
+        notes: input.notes || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating purchase order:", error);
+      return { success: false, error: error.message };
+    }
+
+    await logActivity(
+      input.project_id,
+      "purchase_order_created",
+      `Created PO ${input.po_number}: ${input.title}`
+    );
+
+    return { success: true, data };
+  } catch (e: any) {
+    console.error("Exception creating purchase order:", e);
+    return { success: false, error: e?.message || String(e) };
+  }
+}
+
+export async function updatePurchaseOrder(
+  id: string,
+  updates: Partial<Omit<PurchaseOrder, "id" | "company_id" | "project_id" | "created_at" | "updated_at">>
+) {
+  try {
+    const { data, error } = await supabase
+      .from("purchase_orders")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating purchase order:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data };
+  } catch (e: any) {
+    console.error("Exception updating purchase order:", e);
+    return { success: false, error: e?.message || String(e) };
+  }
+}
+
+export async function deletePurchaseOrder(id: string) {
+  try {
+    const { error } = await supabase
+      .from("purchase_orders")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error deleting purchase order:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (e: any) {
+    console.error("Exception deleting purchase order:", e);
+    return { success: false, error: e?.message || String(e) };
+  }
+}
+
+export async function createPurchaseOrderFromProcurementItems(
+  input: CreatePurchaseOrderFromProcurementInput
+) {
+  try {
+    const { data: userProfile } = await supabase
+      .from("user_profiles")
+      .select("company_id")
+      .eq("id", (await supabase.auth.getUser()).data.user?.id)
+      .single();
+
+    if (!userProfile?.company_id) {
+      return { success: false, error: "Company not found" };
+    }
+
+    if (!input.procurement_item_ids || input.procurement_item_ids.length === 0) {
+      return { success: false, error: "No procurement items selected" };
+    }
+
+    const { data: procurementItems, error: fetchError } = await supabase
+      .from("procurement_items")
+      .select("*")
+      .in("id", input.procurement_item_ids);
+
+    if (fetchError || !procurementItems || procurementItems.length === 0) {
+      console.error("Error fetching procurement items:", fetchError);
+      return { success: false, error: "Failed to fetch procurement items" };
+    }
+
+    const { data: po, error: poError } = await supabase
+      .from("purchase_orders")
+      .insert({
+        company_id: userProfile.company_id,
+        project_id: input.project_id,
+        supplier_id: input.supplier_id || null,
+        supplier_name: input.supplier_name,
+        po_number: input.po_number,
+        title: input.title,
+        status: "draft",
+        issue_date: input.issue_date || null,
+        expected_date: input.expected_date || null,
+        notes: input.notes || null,
+      })
+      .select()
+      .single();
+
+    if (poError || !po) {
+      console.error("Error creating purchase order:", poError);
+      return { success: false, error: "Failed to create purchase order" };
+    }
+
+    const poItems = procurementItems.map((item) => {
+      const quantity = Number(item.quantity) || 0;
+      const unitRate = Number(item.unit_rate) || 0;
+      const totalAmount = quantity * unitRate;
+
+      return {
+        purchase_order_id: po.id,
+        procurement_item_id: item.id,
+        material_name: item.material_name,
+        description: item.description || null,
+        quantity,
+        unit: item.unit || null,
+        unit_rate: unitRate,
+        total_amount: totalAmount,
+      };
+    });
+
+    const { data: insertedItems, error: itemsError } = await supabase
+      .from("purchase_order_items")
+      .insert(poItems)
+      .select();
+
+    if (itemsError) {
+      console.error("Error creating purchase order items:", itemsError);
+      await supabase.from("purchase_orders").delete().eq("id", po.id);
+      return { success: false, error: "Failed to create purchase order items" };
+    }
+
+    await logActivity(
+      input.project_id,
+      "purchase_order_created",
+      `Created PO ${input.po_number} with ${insertedItems?.length || 0} items from procurement`
+    );
+
+    const totalValue = poItems.reduce((sum, item) => sum + item.total_amount, 0);
+
+    const result: PurchaseOrderWithItems = {
+      ...po,
+      items: insertedItems || [],
+      itemCount: insertedItems?.length || 0,
+      totalValue,
+    };
+
+    return { success: true, data: result };
+  } catch (e: any) {
+    console.error("Exception creating PO from procurement:", e);
+    return { success: false, error: e?.message || String(e) };
+  }
+}
+
+export async function addPurchaseOrderItem(
+  purchaseOrderId: string,
+  item: CreatePurchaseOrderItemInput
+) {
+  try {
+    const quantity = Number(item.quantity) || 0;
+    const unitRate = Number(item.unit_rate) || 0;
+    const totalAmount = quantity * unitRate;
+
+    const { data, error } = await supabase
+      .from("purchase_order_items")
+      .insert({
+        purchase_order_id: purchaseOrderId,
+        procurement_item_id: item.procurement_item_id || null,
+        material_name: item.material_name,
+        description: item.description || null,
+        quantity,
+        unit: item.unit || null,
+        unit_rate: unitRate,
+        total_amount: totalAmount,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error adding purchase order item:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data };
+  } catch (e: any) {
+    console.error("Exception adding purchase order item:", e);
+    return { success: false, error: e?.message || String(e) };
+  }
+}
+
+export async function updatePurchaseOrderItem(
+  id: string,
+  updates: Partial<Omit<PurchaseOrderItem, "id" | "purchase_order_id" | "created_at" | "updated_at">>
+) {
+  try {
+    if (updates.quantity !== undefined || updates.unit_rate !== undefined) {
+      const { data: currentItem } = await supabase
+        .from("purchase_order_items")
+        .select("quantity, unit_rate")
+        .eq("id", id)
+        .single();
+
+      const quantity = updates.quantity !== undefined
+        ? Number(updates.quantity)
+        : Number(currentItem?.quantity || 0);
+
+      const unitRate = updates.unit_rate !== undefined
+        ? Number(updates.unit_rate)
+        : Number(currentItem?.unit_rate || 0);
+
+      updates.total_amount = quantity * unitRate;
+    }
+
+    const { data, error } = await supabase
+      .from("purchase_order_items")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating purchase order item:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data };
+  } catch (e: any) {
+    console.error("Exception updating purchase order item:", e);
+    return { success: false, error: e?.message || String(e) };
+  }
+}
+
+export async function deletePurchaseOrderItem(id: string) {
+  try {
+    const { error } = await supabase
+      .from("purchase_order_items")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error deleting purchase order item:", error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (e: any) {
+    console.error("Exception deleting purchase order item:", e);
+    return { success: false, error: e?.message || String(e) };
+  }
+}
+
+export async function generatePONumber(companyId: string, year?: number): Promise<string> {
+  const currentYear = year || new Date().getFullYear();
+  const prefix = `PO-${currentYear}-`;
+
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select("po_number")
+    .eq("company_id", companyId)
+    .like("po_number", `${prefix}%`)
+    .order("po_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error && error.code !== "PGRST116") {
+    console.error("Error generating PO number:", error);
+    return `${prefix}001`;
+  }
+
+  if (!data) {
+    return `${prefix}001`;
+  }
+
+  const lastNumber = data.po_number.replace(prefix, "");
+  const nextNumber = parseInt(lastNumber, 10) + 1;
+  const paddedNumber = String(nextNumber).padStart(3, "0");
+
+  return `${prefix}${paddedNumber}`;
+}

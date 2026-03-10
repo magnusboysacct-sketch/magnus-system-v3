@@ -10,6 +10,9 @@ export type ActivityType =
   | "procurement_received"
   | "procurement_created"
   | "procurement_generated"
+  | "purchase_order_created"
+  | "purchase_order_issued"
+  | "purchase_order_delivered"
   | "estimate_created"
   | "cost_added"
   | "project_created"
@@ -141,6 +144,12 @@ export function getActivityIcon(activityType: ActivityType): string {
       return "🛒";
     case "procurement_generated":
       return "🔧";
+    case "purchase_order_created":
+      return "📋";
+    case "purchase_order_issued":
+      return "📤";
+    case "purchase_order_delivered":
+      return "✅";
     case "estimate_created":
       return "📊";
     case "cost_added":
@@ -174,6 +183,12 @@ export function getActivityColor(activityType: ActivityType): string {
       return "text-blue-400";
     case "procurement_generated":
       return "text-teal-400";
+    case "purchase_order_created":
+      return "text-blue-400";
+    case "purchase_order_issued":
+      return "text-green-400";
+    case "purchase_order_delivered":
+      return "text-emerald-400";
     case "estimate_created":
       return "text-cyan-400";
     case "cost_added":
