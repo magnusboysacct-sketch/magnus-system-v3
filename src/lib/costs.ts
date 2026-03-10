@@ -359,3 +359,158 @@ export async function getProjectFinancialSummary(
     profit_margin,
   };
 }
+
+export interface CommittedDeliveredSummary {
+  total_budget: number;
+  committed_value: number;
+  delivered_value: number;
+  remaining_budget: number;
+  variance: number;
+}
+
+export interface CategoryBreakdown {
+  category: string;
+  committed: number;
+  delivered: number;
+  remaining: number;
+}
+
+export async function getCommittedDeliveredSummary(
+  projectId: string
+): Promise<CommittedDeliveredSummary> {
+  try {
+    const budget = await getProjectBudgetSummary(projectId);
+
+    const { data: poItems, error: poError } = await supabase
+      .from("purchase_order_items")
+      .select(`
+        total_amount,
+        delivered_qty,
+        quantity,
+        unit_rate,
+        purchase_order_id,
+        purchase_orders!inner(project_id)
+      `)
+      .eq("purchase_orders.project_id", projectId);
+
+    if (poError) {
+      console.error("Error fetching PO items:", poError);
+    }
+
+    let committed_value = 0;
+    let delivered_value = 0;
+
+    if (poItems) {
+      poItems.forEach((item: any) => {
+        committed_value += Number(item.total_amount || 0);
+        const deliveredQty = Number(item.delivered_qty || 0);
+        const unitRate = Number(item.unit_rate || 0);
+        delivered_value += deliveredQty * unitRate;
+      });
+    }
+
+    const total_budget = budget.total_budget;
+    const remaining_budget = total_budget - delivered_value;
+    const variance = total_budget - committed_value;
+
+    return {
+      total_budget,
+      committed_value,
+      delivered_value,
+      remaining_budget,
+      variance,
+    };
+  } catch (e) {
+    console.error("Exception getting committed/delivered summary:", e);
+    return {
+      total_budget: 0,
+      committed_value: 0,
+      delivered_value: 0,
+      remaining_budget: 0,
+      variance: 0,
+    };
+  }
+}
+
+export async function getCategoryBreakdown(
+  projectId: string
+): Promise<CategoryBreakdown[]> {
+  try {
+    const { data: poItems, error } = await supabase
+      .from("purchase_order_items")
+      .select(`
+        total_amount,
+        delivered_qty,
+        quantity,
+        unit_rate,
+        procurement_item_id,
+        purchase_orders!inner(project_id)
+      `)
+      .eq("purchase_orders.project_id", projectId);
+
+    if (error) {
+      console.error("Error fetching PO items for category breakdown:", error);
+      return [];
+    }
+
+    if (!poItems || poItems.length === 0) {
+      return [];
+    }
+
+    const procurementItemIds = poItems
+      .map((item: any) => item.procurement_item_id)
+      .filter(Boolean);
+
+    if (procurementItemIds.length === 0) {
+      return [];
+    }
+
+    const { data: procItems } = await supabase
+      .from("procurement_items")
+      .select("id, category")
+      .in("id", procurementItemIds);
+
+    const categoryMap = new Map<string, string>();
+    procItems?.forEach((item: any) => {
+      if (item.category) {
+        categoryMap.set(item.id, item.category);
+      }
+    });
+
+    const categoryTotals = new Map<string, { committed: number; delivered: number }>();
+
+    poItems.forEach((item: any) => {
+      const category = item.procurement_item_id
+        ? categoryMap.get(item.procurement_item_id) || "Uncategorized"
+        : "Uncategorized";
+
+      const committed = Number(item.total_amount || 0);
+      const deliveredQty = Number(item.delivered_qty || 0);
+      const unitRate = Number(item.unit_rate || 0);
+      const delivered = deliveredQty * unitRate;
+
+      const existing = categoryTotals.get(category) || { committed: 0, delivered: 0 };
+      categoryTotals.set(category, {
+        committed: existing.committed + committed,
+        delivered: existing.delivered + delivered,
+      });
+    });
+
+    const breakdown: CategoryBreakdown[] = [];
+    categoryTotals.forEach((totals, category) => {
+      breakdown.push({
+        category,
+        committed: totals.committed,
+        delivered: totals.delivered,
+        remaining: totals.committed - totals.delivered,
+      });
+    });
+
+    breakdown.sort((a, b) => b.committed - a.committed);
+
+    return breakdown;
+  } catch (e) {
+    console.error("Exception getting category breakdown:", e);
+    return [];
+  }
+}
