@@ -443,7 +443,7 @@ function DocumentView({
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 print-container">
       <div className="no-print mb-6">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex items-center gap-3">
@@ -673,46 +673,101 @@ function DocumentView({
 
       <style>{`
         @media print {
+          /* Hide everything by default */
+          body * {
+            visibility: hidden;
+          }
+
+          /* Only show the print container and its children */
+          .print-container,
+          .print-container * {
+            visibility: visible;
+          }
+
+          /* Position print container at top-left of page */
+          .print-container {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 1rem;
+            background: white !important;
+            color: black !important;
+          }
+
+          /* Force white background and black text */
           body {
             background: white !important;
             color: black !important;
           }
+
+          /* Hide no-print elements */
           .no-print {
             display: none !important;
+            visibility: hidden !important;
           }
+
+          /* Show print-only elements */
           .print-header.hidden {
             display: block !important;
+            visibility: visible !important;
           }
+
           .print-footer.hidden {
             display: block !important;
+            visibility: visible !important;
           }
+
+          /* Print content styling */
           .print-content {
             color: black !important;
+            background: white !important;
           }
+
+          /* Page break handling */
           .print-section {
             page-break-inside: avoid;
             margin-bottom: 1.5rem;
           }
+
+          /* Category headers */
           .print-category-header {
             background: #f3f4f6 !important;
             border-bottom: 2px solid #d1d5db !important;
             color: black !important;
           }
+
+          /* Table styling */
           .print-table {
             border-collapse: collapse;
+            width: 100%;
           }
+
           .print-table th {
             background: #f9fafb !important;
             border-bottom: 2px solid #d1d5db !important;
             color: black !important;
             font-weight: 600;
+            padding: 8px 12px;
           }
+
           .print-table td {
             border-bottom: 1px solid #e5e7eb !important;
             color: black !important;
+            padding: 8px 12px;
           }
+
           .print-table tr:hover {
             background: transparent !important;
+          }
+
+          /* Remove dark mode colors */
+          .rounded-xl,
+          .rounded-2xl,
+          .border-slate-800,
+          .bg-slate-900 {
+            background: white !important;
+            border-color: #d1d5db !important;
           }
         }
       `}</style>
