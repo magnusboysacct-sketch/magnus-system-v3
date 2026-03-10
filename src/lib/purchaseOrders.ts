@@ -79,7 +79,7 @@ export async function listPurchaseOrders(projectId?: string) {
       .from("purchase_orders")
       .select(`
         *,
-        items:purchase_order_items(count)
+        items:purchase_order_items(total_amount)
       `)
       .order("updated_at", { ascending: false });
 
@@ -94,12 +94,19 @@ export async function listPurchaseOrders(projectId?: string) {
       return [];
     }
 
-    const enriched: PurchaseOrderWithItems[] = (data || []).map((po: any) => ({
-      ...po,
-      items: [],
-      itemCount: Array.isArray(po.items) ? po.items[0]?.count || 0 : 0,
-      totalValue: 0,
-    }));
+    const enriched: PurchaseOrderWithItems[] = (data || []).map((po: any) => {
+      const items = Array.isArray(po.items) ? po.items : [];
+      const totalValue = items.reduce((sum: number, item: any) => {
+        return sum + (Number(item.total_amount) || 0);
+      }, 0);
+
+      return {
+        ...po,
+        items: [],
+        itemCount: items.length,
+        totalValue,
+      };
+    });
 
     return enriched;
   } catch (e) {
