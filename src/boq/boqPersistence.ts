@@ -1,4 +1,4 @@
-﻿import { supabase } from "../lib/supabase";
+import { supabase } from "../lib/supabase";
 
 export type BoqStatus = "draft" | "approved";
 
@@ -145,25 +145,56 @@ export async function saveBoq({
   status: BoqStatus;
   sections: Section[];
 }) {
+  console.log("[BOQ Save] Starting save process...");
+
+  // Get current user info for debugging
+  const { data: userData } = await supabase.auth.getUser();
+  const currentUserId = userData.user?.id || "UNKNOWN";
+  console.log("[BOQ Save] Current user ID:", currentUserId);
+
+  // Get user's company_id
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("company_id, role")
+    .eq("id", currentUserId)
+    .maybeSingle();
+
+  console.log("[BOQ Save] User profile:", profile);
+  console.log("[BOQ Save] Project ID:", projectId);
+  console.log("[BOQ Save] Initial BOQ ID:", boqId);
+
   let headerId = boqId;
 
   if (!headerId) {
+    console.log("[BOQ Save] Creating new BOQ header...");
     const { data: ins, error: insErr } = await supabase
       .from("boq_headers")
       .insert([{ project_id: projectId, status, version: 1 }])
       .select("id")
       .single();
 
-    if (insErr) throw insErr;
+    if (insErr) {
+      console.error("[BOQ Save] Error creating header:", insErr);
+      throw insErr;
+    }
     headerId = String((ins as any).id);
+    console.log("[BOQ Save] Created BOQ header ID:", headerId);
   } else {
+    console.log("[BOQ Save] Updating existing BOQ header:", headerId);
     const { error: upErr } = await supabase.from("boq_headers").update({ status }).eq("id", headerId);
-    if (upErr) throw upErr;
+    if (upErr) {
+      console.error("[BOQ Save] Error updating header:", upErr);
+      throw upErr;
+    }
   }
 
   // Replace sections
+  console.log("[BOQ Save] Deleting existing sections for BOQ:", headerId);
   const { error: delSecErr } = await supabase.from("boq_sections").delete().eq("boq_id", headerId);
-  if (delSecErr) throw delSecErr;
+  if (delSecErr) {
+    console.error("[BOQ Save] Error deleting sections:", delSecErr);
+    throw delSecErr;
+  }
 
   const sectionPayload = sections.map((s, idx) => ({
     id: s.id,
@@ -174,8 +205,22 @@ export async function saveBoq({
     scope: s.scope ?? "",
   }));
 
+  console.log("[BOQ Save] Inserting", sectionPayload.length, "sections...");
+  console.log("[BOQ Save] Section IDs:", sectionPayload.map(s => s.id));
+
   const { error: secInsErr } = await supabase.from("boq_sections").insert(sectionPayload);
-  if (secInsErr) throw secInsErr;
+  if (secInsErr) {
+    console.error("[BOQ Save] Error inserting sections:", secInsErr);
+    throw secInsErr;
+  }
+
+  // Validate sections were created before inserting items
+  const { data: createdSections } = await supabase
+    .from("boq_sections")
+    .select("id, boq_id")
+    .eq("boq_id", headerId);
+
+  console.log("[BOQ Save] Created sections verification:", createdSections);
 
   // Replace items
   const itemPayload: any[] = [];
@@ -201,10 +246,44 @@ export async function saveBoq({
   }
 
   if (itemPayload.length > 0) {
+    console.log("[BOQ Save] Inserting", itemPayload.length, "items...");
+    console.log("[BOQ Save] Item section_ids:", [...new Set(itemPayload.map(i => i.section_id))]);
+    console.log("[BOQ Save] First item payload sample:", itemPayload[0]);
+
+    // Validate section_ids exist before inserting
+    const sectionIds = [...new Set(itemPayload.map(i => i.section_id))];
+    const { data: validSections } = await supabase
+      .from("boq_sections")
+      .select("id, boq_id")
+      .in("id", sectionIds);
+
+    console.log("[BOQ Save] Validation - sections found:", validSections);
+
+    if (!validSections || validSections.length !== sectionIds.length) {
+      const foundIds = validSections?.map(s => s.id) || [];
+      const missingIds = sectionIds.filter(id => !foundIds.includes(id));
+      console.error("[BOQ Save] VALIDATION FAILED - Missing section IDs:", missingIds);
+      throw new Error(`Cannot insert items: section_ids not found: ${missingIds.join(", ")}`);
+    }
+
+    // Verify sections belong to correct BOQ
+    const wrongBoq = validSections.filter(s => s.boq_id !== headerId);
+    if (wrongBoq.length > 0) {
+      console.error("[BOQ Save] VALIDATION FAILED - Sections belong to wrong BOQ:", wrongBoq);
+      throw new Error("Section belongs to different BOQ");
+    }
+
+    console.log("[BOQ Save] Validation passed, inserting items...");
     const { error: itemInsErr } = await supabase.from("boq_section_items").insert(itemPayload);
-    if (itemInsErr) throw itemInsErr;
+    if (itemInsErr) {
+      console.error("[BOQ Save] Error inserting items:", itemInsErr);
+      console.error("[BOQ Save] Failed payload sample:", itemPayload[0]);
+      throw itemInsErr;
+    }
+    console.log("[BOQ Save] Items inserted successfully");
   }
 
+  console.log("[BOQ Save] Save complete, returning header ID:", headerId);
   return headerId;
 }
 
