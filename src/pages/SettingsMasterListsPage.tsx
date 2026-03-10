@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import {
+  listSuppliers,
+  createSupplier,
+  updateSupplier,
+  deleteSupplier,
+  toggleSupplierStatus,
+  type Supplier
+} from "../lib/suppliers";
 
 type Category = {
   id: string;
@@ -22,9 +30,10 @@ type Unit = {
 };
 
 export default function SettingsMasterListsPage() {
-  const [activeTab, setActiveTab] = useState<"categories" | "units">("categories");
+  const [activeTab, setActiveTab] = useState<"categories" | "units" | "suppliers">("categories");
   const [categories, setCategories] = useState<Category[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
 
@@ -36,6 +45,20 @@ export default function SettingsMasterListsPage() {
   // Search states
   const [categorySearch, setCategorySearch] = useState("");
   const [unitSearch, setUnitSearch] = useState("");
+  const [supplierSearch, setSupplierSearch] = useState("");
+
+  // Supplier form states
+  const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [supplierForm, setSupplierForm] = useState({
+    supplier_name: "",
+    contact_name: "",
+    email: "",
+    phone: "",
+    address: "",
+    payment_terms: "",
+    notes: "",
+  });
 
   // ✅ NEW: Scope editor states (frontend)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -67,7 +90,7 @@ export default function SettingsMasterListsPage() {
       setError("");
       setScopeSaveMsg("");
 
-      const [categoriesResult, unitsResult] = await Promise.all([
+      const [categoriesResult, unitsResult, suppliersData] = await Promise.all([
         supabase
           .from("master_categories")
           // ✅ IMPORTANT: include scope_of_work
@@ -81,6 +104,7 @@ export default function SettingsMasterListsPage() {
           .order("is_active", { ascending: false })
           .order("sort_order", { ascending: true })
           .order("name", { ascending: true }),
+        listSuppliers(),
       ]);
 
       if (categoriesResult.error) throw categoriesResult.error;
@@ -89,6 +113,7 @@ export default function SettingsMasterListsPage() {
       const cats = (categoriesResult.data || []) as Category[];
       setCategories(cats);
       setUnits((unitsResult.data || []) as Unit[]);
+      setSuppliers(suppliersData);
 
       // ✅ keep editor in sync if a category is already selected
       if (selectedCategoryId) {
@@ -218,6 +243,94 @@ export default function SettingsMasterListsPage() {
     }
   }
 
+  // Supplier functions
+  function openAddSupplierForm() {
+    setEditingSupplier(null);
+    setSupplierForm({
+      supplier_name: "",
+      contact_name: "",
+      email: "",
+      phone: "",
+      address: "",
+      payment_terms: "",
+      notes: "",
+    });
+    setShowSupplierForm(true);
+  }
+
+  function openEditSupplierForm(supplier: Supplier) {
+    setEditingSupplier(supplier);
+    setSupplierForm({
+      supplier_name: supplier.supplier_name,
+      contact_name: supplier.contact_name || "",
+      email: supplier.email || "",
+      phone: supplier.phone || "",
+      address: supplier.address || "",
+      payment_terms: supplier.payment_terms || "",
+      notes: supplier.notes || "",
+    });
+    setShowSupplierForm(true);
+  }
+
+  function closeSupplierForm() {
+    setShowSupplierForm(false);
+    setEditingSupplier(null);
+    setSupplierForm({
+      supplier_name: "",
+      contact_name: "",
+      email: "",
+      phone: "",
+      address: "",
+      payment_terms: "",
+      notes: "",
+    });
+  }
+
+  async function saveSupplier() {
+    if (!supplierForm.supplier_name.trim()) {
+      setError("Supplier name is required");
+      return;
+    }
+
+    try {
+      setError("");
+      if (editingSupplier) {
+        await updateSupplier(editingSupplier.id, supplierForm);
+      } else {
+        await createSupplier(supplierForm);
+      }
+      closeSupplierForm();
+      await loadData();
+    } catch (err) {
+      console.error("Failed to save supplier:", err);
+      setError(err instanceof Error ? err.message : "Failed to save supplier");
+    }
+  }
+
+  async function handleDeleteSupplier(id: string, name: string) {
+    if (!confirm(`Delete supplier "${name}"?`)) return;
+
+    try {
+      setError("");
+      await deleteSupplier(id);
+      await loadData();
+    } catch (err) {
+      console.error("Failed to delete supplier:", err);
+      setError(err instanceof Error ? err.message : "Failed to delete supplier");
+    }
+  }
+
+  async function handleToggleSupplier(id: string, currentStatus: boolean) {
+    try {
+      setError("");
+      await toggleSupplierStatus(id, !currentStatus);
+      await loadData();
+    } catch (err) {
+      console.error("Failed to toggle supplier:", err);
+      setError("Failed to update supplier");
+    }
+  }
+
   // Filter data based on search
   const filteredCategories = categories.filter((cat) =>
     cat.name.toLowerCase().includes(categorySearch.toLowerCase())
@@ -226,6 +339,16 @@ export default function SettingsMasterListsPage() {
   const filteredUnits = units.filter((unit) =>
     unit.name.toLowerCase().includes(unitSearch.toLowerCase())
   );
+
+  const filteredSuppliers = suppliers.filter((supplier) => {
+    const searchLower = supplierSearch.toLowerCase();
+    return (
+      supplier.supplier_name.toLowerCase().includes(searchLower) ||
+      (supplier.contact_name || "").toLowerCase().includes(searchLower) ||
+      (supplier.email || "").toLowerCase().includes(searchLower) ||
+      (supplier.phone || "").toLowerCase().includes(searchLower)
+    );
+  });
 
   const selectedCategory = selectedCategoryId
     ? categories.find((c) => c.id === selectedCategoryId) || null
@@ -259,6 +382,16 @@ export default function SettingsMasterListsPage() {
           }`}
         >
           Units
+        </button>
+        <button
+          onClick={() => setActiveTab("suppliers")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "suppliers"
+              ? "border-blue-500 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-300"
+          }`}
+        >
+          Suppliers
         </button>
       </div>
 
@@ -511,6 +644,239 @@ export default function SettingsMasterListsPage() {
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Suppliers Tab */}
+      {activeTab === "suppliers" && !loading && (
+        <div className="space-y-4">
+          {/* Add/Edit Supplier Form */}
+          {showSupplierForm && (
+            <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-slate-200 mb-3">
+                {editingSupplier ? "Edit Supplier" : "Add New Supplier"}
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Supplier Name *</label>
+                  <input
+                    type="text"
+                    value={supplierForm.supplier_name}
+                    onChange={(e) =>
+                      setSupplierForm({ ...supplierForm, supplier_name: e.target.value })
+                    }
+                    placeholder="Supplier name"
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Contact Name</label>
+                  <input
+                    type="text"
+                    value={supplierForm.contact_name}
+                    onChange={(e) =>
+                      setSupplierForm({ ...supplierForm, contact_name: e.target.value })
+                    }
+                    placeholder="Contact name"
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Email</label>
+                  <input
+                    type="email"
+                    value={supplierForm.email}
+                    onChange={(e) =>
+                      setSupplierForm({ ...supplierForm, email: e.target.value })
+                    }
+                    placeholder="email@example.com"
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Phone</label>
+                  <input
+                    type="text"
+                    value={supplierForm.phone}
+                    onChange={(e) =>
+                      setSupplierForm({ ...supplierForm, phone: e.target.value })
+                    }
+                    placeholder="Phone number"
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs text-slate-400 mb-1 block">Address</label>
+                  <input
+                    type="text"
+                    value={supplierForm.address}
+                    onChange={(e) =>
+                      setSupplierForm({ ...supplierForm, address: e.target.value })
+                    }
+                    placeholder="Physical address"
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Payment Terms</label>
+                  <input
+                    type="text"
+                    value={supplierForm.payment_terms}
+                    onChange={(e) =>
+                      setSupplierForm({ ...supplierForm, payment_terms: e.target.value })
+                    }
+                    placeholder="e.g., Net 30, COD"
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Notes</label>
+                  <input
+                    type="text"
+                    value={supplierForm.notes}
+                    onChange={(e) =>
+                      setSupplierForm({ ...supplierForm, notes: e.target.value })
+                    }
+                    placeholder="Additional notes"
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={saveSupplier}
+                  disabled={!supplierForm.supplier_name.trim()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm text-white"
+                >
+                  {editingSupplier ? "Update" : "Add"}
+                </button>
+                <button
+                  onClick={closeSupplierForm}
+                  className="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded text-sm text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Add Supplier Button */}
+          {!showSupplierForm && (
+            <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
+              <button
+                onClick={openAddSupplierForm}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm text-white"
+              >
+                Add Supplier
+              </button>
+            </div>
+          )}
+
+          {/* Search */}
+          <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
+            <input
+              type="text"
+              value={supplierSearch}
+              onChange={(e) => setSupplierSearch(e.target.value)}
+              placeholder="Search suppliers by name, contact, email, or phone..."
+              className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+            />
+          </div>
+
+          {/* Suppliers Table */}
+          <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-slate-200 mb-3">
+              Suppliers ({filteredSuppliers.length})
+            </h3>
+            {filteredSuppliers.length === 0 ? (
+              <p className="text-sm text-slate-400">No suppliers found</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-700">
+                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Status</th>
+                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Supplier</th>
+                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Contact</th>
+                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Phone</th>
+                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Email</th>
+                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Payment Terms</th>
+                      <th className="text-right py-2 px-2 text-slate-400 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSuppliers.map((supplier) => (
+                      <tr
+                        key={supplier.id}
+                        className="border-b border-slate-700/50 hover:bg-slate-700/30"
+                      >
+                        <td className="py-2 px-2">
+                          <span
+                            className={`inline-block w-2 h-2 rounded-full ${
+                              supplier.is_active ? "bg-green-500" : "bg-slate-500"
+                            }`}
+                          />
+                        </td>
+                        <td className="py-2 px-2">
+                          <span
+                            className={`${
+                              supplier.is_active
+                                ? "text-slate-200"
+                                : "text-slate-400 line-through"
+                            }`}
+                          >
+                            {supplier.supplier_name}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-slate-300">
+                          {supplier.contact_name || "-"}
+                        </td>
+                        <td className="py-2 px-2 text-slate-300">
+                          {supplier.phone || "-"}
+                        </td>
+                        <td className="py-2 px-2 text-slate-300">
+                          {supplier.email || "-"}
+                        </td>
+                        <td className="py-2 px-2 text-slate-300">
+                          {supplier.payment_terms || "-"}
+                        </td>
+                        <td className="py-2 px-2 text-right">
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => openEditSupplierForm(supplier)}
+                              className="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs text-white"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleToggleSupplier(supplier.id, supplier.is_active)
+                              }
+                              className={`px-2 py-1 rounded text-xs font-medium ${
+                                supplier.is_active
+                                  ? "bg-red-600 hover:bg-red-500 text-white"
+                                  : "bg-green-600 hover:bg-green-500 text-white"
+                              }`}
+                            >
+                              {supplier.is_active ? "Deactivate" : "Activate"}
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleDeleteSupplier(supplier.id, supplier.supplier_name)
+                              }
+                              className="px-2 py-1 bg-red-600/80 hover:bg-red-500 rounded text-xs text-white"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
