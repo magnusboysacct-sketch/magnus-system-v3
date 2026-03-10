@@ -110,7 +110,7 @@ export async function generateProcurementFromBOQ(projectId: string) {
     console.log("\n[Procurement Generation] Step 3: Fetching BOQ items...");
     const { data: boqItems, error: itemsError } = await supabase
       .from("boq_section_items")
-      .select("id, section_id, item_name, description, unit_id, qty, pick_category")
+      .select("id, section_id, item_name, description, unit_id, qty, pick_category, rate")
       .in("section_id", sectionIds)
       .order("section_id")
       .order("sort_order", { ascending: true });
@@ -225,7 +225,7 @@ export async function generateProcurementFromBOQ(projectId: string) {
         needed_by_date: null,
         ordered_qty: 0,
         delivered_qty: 0,
-        unit_rate: 0,
+        unit_rate: Number(item.rate) || 0,
       }));
 
     console.log("[Procurement Generation] ✓ Filtered to", procurementRecords.length, "items with qty > 0");
