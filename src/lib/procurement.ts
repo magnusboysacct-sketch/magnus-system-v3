@@ -6,7 +6,7 @@ export interface ProcurementHeader {
   project_id: string;
   boq_id: string | null;
   title: string;
-  status: "draft" | "approved" | "sent" | "completed";
+  status: "draft" | "approved" | "sent" | "completed" | "cancelled";
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -23,8 +23,14 @@ export interface ProcurementItem {
   unit: string | null;
   category: string | null;
   notes: string | null;
-  status: "pending" | "ordered" | "received";
+  status: "pending" | "requested" | "quoted" | "approved" | "ordered" | "part_delivered" | "received" | "cancelled";
   supplier: string | null;
+  priority: "low" | "normal" | "high" | "urgent";
+  request_date: string | null;
+  needed_by_date: string | null;
+  ordered_qty: number;
+  delivered_qty: number;
+  unit_rate: number;
   created_at: string;
   updated_at: string;
 }
@@ -384,7 +390,7 @@ export async function updateProcurementHeader(
 
 export async function updateProcurementItemStatus(
   itemId: string,
-  status: "pending" | "ordered" | "received"
+  status: "pending" | "requested" | "quoted" | "approved" | "ordered" | "part_delivered" | "received" | "cancelled"
 ) {
   try {
     const { data: existingItem } = await supabase
