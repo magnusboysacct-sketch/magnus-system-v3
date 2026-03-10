@@ -296,11 +296,6 @@ export async function createPurchaseOrderFromProcurementItems(
       const unitRate = Number(item.unit_rate) || 0;
       const totalAmount = quantity * unitRate;
 
-      console.log(`[PO Creation] Item: ${item.material_name}`);
-      console.log(`[PO Creation]   quantity: ${item.quantity} → ${quantity}`);
-      console.log(`[PO Creation]   unit_rate: ${item.unit_rate} → ${unitRate}`);
-      console.log(`[PO Creation]   total_amount: ${totalAmount}`);
-
       return {
         purchase_order_id: po.id,
         procurement_item_id: item.id,
