@@ -81,11 +81,22 @@ export default function SidebarLayout() {
     }
 
     async function loadCompany() {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) return;
+
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("company_id")
+        .eq("id", userData.user.id)
+        .maybeSingle();
+
+      if (!alive || !profile?.company_id) return;
+
       const { data } = await supabase
         .from("company_settings")
         .select("company_name,logo_url")
-        .eq("id", 1)
-        .single();
+        .eq("company_id", profile.company_id)
+        .maybeSingle();
 
       if (!alive) return;
 

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
 type CompanySettings = {
+  id: number;
+  company_id: string;
   company_name: string;
   logo_url: string | null;
   tagline: string | null;
@@ -17,6 +19,7 @@ type CompanySettings = {
 export default function SettingsCompanyPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -37,31 +40,58 @@ export default function SettingsCompanyPage() {
       setLoading(true);
       setMsg(null);
 
-      const { data, error } = await supabase
-        .from("company_settings")
-        .select("*")
-        .eq("id", 1)
-        .single();
+      try {
+        // Get the current user's company_id
+        const { data: userData } = await supabase.auth.getUser();
+        if (!userData.user) {
+          if (alive) setMsg("Not authenticated");
+          return;
+        }
 
-      if (!alive) return;
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("company_id")
+          .eq("id", userData.user.id)
+          .maybeSingle();
 
-      if (error) {
-        console.error(error);
-        setMsg(error.message);
-      } else if (data) {
-        setCompanyName(data.company_name || "");
-        setLogoUrl(data.logo_url || null);
-        setTagline(data.tagline || "");
-        setAddressLine1(data.address_line1 || "");
-        setAddressLine2(data.address_line2 || "");
-        setParish(data.parish || "");
-        setCountry(data.country || "");
-        setPhone(data.phone || "");
-        setEmail(data.email || "");
-        setWebsite(data.website || "");
+        if (!alive) return;
+
+        if (!profile?.company_id) {
+          setMsg("No company associated with your account");
+          setLoading(false);
+          return;
+        }
+
+        setCompanyId(profile.company_id);
+
+        // Get or create company settings using the helper function
+        const { data: settingsData, error: settingsError } = await supabase
+          .rpc("get_or_create_company_settings", { p_company_id: profile.company_id });
+
+        if (!alive) return;
+
+        if (settingsError) {
+          console.error(settingsError);
+          setMsg(settingsError.message);
+        } else if (settingsData && settingsData.length > 0) {
+          const settings = settingsData[0] as CompanySettings;
+          setCompanyName(settings.company_name || "");
+          setLogoUrl(settings.logo_url || null);
+          setTagline(settings.tagline || "");
+          setAddressLine1(settings.address_line1 || "");
+          setAddressLine2(settings.address_line2 || "");
+          setParish(settings.parish || "");
+          setCountry(settings.country || "");
+          setPhone(settings.phone || "");
+          setEmail(settings.email || "");
+          setWebsite(settings.website || "");
+        }
+      } catch (err) {
+        console.error(err);
+        if (alive) setMsg("Error loading settings");
+      } finally {
+        if (alive) setLoading(false);
       }
-
-      setLoading(false);
     }
     load();
     return () => {
@@ -70,12 +100,18 @@ export default function SettingsCompanyPage() {
   }, []);
 
   async function saveAll() {
+    if (!companyId) {
+      setMsg("No company ID available");
+      return;
+    }
+
     setBusy(true);
     setMsg(null);
     try {
       const { error } = await supabase
         .from("company_settings")
-        .update({
+        .upsert({
+          company_id: companyId,
           company_name: companyName.trim() || null,
           tagline: tagline.trim() || null,
           address_line1: addressLine1.trim() || null,
@@ -86,29 +122,40 @@ export default function SettingsCompanyPage() {
           email: email.trim() || null,
           website: website.trim() || null,
           updated_at: new Date().toISOString()
-        })
-        .eq("id", 1);
+        }, {
+          onConflict: "company_id"
+        });
 
       if (error) {
         console.error(error);
         setMsg(error.message);
       } else {
-        setMsg("Saved.");
+        setMsg("Saved successfully.");
       }
+    } catch (err) {
+      console.error(err);
+      setMsg("Error saving settings");
     } finally {
       setBusy(false);
     }
   }
 
   async function uploadLogo(file: File) {
+    if (!companyId) {
+      setMsg("No company ID available");
+      return;
+    }
+
     setBusy(true);
     setMsg(null);
     try {
       const ext = file.name.split(".").pop() || "png";
-      const path = `logo-${Date.now()}.${ext}`;
+      const timestamp = Date.now();
+      const path = `${companyId}/logo-${timestamp}.${ext}`;
 
+      // Upload to company-logos bucket
       const { error: upErr } = await supabase.storage
-        .from("COMPANY-ASSETS")
+        .from("company-logos")
         .upload(path, file, { upsert: true });
 
       if (upErr) {
@@ -117,13 +164,20 @@ export default function SettingsCompanyPage() {
         return;
       }
 
-      const { data } = supabase.storage.from("COMPANY-ASSETS").getPublicUrl(path);
+      // Get public URL
+      const { data } = supabase.storage.from("company-logos").getPublicUrl(path);
       const publicUrl = data.publicUrl;
 
+      // Update database
       const { error: dbErr } = await supabase
         .from("company_settings")
-        .update({ logo_url: publicUrl, updated_at: new Date().toISOString() })
-        .eq("id", 1);
+        .upsert({
+          company_id: companyId,
+          logo_url: publicUrl,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: "company_id"
+        });
 
       if (dbErr) {
         console.error(dbErr);
@@ -132,7 +186,10 @@ export default function SettingsCompanyPage() {
       }
 
       setLogoUrl(publicUrl);
-      setMsg("Logo updated.");
+      setMsg("Logo uploaded successfully.");
+    } catch (err) {
+      console.error(err);
+      setMsg("Error uploading logo");
     } finally {
       setBusy(false);
     }
