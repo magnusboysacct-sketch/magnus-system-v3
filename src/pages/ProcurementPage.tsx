@@ -30,7 +30,16 @@ import { createProjectCost } from "../lib/costs";
 import { supabase } from "../lib/supabase";
 import { printProcurementDocument } from "../lib/procurementPrint";
 import { listSuppliers, type Supplier } from "../lib/suppliers";
-import { createPurchaseOrderFromProcurementItems, generatePONumber } from "../lib/purchaseOrders";
+import {
+  createPurchaseOrderFromProcurementItems,
+  generatePONumber,
+  listPurchaseOrders,
+  getPurchaseOrder,
+  updatePurchaseOrder,
+  deletePurchaseOrder,
+  type PurchaseOrderWithItems,
+  type PurchaseOrderStatus,
+} from "../lib/purchaseOrders";
 
 export default function ProcurementPage() {
   const { projectId } = useParams<{ projectId?: string }>();
@@ -39,10 +48,13 @@ export default function ProcurementPage() {
 
   const viewMode = searchParams.get("view") || "list";
   const documentId = searchParams.get("doc") || null;
+  const section = searchParams.get("section") || "procurement";
 
   const [headers, setHeaders] = useState<ProcurementHeaderWithItems[]>([]);
   const [currentDocument, setCurrentDocument] =
     useState<ProcurementHeaderWithItems | null>(null);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderWithItems[]>([]);
+  const [currentPO, setCurrentPO] = useState<PurchaseOrderWithItems | null>(null);
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState<string>("");
   const [companyName, setCompanyName] = useState<string>("");
@@ -51,12 +63,20 @@ export default function ProcurementPage() {
     if (projectId) {
       loadProjectInfo();
       if (viewMode === "list") {
-        loadProcurementHeaders();
+        if (section === "procurement") {
+          loadProcurementHeaders();
+        } else if (section === "purchase-orders") {
+          loadPurchaseOrders();
+        }
       } else if (viewMode === "document" && documentId) {
-        loadProcurementDocument(documentId);
+        if (section === "procurement") {
+          loadProcurementDocument(documentId);
+        } else if (section === "purchase-orders") {
+          loadPurchaseOrderDocument(documentId);
+        }
       }
     }
-  }, [projectId, viewMode, documentId]);
+  }, [projectId, viewMode, documentId, section]);
 
   async function loadProjectInfo() {
     if (!projectId) return;
@@ -114,14 +134,57 @@ export default function ProcurementPage() {
     }
   }
 
+  async function loadPurchaseOrders() {
+    if (!projectId) return;
+
+    setLoading(true);
+    try {
+      const data = await listPurchaseOrders(projectId);
+      setPurchaseOrders(data);
+    } catch (e) {
+      console.error("Failed to load purchase orders:", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadPurchaseOrderDocument(poId: string) {
+    setLoading(true);
+    try {
+      const data = await getPurchaseOrder(poId);
+      if (data) {
+        setCurrentPO(data);
+      }
+    } catch (e) {
+      console.error("Failed to load purchase order:", e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function openDocument(docId: string) {
-    setSearchParams({ view: "document", doc: docId });
+    setSearchParams({ view: "document", doc: docId, section });
+  }
+
+  function openPurchaseOrder(poId: string) {
+    setSearchParams({ view: "document", doc: poId, section: "purchase-orders" });
   }
 
   function backToList() {
-    setSearchParams({ view: "list" });
+    setSearchParams({ view: "list", section });
     setCurrentDocument(null);
-    loadProcurementHeaders();
+    setCurrentPO(null);
+    if (section === "procurement") {
+      loadProcurementHeaders();
+    } else if (section === "purchase-orders") {
+      loadPurchaseOrders();
+    }
+  }
+
+  function switchSection(newSection: string) {
+    setSearchParams({ view: "list", section: newSection });
+    setCurrentDocument(null);
+    setCurrentPO(null);
   }
 
   async function handleDeleteDocument(docId: string) {
@@ -132,6 +195,28 @@ export default function ProcurementPage() {
       setHeaders((prev) => prev.filter((h) => h.id !== docId));
     } else {
       alert("Failed to delete document");
+    }
+  }
+
+  async function handleDeletePurchaseOrder(poId: string) {
+    if (!window.confirm("Delete this purchase order? All items will be removed.")) return;
+
+    const result = await deletePurchaseOrder(poId);
+    if (result.success) {
+      setPurchaseOrders((prev) => prev.filter((po) => po.id !== poId));
+    } else {
+      alert("Failed to delete purchase order");
+    }
+  }
+
+  async function handleUpdatePurchaseOrder(
+    updates: Partial<Pick<PurchaseOrderWithItems, "status" | "issue_date" | "expected_date" | "notes">>
+  ) {
+    if (!currentPO) return;
+
+    const result = await updatePurchaseOrder(currentPO.id, updates);
+    if (result.success && result.data) {
+      setCurrentPO({ ...currentPO, ...result.data });
     }
   }
 
@@ -255,32 +340,59 @@ export default function ProcurementPage() {
     );
   }
 
-  if (viewMode === "document" && currentDocument) {
+  if (viewMode === "document") {
+    if (section === "procurement" && currentDocument) {
+      return (
+        <DocumentView
+          document={currentDocument}
+          projectName={projectName}
+          companyName={companyName}
+          onBack={backToList}
+          onUpdateItem={handleUpdateItem}
+          onDeleteItem={handleDeleteItem}
+          onUpdateHeader={handleUpdateHeader}
+          onPrint={() => handlePrint()}
+          projectId={projectId}
+        />
+      );
+    } else if (section === "purchase-orders" && currentPO) {
+      return (
+        <PurchaseOrderDocumentView
+          purchaseOrder={currentPO}
+          onBack={backToList}
+          onUpdate={handleUpdatePurchaseOrder}
+        />
+      );
+    }
+  }
+
+  if (section === "procurement") {
     return (
-      <DocumentView
-        document={currentDocument}
-        projectName={projectName}
-        companyName={companyName}
-        onBack={backToList}
-        onUpdateItem={handleUpdateItem}
-        onDeleteItem={handleDeleteItem}
-        onUpdateHeader={handleUpdateHeader}
-        onPrint={() => handlePrint()}
+      <ListView
+        headers={headers}
+        loading={loading}
         projectId={projectId}
+        onOpenDocument={openDocument}
+        onDeleteDocument={handleDeleteDocument}
+        onNavigate={nav}
+        onSwitchSection={switchSection}
+        currentSection={section}
+      />
+    );
+  } else if (section === "purchase-orders") {
+    return (
+      <PurchaseOrdersListView
+        purchaseOrders={purchaseOrders}
+        loading={loading}
+        onOpenPO={openPurchaseOrder}
+        onDeletePO={handleDeletePurchaseOrder}
+        onSwitchSection={switchSection}
+        currentSection={section}
       />
     );
   }
 
-  return (
-    <ListView
-      headers={headers}
-      loading={loading}
-      projectId={projectId}
-      onOpenDocument={openDocument}
-      onDeleteDocument={handleDeleteDocument}
-      onNavigate={nav}
-    />
-  );
+  return null;
 }
 
 interface ListViewProps {
@@ -290,6 +402,8 @@ interface ListViewProps {
   onOpenDocument: (docId: string) => void;
   onDeleteDocument: (docId: string) => void;
   onNavigate: (path: string) => void;
+  onSwitchSection: (section: string) => void;
+  currentSection: string;
 }
 
 function ListView({
@@ -299,6 +413,8 @@ function ListView({
   onOpenDocument,
   onDeleteDocument,
   onNavigate,
+  onSwitchSection,
+  currentSection,
 }: ListViewProps) {
   const totalDocs = headers.length;
   const draftCount = headers.filter((h) => h.status === "draft").length;
@@ -322,6 +438,31 @@ function ListView({
             Go to BOQ
           </button>
         </div>
+      </div>
+
+      <div className="flex gap-2 mb-6 border-b border-slate-800">
+        <button
+          onClick={() => onSwitchSection("procurement")}
+          className={
+            "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
+            (currentSection === "procurement"
+              ? "border-blue-400 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-300")
+          }
+        >
+          Procurement Documents
+        </button>
+        <button
+          onClick={() => onSwitchSection("purchase-orders")}
+          className={
+            "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
+            (currentSection === "purchase-orders"
+              ? "border-blue-400 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-300")
+          }
+        >
+          Purchase Orders
+        </button>
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
@@ -1225,5 +1366,480 @@ function ItemRow({ item, suppliers, selected, onToggleSelect, onUpdate, onDelete
         </button>
       </td>
     </tr>
+  );
+}
+
+interface PurchaseOrdersListViewProps {
+  purchaseOrders: PurchaseOrderWithItems[];
+  loading: boolean;
+  onOpenPO: (poId: string) => void;
+  onDeletePO: (poId: string) => void;
+  onSwitchSection: (section: string) => void;
+  currentSection: string;
+}
+
+function PurchaseOrdersListView({
+  purchaseOrders,
+  loading,
+  onOpenPO,
+  onDeletePO,
+  onSwitchSection,
+  currentSection,
+}: PurchaseOrdersListViewProps) {
+  const totalPOs = purchaseOrders.length;
+  const draftCount = purchaseOrders.filter((po) => po.status === "draft").length;
+  const issuedCount = purchaseOrders.filter((po) => po.status === "issued").length;
+  const deliveredCount = purchaseOrders.filter((po) => po.status === "delivered").length;
+
+  function getStatusLabel(status: PurchaseOrderStatus): string {
+    switch (status) {
+      case "draft":
+        return "Draft";
+      case "issued":
+        return "Issued";
+      case "part_delivered":
+        return "Part Delivered";
+      case "delivered":
+        return "Delivered";
+      case "cancelled":
+        return "Cancelled";
+      default:
+        return status;
+    }
+  }
+
+  return (
+    <div className="p-6">
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-semibold">Purchase Orders</h1>
+          <p className="text-slate-400 mt-1">
+            Manage purchase orders for materials and supplies
+          </p>
+        </div>
+      </div>
+
+      <div className="flex gap-2 mb-6 border-b border-slate-800">
+        <button
+          onClick={() => onSwitchSection("procurement")}
+          className={
+            "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
+            (currentSection === "procurement"
+              ? "border-blue-400 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-300")
+          }
+        >
+          Procurement Documents
+        </button>
+        <button
+          onClick={() => onSwitchSection("purchase-orders")}
+          className={
+            "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
+            (currentSection === "purchase-orders"
+              ? "border-blue-400 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-300")
+          }
+        >
+          Purchase Orders
+        </button>
+      </div>
+
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-400">Total POs</div>
+          <div className="text-2xl font-semibold mt-1">{totalPOs}</div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-400">Draft</div>
+          <div className="text-2xl font-semibold mt-1 text-slate-300">
+            {draftCount}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-400">Issued</div>
+          <div className="text-2xl font-semibold mt-1 text-blue-400">
+            {issuedCount}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-400">Delivered</div>
+          <div className="text-2xl font-semibold mt-1 text-emerald-400">
+            {deliveredCount}
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-400">Loading purchase orders...</p>
+        </div>
+      ) : purchaseOrders.length === 0 ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-400 mb-2">No purchase orders found</p>
+          <p className="text-xs text-slate-500">
+            Create purchase orders from procurement documents
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {purchaseOrders.map((po) => (
+            <div
+              key={po.id}
+              className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 hover:bg-slate-900/50 transition-colors"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => onOpenPO(po.id)}
+                      className="font-medium text-lg hover:text-blue-400 transition-colors text-left"
+                    >
+                      {po.po_number}
+                    </button>
+                    <span
+                      className={
+                        "px-2 py-0.5 rounded text-xs " +
+                        (po.status === "draft"
+                          ? "bg-slate-700/50 text-slate-300"
+                          : po.status === "issued"
+                          ? "bg-blue-900/30 border border-blue-900/50 text-blue-300"
+                          : po.status === "part_delivered"
+                          ? "bg-orange-900/30 border border-orange-900/50 text-orange-300"
+                          : po.status === "delivered"
+                          ? "bg-emerald-900/30 border border-emerald-900/50 text-emerald-300"
+                          : po.status === "cancelled"
+                          ? "bg-red-900/30 border border-red-900/50 text-red-300"
+                          : "bg-slate-700/50 text-slate-300")
+                      }
+                    >
+                      {getStatusLabel(po.status)}
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-slate-300 mt-1">{po.supplier_name}</p>
+                  {po.title && (
+                    <p className="text-sm text-slate-400 mt-0.5">{po.title}</p>
+                  )}
+
+                  <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+                    <span>{po.itemCount} items</span>
+                    <span>•</span>
+                    <span>
+                      {po.issue_date
+                        ? `Issued ${new Date(po.issue_date).toLocaleDateString()}`
+                        : "Not issued"}
+                    </span>
+                    {po.itemCount > 0 && (
+                      <>
+                        <span>•</span>
+                        <span className="text-slate-400 font-medium">
+                          Total: ${po.totalValue.toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onOpenPO(po.id)}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-xs"
+                  >
+                    View
+                  </button>
+                  <button
+                    onClick={() => onDeletePO(po.id)}
+                    className="px-3 py-1.5 rounded-lg bg-red-900/20 hover:bg-red-900/40 border border-red-900/40 text-red-300 text-xs"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface PurchaseOrderDocumentViewProps {
+  purchaseOrder: PurchaseOrderWithItems;
+  onBack: () => void;
+  onUpdate: (updates: Partial<Pick<PurchaseOrderWithItems, "status" | "issue_date" | "expected_date" | "notes">>) => void;
+}
+
+const PO_STATUSES: PurchaseOrderStatus[] = [
+  "draft",
+  "issued",
+  "part_delivered",
+  "delivered",
+  "cancelled",
+];
+
+function PurchaseOrderDocumentView({
+  purchaseOrder,
+  onBack,
+  onUpdate,
+}: PurchaseOrderDocumentViewProps) {
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [tempValue, setTempValue] = useState<string>("");
+
+  function getStatusLabel(status: PurchaseOrderStatus): string {
+    switch (status) {
+      case "draft":
+        return "Draft";
+      case "issued":
+        return "Issued";
+      case "part_delivered":
+        return "Part Delivered";
+      case "delivered":
+        return "Delivered";
+      case "cancelled":
+        return "Cancelled";
+      default:
+        return status;
+    }
+  }
+
+  function startEdit(field: string, currentValue: any) {
+    setEditingField(field);
+    setTempValue(String(currentValue || ""));
+  }
+
+  function saveEdit(field: string) {
+    if (!editingField) return;
+    const value = tempValue.trim();
+    onUpdate({ [field]: value || null } as any);
+    setEditingField(null);
+  }
+
+  function cancelEdit() {
+    setEditingField(null);
+    setTempValue("");
+  }
+
+  return (
+    <div className="p-6">
+      <div className="mb-6">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+            >
+              ← Back to List
+            </button>
+            <h1 className="text-2xl font-semibold">{purchaseOrder.po_number}</h1>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={purchaseOrder.status}
+              onChange={(e) =>
+                onUpdate({ status: e.target.value as PurchaseOrderStatus })
+              }
+              className="px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700 text-sm"
+            >
+              {PO_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {getStatusLabel(status)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-xs text-slate-400 mb-1">Supplier</div>
+              <div className="font-medium">{purchaseOrder.supplier_name}</div>
+            </div>
+
+            <div>
+              <div className="text-xs text-slate-400 mb-1">Title</div>
+              <div className="text-sm">{purchaseOrder.title}</div>
+            </div>
+
+            <div>
+              <div className="text-xs text-slate-400 mb-1">Issue Date</div>
+              {editingField === "issue_date" ? (
+                <input
+                  type="date"
+                  value={tempValue}
+                  onChange={(e) => setTempValue(e.target.value)}
+                  onBlur={() => saveEdit("issue_date")}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveEdit("issue_date");
+                    if (e.key === "Escape") cancelEdit();
+                  }}
+                  autoFocus
+                  className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-sm focus:outline-none focus:border-slate-600"
+                />
+              ) : (
+                <div
+                  onClick={() =>
+                    startEdit(
+                      "issue_date",
+                      purchaseOrder.issue_date
+                        ? new Date(purchaseOrder.issue_date).toISOString().split("T")[0]
+                        : ""
+                    )
+                  }
+                  className="text-sm cursor-pointer hover:text-slate-300"
+                >
+                  {purchaseOrder.issue_date ? (
+                    new Date(purchaseOrder.issue_date).toLocaleDateString()
+                  ) : (
+                    <span className="text-slate-600">Not set</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="text-xs text-slate-400 mb-1">Expected Date</div>
+              {editingField === "expected_date" ? (
+                <input
+                  type="date"
+                  value={tempValue}
+                  onChange={(e) => setTempValue(e.target.value)}
+                  onBlur={() => saveEdit("expected_date")}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveEdit("expected_date");
+                    if (e.key === "Escape") cancelEdit();
+                  }}
+                  autoFocus
+                  className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-sm focus:outline-none focus:border-slate-600"
+                />
+              ) : (
+                <div
+                  onClick={() =>
+                    startEdit(
+                      "expected_date",
+                      purchaseOrder.expected_date
+                        ? new Date(purchaseOrder.expected_date).toISOString().split("T")[0]
+                        : ""
+                    )
+                  }
+                  className="text-sm cursor-pointer hover:text-slate-300"
+                >
+                  {purchaseOrder.expected_date ? (
+                    new Date(purchaseOrder.expected_date).toLocaleDateString()
+                  ) : (
+                    <span className="text-slate-600">Not set</span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {purchaseOrder.notes && (
+            <div className="mt-4 pt-4 border-t border-slate-800">
+              <div className="text-xs text-slate-400 mb-1">Notes</div>
+              <div className="text-sm text-slate-300">{purchaseOrder.notes}</div>
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-400">Total Items</div>
+            <div className="text-xl font-semibold mt-1">
+              {purchaseOrder.itemCount}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-400">Total Value</div>
+            <div className="text-xl font-semibold mt-1">
+              ${purchaseOrder.totalValue.toLocaleString(undefined, {
+                maximumFractionDigits: 2,
+              })}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-400">Status</div>
+            <div className="text-xl font-semibold mt-1">
+              {getStatusLabel(purchaseOrder.status)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {purchaseOrder.items.length === 0 ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-400">No items in this purchase order</p>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/50">
+            <h3 className="font-semibold text-sm">Purchase Order Items</h3>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-800 text-left text-xs text-slate-400">
+                  <th className="px-4 py-3 font-medium">Material</th>
+                  <th className="px-4 py-3 font-medium">Quantity</th>
+                  <th className="px-4 py-3 font-medium">Unit Rate</th>
+                  <th className="px-4 py-3 font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {purchaseOrder.items.map((item) => (
+                  <tr
+                    key={item.id}
+                    className="border-b border-slate-800/50 hover:bg-slate-900/50"
+                  >
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-sm">{item.material_name}</div>
+                      {item.description && (
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {item.description}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm font-medium">
+                        {Number(item.quantity).toFixed(2)}
+                      </div>
+                      <div className="text-xs text-slate-500">{item.unit || "-"}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm">
+                        ${Number(item.unit_rate).toFixed(2)}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-sm font-medium">
+                        ${Number(item.total_amount).toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-700 bg-slate-900/50">
+                  <td className="px-4 py-3 text-sm font-semibold" colSpan={3}>
+                    Total
+                  </td>
+                  <td className="px-4 py-3 text-sm font-semibold">
+                    ${purchaseOrder.totalValue.toLocaleString(undefined, {
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
