@@ -14,6 +14,7 @@ import type {
 } from "../lib/procurement";
 import { createProjectCost } from "../lib/costs";
 import { supabase } from "../lib/supabase";
+import { printProcurementDocument } from "../lib/procurementPrint";
 
 export default function ProcurementPage() {
   const { projectId } = useParams<{ projectId?: string }>();
@@ -205,7 +206,13 @@ export default function ProcurementPage() {
   }
 
   function handlePrint() {
-    window.print();
+    if (!currentDocument) return;
+
+    printProcurementDocument({
+      document: currentDocument,
+      projectName,
+      companyName,
+    });
   }
 
   if (!projectId) {
@@ -237,7 +244,7 @@ export default function ProcurementPage() {
       onStatusChange={handleStatusChange}
       onDeleteItem={handleDeleteItem}
       onUpdateHeader={handleUpdateHeader}
-      onPrint={handlePrint}
+      onPrint={() => handlePrint()}
       projectId={projectId}
     />;
   }
@@ -444,7 +451,7 @@ function DocumentView({
 
   return (
     <div className="p-6">
-      <div className="no-print mb-6">
+      <div className="mb-6">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex items-center gap-3">
             <button
@@ -551,77 +558,55 @@ function DocumentView({
         </div>
       </div>
 
-      <div id="procurement-print" className="print-content">
-        <div className="print-header hidden">
-          <div className="text-center mb-8">
-            {companyName && (
-              <div className="text-2xl font-bold mb-2">{companyName}</div>
-            )}
-            <div className="text-xl font-semibold mb-1">Procurement List</div>
-            <div className="text-lg text-slate-600 mb-4">{document.title}</div>
-            <div className="flex justify-between text-sm text-slate-600 border-t border-b border-slate-300 py-2">
-              <div>
-                <strong>Project:</strong> {projectName}
-              </div>
-              <div>
-                <strong>Date:</strong> {new Date().toLocaleDateString()}
-              </div>
-              <div>
-                <strong>Status:</strong> {document.status.toUpperCase()}
-              </div>
-            </div>
-          </div>
+      {filteredItems.length === 0 ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-400">No items match the current filter</p>
         </div>
-
-        {filteredItems.length === 0 ? (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center no-print">
-            <p className="text-slate-400">No items match the current filter</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {Object.entries(groupedItems).map(([category, categoryItems]) => (
-              <div key={category} className="print-section">
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/30 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/50 print-category-header">
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(groupedItems).map(([category, categoryItems]) => (
+            <div key={category}>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/30 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/50">
                     <h3 className="font-semibold text-sm">{category}</h3>
                     <div className="text-xs text-slate-400 mt-0.5">
                       {categoryItems.length} items
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full print-table">
-                      <thead>
-                        <tr className="border-b border-slate-800 text-left text-xs text-slate-400">
-                          <th className="px-4 py-3 font-medium">Material</th>
-                          <th className="px-4 py-3 font-medium">Description</th>
-                          <th className="px-4 py-3 font-medium">Quantity</th>
-                          <th className="px-4 py-3 font-medium">Unit</th>
-                          <th className="px-4 py-3 font-medium no-print">Status</th>
-                          <th className="px-4 py-3 font-medium no-print">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {categoryItems.map((item) => (
-                          <tr
-                            key={item.id}
-                            className="border-b border-slate-800/50 hover:bg-slate-900/50"
-                          >
-                            <td className="px-4 py-3">
-                              <div className="font-medium text-sm">
-                                {item.material_name}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-slate-400">
-                              {item.description || item.notes || "-"}
-                            </td>
-                            <td className="px-4 py-3 text-sm font-medium">
-                              {Number(item.quantity).toFixed(2)}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-slate-400">
-                              {item.unit || "-"}
-                            </td>
-                            <td className="px-4 py-3 no-print">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-left text-xs text-slate-400">
+                        <th className="px-4 py-3 font-medium">Material</th>
+                        <th className="px-4 py-3 font-medium">Description</th>
+                        <th className="px-4 py-3 font-medium">Quantity</th>
+                        <th className="px-4 py-3 font-medium">Unit</th>
+                        <th className="px-4 py-3 font-medium">Status</th>
+                        <th className="px-4 py-3 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {categoryItems.map((item) => (
+                        <tr
+                          key={item.id}
+                          className="border-b border-slate-800/50 hover:bg-slate-900/50"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-sm">
+                              {item.material_name}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-400">
+                            {item.description || item.notes || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-medium">
+                            {Number(item.quantity).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-400">
+                            {item.unit || "-"}
+                          </td>
+                          <td className="px-4 py-3">
                               <select
                                 value={item.status}
                                 onChange={(e) =>
@@ -647,140 +632,24 @@ function DocumentView({
                                 <option value="received">Received</option>
                               </select>
                             </td>
-                            <td className="px-4 py-3 no-print">
-                              <button
-                                onClick={() => onDeleteItem(item.id)}
-                                className="px-2 py-1 rounded text-xs bg-red-900/20 hover:bg-red-900/40 border border-red-900/40 text-red-300"
-                              >
-                                Delete
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => onDeleteItem(item.id)}
+                              className="px-2 py-1 rounded text-xs bg-red-900/20 hover:bg-red-900/40 border border-red-900/40 text-red-300"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-
-        <div className="print-footer hidden mt-8 pt-4 border-t border-slate-300 text-xs text-slate-600 text-center">
-          Generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}
+            </div>
+          ))}
         </div>
-      </div>
-
-      <style>{`
-        @page {
-          size: A4;
-          margin: 15mm;
-        }
-
-        @media print {
-          /* Hide everything by default */
-          body * {
-            visibility: hidden;
-          }
-
-          /* Only show the procurement print container and its children */
-          #procurement-print,
-          #procurement-print * {
-            visibility: visible;
-          }
-
-          /* Position print container at top-left of page */
-          #procurement-print {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: white !important;
-            color: black !important;
-          }
-
-          /* Force white background and black text */
-          body,
-          html {
-            background: white !important;
-            color: black !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-
-          /* Hide UI elements globally */
-          aside,
-          nav,
-          button,
-          .no-print {
-            display: none !important;
-            visibility: hidden !important;
-          }
-
-          /* Show print-only elements */
-          .print-header.hidden {
-            display: block !important;
-            visibility: visible !important;
-          }
-
-          .print-footer.hidden {
-            display: block !important;
-            visibility: visible !important;
-          }
-
-          /* Print content styling */
-          .print-content {
-            color: black !important;
-            background: white !important;
-          }
-
-          /* Page break handling */
-          .print-section {
-            page-break-inside: avoid;
-            margin-bottom: 1.5rem;
-          }
-
-          /* Category headers */
-          .print-category-header {
-            background: #f3f4f6 !important;
-            border-bottom: 2px solid #d1d5db !important;
-            color: black !important;
-          }
-
-          /* Table styling */
-          .print-table {
-            border-collapse: collapse;
-            width: 100%;
-          }
-
-          .print-table th {
-            background: #f9fafb !important;
-            border-bottom: 2px solid #d1d5db !important;
-            color: black !important;
-            font-weight: 600;
-            padding: 8px 12px;
-          }
-
-          .print-table td {
-            border-bottom: 1px solid #e5e7eb !important;
-            color: black !important;
-            padding: 8px 12px;
-          }
-
-          .print-table tr:hover {
-            background: transparent !important;
-          }
-
-          /* Remove dark mode colors */
-          .rounded-xl,
-          .rounded-2xl,
-          .border-slate-800,
-          .bg-slate-900 {
-            background: white !important;
-            border-color: #d1d5db !important;
-          }
-        }
-      `}</style>
+      )}
     </div>
   );
 }
