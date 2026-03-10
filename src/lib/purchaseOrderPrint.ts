@@ -363,19 +363,18 @@ export function printPurchaseOrder(data: POPrintData): void {
     return;
   }
 
-  printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
 
-  printWindow.addEventListener("load", () => {
+  printWindow.onload = () => {
+    printWindow.focus();
     setTimeout(() => {
       printWindow.print();
-
-      printWindow.addEventListener("afterprint", () => {
+      printWindow.onafterprint = () => {
         printWindow.close();
-      });
+      };
     }, 250);
-  });
+  };
 }
 
 function getStatusLabel(status: string): string {
