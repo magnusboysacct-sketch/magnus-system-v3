@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   fetchProcurementHeaders,
   fetchProcurementDocument,
-  updateProcurementItemStatus,
   updateProcurementHeader,
   deleteProcurementHeader,
   deleteProcurementItem,
@@ -457,7 +456,7 @@ function DocumentView({
 
   // Get unique suppliers
   const suppliers = Array.from(
-    new Set(document.items.map((i) => i.supplier).filter(Boolean))
+    new Set(document.items.map((i) => i.supplier).filter((s): s is string => Boolean(s)))
   ).sort();
 
   // Apply filters
@@ -675,7 +674,7 @@ function DocumentView({
               >
                 <option value="all">All Suppliers</option>
                 {suppliers.map((supplier) => (
-                  <option key={supplier!} value={supplier!}>
+                  <option key={supplier} value={supplier}>
                     {supplier}
                   </option>
                 ))}
