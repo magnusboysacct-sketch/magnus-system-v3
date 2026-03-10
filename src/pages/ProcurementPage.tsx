@@ -2013,13 +2013,49 @@ function PurchaseOrderDocumentView({
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-slate-700 bg-slate-900/50">
-                  <td className="px-4 py-3 text-sm font-semibold" colSpan={3}>
-                    Total
-                  </td>
-                  <td className="px-4 py-3 text-sm font-semibold">
-                    ${purchaseOrder.totalValue.toLocaleString(undefined, {
-                      maximumFractionDigits: 2,
-                    })}
+                  <td className="px-4 py-3" colSpan={receivingMode ? 4 : 5}>
+                    <div className="grid grid-cols-3 gap-6 text-sm">
+                      <div>
+                        <div className="text-slate-400 mb-1">PO Total</div>
+                        <div className="font-semibold text-base">
+                          ${purchaseOrder.totalValue.toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-slate-400 mb-1">Delivered Value</div>
+                        <div className="font-semibold text-base text-emerald-400">
+                          ${(() => {
+                            const deliveredValue = purchaseOrder.items.reduce((sum, item) => {
+                              const deliveredQty = Number(item.delivered_qty || 0);
+                              const unitRate = Number(item.unit_rate || 0);
+                              return sum + (deliveredQty * unitRate);
+                            }, 0);
+                            return deliveredValue.toLocaleString(undefined, {
+                              maximumFractionDigits: 2,
+                            });
+                          })()}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-slate-400 mb-1">Remaining Value</div>
+                        <div className="font-semibold text-base">
+                          ${(() => {
+                            const remainingValue = purchaseOrder.items.reduce((sum, item) => {
+                              const orderedQty = Number(item.quantity || 0);
+                              const deliveredQty = Number(item.delivered_qty || 0);
+                              const balanceQty = orderedQty - deliveredQty;
+                              const unitRate = Number(item.unit_rate || 0);
+                              return sum + (balanceQty * unitRate);
+                            }, 0);
+                            return remainingValue.toLocaleString(undefined, {
+                              maximumFractionDigits: 2,
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               </tfoot>
