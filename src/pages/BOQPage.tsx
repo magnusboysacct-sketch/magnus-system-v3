@@ -1076,8 +1076,15 @@ export default function BOQPage() {
 
       if (result.success) {
         console.log("[BOQ] ✓ Successfully generated procurement:", result.count, "items");
+        console.log("[BOQ] ✓ Procurement Document ID:", (result as any).procurementId);
         setTimeout(() => {
-          nav(`/projects/${routeProjectId}/procurement`);
+          // Navigate to the specific procurement document
+          const procurementId = (result as any).procurementId;
+          if (procurementId) {
+            nav(`/projects/${routeProjectId}/procurement?view=document&doc=${procurementId}`);
+          } else {
+            nav(`/projects/${routeProjectId}/procurement`);
+          }
         }, 500);
       } else {
         setPersistError(`Failed to generate procurement: ${result.error}`);

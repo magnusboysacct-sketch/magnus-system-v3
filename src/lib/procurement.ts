@@ -1,16 +1,30 @@
 import { supabase } from "./supabase";
 import { logActivity } from "./activity";
 
+export interface ProcurementHeader {
+  id: string;
+  project_id: string;
+  boq_id: string | null;
+  title: string;
+  status: "draft" | "approved" | "sent" | "completed";
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProcurementItem {
   id: string;
+  procurement_id: string;
   project_id: string;
   source_boq_item_id: string | null;
   material_name: string;
+  description: string | null;
   quantity: number;
   unit: string | null;
   category: string | null;
   notes: string | null;
   status: "pending" | "ordered" | "received";
+  supplier: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -18,6 +32,11 @@ export interface ProcurementItem {
 export interface ProcurementItemWithSource extends ProcurementItem {
   source_item?: string;
   source_description?: string;
+}
+
+export interface ProcurementHeaderWithItems extends ProcurementHeader {
+  items: ProcurementItemWithSource[];
+  itemCount: number;
 }
 
 export async function generateProcurementFromBOQ(projectId: string) {
@@ -40,7 +59,7 @@ export async function generateProcurementFromBOQ(projectId: string) {
     console.log("\n[Procurement Generation] Step 1: Fetching BOQ header...");
     const { data: boqHeader, error: headerError } = await supabase
       .from("boq_headers")
-      .select("id, status")
+      .select("id, status, version")
       .eq("project_id", projectId)
       .order("updated_at", { ascending: false })
       .limit(1)
@@ -58,6 +77,7 @@ export async function generateProcurementFromBOQ(projectId: string) {
 
     console.log("[Procurement Generation] ✓ BOQ found:", boqHeader.id);
     console.log("[Procurement Generation]   Status:", boqHeader.status);
+    console.log("[Procurement Generation]   Version:", boqHeader.version);
 
     // Step 2: Fetch BOQ sections
     console.log("\n[Procurement Generation] Step 2: Fetching BOQ sections...");
@@ -79,10 +99,9 @@ export async function generateProcurementFromBOQ(projectId: string) {
 
     const sectionIds = sections.map((s) => s.id);
     console.log("[Procurement Generation] ✓ Found", sections.length, "sections");
-    console.log("[Procurement Generation]   Section IDs:", sectionIds);
 
-    // Step 3: Fetch BOQ items from boq_section_items
-    console.log("\n[Procurement Generation] Step 3: Fetching BOQ items from boq_section_items table...");
+    // Step 3: Fetch BOQ items
+    console.log("\n[Procurement Generation] Step 3: Fetching BOQ items...");
     const { data: boqItems, error: itemsError } = await supabase
       .from("boq_section_items")
       .select("id, section_id, item_name, description, unit_id, qty, pick_category")
@@ -96,25 +115,11 @@ export async function generateProcurementFromBOQ(projectId: string) {
     }
 
     if (!boqItems || boqItems.length === 0) {
-      console.error("[Procurement Generation] ERROR: No BOQ items found in database");
+      console.error("[Procurement Generation] ERROR: No BOQ items found");
       return { success: false, error: "No BOQ items found. Please save the BOQ before generating procurement." };
     }
 
-    console.log("[Procurement Generation] ✓ Found", boqItems.length, "BOQ items in database");
-    console.log("[Procurement Generation]   Sample item IDs:", boqItems.slice(0, 3).map(i => i.id));
-    console.log("[Procurement Generation]   First item:", JSON.stringify(boqItems[0], null, 2));
-
-    // Validate that all items have valid database IDs
-    const invalidItems = boqItems.filter(item => !item.id || item.id.startsWith('id_'));
-    if (invalidItems.length > 0) {
-      console.error("[Procurement Generation] ERROR: Found items with temporary IDs");
-      console.error("[Procurement Generation]   Invalid items:", invalidItems);
-      return {
-        success: false,
-        error: "BOQ contains unsaved items with temporary IDs. Please save the BOQ before generating procurement."
-      };
-    }
-    console.log("[Procurement Generation] ✓ All items have valid database UUIDs");
+    console.log("[Procurement Generation] ✓ Found", boqItems.length, "BOQ items");
 
     // Step 4: Load unit mappings
     console.log("\n[Procurement Generation] Step 4: Loading unit mappings...");
@@ -126,106 +131,118 @@ export async function generateProcurementFromBOQ(projectId: string) {
     const unitMap = new Map(units?.map((u) => [u.id, u.name]) || []);
     console.log("[Procurement Generation] ✓ Loaded", unitMap.size, "unit mappings");
 
-    // Step 5: Clear old procurement items
-    console.log("\n[Procurement Generation] Step 5: Clearing old procurement items...");
-    console.log("[Procurement Generation]   Target table: procurement_items");
-    console.log("[Procurement Generation]   Project ID:", projectId);
-    const { data: deleted, error: deleteError } = await supabase
-      .from("procurement_items")
-      .delete()
+    // Step 5: Check if procurement document already exists for this BOQ
+    console.log("\n[Procurement Generation] Step 5: Checking for existing procurement document...");
+    const { data: existingHeader, error: checkHeaderError } = await supabase
+      .from("procurement_headers")
+      .select("id")
       .eq("project_id", projectId)
-      .select();
+      .eq("boq_id", boqHeader.id)
+      .maybeSingle();
 
-    if (deleteError) {
-      console.error("[Procurement Generation] ERROR clearing old items:", deleteError);
+    if (checkHeaderError) {
+      console.error("[Procurement Generation] ERROR checking headers:", checkHeaderError);
+      return { success: false, error: "Failed to check existing documents: " + checkHeaderError.message };
+    }
+
+    let procurementHeaderId: string;
+
+    if (existingHeader) {
+      console.log("[Procurement Generation] ✓ Found existing document:", existingHeader.id);
+      console.log("[Procurement Generation]   Will replace items in this document");
+      procurementHeaderId = existingHeader.id;
+
+      // Delete existing items for this procurement document
+      const { error: deleteError } = await supabase
+        .from("procurement_items")
+        .delete()
+        .eq("procurement_id", procurementHeaderId);
+
+      if (deleteError) {
+        console.error("[Procurement Generation] ERROR clearing old items:", deleteError);
+      } else {
+        console.log("[Procurement Generation] ✓ Cleared old items");
+      }
+
+      // Update the header's updated_at timestamp
+      await supabase
+        .from("procurement_headers")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", procurementHeaderId);
+
     } else {
-      console.log("[Procurement Generation] ✓ Deleted", deleted?.length || 0, "old items");
+      console.log("[Procurement Generation] No existing document - creating new one");
+
+      // Create new procurement header
+      const { data: newHeader, error: createHeaderError } = await supabase
+        .from("procurement_headers")
+        .insert({
+          project_id: projectId,
+          boq_id: boqHeader.id,
+          title: `BOQ Materials List v${boqHeader.version}`,
+          status: "draft",
+          notes: `Generated from BOQ version ${boqHeader.version}`,
+        })
+        .select("id")
+        .single();
+
+      if (createHeaderError || !newHeader) {
+        console.error("[Procurement Generation] ERROR creating header:", createHeaderError);
+        return { success: false, error: "Failed to create procurement document: " + createHeaderError?.message };
+      }
+
+      procurementHeaderId = newHeader.id;
+      console.log("[Procurement Generation] ✓ Created new document:", procurementHeaderId);
     }
 
     // Step 6: Transform BOQ items to procurement records
-    console.log("\n[Procurement Generation] Step 6: Transforming BOQ items to procurement records...");
+    console.log("\n[Procurement Generation] Step 6: Transforming BOQ items...");
     const procurementRecords = boqItems
       .filter((item) => {
         const qty = Number(item.qty) || 0;
-        const include = qty > 0;
-        if (!include) {
-          console.log("[Procurement Generation]   Skipping (qty=0):", item.item_name);
-        }
-        return include;
+        return qty > 0;
       })
-      .map((item) => {
-        const record = {
-          project_id: projectId,
-          source_boq_item_id: item.id,
-          material_name: item.item_name || "Unnamed Item",
-          quantity: Number(item.qty) || 0,
-          unit: item.unit_id ? unitMap.get(item.unit_id) || null : null,
-          category: item.pick_category || null,
-          notes: item.description || null,
-          status: "pending" as const,
-        };
-        console.log("[Procurement Generation]   Mapping:", {
-          boq_item_id: item.id,
-          name: item.item_name,
-          qty: item.qty,
-          source_boq_item_id: record.source_boq_item_id
-        });
-        return record;
-      });
+      .map((item) => ({
+        procurement_id: procurementHeaderId,
+        project_id: projectId,
+        source_boq_item_id: item.id,
+        material_name: item.item_name || "Unnamed Item",
+        description: item.description || null,
+        quantity: Number(item.qty) || 0,
+        unit: item.unit_id ? unitMap.get(item.unit_id) || null : null,
+        category: item.pick_category || null,
+        notes: null,
+        status: "pending" as const,
+        supplier: null,
+      }));
 
     console.log("[Procurement Generation] ✓ Filtered to", procurementRecords.length, "items with qty > 0");
 
     if (procurementRecords.length === 0) {
-      console.error("[Procurement Generation] ERROR: No items remaining after filtering");
       return {
         success: false,
         error: "No BOQ items with quantities > 0 found",
       };
     }
 
-    console.log("\n[Procurement Generation] Procurement records to insert:");
-    procurementRecords.slice(0, 3).forEach((rec, idx) => {
-      console.log(`[Procurement Generation]   Record ${idx + 1}:`, JSON.stringify(rec, null, 2));
-    });
-
     // Step 7: Insert procurement items
-    console.log("\n[Procurement Generation] Step 7: Inserting into procurement_items...");
-    console.log("[Procurement Generation]   Inserting", procurementRecords.length, "records");
-    console.log("[Procurement Generation]   Validating all source_boq_item_id values are valid UUIDs:");
-    procurementRecords.forEach((rec, idx) => {
-      const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rec.source_boq_item_id || '');
-      console.log(`[Procurement Generation]     ${idx + 1}. ${rec.material_name}: ${rec.source_boq_item_id} ${isValidUUID ? '✓' : '✗ INVALID'}`);
-    });
-
+    console.log("\n[Procurement Generation] Step 7: Inserting procurement items...");
     const { data: inserted, error: insertError } = await supabase
       .from("procurement_items")
       .insert(procurementRecords)
       .select();
 
     if (insertError) {
-      console.error("\n" + "=".repeat(80));
       console.error("[Procurement Generation] ✗✗✗ INSERT FAILED ✗✗✗");
-      console.error("=".repeat(80));
-      console.error("[Procurement Generation] Error code:", insertError.code);
-      console.error("[Procurement Generation] Error message:", insertError.message);
-      console.error("[Procurement Generation] Error details:", insertError.details);
-      console.error("[Procurement Generation] Error hint:", insertError.hint);
-      console.error("[Procurement Generation] Full error:", JSON.stringify(insertError, null, 2));
-      console.error("=".repeat(80));
+      console.error("[Procurement Generation] Error:", insertError);
       return { success: false, error: "Failed to insert items: " + insertError.message };
     }
 
     console.log("\n" + "=".repeat(80));
     console.log("[Procurement Generation] ✓✓✓ SUCCESS ✓✓✓");
     console.log("=".repeat(80));
-    console.log("[Procurement Generation] Successfully created", inserted?.length || 0, "procurement items");
-    console.log("[Procurement Generation] Inserted records (first 2):");
-    inserted?.slice(0, 2).forEach((item, idx) => {
-      console.log(`[Procurement Generation]   ${idx + 1}. ID: ${item.id}`);
-      console.log(`[Procurement Generation]      Material: ${item.material_name}`);
-      console.log(`[Procurement Generation]      Source BOQ Item ID: ${item.source_boq_item_id}`);
-      console.log(`[Procurement Generation]      Quantity: ${item.quantity} ${item.unit || ''}`);
-    });
+    console.log("[Procurement Generation] Created", inserted?.length || 0, "procurement items");
+    console.log("[Procurement Generation] Procurement Document ID:", procurementHeaderId);
     console.log("=".repeat(80));
 
     await logActivity(
@@ -238,25 +255,72 @@ export async function generateProcurementFromBOQ(projectId: string) {
       success: true,
       data: inserted,
       count: procurementRecords.length,
+      procurementId: procurementHeaderId,
     };
   } catch (e: any) {
-    console.error("\n" + "=".repeat(80));
     console.error("[Procurement Generation] ✗✗✗ EXCEPTION ✗✗✗");
-    console.error("=".repeat(80));
     console.error("[Procurement Generation] Exception:", e);
-    console.error("[Procurement Generation] Stack:", e?.stack);
-    console.error("=".repeat(80));
     return { success: false, error: e?.message || String(e) };
   }
 }
 
-export async function fetchProcurementItems(projectId: string) {
+export async function fetchProcurementHeaders(projectId: string) {
   if (!projectId) {
     return { success: false, error: "No project ID", data: [] };
   }
 
   try {
     const { data, error } = await supabase
+      .from("procurement_headers")
+      .select(
+        `
+        *,
+        items:procurement_items(count)
+      `
+      )
+      .eq("project_id", projectId)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching procurement headers:", error);
+      return { success: false, error, data: [] };
+    }
+
+    const enrichedData: ProcurementHeaderWithItems[] = (data || []).map(
+      (header: any) => ({
+        ...header,
+        items: [],
+        itemCount: Array.isArray(header.items) ? header.items[0]?.count || 0 : 0,
+      })
+    );
+
+    return { success: true, data: enrichedData };
+  } catch (e) {
+    console.error("Exception fetching procurement headers:", e);
+    return { success: false, error: e, data: [] };
+  }
+}
+
+export async function fetchProcurementDocument(procurementId: string) {
+  if (!procurementId) {
+    return { success: false, error: "No procurement ID", data: null };
+  }
+
+  try {
+    // Fetch header
+    const { data: header, error: headerError } = await supabase
+      .from("procurement_headers")
+      .select("*")
+      .eq("id", procurementId)
+      .single();
+
+    if (headerError || !header) {
+      console.error("Error fetching procurement header:", headerError);
+      return { success: false, error: headerError, data: null };
+    }
+
+    // Fetch items with source BOQ item data
+    const { data: items, error: itemsError } = await supabase
       .from("procurement_items")
       .select(
         `
@@ -264,16 +328,16 @@ export async function fetchProcurementItems(projectId: string) {
         source_boq_item:boq_section_items(item_name, description)
       `
       )
-      .eq("project_id", projectId)
+      .eq("procurement_id", procurementId)
       .order("category", { ascending: true })
       .order("material_name", { ascending: true });
 
-    if (error) {
-      console.error("Error fetching procurement items:", error);
-      return { success: false, error, data: [] };
+    if (itemsError) {
+      console.error("Error fetching procurement items:", itemsError);
+      return { success: false, error: itemsError, data: null };
     }
 
-    const enrichedData: ProcurementItemWithSource[] = (data || []).map(
+    const enrichedItems: ProcurementItemWithSource[] = (items || []).map(
       (item: any) => ({
         ...item,
         source_item: item.source_boq_item?.item_name || null,
@@ -281,10 +345,40 @@ export async function fetchProcurementItems(projectId: string) {
       })
     );
 
-    return { success: true, data: enrichedData };
+    const document: ProcurementHeaderWithItems = {
+      ...header,
+      items: enrichedItems,
+      itemCount: enrichedItems.length,
+    };
+
+    return { success: true, data: document };
   } catch (e) {
-    console.error("Exception fetching procurement items:", e);
-    return { success: false, error: e, data: [] };
+    console.error("Exception fetching procurement document:", e);
+    return { success: false, error: e, data: null };
+  }
+}
+
+export async function updateProcurementHeader(
+  procurementId: string,
+  updates: Partial<Pick<ProcurementHeader, "title" | "status" | "notes">>
+) {
+  try {
+    const { data, error } = await supabase
+      .from("procurement_headers")
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq("id", procurementId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error updating procurement header:", error);
+      return { success: false, error };
+    }
+
+    return { success: true, data };
+  } catch (e) {
+    console.error("Exception updating procurement header:", e);
+    return { success: false, error: e };
   }
 }
 
@@ -318,6 +412,26 @@ export async function updateProcurementItemStatus(
     return { success: true, data };
   } catch (e) {
     console.error("Exception updating procurement item:", e);
+    return { success: false, error: e };
+  }
+}
+
+export async function deleteProcurementHeader(procurementId: string) {
+  try {
+    // Items will be cascade deleted by FK constraint
+    const { error } = await supabase
+      .from("procurement_headers")
+      .delete()
+      .eq("id", procurementId);
+
+    if (error) {
+      console.error("Error deleting procurement header:", error);
+      return { success: false, error };
+    }
+
+    return { success: true };
+  } catch (e) {
+    console.error("Exception deleting procurement header:", e);
     return { success: false, error: e };
   }
 }
