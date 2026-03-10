@@ -220,6 +220,12 @@ export async function generateProcurementFromBOQ(projectId: string) {
         notes: null,
         status: "pending" as const,
         supplier: null,
+        priority: "normal" as const,
+        request_date: null,
+        needed_by_date: null,
+        ordered_qty: 0,
+        delivered_qty: 0,
+        unit_rate: 0,
       }));
 
     console.log("[Procurement Generation] ✓ Filtered to", procurementRecords.length, "items with qty > 0");
