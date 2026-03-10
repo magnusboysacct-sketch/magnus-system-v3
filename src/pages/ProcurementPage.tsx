@@ -29,6 +29,7 @@ import {
 import { createProjectCost } from "../lib/costs";
 import { supabase } from "../lib/supabase";
 import { printProcurementDocument } from "../lib/procurementPrint";
+import { listSuppliers, type Supplier } from "../lib/suppliers";
 
 export default function ProcurementPage() {
   const { projectId } = useParams<{ projectId?: string }>();
@@ -453,9 +454,23 @@ function DocumentView({
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
-  // Get unique suppliers
-  const suppliers = Array.from(
+  useEffect(() => {
+    loadSuppliers();
+  }, []);
+
+  async function loadSuppliers() {
+    try {
+      const data = await listSuppliers();
+      setSuppliers(data.filter(s => s.is_active));
+    } catch (err) {
+      console.error("Failed to load suppliers:", err);
+    }
+  }
+
+  // Get unique suppliers from items (for filtering)
+  const itemSuppliers = Array.from(
     new Set(document.items.map((i) => i.supplier).filter((s): s is string => Boolean(s)))
   ).sort();
 
@@ -666,14 +681,14 @@ function DocumentView({
               ))}
             </select>
 
-            {suppliers.length > 0 && (
+            {itemSuppliers.length > 0 && (
               <select
                 value={filterSupplier}
                 onChange={(e) => setFilterSupplier(e.target.value)}
                 className="px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700 text-xs"
               >
                 <option value="all">All Suppliers</option>
-                {suppliers.map((supplier) => (
+                {itemSuppliers.map((supplier) => (
                   <option key={supplier} value={supplier}>
                     {supplier}
                   </option>
@@ -737,6 +752,7 @@ function DocumentView({
                         <ItemRow
                           key={item.id}
                           item={item}
+                          suppliers={suppliers}
                           onUpdate={onUpdateItem}
                           onDelete={onDeleteItem}
                         />
@@ -755,16 +771,20 @@ function DocumentView({
 
 interface ItemRowProps {
   item: ProcurementItemWithSource;
+  suppliers: Supplier[];
   onUpdate: (itemId: string, updates: Partial<ProcurementItem>) => void;
   onDelete: (itemId: string) => void;
 }
 
-function ItemRow({ item, onUpdate, onDelete }: ItemRowProps) {
+function ItemRow({ item, suppliers, onUpdate, onDelete }: ItemRowProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [tempValue, setTempValue] = useState<string>("");
 
   const balanceQty = calculateBalanceQty(item.quantity, item.delivered_qty || 0);
   const totalCost = calculateItemTotal(item.ordered_qty || 0, item.unit_rate || 0);
+
+  // Check if current supplier exists in directory
+  const isSupplierInDirectory = item.supplier && suppliers.some(s => s.supplier_name === item.supplier);
 
   function startEdit(field: string, currentValue: any) {
     setEditing(field);
@@ -794,6 +814,15 @@ function ItemRow({ item, onUpdate, onDelete }: ItemRowProps) {
     setTempValue("");
   }
 
+  function handleSupplierChange(supplierName: string) {
+    if (supplierName === "__manual__") {
+      setEditing("supplier");
+      setTempValue(item.supplier || "");
+    } else {
+      onUpdate(item.id, { supplier: supplierName });
+    }
+  }
+
   return (
     <tr className="border-b border-slate-800/50 hover:bg-slate-900/50">
       <td className="px-4 py-3">
@@ -818,12 +847,22 @@ function ItemRow({ item, onUpdate, onDelete }: ItemRowProps) {
             className="w-full px-2 py-1 rounded bg-slate-800 border border-slate-700 text-xs focus:outline-none focus:border-slate-600"
           />
         ) : (
-          <div
-            onClick={() => startEdit("supplier", item.supplier)}
-            className="text-xs cursor-pointer hover:text-slate-300"
+          <select
+            value={isSupplierInDirectory ? item.supplier || "" : "__manual__"}
+            onChange={(e) => handleSupplierChange(e.target.value)}
+            className="w-full px-2 py-1 rounded bg-slate-800 border border-slate-700 text-xs focus:outline-none focus:border-slate-600"
           >
-            {item.supplier || <span className="text-slate-600">-</span>}
-          </div>
+            <option value="">-- Select Supplier --</option>
+            {suppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.supplier_name}>
+                {supplier.supplier_name}
+              </option>
+            ))}
+            {item.supplier && !isSupplierInDirectory && (
+              <option value="__manual__">{item.supplier} (custom)</option>
+            )}
+            <option value="__manual__">Other / Manual...</option>
+          </select>
         )}
       </td>
 
