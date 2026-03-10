@@ -261,25 +261,62 @@ export function generatePrintHTML(data: PrintData): string {
 export function printProcurementDocument(data: PrintData): void {
   const html = generatePrintHTML(data);
 
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    alert("Unable to open print window. Please check your popup blocker settings.");
-    return;
+  // Remove any existing print containers
+  const existingContainer = document.getElementById('procurement-print-container');
+  if (existingContainer) {
+    existingContainer.remove();
   }
 
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
+  // Create a hidden container for the print content
+  const printContainer = document.createElement('div');
+  printContainer.id = 'procurement-print-container';
+  printContainer.style.position = 'fixed';
+  printContainer.style.top = '0';
+  printContainer.style.left = '0';
+  printContainer.style.width = '100%';
+  printContainer.style.height = '100%';
+  printContainer.style.zIndex = '9999';
+  printContainer.style.backgroundColor = 'white';
+  printContainer.style.overflow = 'auto';
+  printContainer.innerHTML = html;
 
-  printWindow.addEventListener("load", () => {
-    setTimeout(() => {
-      printWindow.print();
+  // Add print-specific styles
+  const style = document.createElement('style');
+  style.textContent = `
+    @media screen {
+      body:has(#procurement-print-container) > *:not(#procurement-print-container) {
+        display: none !important;
+      }
+    }
+    @media print {
+      body > *:not(#procurement-print-container) {
+        display: none !important;
+      }
+      #procurement-print-container {
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        overflow: visible !important;
+      }
+    }
+  `;
+  printContainer.appendChild(style);
 
-      printWindow.addEventListener("afterprint", () => {
-        printWindow.close();
-      });
-    }, 250);
-  });
+  // Append to body
+  document.body.appendChild(printContainer);
+
+  // Trigger print after a short delay to ensure rendering
+  setTimeout(() => {
+    window.print();
+
+    // Clean up after print
+    const cleanup = () => {
+      printContainer.remove();
+      window.removeEventListener('afterprint', cleanup);
+    };
+
+    window.addEventListener('afterprint', cleanup);
+  }, 100);
 }
 
 function escapeHTML(str: string): string {
