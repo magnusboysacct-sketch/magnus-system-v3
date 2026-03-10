@@ -29,6 +29,7 @@ export interface PurchaseOrderItem {
   unit: string | null;
   unit_rate: number;
   total_amount: number;
+  delivered_qty: number;
   created_at: string;
   updated_at: string;
 }
@@ -464,4 +465,95 @@ export async function generatePONumber(companyId: string, year?: number): Promis
   const paddedNumber = String(nextNumber).padStart(3, "0");
 
   return `${prefix}${paddedNumber}`;
+}
+
+export async function receiveItems(
+  poId: string,
+  itemDeliveries: { itemId: string; deliveredQty: number }[]
+) {
+  try {
+    for (const delivery of itemDeliveries) {
+      const { itemId, deliveredQty } = delivery;
+
+      const { data: currentItem, error: fetchError } = await supabase
+        .from("purchase_order_items")
+        .select("quantity, delivered_qty, procurement_item_id")
+        .eq("id", itemId)
+        .single();
+
+      if (fetchError || !currentItem) {
+        console.error("Error fetching PO item:", fetchError);
+        continue;
+      }
+
+      const newDeliveredQty = Number(deliveredQty);
+      if (newDeliveredQty < 0 || newDeliveredQty > Number(currentItem.quantity)) {
+        console.error("Invalid delivered quantity for item:", itemId);
+        continue;
+      }
+
+      const { error: updateError } = await supabase
+        .from("purchase_order_items")
+        .update({
+          delivered_qty: newDeliveredQty,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", itemId);
+
+      if (updateError) {
+        console.error("Error updating PO item delivered_qty:", updateError);
+        continue;
+      }
+
+      if (currentItem.procurement_item_id) {
+        const { error: procError } = await supabase
+          .from("procurement_items")
+          .update({
+            delivered_qty: newDeliveredQty,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", currentItem.procurement_item_id);
+
+        if (procError) {
+          console.error("Error syncing delivered_qty to procurement_items:", procError);
+        }
+      }
+    }
+
+    const { data: allItems } = await supabase
+      .from("purchase_order_items")
+      .select("quantity, delivered_qty")
+      .eq("purchase_order_id", poId);
+
+    if (allItems && allItems.length > 0) {
+      let newStatus: PurchaseOrderStatus = "issued";
+
+      const allFullyDelivered = allItems.every(
+        (item) => Number(item.delivered_qty) === Number(item.quantity)
+      );
+      const anyPartiallyDelivered = allItems.some(
+        (item) => Number(item.delivered_qty) > 0 && Number(item.delivered_qty) < Number(item.quantity)
+      );
+      const anyDelivered = allItems.some((item) => Number(item.delivered_qty) > 0);
+
+      if (allFullyDelivered) {
+        newStatus = "delivered";
+      } else if (anyPartiallyDelivered || anyDelivered) {
+        newStatus = "part_delivered";
+      }
+
+      await supabase
+        .from("purchase_orders")
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", poId);
+    }
+
+    return { success: true };
+  } catch (e: any) {
+    console.error("Exception receiving items:", e);
+    return { success: false, error: e?.message || String(e) };
+  }
 }

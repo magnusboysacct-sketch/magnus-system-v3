@@ -38,6 +38,7 @@ import {
   getPurchaseOrder,
   updatePurchaseOrder,
   deletePurchaseOrder,
+  receiveItems,
   type PurchaseOrderWithItems,
   type PurchaseOrderStatus,
 } from "../lib/purchaseOrders";
@@ -221,6 +222,17 @@ export default function ProcurementPage() {
     }
   }
 
+  async function handleReceiveItems(itemDeliveries: { itemId: string; deliveredQty: number }[]) {
+    if (!currentPO) return;
+
+    const result = await receiveItems(currentPO.id, itemDeliveries);
+    if (result.success) {
+      loadPurchaseOrderDocument(currentPO.id);
+    } else {
+      alert("Failed to receive items: " + (result.error || "Unknown error"));
+    }
+  }
+
   async function handleUpdateItem(itemId: string, updates: Partial<ProcurementItem>) {
     if (!currentDocument) return;
 
@@ -377,6 +389,7 @@ export default function ProcurementPage() {
           onBack={backToList}
           onUpdate={handleUpdatePurchaseOrder}
           onPrint={handlePrintPO}
+          onReceive={handleReceiveItems}
         />
       );
     }
@@ -1620,6 +1633,7 @@ interface PurchaseOrderDocumentViewProps {
   onBack: () => void;
   onUpdate: (updates: Partial<Pick<PurchaseOrderWithItems, "status" | "issue_date" | "expected_date" | "notes">>) => void;
   onPrint: () => void;
+  onReceive: (itemDeliveries: { itemId: string; deliveredQty: number }[]) => void;
 }
 
 const PO_STATUSES: PurchaseOrderStatus[] = [
@@ -1637,9 +1651,12 @@ function PurchaseOrderDocumentView({
   onBack,
   onUpdate,
   onPrint,
+  onReceive,
 }: PurchaseOrderDocumentViewProps) {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [tempValue, setTempValue] = useState<string>("");
+  const [receivingMode, setReceivingMode] = useState(false);
+  const [deliveryQuantities, setDeliveryQuantities] = useState<Record<string, number>>({});
 
   function getStatusLabel(status: PurchaseOrderStatus): string {
     switch (status) {
@@ -1675,6 +1692,37 @@ function PurchaseOrderDocumentView({
     setTempValue("");
   }
 
+  function startReceiving() {
+    const initial: Record<string, number> = {};
+    purchaseOrder.items.forEach((item) => {
+      initial[item.id] = item.delivered_qty || 0;
+    });
+    setDeliveryQuantities(initial);
+    setReceivingMode(true);
+  }
+
+  function cancelReceiving() {
+    setReceivingMode(false);
+    setDeliveryQuantities({});
+  }
+
+  function saveReceiving() {
+    const deliveries = Object.entries(deliveryQuantities).map(([itemId, qty]) => ({
+      itemId,
+      deliveredQty: qty,
+    }));
+    onReceive(deliveries);
+    setReceivingMode(false);
+    setDeliveryQuantities({});
+  }
+
+  function updateDeliveryQty(itemId: string, qty: number) {
+    setDeliveryQuantities((prev) => ({
+      ...prev,
+      [itemId]: qty,
+    }));
+  }
+
   return (
     <div className="p-6">
       <div className="mb-6">
@@ -1690,25 +1738,50 @@ function PurchaseOrderDocumentView({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={onPrint}
-              className="px-3 py-2 rounded-xl bg-blue-900/30 hover:bg-blue-900/50 border border-blue-900/50 text-blue-300 text-sm"
-            >
-              Print PO
-            </button>
-            <select
-              value={purchaseOrder.status}
-              onChange={(e) =>
-                onUpdate({ status: e.target.value as PurchaseOrderStatus })
-              }
-              className="px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700 text-sm"
-            >
-              {PO_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {getStatusLabel(status)}
-                </option>
-              ))}
-            </select>
+            {receivingMode ? (
+              <>
+                <button
+                  onClick={saveReceiving}
+                  className="px-3 py-2 rounded-xl bg-green-900/30 hover:bg-green-900/50 border border-green-900/50 text-green-300 text-sm"
+                >
+                  Save Deliveries
+                </button>
+                <button
+                  onClick={cancelReceiving}
+                  className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={startReceiving}
+                  className="px-3 py-2 rounded-xl bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-900/50 text-emerald-300 text-sm"
+                >
+                  Receive Materials
+                </button>
+                <button
+                  onClick={onPrint}
+                  className="px-3 py-2 rounded-xl bg-blue-900/30 hover:bg-blue-900/50 border border-blue-900/50 text-blue-300 text-sm"
+                >
+                  Print PO
+                </button>
+                <select
+                  value={purchaseOrder.status}
+                  onChange={(e) =>
+                    onUpdate({ status: e.target.value as PurchaseOrderStatus })
+                  }
+                  className="px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700 text-sm"
+                >
+                  {PO_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {getStatusLabel(status)}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
         </div>
 
@@ -1844,45 +1917,99 @@ function PurchaseOrderDocumentView({
               <thead>
                 <tr className="border-b border-slate-800 text-left text-xs text-slate-400">
                   <th className="px-4 py-3 font-medium">Material</th>
-                  <th className="px-4 py-3 font-medium">Quantity</th>
+                  <th className="px-4 py-3 font-medium">Ordered</th>
+                  {receivingMode && (
+                    <th className="px-4 py-3 font-medium">Delivered Qty</th>
+                  )}
+                  {!receivingMode && (
+                    <>
+                      <th className="px-4 py-3 font-medium">Delivered</th>
+                      <th className="px-4 py-3 font-medium">Balance</th>
+                    </>
+                  )}
                   <th className="px-4 py-3 font-medium">Unit Rate</th>
                   <th className="px-4 py-3 font-medium">Total</th>
                 </tr>
               </thead>
               <tbody>
-                {purchaseOrder.items.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="border-b border-slate-800/50 hover:bg-slate-900/50"
-                  >
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-sm">{item.material_name}</div>
-                      {item.description && (
-                        <div className="text-xs text-slate-500 mt-0.5">
-                          {item.description}
+                {purchaseOrder.items.map((item) => {
+                  const orderedQty = Number(item.quantity);
+                  const deliveredQty = receivingMode
+                    ? Number(deliveryQuantities[item.id] || 0)
+                    : Number(item.delivered_qty || 0);
+                  const balanceQty = orderedQty - deliveredQty;
+
+                  return (
+                    <tr
+                      key={item.id}
+                      className="border-b border-slate-800/50 hover:bg-slate-900/50"
+                    >
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-sm">{item.material_name}</div>
+                        {item.description && (
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            {item.description}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-sm font-medium">
+                          {orderedQty.toFixed(2)}
                         </div>
+                        <div className="text-xs text-slate-500">{item.unit || "-"}</div>
+                      </td>
+                      {receivingMode ? (
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            min="0"
+                            max={orderedQty}
+                            step="0.01"
+                            value={deliveryQuantities[item.id] || 0}
+                            onChange={(e) =>
+                              updateDeliveryQty(item.id, Number(e.target.value))
+                            }
+                            className="w-24 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-sm focus:outline-none focus:border-slate-600"
+                          />
+                        </td>
+                      ) : (
+                        <>
+                          <td className="px-4 py-3">
+                            <div className="text-sm font-medium">
+                              {deliveredQty.toFixed(2)}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {deliveredQty === orderedQty ? (
+                                <span className="text-emerald-400">Complete</span>
+                              ) : deliveredQty > 0 ? (
+                                <span className="text-orange-400">Partial</span>
+                              ) : (
+                                <span className="text-slate-500">Pending</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm font-medium">
+                              {balanceQty.toFixed(2)}
+                            </div>
+                          </td>
+                        </>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="text-sm font-medium">
-                        {Number(item.quantity).toFixed(2)}
-                      </div>
-                      <div className="text-xs text-slate-500">{item.unit || "-"}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="text-sm">
-                        ${Number(item.unit_rate).toFixed(2)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="text-sm font-medium">
-                        ${Number(item.total_amount).toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                        })}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-4 py-3">
+                        <div className="text-sm">
+                          ${Number(item.unit_rate).toFixed(2)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-sm font-medium">
+                          ${Number(item.total_amount).toLocaleString(undefined, {
+                            maximumFractionDigits: 2,
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-slate-700 bg-slate-900/50">
