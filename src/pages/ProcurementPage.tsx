@@ -29,6 +29,7 @@ import {
 import { createProjectCost } from "../lib/costs";
 import { supabase } from "../lib/supabase";
 import { printProcurementDocument } from "../lib/procurementPrint";
+import { printPurchaseOrder } from "../lib/purchaseOrderPrint";
 import { listSuppliers, type Supplier } from "../lib/suppliers";
 import {
   createPurchaseOrderFromProcurementItems,
@@ -322,6 +323,16 @@ export default function ProcurementPage() {
     });
   }
 
+  function handlePrintPO() {
+    if (!currentPO) return;
+
+    printPurchaseOrder({
+      purchaseOrder: currentPO,
+      projectName,
+      companyName,
+    });
+  }
+
   if (!projectId) {
     return (
       <div className="p-6">
@@ -361,8 +372,11 @@ export default function ProcurementPage() {
       return (
         <PurchaseOrderDocumentView
           purchaseOrder={currentPO}
+          projectName={projectName}
+          companyName={companyName}
           onBack={backToList}
           onUpdate={handleUpdatePurchaseOrder}
+          onPrint={handlePrintPO}
         />
       );
     }
@@ -1601,8 +1615,11 @@ function PurchaseOrdersListView({
 
 interface PurchaseOrderDocumentViewProps {
   purchaseOrder: PurchaseOrderWithItems;
+  projectName: string;
+  companyName: string;
   onBack: () => void;
   onUpdate: (updates: Partial<Pick<PurchaseOrderWithItems, "status" | "issue_date" | "expected_date" | "notes">>) => void;
+  onPrint: () => void;
 }
 
 const PO_STATUSES: PurchaseOrderStatus[] = [
@@ -1615,8 +1632,11 @@ const PO_STATUSES: PurchaseOrderStatus[] = [
 
 function PurchaseOrderDocumentView({
   purchaseOrder,
+  projectName,
+  companyName,
   onBack,
   onUpdate,
+  onPrint,
 }: PurchaseOrderDocumentViewProps) {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [tempValue, setTempValue] = useState<string>("");
@@ -1670,6 +1690,12 @@ function PurchaseOrderDocumentView({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={onPrint}
+              className="px-3 py-2 rounded-xl bg-blue-900/30 hover:bg-blue-900/50 border border-blue-900/50 text-blue-300 text-sm"
+            >
+              Print PO
+            </button>
             <select
               value={purchaseOrder.status}
               onChange={(e) =>
