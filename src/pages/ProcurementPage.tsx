@@ -30,6 +30,7 @@ import { createProjectCost } from "../lib/costs";
 import { supabase } from "../lib/supabase";
 import { printProcurementDocument } from "../lib/procurementPrint";
 import { listSuppliers, type Supplier } from "../lib/suppliers";
+import { createPurchaseOrderFromProcurementItems, generatePONumber } from "../lib/purchaseOrders";
 
 export default function ProcurementPage() {
   const { projectId } = useParams<{ projectId?: string }>();
@@ -455,6 +456,8 @@ function DocumentView({
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [creatingPOs, setCreatingPOs] = useState(false);
 
   useEffect(() => {
     loadSuppliers();
@@ -536,6 +539,134 @@ function DocumentView({
     onUpdateHeader({ status: newStatus });
   }
 
+  function toggleItemSelection(itemId: string) {
+    setSelectedItems((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedItems.size === filteredItems.length) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(filteredItems.map((item) => item.id)));
+    }
+  }
+
+  async function handleCreatePurchaseOrders() {
+    if (selectedItems.size === 0) {
+      alert("Please select items to create purchase orders");
+      return;
+    }
+
+    const selectedItemsData = document.items.filter((item) =>
+      selectedItems.has(item.id)
+    );
+
+    const itemsWithSupplier = selectedItemsData.filter(
+      (item) => item.supplier && item.supplier.trim() !== ""
+    );
+
+    if (itemsWithSupplier.length === 0) {
+      alert("Selected items must have a supplier assigned");
+      return;
+    }
+
+    if (itemsWithSupplier.length !== selectedItemsData.length) {
+      const proceed = window.confirm(
+        `${selectedItemsData.length - itemsWithSupplier.length} selected items have no supplier and will be skipped. Continue?`
+      );
+      if (!proceed) return;
+    }
+
+    const groupedBySupplier = itemsWithSupplier.reduce((acc, item) => {
+      const supplierName = item.supplier!;
+      if (!acc[supplierName]) {
+        acc[supplierName] = [];
+      }
+      acc[supplierName].push(item);
+      return acc;
+    }, {} as Record<string, ProcurementItemWithSource[]>);
+
+    setCreatingPOs(true);
+    const results: { supplier: string; success: boolean; error?: string }[] = [];
+
+    try {
+      const { data: userProfile } = await supabase
+        .from("user_profiles")
+        .select("company_id")
+        .eq("id", (await supabase.auth.getUser()).data.user?.id)
+        .single();
+
+      if (!userProfile?.company_id) {
+        alert("Unable to determine company");
+        setCreatingPOs(false);
+        return;
+      }
+
+      for (const [supplierName, items] of Object.entries(groupedBySupplier)) {
+        try {
+          const poNumber = await generatePONumber(userProfile.company_id);
+
+          const supplier = suppliers.find((s) => s.supplier_name === supplierName);
+
+          const result = await createPurchaseOrderFromProcurementItems({
+            project_id: projectId,
+            supplier_id: supplier?.id || null,
+            supplier_name: supplierName,
+            po_number: poNumber,
+            title: `${supplierName} - ${items.length} items`,
+            procurement_item_ids: items.map((item) => item.id),
+          });
+
+          if (result.success) {
+            results.push({ supplier: supplierName, success: true });
+          } else {
+            results.push({
+              supplier: supplierName,
+              success: false,
+              error: result.error,
+            });
+          }
+        } catch (e: any) {
+          results.push({
+            supplier: supplierName,
+            success: false,
+            error: e?.message || "Unknown error",
+          });
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length;
+      const failCount = results.filter((r) => !r.success).length;
+
+      if (failCount === 0) {
+        alert(
+          `Successfully created ${successCount} purchase order${successCount > 1 ? "s" : ""}`
+        );
+        setSelectedItems(new Set());
+      } else {
+        const failedSuppliers = results
+          .filter((r) => !r.success)
+          .map((r) => `${r.supplier}: ${r.error}`)
+          .join("\n");
+        alert(
+          `Created ${successCount} purchase orders.\n${failCount} failed:\n${failedSuppliers}`
+        );
+      }
+    } catch (e: any) {
+      alert("Failed to create purchase orders: " + (e?.message || "Unknown error"));
+    } finally {
+      setCreatingPOs(false);
+    }
+  }
+
   return (
     <div className="p-6">
       <div className="mb-6">
@@ -576,6 +707,17 @@ function DocumentView({
           </div>
 
           <div className="flex items-center gap-2">
+            {selectedItems.size > 0 && (
+              <button
+                onClick={handleCreatePurchaseOrders}
+                disabled={creatingPOs}
+                className="px-3 py-2 rounded-xl bg-green-900/30 hover:bg-green-900/50 border border-green-900/50 text-green-300 text-sm disabled:opacity-50"
+              >
+                {creatingPOs
+                  ? "Creating..."
+                  : `Create PO (${selectedItems.size})`}
+              </button>
+            )}
             <select
               value={document.status}
               onChange={(e) =>
@@ -733,6 +875,17 @@ function DocumentView({
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-slate-800 text-left text-xs text-slate-400">
+                        <th className="px-4 py-3 font-medium w-8">
+                          <input
+                            type="checkbox"
+                            checked={
+                              filteredItems.length > 0 &&
+                              selectedItems.size === filteredItems.length
+                            }
+                            onChange={toggleSelectAll}
+                            className="rounded border-slate-700 bg-slate-800"
+                          />
+                        </th>
                         <th className="px-4 py-3 font-medium">Material</th>
                         <th className="px-4 py-3 font-medium">Supplier</th>
                         <th className="px-4 py-3 font-medium">Priority</th>
@@ -753,6 +906,8 @@ function DocumentView({
                           key={item.id}
                           item={item}
                           suppliers={suppliers}
+                          selected={selectedItems.has(item.id)}
+                          onToggleSelect={() => toggleItemSelection(item.id)}
                           onUpdate={onUpdateItem}
                           onDelete={onDeleteItem}
                         />
@@ -772,11 +927,13 @@ function DocumentView({
 interface ItemRowProps {
   item: ProcurementItemWithSource;
   suppliers: Supplier[];
+  selected: boolean;
+  onToggleSelect: () => void;
   onUpdate: (itemId: string, updates: Partial<ProcurementItem>) => void;
   onDelete: (itemId: string) => void;
 }
 
-function ItemRow({ item, suppliers, onUpdate, onDelete }: ItemRowProps) {
+function ItemRow({ item, suppliers, selected, onToggleSelect, onUpdate, onDelete }: ItemRowProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [tempValue, setTempValue] = useState<string>("");
 
@@ -825,6 +982,14 @@ function ItemRow({ item, suppliers, onUpdate, onDelete }: ItemRowProps) {
 
   return (
     <tr className="border-b border-slate-800/50 hover:bg-slate-900/50">
+      <td className="px-4 py-3">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggleSelect}
+          className="rounded border-slate-700 bg-slate-800"
+        />
+      </td>
       <td className="px-4 py-3">
         <div className="font-medium text-sm">{item.material_name}</div>
         {item.description && (
