@@ -443,7 +443,7 @@ function DocumentView({
   }
 
   return (
-    <div className="p-6 print-container">
+    <div className="p-6">
       <div className="no-print mb-6">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex items-center gap-3">
@@ -551,7 +551,7 @@ function DocumentView({
         </div>
       </div>
 
-      <div className="print-content">
+      <div id="procurement-print" className="print-content">
         <div className="print-header hidden">
           <div className="text-center mb-8">
             {companyName && (
@@ -672,36 +672,46 @@ function DocumentView({
       </div>
 
       <style>{`
+        @page {
+          size: A4;
+          margin: 15mm;
+        }
+
         @media print {
           /* Hide everything by default */
           body * {
             visibility: hidden;
           }
 
-          /* Only show the print container and its children */
-          .print-container,
-          .print-container * {
+          /* Only show the procurement print container and its children */
+          #procurement-print,
+          #procurement-print * {
             visibility: visible;
           }
 
           /* Position print container at top-left of page */
-          .print-container {
+          #procurement-print {
             position: absolute;
             left: 0;
             top: 0;
             width: 100%;
-            padding: 1rem;
             background: white !important;
             color: black !important;
           }
 
           /* Force white background and black text */
-          body {
+          body,
+          html {
             background: white !important;
             color: black !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
 
-          /* Hide no-print elements */
+          /* Hide UI elements globally */
+          aside,
+          nav,
+          button,
           .no-print {
             display: none !important;
             visibility: hidden !important;

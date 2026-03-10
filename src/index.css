@@ -16,7 +16,7 @@ html, body, #root {
   height: 100%;
 }
 
-/* Print-specific styles - hide everything except the print content */
+/* Print-specific styles - global print rules */
 @media print {
   /* Force white background and black text */
   html, body {
@@ -40,20 +40,13 @@ html, body, #root {
   }
 
   /* Hide sidebar navigation */
-  aside,
-  nav {
+  aside {
     display: none !important;
   }
 
   /* Hide theme toggle button */
   button[title*="mode"],
   button[title*="theme"] {
-    display: none !important;
-  }
-
-  /* Hide all buttons and interactive elements unless specifically marked for print */
-  button:not(.print-visible),
-  .no-print {
     display: none !important;
   }
 
@@ -64,19 +57,5 @@ html, body, #root {
     margin: 0 !important;
     padding: 0 !important;
     background: white !important;
-  }
-
-  /* Reset any dark mode backgrounds */
-  * {
-    background-color: transparent !important;
-    border-color: #d1d5db !important;
-  }
-
-  /* Ensure print content is visible */
-  .print-content,
-  .print-visible {
-    display: block !important;
-    visibility: visible !important;
-    opacity: 1 !important;
   }
 }
