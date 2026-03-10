@@ -986,8 +986,14 @@ export default function BOQPage() {
       return;
     }
 
+    // Validate that BOQ has been saved
+    if (!boqId) {
+      setPersistError("Please save the BOQ before generating procurement");
+      return;
+    }
+
     const confirmGenerate = window.confirm(
-      "This will regenerate the procurement list from the current BOQ. Any existing procurement items will be replaced. Continue?"
+      "This will save the current BOQ and regenerate the procurement list. Any existing procurement items will be replaced. Continue?"
     );
 
     if (!confirmGenerate) return;
@@ -996,10 +1002,25 @@ export default function BOQPage() {
     setPersistError(null);
 
     try {
+      console.log("[BOQ] Step 1: Saving BOQ before procurement generation...");
+      console.log("[BOQ]   Current BOQ ID:", boqId);
+      console.log("[BOQ]   Project ID:", routeProjectId);
+
+      // Force save the BOQ to ensure all items have database IDs
+      await saveBoqToSupabase("draft");
+
+      console.log("[BOQ] Step 2: BOQ saved, reloading to get fresh database IDs...");
+
+      // Reload the BOQ to ensure we have the latest saved data with real database IDs
+      await loadLatestBoqForProject(routeProjectId);
+
+      console.log("[BOQ] Step 3: BOQ reloaded, now generating procurement...");
+
+      // Generate procurement from the saved BOQ
       const result = await generateProcurementFromBOQ(routeProjectId);
 
       if (result.success) {
-        console.log("[BOQ] Successfully generated procurement:", result.count, "items");
+        console.log("[BOQ] ✓ Successfully generated procurement:", result.count, "items");
         setTimeout(() => {
           nav(`/projects/${routeProjectId}/procurement`);
         }, 500);
@@ -1007,6 +1028,7 @@ export default function BOQPage() {
         setPersistError(`Failed to generate procurement: ${result.error}`);
       }
     } catch (e: any) {
+      console.error("[BOQ] Error in procurement generation flow:", e);
       setPersistError(`Error generating procurement: ${e?.message || String(e)}`);
     } finally {
       setPersistLoading(false);
