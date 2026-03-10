@@ -353,6 +353,8 @@ export default function ProcurementPage() {
           onUpdateHeader={handleUpdateHeader}
           onPrint={() => handlePrint()}
           projectId={projectId}
+          onSwitchSection={switchSection}
+          currentSection={section}
         />
       );
     } else if (section === "purchase-orders" && currentPO) {
@@ -577,6 +579,8 @@ interface DocumentViewProps {
   onUpdateHeader: (updates: any) => void;
   onPrint: () => void;
   projectId: string;
+  onSwitchSection: (section: string) => void;
+  currentSection: string;
 }
 
 function DocumentView({
@@ -589,6 +593,8 @@ function DocumentView({
   onUpdateHeader,
   onPrint,
   projectId,
+  onSwitchSection,
+  currentSection,
 }: DocumentViewProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState(document.title);
@@ -810,6 +816,31 @@ function DocumentView({
 
   return (
     <div className="p-6">
+      <div className="flex gap-2 mb-6 border-b border-slate-800">
+        <button
+          onClick={() => onSwitchSection("procurement")}
+          className={
+            "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
+            (currentSection === "procurement"
+              ? "border-blue-400 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-300")
+          }
+        >
+          Procurement Documents
+        </button>
+        <button
+          onClick={() => onSwitchSection("purchase-orders")}
+          className={
+            "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
+            (currentSection === "purchase-orders"
+              ? "border-blue-400 text-blue-400"
+              : "border-transparent text-slate-400 hover:text-slate-300")
+          }
+        >
+          Purchase Orders
+        </button>
+      </div>
+
       <div className="mb-6">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex items-center gap-3">
@@ -848,17 +879,20 @@ function DocumentView({
           </div>
 
           <div className="flex items-center gap-2">
-            {selectedItems.size > 0 && (
-              <button
-                onClick={handleCreatePurchaseOrders}
-                disabled={creatingPOs}
-                className="px-3 py-2 rounded-xl bg-green-900/30 hover:bg-green-900/50 border border-green-900/50 text-green-300 text-sm disabled:opacity-50"
-              >
-                {creatingPOs
-                  ? "Creating..."
-                  : `Create PO (${selectedItems.size})`}
-              </button>
-            )}
+            <button
+              onClick={handleCreatePurchaseOrders}
+              disabled={creatingPOs || selectedItems.size === 0}
+              className={
+                "px-3 py-2 rounded-xl text-sm transition-colors " +
+                (selectedItems.size === 0
+                  ? "bg-slate-800/30 border border-slate-700/50 text-slate-500 cursor-not-allowed"
+                  : "bg-green-900/30 hover:bg-green-900/50 border border-green-900/50 text-green-300 disabled:opacity-50")
+              }
+            >
+              {creatingPOs
+                ? "Creating..."
+                : `Create Purchase Order (${selectedItems.size})`}
+            </button>
             <select
               value={document.status}
               onChange={(e) =>
