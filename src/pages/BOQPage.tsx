@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists";
 import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
 import { generateProcurementFromBOQ } from "../lib/procurement";
+import { generateEstimateFromBOQ } from "../lib/estimates";
 
 type RateItem = {
   id: string;
@@ -947,17 +948,41 @@ export default function BOQPage() {
     void saveBoqToSupabase("approved");
   }
 
-  function generateEstimateFromBoq() {
+  async function generateEstimateFromBoq() {
     if (status !== "approved") {
-      alert("You must approve the BOQ first.");
+      setPersistError("You must approve the BOQ first.");
       return;
     }
-    alert("Estimate generated from BOQ (placeholder).");
+
+    if (!routeProjectId || !boqId) {
+      setPersistError("Please save the BOQ first.");
+      return;
+    }
+
+    setPersistLoading(true);
+    setPersistError(null);
+
+    try {
+      const result = await generateEstimateFromBOQ(routeProjectId, boqId);
+
+      if (result.success) {
+        console.log("[BOQ] Successfully generated estimate:", result.estimateId);
+        setTimeout(() => {
+          nav(`/projects/${routeProjectId}/estimates`);
+        }, 500);
+      } else {
+        setPersistError(`Failed to generate estimate: ${result.error}`);
+      }
+    } catch (e: any) {
+      setPersistError(`Error generating estimate: ${e?.message || String(e)}`);
+    } finally {
+      setPersistLoading(false);
+    }
   }
 
   async function handleGenerateProcurement() {
     if (!routeProjectId) {
-      alert("Please select a project first");
+      setPersistError("Please select a project first");
       return;
     }
 
@@ -967,13 +992,24 @@ export default function BOQPage() {
 
     if (!confirmGenerate) return;
 
-    const result = await generateProcurementFromBOQ(routeProjectId);
+    setPersistLoading(true);
+    setPersistError(null);
 
-    if (result.success) {
-      alert(`Successfully generated ${result.count} procurement items`);
-      nav(`/projects/${routeProjectId}/procurement`);
-    } else {
-      alert(`Failed to generate procurement: ${result.error}`);
+    try {
+      const result = await generateProcurementFromBOQ(routeProjectId);
+
+      if (result.success) {
+        console.log("[BOQ] Successfully generated procurement:", result.count, "items");
+        setTimeout(() => {
+          nav(`/projects/${routeProjectId}/procurement`);
+        }, 500);
+      } else {
+        setPersistError(`Failed to generate procurement: ${result.error}`);
+      }
+    } catch (e: any) {
+      setPersistError(`Error generating procurement: ${e?.message || String(e)}`);
+    } finally {
+      setPersistLoading(false);
     }
   }
 

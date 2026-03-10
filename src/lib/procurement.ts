@@ -21,62 +21,101 @@ export interface ProcurementItemWithSource extends ProcurementItem {
 }
 
 export async function generateProcurementFromBOQ(projectId: string) {
+  console.log("[Procurement Generation] Starting for project:", projectId);
+
   if (!projectId) {
     return { success: false, error: "No project ID provided" };
   }
 
   try {
-    const { data: boqHeaders, error: headerError } = await supabase
+    const { data: userData } = await supabase.auth.getUser();
+    const currentUserId = userData.user?.id;
+    console.log("[Procurement Generation] Current user:", currentUserId);
+
+    const { data: boqHeader, error: headerError } = await supabase
       .from("boq_headers")
-      .select("id")
+      .select("id, status")
       .eq("project_id", projectId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (headerError) {
-      console.error("Error fetching BOQ header:", headerError);
-      return { success: false, error: headerError };
+      console.error("[Procurement Generation] Error fetching BOQ header:", headerError);
+      return { success: false, error: "Failed to fetch BOQ: " + headerError.message };
     }
 
-    if (!boqHeaders) {
+    if (!boqHeader) {
       return { success: false, error: "No BOQ found for this project" };
     }
 
+    console.log("[Procurement Generation] Using BOQ:", boqHeader.id, "Status:", boqHeader.status);
+
+    const { data: sections, error: sectionsError } = await supabase
+      .from("boq_sections")
+      .select("id, title")
+      .eq("boq_id", boqHeader.id)
+      .order("sort_order", { ascending: true });
+
+    if (sectionsError) {
+      console.error("[Procurement Generation] Error fetching sections:", sectionsError);
+      return { success: false, error: "Failed to fetch sections: " + sectionsError.message };
+    }
+
+    if (!sections || sections.length === 0) {
+      return { success: false, error: "No sections found in BOQ" };
+    }
+
+    const sectionIds = sections.map((s) => s.id);
+    console.log("[Procurement Generation] Found", sections.length, "sections");
+
     const { data: boqItems, error: itemsError } = await supabase
-      .from("boq_items")
-      .select("id, item, description, unit, qty, quantity, category")
-      .eq("boq_id", boqHeaders.id)
-      .eq("is_section_header", false);
+      .from("boq_section_items")
+      .select("id, section_id, item_name, description, unit_id, qty, pick_category")
+      .in("section_id", sectionIds)
+      .order("section_id")
+      .order("sort_order", { ascending: true });
 
     if (itemsError) {
-      console.error("Error fetching BOQ items:", itemsError);
-      return { success: false, error: itemsError };
+      console.error("[Procurement Generation] Error fetching BOQ items:", itemsError);
+      return { success: false, error: "Failed to fetch items: " + itemsError.message };
     }
 
     if (!boqItems || boqItems.length === 0) {
       return { success: false, error: "No BOQ items found" };
     }
 
+    console.log("[Procurement Generation] Found", boqItems.length, "total items");
+
+    const { data: units } = await supabase
+      .from("master_units")
+      .select("id, name")
+      .in("id", boqItems.map((i) => i.unit_id).filter(Boolean));
+
+    const unitMap = new Map(units?.map((u) => [u.id, u.name]) || []);
+
+    console.log("[Procurement Generation] Clearing old procurement items...");
     const { error: deleteError } = await supabase
       .from("procurement_items")
       .delete()
       .eq("project_id", projectId);
 
     if (deleteError) {
-      console.error("Error clearing old procurement items:", deleteError);
+      console.error("[Procurement Generation] Error clearing old items:", deleteError);
     }
 
     const procurementRecords = boqItems
       .filter((item) => {
-        const qty = item.quantity || item.qty || 0;
+        const qty = Number(item.qty) || 0;
         return qty > 0;
       })
       .map((item) => ({
         project_id: projectId,
         source_boq_item_id: item.id,
-        material_name: item.item || "Unnamed Item",
-        quantity: item.quantity || item.qty || 0,
-        unit: item.unit || null,
-        category: item.category || null,
+        material_name: item.item_name || "Unnamed Item",
+        quantity: Number(item.qty) || 0,
+        unit: item.unit_id ? unitMap.get(item.unit_id) || null : null,
+        category: item.pick_category || null,
         notes: item.description || null,
         status: "pending" as const,
       }));
@@ -88,24 +127,35 @@ export async function generateProcurementFromBOQ(projectId: string) {
       };
     }
 
+    console.log("[Procurement Generation] Creating", procurementRecords.length, "procurement items");
+    console.log("[Procurement Generation] First item sample:", procurementRecords[0]);
+
     const { data: inserted, error: insertError } = await supabase
       .from("procurement_items")
       .insert(procurementRecords)
       .select();
 
     if (insertError) {
-      console.error("Error creating procurement items:", insertError);
-      return { success: false, error: insertError };
+      console.error("[Procurement Generation] Error creating procurement items:", insertError);
+      return { success: false, error: "Failed to insert items: " + insertError.message };
     }
+
+    console.log("[Procurement Generation] Successfully created", inserted?.length || 0, "items");
+
+    await logActivity(
+      projectId,
+      "procurement_generated",
+      `Generated ${procurementRecords.length} procurement items from BOQ`
+    );
 
     return {
       success: true,
       data: inserted,
       count: procurementRecords.length,
     };
-  } catch (e) {
-    console.error("Exception generating procurement:", e);
-    return { success: false, error: e };
+  } catch (e: any) {
+    console.error("[Procurement Generation] Exception:", e);
+    return { success: false, error: e?.message || String(e) };
   }
 }
 
@@ -120,7 +170,7 @@ export async function fetchProcurementItems(projectId: string) {
       .select(
         `
         *,
-        source_boq_item:boq_items(item, description)
+        source_boq_item:boq_section_items(item_name, description)
       `
       )
       .eq("project_id", projectId)
@@ -135,7 +185,7 @@ export async function fetchProcurementItems(projectId: string) {
     const enrichedData: ProcurementItemWithSource[] = (data || []).map(
       (item: any) => ({
         ...item,
-        source_item: item.source_boq_item?.item || null,
+        source_item: item.source_boq_item?.item_name || null,
         source_description: item.source_boq_item?.description || null,
       })
     );
