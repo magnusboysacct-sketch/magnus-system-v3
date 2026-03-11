@@ -240,29 +240,39 @@ const location = useLocation();
             )}
           </div>
 
-          <nav className="p-3 space-y-1">
-            {visibleNav.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    [
-                      "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition",
-                      isActive
-                        ? "bg-slate-300/60 dark:bg-slate-800/60 text-slate-900 dark:text-white"
-                        : "text-slate-600 dark:text-slate-300 hover:bg-slate-200/30 dark:hover:bg-slate-800/30 hover:text-slate-900 dark:hover:text-white",
-                      collapsed ? "justify-center" : "",
-                    ].join(" ")
-                  }
-                  title={collapsed ? item.label : undefined}
-                >
-                  <Icon size={18} />
-                  {!collapsed && <span className="truncate">{item.label}</span>}
-                </NavLink>
-              );
-            })}
+                  <nav className="p-3 space-y-4">
+            {visibleSections.map((section) => (
+              <div key={section.title} className="space-y-1">
+                {!collapsed && (
+                  <div className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-500">
+                    {section.title}
+                  </div>
+                )}
+
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      className={({ isActive }) =>
+                        [
+                          "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition",
+                          isActive
+                            ? "bg-slate-300/60 dark:bg-slate-800/60 text-slate-900 dark:text-white"
+                            : "text-slate-600 dark:text-slate-300 hover:bg-slate-200/30 dark:hover:bg-slate-800/30 hover:text-slate-900 dark:hover:text-white",
+                          collapsed ? "justify-center" : "",
+                        ].join(" ")
+                      }
+                      title={collapsed ? item.label : undefined}
+                    >
+                      <Icon size={18} />
+                      {!collapsed && <span className="truncate">{item.label}</span>}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
 
           <div className="mt-auto border-t border-slate-200 dark:border-slate-800 p-3">
