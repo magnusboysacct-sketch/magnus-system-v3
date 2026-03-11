@@ -433,6 +433,7 @@ if (section === "procurement") {
         onDeletePO={handleDeletePurchaseOrder}
         onSwitchSection={switchSection}
         currentSection={section}
+        currentProjectName={currentProject?.name || ""}
       />
     );
   }
