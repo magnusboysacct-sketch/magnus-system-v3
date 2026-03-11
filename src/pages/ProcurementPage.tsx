@@ -465,6 +465,15 @@ function ListView({
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-semibold">Procurement Documents</h1>
+
+          {currentProject && (
+  <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+    Project:{" "}
+    <span className="font-semibold text-slate-700 dark:text-slate-200">
+      {currentProject.name}
+    </span>
+  </div>
+)}
           <p className="text-slate-400 mt-1">
             Saved procurement lists and materials orders
           </p>
