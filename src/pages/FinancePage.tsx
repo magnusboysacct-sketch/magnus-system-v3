@@ -118,6 +118,22 @@ export default function FinancePage() {
         setProjectName(String(projectRow?.name ?? ""));
         setSummary(summaryData);
         setCategories(categoryData);
+                setCostControlItems(
+          (itemRows ?? []).map((row: any) => ({
+            cost_category: String(row.cost_category ?? "Uncategorized"),
+            cost_code: String(row.cost_code ?? ""),
+            item_name: String(row.item_name ?? "Unnamed Item"),
+            budget_amount: Number(row.budget_amount ?? 0),
+            committed_amount: Number(row.committed_amount ?? 0),
+            delivered_amount: Number(row.delivered_amount ?? 0),
+            paid_amount: Number(row.paid_amount ?? 0),
+            remaining_budget_after_commit: Number(row.remaining_budget_after_commit ?? 0),
+            remaining_budget_after_delivery: Number(row.remaining_budget_after_delivery ?? 0),
+            undelivered_committed_amount: Number(row.undelivered_committed_amount ?? 0),
+            over_delivery_variance: Number(row.over_delivery_variance ?? 0),
+            over_commitment_variance: Number(row.over_commitment_variance ?? 0),
+          }))
+        );
       } catch (e: any) {
         console.error("[Finance] loadFinanceData failed:", e);
         if (!alive) return;
