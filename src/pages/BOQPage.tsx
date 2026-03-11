@@ -838,9 +838,18 @@ const [activeProjectId, setActiveProjectId] = useState<string | null>(() => rout
 
 
 useEffect(() => {
-  const nextProjectId = routeProjectId || currentProjectId || resolveProjectId() || null;
-  setActiveProjectId(nextProjectId);
-}, [routeProjectId, currentProjectId]);
+  const pid = activeProjectId;
+
+  if (!pid) {
+    setBoqId(null);
+    setStatus("draft");
+    setSections([]);
+    return;
+  }
+
+  void loadLatestBoqForProject(pid);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [activeProjectId]);
 
   function addSection() {
     setSections((prev) => [...prev, { id: safeId(), masterCategoryId: null, title: "New Section", scope: "", items: [] }]);
