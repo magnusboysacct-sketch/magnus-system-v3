@@ -46,7 +46,8 @@ import { useProjectContext } from "../context/ProjectContext";
 
 
 export default function ProcurementPage() {
-  const { projectId } = useParams<{ projectId?: string }>();
+const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+const projectId = routeProjectId || currentProjectId;
   const [searchParams, setSearchParams] = useSearchParams();
   const nav = useNavigate();
 
