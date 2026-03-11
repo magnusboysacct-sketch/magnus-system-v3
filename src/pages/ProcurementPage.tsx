@@ -423,13 +423,14 @@ export default function ProcurementPage() {
 
   if (section === "procurement") {
     return (
-      <ListView
+          <ListView
         headers={headers}
         loading={loading}
         projectId={projectId}
         currentProjectName={currentProject?.name || ""}
         onOpenDocument={openDocument}
         onDeleteDocument={handleDeleteDocument}
+        onCreateReceiving={handleCreateReceiving}
         onNavigate={nav}
         onSwitchSection={switchSection}
         currentSection={section}
