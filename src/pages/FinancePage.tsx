@@ -23,6 +23,7 @@ export default function FinancePage() {
     variance: 0,
   });
   const [categoryBreakdown, setCategoryBreakdown] = useState<CategoryBreakdown[]>([]);
+  const { currentProjectId, currentProject } = useProjectContext();
 
   useEffect(() => {
     if (projectId) {
