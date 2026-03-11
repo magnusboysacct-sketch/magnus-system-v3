@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
@@ -33,108 +33,111 @@ function numOr(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function formatCurrency(value: number) {
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export default function FinancePage() {
-  const { currentProjectId, currentProject } = useProjectContext();
-  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
   const navigate = useNavigate();
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+  const { currentProjectId, currentProject } = useProjectContext();
 
   const projectId = routeProjectId || currentProjectId || null;
 
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState("");
-
   const [costControlTotals, setCostControlTotals] = useState<CostControlTotals | null>(null);
   const [costControlCategories, setCostControlCategories] = useState<CostControlCategoryRow[]>([]);
-  const [costControlLoading, setCostControlLoading] = useState(false);
   const [costControlError, setCostControlError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!projectId) {
-      setLoading(false);
-      setProjectName("");
-      setCostControlTotals(null);
-      setCostControlCategories([]);
-      setCostControlError(null);
-      return;
-    }
-
     let alive = true;
 
     async function loadFinanceData() {
+      if (!projectId) {
+        if (!alive) return;
+        setProjectName("");
+        setCostControlTotals(null);
+        setCostControlCategories([]);
+        setCostControlError(null);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
-      setCostControlLoading(true);
       setCostControlError(null);
 
       try {
-        const [
-          projectResp,
-          totalsResp,
-          categoriesResp,
-        ] = await Promise.all([
-          supabase.from("projects").select("name").eq("id", projectId).maybeSingle(),
-          supabase
-            .from("v_cost_control_project_totals")
-            .select(
-              `
-              total_budget,
-              total_committed,
-              total_delivered,
-              total_paid,
-              total_remaining_budget_after_commit,
-              total_remaining_budget_after_delivery,
-              total_undelivered_committed,
-              total_over_delivery_variance,
-              total_over_commitment_variance
-              `
-            )
-            .eq("project_id", projectId)
-            .maybeSingle(),
-          supabase
-            .from("v_cost_control_categories")
-            .select(
-              `
-              cost_category,
-              budget_amount,
-              committed_amount,
-              delivered_amount,
-              paid_amount,
-              remaining_budget_after_commit,
-              remaining_budget_after_delivery,
-              undelivered_committed_amount,
-              over_delivery_variance,
-              over_commitment_variance
-              `
-            )
-            .eq("project_id", projectId)
-            .order("cost_category", { ascending: true }),
-        ]);
+        const { data: projectRow, error: projectError } = await supabase
+          .from("projects")
+          .select("name")
+          .eq("id", projectId)
+          .maybeSingle();
 
-        if (projectResp.error) throw projectResp.error;
-        if (totalsResp.error) throw totalsResp.error;
-        if (categoriesResp.error) throw categoriesResp.error;
+        if (projectError) throw projectError;
+
+        const { data: totalsRow, error: totalsError } = await supabase
+          .from("v_cost_control_project_totals")
+          .select(
+            `
+            total_budget,
+            total_committed,
+            total_delivered,
+            total_paid,
+            total_remaining_budget_after_commit,
+            total_remaining_budget_after_delivery,
+            total_undelivered_committed,
+            total_over_delivery_variance,
+            total_over_commitment_variance
+            `
+          )
+          .eq("project_id", projectId)
+          .maybeSingle();
+
+        if (totalsError) throw totalsError;
+
+        const { data: categoryRows, error: categoriesError } = await supabase
+          .from("v_cost_control_categories")
+          .select(
+            `
+            cost_category,
+            budget_amount,
+            committed_amount,
+            delivered_amount,
+            paid_amount,
+            remaining_budget_after_commit,
+            remaining_budget_after_delivery,
+            undelivered_committed_amount,
+            over_delivery_variance,
+            over_commitment_variance
+            `
+          )
+          .eq("project_id", projectId)
+          .order("cost_category", { ascending: true });
+
+        if (categoriesError) throw categoriesError;
 
         if (!alive) return;
 
-        setProjectName(String(projectResp.data?.name ?? ""));
+        setProjectName(String(projectRow?.name ?? ""));
 
         setCostControlTotals({
-          total_budget: numOr(totalsResp.data?.total_budget),
-          total_committed: numOr(totalsResp.data?.total_committed),
-          total_delivered: numOr(totalsResp.data?.total_delivered),
-          total_paid: numOr(totalsResp.data?.total_paid),
-          total_remaining_budget_after_commit: numOr(
-            totalsResp.data?.total_remaining_budget_after_commit
-          ),
-          total_remaining_budget_after_delivery: numOr(
-            totalsResp.data?.total_remaining_budget_after_delivery
-          ),
-          total_undelivered_committed: numOr(totalsResp.data?.total_undelivered_committed),
-          total_over_delivery_variance: numOr(totalsResp.data?.total_over_delivery_variance),
-          total_over_commitment_variance: numOr(totalsResp.data?.total_over_commitment_variance),
+          total_budget: numOr(totalsRow?.total_budget),
+          total_committed: numOr(totalsRow?.total_committed),
+          total_delivered: numOr(totalsRow?.total_delivered),
+          total_paid: numOr(totalsRow?.total_paid),
+          total_remaining_budget_after_commit: numOr(totalsRow?.total_remaining_budget_after_commit),
+          total_remaining_budget_after_delivery: numOr(totalsRow?.total_remaining_budget_after_delivery),
+          total_undelivered_committed: numOr(totalsRow?.total_undelivered_committed),
+          total_over_delivery_variance: numOr(totalsRow?.total_over_delivery_variance),
+          total_over_commitment_variance: numOr(totalsRow?.total_over_commitment_variance),
         });
 
         setCostControlCategories(
-          (categoriesResp.data ?? []).map((row: any) => ({
+          (categoryRows ?? []).map((row: any) => ({
             cost_category: String(row.cost_category ?? "Uncategorized"),
             budget_amount: numOr(row.budget_amount),
             committed_amount: numOr(row.committed_amount),
@@ -154,9 +157,7 @@ export default function FinancePage() {
         setCostControlTotals(null);
         setCostControlCategories([]);
       } finally {
-        if (!alive) return;
-        setLoading(false);
-        setCostControlLoading(false);
+        if (alive) setLoading(false);
       }
     }
 
@@ -167,30 +168,13 @@ export default function FinancePage() {
     };
   }, [projectId]);
 
-  const summary = useMemo(() => {
-    const total_budget = numOr(costControlTotals?.total_budget);
-    const committed_value = numOr(costControlTotals?.total_committed);
-    const delivered_value = numOr(costControlTotals?.total_delivered);
-    const remaining_budget = numOr(costControlTotals?.total_remaining_budget_after_delivery);
-
-    // positive = under budget, negative = over budget
-    const variance = total_budget - delivered_value;
-
-    return {
-      total_budget,
-      committed_value,
-      delivered_value,
-      remaining_budget,
-      variance,
-    };
-  }, [costControlTotals]);
-
-  function formatCurrency(value: number) {
-    return value.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  }
+  const summary = {
+    total_budget: numOr(costControlTotals?.total_budget),
+    committed_value: numOr(costControlTotals?.total_committed),
+    delivered_value: numOr(costControlTotals?.total_delivered),
+    remaining_budget: numOr(costControlTotals?.total_remaining_budget_after_delivery),
+    variance: numOr(costControlTotals?.total_budget) - numOr(costControlTotals?.total_delivered),
+  };
 
   if (!projectId) {
     return (
@@ -213,9 +197,7 @@ export default function FinancePage() {
         </div>
 
         <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
-          <p className="text-sm text-slate-400">
-            Please select a project from the projects page
-          </p>
+          <p className="text-sm text-slate-400">Please select a project from the projects page</p>
           <button
             onClick={() => navigate("/projects")}
             className="mt-4 px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
@@ -266,38 +248,28 @@ export default function FinancePage() {
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
               <div className="text-xs text-slate-400">Budget</div>
               <div className="mt-1 text-lg font-semibold text-white">
-                {costControlLoading
-                  ? "Loading..."
-                  : `$${formatCurrency(numOr(costControlTotals?.total_budget))}`}
+                ${formatCurrency(numOr(costControlTotals?.total_budget))}
               </div>
             </div>
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
               <div className="text-xs text-slate-400">Committed</div>
               <div className="mt-1 text-lg font-semibold text-white">
-                {costControlLoading
-                  ? "Loading..."
-                  : `$${formatCurrency(numOr(costControlTotals?.total_committed))}`}
+                ${formatCurrency(numOr(costControlTotals?.total_committed))}
               </div>
             </div>
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
               <div className="text-xs text-slate-400">Delivered</div>
               <div className="mt-1 text-lg font-semibold text-white">
-                {costControlLoading
-                  ? "Loading..."
-                  : `$${formatCurrency(numOr(costControlTotals?.total_delivered))}`}
+                ${formatCurrency(numOr(costControlTotals?.total_delivered))}
               </div>
             </div>
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
               <div className="text-xs text-slate-400">Remaining</div>
               <div className="mt-1 text-lg font-semibold text-white">
-                {costControlLoading
-                  ? "Loading..."
-                  : `$${formatCurrency(
-                      numOr(costControlTotals?.total_remaining_budget_after_delivery)
-                    )}`}
+                ${formatCurrency(numOr(costControlTotals?.total_remaining_budget_after_delivery))}
               </div>
             </div>
 
@@ -309,78 +281,14 @@ export default function FinancePage() {
                   (summary.variance >= 0 ? "text-emerald-400" : "text-red-400")
                 }
               >
-                {costControlLoading
-                  ? "Loading..."
-                  : `$${formatCurrency(Math.abs(summary.variance))}`}
+                ${formatCurrency(Math.abs(summary.variance))}
               </div>
             </div>
           </div>
 
           {costControlError ? (
-            <div className="text-xs text-red-400 mb-4">
-              Cost control error: {costControlError}
-            </div>
+            <div className="text-xs text-red-400 mb-4">Cost control error: {costControlError}</div>
           ) : null}
-
-          <div className="grid grid-cols-5 gap-4 mb-6">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-              <div className="text-xs text-slate-400 mb-1">Budget / Estimated</div>
-              <div className="text-2xl font-semibold mt-1">
-                ${formatCurrency(summary.total_budget)}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-              <div className="text-xs text-slate-400 mb-1">Committed PO Value</div>
-              <div className="text-2xl font-semibold mt-1 text-blue-400">
-                ${formatCurrency(summary.committed_value)}
-              </div>
-              <div className="text-xs text-slate-500 mt-1">
-                {summary.total_budget > 0
-                  ? `${((summary.committed_value / summary.total_budget) * 100).toFixed(1)}% of budget`
-                  : "—"}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-              <div className="text-xs text-slate-400 mb-1">Delivered Value</div>
-              <div className="text-2xl font-semibold mt-1 text-emerald-400">
-                ${formatCurrency(summary.delivered_value)}
-              </div>
-              <div className="text-xs text-slate-500 mt-1">
-                {summary.committed_value > 0
-                  ? `${((summary.delivered_value / summary.committed_value) * 100).toFixed(1)}% delivered`
-                  : "—"}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-              <div className="text-xs text-slate-400 mb-1">Remaining Budget</div>
-              <div className="text-2xl font-semibold mt-1">
-                ${formatCurrency(summary.remaining_budget)}
-              </div>
-              <div className="text-xs text-slate-500 mt-1">
-                {summary.total_budget > 0
-                  ? `${((summary.remaining_budget / summary.total_budget) * 100).toFixed(1)}% remaining`
-                  : "—"}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-              <div className="text-xs text-slate-400 mb-1">Variance</div>
-              <div
-                className={
-                  "text-2xl font-semibold mt-1 " +
-                  (summary.variance >= 0 ? "text-emerald-400" : "text-red-400")
-                }
-              >
-                ${formatCurrency(Math.abs(summary.variance))}
-              </div>
-              <div className="text-xs text-slate-500 mt-1">
-                {summary.variance >= 0 ? "Under budget" : "Over budget"}
-              </div>
-            </div>
-          </div>
 
           <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
             <h3 className="font-semibold mb-4">Financial Progress</h3>
@@ -463,25 +371,17 @@ export default function FinancePage() {
                               {cat.cost_category || "Uncategorized"}
                             </div>
                           </td>
-                          <td className="px-6 py-3 text-right">
-                            <div className="text-sm">
-                              ${formatCurrency(cat.budget_amount)}
-                            </div>
+                          <td className="px-6 py-3 text-right text-sm">
+                            ${formatCurrency(cat.budget_amount)}
                           </td>
-                          <td className="px-6 py-3 text-right">
-                            <div className="text-sm">
-                              ${formatCurrency(cat.committed_amount)}
-                            </div>
+                          <td className="px-6 py-3 text-right text-sm">
+                            ${formatCurrency(cat.committed_amount)}
                           </td>
-                          <td className="px-6 py-3 text-right">
-                            <div className="text-sm text-emerald-400">
-                              ${formatCurrency(cat.delivered_amount)}
-                            </div>
+                          <td className="px-6 py-3 text-right text-sm text-emerald-400">
+                            ${formatCurrency(cat.delivered_amount)}
                           </td>
-                          <td className="px-6 py-3 text-right">
-                            <div className="text-sm">
-                              ${formatCurrency(cat.remaining_budget_after_delivery)}
-                            </div>
+                          <td className="px-6 py-3 text-right text-sm">
+                            ${formatCurrency(cat.remaining_budget_after_delivery)}
                           </td>
                           <td className="px-6 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -504,33 +404,23 @@ export default function FinancePage() {
                     <tr className="border-t-2 border-slate-700 bg-slate-900/50">
                       <td className="px-6 py-3 text-sm font-semibold">Total</td>
                       <td className="px-6 py-3 text-right text-sm font-semibold">
-                        $
-                        {formatCurrency(
-                          costControlCategories.reduce((sum, cat) => sum + cat.budget_amount, 0)
-                        )}
+                        ${formatCurrency(costControlCategories.reduce((sum, cat) => sum + cat.budget_amount, 0))}
                       </td>
                       <td className="px-6 py-3 text-right text-sm font-semibold">
-                        $
-                        {formatCurrency(
-                          costControlCategories.reduce((sum, cat) => sum + cat.committed_amount, 0)
-                        )}
+                        ${formatCurrency(costControlCategories.reduce((sum, cat) => sum + cat.committed_amount, 0))}
                       </td>
                       <td className="px-6 py-3 text-right text-sm font-semibold text-emerald-400">
-                        $
-                        {formatCurrency(
-                          costControlCategories.reduce((sum, cat) => sum + cat.delivered_amount, 0)
-                        )}
+                        ${formatCurrency(costControlCategories.reduce((sum, cat) => sum + cat.delivered_amount, 0))}
                       </td>
                       <td className="px-6 py-3 text-right text-sm font-semibold">
-                        $
-                        {formatCurrency(
+                        ${formatCurrency(
                           costControlCategories.reduce(
                             (sum, cat) => sum + cat.remaining_budget_after_delivery,
                             0
                           )
                         )}
                       </td>
-                      <td className="px-6 py-3" />
+                      <td className="px-6 py-3"></td>
                     </tr>
                   </tfoot>
                 </table>
