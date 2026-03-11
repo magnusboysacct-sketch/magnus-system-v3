@@ -334,8 +334,7 @@ export default function ProcurementPage() {
       setCurrentDocument({ ...currentDocument, ...updates });
     }
   }
-
-   function handlePrint() {
+  function handlePrint() {
     if (!currentDocument) return;
 
     printProcurementDocument({
@@ -373,26 +372,6 @@ export default function ProcurementPage() {
       console.error("[Procurement] Failed to create receiving:", e);
       alert(e?.message ?? "Failed to create receiving");
     }
-  }
-      if (error) throw error;
-
-      alert("Receiving draft created successfully.");
-      console.log("[Procurement] Receiving created:", data);
-
-      if (viewMode === "list" && section === "procurement") {
-        await loadProcurementHeaders();
-      }
-    } catch (e: any) {
-      console.error("[Procurement] Failed to create receiving:", e);
-      alert(e?.message ?? "Failed to create receiving");
-    }
-  }
-
-    printPurchaseOrder({
-      purchaseOrder: currentPO,
-      projectName,
-      companyName,
-    });
   }
 
   if (!projectId) {
