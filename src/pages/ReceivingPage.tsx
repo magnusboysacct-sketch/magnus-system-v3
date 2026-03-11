@@ -24,7 +24,7 @@ export default function ReceivingPage() {
     setLoading(true);
 
     const { data, error } = await supabase
-      .from("receiving_documents")
+     .from("receiving_records")
       .select("id,title,received_date,procurement_id")
       .eq("project_id", currentProjectId)
       .order("received_date", { ascending: false });
