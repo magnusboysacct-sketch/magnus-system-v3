@@ -79,13 +79,17 @@ export default function ReceivingPage() {
               className="rounded-xl border border-slate-800 bg-slate-900/30 p-4"
             >
               <div className="flex items-center justify-between">
-                <div>
-                 <div className="font-medium text-lg">{doc.receiving_no}</div>
+              <div>
+  <div className="font-medium text-lg">{doc.receiving_no}</div>
 
-                  <div className="text-xs text-slate-400 mt-1">
-                    Received {new Date(doc.received_date).toLocaleDateString()}
-                  </div>
-                </div>
+  <div className="text-xs text-slate-400 mt-1">
+    Supplier: {doc.supplier_name || "Unknown"}
+  </div>
+
+  <div className="text-xs text-slate-400">
+    Received {new Date(doc.received_date).toLocaleDateString()}
+  </div>
+</div>
 
                 <div className="text-xs text-slate-500">
                   ID: {doc.id.substring(0, 8)}
