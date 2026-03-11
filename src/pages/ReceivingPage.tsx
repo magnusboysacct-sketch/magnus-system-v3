@@ -4,9 +4,9 @@ import { useProjectContext } from "../context/ProjectContext";
 
 interface ReceivingDocument {
   id: string;
-  title: string;
+  receiving_no: string;
   received_date: string;
-  procurement_id: string | null;
+  purchase_order_id: string | null;
 }
 
 export default function ReceivingPage() {
