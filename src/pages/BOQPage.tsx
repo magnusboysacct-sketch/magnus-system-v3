@@ -151,6 +151,14 @@ export default function BOQPage() {
 
   const { currentProjectId, currentProject: selectedProject } = useProjectContext();
 
+  if (!currentProjectId) {
+  return (
+    <div className="p-6 text-sm text-slate-500">
+      Please select a project from the top bar before using the BOQ Builder.
+    </div>
+  );
+}
+
   const {
     categories: masterCategories,
     units: masterUnits,
