@@ -291,6 +291,7 @@ export default function ProcurementPage() {
       .eq("id", itemId)
       .select()
       .single();
+    .eq("project_id", currentProjectId)
 
     if (error) {
       console.error("Error updating item:", error);
