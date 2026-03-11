@@ -91,10 +91,6 @@ export default function SidebarLayout() {
   }, [collapsed]);
 
   useEffect(() => {
-    localStorage.setItem("mb_sidebar_collapsed", collapsed ? "1" : "0");
-  }, [collapsed]);
-
-  useEffect(() => {
     const allowedWithoutProject = [
       "/projects",
       "/clients",
