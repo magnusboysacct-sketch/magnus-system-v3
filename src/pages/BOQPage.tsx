@@ -1039,12 +1039,29 @@ useEffect(() => {
       // This function fetches directly from database, NOT from React state
       const result = await generateProcurementFromBOQ(routeProjectId);
 
-      if (result.success) {
+          if (result.success) {
         console.log("[BOQ] ✓ Successfully generated procurement:", result.count, "items");
-        console.log("[BOQ] ✓ Procurement Document ID:", (result as any).procurementId);
+
+        const procurementId = (result as any).procurementId as string | undefined;
+        console.log("[BOQ] ✓ Procurement Document ID:", procurementId);
+
+        if (procurementId) {
+          console.log("[BOQ] Syncing procurement committed costs into project_cost_events...");
+          const { error: syncCommittedError } = await supabase.rpc(
+            "sync_procurement_committed_to_cost_events",
+            {
+              p_procurement_id: procurementId,
+            }
+          );
+
+          if (syncCommittedError) {
+            console.error("[BOQ] Procurement committed-cost sync failed:", syncCommittedError);
+          } else {
+            console.log("[BOQ] ✓ Procurement committed costs synced to project_cost_events");
+          }
+        }
+
         setTimeout(() => {
-          // Navigate to the specific procurement document
-          const procurementId = (result as any).procurementId;
           if (procurementId) {
             nav(`/projects/${routeProjectId}/procurement?view=document&doc=${procurementId}`);
           } else {
