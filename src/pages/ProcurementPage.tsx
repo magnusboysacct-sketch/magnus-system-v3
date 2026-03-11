@@ -335,7 +335,7 @@ export default function ProcurementPage() {
     }
   }
 
-  function handlePrint() {
+   function handlePrint() {
     if (!currentDocument) return;
 
     printProcurementDocument({
@@ -347,12 +347,33 @@ export default function ProcurementPage() {
 
   function handlePrintPO() {
     if (!currentPO) return;
-      async function handleCreateReceiving(procurementId: string) {
+
+    printPurchaseOrder({
+      purchaseOrder: currentPO,
+      projectName,
+      companyName,
+    });
+  }
+
+  async function handleCreateReceiving(procurementId: string) {
     try {
       const { data, error } = await supabase.rpc("create_receiving_from_procurement", {
         p_procurement_id: procurementId,
       });
 
+      if (error) throw error;
+
+      alert("Receiving draft created successfully.");
+      console.log("[Procurement] Receiving created:", data);
+
+      if (viewMode === "list" && section === "procurement") {
+        await loadProcurementHeaders();
+      }
+    } catch (e: any) {
+      console.error("[Procurement] Failed to create receiving:", e);
+      alert(e?.message ?? "Failed to create receiving");
+    }
+  }
       if (error) throw error;
 
       alert("Receiving draft created successfully.");
