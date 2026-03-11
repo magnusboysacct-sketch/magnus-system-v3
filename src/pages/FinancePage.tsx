@@ -40,7 +40,7 @@ const projectId = routeProjectId || currentProjectId;
     } else {
       setLoading(false);
     }
-  }, [projectId]);
+ }, [projectId, currentProjectId, viewMode]);
 
   async function loadData() {
     if (!projectId) return;
