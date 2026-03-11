@@ -24,22 +24,53 @@ import ProjectSelector from "../components/ProjectSelector";
 import { useProjectContext } from "../context/ProjectContext";
 import { useNavigate, useLocation } from "react-router-dom";
 
-const nav = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/clients", label: "Clients", icon: Users },
-  { to: "/projects", label: "Projects", icon: BriefcaseBusiness },
-  { to: "/estimates", label: "Estimates", icon: FileSpreadsheet },
-  { to: "/boq", label: "BOQ Builder", icon: Layers },
-  { to: "/assemblies", label: "Assemblies", icon: Layers },
-  { to: "/rates", label: "Rate Library", icon: Layers },
-  { to: "/takeoff", label: "Takeoff", icon: Ruler },
-  { to: "/procurement", label: "Procurement", icon: ShoppingCart },
-  { to: "/receiving", label: "Receiving", icon: PackageCheck },
-  { to: "/finance", label: "Finance", icon: Landmark },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
-  { to: "/billing", label: "Billing", icon: CreditCard },
-  { to: "/settings", label: "Settings", icon: Settings },
-  { to: "/settings/users", label: "User Manager", icon: Users },
+const navSections = [
+  {
+    title: "Main",
+    items: [{ to: "/", label: "Dashboard", icon: LayoutDashboard }],
+  },
+  {
+    title: "CRM",
+    items: [
+      { to: "/clients", label: "Clients", icon: Users },
+      { to: "/projects", label: "Projects", icon: BriefcaseBusiness },
+    ],
+  },
+  {
+    title: "Estimating",
+    items: [
+      { to: "/estimates", label: "Estimates", icon: FileSpreadsheet },
+      { to: "/boq", label: "BOQ Builder", icon: Layers },
+      { to: "/assemblies", label: "Assemblies", icon: Layers },
+      { to: "/rates", label: "Rate Library", icon: Layers },
+      { to: "/takeoff", label: "Takeoff", icon: Ruler },
+    ],
+  },
+  {
+    title: "Procurement",
+    items: [
+      { to: "/procurement", label: "Procurement", icon: ShoppingCart },
+      { to: "/receiving", label: "Receiving", icon: PackageCheck },
+    ],
+  },
+  {
+    title: "Finance",
+    items: [
+      { to: "/finance", label: "Finance", icon: Landmark },
+      { to: "/billing", label: "Billing", icon: CreditCard },
+    ],
+  },
+  {
+    title: "Analytics",
+    items: [{ to: "/reports", label: "Reports", icon: BarChart3 }],
+  },
+  {
+    title: "System",
+    items: [
+      { to: "/settings", label: "Settings", icon: Settings },
+      { to: "/settings/users", label: "User Manager", icon: Users },
+    ],
+  },
 ];
 
 export default function SidebarLayout() {
