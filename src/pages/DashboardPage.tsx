@@ -1,13 +1,9 @@
 import React from "react";
 import { useProjectContext } from "../context/ProjectContext";
 
-{currentProject && (
-  <div className="mb-4 text-sm text-slate-500">
-    Project: <span className="font-semibold text-slate-700">{currentProject.name}</span>
-  </div>
-)}
 export default function DashboardPage() {
   const { currentProjectId, currentProject } = useProjectContext();
+
   return (
     <div className="p-6">
       <div className="flex items-start justify-between gap-4">
@@ -25,6 +21,12 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      {currentProject && (
+        <div className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+          Project: <span className="font-semibold text-slate-700 dark:text-slate-200">{currentProject.name}</span>
+        </div>
+      )}
 
       <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
         <p className="text-sm text-slate-300">
