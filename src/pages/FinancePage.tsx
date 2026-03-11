@@ -59,6 +59,51 @@ const [costControlError, setCostControlError] = useState<string | null>(null);
   async function loadData() {
     if (!projectId) return;
 
+    async function loadCostControlTotals(projectId: string) {
+  setCostControlLoading(true);
+  setCostControlError(null);
+
+  try {
+    const { data, error } = await supabase
+      .from("v_cost_control_project_totals")
+      .select(
+        `
+        total_budget,
+        total_committed,
+        total_delivered,
+        total_paid,
+        total_remaining_budget_after_commit,
+        total_remaining_budget_after_delivery,
+        total_undelivered_committed,
+        total_over_delivery_variance,
+        total_over_commitment_variance
+        `
+      )
+      .eq("project_id", projectId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    setCostControlTotals({
+      total_budget: Number(data?.total_budget ?? 0),
+      total_committed: Number(data?.total_committed ?? 0),
+      total_delivered: Number(data?.total_delivered ?? 0),
+      total_paid: Number(data?.total_paid ?? 0),
+      total_remaining_budget_after_commit: Number(data?.total_remaining_budget_after_commit ?? 0),
+      total_remaining_budget_after_delivery: Number(data?.total_remaining_budget_after_delivery ?? 0),
+      total_undelivered_committed: Number(data?.total_undelivered_committed ?? 0),
+      total_over_delivery_variance: Number(data?.total_over_delivery_variance ?? 0),
+      total_over_commitment_variance: Number(data?.total_over_commitment_variance ?? 0),
+    });
+  } catch (e: any) {
+    console.error("[Finance] loadCostControlTotals failed:", e);
+    setCostControlError(e?.message ?? "Failed to load cost control totals");
+    setCostControlTotals(null);
+  } finally {
+    setCostControlLoading(false);
+  }
+}
+
     setLoading(true);
     try {
       const { data: project } = await supabase
