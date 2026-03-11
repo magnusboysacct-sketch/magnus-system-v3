@@ -1463,6 +1463,7 @@ interface PurchaseOrdersListViewProps {
   onDeletePO: (poId: string) => void;
   onSwitchSection: (section: string) => void;
   currentSection: string;
+  currentProjectName: string;
 }
 
 function PurchaseOrdersListView({
