@@ -20,6 +20,9 @@ import {
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
 import ProjectSelector from "../components/ProjectSelector";
+import { useProjectContext } from "../context/ProjectContext";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useEffect } from "react";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
