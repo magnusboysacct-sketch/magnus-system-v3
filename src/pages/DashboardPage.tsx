@@ -1,6 +1,11 @@
 import React from "react";
 import { useProjectContext } from "../context/ProjectContext";
 
+{currentProject && (
+  <div className="mb-4 text-sm text-slate-500">
+    Project: <span className="font-semibold text-slate-700">{currentProject.name}</span>
+  </div>
+)}
 export default function DashboardPage() {
   const { currentProjectId, currentProject } = useProjectContext();
   return (
