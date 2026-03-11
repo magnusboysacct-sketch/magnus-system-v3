@@ -846,27 +846,7 @@ const [activeProjectId, setActiveProjectId] = useState<string | null>(() => rout
     if (next) await loadLatestBoqForProject(next);
   }
 
-  async function createProject() {
-    const name = window.prompt("Enter project name:");
-    if (!name || !name.trim()) return;
 
-    try {
-      const { data, error } = await supabase.from("projects").insert([{ name: name.trim() }]).select("id,name").single();
-      if (error) throw error;
-
-      const created = data as ProjectRow;
-      setProjects((prev) => {
-        const next = [...prev, created];
-        next.sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
-        return next;
-      });
-
-      await setActiveProject(created.id);
-    } catch (e: any) {
-      console.error("createProject failed:", e);
-      alert(e?.message ?? "Failed to create project");
-    }
-  }
 
  useEffect(() => {
   const pid = routeProjectId || currentProjectId || resolveProjectId();
