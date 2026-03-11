@@ -1469,6 +1469,7 @@ interface PurchaseOrdersListViewProps {
 function PurchaseOrdersListView({
   purchaseOrders,
   loading,
+  currentProjectName,
   onOpenPO,
   onDeletePO,
   onSwitchSection,
