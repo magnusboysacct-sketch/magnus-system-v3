@@ -334,6 +334,21 @@ export default function ProcurementPage() {
       setCurrentDocument({ ...currentDocument, ...updates });
     }
   }
+    async function handleCreateReceiving(procurementId: string) {
+    try {
+      const { data, error } = await supabase.rpc("create_receiving_from_procurement", {
+        p_procurement_id: procurementId,
+      });
+
+      if (error) throw error;
+
+      alert("Receiving draft created successfully.");
+      console.log("[Procurement] Receiving created:", data);
+    } catch (e: any) {
+      console.error("[Procurement] Failed to create receiving:", e);
+      alert(e?.message ?? "Failed to create receiving");
+    }
+  }
 
   function handlePrint() {
     if (!currentDocument) return;
