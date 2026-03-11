@@ -851,6 +851,11 @@ useEffect(() => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [activeProjectId]);
 
+  useEffect(() => {
+  const nextProjectId = routeProjectId || currentProjectId || resolveProjectId() || null;
+  setActiveProjectId(nextProjectId);
+}, [routeProjectId, currentProjectId]);
+
   function addSection() {
     setSections((prev) => [...prev, { id: safeId(), masterCategoryId: null, title: "New Section", scope: "", items: [] }]);
   }
