@@ -143,7 +143,7 @@ export default function BOQPage() {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(() => routeProjectId || resolveProjectId());
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(() => routeProjectId || currentProjectId || resolveProjectId());
 
   // Auto-save state (UI only right now)
   const [autoSaveOn, setAutoSaveOn] = useState(true);
