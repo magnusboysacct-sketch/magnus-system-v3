@@ -904,13 +904,13 @@ export default function BOQPage() {
     }
   }
 
-  useEffect(() => {
-    const pid = resolveProjectId();
-    if (!pid) return;
-    setActiveProjectId(pid);
-    void loadLatestBoqForProject(pid);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+ useEffect(() => {
+  const pid = routeProjectId || currentProjectId || resolveProjectId();
+  if (!pid) return;
+  setActiveProjectId(pid);
+  void loadLatestBoqForProject(pid);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [routeProjectId, currentProjectId]);
 
   function addSection() {
     setSections((prev) => [...prev, { id: safeId(), masterCategoryId: null, title: "New Section", scope: "", items: [] }]);
