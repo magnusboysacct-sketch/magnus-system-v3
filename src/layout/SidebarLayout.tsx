@@ -47,6 +47,9 @@ export default function SidebarLayout() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
+  const { currentProjectId } = useProjectContext();
+const navigate = useNavigate();
+const location = useLocation();
 
   useEffect(() => {
     const v = localStorage.getItem("mb_sidebar_collapsed");
