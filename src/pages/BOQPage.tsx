@@ -128,12 +128,13 @@ function resolveProjectId(): string | null {
 }
 
 export default function BOQPage() {
-  const { currentProjectId, currentProject } = useProjectContext();
   const nav = useNavigate();
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
 
   const [status, setStatus] = useState<"draft" | "approved">("draft");
   const [sections, setSections] = useState<Section[]>([]);
+
+  const { currentProjectId, currentProject } = useProjectContext();
 
   // Persistence state
   const [boqId, setBoqId] = useState<string | null>(null);
