@@ -1406,36 +1406,7 @@ export default function BOQPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Project Context Header */}
-      {routeProjectId ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-xs text-slate-500 mb-1">Project Context</div>
-              <div className="text-sm font-semibold">
-                {currentProject?.name || `Project ${routeProjectId}`}
-              </div>
-              <div className="text-xs text-slate-400 mt-1">
-                Project ID: {routeProjectId}
-              </div>
-            </div>
-            <button
-              onClick={() => nav(`/projects/${routeProjectId}`)}
-              className="px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 text-sm"
-            >
-              Back to Project
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 p-4">
-          <div className="text-sm font-semibold text-amber-300">Global BOQ Mode</div>
-          <div className="text-xs text-amber-400/70 mt-1">
-            No project context. Select a project below or access BOQ from a project dashboard.
-          </div>
-        </div>
-      )}
-
+   
       <div className="flex items-start justify-between gap-4">
         <div>
         <h1 className="text-xl font-semibold">BOQ Builder</h1>
