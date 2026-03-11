@@ -25,6 +25,20 @@ export default function FinancePage() {
     variance: 0,
   });
   const [categoryBreakdown, setCategoryBreakdown] = useState<CategoryBreakdown[]>([]);
+  const [costControlTotals, setCostControlTotals] = useState<{
+  total_budget: number;
+  total_committed: number;
+  total_delivered: number;
+  total_paid: number;
+  total_remaining_budget_after_commit: number;
+  total_remaining_budget_after_delivery: number;
+  total_undelivered_committed: number;
+  total_over_delivery_variance: number;
+  total_over_commitment_variance: number;
+} | null>(null);
+
+const [costControlLoading, setCostControlLoading] = useState(false);
+const [costControlError, setCostControlError] = useState<string | null>(null);
 
   if (!currentProjectId) {
     return (
