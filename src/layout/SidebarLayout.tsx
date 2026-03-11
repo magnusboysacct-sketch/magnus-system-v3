@@ -222,19 +222,20 @@ export default function SidebarLayout() {
           )}
         </aside>
 
-        <main className="flex-1 bg-white dark:bg-slate-950">
+              <main className="flex-1 bg-white dark:bg-slate-950">
           <div className="h-full overflow-auto relative">
-            <button
-              onClick={toggleTheme}
-              className="fixed top-4 right-4 z-50 p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-900/80 hover:bg-slate-200/80 dark:hover:bg-slate-800/80 backdrop-blur-sm transition-colors text-slate-900 dark:text-slate-100"
-              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
+            <div className="sticky top-0 z-40 flex items-center justify-end gap-3 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-950/90 px-4 py-3 backdrop-blur-sm">
+              <ProjectSelector />
+
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-100/80 dark:bg-slate-900/80 hover:bg-slate-200/80 dark:hover:bg-slate-800/80 transition-colors text-slate-900 dark:text-slate-100"
+                title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+            </div>
+
             <Outlet />
           </div>
         </main>
-      </div>
-    </div>
-  );
-}
