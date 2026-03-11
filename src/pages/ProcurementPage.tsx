@@ -287,11 +287,12 @@ export default function ProcurementPage() {
 
     const { data, error } = await supabase
       .from("procurement_items")
+      .eq("project_id", currentProjectId)
       .update({ ...finalUpdates, updated_at: new Date().toISOString() })
       .eq("id", itemId)
       .select()
       .single();
-    .eq("project_id", currentProjectId)
+    
 
     if (error) {
       console.error("Error updating item:", error);
