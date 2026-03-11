@@ -7,6 +7,9 @@ interface ReceivingDocument {
   receiving_no: string;
   received_date: string;
   purchase_order_id: string | null;
+  supplier_name: string | null;
+  delivery_note_no: string | null;
+  status: string;
 }
 
 export default function ReceivingPage() {
