@@ -39,7 +39,7 @@ export default function FinancePage() {
 
 const [costControlLoading, setCostControlLoading] = useState(false);
 const [costControlError, setCostControlError] = useState<string | null>(nu
-const [costControlCategories, setCostControlCategories] = useState<
+                                                                        const [costControlCategories, setCostControlCategories] = useState<
   Array<{
     cost_category: string;
     budget_amount: number;
@@ -52,7 +52,7 @@ const [costControlCategories, setCostControlCategories] = useState<
     over_delivery_variance: number;
     over_commitment_variance: number;
   }>
->([]);            
+>([]);
 
   <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
   <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
