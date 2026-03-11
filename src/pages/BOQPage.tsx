@@ -833,18 +833,7 @@ const [activeProjectId, setActiveProjectId] = useState<string | null>(() => rout
     }
   }
 
-  async function setActiveProject(projectId: string | null) {
-    const next = projectId && projectId.trim() ? projectId.trim() : null;
-    setActiveProjectId(next);
-
-    if (next) localStorage.setItem("active_project_id", next);
-    else localStorage.removeItem("active_project_id");
-
-    setBoqId(null);
-    setStatus("draft");
-    setSections([]);
-    if (next) await loadLatestBoqForProject(next);
-  }
+ 
 
 
 
