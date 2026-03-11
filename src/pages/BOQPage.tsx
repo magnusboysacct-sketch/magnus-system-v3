@@ -126,6 +126,7 @@ function resolveProjectId(): string | null {
 export default function BOQPage() {
   const nav = useNavigate();
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+  const { currentProjectId, currentProject: selectedProject } = useProjectContext();
 
   const [status, setStatus] = useState<"draft" | "approved">("draft");
   const [sections, setSections] = useState<Section[]>([]);
@@ -135,22 +136,14 @@ export default function BOQPage() {
   const [persistLoading, setPersistLoading] = useState(false);
   const [persistError, setPersistError] = useState<string | null>(null);
 
-  // Project picker state
-const [activeProjectId, setActiveProjectId] = useState<string | null>(() => routeProjectId || currentProjectId || resolveProjectId());
+  // Project picker state - resolve after hooks are called
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(() =>
+    routeProjectId || currentProjectId || resolveProjectId()
+  );
 
   // Auto-save state (UI only right now)
   const [autoSaveOn, setAutoSaveOn] = useState(true);
   const [lastAutoSaveAt, setLastAutoSaveAt] = useState<string | null>(null);
-
-  const { currentProjectId, currentProject: selectedProject } = useProjectContext();
-
-  if (!currentProjectId) {
-  return (
-    <div className="p-6 text-sm text-slate-500">
-      Please select a project from the top bar before using the BOQ Builder.
-    </div>
-  );
-}
 
   const {
     categories: masterCategories,
@@ -1374,6 +1367,18 @@ useEffect(() => {
       setActiveProjectId(routeProjectId);
     }
   }, [routeProjectId, activeProjectId]);
+
+  // Check for project after all hooks are called
+  if (!currentProjectId && !routeProjectId) {
+    return (
+      <div className="p-6">
+        <h1 className="text-xl font-semibold mb-2">BOQ Builder</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Please select a project from the top bar before using the BOQ Builder.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
