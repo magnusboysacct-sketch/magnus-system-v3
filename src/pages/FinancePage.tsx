@@ -325,7 +325,84 @@ export default function FinancePage() {
             <div className="rounded-2xl border border-slate-800 bg-slate-900/30 overflow-hidden mt-6">
               <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
                 <h3 className="font-semibold">Category Breakdown</h3>
-              </div
+              </div>
+                        {costControlItems.length > 0 && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/30 overflow-hidden mt-6">
+              <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
+                <h3 className="font-semibold">Item Breakdown</h3>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-left text-xs text-slate-400">
+                      <th className="px-6 py-3 font-medium">Category</th>
+                      <th className="px-6 py-3 font-medium">Code</th>
+                      <th className="px-6 py-3 font-medium">Item</th>
+                      <th className="px-6 py-3 font-medium text-right">Budget</th>
+                      <th className="px-6 py-3 font-medium text-right">Committed</th>
+                      <th className="px-6 py-3 font-medium text-right">Delivered</th>
+                      <th className="px-6 py-3 font-medium text-right">Remaining</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {costControlItems.map((row, idx) => (
+                      <tr
+                        key={`${row.cost_category}-${row.cost_code}-${row.item_name}-${idx}`}
+                        className="border-b border-slate-800/50 hover:bg-slate-900/50"
+                      >
+                        <td className="px-6 py-3 text-sm">
+                          {row.cost_category || "Uncategorized"}
+                        </td>
+                        <td className="px-6 py-3 text-sm text-slate-400">
+                          {row.cost_code || "—"}
+                        </td>
+                        <td className="px-6 py-3 text-sm">
+                          {row.item_name || "Unnamed Item"}
+                        </td>
+                        <td className="px-6 py-3 text-right text-sm">
+                          ${formatCurrency(row.budget_amount)}
+                        </td>
+                        <td className="px-6 py-3 text-right text-sm">
+                          ${formatCurrency(row.committed_amount)}
+                        </td>
+                        <td className="px-6 py-3 text-right text-sm text-emerald-400">
+                          ${formatCurrency(row.delivered_amount)}
+                        </td>
+                        <td className="px-6 py-3 text-right text-sm">
+                          ${formatCurrency(row.remaining_budget_after_delivery)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-slate-700 bg-slate-900/50">
+                      <td className="px-6 py-3 text-sm font-semibold" colSpan={3}>
+                        Total
+                      </td>
+                      <td className="px-6 py-3 text-right text-sm font-semibold">
+                        ${formatCurrency(costControlItems.reduce((sum, row) => sum + row.budget_amount, 0))}
+                      </td>
+                      <td className="px-6 py-3 text-right text-sm font-semibold">
+                        ${formatCurrency(costControlItems.reduce((sum, row) => sum + row.committed_amount, 0))}
+                      </td>
+                      <td className="px-6 py-3 text-right text-sm font-semibold text-emerald-400">
+                        ${formatCurrency(costControlItems.reduce((sum, row) => sum + row.delivered_amount, 0))}
+                      </td>
+                      <td className="px-6 py-3 text-right text-sm font-semibold">
+                        ${formatCurrency(
+                          costControlItems.reduce(
+                            (sum, row) => sum + row.remaining_budget_after_delivery,
+                            0
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
 
               <div className="overflow-x-auto">
                 <table className="w-full">
