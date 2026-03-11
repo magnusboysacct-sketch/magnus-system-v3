@@ -239,3 +239,7 @@ export default function SidebarLayout() {
             <Outlet />
           </div>
         </main>
+        </div>
+    </div>
+  );
+}
