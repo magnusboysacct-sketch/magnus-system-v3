@@ -39,6 +39,22 @@ export default function FinancePage() {
     remaining: number;
   }>>([]);
   const [error, setError] = useState<string | null>(null);
+  const [costControlItems, setCostControlItems] = useState<
+  Array<{
+    cost_category: string;
+    cost_code: string;
+    item_name: string;
+    budget_amount: number;
+    committed_amount: number;
+    delivered_amount: number;
+    paid_amount: number;
+    remaining_budget_after_commit: number;
+    remaining_budget_after_delivery: number;
+    undelivered_committed_amount: number;
+    over_delivery_variance: number;
+    over_commitment_variance: number;
+  }>
+>([]);
 
   useEffect(() => {
     let alive = true;
