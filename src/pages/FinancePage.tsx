@@ -10,11 +10,9 @@ import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 
 export default function FinancePage() {
-
   const { currentProjectId, currentProject } = useProjectContext();
-  
-const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
-const projectId = routeProjectId || currentProjectId;
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+  const projectId = routeProjectId || currentProjectId;
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -27,15 +25,14 @@ const projectId = routeProjectId || currentProjectId;
     variance: 0,
   });
   const [categoryBreakdown, setCategoryBreakdown] = useState<CategoryBreakdown[]>([]);
-  const { currentProjectId, currentProject } = useProjectContext();
 
   if (!currentProjectId) {
-  return (
-    <div className="p-6 text-sm text-slate-500">
-      Please select a project from the top bar before using Finance.
-    </div>
-  );
-}
+    return (
+      <div className="p-6 text-sm text-slate-500">
+        Please select a project from the top bar before using Finance.
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (projectId) {
@@ -43,7 +40,7 @@ const projectId = routeProjectId || currentProjectId;
     } else {
       setLoading(false);
     }
- }, [projectId, currentProjectId, viewMode]);
+  }, [projectId, currentProjectId]);
 
   async function loadData() {
     if (!projectId) return;
@@ -58,6 +55,8 @@ const projectId = routeProjectId || currentProjectId;
 
       if (project) {
         setProjectName(project.name || "");
+      } else {
+        setProjectName("");
       }
 
       const summaryData = await getCommittedDeliveredSummary(projectId);
@@ -87,13 +86,14 @@ const projectId = routeProjectId || currentProjectId;
             <h1 className="text-2xl font-semibold">Finance</h1>
 
             {currentProject && (
-  <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-    Project:{" "}
-    <span className="font-semibold text-slate-700 dark:text-slate-200">
-      {currentProject.name}
-    </span>
-  </div>
-)}
+              <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                Project:{" "}
+                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                  {currentProject.name}
+                </span>
+              </div>
+            )}
+
             <p className="text-slate-400 mt-1">Select a project to view financial details</p>
           </div>
         </div>
@@ -118,6 +118,16 @@ const projectId = routeProjectId || currentProjectId;
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-semibold">Finance</h1>
+
+          {currentProject && (
+            <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Project:{" "}
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {currentProject.name}
+              </span>
+            </div>
+          )}
+
           <p className="text-slate-400 mt-1">
             {projectName ? `${projectName} - ` : ""}Budget, commitments, and delivery tracking
           </p>
