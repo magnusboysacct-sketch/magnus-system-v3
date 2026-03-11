@@ -464,6 +464,7 @@ interface ListViewProps {
   currentProjectName: string;
   onOpenDocument: (docId: string) => void;
   onDeleteDocument: (docId: string) => void;
+  onCreateReceiving: (docId: string) => void;
   onNavigate: (path: string) => void;
   onSwitchSection: (section: string) => void;
   currentSection: string;
