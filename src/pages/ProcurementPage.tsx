@@ -1512,6 +1512,7 @@ function PurchaseOrdersListView({
     Manage purchase orders for materials and supplies
   </p>
 </div>
+      </div>
 
       <div className="flex gap-2 mb-6 border-b border-slate-800">
         <button
