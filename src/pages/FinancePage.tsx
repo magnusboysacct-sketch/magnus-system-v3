@@ -40,6 +40,69 @@ export default function FinancePage() {
 const [costControlLoading, setCostControlLoading] = useState(false);
 const [costControlError, setCostControlError] = useState<string | null>(null);
 
+  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+    <div className="text-xs text-slate-400">Budget</div>
+    <div className="mt-1 text-lg font-semibold text-white">
+      {costControlLoading
+        ? "Loading..."
+        : (costControlTotals?.total_budget ?? 0).toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          })}
+    </div>
+  </div>
+
+  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+    <div className="text-xs text-slate-400">Committed</div>
+    <div className="mt-1 text-lg font-semibold text-white">
+      {costControlLoading
+        ? "Loading..."
+        : (costControlTotals?.total_committed ?? 0).toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          })}
+    </div>
+  </div>
+
+  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+    <div className="text-xs text-slate-400">Delivered</div>
+    <div className="mt-1 text-lg font-semibold text-white">
+      {costControlLoading
+        ? "Loading..."
+        : (costControlTotals?.total_delivered ?? 0).toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          })}
+    </div>
+  </div>
+
+  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+    <div className="text-xs text-slate-400">Remaining</div>
+    <div className="mt-1 text-lg font-semibold text-white">
+      {costControlLoading
+        ? "Loading..."
+        : (costControlTotals?.total_remaining_budget_after_delivery ?? 0).toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          })}
+    </div>
+  </div>
+
+  <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+    <div className="text-xs text-slate-400">Variance</div>
+    <div className="mt-1 text-lg font-semibold text-white">
+      {costControlLoading
+        ? "Loading..."
+        : (costControlTotals?.total_over_delivery_variance ?? 0).toLocaleString(undefined, {
+            maximumFractionDigits: 2,
+          })}
+    </div>
+  </div>
+</div>
+
+  {costControlError ? (
+  <div className="text-xs text-red-400 mt-2">
+    Cost control error: {costControlError}
+  </div>
+) : null}
+
   if (!currentProjectId) {
     return (
       <div className="p-6 text-sm text-slate-500">
