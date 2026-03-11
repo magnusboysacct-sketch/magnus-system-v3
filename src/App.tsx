@@ -116,7 +116,7 @@ export default function App() {
           />
 
           {/* Protected routes */}
-          <Route
+                   <Route
             element={
               <RequireAuth>
                 <SidebarLayout />
@@ -138,6 +138,7 @@ export default function App() {
             <Route path="/rates" element={<RatesPage />} />
             <Route path="/takeoff" element={<TakeoffPage />} />
             <Route path="/procurement" element={<ProcurementPage />} />
+            <Route path="/receiving" element={<ReceivingPage />} />
             <Route path="/finance" element={<FinancePage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/billing" element={<BillingPage />} />
@@ -147,7 +148,6 @@ export default function App() {
             <Route path="/settings/users" element={<CompanyUsersPage />} />
             <Route path="/settings/company" element={<Navigate to="/settings" replace />} />
           </Route>
-          <Route path="/receiving" element={<ReceivingPage />} />
 
           {/* fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
