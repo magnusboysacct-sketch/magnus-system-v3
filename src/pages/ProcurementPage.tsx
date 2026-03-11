@@ -42,6 +42,8 @@ import {
   type PurchaseOrderWithItems,
   type PurchaseOrderStatus,
 } from "../lib/purchaseOrders";
+import { useProjectContext } from "../context/ProjectContext";
+
 
 export default function ProcurementPage() {
   const { projectId } = useParams<{ projectId?: string }>();
