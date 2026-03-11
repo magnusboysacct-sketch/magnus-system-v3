@@ -34,6 +34,7 @@ const nav = [
   { to: "/rates", label: "Rate Library", icon: Layers },
   { to: "/takeoff", label: "Takeoff", icon: Ruler },
   { to: "/procurement", label: "Procurement", icon: ShoppingCart },
+  { to: "/receiving", label: "Receiving", icon: PackageCheck },
   { to: "/finance", label: "Finance", icon: Landmark },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/billing", label: "Billing", icon: CreditCard },
