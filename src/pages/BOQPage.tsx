@@ -134,8 +134,6 @@ export default function BOQPage() {
   const [status, setStatus] = useState<"draft" | "approved">("draft");
   const [sections, setSections] = useState<Section[]>([]);
 
-  const { currentProjectId, currentProject } = useProjectContext();
-
   // Persistence state
   const [boqId, setBoqId] = useState<string | null>(null);
   const [persistLoading, setPersistLoading] = useState(false);
@@ -150,6 +148,8 @@ export default function BOQPage() {
   // Auto-save state (UI only right now)
   const [autoSaveOn, setAutoSaveOn] = useState(true);
   const [lastAutoSaveAt, setLastAutoSaveAt] = useState<string | null>(null);
+
+  const { currentProjectId, currentProject } = useProjectContext();
 
   const {
     categories: masterCategories,
