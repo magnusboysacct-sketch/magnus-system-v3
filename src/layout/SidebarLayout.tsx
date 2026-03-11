@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Sun,
   Moon,
+  PackageCheck,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
