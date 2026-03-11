@@ -118,6 +118,15 @@ const [costControlError, setCostControlError] = useState<string | null>(null);
         setProjectName("");
       }
 
+      useEffect(() => {
+  if (!currentProjectId) {
+    setCostControlTotals(null);
+    return;
+  }
+
+  void loadCostControlTotals(currentProjectId);
+}, [currentProjectId]);
+
       const summaryData = await getCommittedDeliveredSummary(projectId);
       setSummary(summaryData);
 
