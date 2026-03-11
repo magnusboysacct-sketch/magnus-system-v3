@@ -814,6 +814,16 @@ const [activeProjectId, setActiveProjectId] = useState<string | null>(() => rout
 
       setStatus(nextStatus);
       console.log("[BOQ Save] ========== Save completed successfully! ==========");
+            console.log("[BOQ Save] Syncing BOQ budget into project_cost_events...");
+      const { error: syncBudgetError } = await supabase.rpc("sync_boq_budget_to_cost_events", {
+        p_boq_id: headerId,
+      });
+
+      if (syncBudgetError) {
+        console.error("[BOQ Save] BOQ budget sync failed:", syncBudgetError);
+      } else {
+        console.log("[BOQ Save] ✓ BOQ budget synced to project_cost_events");
+      }
 
       // CRITICAL: Reload the BOQ from database to sync React state with real database IDs
       // This prevents FK violations when generating procurement
