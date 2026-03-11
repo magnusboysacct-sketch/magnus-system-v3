@@ -113,10 +113,6 @@ type BoqHeaderRow = {
   updated_at: string;
 };
 
-type ProjectRow = {
-  id: string;
-  name: string | null;
-};
 
 function resolveProjectId(): string | null {
   const keys = ["active_project_id", "selected_project_id", "project_id"];
