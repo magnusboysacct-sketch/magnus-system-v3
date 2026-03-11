@@ -454,6 +454,7 @@ function ListView({
   headers,
   loading,
   projectId,
+  currentProjectName,
   onOpenDocument,
   onDeleteDocument,
   onNavigate,
