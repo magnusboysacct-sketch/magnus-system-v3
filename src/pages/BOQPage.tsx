@@ -1395,7 +1395,7 @@ export default function BOQPage() {
   }
 
   // Determine current project context
-  const currentProject = projects.find(p => p.id === (routeProjectId || activeProjectId));
+  
 
   // Sync activeProjectId when route changes
   useEffect(() => {
