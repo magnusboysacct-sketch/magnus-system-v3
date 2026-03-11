@@ -10,7 +10,8 @@ import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 
 export default function FinancePage() {
-  const { projectId } = useParams<{ projectId?: string }>();
+const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+const projectId = routeProjectId || currentProjectId;
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
