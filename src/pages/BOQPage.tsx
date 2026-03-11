@@ -1430,9 +1430,9 @@ export default function BOQPage() {
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-white">BOQ Builder</h1>
+        <h1 className="text-xl font-semibold">BOQ Builder</h1>
 
-          {currentProject && (
+{currentProject && (
   <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
     Project:{" "}
     <span className="font-semibold text-slate-700 dark:text-slate-200">
