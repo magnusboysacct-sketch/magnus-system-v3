@@ -74,20 +74,21 @@ const navSections = [
 ];
 
 export default function SidebarLayout() {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    return localStorage.getItem("mb_sidebar_collapsed") === "1";
+  });
   const [userEmail, setUserEmail] = useState<string>("");
   const [companyName, setCompanyName] = useState<string>("");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
   const { currentProjectId } = useProjectContext();
-const navigate = useNavigate();
-const location = useLocation();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
-    const v = localStorage.getItem("mb_sidebar_collapsed");
-    if (v === "1") setCollapsed(true);
-  }, []);
+    localStorage.setItem("mb_sidebar_collapsed", collapsed ? "1" : "0");
+  }, [collapsed]);
 
   useEffect(() => {
     localStorage.setItem("mb_sidebar_collapsed", collapsed ? "1" : "0");
