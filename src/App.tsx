@@ -147,6 +147,7 @@ export default function App() {
             <Route path="/settings/users" element={<CompanyUsersPage />} />
             <Route path="/settings/company" element={<Navigate to="/settings" replace />} />
           </Route>
+          <Route path="/receiving" element={<ReceivingPage />} />
 
           {/* fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
