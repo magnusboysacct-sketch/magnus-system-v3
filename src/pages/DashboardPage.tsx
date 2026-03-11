@@ -1,4 +1,5 @@
-﻿import React from "react";
+import React from "react";
+import { useProjectContext } from "../context/ProjectContext";
 
 export default function DashboardPage() {
   return (
