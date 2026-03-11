@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
+import ProjectSelector from "../components/ProjectSelector";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
