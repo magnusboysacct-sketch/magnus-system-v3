@@ -128,6 +128,7 @@ function resolveProjectId(): string | null {
 }
 
 export default function BOQPage() {
+  const { currentProjectId, currentProject } = useProjectContext();
   const nav = useNavigate();
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
 
