@@ -81,6 +81,15 @@ export default function FinancePage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold">Finance</h1>
+
+            {currentProject && (
+  <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+    Project:{" "}
+    <span className="font-semibold text-slate-700 dark:text-slate-200">
+      {currentProject.name}
+    </span>
+  </div>
+)}
             <p className="text-slate-400 mt-1">Select a project to view financial details</p>
           </div>
         </div>
