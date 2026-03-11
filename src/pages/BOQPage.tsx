@@ -175,36 +175,7 @@ const [activeProjectId, setActiveProjectId] = useState<string | null>(() => rout
     return arr.filter((u: any) => !!getUnitId(u));
   }, [masterUnits]);
 
-  // Load projects
-  useEffect(() => {
-    let alive = true;
-    async function loadProjects() {
-      setProjectsLoading(true);
-      setProjectsError(null);
-      try {
-        const { data, error } = await supabase
-          .from("projects")
-          .select("id,name")
-          .order("name", { ascending: true })
-          .limit(5000);
 
-        if (error) throw error;
-        if (!alive) return;
-        setProjects((data ?? []) as ProjectRow[]);
-      } catch (e: any) {
-        console.error("loadProjects failed:", e);
-        if (!alive) return;
-        setProjectsError(e?.message ?? "Failed to load projects");
-        setProjects([]);
-      } finally {
-        if (alive) setProjectsLoading(false);
-      }
-    }
-    loadProjects();
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   // Rate items
   const [rateItems, setRateItems] = useState<RateItem[]>([]);
