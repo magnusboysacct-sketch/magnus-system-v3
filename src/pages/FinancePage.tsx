@@ -72,6 +72,7 @@ export default function FinancePage() {
           variance: 0,
         });
         setCategories([]);
+        setCostControlItems([]);
         setError(null);
         setLoading(false);
         return;
