@@ -325,7 +325,7 @@ export default function FinancePage() {
             <div className="rounded-2xl border border-slate-800 bg-slate-900/30 overflow-hidden mt-6">
               <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/50">
                 <h3 className="font-semibold">Category Breakdown</h3>
-              </div>
+              </div
 
               <div className="overflow-x-auto">
                 <table className="w-full">
