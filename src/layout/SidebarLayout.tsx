@@ -184,13 +184,18 @@ const location = useLocation();
     window.location.href = "/login";
   }
 
-  const visibleNav = nav.filter((item) => {
-    if (item.to === "/settings/users" && userRole !== "director") {
-      return false;
-    }
-    return true;
-  });
-
+   const visibleSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => {
+        if (item.to === "/settings/users" && userRole !== "director") {
+          return false;
+        }
+        return true;
+      }),
+    }))
+    .filter((section) => section.items.length > 0);
+  
   return (
     <div className="h-full w-full bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       <div className="flex h-full">
