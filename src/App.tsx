@@ -30,6 +30,7 @@ import AcceptInvitePage from "./pages/AcceptInvitePage";
 import ClientProjectPage from "./pages/ClientProjectPage";
 import { supabase } from "./lib/supabase";
 import CompanyUsersPage from "./pages/CompanyUsersPage";
+import { ProjectProvider } from "./context/ProjectContext";
 
 function AuthHashRouter() {
   const nav = useNavigate();
