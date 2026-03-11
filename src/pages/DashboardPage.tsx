@@ -2,6 +2,7 @@ import React from "react";
 import { useProjectContext } from "../context/ProjectContext";
 
 export default function DashboardPage() {
+  const { currentProjectId, currentProject } = useProjectContext();
   return (
     <div className="p-6">
       <div className="flex items-start justify-between gap-4">
