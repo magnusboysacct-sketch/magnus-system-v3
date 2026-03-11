@@ -63,6 +63,26 @@ const location = useLocation();
   useEffect(() => {
     let alive = true;
 
+    useEffect(() => {
+  const allowedWithoutProject = [
+    "/projects",
+    "/clients",
+    "/settings",
+    "/settings/users",
+    "/settings/master-categories",
+    "/settings/master-lists",
+    "/billing",
+  ];
+
+  const pathAllowed = allowedWithoutProject.some((p) =>
+    location.pathname.startsWith(p)
+  );
+
+  if (!currentProjectId && !pathAllowed) {
+    navigate("/projects");
+  }
+}, [currentProjectId, location.pathname, navigate]);
+
     async function loadUser() {
       const { data } = await supabase.auth.getUser();
       const user = data.user;
