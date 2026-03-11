@@ -77,7 +77,7 @@ export default function ReceivingPage() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-medium text-lg">{doc.title}</div>
+                 <div className="font-medium text-lg">{doc.receiving_no}</div>
 
                   <div className="text-xs text-slate-400 mt-1">
                     Received {new Date(doc.received_date).toLocaleDateString()}
