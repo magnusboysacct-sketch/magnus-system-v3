@@ -90,7 +90,7 @@ const projectId = routeProjectId || currentProjectId;
         }
       }
     }
-  }, [projectId, viewMode, documentId, section]);
+ }, [projectId, currentProjectId, viewMode, documentId, section]);
 
   async function loadProjectInfo() {
     if (!projectId) return;
