@@ -25,6 +25,14 @@ export default function FinancePage() {
   const [categoryBreakdown, setCategoryBreakdown] = useState<CategoryBreakdown[]>([]);
   const { currentProjectId, currentProject } = useProjectContext();
 
+  if (!currentProjectId) {
+  return (
+    <div className="p-6 text-sm text-slate-500">
+      Please select a project from the top bar before using Finance.
+    </div>
+  );
+}
+
   useEffect(() => {
     if (projectId) {
       loadData();
