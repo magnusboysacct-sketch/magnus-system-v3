@@ -422,7 +422,7 @@ if (section === "procurement") {
       currentSection={section}
     />
   );
-}
+
   } else if (section === "purchase-orders") {
     return (
       <PurchaseOrdersListView
