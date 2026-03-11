@@ -62,6 +62,7 @@ export default function ProcurementPage() {
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState<string>("");
   const [companyName, setCompanyName] = useState<string>("");
+  const { currentProjectId, currentProject } = useProjectContext();
 
   useEffect(() => {
     if (projectId) {
