@@ -1497,29 +1497,7 @@ export default function BOQPage() {
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row md:items-end gap-3">
-        <div className="space-y-1 w-full md:max-w-[620px]">
-          <div className="text-xs text-slate-300">Project (required)</div>
-          <select
-            value={activeProjectId ?? ""}
-            disabled={projectsLoading}
-            onChange={(e) => void setActiveProject(e.target.value || null)}
-            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
-          >
-            <option value="">Select a project…</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name ?? p.id}
-              </option>
-            ))}
-          </select>
-          {projectsError ? <div className="text-xs text-red-400">Projects failed: {projectsError}</div> : null}
-        </div>
-
-        <button onClick={() => void createProject()} className="px-3 py-2 rounded bg-slate-700 text-white">
-          Create Project
-        </button>
-      </div>
+  
 
       <div className="text-sm text-slate-400">
         Status: <span className="font-semibold">{status}</span> • Sections:{" "}
