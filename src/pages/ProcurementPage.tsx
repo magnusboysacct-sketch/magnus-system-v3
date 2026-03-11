@@ -334,21 +334,6 @@ export default function ProcurementPage() {
       setCurrentDocument({ ...currentDocument, ...updates });
     }
   }
-    async function handleCreateReceiving(procurementId: string) {
-    try {
-      const { data, error } = await supabase.rpc("create_receiving_from_procurement", {
-        p_procurement_id: procurementId,
-      });
-
-      if (error) throw error;
-
-      alert("Receiving draft created successfully.");
-      console.log("[Procurement] Receiving created:", data);
-    } catch (e: any) {
-      console.error("[Procurement] Failed to create receiving:", e);
-      alert(e?.message ?? "Failed to create receiving");
-    }
-  }
 
   function handlePrint() {
     if (!currentDocument) return;
@@ -423,14 +408,13 @@ export default function ProcurementPage() {
 
   if (section === "procurement") {
     return (
-          <ListView
+      <ListView
         headers={headers}
         loading={loading}
         projectId={projectId}
         currentProjectName={currentProject?.name || ""}
         onOpenDocument={openDocument}
         onDeleteDocument={handleDeleteDocument}
-        onCreateReceiving={handleCreateReceiving}
         onNavigate={nav}
         onSwitchSection={switchSection}
         currentSection={section}
@@ -460,7 +444,6 @@ interface ListViewProps {
   currentProjectName: string;
   onOpenDocument: (docId: string) => void;
   onDeleteDocument: (docId: string) => void;
-  onCreateReceiving: (docId: string) => void;
   onNavigate: (path: string) => void;
   onSwitchSection: (section: string) => void;
   currentSection: string;
@@ -473,7 +456,6 @@ function ListView({
   currentProjectName,
   onOpenDocument,
   onDeleteDocument,
-  onCreateReceiving,
   onNavigate,
   onSwitchSection,
   currentSection,
@@ -615,7 +597,6 @@ function ListView({
                     </span>
                   </div>
                 </div>
-
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => onOpenDocument(header.id)}
@@ -624,17 +605,18 @@ function ListView({
                     View
                   </button>
                   <button
-                   <button
                     onClick={() => onCreateReceiving(header.id)}
                     className="px-3 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-xs"
                   >
                     Create Receiving
                   </button>
+                  <button
                     onClick={() => onDeleteDocument(header.id)}
                     className="px-3 py-1.5 rounded-lg bg-red-900/20 hover:bg-red-900/40 border border-red-900/40 text-red-300 text-xs"
                   >
                     Delete
                   </button>
+                </div>
                 </div>
               </div>
             </div>
