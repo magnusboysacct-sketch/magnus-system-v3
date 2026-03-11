@@ -55,6 +55,27 @@ export default function FinancePage() {
     over_commitment_variance: number;
   }>
 >([]);
+  const { data: itemRows, error: itemsError } = await supabase
+  .from("v_cost_control_items")
+  .select(`
+    cost_category,
+    cost_code,
+    item_name,
+    budget_amount,
+    committed_amount,
+    delivered_amount,
+    paid_amount,
+    remaining_budget_after_commit,
+    remaining_budget_after_delivery,
+    undelivered_committed_amount,
+    over_delivery_variance,
+    over_commitment_variance
+  `)
+  .eq("project_id", projectId)
+  .order("cost_category", { ascending: true })
+  .order("item_name", { ascending: true });
+
+if (itemsError) throw itemsError;
 
   useEffect(() => {
     let alive = true;
