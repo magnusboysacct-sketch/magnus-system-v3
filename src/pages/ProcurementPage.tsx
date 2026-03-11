@@ -624,6 +624,12 @@ function ListView({
                     View
                   </button>
                   <button
+                   <button
+                    onClick={() => onCreateReceiving(header.id)}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-xs"
+                  >
+                    Create Receiving
+                  </button>
                     onClick={() => onDeleteDocument(header.id)}
                     className="px-3 py-1.5 rounded-lg bg-red-900/20 hover:bg-red-900/40 border border-red-900/40 text-red-300 text-xs"
                   >
