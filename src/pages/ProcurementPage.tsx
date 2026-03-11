@@ -1498,13 +1498,20 @@ function PurchaseOrdersListView({
   return (
     <div className="p-6">
       <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Purchase Orders</h1>
-          <p className="text-slate-400 mt-1">
-            Manage purchase orders for materials and supplies
-          </p>
-        </div>
-      </div>
+       <div>
+  <h1 className="text-2xl font-semibold">Purchase Orders</h1>
+  {currentProjectName && (
+    <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+      Project:{" "}
+      <span className="font-semibold text-slate-700 dark:text-slate-200">
+        {currentProjectName}
+      </span>
+    </div>
+  )}
+  <p className="text-slate-400 mt-1">
+    Manage purchase orders for materials and supplies
+  </p>
+</div>
 
       <div className="flex gap-2 mb-6 border-b border-slate-800">
         <button
