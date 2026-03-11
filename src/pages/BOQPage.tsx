@@ -149,7 +149,7 @@ export default function BOQPage() {
   const [autoSaveOn, setAutoSaveOn] = useState(true);
   const [lastAutoSaveAt, setLastAutoSaveAt] = useState<string | null>(null);
 
-  const { currentProjectId, currentProject } = useProjectContext();
+  const { currentProjectId, currentProject: selectedProject } = useProjectContext();
 
   const {
     categories: masterCategories,
