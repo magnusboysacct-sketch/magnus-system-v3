@@ -44,10 +44,10 @@ import {
 } from "../lib/purchaseOrders";
 import { useProjectContext } from "../context/ProjectContext";
 
-
 export default function ProcurementPage() {
-const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
-const projectId = routeProjectId || currentProjectId;
+  const { currentProjectId, currentProject } = useProjectContext();
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+  const projectId = routeProjectId || currentProjectId;
   const [searchParams, setSearchParams] = useSearchParams();
   const nav = useNavigate();
 
@@ -63,15 +63,14 @@ const projectId = routeProjectId || currentProjectId;
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState<string>("");
   const [companyName, setCompanyName] = useState<string>("");
-  const { currentProjectId, currentProject } = useProjectContext();
 
   if (!currentProjectId) {
-  return (
-    <div className="p-6 text-sm text-slate-500">
-      Please select a project from the top bar before using Procurement.
-    </div>
-  );
-}
+    return (
+      <div className="p-6 text-sm text-slate-500">
+        Please select a project from the top bar before using Procurement.
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (projectId) {
@@ -90,7 +89,7 @@ const projectId = routeProjectId || currentProjectId;
         }
       }
     }
- }, [projectId, currentProjectId, viewMode, documentId, section]);
+  }, [projectId, currentProjectId, viewMode, documentId, section]);
 
   async function loadProjectInfo() {
     if (!projectId) return;
@@ -251,7 +250,6 @@ const projectId = routeProjectId || currentProjectId;
     const item = currentDocument.items.find((i) => i.id === itemId);
     if (!item) return;
 
-    // Auto-normalize status based on quantities
     let finalUpdates = { ...updates };
     if (updates.delivered_qty !== undefined || updates.ordered_qty !== undefined) {
       const newDeliveredQty = updates.delivered_qty ?? item.delivered_qty ?? 0;
@@ -266,7 +264,6 @@ const projectId = routeProjectId || currentProjectId;
       );
     }
 
-    // If status is changing to received and it wasn't received before, create cost record
     if (finalUpdates.status === "received" && item.status !== "received") {
       const unitRate = finalUpdates.unit_rate ?? item.unit_rate ?? 0;
       const deliveredQty = finalUpdates.delivered_qty ?? item.delivered_qty ?? 0;
@@ -288,12 +285,11 @@ const projectId = routeProjectId || currentProjectId;
 
     const { data, error } = await supabase
       .from("procurement_items")
-      .eq("project_id", currentProjectId)
       .update({ ...finalUpdates, updated_at: new Date().toISOString() })
       .eq("id", itemId)
+      .eq("project_id", currentProjectId)
       .select()
       .single();
-    
 
     if (error) {
       console.error("Error updating item:", error);
@@ -399,6 +395,7 @@ const projectId = routeProjectId || currentProjectId;
         <PurchaseOrderDocumentView
           purchaseOrder={currentPO}
           projectName={projectName}
+          currentProjectName={currentProject?.name || ""}
           companyName={companyName}
           onBack={backToList}
           onUpdate={handleUpdatePurchaseOrder}
@@ -409,31 +406,30 @@ const projectId = routeProjectId || currentProjectId;
     }
   }
 
-if (section === "procurement") {
-  return (
-    <ListView
-      headers={headers}
-      loading={loading}
-      projectId={projectId}
-      currentProjectName={currentProject?.name || ""}
-      onOpenDocument={openDocument}
-      onDeleteDocument={handleDeleteDocument}
-      onNavigate={nav}
-      onSwitchSection={switchSection}
-      currentSection={section}
-    />
-  );
-
+  if (section === "procurement") {
+    return (
+      <ListView
+        headers={headers}
+        loading={loading}
+        projectId={projectId}
+        currentProjectName={currentProject?.name || ""}
+        onOpenDocument={openDocument}
+        onDeleteDocument={handleDeleteDocument}
+        onNavigate={nav}
+        onSwitchSection={switchSection}
+        currentSection={section}
+      />
+    );
   } else if (section === "purchase-orders") {
     return (
       <PurchaseOrdersListView
         purchaseOrders={purchaseOrders}
         loading={loading}
+        currentProjectName={currentProject?.name || ""}
         onOpenPO={openPurchaseOrder}
         onDeletePO={handleDeletePurchaseOrder}
         onSwitchSection={switchSection}
         currentSection={section}
-        currentProjectName={currentProject?.name || ""}
       />
     );
   }
@@ -445,6 +441,7 @@ interface ListViewProps {
   headers: ProcurementHeaderWithItems[];
   loading: boolean;
   projectId: string;
+  currentProjectName: string;
   onOpenDocument: (docId: string) => void;
   onDeleteDocument: (docId: string) => void;
   onNavigate: (path: string) => void;
@@ -473,14 +470,15 @@ function ListView({
         <div>
           <h1 className="text-2xl font-semibold">Procurement Documents</h1>
 
-     {currentProjectName && (
-  <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-    Project:{" "}
-    <span className="font-semibold text-slate-700 dark:text-slate-200">
-      {currentProjectName}
-    </span>
-  </div>
-)}
+          {currentProjectName && (
+            <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Project:{" "}
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {currentProjectName}
+              </span>
+            </div>
+          )}
+
           <p className="text-slate-400 mt-1">
             Saved procurement lists and materials orders
           </p>
@@ -673,12 +671,10 @@ function DocumentView({
     }
   }
 
-  // Get unique suppliers from items (for filtering)
   const itemSuppliers = Array.from(
     new Set(document.items.map((i) => i.supplier).filter((s): s is string => Boolean(s)))
   ).sort();
 
-  // Apply filters
   let filteredItems = document.items;
 
   if (searchText.trim()) {
@@ -714,7 +710,6 @@ function DocumentView({
     return acc;
   }, {} as Record<string, ProcurementItemWithSource[]>);
 
-  // Summary calculations
   const totalItems = document.items.length;
   const pendingCount = document.items.filter((i) => i.status === "pending").length;
   const orderedCount = document.items.filter((i) => i.status === "ordered").length;
@@ -1169,7 +1164,6 @@ function ItemRow({ item, suppliers, selected, onToggleSelect, onUpdate, onDelete
   const balanceQty = calculateBalanceQty(item.quantity, item.delivered_qty || 0);
   const totalCost = calculateItemTotal(item.quantity || 0, item.unit_rate || 0);
 
-  // Check if current supplier exists in directory
   const isSupplierInDirectory = item.supplier && suppliers.some(s => s.supplier_name === item.supplier);
 
   function startEdit(field: string, currentValue: any) {
@@ -1460,11 +1454,11 @@ function ItemRow({ item, suppliers, selected, onToggleSelect, onUpdate, onDelete
 interface PurchaseOrdersListViewProps {
   purchaseOrders: PurchaseOrderWithItems[];
   loading: boolean;
+  currentProjectName: string;
   onOpenPO: (poId: string) => void;
   onDeletePO: (poId: string) => void;
   onSwitchSection: (section: string) => void;
   currentSection: string;
-  currentProjectName: string;
 }
 
 function PurchaseOrdersListView({
@@ -1501,21 +1495,21 @@ function PurchaseOrdersListView({
   return (
     <div className="p-6">
       <div className="flex items-start justify-between gap-4 mb-6">
-       <div>
-  <h1 className="text-2xl font-semibold">Purchase Orders</h1>
-  {currentProjectName && (
-    <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-      Project:{" "}
-      <span className="font-semibold text-slate-700 dark:text-slate-200">
-        {currentProjectName}
-      </span>
-    </div>
-  )}
-  <p className="text-slate-400 mt-1">
-    Manage purchase orders for materials and supplies
-  </p>
-</div>
- </div>
+        <div>
+          <h1 className="text-2xl font-semibold">Purchase Orders</h1>
+          {currentProjectName && (
+            <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Project:{" "}
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {currentProjectName}
+              </span>
+            </div>
+          )}
+          <p className="text-slate-400 mt-1">
+            Manage purchase orders for materials and supplies
+          </p>
+        </div>
+      </div>
 
       <div className="flex gap-2 mb-6 border-b border-slate-800">
         <button
@@ -1666,6 +1660,7 @@ function PurchaseOrdersListView({
 interface PurchaseOrderDocumentViewProps {
   purchaseOrder: PurchaseOrderWithItems;
   projectName: string;
+  currentProjectName: string;
   companyName: string;
   onBack: () => void;
   onUpdate: (updates: Partial<Pick<PurchaseOrderWithItems, "status" | "issue_date" | "expected_date" | "notes">>) => void;
@@ -1684,6 +1679,7 @@ const PO_STATUSES: PurchaseOrderStatus[] = [
 function PurchaseOrderDocumentView({
   purchaseOrder,
   projectName,
+  currentProjectName,
   companyName,
   onBack,
   onUpdate,
@@ -1764,14 +1760,25 @@ function PurchaseOrderDocumentView({
     <div className="p-6">
       <div className="mb-6">
         <div className="flex items-start justify-between gap-4 mb-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onBack}
-              className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
-            >
-              ← Back to List
-            </button>
-            <h1 className="text-2xl font-semibold">{purchaseOrder.po_number}</h1>
+          <div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onBack}
+                className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+              >
+                ← Back to List
+              </button>
+              <h1 className="text-2xl font-semibold">{purchaseOrder.po_number}</h1>
+            </div>
+
+            {currentProjectName && (
+              <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                Project:{" "}
+                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                  {currentProjectName}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
