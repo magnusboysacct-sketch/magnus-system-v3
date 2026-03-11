@@ -837,12 +837,9 @@ const [activeProjectId, setActiveProjectId] = useState<string | null>(() => rout
 
 
 
- useEffect(() => {
-  const pid = routeProjectId || currentProjectId || resolveProjectId();
-  if (!pid) return;
-  setActiveProjectId(pid);
-  void loadLatestBoqForProject(pid);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+useEffect(() => {
+  const nextProjectId = routeProjectId || currentProjectId || resolveProjectId() || null;
+  setActiveProjectId(nextProjectId);
 }, [routeProjectId, currentProjectId]);
 
   function addSection() {
