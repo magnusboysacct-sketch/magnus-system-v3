@@ -7,6 +7,7 @@ import {
   type CategoryBreakdown,
 } from "../lib/costs";
 import { supabase } from "../lib/supabase";
+import { useProjectContext } from "../context/ProjectContext";
 
 export default function FinancePage() {
   const { projectId } = useParams<{ projectId?: string }>();
