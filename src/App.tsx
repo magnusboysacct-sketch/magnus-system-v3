@@ -95,60 +95,62 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthHashRouter />
+    <ProjectProvider>
+      <BrowserRouter>
+        <AuthHashRouter />
 
-      <Routes>
-        {/* Public routes */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/accept-invite" element={<AcceptInvitePage />} />
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
 
-        {/* Client Portal routes */}
-        <Route
-          path="/client/projects/:projectId"
-          element={
-            <RequireAuth>
-              <ClientProjectPage />
-            </RequireAuth>
-          }
-        />
+          {/* Client Portal routes */}
+          <Route
+            path="/client/projects/:projectId"
+            element={
+              <RequireAuth>
+                <ClientProjectPage />
+              </RequireAuth>
+            }
+          />
 
-        {/* Protected routes */}
-        <Route
-          element={
-            <RequireAuth>
-              <SidebarLayout />
-            </RequireAuth>
-          }
-        >
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/clients" element={<ClientsPage />} />
-          <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/projects/:projectId" element={<ProjectDashboardPage />} />
-          <Route path="/projects/:projectId/boq" element={<BOQPage />} />
-          <Route path="/projects/:projectId/takeoff" element={<TakeoffPage />} />
-          <Route path="/projects/:projectId/procurement" element={<ProcurementPage />} />
-          <Route path="/projects/:projectId/finance" element={<FinancePage />} />
-          <Route path="/projects/:projectId/reports" element={<ReportsPage />} />
-          <Route path="/estimates" element={<EstimatesPage />} />
-          <Route path="/boq" element={<BOQPage />} />
-          <Route path="/assemblies" element={<AssembliesPage />} />
-          <Route path="/rates" element={<RatesPage />} />
-          <Route path="/takeoff" element={<TakeoffPage />} />
-          <Route path="/procurement" element={<ProcurementPage />} />
-          <Route path="/finance" element={<FinancePage />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/billing" element={<BillingPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/settings/master-categories" element={<SettingsMasterCategoriesPage />} />
-          <Route path="/settings/master-lists" element={<SettingsMasterListsPage />} />
-          <Route path="/settings/users" element={<CompanyUsersPage />} />
-          <Route path="/settings/company" element={<Navigate to="/settings" replace />} />
-        </Route>
+          {/* Protected routes */}
+          <Route
+            element={
+              <RequireAuth>
+                <SidebarLayout />
+              </RequireAuth>
+            }
+          >
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/clients" element={<ClientsPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/projects/:projectId" element={<ProjectDashboardPage />} />
+            <Route path="/projects/:projectId/boq" element={<BOQPage />} />
+            <Route path="/projects/:projectId/takeoff" element={<TakeoffPage />} />
+            <Route path="/projects/:projectId/procurement" element={<ProcurementPage />} />
+            <Route path="/projects/:projectId/finance" element={<FinancePage />} />
+            <Route path="/projects/:projectId/reports" element={<ReportsPage />} />
+            <Route path="/estimates" element={<EstimatesPage />} />
+            <Route path="/boq" element={<BOQPage />} />
+            <Route path="/assemblies" element={<AssembliesPage />} />
+            <Route path="/rates" element={<RatesPage />} />
+            <Route path="/takeoff" element={<TakeoffPage />} />
+            <Route path="/procurement" element={<ProcurementPage />} />
+            <Route path="/finance" element={<FinancePage />} />
+            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/billing" element={<BillingPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/master-categories" element={<SettingsMasterCategoriesPage />} />
+            <Route path="/settings/master-lists" element={<SettingsMasterListsPage />} />
+            <Route path="/settings/users" element={<CompanyUsersPage />} />
+            <Route path="/settings/company" element={<Navigate to="/settings" replace />} />
+          </Route>
 
-        {/* fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+          {/* fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ProjectProvider>
   );
 }
