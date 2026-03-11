@@ -477,6 +477,7 @@ function ListView({
   currentProjectName,
   onOpenDocument,
   onDeleteDocument,
+  onCreateReceiving,
   onNavigate,
   onSwitchSection,
   currentSection,
