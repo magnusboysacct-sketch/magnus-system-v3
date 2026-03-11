@@ -471,11 +471,11 @@ function ListView({
         <div>
           <h1 className="text-2xl font-semibold">Procurement Documents</h1>
 
-          {currentProject && (
+     {currentProjectName && (
   <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
     Project:{" "}
     <span className="font-semibold text-slate-700 dark:text-slate-200">
-      {currentProject.name}
+      {currentProjectName}
     </span>
   </div>
 )}
