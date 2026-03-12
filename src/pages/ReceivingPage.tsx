@@ -38,13 +38,11 @@ export default function ReceivingPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Load receiving list
   useEffect(() => {
-    if (!currentProjectId) return;
+    if (!currentProjectId || receivingId) return;
     loadReceivingDocuments();
-  }, [currentProjectId]);
+  }, [currentProjectId, receivingId]);
 
-  // Load receiving record
   useEffect(() => {
     if (!receivingId) return;
     loadReceivingRecord();
@@ -52,6 +50,8 @@ export default function ReceivingPage() {
   }, [receivingId]);
 
   async function loadReceivingDocuments() {
+    if (!currentProjectId) return;
+
     setLoading(true);
 
     const { data, error } = await supabase
@@ -62,6 +62,7 @@ export default function ReceivingPage() {
 
     if (error) {
       console.error("Failed to load receiving documents", error);
+      setDocuments([]);
     } else {
       setDocuments(data || []);
     }
@@ -89,58 +90,6 @@ export default function ReceivingPage() {
   async function loadReceivingItems() {
     if (!receivingId) return;
 
-    async function saveReceivingChanges() {
-  try {
-    setSaving(true);
-for (const item of items) {
-  const { error } = await supabase
-    .from("receiving_record_items")
-    .update({
-      received_qty: Number(item.received_qty || 0),
-    })
-    .eq("id", item.id);
-
-  if (error) {
-    throw error;
-  }
-
-  if (item.purchase_order_item_id) {
-    const { data: totals, error: totalsError } = await supabase
-      .from("receiving_record_items")
-      .select("received_qty")
-      .eq("purchase_order_item_id", item.purchase_order_item_id);
-
-    if (totalsError) {
-      throw totalsError;
-    }
-
-    const totalDelivered = (totals || []).reduce(
-      (sum, row) => sum + Number(row.received_qty || 0),
-      0
-    );
-
-    const { error: poUpdateError } = await supabase
-      .from("purchase_order_items")
-      .update({
-        delivered_qty: totalDelivered,
-      })
-      .eq("id", item.purchase_order_item_id);
-
-    if (poUpdateError) {
-      throw poUpdateError;
-    }
-  }
-}
-
-    await loadReceivingItems();
-  } catch (error) {
-    console.error("Failed to save receiving changes", error);
-    alert("Failed to save receiving changes.");
-  } finally {
-    setSaving(false);
-  }
-}
-
     const { data, error } = await supabase
       .from("receiving_record_items")
       .select(`
@@ -167,6 +116,91 @@ for (const item of items) {
     }
   }
 
+  async function saveReceivingChanges() {
+    try {
+      setSaving(true);
+
+      for (const item of items) {
+        const { error } = await supabase
+          .from("receiving_record_items")
+          .update({
+            received_qty: Number(item.received_qty || 0),
+          })
+          .eq("id", item.id);
+
+        if (error) {
+          throw error;
+        }
+
+        if (item.purchase_order_item_id) {
+          const { data: totals, error: totalsError } = await supabase
+            .from("receiving_record_items")
+            .select("received_qty")
+            .eq("purchase_order_item_id", item.purchase_order_item_id);
+
+          if (totalsError) {
+            throw totalsError;
+          }
+
+          const totalDelivered = (totals || []).reduce(
+            (sum, row) => sum + Number(row.received_qty || 0),
+            0
+          );
+
+          const { error: poUpdateError } = await supabase
+            .from("purchase_order_items")
+            .update({
+              delivered_qty: totalDelivered,
+            })
+            .eq("id", item.purchase_order_item_id);
+
+          if (poUpdateError) {
+            throw poUpdateError;
+          }
+        }
+      }
+
+      const totalOrdered = items.reduce(
+        (sum, item) => sum + Number(item.ordered_qty || 0),
+        0
+      );
+
+      const totalReceived = items.reduce(
+        (sum, item) => sum + Number(item.received_qty || 0),
+        0
+      );
+
+      let nextStatus = "draft";
+
+      if (totalReceived <= 0) {
+        nextStatus = "draft";
+      } else if (totalReceived < totalOrdered) {
+        nextStatus = "partial";
+      } else {
+        nextStatus = "received";
+      }
+
+      if (receivingId) {
+        const { error: recordUpdateError } = await supabase
+          .from("receiving_records")
+          .update({ status: nextStatus })
+          .eq("id", receivingId);
+
+        if (recordUpdateError) {
+          throw recordUpdateError;
+        }
+      }
+
+      await loadReceivingRecord();
+      await loadReceivingItems();
+    } catch (error) {
+      console.error("Failed to save receiving changes", error);
+      alert("Failed to save receiving changes.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!currentProjectId) {
     return (
       <div className="p-6 text-sm text-slate-500">
@@ -175,35 +209,34 @@ for (const item of items) {
     );
   }
 
-  // Receiving editor mode
   if (receivingId) {
     return (
       <div className="p-6">
-       <div className="flex items-start justify-between gap-4 mb-6">
-  <div>
-    <h1 className="text-2xl font-semibold">Receiving Editor</h1>
-    <p className="text-slate-400 mt-1">
-      Update received quantities and track delivery details.
-    </p>
-  </div>
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-semibold">Receiving Editor</h1>
+            <p className="text-slate-400 mt-1">
+              Update received quantities and track delivery details.
+            </p>
+          </div>
 
-  <div className="flex items-center gap-2">
-    <button
-      onClick={() => navigate("/receiving")}
-      className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
-    >
-      Back to Receiving
-    </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate("/receiving")}
+              className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+            >
+              Back to Receiving
+            </button>
 
-   <button
- onClick={saveReceivingChanges}
-  disabled={saving}
-  className="px-3 py-2 rounded-xl bg-slate-200 text-slate-900 hover:bg-white text-sm font-medium disabled:opacity-60"
->
-  {saving ? "Saving..." : "Save Changes"}
-</button>
-  </div>
-</div>
+            <button
+              onClick={saveReceivingChanges}
+              disabled={saving}
+              className="px-3 py-2 rounded-xl bg-slate-200 text-slate-900 hover:bg-white text-sm font-medium disabled:opacity-60"
+            >
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
           {!selectedDocument ? (
@@ -267,30 +300,37 @@ for (const item of items) {
                     <div className="text-right text-xs text-slate-400 space-y-1">
                       <div>Ordered: {item.ordered_qty}</div>
                       <div>Previously Received: {item.previously_received_qty}</div>
-                     <div className="flex items-center justify-end gap-2">
-  <span>This Delivery:</span>
 
-  <input
-    type="number"
-    value={item.received_qty}
-    onChange={(e) => {
-      const newQty = Number(e.target.value);
+                      <div className="flex items-center justify-end gap-2">
+                        <span>This Delivery:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.received_qty}
+                          onChange={(e) => {
+                            const newQty = Number(e.target.value);
 
-      setItems((prev) =>
-        prev.map((i) =>
-          i.id === item.id
-            ? { ...i, received_qty: newQty }
-            : i
-        )
-      );
-    }}
-    className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-right"
-  />
-</div>
+                            setItems((prev) =>
+                              prev.map((i) =>
+                                i.id === item.id
+                                  ? { ...i, received_qty: newQty }
+                                  : i
+                              )
+                            );
+                          }}
+                          className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-right"
+                        />
+                      </div>
+
                       <div>Unit Cost: {item.unit_cost}</div>
-                    <div>
-  Delivered Cost: {(Number(item.received_qty || 0) * Number(item.unit_cost || 0)).toFixed(2)}
-</div>
+                      <div>
+                        Delivered Cost:{" "}
+                        {(
+                          Number(item.received_qty || 0) *
+                          Number(item.unit_cost || 0)
+                        ).toFixed(2)}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -302,7 +342,6 @@ for (const item of items) {
     );
   }
 
-  // Receiving list
   return (
     <div className="p-6">
       <div className="flex items-start justify-between gap-4 mb-6">
