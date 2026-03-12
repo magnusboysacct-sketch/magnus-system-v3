@@ -92,19 +92,45 @@ export default function ReceivingPage() {
     async function saveReceivingChanges() {
   try {
     setSaving(true);
+for (const item of items) {
+  const { error } = await supabase
+    .from("receiving_record_items")
+    .update({
+      received_qty: Number(item.received_qty || 0),
+    })
+    .eq("id", item.id);
 
-    for (const item of items) {
-   const { error } = await supabase
-  .from("receiving_record_items")
-  .update({
-    received_qty: Number(item.received_qty || 0),
-  })
-  .eq("id", item.id);
+  if (error) {
+    throw error;
+  }
 
-      if (error) {
-        throw error;
-      }
+  if (item.purchase_order_item_id) {
+    const { data: totals, error: totalsError } = await supabase
+      .from("receiving_record_items")
+      .select("received_qty")
+      .eq("purchase_order_item_id", item.purchase_order_item_id);
+
+    if (totalsError) {
+      throw totalsError;
     }
+
+    const totalDelivered = (totals || []).reduce(
+      (sum, row) => sum + Number(row.received_qty || 0),
+      0
+    );
+
+    const { error: poUpdateError } = await supabase
+      .from("purchase_order_items")
+      .update({
+        delivered_qty: totalDelivered,
+      })
+      .eq("id", item.purchase_order_item_id);
+
+    if (poUpdateError) {
+      throw poUpdateError;
+    }
+  }
+}
 
     await loadReceivingItems();
   } catch (error) {
