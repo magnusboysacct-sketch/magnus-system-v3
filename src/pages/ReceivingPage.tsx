@@ -225,7 +225,9 @@ export default function ReceivingPage() {
   />
 </div>
                       <div>Unit Cost: {item.unit_cost}</div>
-                      <div>Delivered Cost: {item.delivered_cost}</div>
+                    <div>
+  Delivered Cost: {(Number(item.received_qty || 0) * Number(item.unit_cost || 0)).toFixed(2)}
+</div>
                     </div>
                   </div>
                 </div>
