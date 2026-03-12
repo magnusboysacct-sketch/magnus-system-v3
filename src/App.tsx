@@ -147,6 +147,7 @@ export default function App() {
             <Route path="/settings/master-lists" element={<SettingsMasterListsPage />} />
             <Route path="/settings/users" element={<CompanyUsersPage />} />
             <Route path="/settings/company" element={<Navigate to="/settings" replace />} />
+            <Route path="/receiving/:id" element={<ReceivingPage />} />
           </Route>
 
           {/* fallback */}
