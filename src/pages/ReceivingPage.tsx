@@ -15,6 +15,7 @@ interface ReceivingDocument {
 
 export default function ReceivingPage() {
   const { currentProjectId } = useProjectContext();
+  const navigate = useNavigate();
   const [documents, setDocuments] = useState<ReceivingDocument[]>([]);
   const [loading, setLoading] = useState(true);
 
