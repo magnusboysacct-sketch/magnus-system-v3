@@ -126,21 +126,32 @@ export default function ReceivingPage() {
   if (receivingId) {
     return (
       <div className="p-6">
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl font-semibold">Receiving Editor</h1>
-            <p className="text-slate-400 mt-1">
-              Update received quantities and track delivery details.
-            </p>
-          </div>
+       <div className="flex items-start justify-between gap-4 mb-6">
+  <div>
+    <h1 className="text-2xl font-semibold">Receiving Editor</h1>
+    <p className="text-slate-400 mt-1">
+      Update received quantities and track delivery details.
+    </p>
+  </div>
 
-          <button
-            onClick={() => navigate("/receiving")}
-            className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
-          >
-            Back to Receiving
-          </button>
-        </div>
+  <div className="flex items-center gap-2">
+    <button
+      onClick={() => navigate("/receiving")}
+      className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+    >
+      Back to Receiving
+    </button>
+
+    <button
+      onClick={() => {
+        console.log("Save receiving changes");
+      }}
+      className="px-3 py-2 rounded-xl bg-slate-200 text-slate-900 hover:bg-white text-sm font-medium"
+    >
+      Save Changes
+    </button>
+  </div>
+</div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
           {!selectedDocument ? (
