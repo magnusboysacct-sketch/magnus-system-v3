@@ -204,7 +204,26 @@ export default function ReceivingPage() {
                     <div className="text-right text-xs text-slate-400 space-y-1">
                       <div>Ordered: {item.ordered_qty}</div>
                       <div>Previously Received: {item.previously_received_qty}</div>
-                      <div>This Delivery: {item.received_qty}</div>
+                     <div className="flex items-center justify-end gap-2">
+  <span>This Delivery:</span>
+
+  <input
+    type="number"
+    value={item.received_qty}
+    onChange={(e) => {
+      const newQty = Number(e.target.value);
+
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === item.id
+            ? { ...i, received_qty: newQty }
+            : i
+        )
+      );
+    }}
+    className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-right"
+  />
+</div>
                       <div>Unit Cost: {item.unit_cost}</div>
                       <div>Delivered Cost: {item.delivered_cost}</div>
                     </div>
