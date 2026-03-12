@@ -174,9 +174,7 @@ export default function ReceivingPage() {
     </button>
 
    <button
-  onClick={() => {
-    console.log("Save receiving changes");
-  }}
+ onClick={saveReceivingChanges}
   disabled={saving}
   className="px-3 py-2 rounded-xl bg-slate-200 text-slate-900 hover:bg-white text-sm font-medium disabled:opacity-60"
 >
