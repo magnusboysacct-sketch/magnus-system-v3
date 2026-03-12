@@ -89,6 +89,36 @@ export default function ReceivingPage() {
   async function loadReceivingItems() {
     if (!receivingId) return;
 
+    async function saveReceivingChanges() {
+  try {
+    setSaving(true);
+
+    for (const item of items) {
+      const deliveredCost =
+        Number(item.received_qty || 0) * Number(item.unit_cost || 0);
+
+      const { error } = await supabase
+        .from("receiving_record_items")
+        .update({
+          received_qty: Number(item.received_qty || 0),
+          delivered_cost: deliveredCost,
+        })
+        .eq("id", item.id);
+
+      if (error) {
+        throw error;
+      }
+    }
+
+    await loadReceivingItems();
+  } catch (error) {
+    console.error("Failed to save receiving changes", error);
+    alert("Failed to save receiving changes.");
+  } finally {
+    setSaving(false);
+  }
+}
+
     const { data, error } = await supabase
       .from("receiving_record_items")
       .select(`
