@@ -44,6 +44,35 @@ const { id: receivingId } = useParams();
   loadReceivingRecord();
 }, [receivingId]);
 
+    async function loadReceivingItems() {
+  if (!receivingId) return;
+
+  const { data, error } = await supabase
+    .from("receiving_record_items")
+    .select(`
+      id,
+      purchase_order_item_id,
+      item_name,
+      description,
+      unit,
+      ordered_qty,
+      previously_received_qty,
+      received_qty,
+      unit_cost,
+      delivered_cost,
+      notes
+    `)
+    .eq("receiving_record_id", receivingId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Failed to load receiving items", error);
+    setItems([]);
+  } else {
+    setItems(data || []);
+  }
+}
+
     useEffect(() => {
   if (!receivingId) return;
 
