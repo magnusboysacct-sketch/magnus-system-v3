@@ -44,6 +44,12 @@ const { id: receivingId } = useParams();
   loadReceivingRecord();
 }, [receivingId]);
 
+    useEffect(() => {
+  if (!receivingId) return;
+
+  loadReceivingItems();
+}, [receivingId]);
+
     if (receivingId) {
   return (
     <div className="p-6">
