@@ -23,6 +23,34 @@ const { id: receivingId } = useParams();
   useEffect(() => {
     if (!currentProjectId) return;
 
+    if (receivingId) {
+  return (
+    <div className="p-6">
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-semibold">Receiving Editor</h1>
+          <p className="text-slate-400 mt-1">
+            Update received quantities and track delivery details.
+          </p>
+        </div>
+
+        <button
+          onClick={() => navigate("/receiving")}
+          className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+        >
+          Back to Receiving
+        </button>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
+        <div className="text-sm text-slate-300">
+          Receiving record: {receivingId}
+        </div>
+      </div>
+    </div>
+  );
+}
+
     loadReceivingDocuments();
   }, [currentProjectId]);
 
