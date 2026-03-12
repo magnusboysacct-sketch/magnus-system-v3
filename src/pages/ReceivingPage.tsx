@@ -78,9 +78,9 @@ export default function ReceivingPage() {
           {documents.map((doc) => (
           <div
   key={doc.id}
-  onClick={() => {
-    console.log("Open receiving record:", doc.id);
-  }}
+onClick={() => {
+  navigate(`/receiving/${doc.id}`);
+}}
   className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 cursor-pointer hover:bg-slate-900/50 transition"
 >
               <div className="flex items-center justify-between">
