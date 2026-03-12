@@ -49,9 +49,32 @@ const { id: receivingId } = useParams();
       </div>
 
       <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
-        <div className="text-sm text-slate-300">
-          Receiving record: {receivingId}
-        </div>
+      {!selectedDocument ? (
+  <div className="text-sm text-slate-400">Loading receiving record...</div>
+) : (
+  <div className="space-y-2">
+    <div className="text-lg font-medium text-white">
+      {selectedDocument.receiving_no}
+    </div>
+
+    <div className="text-sm text-slate-400">
+      Supplier: {selectedDocument.supplier_name || "Unknown"}
+    </div>
+
+    <div className="text-sm text-slate-400">
+      Received Date:{" "}
+      {new Date(selectedDocument.received_date).toLocaleDateString()}
+    </div>
+
+    <div className="text-sm text-slate-400">
+      Delivery Note: {selectedDocument.delivery_note_no || "—"}
+    </div>
+
+    <div className="text-sm text-slate-400">
+      Status: {selectedDocument.status}
+    </div>
+  </div>
+)}
       </div>
     </div>
   );
