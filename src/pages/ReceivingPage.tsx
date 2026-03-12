@@ -23,6 +23,11 @@ const { id: receivingId } = useParams();
 
   useEffect(() => {
     if (!currentProjectId) return;
+    useEffect(() => {
+  if (!receivingId) return;
+
+  loadReceivingRecord();
+}, [receivingId]);
 
     if (receivingId) {
   return (
