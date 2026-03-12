@@ -13,6 +13,20 @@ interface ReceivingDocument {
   status: string;
 }
 
+interface ReceivingItem {
+  id: string;
+  purchase_order_item_id: string | null;
+  item_name: string;
+  description: string | null;
+  unit: string | null;
+  ordered_qty: number;
+  previously_received_qty: number;
+  received_qty: number;
+  unit_cost: number;
+  delivered_cost: number;
+  notes: string | null;
+}
+
 export default function ReceivingPage() {
  const { currentProjectId } = useProjectContext();
 const navigate = useNavigate();
