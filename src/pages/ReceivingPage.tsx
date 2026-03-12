@@ -34,6 +34,7 @@ const { id: receivingId } = useParams();
   const [documents, setDocuments] = useState<ReceivingDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDocument, setSelectedDocument] = useState<ReceivingDocument | null>(null);
+  const [items, setItems] = useState<ReceivingItem[]>([]);
 
   useEffect(() => {
     if (!currentProjectId) return;
