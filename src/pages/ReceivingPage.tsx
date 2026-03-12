@@ -63,6 +63,23 @@ const { id: receivingId } = useParams();
   async function loadReceivingDocuments() {
     setLoading(true);
 
+    async function loadReceivingRecord() {
+  if (!receivingId) return;
+
+  const { data, error } = await supabase
+    .from("receiving_records")
+    .select("id,receiving_no,received_date,purchase_order_id,supplier_name,delivery_note_no,status")
+    .eq("id", receivingId)
+    .single();
+
+  if (error) {
+    console.error("Failed to load receiving record", error);
+    setSelectedDocument(null);
+  } else {
+    setSelectedDocument(data);
+  }
+}
+
     const { data, error } = await supabase
      .from("receiving_records")
      .select("id,receiving_no,received_date,purchase_order_id,supplier_name,delivery_note_no,status")
