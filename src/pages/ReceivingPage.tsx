@@ -36,6 +36,7 @@ export default function ReceivingPage() {
   const [items, setItems] = useState<ReceivingItem[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<ReceivingDocument | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   // Load receiving list
   useEffect(() => {
