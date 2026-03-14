@@ -669,6 +669,7 @@ export default function TakeoffPage() {
     await page.render({
       canvasContext: ctx,
       viewport: renderViewport,
+      canvas: canvas,
     }).promise;
 
     setPageRows((prev) => {
