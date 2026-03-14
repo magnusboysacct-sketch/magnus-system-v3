@@ -32,15 +32,18 @@ return Math.sqrt(dx * dx + dy * dy);
 }
 
 function parseFraction(input: string): number | null {
-const s = input.trim();
-if (!s) return 0;
-if (/^\d+(.\d+)?$/.test(s)) return parseFloat(s);
-const m = s.match(/^(\d+)\s*/\s*(\d+)$/);
-if (!m) return null;
-const a = parseInt(m[1], 10);
-const b = parseInt(m[2], 10);
-if (!b) return null;
-return a / b;
+  const s = input.trim();
+  if (!s) return 0;
+  if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+
+  const m = s.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (!m) return null;
+
+  const a = parseInt(m[1], 10);
+  const b = parseInt(m[2], 10);
+  if (!b) return null;
+
+  return a / b;
 }
 
 function feetFromFIS(feet: number, inches: number, frac: number) {
