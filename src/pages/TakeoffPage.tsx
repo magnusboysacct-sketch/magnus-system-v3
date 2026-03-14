@@ -30,7 +30,6 @@ type SessionRow = {
   pdf_bucket?: string | null;
   pdf_path?: string | null;
   pdf_url?: string | null;
-  current_page?: number | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -516,15 +515,14 @@ export default function TakeoffPage() {
           if (existing) {
             sessionRow = existing as SessionRow;
           } else {
-            const { data: inserted, error: insertError } = await supabase
-              .from("takeoff_sessions")
-              .insert({
-                project_id: projectId,
-                name: "Takeoff Session",
-                current_page: 1,
-              })
-              .select("*")
-              .single();
+          const { data: inserted, error: insertError } = await supabase
+  .from("takeoff_sessions")
+  .insert({
+    project_id: projectId,
+    name: "Takeoff Session",
+  })
+  .select("*")
+  .single();
 
             if (insertError) throw insertError;
             sessionRow = inserted as SessionRow;
@@ -532,7 +530,7 @@ export default function TakeoffPage() {
         }
 
         setSession(sessionRow);
-        setCurrentPage(sessionRow.current_page ?? 1);
+     setCurrentPage(1);
 
         let pageData: PageRow[] = [];
         let groupData: GroupRow[] = [];
@@ -714,17 +712,16 @@ export default function TakeoffPage() {
 
     saveTimeoutRef.current = window.setTimeout(async () => {
       try {
-        const sessionPayload = {
-          id: session.id,
-          project_id: session.project_id,
-          name: session.name ?? "Takeoff Session",
-          pdf_name: pdfName || session.pdf_name || null,
-          pdf_bucket: session.pdf_bucket ?? null,
-          pdf_path: session.pdf_path ?? null,
-          pdf_url: pdfUrl || session.pdf_url || null,
-          current_page: currentPage,
-          updated_at: new Date().toISOString(),
-        };
+      const sessionPayload = {
+  id: session.id,
+  project_id: session.project_id,
+  name: session.name ?? "Takeoff Session",
+  pdf_name: pdfName || session.pdf_name || null,
+  pdf_bucket: session.pdf_bucket ?? null,
+  pdf_path: session.pdf_path ?? null,
+  pdf_url: pdfUrl || session.pdf_url || null,
+  updated_at: new Date().toISOString(),
+};
 
         const pagePayload = pageRows.map((p) => ({
           session_id: session.id,
