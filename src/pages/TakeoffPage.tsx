@@ -24,8 +24,11 @@ type Point = {
 
 type SessionRow = {
   id: string;
-  project_id: string | null;
+  company_id: string;
+  project_id: string;
+  drawing_id?: string;
   name?: string | null;
+  status?: string;
   pdf_name?: string | null;
   pdf_bucket?: string | null;
   pdf_path?: string | null;
@@ -51,10 +54,16 @@ type PageRow = {
 
 type GroupRow = {
   id: string;
+  company_id?: string;
+  project_id?: string;
   session_id: string;
+  drawing_id?: string | null;
   name: string;
-  color: string;
+  color?: string | null;
+  group_type?: string;
   sort_order: number;
+  is_locked?: boolean;
+  is_archived?: boolean;
   unit?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -64,18 +73,28 @@ type MeasurementKind = "line" | "area" | "count" | "volume";
 
 type MeasurementRow = {
   id: string;
+  company_id?: string;
+  project_id?: string;
   session_id: string;
+  drawing_id?: string;
   page_number: number;
   group_id: string | null;
-  name: string;
-  kind: MeasurementKind;
+  name?: string | null;
+  tool_type?: string;
+  kind?: MeasurementKind;
   points: Point[];
-  length_value: number | null;
-  area_value: number | null;
-  count_value: number | null;
-  volume_value: number | null;
-  depth_value: number | null;
-  unit_label: string | null;
+  raw_length?: number | null;
+  raw_area?: number | null;
+  raw_count?: number | null;
+  raw_volume?: number | null;
+  length_value?: number | null;
+  area_value?: number | null;
+  count_value?: number | null;
+  volume_value?: number | null;
+  depth_value?: number | null;
+  unit_label?: string | null;
+  display_unit?: string | null;
+  multiplier?: number;
   notes?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -170,15 +189,16 @@ function polygonPointsToSvg(points: Point[]) {
 }
 
 function getMeasurementDisplayValue(measurement: MeasurementRow) {
-  switch (measurement.kind) {
+  const kind = measurement.kind ?? measurement.tool_type;
+  switch (kind) {
     case "line":
-      return measurement.length_value ?? 0;
+      return measurement.length_value ?? measurement.raw_length ?? 0;
     case "area":
-      return measurement.area_value ?? 0;
+      return measurement.area_value ?? measurement.raw_area ?? 0;
     case "count":
-      return measurement.count_value ?? 0;
+      return measurement.count_value ?? measurement.raw_count ?? 0;
     case "volume":
-      return measurement.volume_value ?? 0;
+      return measurement.volume_value ?? measurement.raw_volume ?? 0;
     default:
       return 0;
   }
@@ -186,13 +206,16 @@ function getMeasurementDisplayValue(measurement: MeasurementRow) {
 
 function getMeasurementBadge(measurement: MeasurementRow) {
   const value = getMeasurementDisplayValue(measurement);
-  const unit = measurement.unit_label ?? "";
+  const unit = measurement.unit_label ?? measurement.display_unit ?? "";
   return `${formatNumber(value)} ${unit}`.trim();
 }
 
 function buildMeasurementFromDraft(args: {
   id?: string;
+  companyId: string;
+  projectId: string;
   sessionId: string;
+  drawingId: string;
   pageNumber: number;
   groupId: string | null;
   name: string;
@@ -202,28 +225,40 @@ function buildMeasurementFromDraft(args: {
   baseUnit: UnitSystem;
   depth: number | null;
 }): MeasurementRow {
-  const { id, sessionId, pageNumber, groupId, name, kind, points, scale, baseUnit, depth } = args;
+  const { id, companyId, projectId, sessionId, drawingId, pageNumber, groupId, name, kind, points, scale, baseUnit, depth } = args;
   const lengthPx = polylineLength(points);
   const areaPx = polygonArea(points);
   const realLength = scale ? lengthPx * scale : 0;
   const realArea = scale ? areaPx * scale * scale : 0;
   const realVolume = scale ? realArea * (depth ?? 0) : 0;
 
+  const toolType = kind === "count" ? "count" : kind === "volume" ? "area" : kind;
+
   if (kind === "line") {
     return {
       id: id ?? uid(),
+      company_id: companyId,
+      project_id: projectId,
       session_id: sessionId,
+      drawing_id: drawingId,
       page_number: pageNumber,
       group_id: groupId,
       name,
+      tool_type: toolType,
       kind,
       points,
+      raw_length: lengthPx,
+      raw_area: null,
+      raw_count: null,
+      raw_volume: null,
       length_value: realLength,
       area_value: null,
       count_value: null,
       volume_value: null,
       depth_value: null,
       unit_label: baseUnit,
+      display_unit: baseUnit,
+      multiplier: 1,
       updated_at: new Date().toISOString(),
     };
   }
@@ -231,18 +266,28 @@ function buildMeasurementFromDraft(args: {
   if (kind === "area") {
     return {
       id: id ?? uid(),
+      company_id: companyId,
+      project_id: projectId,
       session_id: sessionId,
+      drawing_id: drawingId,
       page_number: pageNumber,
       group_id: groupId,
       name,
+      tool_type: toolType,
       kind,
       points,
+      raw_length: null,
+      raw_area: areaPx,
+      raw_count: null,
+      raw_volume: null,
       length_value: null,
       area_value: realArea,
       count_value: null,
       volume_value: null,
       depth_value: null,
       unit_label: getAreaUnit(baseUnit),
+      display_unit: getAreaUnit(baseUnit),
+      multiplier: 1,
       updated_at: new Date().toISOString(),
     };
   }
@@ -250,36 +295,56 @@ function buildMeasurementFromDraft(args: {
   if (kind === "count") {
     return {
       id: id ?? uid(),
+      company_id: companyId,
+      project_id: projectId,
       session_id: sessionId,
+      drawing_id: drawingId,
       page_number: pageNumber,
       group_id: groupId,
       name,
+      tool_type: toolType,
       kind,
       points,
+      raw_length: null,
+      raw_area: null,
+      raw_count: 1,
+      raw_volume: null,
       length_value: null,
       area_value: null,
       count_value: 1,
       volume_value: null,
       depth_value: null,
       unit_label: "ea",
+      display_unit: "ea",
+      multiplier: 1,
       updated_at: new Date().toISOString(),
     };
   }
 
   return {
     id: id ?? uid(),
+    company_id: companyId,
+    project_id: projectId,
     session_id: sessionId,
+    drawing_id: drawingId,
     page_number: pageNumber,
     group_id: groupId,
     name,
+    tool_type: toolType,
     kind,
     points,
+    raw_length: null,
+    raw_area: areaPx,
+    raw_count: null,
+    raw_volume: realVolume,
     length_value: null,
     area_value: realArea,
     count_value: null,
     volume_value: realVolume,
     depth_value: depth ?? 0,
     unit_label: getVolumeUnit(baseUnit),
+    display_unit: getVolumeUnit(baseUnit),
+    multiplier: 1,
     updated_at: new Date().toISOString(),
   };
 }
@@ -471,13 +536,18 @@ export default function TakeoffPage() {
   const currentStageWidth = basePageSize.width * zoom;
   const currentStageHeight = basePageSize.height * zoom;
 
-  const createDefaultGroup = useCallback((sessionId: string) => {
+  const createDefaultGroup = useCallback((sessionId: string, companyId: string, projectId: string) => {
     const next: GroupRow = {
       id: uid(),
+      company_id: companyId,
+      project_id: projectId,
       session_id: sessionId,
       name: "General",
       color: COLORS[0],
+      group_type: "general",
       sort_order: 1,
+      is_locked: false,
+      is_archived: false,
       unit: null,
       updated_at: new Date().toISOString(),
     };
@@ -491,6 +561,26 @@ export default function TakeoffPage() {
       setErrorText("");
 
       try {
+        const { data: userProfile } = await supabase
+          .from("user_profiles")
+          .select("company_id")
+          .eq("id", (await supabase.auth.getUser()).data.user?.id)
+          .single();
+
+        if (!userProfile?.company_id) {
+          throw new Error("User profile or company not found");
+        }
+
+        const { data: project } = await supabase
+          .from("projects")
+          .select("id, company_id")
+          .eq("id", projectId)
+          .single();
+
+        if (!project) {
+          throw new Error("Project not found");
+        }
+
         let sessionRow: SessionRow | null = null;
 
         const rpcSession = await tryRpc<any>("get_or_create_takeoff_session", {
@@ -515,14 +605,19 @@ export default function TakeoffPage() {
           if (existing) {
             sessionRow = existing as SessionRow;
           } else {
-          const { data: inserted, error: insertError } = await supabase
-  .from("takeoff_sessions")
-  .insert({
-    project_id: projectId,
-    name: "Takeoff Session",
-  })
-  .select("*")
-  .single();
+            const dummyDrawingId = crypto.randomUUID();
+
+            const { data: inserted, error: insertError } = await supabase
+              .from("takeoff_sessions")
+              .insert({
+                company_id: project.company_id,
+                project_id: projectId,
+                drawing_id: dummyDrawingId,
+                name: "Takeoff Session",
+                status: "draft",
+              })
+              .select("*")
+              .single();
 
             if (insertError) throw insertError;
             sessionRow = inserted as SessionRow;
@@ -532,54 +627,36 @@ export default function TakeoffPage() {
         setSession(sessionRow);
      setCurrentPage(1);
 
-        let pageData: PageRow[] = [];
         let groupData: GroupRow[] = [];
         let measurementData: MeasurementRow[] = [];
 
-        const rpcPayload = await tryRpc<any>("load_takeoff_session", {
-          p_session_id: sessionRow.id,
-        });
+        const [groupsRes, measurementsRes] = await Promise.all([
+          supabase
+            .from("takeoff_groups")
+            .select("*")
+            .eq("session_id", sessionRow.id)
+            .order("sort_order", { ascending: true }),
+          supabase
+            .from("takeoff_measurements")
+            .select("*")
+            .eq("session_id", sessionRow.id)
+            .order("updated_at", { ascending: false }),
+        ]);
 
-        if (rpcPayload && typeof rpcPayload === "object") {
-          pageData = Array.isArray(rpcPayload.pages) ? rpcPayload.pages : [];
-          groupData = Array.isArray(rpcPayload.groups) ? rpcPayload.groups : [];
-          measurementData = Array.isArray(rpcPayload.measurements) ? rpcPayload.measurements : [];
-        } else {
-          const [pagesRes, groupsRes, measurementsRes] = await Promise.all([
-            supabase
-              .from("takeoff_pages")
-              .select("*")
-              .eq("session_id", sessionRow.id)
-              .order("page_number", { ascending: true }),
-            supabase
-              .from("takeoff_groups")
-              .select("*")
-              .eq("session_id", sessionRow.id)
-              .order("sort_order", { ascending: true }),
-            supabase
-              .from("takeoff_measurements")
-              .select("*")
-              .eq("session_id", sessionRow.id)
-              .order("updated_at", { ascending: false }),
-          ]);
+        if (groupsRes.error) throw groupsRes.error;
+        if (measurementsRes.error) throw measurementsRes.error;
 
-          if (pagesRes.error) throw pagesRes.error;
-          if (groupsRes.error) throw groupsRes.error;
-          if (measurementsRes.error) throw measurementsRes.error;
+        groupData = (groupsRes.data ?? []) as GroupRow[];
+        measurementData = (measurementsRes.data ?? []) as MeasurementRow[];
 
-          pageData = (pagesRes.data ?? []) as PageRow[];
-          groupData = (groupsRes.data ?? []) as GroupRow[];
-          measurementData = (measurementsRes.data ?? []) as MeasurementRow[];
-        }
-
-        setPageRows(pageData);
+        setPageRows([]);
         setGroups(groupData);
         setMeasurements(measurementData);
 
         if (groupData.length > 0) {
           setSelectedGroupId(groupData[0].id);
         } else {
-          createDefaultGroup(sessionRow.id);
+          createDefaultGroup(sessionRow.id, project.company_id, projectId);
         }
 
         const resolvedPdfUrl =
@@ -713,106 +790,88 @@ export default function TakeoffPage() {
 
     saveTimeoutRef.current = window.setTimeout(async () => {
       try {
-      const sessionPayload = {
-  id: session.id,
-  project_id: session.project_id,
-  name: session.name ?? "Takeoff Session",
-  pdf_name: pdfName || session.pdf_name || null,
-  pdf_bucket: session.pdf_bucket ?? null,
-  pdf_path: session.pdf_path ?? null,
-  pdf_url: pdfUrl || session.pdf_url || null,
-  updated_at: new Date().toISOString(),
-};
-
-        const pagePayload = pageRows.map((p) => ({
-          session_id: session.id,
-          page_number: p.page_number,
-          page_label: p.page_label ?? null,
-          width: p.width ?? null,
-          height: p.height ?? null,
-          calibration_point_1: p.calibration_point_1 ?? null,
-          calibration_point_2: p.calibration_point_2 ?? null,
-          calibration_distance: p.calibration_distance ?? null,
-          calibration_unit: p.calibration_unit ?? null,
-          calibration_scale: p.calibration_scale ?? null,
+        const sessionPayload = {
+          id: session.id,
+          company_id: session.company_id,
+          project_id: session.project_id,
+          drawing_id: session.drawing_id ?? crypto.randomUUID(),
+          name: session.name ?? "Takeoff Session",
+          status: session.status ?? "draft",
           updated_at: new Date().toISOString(),
-        }));
+        };
 
         const groupPayload = groups.map((g, index) => ({
           id: g.id,
+          company_id: session.company_id,
+          project_id: session.project_id,
           session_id: session.id,
+          drawing_id: session.drawing_id,
           name: g.name,
-          color: g.color,
+          code: g.unit ?? null,
+          description: null,
+          group_type: g.group_type ?? "general",
+          color: g.color ?? COLORS[0],
           sort_order: index + 1,
-          unit: g.unit ?? null,
+          is_locked: g.is_locked ?? false,
+          is_archived: g.is_archived ?? false,
           updated_at: new Date().toISOString(),
         }));
 
         const measurementPayload = measurements.map((m) => ({
           id: m.id,
+          company_id: session.company_id,
+          project_id: session.project_id,
           session_id: session.id,
+          drawing_id: session.drawing_id ?? crypto.randomUUID(),
           page_number: m.page_number,
           group_id: m.group_id,
-          name: m.name,
-          kind: m.kind,
+          tool_type: m.tool_type ?? m.kind ?? "line",
+          name: m.name ?? null,
+          description: m.notes ?? null,
           points: m.points,
-          length_value: m.length_value,
-          area_value: m.area_value,
-          count_value: m.count_value,
-          volume_value: m.volume_value,
-          depth_value: m.depth_value,
-          unit_label: m.unit_label,
-          notes: m.notes ?? null,
+          closed_shape: (m.kind === "area" || m.kind === "volume"),
+          raw_length: m.raw_length ?? null,
+          raw_area: m.raw_area ?? null,
+          raw_count: m.raw_count ?? null,
+          raw_volume: m.raw_volume ?? null,
+          display_unit: m.display_unit ?? m.unit_label ?? null,
+          multiplier: m.multiplier ?? 1,
+          waste_percent: 0,
+          sort_order: 0,
+          is_deleted: false,
           updated_at: new Date().toISOString(),
         }));
 
-        const rpcSaved = await tryRpc("save_takeoff_session", {
-          p_session: sessionPayload,
-          p_pages: pagePayload,
-          p_groups: groupPayload,
-          p_measurements: measurementPayload,
-          p_deleted_group_ids: deletedGroupIdsRef.current,
-          p_deleted_measurement_ids: deletedMeasurementIdsRef.current,
-        });
+        const [sessionRes, groupsRes, measurementsRes] = await Promise.all([
+          supabase.from("takeoff_sessions").upsert(sessionPayload, { onConflict: "id" }),
+          groupPayload.length
+            ? supabase.from("takeoff_groups").upsert(groupPayload, { onConflict: "id" })
+            : Promise.resolve({ error: null } as any),
+          measurementPayload.length
+            ? supabase.from("takeoff_measurements").upsert(measurementPayload, {
+                onConflict: "id",
+              })
+            : Promise.resolve({ error: null } as any),
+        ]);
 
-        if (!rpcSaved) {
-          const [sessionRes, pagesRes, groupsRes, measurementsRes] = await Promise.all([
-            supabase.from("takeoff_sessions").upsert(sessionPayload, { onConflict: "id" }),
-            pagePayload.length
-              ? supabase.from("takeoff_pages").upsert(pagePayload, {
-                  onConflict: "session_id,page_number",
-                })
-              : Promise.resolve({ error: null } as any),
-            groupPayload.length
-              ? supabase.from("takeoff_groups").upsert(groupPayload, { onConflict: "id" })
-              : Promise.resolve({ error: null } as any),
-            measurementPayload.length
-              ? supabase.from("takeoff_measurements").upsert(measurementPayload, {
-                  onConflict: "id",
-                })
-              : Promise.resolve({ error: null } as any),
-          ]);
+        if (sessionRes.error) throw sessionRes.error;
+        if (groupsRes.error) throw groupsRes.error;
+        if (measurementsRes.error) throw measurementsRes.error;
 
-          if (sessionRes.error) throw sessionRes.error;
-          if (pagesRes.error) throw pagesRes.error;
-          if (groupsRes.error) throw groupsRes.error;
-          if (measurementsRes.error) throw measurementsRes.error;
+        if (deletedMeasurementIdsRef.current.length) {
+          const delRes = await supabase
+            .from("takeoff_measurements")
+            .delete()
+            .in("id", deletedMeasurementIdsRef.current);
+          if (delRes.error) throw delRes.error;
+        }
 
-          if (deletedMeasurementIdsRef.current.length) {
-            const delRes = await supabase
-              .from("takeoff_measurements")
-              .delete()
-              .in("id", deletedMeasurementIdsRef.current);
-            if (delRes.error) throw delRes.error;
-          }
-
-          if (deletedGroupIdsRef.current.length) {
-            const delRes = await supabase
-              .from("takeoff_groups")
-              .delete()
-              .in("id", deletedGroupIdsRef.current);
-            if (delRes.error) throw delRes.error;
-          }
+        if (deletedGroupIdsRef.current.length) {
+          const delRes = await supabase
+            .from("takeoff_groups")
+            .delete()
+            .in("id", deletedGroupIdsRef.current);
+          if (delRes.error) throw delRes.error;
         }
 
         deletedGroupIdsRef.current = [];
@@ -823,12 +882,12 @@ export default function TakeoffPage() {
         setErrorText(error?.message ?? "Autosave failed.");
       }
     }, 700);
-  }, [session, currentPage, pageRows, groups, measurements, pdfName, pdfUrl]);
+  }, [session, currentPage, groups, measurements, pdfName, pdfUrl]);
 
   useEffect(() => {
     if (!session) return;
     queueAutosave();
-  }, [session, currentPage, pageRows, groups, measurements, pdfName, pdfUrl, queueAutosave]);
+  }, [session, currentPage, groups, measurements, pdfName, pdfUrl, queueAutosave]);
 
   useEffect(() => {
     return () => {
@@ -842,10 +901,16 @@ export default function TakeoffPage() {
     if (!session) return;
     const next: GroupRow = {
       id: uid(),
+      company_id: session.company_id,
+      project_id: session.project_id,
       session_id: session.id,
+      drawing_id: session.drawing_id,
       name: `Group ${groups.length + 1}`,
       color: COLORS[groups.length % COLORS.length],
+      group_type: "general",
       sort_order: groups.length + 1,
+      is_locked: false,
+      is_archived: false,
       updated_at: new Date().toISOString(),
     };
     setGroups((prev) => [...prev, next]);
@@ -975,7 +1040,10 @@ export default function TakeoffPage() {
         kind === "volume" ? Math.max(Number(draftVolumeDepth) || 0, 0) : null;
 
       const next = buildMeasurementFromDraft({
+        companyId: session.company_id,
+        projectId: session.project_id,
         sessionId: session.id,
+        drawingId: session.drawing_id ?? crypto.randomUUID(),
         pageNumber: currentPage,
         groupId: selectedGroupId ?? safeGroups[0]?.id ?? null,
         name: nextName,
@@ -1179,10 +1247,10 @@ export default function TakeoffPage() {
         [
           m.page_number,
           `"${groupName.replace(/"/g, '""')}"`,
-          `"${m.name.replace(/"/g, '""')}"`,
-          m.kind,
+          `"${(m.name ?? "").replace(/"/g, '""')}"`,
+          m.kind ?? m.tool_type ?? "unknown",
           value,
-          `"${(m.unit_label ?? "").replace(/"/g, '""')}"`,
+          `"${(m.unit_label ?? m.display_unit ?? "").replace(/"/g, '""')}"`,
           m.depth_value ?? "",
           `"${JSON.stringify(m.points).replace(/"/g, '""')}"`,
         ].join(",")
@@ -1654,7 +1722,7 @@ export default function TakeoffPage() {
                         <button
                           type="button"
                           className="h-4 w-4 rounded-full border border-white shadow-sm"
-                          style={{ backgroundColor: group.color }}
+                          style={{ backgroundColor: group.color ?? COLORS[0] }}
                           onClick={() => setSelectedGroupId(group.id)}
                           title={group.name}
                         />
@@ -1715,7 +1783,7 @@ export default function TakeoffPage() {
                                 <div className="truncate text-sm font-semibold text-slate-900">{m.name}</div>
                               </div>
                               <div className="mt-1 text-xs text-slate-500">
-                                {group?.name ?? "Ungrouped"} • {m.kind.toUpperCase()}
+                                {group?.name ?? "Ungrouped"} • {(m.kind ?? m.tool_type ?? "unknown").toUpperCase()}
                               </div>
                               <div className="mt-2 text-sm font-medium text-slate-800">
                                 {getMeasurementBadge(m)}
@@ -1796,9 +1864,9 @@ export default function TakeoffPage() {
               {selectedMeasurement ? (
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
                   <div className="text-sm font-semibold text-slate-900">Selected</div>
-                  <div className="mt-2 text-sm font-medium text-slate-800">{selectedMeasurement.name}</div>
+                  <div className="mt-2 text-sm font-medium text-slate-800">{selectedMeasurement.name ?? "Measurement"}</div>
                   <div className="mt-1 text-xs text-slate-500">
-                    Page {selectedMeasurement.page_number} • {selectedMeasurement.kind.toUpperCase()}
+                    Page {selectedMeasurement.page_number} • {(selectedMeasurement.kind ?? selectedMeasurement.tool_type ?? "unknown").toUpperCase()}
                   </div>
                   <div className="mt-2 text-sm text-slate-700">{getMeasurementBadge(selectedMeasurement)}</div>
                 </div>
