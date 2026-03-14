@@ -588,11 +588,17 @@ try {
     if (session) {
       setSessionId(session.id);
       const data = await loadTakeoff(session.id);
-      if (data && !dbLoaded) {
-        if (data.groups && data.groups.length > 0) setGroups(data.groups);
-        if (data.measurements && data.measurements.length > 0) setAllMeasurements(data.measurements);
-        setDbLoaded(true);
-      }
+    if (data && !dbLoaded) {
+  if (Array.isArray(data.groups) && data.groups.length > 0) {
+    setGroups(data.groups);
+  }
+
+  if (Array.isArray(data.measurements) && data.measurements.length > 0) {
+    setAllMeasurements(data.measurements);
+  }
+
+  setDbLoaded(true);
+}
     }
   }
 
@@ -1543,11 +1549,13 @@ count: measurements.filter((m) => m.type === "count").reduce((sum, m) => sum + m
 };
 }, [measurements]);
 
-const activeGroup = groups.find((g) => g.id === activeGroupId) || null;
+const activeGroup = safeGroups.find((g) => g.id === activeGroupId) || null;
+
+const safeGroups = Array.isArray(groups) ? groups : [];
 
 const sortedGroups = useMemo(() => {
-return [...groups].sort((a, b) => a.sortOrder - b.sortOrder);
-}, [groups]);
+  return [...safeGroups].sort((a, b) => a.sortOrder - b.sortOrder);
+}, [safeGroups]);
 
 const pageList = useMemo(() => {
 return Array.from({ length: numPages }, (_, i) => i + 1);
@@ -1641,9 +1649,11 @@ return () => {
 
 }, [sessionId, measurements, groups, feetPerPixel, dbLoaded, calPoints]);
 
+const safeMeasurements = Array.isArray(measurements) ? measurements : [];
+
 const activeGroupMeasurements = activeGroupId
-? measurements.filter((m) => m.groupId === activeGroupId)
-: measurements;
+  ? safeMeasurements.filter((m) => m.groupId === activeGroupId)
+  : safeMeasurements;
 
 const sidebarToolHint =
 tool === "line"
