@@ -436,6 +436,7 @@ export default function TakeoffPage() {
   const [toolMode, setToolMode] = useState<ToolMode>("select");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  const [highlightedGroupId, setHighlightedGroupId] = useState<string | null>(null);
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 24, y: 24 });
@@ -1792,6 +1793,8 @@ export default function TakeoffPage() {
                     const groupColor =
                       safeGroups.find((g) => g.id === m.group_id)?.color ?? "#2563eb";
                     const selected = selectedMeasurementId === m.id;
+                    const isDimmed = highlightedGroupId !== null && m.group_id !== highlightedGroupId;
+                    const baseOpacity = isDimmed ? 0.15 : 1;
 
                     if (m.type === "line") {
                       const midpoint = getLineMidpoint(m.points);
@@ -1807,7 +1810,7 @@ export default function TakeoffPage() {
                       const displayColor = selected ? brightenColor(groupColor, 40) : groupColor;
 
                       return (
-                        <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)} style={{ cursor: "pointer" }}>
+                        <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)} style={{ cursor: "pointer" }} opacity={baseOpacity}>
                           {selected && (
                             <polyline
                               points={linePointsToSvg(m.points)}
@@ -1916,7 +1919,7 @@ export default function TakeoffPage() {
                       const displayColor = selected ? brightenColor(groupColor, 40) : groupColor;
 
                       return (
-                        <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)} style={{ cursor: "pointer" }}>
+                        <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)} style={{ cursor: "pointer" }} opacity={baseOpacity}>
                           {selected && (
                             <polygon
                               points={polygonPointsToSvg(m.points)}
@@ -2008,7 +2011,7 @@ export default function TakeoffPage() {
                     const displayColor = selected ? brightenColor(groupColor, 40) : groupColor;
 
                     return (
-                      <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)} style={{ cursor: "pointer" }}>
+                      <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)} style={{ cursor: "pointer" }} opacity={baseOpacity}>
                         {selected && (
                           <circle
                             cx={m.points[0]?.x ?? 0}
@@ -2302,6 +2305,94 @@ export default function TakeoffPage() {
             <div className="text-sm font-semibold text-slate-900">Groups & Measurements</div>
             <div className="mt-1 text-xs text-slate-500">Live totals and takeoff items</div>
           </div>
+
+          {totalsByGroup.filter((t) => t.group !== null).length > 0 && (
+            <div className="border-b border-slate-200 bg-slate-50/50 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-semibold text-slate-900">Measurement Legend</div>
+                {highlightedGroupId && (
+                  <button
+                    type="button"
+                    onClick={() => setHighlightedGroupId(null)}
+                    className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    Clear Filter
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {totalsByGroup
+                  .filter((t) => t.group !== null)
+                  .map((total) => {
+                    const group = total.group!;
+                    const measurementCount = safeMeasurements.filter((m) => m.group_id === group.id).length;
+                    const isHighlighted = highlightedGroupId === group.id;
+                    const hasMeasurements = measurementCount > 0;
+
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => setHighlightedGroupId(isHighlighted ? null : group.id)}
+                        className={`w-full rounded-xl border p-3 text-left transition-all ${
+                          isHighlighted
+                            ? "border-blue-400 bg-blue-50 shadow-sm"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2">
+                          <div
+                            className="h-4 w-4 flex-shrink-0 rounded-full border-2 border-white shadow-sm"
+                            style={{ backgroundColor: group.color }}
+                          />
+                          <div className="min-w-0 flex-1 text-sm font-semibold text-slate-900">{group.name}</div>
+                          <div className="flex-shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">
+                            {measurementCount}
+                          </div>
+                        </div>
+
+                        {hasMeasurements && (
+                          <div className="ml-6 space-y-1 text-xs">
+                            {total.line > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-600">Length:</span>
+                                <span className="font-semibold text-slate-900">
+                                  {formatNumber(total.line)} {total.lineUnit}
+                                </span>
+                              </div>
+                            )}
+                            {total.area > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-600">Area:</span>
+                                <span className="font-semibold text-slate-900">
+                                  {formatNumber(total.area)} {total.areaUnit}
+                                </span>
+                              </div>
+                            )}
+                            {total.count > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-600">Count:</span>
+                                <span className="font-semibold text-slate-900">
+                                  {formatNumber(total.count)} {total.countUnit}
+                                </span>
+                              </div>
+                            )}
+                            {total.volume > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-600">Volume:</span>
+                                <span className="font-semibold text-slate-900">
+                                  {formatNumber(total.volume)} {total.volumeUnit}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
 
           <div className="grid h-[calc(100vh-145px)] grid-rows-[auto_1fr_auto]">
             <div className="border-b border-slate-200 p-4">
