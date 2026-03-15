@@ -238,6 +238,14 @@ function brightenColor(hex: string, percent: number = 30): string {
   return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
 }
 
+function calculateAngle(p1: Point, p2: Point): number {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  if (angle < 0) angle += 360;
+  return angle;
+}
+
 function buildMeasurementFromDraft(args: {
   id?: string;
   sessionId: string;
@@ -438,6 +446,7 @@ export default function TakeoffPage() {
   const [draftVolumeDepth, setDraftVolumeDepth] = useState<string>("1");
   const [measurementCounter, setMeasurementCounter] = useState(1);
   const [currentMousePoint, setCurrentMousePoint] = useState<Point | null>(null);
+  const [cursorScreenPos, setCursorScreenPos] = useState<{ x: number; y: number } | null>(null);
 
   const [calibrationDraft, setCalibrationDraft] = useState<CalibrationDraft>({
     p1: null,
@@ -1180,12 +1189,14 @@ export default function TakeoffPage() {
       const point = getPagePointFromEvent(event);
       if (!point) return;
       setCurrentMousePoint(point);
+      setCursorScreenPos({ x: event.clientX, y: event.clientY });
     },
     [pdfDoc, getPagePointFromEvent]
   );
 
   const handleOverlayMouseLeave = useCallback(() => {
     setCurrentMousePoint(null);
+    setCursorScreenPos(null);
   }, []);
 
   const handleWorkspaceMouseDown = useCallback(
@@ -1236,6 +1247,7 @@ export default function TakeoffPage() {
       if (!point) return;
 
       setCurrentMousePoint(point);
+      setCursorScreenPos({ x: event.clientX, y: event.clientY });
 
       if (dragState.type === "measurement" && dragState.measurementId && dragState.pointIndex !== null) {
         const measurement = measurements.find((m) => m.id === dragState.measurementId);
@@ -2521,6 +2533,223 @@ export default function TakeoffPage() {
         groupSummaries={groupSummariesForExport}
         sessionId={session?.id || ""}
       />
+
+      {cursorScreenPos && (() => {
+        let hudContent: React.ReactNode = null;
+
+        if (toolMode === "line" && draftPoints.length > 0 && currentMousePoint) {
+          const previewPoints = draftPoints.length === 1
+            ? [draftPoints[0], currentMousePoint]
+            : [...draftPoints, currentMousePoint];
+
+          const totalLengthPx = polylineLength(previewPoints);
+          const lastSegmentPx = draftPoints.length > 0
+            ? distanceBetween(draftPoints[draftPoints.length - 1], currentMousePoint)
+            : 0;
+
+          const angle = draftPoints.length > 0
+            ? calculateAngle(draftPoints[draftPoints.length - 1], currentMousePoint)
+            : 0;
+
+          if (calibrationScale) {
+            const totalLength = totalLengthPx * calibrationScale;
+            const segmentLength = lastSegmentPx * calibrationScale;
+            hudContent = (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Total:</span>
+                  <span className="text-sm font-bold text-slate-900">{formatNumber(totalLength)} {calibrationUnit}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Segment:</span>
+                  <span className="text-sm font-semibold text-slate-700">{formatNumber(segmentLength)} {calibrationUnit}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Angle:</span>
+                  <span className="text-sm font-semibold text-slate-700">{formatNumber(angle)}°</span>
+                </div>
+              </div>
+            );
+          } else {
+            hudContent = (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Total:</span>
+                  <span className="text-sm font-bold text-slate-900">{formatNumber(totalLengthPx)} px</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Segment:</span>
+                  <span className="text-sm font-semibold text-slate-700">{formatNumber(lastSegmentPx)} px</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Angle:</span>
+                  <span className="text-sm font-semibold text-slate-700">{formatNumber(angle)}°</span>
+                </div>
+              </div>
+            );
+          }
+        } else if ((toolMode === "area" || toolMode === "volume") && draftPoints.length >= 2 && currentMousePoint) {
+          const previewPoints = [...draftPoints, currentMousePoint];
+          const areaPx = polygonArea(previewPoints);
+          const perimeterPx = polylineLength([...previewPoints, previewPoints[0]]);
+
+          if (toolMode === "volume") {
+            const depth = Number(draftVolumeDepth) || 1;
+            if (calibrationScale) {
+              const realArea = areaPx * calibrationScale * calibrationScale;
+              const realVolume = realArea * depth;
+              const areaUnit = getAreaUnit(calibrationUnit);
+              const volumeUnit = getVolumeUnit(calibrationUnit);
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Area:</span>
+                    <span className="text-sm font-semibold text-slate-700">{formatNumber(realArea)} {areaUnit}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Depth:</span>
+                    <span className="text-sm font-semibold text-slate-700">{depth} {calibrationUnit}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Volume:</span>
+                    <span className="text-sm font-bold text-slate-900">{formatNumber(realVolume)} {volumeUnit}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Points:</span>
+                    <span className="text-sm font-semibold text-slate-700">{draftPoints.length}</span>
+                  </div>
+                </div>
+              );
+            } else {
+              const volumePx = areaPx * depth;
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Area:</span>
+                    <span className="text-sm font-semibold text-slate-700">{formatNumber(areaPx)} px²</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Depth:</span>
+                    <span className="text-sm font-semibold text-slate-700">{depth} px</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Volume:</span>
+                    <span className="text-sm font-bold text-slate-900">{formatNumber(volumePx)} px³</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Points:</span>
+                    <span className="text-sm font-semibold text-slate-700">{draftPoints.length}</span>
+                  </div>
+                </div>
+              );
+            }
+          } else {
+            if (calibrationScale) {
+              const realArea = areaPx * calibrationScale * calibrationScale;
+              const realPerimeter = perimeterPx * calibrationScale;
+              const areaUnit = getAreaUnit(calibrationUnit);
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Area:</span>
+                    <span className="text-sm font-bold text-slate-900">{formatNumber(realArea)} {areaUnit}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Perimeter:</span>
+                    <span className="text-sm font-semibold text-slate-700">{formatNumber(realPerimeter)} {calibrationUnit}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Points:</span>
+                    <span className="text-sm font-semibold text-slate-700">{draftPoints.length}</span>
+                  </div>
+                </div>
+              );
+            } else {
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Area:</span>
+                    <span className="text-sm font-bold text-slate-900">{formatNumber(areaPx)} px²</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Perimeter:</span>
+                    <span className="text-sm font-semibold text-slate-700">{formatNumber(perimeterPx)} px</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Points:</span>
+                    <span className="text-sm font-semibold text-slate-700">{draftPoints.length}</span>
+                  </div>
+                </div>
+              );
+            }
+          }
+        } else if (toolMode === "calibrate") {
+          if (calibrationDraft.p1 && calibrationDraft.p2) {
+            const distPx = distanceBetween(calibrationDraft.p1, calibrationDraft.p2);
+            const targetDist = calibrationDraft.distanceText || "0";
+            const targetUnit = calibrationDraft.unit;
+            hudContent = (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Distance:</span>
+                  <span className="text-sm font-bold text-slate-900">{formatNumber(distPx)} px</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Target:</span>
+                  <span className="text-sm font-semibold text-slate-700">{targetDist} {targetUnit}</span>
+                </div>
+              </div>
+            );
+          } else if (calibrationDraft.p1 && currentMousePoint) {
+            const distPx = distanceBetween(calibrationDraft.p1, currentMousePoint);
+            hudContent = (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Distance:</span>
+                  <span className="text-sm font-bold text-slate-900">{formatNumber(distPx)} px</span>
+                </div>
+              </div>
+            );
+          }
+        }
+
+        if (!hudContent) return null;
+
+        const hudWidth = 240;
+        const hudHeight = 120;
+        const offset = 20;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        let hudX = cursorScreenPos.x + offset;
+        let hudY = cursorScreenPos.y + offset;
+
+        if (hudX + hudWidth > viewportWidth - 20) {
+          hudX = cursorScreenPos.x - hudWidth - offset;
+        }
+
+        if (hudY + hudHeight > viewportHeight - 20) {
+          hudY = cursorScreenPos.y - hudHeight - offset;
+        }
+
+        if (hudX < 20) hudX = 20;
+        if (hudY < 20) hudY = 20;
+
+        return (
+          <div
+            className="pointer-events-none fixed z-50 rounded-xl border-2 border-blue-300 bg-white px-4 py-3 shadow-2xl"
+            style={{
+              left: `${hudX}px`,
+              top: `${hudY}px`,
+            }}
+          >
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-blue-600">
+              {toolMode === "calibrate" ? "Calibrating" : "Drawing"}
+            </div>
+            {hudContent}
+          </div>
+        );
+      })()}
     </div>
   );
 }
