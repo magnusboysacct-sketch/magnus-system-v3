@@ -99,7 +99,8 @@ const COLORS = [
   "#ca8a04",
 ];
 
-const STORAGE_BUCKET_CANDIDATES = ["takeoff-files", "takeoff", "project-files", "documents"];
+const STORAGE_BUCKET_CANDIDATES = ["project-files"];
+const SIGNED_URL_EXPIRY = 3600; // 1 hour in seconds
 
 function uid() {
   return crypto.randomUUID();
@@ -234,6 +235,35 @@ async function tryRpc<T = any>(fn: string, params?: Record<string, any>): Promis
   const { data, error } = await supabase.rpc(fn, params ?? {});
   if (error) return null;
   return (data as T) ?? null;
+}
+
+async function getStorageUrl(bucket: string, path: string): Promise<string> {
+  // For project-files bucket (private), use signed URL with long expiry
+  if (bucket === 'project-files') {
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(path, SIGNED_URL_EXPIRY);
+
+    if (error) {
+      console.error('Failed to create signed URL:', error);
+      throw new Error(`Failed to generate PDF URL: ${error.message}`);
+    }
+
+    if (!data?.signedUrl) {
+      throw new Error('No signed URL returned from storage');
+    }
+
+    return data.signedUrl;
+  }
+
+  // For public buckets, use public URL
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+
+  if (!data?.publicUrl) {
+    throw new Error('No public URL returned from storage');
+  }
+
+  return data.publicUrl;
 }
 
 async function uploadPdfToStorage(file: File, projectId: string, sessionId: string) {
@@ -531,9 +561,10 @@ export default function TakeoffPage() {
         }
 
         // Always generate fresh URL from bucket+path (never trust cached pdf_url)
-        const resolvedPdfUrl = (sessionRow.pdf_bucket && sessionRow.pdf_path)
-          ? supabase.storage.from(sessionRow.pdf_bucket).getPublicUrl(sessionRow.pdf_path).data.publicUrl
-          : "";
+        let resolvedPdfUrl = "";
+        if (sessionRow.pdf_bucket && sessionRow.pdf_path) {
+          resolvedPdfUrl = await getStorageUrl(sessionRow.pdf_bucket, sessionRow.pdf_path);
+        }
 
         setPdfUrl(resolvedPdfUrl);
         setPdfName(sessionRow.pdf_name ?? "");
@@ -1033,10 +1064,10 @@ export default function TakeoffPage() {
         const localUrl = URL.createObjectURL(file);
 
         if (uploaded) {
-          // Generate fresh public URL from bucket+path
-          const publicUrl = supabase.storage.from(uploaded.bucket).getPublicUrl(uploaded.path).data.publicUrl;
+          // Generate correct URL based on bucket type (signed for private, public for public)
+          const storageUrl = await getStorageUrl(uploaded.bucket, uploaded.path);
 
-          setPdfUrl(publicUrl);
+          setPdfUrl(storageUrl);
           setPdfName(file.name);
           setSession((prev) =>
             prev
