@@ -692,6 +692,51 @@ export interface SupplierPayment {
   created_by?: string | null;
 }
 
+export interface ProjectFinanceSummary {
+  project_id: string;
+  company_id: string;
+  project_name: string;
+  project_status: string;
+  budget_total: number;
+  committed_total: number;
+  actual_total: number;
+  billed_total: number;
+  received_total: number;
+  ar_outstanding: number;
+  ap_outstanding: number;
+  budget_variance: number;
+  committed_variance: number;
+  projected_margin: number;
+  margin_percent: number;
+  cost_completion_percent: number;
+  billing_completion_percent: number;
+  collection_percent: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export async function fetchProjectFinanceSummary(projectId: string) {
+  const { data, error } = await supabase
+    .from("v_project_finance_summary")
+    .select("*")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as ProjectFinanceSummary | null;
+}
+
+export async function fetchAllProjectsFinanceSummary(companyId: string) {
+  const { data, error } = await supabase
+    .from("v_project_finance_summary")
+    .select("*")
+    .eq("company_id", companyId)
+    .order("project_name", { ascending: true });
+
+  if (error) throw error;
+  return data as ProjectFinanceSummary[];
+}
+
 export async function createSupplierPayment(payment: Partial<SupplierPayment>) {
   const { data: { user } } = await supabase.auth.getUser();
 

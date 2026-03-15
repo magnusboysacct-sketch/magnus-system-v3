@@ -13,6 +13,7 @@ import { uploadProjectPhoto, fetchProjectPhotos, deleteProjectPhoto } from "../l
 import type { ProjectPhoto } from "../lib/photos";
 import { fetchProjectActivity, getActivityIcon, getActivityColor } from "../lib/activity";
 import type { ProjectActivity } from "../lib/activity";
+import ProjectFinanceSummary from "../components/ProjectFinanceSummary";
 
 type ProjectRow = {
   id: string;
@@ -714,8 +715,10 @@ export default function ProjectDashboardPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
-        <div className="text-sm font-semibold mb-4">Project Financial Summary</div>
+      {projectId && <ProjectFinanceSummary projectId={projectId} />}
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4 mt-6">
+        <div className="text-sm font-semibold mb-4">Legacy Financial Summary (Budget vs Costs)</div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
