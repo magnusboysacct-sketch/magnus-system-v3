@@ -464,6 +464,7 @@ export default function TakeoffPage() {
   const [pageCount, setPageCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [basePageSize, setBasePageSize] = useState({ width: 1, height: 1 });
+  const [pageThumbnails, setPageThumbnails] = useState<Map<number, string>>(new Map());
 
   const [toolMode, setToolMode] = useState<ToolMode>("select");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -794,6 +795,56 @@ export default function TakeoffPage() {
       cancelled = true;
     };
   }, [pdfUrl]);
+
+  useEffect(() => {
+    if (!pdfDoc) {
+      setPageThumbnails(new Map());
+      return;
+    }
+
+    let cancelled = false;
+
+    const generateThumbnails = async () => {
+      const thumbnails = new Map<number, string>();
+
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        if (cancelled) break;
+
+        try {
+          const page = await pdfDoc.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 0.2 });
+
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d");
+          if (!context) continue;
+
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+
+          await page.render({
+            canvasContext: context,
+            viewport: viewport,
+            canvas: canvas,
+          }).promise;
+
+          const thumbnailDataUrl = canvas.toDataURL("image/png");
+          thumbnails.set(pageNum, thumbnailDataUrl);
+
+          if (!cancelled) {
+            setPageThumbnails(new Map(thumbnails));
+          }
+        } catch (error) {
+          console.error(`Failed to generate thumbnail for page ${pageNum}:`, error);
+        }
+      }
+    };
+
+    void generateThumbnails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfDoc]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1726,13 +1777,23 @@ export default function TakeoffPage() {
                       </div>
                     </div>
                     <div
-                      className={`flex h-28 items-center justify-center rounded-xl border text-xs ${
+                      className={`flex h-28 items-center justify-center overflow-hidden rounded-xl border ${
                         active
-                          ? "border-white/15 bg-white/5 text-white/80"
-                          : "border-slate-200 bg-slate-50 text-slate-500"
+                          ? "border-white/15 bg-white/5"
+                          : "border-slate-200 bg-slate-50"
                       }`}
                     >
-                      Drawing sheet preview
+                      {pageThumbnails.get(pageNo) ? (
+                        <img
+                          src={pageThumbnails.get(pageNo)}
+                          alt={`Page ${pageNo} preview`}
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <div className={`text-xs ${active ? "text-white/80" : "text-slate-500"}`}>
+                          Loading preview...
+                        </div>
+                      )}
                     </div>
                   </button>
                 );
