@@ -25,15 +25,19 @@ export interface ClientInvoice {
   created_by?: string | null;
 }
 
-export interface ClientInvoiceItem {
-  id: string;
+export interface ClientInvoiceLineItem {
+  id?: string;
   invoice_id: string;
+  company_id: string;
+  line_number: number;
   description: string;
   quantity: number;
-  unit_price: number;
+  unit: string;
+  rate: number;
   amount: number;
-  sort_order: number;
+  notes?: string | null;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface ClientPayment {
@@ -174,15 +178,57 @@ export async function updateClientInvoice(id: string, updates: Partial<ClientInv
   return data as ClientInvoice;
 }
 
-export async function fetchInvoiceItems(invoiceId: string) {
+export async function fetchInvoiceLineItems(invoiceId: string) {
   const { data, error } = await supabase
-    .from("client_invoice_items")
+    .from("client_invoice_line_items")
     .select("*")
     .eq("invoice_id", invoiceId)
-    .order("sort_order", { ascending: true });
+    .order("line_number", { ascending: true });
 
   if (error) throw error;
-  return data as ClientInvoiceItem[];
+  return data as ClientInvoiceLineItem[];
+}
+
+export async function createInvoiceLineItems(lineItems: Partial<ClientInvoiceLineItem>[]) {
+  const { data, error } = await supabase
+    .from("client_invoice_line_items")
+    .insert(lineItems)
+    .select();
+
+  if (error) throw error;
+  return data as ClientInvoiceLineItem[];
+}
+
+export async function updateInvoiceLineItem(id: string, updates: Partial<ClientInvoiceLineItem>) {
+  const { data, error } = await supabase
+    .from("client_invoice_line_items")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ClientInvoiceLineItem;
+}
+
+export async function deleteInvoiceLineItem(id: string) {
+  const { error } = await supabase
+    .from("client_invoice_line_items")
+    .delete()
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+export async function fetchInvoicePayments(invoiceId: string) {
+  const { data, error } = await supabase
+    .from("client_payments")
+    .select("*")
+    .eq("invoice_id", invoiceId)
+    .order("payment_date", { ascending: false });
+
+  if (error) throw error;
+  return data as ClientPayment[];
 }
 
 export async function createClientPayment(payment: Partial<ClientPayment>) {
@@ -201,6 +247,51 @@ export async function createClientPayment(payment: Partial<ClientPayment>) {
 
   if (error) throw error;
   return data as ClientPayment;
+}
+
+export async function updateInvoiceAfterPayment(invoiceId: string) {
+  // Fetch all payments for this invoice
+  const payments = await fetchInvoicePayments(invoiceId);
+  const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+
+  // Fetch invoice to get total
+  const { data: invoice, error: invError } = await supabase
+    .from("client_invoices")
+    .select("total_amount, due_date")
+    .eq("id", invoiceId)
+    .single();
+
+  if (invError) throw invError;
+
+  const balanceDue = Number(invoice.total_amount) - totalPaid;
+  const isOverdue = new Date(invoice.due_date) < new Date() && balanceDue > 0;
+
+  let status: ClientInvoice["status"] = "draft";
+  if (balanceDue <= 0) {
+    status = "paid";
+  } else if (totalPaid > 0) {
+    status = "partial";
+  } else if (isOverdue) {
+    status = "overdue";
+  } else {
+    status = "sent";
+  }
+
+  // Update invoice
+  const { data, error } = await supabase
+    .from("client_invoices")
+    .update({
+      amount_paid: totalPaid,
+      balance_due: balanceDue,
+      status,
+      paid_date: balanceDue <= 0 ? new Date().toISOString().split("T")[0] : null,
+    })
+    .eq("id", invoiceId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }
 
 export async function fetchSupplierInvoices(companyId: string) {
