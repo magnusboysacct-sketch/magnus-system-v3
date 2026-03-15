@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Receipt, Plus, Upload, Check, X } from "lucide-react";
+import { Receipt, Plus, Upload, Check, X, Eye, FileText, DollarSign } from "lucide-react";
 import { fetchExpenses, createExpense, approveExpense } from "../lib/finance";
 import type { Expense } from "../lib/finance";
 
@@ -7,19 +7,28 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedExpense, setSelectedExpense] = useState<any>(null);
+  const [editingExpense, setEditingExpense] = useState<any>(null);
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
+  const [projects, setProjects] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
     expense_date: new Date().toISOString().split("T")[0],
+    project_id: "",
+    category_id: "",
     vendor: "",
     description: "",
     amount: "",
     payment_method: "credit_card",
+    receipt_url: "",
     notes: "",
   });
 
   useEffect(() => {
     loadExpenses();
+    loadProjectsAndCategories();
   }, []);
 
   async function loadExpenses() {
@@ -45,6 +54,69 @@ export default function ExpensesPage() {
     }
   }
 
+  async function loadProjectsAndCategories() {
+    try {
+      const { supabase } = await import("../lib/supabase");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("company_id")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile?.company_id) return;
+
+      const [projectsData, categoriesData] = await Promise.all([
+        supabase.from("projects").select("id, name").eq("company_id", profile.company_id).order("name"),
+        supabase.from("expense_categories").select("id, name").eq("company_id", profile.company_id).order("name"),
+      ]);
+
+      if (projectsData.data) setProjects(projectsData.data);
+      if (categoriesData.data) setCategories(categoriesData.data);
+    } catch (error) {
+      console.error("Error loading projects/categories:", error);
+    }
+  }
+
+  function openCreateModal() {
+    setEditingExpense(null);
+    setFormData({
+      expense_date: new Date().toISOString().split("T")[0],
+      project_id: "",
+      category_id: "",
+      vendor: "",
+      description: "",
+      amount: "",
+      payment_method: "credit_card",
+      receipt_url: "",
+      notes: "",
+    });
+    setShowModal(true);
+  }
+
+  function openEditModal(expense: any) {
+    setEditingExpense(expense);
+    setFormData({
+      expense_date: expense.expense_date,
+      project_id: expense.project_id || "",
+      category_id: expense.category_id || "",
+      vendor: expense.vendor || "",
+      description: expense.description,
+      amount: expense.amount.toString(),
+      payment_method: expense.payment_method || "credit_card",
+      receipt_url: expense.receipt_url || "",
+      notes: expense.notes || "",
+    });
+    setShowModal(true);
+  }
+
+  function openDetailModal(expense: any) {
+    setSelectedExpense(expense);
+    setShowDetailModal(true);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
@@ -61,25 +133,31 @@ export default function ExpensesPage() {
 
       if (!profile?.company_id) return;
 
-      await createExpense({
+      const payload = {
         company_id: profile.company_id,
-        ...formData,
+        expense_date: formData.expense_date,
+        project_id: formData.project_id || null,
+        category_id: formData.category_id || null,
+        vendor: formData.vendor || null,
+        description: formData.description,
         amount: parseFloat(formData.amount),
-      });
+        payment_method: formData.payment_method || null,
+        receipt_url: formData.receipt_url || null,
+        notes: formData.notes || null,
+        status: "pending" as const,
+      };
+
+      if (editingExpense) {
+        await supabase.from("expenses").update(payload).eq("id", editingExpense.id);
+      } else {
+        await createExpense(payload);
+      }
 
       setShowModal(false);
       loadExpenses();
-      setFormData({
-        expense_date: new Date().toISOString().split("T")[0],
-        vendor: "",
-        description: "",
-        amount: "",
-        payment_method: "credit_card",
-        notes: "",
-      });
     } catch (error) {
-      console.error("Error creating expense:", error);
-      alert("Failed to create expense");
+      console.error("Error saving expense:", error);
+      alert("Failed to save expense");
     }
   }
 
@@ -89,6 +167,29 @@ export default function ExpensesPage() {
       loadExpenses();
     } catch (error) {
       console.error("Error approving expense:", error);
+    }
+  }
+
+  async function handleReject(id: string) {
+    try {
+      const { supabase } = await import("../lib/supabase");
+      await supabase.from("expenses").update({ status: "rejected" }).eq("id", id);
+      loadExpenses();
+    } catch (error) {
+      console.error("Error rejecting expense:", error);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this expense?")) return;
+
+    try {
+      const { supabase } = await import("../lib/supabase");
+      await supabase.from("expenses").delete().eq("id", id);
+      loadExpenses();
+    } catch (error) {
+      console.error("Error deleting expense:", error);
+      alert("Failed to delete expense");
     }
   }
 
@@ -108,7 +209,7 @@ export default function ExpensesPage() {
           <p className="text-sm text-slate-600">Track and manage business expenses</p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={openCreateModal}
           className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
         >
           <Plus size={18} />
@@ -156,6 +257,9 @@ export default function ExpensesPage() {
                   Description
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
+                  Category
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
                   Vendor
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
@@ -178,8 +282,11 @@ export default function ExpensesPage() {
                   <td className="px-6 py-4 text-sm text-slate-600">{exp.expense_date}</td>
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-slate-900">{exp.description}</div>
-                    {exp.notes && <div className="text-xs text-slate-500">{exp.notes}</div>}
+                    {exp.payment_method && (
+                      <div className="text-xs text-slate-500 capitalize">{exp.payment_method.replace("_", " ")}</div>
+                    )}
                   </td>
+                  <td className="px-6 py-4 text-sm text-slate-600">{exp.expense_categories?.name || "-"}</td>
                   <td className="px-6 py-4 text-sm text-slate-600">{exp.vendor || "-"}</td>
                   <td className="px-6 py-4 text-sm text-slate-600">{exp.projects?.name || "-"}</td>
                   <td className="px-6 py-4 text-right text-sm font-medium text-slate-900">
@@ -199,13 +306,33 @@ export default function ExpensesPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
+                    <button
+                      onClick={() => openDetailModal(exp)}
+                      className="mr-3 text-sm font-medium text-slate-600 hover:text-slate-900"
+                    >
+                      View
+                    </button>
                     {exp.status === "pending" && (
-                      <button
-                        onClick={() => handleApprove(exp.id)}
-                        className="text-sm font-medium text-green-600 hover:text-green-700"
-                      >
-                        Approve
-                      </button>
+                      <>
+                        <button
+                          onClick={() => openEditModal(exp)}
+                          className="mr-3 text-sm font-medium text-blue-600 hover:text-blue-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleApprove(exp.id)}
+                          className="mr-3 text-sm font-medium text-green-600 hover:text-green-700"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleReject(exp.id)}
+                          className="text-sm font-medium text-red-600 hover:text-red-700"
+                        >
+                          Reject
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>
@@ -220,19 +347,35 @@ export default function ExpensesPage() {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="mb-6 text-xl font-bold text-slate-900">Add Expense</h2>
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="mb-6 text-xl font-bold text-slate-900">
+              {editingExpense ? "Edit Expense" : "Add Expense"}
+            </h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Date *</label>
-                <input
-                  type="date"
-                  required
-                  value={formData.expense_date}
-                  onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.expense_date}
+                    onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Amount *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={formData.amount}
+                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="0.00"
+                  />
+                </div>
               </div>
 
               <div>
@@ -243,45 +386,88 @@ export default function ExpensesPage() {
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                  placeholder="Office supplies, fuel, etc."
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Vendor</label>
-                <input
-                  type="text"
-                  value={formData.vendor}
-                  onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="Office supplies, fuel, equipment rental, etc."
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Amount *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Payment Method</label>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Category</label>
                   <select
-                    value={formData.payment_method}
-                    onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
+                    value={formData.category_id}
+                    onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2"
                   >
-                    <option value="credit_card">Credit Card</option>
-                    <option value="cash">Cash</option>
-                    <option value="check">Check</option>
-                    <option value="ach">ACH</option>
+                    <option value="">Select Category</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Vendor</label>
+                  <input
+                    type="text"
+                    value={formData.vendor}
+                    onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="Vendor name"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Project (Optional)</label>
+                <select
+                  value={formData.project_id}
+                  onChange={(e) => setFormData({ ...formData, project_id: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                >
+                  <option value="">No Project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Payment Method</label>
+                <select
+                  value={formData.payment_method}
+                  onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                >
+                  <option value="credit_card">Credit Card</option>
+                  <option value="cash">Cash</option>
+                  <option value="check">Check</option>
+                  <option value="ach">ACH</option>
+                  <option value="wire">Wire Transfer</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Receipt URL</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={formData.receipt_url}
+                    onChange={(e) => setFormData({ ...formData, receipt_url: e.target.value })}
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2"
+                    placeholder="https://..."
+                  />
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    <Upload size={16} />
+                    Upload
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">Add a link to the receipt image or PDF</p>
               </div>
 
               <div>
@@ -291,6 +477,7 @@ export default function ExpensesPage() {
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  placeholder="Additional notes about this expense"
                 />
               </div>
 
@@ -306,10 +493,157 @@ export default function ExpensesPage() {
                   type="submit"
                   className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
                 >
-                  Add Expense
+                  {editingExpense ? "Update" : "Create"} Expense
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showDetailModal && selectedExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Expense Details</h2>
+                <p className="text-sm text-slate-600">{selectedExpense.expense_date}</p>
+              </div>
+              <button
+                onClick={() => setShowDetailModal(false)}
+                className="rounded-lg p-2 hover:bg-slate-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div>
+                  <div className="text-sm text-slate-600">Amount</div>
+                  <div className="text-3xl font-bold text-slate-900">
+                    ${Number(selectedExpense.amount).toLocaleString()}
+                  </div>
+                </div>
+                <span
+                  className={`inline-flex rounded-full px-3 py-1.5 text-sm font-medium capitalize ${
+                    selectedExpense.status === "approved"
+                      ? "bg-green-50 text-green-700"
+                      : selectedExpense.status === "rejected"
+                      ? "bg-red-50 text-red-700"
+                      : "bg-orange-50 text-orange-700"
+                  }`}
+                >
+                  {selectedExpense.status}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">Description</div>
+                  <div className="text-sm text-slate-900">{selectedExpense.description}</div>
+                </div>
+                <div>
+                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">
+                    Payment Method
+                  </div>
+                  <div className="text-sm capitalize text-slate-900">
+                    {selectedExpense.payment_method?.replace("_", " ") || "-"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">Category</div>
+                  <div className="text-sm text-slate-900">{selectedExpense.expense_categories?.name || "-"}</div>
+                </div>
+                <div>
+                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">Vendor</div>
+                  <div className="text-sm text-slate-900">{selectedExpense.vendor || "-"}</div>
+                </div>
+              </div>
+
+              {selectedExpense.project_id && (
+                <div>
+                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">Project</div>
+                  <div className="text-sm text-slate-900">{selectedExpense.projects?.name || "-"}</div>
+                </div>
+              )}
+
+              {selectedExpense.receipt_url && (
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Receipt</div>
+                  <a
+                    href={selectedExpense.receipt_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    <FileText size={16} />
+                    View Receipt
+                  </a>
+                </div>
+              )}
+
+              {selectedExpense.notes && (
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Notes</div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    {selectedExpense.notes}
+                  </div>
+                </div>
+              )}
+
+              {selectedExpense.approved_by && (
+                <div className="rounded-lg border border-slate-200 bg-green-50 p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-green-700">
+                    <Check size={16} />
+                    Approved on {new Date(selectedExpense.approved_at).toLocaleDateString()}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+                {selectedExpense.status === "pending" && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setShowDetailModal(false);
+                        openEditModal(selectedExpense);
+                      }}
+                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleApprove(selectedExpense.id);
+                        setShowDetailModal(false);
+                      }}
+                      className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleReject(selectedExpense.id);
+                        setShowDetailModal(false);
+                      }}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                    >
+                      Reject
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setShowDetailModal(false)}
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
