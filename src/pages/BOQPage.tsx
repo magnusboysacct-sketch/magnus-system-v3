@@ -1,6 +1,6 @@
 // src/pages/BOQPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists";
 import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
@@ -127,6 +127,7 @@ export default function BOQPage() {
   const nav = useNavigate();
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
   const { currentProjectId, currentProject: selectedProject } = useProjectContext();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [status, setStatus] = useState<"draft" | "approved">("draft");
   const [sections, setSections] = useState<Section[]>([]);
@@ -227,6 +228,44 @@ export default function BOQPage() {
       alive = false;
     };
   }, []);
+
+  // Handle takeoff data from URL params
+  useEffect(() => {
+    const groupsParam = searchParams.get("groups");
+    if (!groupsParam) return;
+
+    try {
+      const takeoffGroups = JSON.parse(groupsParam);
+
+      if (Array.isArray(takeoffGroups) && takeoffGroups.length > 0) {
+        const newSection: Section = {
+          id: safeId(),
+          masterCategoryId: null,
+          title: "Takeoff Import",
+          scope: "Quantities imported from takeoff measurements",
+          items: takeoffGroups.map((group: any, index: number) => ({
+            id: safeId(),
+            pick_type: "manual",
+            pick_category: "",
+            pick_item: "",
+            pick_variant: "",
+            cost_item_id: null,
+            item_name: group.groupName || "Imported Item",
+            description: `${group.metric} measurement`,
+            unit_id: null,
+            qty: Number(group.value) || 0,
+            rate: 0,
+          })),
+        };
+
+        setSections((prev) => [...prev, newSection]);
+
+        setSearchParams({});
+      }
+    } catch (e) {
+      console.error("Failed to parse takeoff groups:", e);
+    }
+  }, [searchParams, setSearchParams]);
 
   // -----------------------------
   // Assemblies (PlanSwift-style)

@@ -10,6 +10,7 @@ import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-d
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
+import { ExportToBOQModal } from "../components/ExportToBOQModal";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -437,6 +438,8 @@ export default function TakeoffPage() {
     unit: "ft",
   });
 
+  const [showExportModal, setShowExportModal] = useState(false);
+
   const [dragState, setDragState] = useState<{
     type: "measurement" | "calibration" | null;
     measurementId: string | null;
@@ -548,6 +551,23 @@ export default function TakeoffPage() {
 
     return Array.from(map.values());
   }, [safeMeasurements, safeGroups, calibrationUnit]);
+
+  const groupSummariesForExport = useMemo(() => {
+    return totalsByGroup
+      .filter((t) => t.group !== null)
+      .map((t) => ({
+        groupId: t.group!.id,
+        groupName: t.group!.name,
+        color: t.group!.color,
+        totalLength: t.line,
+        totalArea: t.area,
+        totalVolume: t.volume,
+        totalCount: t.count,
+        lengthUnit: t.lineUnit,
+        areaUnit: t.areaUnit,
+        volumeUnit: t.volumeUnit,
+      }));
+  }, [totalsByGroup]);
 
   const currentStageWidth = basePageSize.width * zoom;
   const currentStageHeight = basePageSize.height * zoom;
@@ -1565,6 +1585,14 @@ export default function TakeoffPage() {
             </button>
             <button
               type="button"
+              onClick={() => setShowExportModal(true)}
+              disabled={safeMeasurements.length === 0}
+              className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Send to BOQ
+            </button>
+            <button
+              type="button"
               onClick={exportCsv}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
             >
@@ -2385,6 +2413,14 @@ export default function TakeoffPage() {
           </div>
         </aside>
       </div>
+
+      <ExportToBOQModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        projectId={activeProjectId || ""}
+        groupSummaries={groupSummariesForExport}
+        sessionId={session?.id || ""}
+      />
     </div>
   );
 }
