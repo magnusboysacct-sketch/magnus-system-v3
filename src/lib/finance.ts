@@ -133,6 +133,10 @@ export interface CashTransaction {
   balance_after?: number | null;
   description: string;
   reference_number?: string | null;
+  client_payment_id?: string | null;
+  supplier_payment_id?: string | null;
+  expense_id?: string | null;
+  payroll_entry_id?: string | null;
   created_at?: string;
   created_by?: string | null;
 }
@@ -246,6 +250,56 @@ export async function createClientPayment(payment: Partial<ClientPayment>) {
     .single();
 
   if (error) throw error;
+
+  if (data) {
+    let projectId: string | null = null;
+    let clientName = "Client";
+
+    if (data.invoice_id) {
+      const { data: invoice } = await supabase
+        .from("client_invoices")
+        .select("project_id, clients(name)")
+        .eq("id", data.invoice_id)
+        .maybeSingle();
+
+      if (invoice) {
+        projectId = invoice.project_id;
+        const clients = invoice.clients as any;
+        clientName = clients?.name || clientName;
+      }
+    } else if (data.client_id) {
+      const { data: client } = await supabase
+        .from("clients")
+        .select("name")
+        .eq("id", data.client_id)
+        .maybeSingle();
+
+      if (client) {
+        clientName = client.name;
+      }
+    }
+
+    const description = `Payment from ${clientName}${data.reference_number ? ` (Ref: ${data.reference_number})` : ""}`;
+
+    const { error: cashError } = await supabase
+      .from("cash_transactions")
+      .insert({
+        company_id: data.company_id,
+        transaction_date: data.payment_date,
+        transaction_type: "income",
+        category: "client_payment",
+        amount: data.amount,
+        description,
+        reference_number: data.reference_number,
+        client_payment_id: data.id,
+        created_by: user?.id,
+      });
+
+    if (cashError) {
+      console.error("Error creating cash transaction from client payment:", cashError);
+    }
+  }
+
   return data as ClientPayment;
 }
 
@@ -370,7 +424,7 @@ export async function createExpense(expense: Partial<Expense>) {
   return data as Expense;
 }
 
-export async function approveExpense(id: string) {
+export async function approveExpense(id: string, markAsPaid: boolean = false) {
   const { data: { user } } = await supabase.auth.getUser();
 
   const { data: expense, error: fetchError } = await supabase
@@ -381,13 +435,19 @@ export async function approveExpense(id: string) {
 
   if (fetchError) throw fetchError;
 
+  const updateData: any = {
+    status: markAsPaid ? "reimbursed" : "approved",
+    approved_by: user?.id,
+    approved_at: new Date().toISOString(),
+  };
+
+  if (markAsPaid) {
+    updateData.reimbursed_at = new Date().toISOString();
+  }
+
   const { data, error } = await supabase
     .from("expenses")
-    .update({
-      status: "approved",
-      approved_by: user?.id,
-      approved_at: new Date().toISOString(),
-    })
+    .update(updateData)
     .eq("id", id)
     .select()
     .single();
@@ -427,6 +487,102 @@ export async function approveExpense(id: string) {
 
     if (costError) {
       console.error("Error creating project_cost from expense:", costError);
+    }
+  }
+
+  if (markAsPaid) {
+    const { data: worker } = expense.worker_id
+      ? await supabase
+          .from("workers")
+          .select("first_name, last_name")
+          .eq("id", expense.worker_id)
+          .maybeSingle()
+      : { data: null };
+
+    const workerName = worker
+      ? `${worker.first_name} ${worker.last_name}`
+      : "Employee";
+
+    const description = expense.worker_id
+      ? `Expense reimbursement to ${workerName} - ${expense.description}`
+      : `Expense payment - ${expense.description}${expense.vendor ? ` (${expense.vendor})` : ""}`;
+
+    const { error: cashError } = await supabase
+      .from("cash_transactions")
+      .insert({
+        company_id: expense.company_id,
+        transaction_date: new Date().toISOString().split("T")[0],
+        transaction_type: "expense",
+        category: expense.worker_id ? "expense_reimbursement" : "expense_payment",
+        amount: expense.amount,
+        description,
+        expense_id: id,
+        created_by: user?.id,
+      });
+
+    if (cashError) {
+      console.error("Error creating cash transaction from expense:", cashError);
+    }
+  }
+
+  return data;
+}
+
+export async function reimburseExpense(id: string) {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const { data: expense, error: fetchError } = await supabase
+    .from("expenses")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  const { data, error } = await supabase
+    .from("expenses")
+    .update({
+      status: "reimbursed",
+      reimbursed_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  if (expense) {
+    const { data: worker } = expense.worker_id
+      ? await supabase
+          .from("workers")
+          .select("first_name, last_name")
+          .eq("id", expense.worker_id)
+          .maybeSingle()
+      : { data: null };
+
+    const workerName = worker
+      ? `${worker.first_name} ${worker.last_name}`
+      : "Employee";
+
+    const description = expense.worker_id
+      ? `Expense reimbursement to ${workerName} - ${expense.description}`
+      : `Expense payment - ${expense.description}${expense.vendor ? ` (${expense.vendor})` : ""}`;
+
+    const { error: cashError } = await supabase
+      .from("cash_transactions")
+      .insert({
+        company_id: expense.company_id,
+        transaction_date: new Date().toISOString().split("T")[0],
+        transaction_type: "expense",
+        category: expense.worker_id ? "expense_reimbursement" : "expense_payment",
+        amount: expense.amount,
+        description,
+        expense_id: id,
+        created_by: user?.id,
+      });
+
+    if (cashError) {
+      console.error("Error creating cash transaction from expense:", cashError);
     }
   }
 
@@ -518,4 +674,123 @@ export async function getAPSummary(companyId: string) {
     totalDue,
     pendingApprovalCount: pendingApproval,
   };
+}
+
+export interface SupplierPayment {
+  id: string;
+  company_id: string;
+  supplier_id?: string | null;
+  invoice_id?: string | null;
+  payment_number: string;
+  payment_date: string;
+  amount: number;
+  payment_method: "check" | "ach" | "wire" | "credit_card" | "cash" | "other";
+  check_number?: string | null;
+  reference_number?: string | null;
+  notes?: string | null;
+  created_at?: string;
+  created_by?: string | null;
+}
+
+export async function createSupplierPayment(payment: Partial<SupplierPayment>) {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const { data, error } = await supabase
+    .from("supplier_payments")
+    .insert([
+      {
+        ...payment,
+        created_by: user?.id,
+      },
+    ])
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  if (data) {
+    let projectId: string | null = null;
+    let supplierName = "Supplier";
+
+    if (data.invoice_id) {
+      const { data: invoice } = await supabase
+        .from("supplier_invoices")
+        .select("project_id, suppliers(name)")
+        .eq("id", data.invoice_id)
+        .maybeSingle();
+
+      if (invoice) {
+        projectId = invoice.project_id;
+        const suppliers = invoice.suppliers as any;
+        supplierName = suppliers?.name || supplierName;
+      }
+    } else if (data.supplier_id) {
+      const { data: supplier } = await supabase
+        .from("suppliers")
+        .select("name")
+        .eq("id", data.supplier_id)
+        .maybeSingle();
+
+      if (supplier) {
+        supplierName = supplier.name;
+      }
+    }
+
+    const refInfo = data.check_number ? `Check #${data.check_number}` : data.reference_number ? `Ref: ${data.reference_number}` : "";
+    const description = `Payment to ${supplierName}${refInfo ? ` (${refInfo})` : ""}`;
+
+    const { error: cashError } = await supabase
+      .from("cash_transactions")
+      .insert({
+        company_id: data.company_id,
+        transaction_date: data.payment_date,
+        transaction_type: "expense",
+        category: "supplier_payment",
+        amount: data.amount,
+        description,
+        reference_number: data.reference_number || data.check_number,
+        supplier_payment_id: data.id,
+        created_by: user?.id,
+      });
+
+    if (cashError) {
+      console.error("Error creating cash transaction from supplier payment:", cashError);
+    }
+
+    if (data.invoice_id) {
+      const { data: invoice, error: invError } = await supabase
+        .from("supplier_invoices")
+        .select("total_amount")
+        .eq("id", data.invoice_id)
+        .single();
+
+      if (!invError && invoice) {
+        const { data: allPayments } = await supabase
+          .from("supplier_payments")
+          .select("amount")
+          .eq("invoice_id", data.invoice_id);
+
+        const totalPaid = allPayments?.reduce((sum, p) => sum + Number(p.amount), 0) || 0;
+        const balanceDue = Number(invoice.total_amount) - totalPaid;
+
+        let status: SupplierInvoice["status"] = "approved";
+        if (balanceDue <= 0) {
+          status = "paid";
+        } else if (totalPaid > 0) {
+          status = "partial";
+        }
+
+        await supabase
+          .from("supplier_invoices")
+          .update({
+            amount_paid: totalPaid,
+            balance_due: balanceDue,
+            status,
+          })
+          .eq("id", data.invoice_id);
+      }
+    }
+  }
+
+  return data as SupplierPayment;
 }

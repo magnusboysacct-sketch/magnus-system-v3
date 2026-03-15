@@ -231,12 +231,20 @@ export async function processPayroll(periodId: string) {
 
   const { data: entries } = await supabase
     .from("payroll_entries")
-    .select("gross_pay, total_deductions, net_pay")
+    .select("id, gross_pay, total_deductions, net_pay, worker_id, workers(first_name, last_name)")
     .eq("payroll_period_id", periodId);
 
   const totalGross = entries?.reduce((sum, e) => sum + Number(e.gross_pay), 0) || 0;
   const totalDeductions = entries?.reduce((sum, e) => sum + Number(e.total_deductions), 0) || 0;
   const totalNet = entries?.reduce((sum, e) => sum + Number(e.net_pay), 0) || 0;
+
+  const { data: period, error: periodError } = await supabase
+    .from("payroll_periods")
+    .select("company_id, pay_date, period_start, period_end")
+    .eq("id", periodId)
+    .single();
+
+  if (periodError) throw periodError;
 
   const { data, error } = await supabase
     .from("payroll_periods")
@@ -259,6 +267,33 @@ export async function processPayroll(periodId: string) {
     .update({ status: "paid" })
     .eq("payroll_period_id", periodId)
     .eq("status", "pending");
+
+  if (entries && entries.length > 0) {
+    const cashTransactions = entries.map((entry: any) => {
+      const workerName = entry.workers
+        ? `${entry.workers.first_name} ${entry.workers.last_name}`
+        : "Worker";
+
+      return {
+        company_id: period.company_id,
+        transaction_date: period.pay_date,
+        transaction_type: "expense",
+        category: "payroll",
+        amount: Number(entry.net_pay),
+        description: `Payroll payment to ${workerName} (${period.period_start} to ${period.period_end})`,
+        payroll_entry_id: entry.id,
+        created_by: user?.id,
+      };
+    });
+
+    const { error: cashError } = await supabase
+      .from("cash_transactions")
+      .insert(cashTransactions);
+
+    if (cashError) {
+      console.error("Error creating cash transactions from payroll:", cashError);
+    }
+  }
 
   return data;
 }
