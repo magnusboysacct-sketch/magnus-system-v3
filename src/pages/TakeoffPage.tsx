@@ -237,8 +237,11 @@ async function tryRpc<T = any>(fn: string, params?: Record<string, any>): Promis
 }
 
 async function uploadPdfToStorage(file: File, projectId: string, sessionId: string) {
-  const fileExt = file.name.split(".").pop() ?? "pdf";
-  const path = `${projectId}/${sessionId}/${Date.now()}-${file.name.replace(/[^\w.-]+/g, "_")}.${fileExt}`;
+  // Remove extension from filename and sanitize
+  const nameWithoutExt = file.name.replace(/\.pdf$/i, "").replace(/[^\w-]+/g, "_");
+  const timestamp = Date.now();
+  const fileName = `${timestamp}-${nameWithoutExt}.pdf`;
+  const path = `${projectId}/${sessionId}/${fileName}`;
 
   for (const bucket of STORAGE_BUCKET_CANDIDATES) {
     const { error } = await supabase.storage.from(bucket).upload(path, file, {
@@ -248,11 +251,9 @@ async function uploadPdfToStorage(file: File, projectId: string, sessionId: stri
     });
 
     if (!error) {
-      const { data } = supabase.storage.from(bucket).getPublicUrl(path);
       return {
         bucket,
         path,
-        publicUrl: data.publicUrl,
       };
     }
   }
@@ -529,13 +530,12 @@ export default function TakeoffPage() {
           createDefaultGroup(sessionRow.id, sessionRow.company_id);
         }
 
-        const resolvedPdfUrl =
-          sessionRow.pdf_url ||
-          (sessionRow.pdf_bucket && sessionRow.pdf_path
-            ? supabase.storage.from(sessionRow.pdf_bucket).getPublicUrl(sessionRow.pdf_path).data.publicUrl
-            : "");
+        // Always generate fresh URL from bucket+path (never trust cached pdf_url)
+        const resolvedPdfUrl = (sessionRow.pdf_bucket && sessionRow.pdf_path)
+          ? supabase.storage.from(sessionRow.pdf_bucket).getPublicUrl(sessionRow.pdf_path).data.publicUrl
+          : "";
 
-        setPdfUrl(resolvedPdfUrl ?? "");
+        setPdfUrl(resolvedPdfUrl);
         setPdfName(sessionRow.pdf_name ?? "");
       } catch (error: any) {
         setErrorText(error?.message ?? "Failed to load takeoff session.");
@@ -1033,7 +1033,10 @@ export default function TakeoffPage() {
         const localUrl = URL.createObjectURL(file);
 
         if (uploaded) {
-          setPdfUrl(uploaded.publicUrl);
+          // Generate fresh public URL from bucket+path
+          const publicUrl = supabase.storage.from(uploaded.bucket).getPublicUrl(uploaded.path).data.publicUrl;
+
+          setPdfUrl(publicUrl);
           setPdfName(file.name);
           setSession((prev) =>
             prev
@@ -1042,7 +1045,7 @@ export default function TakeoffPage() {
                   pdf_name: file.name,
                   pdf_bucket: uploaded.bucket,
                   pdf_path: uploaded.path,
-                  pdf_url: uploaded.publicUrl,
+                  pdf_url: null,
                   updated_at: new Date().toISOString(),
                 }
               : prev
@@ -1055,6 +1058,8 @@ export default function TakeoffPage() {
               ? {
                   ...prev,
                   pdf_name: file.name,
+                  pdf_bucket: null,
+                  pdf_path: null,
                   pdf_url: localUrl,
                   updated_at: new Date().toISOString(),
                 }
