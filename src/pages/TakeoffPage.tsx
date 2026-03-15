@@ -149,6 +149,38 @@ function formatNumber(value: number, digits = 2) {
   });
 }
 
+function formatFeetInches(feet: number): string {
+  if (!Number.isFinite(feet)) return "0'-0\"";
+
+  const totalInches = feet * 12;
+  const wholeFeet = Math.floor(feet);
+  const remainingInches = totalInches - (wholeFeet * 12);
+
+  if (remainingInches < 0.25) {
+    return `${wholeFeet}'-0"`;
+  }
+
+  const roundedInches = Math.round(remainingInches * 2) / 2;
+
+  if (roundedInches >= 12) {
+    return `${wholeFeet + 1}'-0"`;
+  }
+
+  const wholeInches = Math.floor(roundedInches);
+  const fraction = roundedInches - wholeInches;
+
+  let inchString = "";
+  if (fraction === 0) {
+    inchString = `${wholeInches}"`;
+  } else if (fraction === 0.5) {
+    inchString = wholeInches > 0 ? `${wholeInches} 1/2"` : `1/2"`;
+  } else {
+    inchString = `${roundedInches}"`;
+  }
+
+  return `${wholeFeet}'-${inchString}`;
+}
+
 function toolToKind(tool: ToolMode): MeasurementKind | null {
   if (tool === "line") return "line";
   if (tool === "area") return "area";
@@ -1802,7 +1834,11 @@ export default function TakeoffPage() {
                       let labelText = "";
                       if (calibrationScale) {
                         const realLength = lengthPx * calibrationScale;
-                        labelText = `${formatNumber(realLength)} ${calibrationUnit}`;
+                        if (calibrationUnit === "ft") {
+                          labelText = formatFeetInches(realLength);
+                        } else {
+                          labelText = `${formatNumber(realLength)} ${calibrationUnit}`;
+                        }
                       } else {
                         labelText = `${formatNumber(lengthPx)} px`;
                       }
@@ -2230,7 +2266,11 @@ export default function TakeoffPage() {
                         const lengthPx = polylineLength(previewPoints);
                         if (calibrationScale) {
                           const realLength = lengthPx * calibrationScale;
-                          displayValue = `${formatNumber(realLength)} ${calibrationUnit}`;
+                          if (calibrationUnit === "ft") {
+                            displayValue = formatFeetInches(realLength);
+                          } else {
+                            displayValue = `${formatNumber(realLength)} ${calibrationUnit}`;
+                          }
                         } else {
                           displayValue = `${formatNumber(lengthPx)} px (uncalibrated)`;
                         }
@@ -2645,15 +2685,23 @@ export default function TakeoffPage() {
           if (calibrationScale) {
             const totalLength = totalLengthPx * calibrationScale;
             const segmentLength = lastSegmentPx * calibrationScale;
+
+            const totalText = calibrationUnit === "ft"
+              ? formatFeetInches(totalLength)
+              : `${formatNumber(totalLength)} ${calibrationUnit}`;
+            const segmentText = calibrationUnit === "ft"
+              ? formatFeetInches(segmentLength)
+              : `${formatNumber(segmentLength)} ${calibrationUnit}`;
+
             hudContent = (
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-xs text-slate-500">Total:</span>
-                  <span className="text-sm font-bold text-slate-900">{formatNumber(totalLength)} {calibrationUnit}</span>
+                  <span className="text-sm font-bold text-slate-900">{totalText}</span>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-xs text-slate-500">Segment:</span>
-                  <span className="text-sm font-semibold text-slate-700">{formatNumber(segmentLength)} {calibrationUnit}</span>
+                  <span className="text-sm font-semibold text-slate-700">{segmentText}</span>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-xs text-slate-500">Angle:</span>
@@ -2691,6 +2739,11 @@ export default function TakeoffPage() {
               const realVolume = realArea * depth;
               const areaUnit = getAreaUnit(calibrationUnit);
               const volumeUnit = getVolumeUnit(calibrationUnit);
+
+              const depthText = calibrationUnit === "ft"
+                ? formatFeetInches(depth)
+                : `${depth} ${calibrationUnit}`;
+
               hudContent = (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between gap-4">
@@ -2699,7 +2752,7 @@ export default function TakeoffPage() {
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-xs text-slate-500">Depth:</span>
-                    <span className="text-sm font-semibold text-slate-700">{depth} {calibrationUnit}</span>
+                    <span className="text-sm font-semibold text-slate-700">{depthText}</span>
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-xs text-slate-500">Volume:</span>
@@ -2739,6 +2792,11 @@ export default function TakeoffPage() {
               const realArea = areaPx * calibrationScale * calibrationScale;
               const realPerimeter = perimeterPx * calibrationScale;
               const areaUnit = getAreaUnit(calibrationUnit);
+
+              const perimeterText = calibrationUnit === "ft"
+                ? formatFeetInches(realPerimeter)
+                : `${formatNumber(realPerimeter)} ${calibrationUnit}`;
+
               hudContent = (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between gap-4">
@@ -2747,7 +2805,7 @@ export default function TakeoffPage() {
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-xs text-slate-500">Perimeter:</span>
-                    <span className="text-sm font-semibold text-slate-700">{formatNumber(realPerimeter)} {calibrationUnit}</span>
+                    <span className="text-sm font-semibold text-slate-700">{perimeterText}</span>
                   </div>
                   <div className="flex items-center justify-between gap-4">
                     <span className="text-xs text-slate-500">Points:</span>
