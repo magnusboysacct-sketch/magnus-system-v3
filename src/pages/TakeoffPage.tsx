@@ -192,6 +192,32 @@ function getMeasurementDisplayValue(measurement: MeasurementRow, isCalibrated: b
   return measurement.result ?? 0;
 }
 
+function getLineMidpoint(points: Point[]): Point | null {
+  if (points.length < 2) return null;
+  const mid = Math.floor(points.length / 2);
+  if (points.length === 2) {
+    return {
+      x: (points[0].x + points[1].x) / 2,
+      y: (points[0].y + points[1].y) / 2,
+    };
+  }
+  return points[mid];
+}
+
+function getPolygonCentroid(points: Point[]): Point | null {
+  if (points.length < 3) return null;
+  let x = 0;
+  let y = 0;
+  for (const p of points) {
+    x += p.x;
+    y += p.y;
+  }
+  return {
+    x: x / points.length,
+    y: y / points.length,
+  };
+}
+
 function getMeasurementBadge(measurement: MeasurementRow, isCalibrated: boolean) {
   const value = getMeasurementDisplayValue(measurement, isCalibrated);
 
@@ -1560,6 +1586,16 @@ export default function TakeoffPage() {
                     const selected = selectedMeasurementId === m.id;
 
                     if (m.type === "line") {
+                      const midpoint = getLineMidpoint(m.points);
+                      const lengthPx = m.raw_length ?? 0;
+                      let labelText = "";
+                      if (calibrationScale) {
+                        const realLength = lengthPx * calibrationScale;
+                        labelText = `${formatNumber(realLength)} ${calibrationUnit}`;
+                      } else {
+                        labelText = `${formatNumber(lengthPx)} px`;
+                      }
+
                       return (
                         <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)}>
                           <polyline
@@ -1579,11 +1615,60 @@ export default function TakeoffPage() {
                               fill={groupColor}
                             />
                           ))}
+                          {midpoint && (
+                            <g>
+                              <rect
+                                x={midpoint.x - 30}
+                                y={midpoint.y - 20}
+                                width={60}
+                                height={18}
+                                rx={9}
+                                fill="white"
+                                fillOpacity={0.95}
+                                stroke={groupColor}
+                                strokeWidth={1.5}
+                              />
+                              <text
+                                x={midpoint.x}
+                                y={midpoint.y - 8}
+                                fill={groupColor}
+                                fontSize={11}
+                                fontWeight="600"
+                                textAnchor="middle"
+                              >
+                                {labelText}
+                              </text>
+                            </g>
+                          )}
                         </g>
                       );
                     }
 
                     if (m.type === "area" || m.type === "volume") {
+                      const centroid = getPolygonCentroid(m.points);
+                      const areaPx = m.raw_area ?? 0;
+                      let labelLines: string[] = [];
+
+                      if (calibrationScale) {
+                        const realArea = areaPx * calibrationScale * calibrationScale;
+                        const areaUnit = getAreaUnit(calibrationUnit);
+
+                        if (m.type === "volume") {
+                          const depth = m.meta?.depth ?? 1;
+                          const realVolume = realArea * depth;
+                          const volumeUnit = getVolumeUnit(calibrationUnit);
+                          labelLines = [`${formatNumber(realVolume)} ${volumeUnit}`];
+                        } else {
+                          labelLines = [`${formatNumber(realArea)} ${areaUnit}`];
+                        }
+                      } else {
+                        if (m.type === "volume") {
+                          labelLines = [`${formatNumber(areaPx)} px²`];
+                        } else {
+                          labelLines = [`${formatNumber(areaPx)} px²`];
+                        }
+                      }
+
                       return (
                         <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)}>
                           <polygon
@@ -1603,6 +1688,39 @@ export default function TakeoffPage() {
                               fill={groupColor}
                             />
                           ))}
+                          {centroid && labelLines.length > 0 && (
+                            <g>
+                              {labelLines.map((line, idx) => {
+                                const textWidth = line.length * 6 + 16;
+                                const yOffset = idx * 20;
+                                return (
+                                  <g key={idx}>
+                                    <rect
+                                      x={centroid.x - textWidth / 2}
+                                      y={centroid.y - 10 + yOffset}
+                                      width={textWidth}
+                                      height={18}
+                                      rx={9}
+                                      fill="white"
+                                      fillOpacity={0.95}
+                                      stroke={groupColor}
+                                      strokeWidth={1.5}
+                                    />
+                                    <text
+                                      x={centroid.x}
+                                      y={centroid.y + 2 + yOffset}
+                                      fill={groupColor}
+                                      fontSize={11}
+                                      fontWeight="600"
+                                      textAnchor="middle"
+                                    >
+                                      {line}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                            </g>
+                          )}
                         </g>
                       );
                     }
@@ -1618,6 +1736,29 @@ export default function TakeoffPage() {
                           stroke="white"
                           strokeWidth={2}
                         />
+                        <g>
+                          <rect
+                            x={(m.points[0]?.x ?? 0) + 12}
+                            y={(m.points[0]?.y ?? 0) - 10}
+                            width={24}
+                            height={18}
+                            rx={9}
+                            fill="white"
+                            fillOpacity={0.95}
+                            stroke={groupColor}
+                            strokeWidth={1.5}
+                          />
+                          <text
+                            x={(m.points[0]?.x ?? 0) + 24}
+                            y={(m.points[0]?.y ?? 0) + 2}
+                            fill={groupColor}
+                            fontSize={11}
+                            fontWeight="600"
+                            textAnchor="middle"
+                          >
+                            1
+                          </text>
+                        </g>
                       </g>
                     );
                   })}
