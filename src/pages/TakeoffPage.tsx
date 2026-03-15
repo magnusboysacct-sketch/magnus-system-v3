@@ -402,6 +402,7 @@ export default function TakeoffPage() {
   const [draftPoints, setDraftPoints] = useState<Point[]>([]);
   const [draftVolumeDepth, setDraftVolumeDepth] = useState<string>("1");
   const [measurementCounter, setMeasurementCounter] = useState(1);
+  const [currentMousePoint, setCurrentMousePoint] = useState<Point | null>(null);
 
   const [calibrationDraft, setCalibrationDraft] = useState<CalibrationDraft>({
     p1: null,
@@ -1082,6 +1083,20 @@ export default function TakeoffPage() {
     }
   }, [toolMode, draftPoints, finishDraftMeasurement]);
 
+  const handleOverlayMouseMove = useCallback(
+    (event: React.MouseEvent<SVGSVGElement>) => {
+      if (!pdfDoc) return;
+      const point = getPagePointFromEvent(event);
+      if (!point) return;
+      setCurrentMousePoint(point);
+    },
+    [pdfDoc, getPagePointFromEvent]
+  );
+
+  const handleOverlayMouseLeave = useCallback(() => {
+    setCurrentMousePoint(null);
+  }, []);
+
   const handleWorkspaceMouseDown = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       if (toolMode !== "hand") return;
@@ -1536,6 +1551,8 @@ export default function TakeoffPage() {
                   }}
                   onClick={handleOverlayClick}
                   onDoubleClick={handleOverlayDoubleClick}
+                  onMouseMove={handleOverlayMouseMove}
+                  onMouseLeave={handleOverlayMouseLeave}
                 >
                   {pageMeasurements.map((m) => {
                     const groupColor =
@@ -1644,6 +1661,128 @@ export default function TakeoffPage() {
                         <circle key={`draft-${idx}`} cx={p.x} cy={p.y} r={4} fill={selectedGroupColor} />
                       ))}
                     </g>
+                  ) : null}
+
+                  {currentMousePoint && toolMode === "line" && draftPoints.length === 1 ? (
+                    <g>
+                      <line
+                        x1={draftPoints[0].x}
+                        y1={draftPoints[0].y}
+                        x2={currentMousePoint.x}
+                        y2={currentMousePoint.y}
+                        stroke={selectedGroupColor}
+                        strokeWidth={2}
+                        strokeDasharray="3 3"
+                        opacity={0.6}
+                      />
+                      <circle cx={currentMousePoint.x} cy={currentMousePoint.y} r={3} fill={selectedGroupColor} opacity={0.6} />
+                    </g>
+                  ) : null}
+
+                  {currentMousePoint && (toolMode === "area" || toolMode === "volume") && draftPoints.length === 1 ? (
+                    <g>
+                      <line
+                        x1={draftPoints[0].x}
+                        y1={draftPoints[0].y}
+                        x2={currentMousePoint.x}
+                        y2={currentMousePoint.y}
+                        stroke={selectedGroupColor}
+                        strokeWidth={2}
+                        strokeDasharray="3 3"
+                        opacity={0.6}
+                      />
+                      <circle cx={currentMousePoint.x} cy={currentMousePoint.y} r={3} fill={selectedGroupColor} opacity={0.6} />
+                    </g>
+                  ) : null}
+
+                  {currentMousePoint && (toolMode === "area" || toolMode === "volume") && draftPoints.length >= 2 ? (
+                    <g>
+                      <polygon
+                        points={polygonPointsToSvg([...draftPoints, currentMousePoint])}
+                        fill={selectedGroupColor}
+                        fillOpacity={toolMode === "volume" ? 0.15 : 0.1}
+                        stroke={selectedGroupColor}
+                        strokeWidth={2}
+                        strokeDasharray="3 3"
+                        opacity={0.6}
+                      />
+                      <circle cx={currentMousePoint.x} cy={currentMousePoint.y} r={3} fill={selectedGroupColor} opacity={0.6} />
+                    </g>
+                  ) : null}
+
+                  {currentMousePoint && (toolMode === "line" || toolMode === "area" || toolMode === "volume") && draftPoints.length > 0 ? (
+                    (() => {
+                      let previewPoints: Point[] = [];
+                      let displayValue = "";
+
+                      if (toolMode === "line" && draftPoints.length === 1) {
+                        previewPoints = [draftPoints[0], currentMousePoint];
+                        const lengthPx = polylineLength(previewPoints);
+                        if (calibrationScale) {
+                          const realLength = lengthPx * calibrationScale;
+                          displayValue = `${formatNumber(realLength)} ${calibrationUnit}`;
+                        } else {
+                          displayValue = `${formatNumber(lengthPx)} px (uncalibrated)`;
+                        }
+                      } else if ((toolMode === "area" || toolMode === "volume") && draftPoints.length >= 2) {
+                        previewPoints = [...draftPoints, currentMousePoint];
+                        const areaPx = polygonArea(previewPoints);
+                        if (calibrationScale) {
+                          const realArea = areaPx * calibrationScale * calibrationScale;
+                          const areaUnit = getAreaUnit(calibrationUnit);
+                          if (toolMode === "volume") {
+                            const depth = Math.max(Number(draftVolumeDepth) || 0, 0);
+                            const realVolume = realArea * depth;
+                            const volumeUnit = getVolumeUnit(calibrationUnit);
+                            displayValue = `Area: ${formatNumber(realArea)} ${areaUnit}\nVolume: ${formatNumber(realVolume)} ${volumeUnit}`;
+                          } else {
+                            displayValue = `${formatNumber(realArea)} ${areaUnit}`;
+                          }
+                        } else {
+                          if (toolMode === "volume") {
+                            displayValue = `${formatNumber(areaPx)} px² (uncalibrated)`;
+                          } else {
+                            displayValue = `${formatNumber(areaPx)} px² (uncalibrated)`;
+                          }
+                        }
+                      }
+
+                      if (!displayValue) return null;
+
+                      const textLines = displayValue.split('\n');
+                      const offsetX = 12;
+                      const offsetY = -12;
+
+                      return (
+                        <g>
+                          {textLines.map((line, idx) => (
+                            <g key={idx}>
+                              <text
+                                x={currentMousePoint.x + offsetX}
+                                y={currentMousePoint.y + offsetY + (idx * 20)}
+                                fill="white"
+                                stroke="white"
+                                strokeWidth={4}
+                                fontSize={14}
+                                fontWeight="600"
+                                paintOrder="stroke"
+                              >
+                                {line}
+                              </text>
+                              <text
+                                x={currentMousePoint.x + offsetX}
+                                y={currentMousePoint.y + offsetY + (idx * 20)}
+                                fill={selectedGroupColor}
+                                fontSize={14}
+                                fontWeight="600"
+                              >
+                                {line}
+                              </text>
+                            </g>
+                          ))}
+                        </g>
+                      );
+                    })()
                   ) : null}
                 </svg>
               </div>
