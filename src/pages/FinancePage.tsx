@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { getCommittedDeliveredSummary, getCategoryBreakdown } from "../lib/costs";
+import SupplierInvoiceManager from "../components/SupplierInvoiceManager";
 
 function numOr(value: unknown, fallback = 0): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -55,6 +56,7 @@ export default function FinancePage() {
     over_commitment_variance: number;
   }>
 >([]);
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -84,11 +86,15 @@ export default function FinancePage() {
       try {
         const { data: projectRow, error: projectError } = await supabase
           .from("projects")
-          .select("name")
+          .select("name, company_id")
           .eq("id", projectId)
           .maybeSingle();
 
         if (projectError) throw projectError;
+
+        if (projectRow?.company_id) {
+          setCompanyId(projectRow.company_id);
+        }
 
         const summaryData = await getCommittedDeliveredSummary(projectId);
         const categoryData = await getCategoryBreakdown(projectId);
@@ -475,6 +481,12 @@ export default function FinancePage() {
                   </tfoot>
                 </table>
               </div>
+            </div>
+          )}
+
+          {projectId && companyId && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6 mt-6">
+              <SupplierInvoiceManager projectId={projectId} companyId={companyId} />
             </div>
           )}
         </>

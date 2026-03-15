@@ -73,13 +73,53 @@ export interface SupplierInvoice {
   status: "pending" | "approved" | "partial" | "paid" | "disputed";
   po_matched: boolean;
   receiving_matched: boolean;
-  three_way_match_status?: "pending" | "matched" | "discrepancy" | null;
+  three_way_match_status?: "pending" | "matched" | "mismatch" | "no_po" | "no_receiving" | "overbilling" | null;
   notes?: string | null;
   approved_by?: string | null;
   approved_at?: string | null;
   created_at?: string;
   updated_at?: string;
   created_by?: string | null;
+}
+
+export interface SupplierInvoiceLineItem {
+  id?: string;
+  supplier_invoice_id: string;
+  purchase_order_item_id?: string | null;
+  line_no: number;
+  item_name: string;
+  description?: string | null;
+  unit: string;
+  quantity: number;
+  unit_cost: number;
+  total_amount: number;
+  po_quantity?: number | null;
+  po_unit_cost?: number | null;
+  received_quantity?: number | null;
+  match_status?: "matched" | "quantity_mismatch" | "price_mismatch" | "not_received" | "pending" | null;
+  match_notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ThreeWayMatchResult {
+  match_status: "matched" | "mismatch" | "no_po" | "no_receiving" | "overbilling" | "error";
+  match_details: {
+    total_invoice_amount: number;
+    total_po_amount: number;
+    line_items: Array<{
+      line_no: number;
+      item_name: string;
+      status: string;
+      notes: string;
+      invoice_qty: number;
+      invoice_cost: number;
+      po_qty?: number;
+      po_cost?: number;
+      received_qty?: number;
+    }>;
+  };
+  can_auto_approve: boolean;
 }
 
 export interface Expense {
@@ -735,6 +775,76 @@ export async function fetchAllProjectsFinanceSummary(companyId: string) {
 
   if (error) throw error;
   return data as ProjectFinanceSummary[];
+}
+
+export async function fetchSupplierInvoiceLineItems(invoiceId: string) {
+  const { data, error } = await supabase
+    .from("supplier_invoice_line_items")
+    .select("*")
+    .eq("supplier_invoice_id", invoiceId)
+    .order("line_no", { ascending: true });
+
+  if (error) throw error;
+  return data as SupplierInvoiceLineItem[];
+}
+
+export async function createSupplierInvoiceLineItem(lineItem: Partial<SupplierInvoiceLineItem>) {
+  const { data, error } = await supabase
+    .from("supplier_invoice_line_items")
+    .insert([lineItem])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as SupplierInvoiceLineItem;
+}
+
+export async function updateSupplierInvoiceLineItem(id: string, updates: Partial<SupplierInvoiceLineItem>) {
+  const { data, error } = await supabase
+    .from("supplier_invoice_line_items")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as SupplierInvoiceLineItem;
+}
+
+export async function deleteSupplierInvoiceLineItem(id: string) {
+  const { error } = await supabase
+    .from("supplier_invoice_line_items")
+    .delete()
+    .eq("id", id);
+
+  if (error) throw error;
+}
+
+export async function performThreeWayMatch(invoiceId: string): Promise<ThreeWayMatchResult> {
+  const { data, error } = await supabase.rpc("perform_three_way_match", {
+    p_supplier_invoice_id: invoiceId,
+  });
+
+  if (error) throw error;
+
+  if (!data || data.length === 0) {
+    throw new Error("No match result returned");
+  }
+
+  return {
+    match_status: data[0].match_status,
+    match_details: data[0].match_details,
+    can_auto_approve: data[0].can_auto_approve,
+  };
+}
+
+export async function autoApproveMatchedInvoice(invoiceId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("auto_approve_matched_invoice", {
+    p_supplier_invoice_id: invoiceId,
+  });
+
+  if (error) throw error;
+  return data as boolean;
 }
 
 export async function createSupplierPayment(payment: Partial<SupplierPayment>) {
