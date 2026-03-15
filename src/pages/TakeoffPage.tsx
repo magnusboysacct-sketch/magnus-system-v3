@@ -76,6 +76,12 @@ type MeasurementRow = {
   points: Point[];
   unit: string;
   result: number;
+  raw_length?: number | null;
+  raw_area?: number | null;
+  raw_count?: number | null;
+  raw_volume?: number | null;
+  scale_x?: number | null;
+  scale_y?: number | null;
   meta?: any;
   sort_order?: number;
   created_at?: string | null;
@@ -170,12 +176,29 @@ function polygonPointsToSvg(points: Point[]) {
   return points.map((p) => `${p.x},${p.y}`).join(" ");
 }
 
-function getMeasurementDisplayValue(measurement: MeasurementRow) {
+function getMeasurementDisplayValue(measurement: MeasurementRow, isCalibrated: boolean) {
+  if (!isCalibrated) {
+    if (measurement.type === "line" && measurement.raw_length) {
+      return measurement.raw_length;
+    } else if (measurement.type === "area" && measurement.raw_area) {
+      return measurement.raw_area;
+    } else if (measurement.type === "count") {
+      return 1;
+    } else if (measurement.type === "volume" && measurement.raw_volume) {
+      return measurement.raw_volume;
+    }
+    return 0;
+  }
   return measurement.result ?? 0;
 }
 
-function getMeasurementBadge(measurement: MeasurementRow) {
-  const value = getMeasurementDisplayValue(measurement);
+function getMeasurementBadge(measurement: MeasurementRow, isCalibrated: boolean) {
+  const value = getMeasurementDisplayValue(measurement, isCalibrated);
+
+  if (!isCalibrated && measurement.type !== "count") {
+    return `${formatNumber(value)} px (uncalibrated)`;
+  }
+
   const unit = measurement.unit ?? "";
   return `${formatNumber(value)} ${unit}`.trim();
 }
@@ -226,8 +249,49 @@ function buildMeasurementFromDraft(args: {
     points,
     unit,
     result,
+    raw_length: lengthPx,
+    raw_area: areaPx,
+    raw_count: type === "count" ? 1 : null,
+    raw_volume: areaPx * (depth ?? 0),
+    scale_x: scale,
+    scale_y: scale,
     meta: { depth },
     sort_order: 0,
+  };
+}
+
+function recalculateMeasurement(measurement: MeasurementRow, scale: number, baseUnit: UnitSystem): MeasurementRow {
+  const lengthPx = measurement.raw_length ?? 0;
+  const areaPx = measurement.raw_area ?? 0;
+  const depth = measurement.meta?.depth ?? 0;
+
+  const realLength = lengthPx * scale;
+  const realArea = areaPx * scale * scale;
+  const realVolume = areaPx * scale * scale * depth;
+
+  let result = 0;
+  let unit: string = baseUnit;
+
+  if (measurement.type === "line") {
+    result = realLength;
+    unit = baseUnit;
+  } else if (measurement.type === "area") {
+    result = realArea;
+    unit = getAreaUnit(baseUnit);
+  } else if (measurement.type === "count") {
+    result = 1;
+    unit = "ea";
+  } else if (measurement.type === "volume") {
+    result = realVolume;
+    unit = getVolumeUnit(baseUnit);
+  }
+
+  return {
+    ...measurement,
+    unit,
+    result,
+    scale_x: scale,
+    scale_y: scale,
   };
 }
 
@@ -721,11 +785,17 @@ export default function TakeoffPage() {
           company_id: m.company_id,
           page_number: m.page_number,
           group_id: m.group_id,
-          tool_type: m.type, // Required field: line, area, count, volume
-          type: m.type, // Legacy field for compatibility
+          tool_type: m.type,
+          type: m.type,
           points: m.points,
           unit: m.unit,
           result: m.result,
+          raw_length: m.raw_length ?? null,
+          raw_area: m.raw_area ?? null,
+          raw_count: m.raw_count ?? null,
+          raw_volume: m.raw_volume ?? null,
+          scale_x: m.scale_x ?? null,
+          scale_y: m.scale_y ?? null,
           meta: m.meta ?? null,
           sort_order: index,
         }));
@@ -907,6 +977,13 @@ export default function TakeoffPage() {
         },
       ];
     });
+
+    setMeasurements((prev) =>
+      prev.map((m) => {
+        if (m.page_number !== currentPage) return m;
+        return recalculateMeasurement(m, scale, calibrationDraft.unit);
+      })
+    );
 
     setToolMode("select");
     setDraftPoints([]);
@@ -1128,7 +1205,7 @@ export default function TakeoffPage() {
 
     safeMeasurements.forEach((m) => {
       const groupName = safeGroups.find((g) => g.id === m.group_id)?.name ?? "Ungrouped";
-      const value = getMeasurementDisplayValue(m);
+      const value = getMeasurementDisplayValue(m, calibrationScale !== null);
       lines.push(
         [
           m.page_number,
@@ -1672,7 +1749,7 @@ export default function TakeoffPage() {
                                 {group?.name ?? "Ungrouped"} • {m.type.toUpperCase()}
                               </div>
                               <div className="mt-2 text-sm font-medium text-slate-800">
-                                {getMeasurementBadge(m)}
+                                {getMeasurementBadge(m, calibrationScale !== null)}
                               </div>
                             </button>
                             <button
@@ -1754,7 +1831,7 @@ export default function TakeoffPage() {
                   <div className="mt-1 text-xs text-slate-500">
                     Page {selectedMeasurement.page_number} • {selectedMeasurement.type.toUpperCase()}
                   </div>
-                  <div className="mt-2 text-sm text-slate-700">{getMeasurementBadge(selectedMeasurement)}</div>
+                  <div className="mt-2 text-sm text-slate-700">{getMeasurementBadge(selectedMeasurement, calibrationScale !== null)}</div>
                 </div>
               ) : null}
             </div>
