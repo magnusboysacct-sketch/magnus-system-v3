@@ -475,6 +475,8 @@ export default function TakeoffPage() {
   const [pan, setPan] = useState({ x: 24, y: 24 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [isSpacebarPressed, setIsSpacebarPressed] = useState(false);
+  const [panMode, setPanMode] = useState<"none" | "middle" | "spacebar">("none");
 
   const [draftPoints, setDraftPoints] = useState<Point[]>([]);
   const [draftVolumeDepth, setDraftVolumeDepth] = useState<string>("1");
@@ -871,6 +873,36 @@ export default function TakeoffPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [currentPage, pageCount]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (event.code === "Space" && !isSpacebarPressed) {
+        event.preventDefault();
+        setIsSpacebarPressed(true);
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        setIsSpacebarPressed(false);
+        if (panMode === "spacebar") {
+          setIsPanning(false);
+          setPanMode("none");
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [isSpacebarPressed, panMode]);
+
   const renderCurrentPage = useCallback(async () => {
     if (!pdfDoc || !canvasRef.current) return;
 
@@ -1218,6 +1250,7 @@ export default function TakeoffPage() {
   const handleOverlayClick = useCallback(
     (event: React.MouseEvent<SVGSVGElement>) => {
       if (!pdfDoc) return;
+      if (isSpacebarPressed || isPanning) return;
 
       const point = getPagePointFromEvent(event);
       if (!point) return;
@@ -1254,7 +1287,7 @@ export default function TakeoffPage() {
         setDraftPoints((prev) => [...prev, point]);
       }
     },
-    [pdfDoc, getPagePointFromEvent, toolMode, finishDraftMeasurement]
+    [pdfDoc, getPagePointFromEvent, toolMode, finishDraftMeasurement, isSpacebarPressed, isPanning]
   );
 
   const handleOverlayDoubleClick = useCallback(() => {
@@ -1285,30 +1318,61 @@ export default function TakeoffPage() {
 
   const handleWorkspaceMouseDown = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (toolMode !== "hand") return;
+      const isMiddleMouse = event.button === 1;
+      const isLeftMouse = event.button === 0;
+      const shouldPan =
+        toolMode === "hand" ||
+        isMiddleMouse ||
+        (isLeftMouse && isSpacebarPressed);
+
+      if (!shouldPan) return;
+
+      if (isMiddleMouse || (isLeftMouse && isSpacebarPressed)) {
+        event.preventDefault();
+      }
+
       setIsPanning(true);
+      setPanMode(isMiddleMouse ? "middle" : isSpacebarPressed ? "spacebar" : "none");
       setPanStart({
         x: event.clientX - pan.x,
         y: event.clientY - pan.y,
       });
     },
-    [toolMode, pan.x, pan.y]
+    [toolMode, pan.x, pan.y, isSpacebarPressed]
   );
 
   const handleWorkspaceMouseMove = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (!isPanning || toolMode !== "hand") return;
+      if (!isPanning) return;
+
+      const shouldPan =
+        toolMode === "hand" ||
+        panMode === "middle" ||
+        panMode === "spacebar";
+
+      if (!shouldPan) return;
+
+      event.preventDefault();
       setPan({
         x: event.clientX - panStart.x,
         y: event.clientY - panStart.y,
       });
     },
-    [isPanning, toolMode, panStart.x, panStart.y]
+    [isPanning, toolMode, panStart.x, panStart.y, panMode]
   );
 
-  const handleWorkspaceMouseUp = useCallback(() => {
+  const handleWorkspaceMouseUp = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const isMiddleMouse = event.button === 1;
+
+    if (isPanning && (panMode === "middle" || isMiddleMouse)) {
+      event.preventDefault();
+    }
+
     setIsPanning(false);
-  }, []);
+    if (panMode !== "spacebar") {
+      setPanMode("none");
+    }
+  }, [isPanning, panMode]);
 
   const handleHandleMouseDown = useCallback(
     (
@@ -1809,6 +1873,12 @@ export default function TakeoffPage() {
           onMouseMove={handleWorkspaceMouseMove}
           onMouseUp={handleWorkspaceMouseUp}
           onMouseLeave={handleWorkspaceMouseUp}
+          onAuxClick={(e) => e.preventDefault()}
+          onContextMenu={(e) => {
+            if (e.button === 1 || isPanning) {
+              e.preventDefault();
+            }
+          }}
         >
           {!pdfUrl ? (
             <div className="flex h-full items-center justify-center p-8">
@@ -1859,10 +1929,10 @@ export default function TakeoffPage() {
                     width: `${currentStageWidth}px`,
                     height: `${currentStageHeight}px`,
                     cursor:
-                      toolMode === "hand"
-                        ? isPanning
-                          ? "grabbing"
-                          : "grab"
+                      isPanning
+                        ? "grabbing"
+                        : toolMode === "hand" || isSpacebarPressed
+                        ? "grab"
                         : toolMode === "select"
                         ? "default"
                         : "crosshair",
