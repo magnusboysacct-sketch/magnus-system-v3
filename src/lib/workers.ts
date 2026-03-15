@@ -135,6 +135,14 @@ export async function createTimeEntry(entry: Partial<TimeEntry>) {
 export async function approveTimeEntry(id: string) {
   const { data: { user } } = await supabase.auth.getUser();
 
+  const { data: timeEntry, error: fetchError } = await supabase
+    .from("time_entries")
+    .select("*, workers(first_name, last_name, pay_rate, pay_type)")
+    .eq("id", id)
+    .single();
+
+  if (fetchError) throw fetchError;
+
   const { data, error } = await supabase
     .from("time_entries")
     .update({
@@ -147,6 +155,40 @@ export async function approveTimeEntry(id: string) {
     .single();
 
   if (error) throw error;
+
+  if (timeEntry && timeEntry.project_id && timeEntry.workers) {
+    const worker = timeEntry.workers;
+    const payRate = Number(worker.pay_rate) || 0;
+    const regularHours = Number(timeEntry.regular_hours) || 0;
+    const overtimeHours = Number(timeEntry.overtime_hours) || 0;
+    const overtimeRate = payRate * 1.5;
+
+    const laborCost = (regularHours * payRate) + (overtimeHours * overtimeRate);
+
+    if (laborCost > 0) {
+      const workerName = `${worker.first_name} ${worker.last_name}`;
+      const totalHours = regularHours + overtimeHours;
+      const description = `${workerName} - ${totalHours}h (${regularHours}h regular${overtimeHours > 0 ? `, ${overtimeHours}h OT` : ""})`;
+
+      const { error: costError } = await supabase
+        .from("project_costs")
+        .insert({
+          project_id: timeEntry.project_id,
+          cost_type: "labor",
+          source_id: id,
+          source_type: "time_entry",
+          description,
+          amount: laborCost,
+          cost_date: timeEntry.entry_date,
+          notes: `Auto-created from approved time entry`,
+        });
+
+      if (costError) {
+        console.error("Error creating project_cost from time entry:", costError);
+      }
+    }
+  }
+
   return data;
 }
 

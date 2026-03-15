@@ -7,6 +7,7 @@ export interface ProjectCost {
   project_id: string;
   cost_type: CostType;
   source_id: string | null;
+  source_type?: string | null;
   description: string;
   amount: number;
   cost_date: string;

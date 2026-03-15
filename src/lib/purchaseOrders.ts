@@ -479,12 +479,23 @@ export async function receiveItems(
   itemDeliveries: { itemId: string; deliveredQty: number }[]
 ) {
   try {
+    const { data: po } = await supabase
+      .from("purchase_orders")
+      .select("project_id")
+      .eq("id", poId)
+      .single();
+
+    if (!po?.project_id) {
+      console.error("PO not found or missing project_id");
+      return { success: false, error: "PO not found" };
+    }
+
     for (const delivery of itemDeliveries) {
       const { itemId, deliveredQty } = delivery;
 
       const { data: currentItem, error: fetchError } = await supabase
         .from("purchase_order_items")
-        .select("quantity, delivered_qty, procurement_item_id")
+        .select("quantity, delivered_qty, procurement_item_id, material_name, unit, unit_rate")
         .eq("id", itemId)
         .single();
 
@@ -498,6 +509,9 @@ export async function receiveItems(
         console.error("Invalid delivered quantity for item:", itemId);
         continue;
       }
+
+      const previousDeliveredQty = Number(currentItem.delivered_qty) || 0;
+      const incrementalDelivery = newDeliveredQty - previousDeliveredQty;
 
       const { error: updateError } = await supabase
         .from("purchase_order_items")
@@ -523,6 +537,29 @@ export async function receiveItems(
 
         if (procError) {
           console.error("Error syncing delivered_qty to procurement_items:", procError);
+        }
+      }
+
+      if (incrementalDelivery > 0) {
+        const unitRate = Number(currentItem.unit_rate) || 0;
+        const costAmount = incrementalDelivery * unitRate;
+        const description = `${currentItem.material_name} - ${incrementalDelivery} ${currentItem.unit || "units"} received`;
+
+        const { error: costError } = await supabase
+          .from("project_costs")
+          .insert({
+            project_id: po.project_id,
+            cost_type: "material",
+            source_id: itemId,
+            source_type: "po_item",
+            description,
+            amount: costAmount,
+            cost_date: new Date().toISOString().split("T")[0],
+            notes: `Auto-created from PO item delivery`,
+          });
+
+        if (costError) {
+          console.error("Error creating project_cost from delivery:", costError);
         }
       }
     }

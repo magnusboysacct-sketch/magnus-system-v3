@@ -373,6 +373,14 @@ export async function createExpense(expense: Partial<Expense>) {
 export async function approveExpense(id: string) {
   const { data: { user } } = await supabase.auth.getUser();
 
+  const { data: expense, error: fetchError } = await supabase
+    .from("expenses")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (fetchError) throw fetchError;
+
   const { data, error } = await supabase
     .from("expenses")
     .update({
@@ -385,6 +393,43 @@ export async function approveExpense(id: string) {
     .single();
 
   if (error) throw error;
+
+  if (expense && expense.project_id) {
+    const { data: category } = await supabase
+      .from("expense_categories")
+      .select("category_type")
+      .eq("id", expense.category_id)
+      .maybeSingle();
+
+    const categoryType = category?.category_type || "other";
+    let costType: "material" | "labor" | "equipment" | "other" = "other";
+
+    if (categoryType === "materials") {
+      costType = "material";
+    } else if (categoryType === "labor") {
+      costType = "labor";
+    } else if (categoryType === "equipment") {
+      costType = "equipment";
+    }
+
+    const { error: costError } = await supabase
+      .from("project_costs")
+      .insert({
+        project_id: expense.project_id,
+        cost_type: costType,
+        source_id: id,
+        source_type: "expense",
+        description: expense.description,
+        amount: expense.amount,
+        cost_date: expense.expense_date,
+        notes: `Auto-created from approved expense${expense.vendor ? ` - ${expense.vendor}` : ""}`,
+      });
+
+    if (costError) {
+      console.error("Error creating project_cost from expense:", costError);
+    }
+  }
+
   return data;
 }
 
