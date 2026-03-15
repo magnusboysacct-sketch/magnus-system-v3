@@ -1,23 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import {
-  LayoutDashboard,
-  Users,
-  BriefcaseBusiness,
-  FileSpreadsheet,
-  Layers,
-  Ruler,
-  ShoppingCart,
-  Landmark,
-  ChartBar as BarChart3,
-  Settings,
-  CreditCard,
-  ChevronLeft,
-  ChevronRight,
-  Sun,
-  Moon,
-  PackageCheck,
-} from "lucide-react";
+import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
 import ProjectSelector from "../components/ProjectSelector";
@@ -56,7 +39,11 @@ const navSections = [
   {
     title: "Finance",
     items: [
-      { to: "/finance", label: "Finance", icon: Landmark },
+      { to: "/cash-flow", label: "Cash Flow", icon: TrendingUp },
+      { to: "/accounts-receivable", label: "Receivables", icon: FileText },
+      { to: "/expenses", label: "Expenses", icon: Receipt },
+      { to: "/workers", label: "Workers", icon: UserCircle },
+      { to: "/finance", label: "Finance Hub", icon: Landmark },
       { to: "/billing", label: "Billing", icon: CreditCard },
     ],
   },
@@ -99,6 +86,11 @@ export default function SidebarLayout() {
       "/settings/master-categories",
       "/settings/master-lists",
       "/billing",
+      "/workers",
+      "/cash-flow",
+      "/accounts-receivable",
+      "/expenses",
+      "/finance",
     ];
 
     const pathAllowed = allowedWithoutProject.some((p) =>

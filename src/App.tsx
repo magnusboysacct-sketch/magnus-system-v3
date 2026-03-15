@@ -32,6 +32,10 @@ import { supabase } from "./lib/supabase";
 import CompanyUsersPage from "./pages/CompanyUsersPage";
 import { ProjectProvider } from "./context/ProjectContext";
 import ReceivingPage from "./pages/ReceivingPage";
+import WorkersPage from "./pages/WorkersPage";
+import CashFlowPage from "./pages/CashFlowPage";
+import AccountsReceivablePage from "./pages/AccountsReceivablePage";
+import ExpensesPage from "./pages/ExpensesPage";
 
 function AuthHashRouter() {
   const nav = useNavigate();
@@ -140,6 +144,10 @@ export default function App() {
             <Route path="/procurement" element={<ProcurementPage />} />
             <Route path="/receiving" element={<ReceivingPage />} />
             <Route path="/finance" element={<FinancePage />} />
+            <Route path="/workers" element={<WorkersPage />} />
+            <Route path="/cash-flow" element={<CashFlowPage />} />
+            <Route path="/accounts-receivable" element={<AccountsReceivablePage />} />
+            <Route path="/expenses" element={<ExpensesPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/settings" element={<SettingsPage />} />
