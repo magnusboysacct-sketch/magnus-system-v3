@@ -721,7 +721,8 @@ export default function TakeoffPage() {
           company_id: m.company_id,
           page_number: m.page_number,
           group_id: m.group_id,
-          type: m.type,
+          tool_type: m.type, // Required field: line, area, count, volume
+          type: m.type, // Legacy field for compatibility
           points: m.points,
           unit: m.unit,
           result: m.result,
