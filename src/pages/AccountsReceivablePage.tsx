@@ -12,6 +12,7 @@ import {
   updateClientInvoice
 } from "../lib/finance";
 import type { ClientInvoice, ClientInvoiceLineItem, ClientPayment } from "../lib/finance";
+import ContractProgressBilling from "../components/ContractProgressBilling";
 
 interface LineItem {
   id?: string;
@@ -34,7 +35,10 @@ export default function AccountsReceivablePage() {
   const [invoicePayments, setInvoicePayments] = useState<ClientPayment[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [contracts, setContracts] = useState<any[]>([]);
   const [companyId, setCompanyId] = useState<string>("");
+  const [showProgressBilling, setShowProgressBilling] = useState(false);
+  const [selectedContract, setSelectedContract] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     invoice_number: "",
@@ -62,6 +66,7 @@ export default function AccountsReceivablePage() {
   useEffect(() => {
     loadInvoices();
     loadClientsAndProjects();
+    loadContracts();
   }, []);
 
   async function loadInvoices() {
@@ -85,6 +90,33 @@ export default function AccountsReceivablePage() {
       console.error("Error loading invoices:", error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadContracts() {
+    try {
+      const { supabase } = await import("../lib/supabase");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("company_id")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile?.company_id) return;
+
+      const { data } = await supabase
+        .from("client_contracts")
+        .select("*, projects(name), clients(name)")
+        .eq("company_id", profile.company_id)
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
+
+      if (data) setContracts(data);
+    } catch (error) {
+      console.error("Error loading contracts:", error);
     }
   }
 
@@ -288,16 +320,54 @@ export default function AccountsReceivablePage() {
           <h1 className="text-2xl font-bold text-slate-900">Accounts Receivable</h1>
           <p className="text-sm text-slate-600">Manage client invoices and payments</p>
         </div>
-        <button
-          onClick={openCreateModal}
-          className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
-        >
-          <Plus size={18} />
-          New Invoice
-        </button>
+        <div className="flex items-center gap-3">
+          {contracts.length > 0 && (
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedContract?.id || ""}
+                onChange={(e) => {
+                  const contract = contracts.find(c => c.id === e.target.value);
+                  setSelectedContract(contract || null);
+                  setShowProgressBilling(!!contract);
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              >
+                <option value="">Select Contract for Progress Billing</option>
+                {contracts.map((contract) => (
+                  <option key={contract.id} value={contract.id}>
+                    {contract.contract_number} - {contract.projects?.name || "No Project"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            <Plus size={18} />
+            New Invoice
+          </button>
+        </div>
       </div>
 
       <div className="p-8">
+        {showProgressBilling && selectedContract ? (
+          <div className="mb-8 rounded-xl border border-slate-200 bg-white p-6">
+            <ContractProgressBilling
+              contractId={selectedContract.id}
+              companyId={companyId}
+              projectId={selectedContract.project_id}
+              clientId={selectedContract.client_id}
+              onInvoiceCreated={() => {
+                loadInvoices();
+                setShowProgressBilling(false);
+                setSelectedContract(null);
+              }}
+            />
+          </div>
+        ) : null}
+
         <div className="mb-6 grid grid-cols-3 gap-4">
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex items-center gap-3">

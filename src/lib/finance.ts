@@ -36,6 +36,13 @@ export interface ClientInvoiceLineItem {
   rate: number;
   amount: number;
   notes?: string | null;
+  boq_item_id?: string | null;
+  milestone_id?: string | null;
+  billing_item_id?: string | null;
+  percent_complete?: number | null;
+  previously_billed?: number | null;
+  retainage_percent?: number | null;
+  retainage_amount?: number | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -845,6 +852,211 @@ export async function autoApproveMatchedInvoice(invoiceId: string): Promise<bool
 
   if (error) throw error;
   return data as boolean;
+}
+
+export interface ContractBillingItem {
+  id?: string;
+  company_id: string;
+  contract_id: string;
+  boq_item_id?: string | null;
+  line_no: number;
+  description: string;
+  unit: string;
+  contract_quantity: number;
+  contract_rate: number;
+  contract_amount: number;
+  percent_complete: number;
+  quantity_completed: number;
+  previously_billed_amount: number;
+  previously_billed_quantity: number;
+  retainage_percent: number;
+  total_retainage_held: number;
+  current_amount_due: number;
+  remaining_contract_balance: number;
+  is_active: boolean;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ContractMilestone {
+  id?: string;
+  company_id: string;
+  contract_id: string;
+  milestone_no: number;
+  milestone_name: string;
+  description?: string | null;
+  milestone_amount: number;
+  percent_complete: number;
+  is_completed: boolean;
+  scheduled_date?: string | null;
+  completion_date?: string | null;
+  billed_amount: number;
+  retainage_percent: number;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ContractBillingCalculation {
+  billing_item_id: string;
+  boq_item_id: string | null;
+  line_no: number;
+  description: string;
+  unit: string;
+  contract_quantity: number;
+  contract_rate: number;
+  contract_amount: number;
+  percent_complete: number;
+  quantity_completed: number;
+  previously_billed_amount: number;
+  current_billing_quantity: number;
+  current_billing_amount: number;
+  retainage_percent: number;
+  retainage_amount: number;
+  net_amount_due: number;
+  remaining_balance: number;
+}
+
+export interface ContractBillingSummary {
+  contract_amount: number;
+  total_billed_to_date: number;
+  total_retainage_held: number;
+  total_paid: number;
+  total_outstanding: number;
+  remaining_contract_balance: number;
+  percent_billed: number;
+  percent_complete: number;
+}
+
+export async function fetchContractBillingItems(contractId: string) {
+  const { data, error } = await supabase
+    .from("contract_billing_items")
+    .select("*")
+    .eq("contract_id", contractId)
+    .eq("is_active", true)
+    .order("line_no", { ascending: true });
+
+  if (error) throw error;
+  return data as ContractBillingItem[];
+}
+
+export async function fetchContractMilestones(contractId: string) {
+  const { data, error } = await supabase
+    .from("contract_milestones")
+    .select("*")
+    .eq("contract_id", contractId)
+    .order("milestone_no", { ascending: true });
+
+  if (error) throw error;
+  return data as ContractMilestone[];
+}
+
+export async function createContractBillingItem(item: Partial<ContractBillingItem>) {
+  const { data, error } = await supabase
+    .from("contract_billing_items")
+    .insert([item])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ContractBillingItem;
+}
+
+export async function updateContractBillingItem(id: string, updates: Partial<ContractBillingItem>) {
+  const { data, error } = await supabase
+    .from("contract_billing_items")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ContractBillingItem;
+}
+
+export async function createContractMilestone(milestone: Partial<ContractMilestone>) {
+  const { data, error } = await supabase
+    .from("contract_milestones")
+    .insert([milestone])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ContractMilestone;
+}
+
+export async function updateContractMilestone(id: string, updates: Partial<ContractMilestone>) {
+  const { data, error } = await supabase
+    .from("contract_milestones")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ContractMilestone;
+}
+
+export async function calculateContractBilling(
+  contractId: string,
+  billingDate?: string
+): Promise<ContractBillingCalculation[]> {
+  const { data, error } = await supabase.rpc("calculate_contract_billing", {
+    p_contract_id: contractId,
+    p_billing_date: billingDate || new Date().toISOString().split("T")[0],
+  });
+
+  if (error) throw error;
+  return (data || []) as ContractBillingCalculation[];
+}
+
+export async function getContractBillingSummary(contractId: string): Promise<ContractBillingSummary> {
+  const { data, error } = await supabase.rpc("get_contract_billing_summary", {
+    p_contract_id: contractId,
+  });
+
+  if (error) throw error;
+
+  if (!data || data.length === 0) {
+    return {
+      contract_amount: 0,
+      total_billed_to_date: 0,
+      total_retainage_held: 0,
+      total_paid: 0,
+      total_outstanding: 0,
+      remaining_contract_balance: 0,
+      percent_billed: 0,
+      percent_complete: 0,
+    };
+  }
+
+  return data[0] as ContractBillingSummary;
+}
+
+export async function syncBOQToBillingItems(contractId: string): Promise<number> {
+  const { data, error } = await supabase.rpc("sync_boq_to_billing_items", {
+    p_contract_id: contractId,
+  });
+
+  if (error) throw error;
+  return data as number;
+}
+
+export async function updateBillingItemAfterInvoice(
+  billingItemId: string,
+  billedAmount: number,
+  billedQuantity: number,
+  retainageAmount: number
+): Promise<void> {
+  const { error } = await supabase.rpc("update_billing_item_after_invoice", {
+    p_billing_item_id: billingItemId,
+    p_billed_amount: billedAmount,
+    p_billed_quantity: billedQuantity,
+    p_retainage_amount: retainageAmount,
+  });
+
+  if (error) throw error;
 }
 
 export async function createSupplierPayment(payment: Partial<SupplierPayment>) {
