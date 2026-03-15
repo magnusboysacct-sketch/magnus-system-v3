@@ -437,6 +437,18 @@ export default function TakeoffPage() {
     unit: "ft",
   });
 
+  const [dragState, setDragState] = useState<{
+    type: "measurement" | "calibration" | null;
+    measurementId: string | null;
+    pointIndex: number | null;
+    calibrationPoint: "p1" | "p2" | null;
+  }>({
+    type: null,
+    measurementId: null,
+    pointIndex: null,
+    calibrationPoint: null,
+  });
+
   const deletedMeasurementIdsRef = useRef<string[]>([]);
   const deletedGroupIdsRef = useRef<string[]>([]);
   const saveTimeoutRef = useRef<number | null>(null);
@@ -1150,6 +1162,95 @@ export default function TakeoffPage() {
     setIsPanning(false);
   }, []);
 
+  const handleHandleMouseDown = useCallback(
+    (
+      event: React.MouseEvent,
+      type: "measurement" | "calibration",
+      measurementId: string | null,
+      pointIndex: number | null,
+      calibrationPoint: "p1" | "p2" | null
+    ) => {
+      event.stopPropagation();
+      setDragState({ type, measurementId, pointIndex, calibrationPoint });
+    },
+    []
+  );
+
+  const handleOverlayMouseMoveWithDrag = useCallback(
+    (event: React.MouseEvent<SVGSVGElement>) => {
+      if (!pdfDoc) return;
+      const point = getPagePointFromEvent(event);
+      if (!point) return;
+
+      setCurrentMousePoint(point);
+
+      if (dragState.type === "measurement" && dragState.measurementId && dragState.pointIndex !== null) {
+        const measurement = measurements.find((m) => m.id === dragState.measurementId);
+        if (!measurement) return;
+
+        const updatedPoints = [...measurement.points];
+        updatedPoints[dragState.pointIndex] = point;
+
+        let updatedMeasurement = { ...measurement, points: updatedPoints };
+
+        if (measurement.type === "line") {
+          const rawLength = polylineLength(updatedPoints);
+          updatedMeasurement = { ...updatedMeasurement, raw_length: rawLength };
+          if (calibrationScale) {
+            updatedMeasurement.result = rawLength * calibrationScale;
+          }
+        } else if (measurement.type === "area" || measurement.type === "volume") {
+          const rawArea = polygonArea(updatedPoints);
+          updatedMeasurement = { ...updatedMeasurement, raw_area: rawArea };
+          if (calibrationScale) {
+            const realArea = rawArea * calibrationScale * calibrationScale;
+            if (measurement.type === "volume") {
+              const depth = measurement.meta?.depth ?? 1;
+              updatedMeasurement.result = realArea * depth;
+              updatedMeasurement.raw_volume = rawArea * depth;
+            } else {
+              updatedMeasurement.result = realArea;
+            }
+          }
+        }
+
+        setMeasurements((prev) =>
+          prev.map((m) => (m.id === dragState.measurementId ? updatedMeasurement : m))
+        );
+      } else if (dragState.type === "calibration" && dragState.calibrationPoint) {
+        const propName = dragState.calibrationPoint === "p1" ? "calibration_point_1" : "calibration_point_2";
+        setPageRows((prev) =>
+          prev.map((p) =>
+            p.page_number === currentPage
+              ? {
+                  ...p,
+                  [propName]: point,
+                }
+              : p
+          )
+        );
+      }
+    },
+    [
+      pdfDoc,
+      getPagePointFromEvent,
+      dragState,
+      measurements,
+      calibrationScale,
+      pageMeasurements,
+      currentPage,
+    ]
+  );
+
+  const handleOverlayMouseUpWithDrag = useCallback(() => {
+    if (dragState.type === "measurement" && dragState.measurementId) {
+      queueAutosave();
+    } else if (dragState.type === "calibration") {
+      queueAutosave();
+    }
+    setDragState({ type: null, measurementId: null, pointIndex: null, calibrationPoint: null });
+  }, [dragState, queueAutosave]);
+
   const zoomIn = useCallback(() => setZoom((prev) => clamp(prev + 0.1, 0.25, 4)), []);
   const zoomOut = useCallback(() => setZoom((prev) => clamp(prev - 0.1, 0.25, 4)), []);
   const zoomFit = useCallback(() => {
@@ -1577,7 +1678,8 @@ export default function TakeoffPage() {
                   }}
                   onClick={handleOverlayClick}
                   onDoubleClick={handleOverlayDoubleClick}
-                  onMouseMove={handleOverlayMouseMove}
+                  onMouseMove={handleOverlayMouseMoveWithDrag}
+                  onMouseUp={handleOverlayMouseUpWithDrag}
                   onMouseLeave={handleOverlayMouseLeave}
                 >
                   {pageMeasurements.map((m) => {
@@ -1614,6 +1716,27 @@ export default function TakeoffPage() {
                               r={selected ? 4 : 3}
                               fill={groupColor}
                             />
+                          ))}
+                          {selected && m.points.map((p, idx) => (
+                            <g key={`handle-${m.id}-${idx}`}>
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={8}
+                                fill="white"
+                                stroke={groupColor}
+                                strokeWidth={2}
+                                style={{ cursor: "move" }}
+                                onMouseDown={(e) => handleHandleMouseDown(e, "measurement", m.id, idx, null)}
+                              />
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={3}
+                                fill={groupColor}
+                                pointerEvents="none"
+                              />
+                            </g>
                           ))}
                           {midpoint && (
                             <g>
@@ -1688,6 +1811,27 @@ export default function TakeoffPage() {
                               fill={groupColor}
                             />
                           ))}
+                          {selected && m.points.map((p, idx) => (
+                            <g key={`handle-${m.id}-${idx}`}>
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={8}
+                                fill="white"
+                                stroke={groupColor}
+                                strokeWidth={2}
+                                style={{ cursor: "move" }}
+                                onMouseDown={(e) => handleHandleMouseDown(e, "measurement", m.id, idx, null)}
+                              />
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={3}
+                                fill={groupColor}
+                                pointerEvents="none"
+                              />
+                            </g>
+                          ))}
                           {centroid && labelLines.length > 0 && (
                             <g>
                               {labelLines.map((line, idx) => {
@@ -1736,6 +1880,27 @@ export default function TakeoffPage() {
                           stroke="white"
                           strokeWidth={2}
                         />
+                        {selected && (
+                          <g>
+                            <circle
+                              cx={m.points[0]?.x ?? 0}
+                              cy={m.points[0]?.y ?? 0}
+                              r={12}
+                              fill="white"
+                              stroke={groupColor}
+                              strokeWidth={2}
+                              style={{ cursor: "move" }}
+                              onMouseDown={(e) => handleHandleMouseDown(e, "measurement", m.id, 0, null)}
+                            />
+                            <circle
+                              cx={m.points[0]?.x ?? 0}
+                              cy={m.points[0]?.y ?? 0}
+                              r={4}
+                              fill={groupColor}
+                              pointerEvents="none"
+                            />
+                          </g>
+                        )}
                         <g>
                           <rect
                             x={(m.points[0]?.x ?? 0) + 12}
@@ -1762,6 +1927,59 @@ export default function TakeoffPage() {
                       </g>
                     );
                   })}
+
+                  {currentPageRow?.calibration_point_1 && currentPageRow?.calibration_point_2 && toolMode === "select" ? (
+                    <g>
+                      <line
+                        x1={currentPageRow.calibration_point_1.x}
+                        y1={currentPageRow.calibration_point_1.y}
+                        x2={currentPageRow.calibration_point_2.x}
+                        y2={currentPageRow.calibration_point_2.y}
+                        stroke="#7c3aed"
+                        strokeWidth={2}
+                        strokeDasharray="4 4"
+                        opacity={0.6}
+                      />
+                      <g>
+                        <circle
+                          cx={currentPageRow.calibration_point_1.x}
+                          cy={currentPageRow.calibration_point_1.y}
+                          r={8}
+                          fill="white"
+                          stroke="#7c3aed"
+                          strokeWidth={2}
+                          style={{ cursor: "move" }}
+                          onMouseDown={(e) => handleHandleMouseDown(e, "calibration", null, null, "p1")}
+                        />
+                        <circle
+                          cx={currentPageRow.calibration_point_1.x}
+                          cy={currentPageRow.calibration_point_1.y}
+                          r={3}
+                          fill="#7c3aed"
+                          pointerEvents="none"
+                        />
+                      </g>
+                      <g>
+                        <circle
+                          cx={currentPageRow.calibration_point_2.x}
+                          cy={currentPageRow.calibration_point_2.y}
+                          r={8}
+                          fill="white"
+                          stroke="#7c3aed"
+                          strokeWidth={2}
+                          style={{ cursor: "move" }}
+                          onMouseDown={(e) => handleHandleMouseDown(e, "calibration", null, null, "p2")}
+                        />
+                        <circle
+                          cx={currentPageRow.calibration_point_2.x}
+                          cy={currentPageRow.calibration_point_2.y}
+                          r={3}
+                          fill="#7c3aed"
+                          pointerEvents="none"
+                        />
+                      </g>
+                    </g>
+                  ) : null}
 
                   {toolMode === "calibrate" && calibrationDraft.p1 ? (
                     <circle
