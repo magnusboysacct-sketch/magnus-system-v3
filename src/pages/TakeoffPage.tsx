@@ -725,6 +725,31 @@ export default function TakeoffPage() {
     };
   }, [pdfUrl]);
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if ((event.key === "ArrowLeft" || event.key === "PageUp") && currentPage > 1) {
+        event.preventDefault();
+        setCurrentPage((prev) => Math.max(1, prev - 1));
+      } else if ((event.key === "ArrowRight" || event.key === "PageDown") && currentPage < pageCount) {
+        event.preventDefault();
+        setCurrentPage((prev) => Math.min(pageCount, prev + 1));
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        setCurrentPage(1);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        setCurrentPage(pageCount);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentPage, pageCount]);
+
   const renderCurrentPage = useCallback(async () => {
     if (!pdfDoc || !canvasRef.current) return;
 
@@ -1460,6 +1485,30 @@ export default function TakeoffPage() {
               Reset
             </button>
           </div>
+
+          {pageCount > 1 && (
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ←
+              </button>
+              <div className="min-w-[80px] text-center text-sm font-medium">
+                Page {currentPage} / {pageCount}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.min(pageCount, prev + 1))}
+                disabled={currentPage === pageCount}
+                className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                →
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <span className="text-xs uppercase tracking-wide text-slate-500">Calibration</span>
