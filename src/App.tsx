@@ -24,6 +24,7 @@ import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
 import SettingsMasterListsPage from "./pages/SettingsMasterListsPage";
 import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
+import SettingsCostCodesPage from "./pages/SettingsCostCodesPage";
 import BillingPage from "./pages/BillingPage";
 import LoginPage from "./pages/LoginPage";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
@@ -153,6 +154,7 @@ export default function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/master-categories" element={<SettingsMasterCategoriesPage />} />
             <Route path="/settings/master-lists" element={<SettingsMasterListsPage />} />
+            <Route path="/settings/cost-codes" element={<SettingsCostCodesPage />} />
             <Route path="/settings/users" element={<CompanyUsersPage />} />
             <Route path="/settings/company" element={<Navigate to="/settings" replace />} />
             <Route path="/receiving/:id" element={<ReceivingPage />} />

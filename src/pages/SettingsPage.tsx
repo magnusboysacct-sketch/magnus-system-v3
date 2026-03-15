@@ -32,6 +32,12 @@ export default function SettingsPage() {
         >
           Master Lists
         </Link>
+        <Link
+          to="/settings/cost-codes"
+          className={`px-4 py-2 text-sm font-medium transition border-b-2 border-transparent text-white/60 hover:text-white hover:bg-white/5`}
+        >
+          Cost Codes
+        </Link>
       </div>
 
       {/* Tab Content */}

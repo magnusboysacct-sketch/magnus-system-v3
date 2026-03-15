@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { getCommittedDeliveredSummary, getCategoryBreakdown } from "../lib/costs";
 import SupplierInvoiceManager from "../components/SupplierInvoiceManager";
+import CostCodeSummary from "../components/CostCodeSummary";
 
 function numOr(value: unknown, fallback = 0): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -481,6 +482,12 @@ export default function FinancePage() {
                   </tfoot>
                 </table>
               </div>
+            </div>
+          )}
+
+          {projectId && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6 mt-6">
+              <CostCodeSummary projectId={projectId} />
             </div>
           )}
 
