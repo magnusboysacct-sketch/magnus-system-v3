@@ -237,7 +237,7 @@ export default function ExpensesPage() {
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as any)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
           >
             <option value="all">All Expenses</option>
             <option value="pending">Pending</option>
@@ -361,7 +361,7 @@ export default function ExpensesPage() {
                     required
                     value={formData.expense_date}
                     onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
                 <div>
@@ -372,7 +372,7 @@ export default function ExpensesPage() {
                     required
                     value={formData.amount}
                     onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="0.00"
                   />
                 </div>
@@ -385,7 +385,7 @@ export default function ExpensesPage() {
                   required
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   placeholder="Office supplies, fuel, equipment rental, etc."
                 />
               </div>
@@ -396,7 +396,7 @@ export default function ExpensesPage() {
                   <select
                     value={formData.category_id}
                     onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   >
                     <option value="">Select Category</option>
                     {categories.map((cat) => (
@@ -412,7 +412,7 @@ export default function ExpensesPage() {
                     type="text"
                     value={formData.vendor}
                     onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="Vendor name"
                   />
                 </div>
@@ -423,7 +423,7 @@ export default function ExpensesPage() {
                 <select
                   value={formData.project_id}
                   onChange={(e) => setFormData({ ...formData, project_id: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                 >
                   <option value="">No Project</option>
                   {projects.map((project) => (
@@ -439,7 +439,7 @@ export default function ExpensesPage() {
                 <select
                   value={formData.payment_method}
                   onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                 >
                   <option value="credit_card">Credit Card</option>
                   <option value="cash">Cash</option>
@@ -456,7 +456,7 @@ export default function ExpensesPage() {
                     type="text"
                     value={formData.receipt_url}
                     onChange={(e) => setFormData({ ...formData, receipt_url: e.target.value })}
-                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2"
+                    className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="https://..."
                   />
                   <button
@@ -476,7 +476,7 @@ export default function ExpensesPage() {
                   rows={3}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   placeholder="Additional notes about this expense"
                 />
               </div>

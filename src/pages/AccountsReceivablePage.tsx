@@ -206,7 +206,7 @@ export default function AccountsReceivablePage() {
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as any)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
           >
             <option value="all">All Invoices</option>
             <option value="draft">Draft</option>
@@ -307,7 +307,7 @@ export default function AccountsReceivablePage() {
                     required
                     value={formData.invoice_number}
                     onChange={(e) => setFormData({ ...formData, invoice_number: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
                 <div>
@@ -316,7 +316,7 @@ export default function AccountsReceivablePage() {
                     required
                     value={formData.client_id}
                     onChange={(e) => setFormData({ ...formData, client_id: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   >
                     <option value="">Select Client</option>
                     {clients.map((client) => (
@@ -333,7 +333,7 @@ export default function AccountsReceivablePage() {
                 <select
                   value={formData.project_id}
                   onChange={(e) => setFormData({ ...formData, project_id: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                 >
                   <option value="">No Project</option>
                   {projects
@@ -354,7 +354,7 @@ export default function AccountsReceivablePage() {
                     required
                     value={formData.invoice_date}
                     onChange={(e) => setFormData({ ...formData, invoice_date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
                 <div>
@@ -364,7 +364,7 @@ export default function AccountsReceivablePage() {
                     required
                     value={formData.due_date}
                     onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -378,7 +378,7 @@ export default function AccountsReceivablePage() {
                     required
                     value={formData.subtotal}
                     onChange={(e) => setFormData({ ...formData, subtotal: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="0.00"
                   />
                 </div>
@@ -389,7 +389,7 @@ export default function AccountsReceivablePage() {
                     step="0.01"
                     value={formData.tax_rate}
                     onChange={(e) => setFormData({ ...formData, tax_rate: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="0"
                   />
                 </div>
@@ -401,7 +401,7 @@ export default function AccountsReceivablePage() {
                   type="text"
                   value={formData.terms}
                   onChange={(e) => setFormData({ ...formData, terms: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   placeholder="Net 30"
                 />
               </div>
@@ -412,7 +412,7 @@ export default function AccountsReceivablePage() {
                   rows={3}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   placeholder="Additional notes or payment instructions"
                 />
               </div>

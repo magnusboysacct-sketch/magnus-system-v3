@@ -242,7 +242,7 @@ export default function WorkersPage() {
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value as any)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
           >
             <option value="all">All Types</option>
             <option value="employee">Employees</option>
@@ -253,7 +253,7 @@ export default function WorkersPage() {
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value as any)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
           >
             <option value="all">All Status</option>
             <option value="active">Active</option>
@@ -397,7 +397,7 @@ export default function WorkersPage() {
                     required
                     value={formData.first_name}
                     onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
                 <div>
@@ -407,7 +407,7 @@ export default function WorkersPage() {
                     required
                     value={formData.last_name}
                     onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -418,7 +418,7 @@ export default function WorkersPage() {
                   <select
                     value={formData.worker_type}
                     onChange={(e) => setFormData({ ...formData, worker_type: e.target.value as WorkerType })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   >
                     <option value="employee">Employee</option>
                     <option value="subcontractor">Subcontractor</option>
@@ -431,7 +431,7 @@ export default function WorkersPage() {
                     type="text"
                     value={formData.employee_id}
                     onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -443,7 +443,7 @@ export default function WorkersPage() {
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
                 <div>
@@ -452,7 +452,7 @@ export default function WorkersPage() {
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -463,7 +463,7 @@ export default function WorkersPage() {
                   <select
                     value={formData.pay_type}
                     onChange={(e) => setFormData({ ...formData, pay_type: e.target.value as PayType })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   >
                     <option value="hourly">Hourly</option>
                     <option value="salary">Salary</option>
@@ -477,7 +477,7 @@ export default function WorkersPage() {
                     step="0.01"
                     value={formData.pay_rate}
                     onChange={(e) => setFormData({ ...formData, pay_rate: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
                 <div>
@@ -487,7 +487,7 @@ export default function WorkersPage() {
                     step="0.01"
                     value={formData.overtime_rate}
                     onChange={(e) => setFormData({ ...formData, overtime_rate: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -499,7 +499,7 @@ export default function WorkersPage() {
                     type="date"
                     value={formData.hire_date}
                     onChange={(e) => setFormData({ ...formData, hire_date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
                 <div>
@@ -509,7 +509,7 @@ export default function WorkersPage() {
                     maxLength={4}
                     value={formData.ssn_last_4}
                     onChange={(e) => setFormData({ ...formData, ssn_last_4: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="1234"
                   />
                 </div>
@@ -522,7 +522,7 @@ export default function WorkersPage() {
                     type="text"
                     value={formData.trade}
                     onChange={(e) => setFormData({ ...formData, trade: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="Electrician, Carpenter, etc."
                   />
                 </div>
@@ -532,7 +532,7 @@ export default function WorkersPage() {
                     type="text"
                     value={formData.crew_name}
                     onChange={(e) => setFormData({ ...formData, crew_name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                     placeholder="Crew A, Framing Team, etc."
                   />
                 </div>
@@ -545,7 +545,7 @@ export default function WorkersPage() {
                     type="text"
                     value={formData.emergency_contact_name}
                     onChange={(e) => setFormData({ ...formData, emergency_contact_name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
                 <div>
@@ -554,7 +554,7 @@ export default function WorkersPage() {
                     type="tel"
                     value={formData.emergency_contact_phone}
                     onChange={(e) => setFormData({ ...formData, emergency_contact_phone: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -565,7 +565,7 @@ export default function WorkersPage() {
                   rows={3}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
                 />
               </div>
 
