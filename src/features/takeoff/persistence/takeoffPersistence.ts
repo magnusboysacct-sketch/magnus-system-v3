@@ -4,9 +4,9 @@ import type { Measurement, MeasurementGroup, CalibrationState } from "../types/t
 export type TakeoffSession = {
   id: string;
   project_id: string;
+  company_id: string;
   pdf_name: string;
   pdf_storage_path: string | null;
-  page_count: number;
   calibration: CalibrationState | null;
   created_at: string;
   updated_at: string;
@@ -25,6 +25,29 @@ export async function getOrCreateSession(
   pdfName?: string
 ): Promise<TakeoffSession | null> {
   try {
+    // Fetch user's company_id first
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error("Not authenticated");
+      return null;
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("company_id")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError) {
+      console.error("Error fetching user profile:", profileError);
+      return null;
+    }
+
+    if (!profile?.company_id) {
+      console.error("User has no company");
+      return null;
+    }
+
     const { data: existingSessions, error: fetchError } = await supabase
       .from("takeoff_sessions")
       .select("*")
@@ -45,8 +68,8 @@ export async function getOrCreateSession(
       .from("takeoff_sessions")
       .insert({
         project_id: projectId,
+        company_id: profile.company_id,
         pdf_name: pdfName || "Untitled",
-        page_count: 1,
         calibration: null,
       })
       .select()
@@ -158,6 +181,20 @@ export async function saveTakeoff(
   try {
     const { groups, measurements, calibration } = data;
 
+    // Get session to access company_id
+    const { data: session, error: sessionFetchError } = await supabase
+      .from("takeoff_sessions")
+      .select("company_id")
+      .eq("id", sessionId)
+      .single();
+
+    if (sessionFetchError || !session?.company_id) {
+      console.error("Error fetching session:", sessionFetchError);
+      return false;
+    }
+
+    const companyId = session.company_id;
+
     const { error: sessionError } = await supabase
       .from("takeoff_sessions")
       .update({
@@ -185,6 +222,7 @@ export async function saveTakeoff(
       const groupsToInsert = groups.map((g, idx) => ({
         id: g.id,
         session_id: sessionId,
+        company_id: companyId,
         name: g.name,
         color: g.color,
         trade: g.trade || null,
@@ -216,6 +254,7 @@ export async function saveTakeoff(
       const measurementsToInsert = measurements.map((m, idx) => ({
         id: m.id,
         session_id: sessionId,
+        company_id: companyId,
         page_number: 1,
         group_id: m.groupId || null,
         type: m.type,

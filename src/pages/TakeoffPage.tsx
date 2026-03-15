@@ -25,13 +25,13 @@ type Point = {
 type SessionRow = {
   id: string;
   project_id: string;
+  company_id: string;
   name?: string | null;
   pdf_name?: string | null;
   pdf_storage_path?: string | null;
   pdf_bucket?: string | null;
   pdf_path?: string | null;
   pdf_url?: string | null;
-  page_count?: number;
   calibration?: any;
   created_at?: string | null;
   updated_at?: string | null;
@@ -55,6 +55,7 @@ type PageRow = {
 type GroupRow = {
   id: string;
   session_id: string;
+  company_id: string;
   name: string;
   color: string;
   trade?: string | null;
@@ -68,6 +69,7 @@ type MeasurementKind = "line" | "area" | "count" | "volume";
 type MeasurementRow = {
   id: string;
   session_id: string;
+  company_id: string;
   page_number: number;
   group_id: string | null;
   type: MeasurementKind;
@@ -180,6 +182,7 @@ function getMeasurementBadge(measurement: MeasurementRow) {
 function buildMeasurementFromDraft(args: {
   id?: string;
   sessionId: string;
+  companyId: string;
   pageNumber: number;
   groupId: string | null;
   type: MeasurementKind;
@@ -188,7 +191,7 @@ function buildMeasurementFromDraft(args: {
   baseUnit: UnitSystem;
   depth: number | null;
 }): MeasurementRow {
-  const { id, sessionId, pageNumber, groupId, type, points, scale, baseUnit, depth } = args;
+  const { id, sessionId, companyId, pageNumber, groupId, type, points, scale, baseUnit, depth } = args;
   const lengthPx = polylineLength(points);
   const areaPx = polygonArea(points);
   const realLength = scale ? lengthPx * scale : 0;
@@ -215,6 +218,7 @@ function buildMeasurementFromDraft(args: {
   return {
     id: id ?? uid(),
     session_id: sessionId,
+    company_id: companyId,
     page_number: pageNumber,
     group_id: groupId,
     type,
@@ -277,6 +281,7 @@ export default function TakeoffPage() {
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [errorText, setErrorText] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
   const [session, setSession] = useState<SessionRow | null>(null);
   const [pageRows, setPageRows] = useState<PageRow[]>([]);
@@ -413,10 +418,11 @@ export default function TakeoffPage() {
   const currentStageWidth = basePageSize.width * zoom;
   const currentStageHeight = basePageSize.height * zoom;
 
-  const createDefaultGroup = useCallback((sessionId: string) => {
+  const createDefaultGroup = useCallback((sessionId: string, companyId: string) => {
     const next: GroupRow = {
       id: uid(),
       session_id: sessionId,
+      company_id: companyId,
       name: "General",
       color: COLORS[0],
       trade: null,
@@ -433,6 +439,22 @@ export default function TakeoffPage() {
       setErrorText("");
 
       try {
+        // Fetch user's company_id first
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Not authenticated");
+
+        const { data: profile, error: profileError } = await supabase
+          .from("user_profiles")
+          .select("company_id")
+          .eq("id", user.id)
+          .single();
+
+        if (profileError) throw profileError;
+        if (!profile?.company_id) throw new Error("User has no company");
+
+        const userCompanyId = profile.company_id;
+        setCompanyId(userCompanyId);
+
         let sessionRow: SessionRow | null = null;
 
         const rpcSession = await tryRpc<any>("get_or_create_takeoff_session", {
@@ -461,8 +483,8 @@ export default function TakeoffPage() {
               .from("takeoff_sessions")
               .insert({
                 project_id: projectId,
+                company_id: userCompanyId,
                 pdf_name: "",
-                page_count: 1,
               })
               .select("*")
               .single();
@@ -504,7 +526,7 @@ export default function TakeoffPage() {
         if (groupData.length > 0) {
           setSelectedGroupId(groupData[0].id);
         } else {
-          createDefaultGroup(sessionRow.id);
+          createDefaultGroup(sessionRow.id, sessionRow.company_id);
         }
 
         const resolvedPdfUrl =
@@ -641,12 +663,12 @@ export default function TakeoffPage() {
         const sessionPayload = {
           id: session.id,
           project_id: session.project_id,
+          company_id: session.company_id,
           pdf_name: session.pdf_name ?? "",
           name: session.name ?? null,
           pdf_bucket: session.pdf_bucket ?? null,
           pdf_path: session.pdf_path ?? null,
           pdf_url: session.pdf_url ?? null,
-          page_count: session.page_count ?? 1,
           calibration: session.calibration ?? null,
           updated_at: new Date().toISOString(),
         };
@@ -654,6 +676,7 @@ export default function TakeoffPage() {
         const groupPayload = groups.map((g, index) => ({
           id: g.id,
           session_id: session.id,
+          company_id: g.company_id,
           name: g.name,
           color: g.color,
           trade: g.trade ?? null,
@@ -664,6 +687,7 @@ export default function TakeoffPage() {
         const measurementPayload = measurements.map((m, index) => ({
           id: m.id,
           session_id: session.id,
+          company_id: m.company_id,
           page_number: m.page_number,
           group_id: m.group_id,
           type: m.type,
@@ -734,6 +758,7 @@ export default function TakeoffPage() {
     const next: GroupRow = {
       id: uid(),
       session_id: session.id,
+      company_id: session.company_id,
       name: `Group ${groups.length + 1}`,
       color: COLORS[groups.length % COLORS.length],
       trade: null,
@@ -868,6 +893,7 @@ export default function TakeoffPage() {
 
       const next = buildMeasurementFromDraft({
         sessionId: session.id,
+        companyId: session.company_id,
         pageNumber: currentPage,
         groupId: selectedGroupId ?? safeGroups[0]?.id ?? null,
         type: kind,
