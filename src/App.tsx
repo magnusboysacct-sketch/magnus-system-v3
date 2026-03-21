@@ -29,6 +29,7 @@ import BillingPage from "./pages/BillingPage";
 import LoginPage from "./pages/LoginPage";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
 import ClientProjectPage from "./pages/ClientProjectPage";
+import WorkerPortalPage from "./pages/WorkerPortalPage";
 import { supabase } from "./lib/supabase";
 import CompanyUsersPage from "./pages/CompanyUsersPage";
 import { ProjectProvider } from "./context/ProjectContext";
@@ -116,6 +117,16 @@ export default function App() {
             element={
               <RequireAuth>
                 <ClientProjectPage />
+              </RequireAuth>
+            }
+          />
+
+          {/* Worker Portal routes */}
+          <Route
+            path="/worker/portal"
+            element={
+              <RequireAuth>
+                <WorkerPortalPage />
               </RequireAuth>
             }
           />

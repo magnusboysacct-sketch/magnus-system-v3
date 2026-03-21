@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { checkClientPortalAccess } from "../lib/clientAccess";
+import {
+  checkClientPortalAccess,
+  fetchClientInvoices,
+  fetchClientPayments,
+  getClientFinancialSummary,
+  type ClientInvoiceSummary,
+  type ClientPaymentHistory,
+} from "../lib/clientAccess";
 import { fetchProjectTasks, getProjectProgress } from "../lib/tasks";
 import type { ProjectTask, ProjectProgress } from "../lib/tasks";
 import { fetchProjectFiles } from "../lib/documents";
@@ -54,6 +61,14 @@ export default function ClientProjectPage() {
   const [dailyLogs, setDailyLogs] = useState<DailyLog[]>([]);
   const [photos, setPhotos] = useState<ProjectPhoto[]>([]);
   const [activities, setActivities] = useState<ProjectActivity[]>([]);
+  const [invoices, setInvoices] = useState<ClientInvoiceSummary[]>([]);
+  const [payments, setPayments] = useState<ClientPaymentHistory[]>([]);
+  const [financialSummary, setFinancialSummary] = useState<{
+    total_invoiced: number;
+    total_paid: number;
+    balance_due: number;
+    overdue_amount: number;
+  } | null>(null);
 
   useEffect(() => {
     async function loadClientProject() {
@@ -80,6 +95,9 @@ export default function ClientProjectPage() {
       await loadDailyLogs();
       await loadPhotos();
       await loadActivities();
+      await loadInvoices();
+      await loadPayments();
+      await loadFinancialSummary();
 
       setLoading(false);
     }
@@ -162,6 +180,30 @@ export default function ClientProjectPage() {
     const result = await fetchProjectActivity(projectId, 20);
     if (result.success && result.data) {
       setActivities(result.data);
+    }
+  }
+
+  async function loadInvoices() {
+    if (!projectId) return;
+    const result = await fetchClientInvoices(projectId);
+    if (result.success && result.data) {
+      setInvoices(result.data);
+    }
+  }
+
+  async function loadPayments() {
+    if (!projectId) return;
+    const result = await fetchClientPayments(projectId);
+    if (result.success && result.data) {
+      setPayments(result.data);
+    }
+  }
+
+  async function loadFinancialSummary() {
+    if (!projectId) return;
+    const result = await getClientFinancialSummary(projectId);
+    if (result.success && result.data) {
+      setFinancialSummary(result.data);
     }
   }
 
@@ -300,6 +342,111 @@ export default function ClientProjectPage() {
                   <div className="text-xs text-slate-500 mt-1">Completed</div>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {financialSummary && (financialSummary.total_invoiced > 0 || financialSummary.total_paid > 0) && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-6">
+            <div className="text-sm font-semibold text-slate-200 mb-4">Financial Summary</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-4 rounded-xl bg-slate-950/40 border border-slate-800">
+                <div className="text-2xl font-semibold text-blue-400">${formatCurrency(financialSummary.total_invoiced)}</div>
+                <div className="text-xs text-slate-500 mt-1">Total Invoiced</div>
+              </div>
+              <div className="text-center p-4 rounded-xl bg-slate-950/40 border border-slate-800">
+                <div className="text-2xl font-semibold text-green-400">${formatCurrency(financialSummary.total_paid)}</div>
+                <div className="text-xs text-slate-500 mt-1">Total Paid</div>
+              </div>
+              <div className="text-center p-4 rounded-xl bg-slate-950/40 border border-slate-800">
+                <div className="text-2xl font-semibold text-yellow-400">${formatCurrency(financialSummary.balance_due)}</div>
+                <div className="text-xs text-slate-500 mt-1">Balance Due</div>
+              </div>
+              {financialSummary.overdue_amount > 0 && (
+                <div className="text-center p-4 rounded-xl bg-red-950/40 border border-red-800">
+                  <div className="text-2xl font-semibold text-red-400">${formatCurrency(financialSummary.overdue_amount)}</div>
+                  <div className="text-xs text-slate-500 mt-1">Overdue</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {invoices.length > 0 && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+            <div className="text-sm font-semibold text-slate-200 mb-4">Invoices</div>
+            <div className="space-y-2">
+              {invoices.map((invoice) => (
+                <div key={invoice.id} className="p-4 rounded-xl border border-slate-800 bg-slate-950/40">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <div className="text-sm font-medium text-slate-200">{invoice.invoice_number}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        Due: {new Date(invoice.due_date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </div>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                      invoice.status === 'paid' ? 'bg-green-500/20 text-green-400' :
+                      invoice.status === 'overdue' ? 'bg-red-500/20 text-red-400' :
+                      invoice.status === 'partial' ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-blue-500/20 text-blue-400'
+                    }`}>
+                      {invoice.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-slate-800">
+                    <div>
+                      <div className="text-xs text-slate-500">Total</div>
+                      <div className="text-sm font-medium text-slate-300">${formatCurrency(invoice.total_amount)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500">Paid</div>
+                      <div className="text-sm font-medium text-green-400">${formatCurrency(invoice.amount_paid)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500">Balance</div>
+                      <div className="text-sm font-medium text-yellow-400">${formatCurrency(invoice.balance_due)}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {payments.length > 0 && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+            <div className="text-sm font-semibold text-slate-200 mb-4">Payment History</div>
+            <div className="space-y-2">
+              {payments.map((payment) => (
+                <div key={payment.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-800 bg-slate-950/40">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm font-medium text-slate-200">{payment.payment_number}</div>
+                      {payment.invoice_number && (
+                        <>
+                          <div className="text-xs text-slate-600">→</div>
+                          <div className="text-xs text-slate-400">{payment.invoice_number}</div>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 mt-1 text-xs text-slate-500">
+                      <span>{new Date(payment.payment_date).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}</span>
+                      <span>{payment.payment_method.replace(/_/g, ' ')}</span>
+                      {payment.reference_number && <span>Ref: {payment.reference_number}</span>}
+                    </div>
+                  </div>
+                  <div className="text-sm font-semibold text-green-400">${formatCurrency(payment.amount)}</div>
+                </div>
+              ))}
             </div>
           </div>
         )}
