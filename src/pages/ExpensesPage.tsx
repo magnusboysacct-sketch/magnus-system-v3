@@ -31,18 +31,6 @@ export default function ExpensesPage() {
   const [showAICategorizer, setShowAICategorizer] = useState(false);
   const [pendingOCRData, setPendingOCRData] = useState<OCRResult | null>(null);
 
-  if (financeAccess.loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-slate-600">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!financeAccess.canViewExpenses) {
-    return <FinanceAccessDenied />;
-  }
-
   const [formData, setFormData] = useState({
     expense_date: new Date().toISOString().split("T")[0],
     project_id: "",
@@ -54,6 +42,18 @@ export default function ExpensesPage() {
     receipt_url: "",
     notes: "",
   });
+
+  if (financeAccess.loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-slate-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!financeAccess.canViewExpenses) {
+    return <FinanceAccessDenied />;
+  }
 
   useEffect(() => {
     loadExpenses();

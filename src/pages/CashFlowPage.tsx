@@ -27,6 +27,10 @@ export default function CashFlowPage() {
     end: new Date().toISOString().split("T")[0],
   });
 
+  useEffect(() => {
+    loadData();
+  }, [dateRange]);
+
   if (financeAccess.loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -38,10 +42,6 @@ export default function CashFlowPage() {
   if (!financeAccess.canViewCashFlow) {
     return <FinanceAccessDenied />;
   }
-
-  useEffect(() => {
-    loadData();
-  }, [dateRange]);
 
   async function loadData() {
     try {

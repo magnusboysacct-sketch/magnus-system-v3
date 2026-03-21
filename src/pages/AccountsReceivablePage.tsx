@@ -31,18 +31,6 @@ export default function AccountsReceivablePage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "draft" | "sent" | "partial" | "overdue" | "paid">("all");
   const [showModal, setShowModal] = useState(false);
-
-  if (financeAccess.loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-slate-600">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!financeAccess.canViewCompanyReports) {
-    return <FinanceAccessDenied />;
-  }
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
@@ -77,6 +65,18 @@ export default function AccountsReceivablePage() {
     reference_number: "",
     notes: "",
   });
+
+  if (financeAccess.loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-slate-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!financeAccess.canViewCompanyReports) {
+    return <FinanceAccessDenied />;
+  }
 
   useEffect(() => {
     loadInvoices();

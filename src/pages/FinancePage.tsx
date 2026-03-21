@@ -27,20 +27,6 @@ export default function FinancePage() {
   const { currentProjectId, currentProject } = useProjectContext();
   const financeAccess = useFinanceAccess();
 
-  const projectId = routeProjectId || currentProjectId || null;
-
-  if (financeAccess.loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-slate-600">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!financeAccess.canViewCompanyReports) {
-    return <FinanceAccessDenied />;
-  }
-
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState("");
   const [summary, setSummary] = useState({
@@ -75,6 +61,7 @@ export default function FinancePage() {
 >([]);
   const [companyId, setCompanyId] = useState<string | null>(null);
 
+  const projectId = routeProjectId || currentProjectId || null;
 
   useEffect(() => {
     let alive = true;
@@ -181,6 +168,18 @@ export default function FinancePage() {
       alive = false;
     };
   }, [projectId]);
+
+  if (financeAccess.loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-slate-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!financeAccess.canViewCompanyReports) {
+    return <FinanceAccessDenied />;
+  }
 
   if (!projectId) {
     return (
