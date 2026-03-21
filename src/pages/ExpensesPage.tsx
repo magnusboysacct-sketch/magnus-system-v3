@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Receipt, Plus, Upload, Check, X, Eye, FileText, DollarSign } from "lucide-react";
+import { Receipt, Plus, Upload, Check, X, Eye, FileText, DollarSign, Image as ImageIcon } from "lucide-react";
 import { fetchExpenses, createExpense, approveExpense } from "../lib/finance";
+import { ReceiptUpload } from "../components/ReceiptUpload";
+import { OCRPreview } from "../components/OCRPreview";
+import { linkReceiptToExpense, getExpenseReceipts, getReceiptUrl, type OCRResult } from "../lib/receiptOCR";
 import type { Expense } from "../lib/finance";
 
 export default function ExpensesPage() {
@@ -13,6 +16,13 @@ export default function ExpensesPage() {
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [projects, setProjects] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [companyId, setCompanyId] = useState<string>("");
+  const [userId, setUserId] = useState<string>("");
+
+  const [uploadedReceiptId, setUploadedReceiptId] = useState<string | null>(null);
+  const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
+  const [showOcrPreview, setShowOcrPreview] = useState(false);
+  const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
 
   const [formData, setFormData] = useState({
     expense_date: new Date().toISOString().split("T")[0],
@@ -29,7 +39,29 @@ export default function ExpensesPage() {
   useEffect(() => {
     loadExpenses();
     loadProjectsAndCategories();
+    loadUserInfo();
   }, []);
+
+  async function loadUserInfo() {
+    try {
+      const { supabase } = await import("../lib/supabase");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("company_id")
+        .eq("id", user.id)
+        .single();
+
+      if (profile?.company_id) {
+        setCompanyId(profile.company_id);
+        setUserId(user.id);
+      }
+    } catch (error) {
+      console.error("Error loading user info:", error);
+    }
+  }
 
   async function loadExpenses() {
     try {
@@ -82,6 +114,9 @@ export default function ExpensesPage() {
 
   function openCreateModal() {
     setEditingExpense(null);
+    setUploadedReceiptId(null);
+    setOcrResult(null);
+    setShowOcrPreview(false);
     setFormData({
       expense_date: new Date().toISOString().split("T")[0],
       project_id: "",
@@ -98,6 +133,9 @@ export default function ExpensesPage() {
 
   function openEditModal(expense: any) {
     setEditingExpense(expense);
+    setUploadedReceiptId(null);
+    setOcrResult(null);
+    setShowOcrPreview(false);
     setFormData({
       expense_date: expense.expense_date,
       project_id: expense.project_id || "",
@@ -112,9 +150,51 @@ export default function ExpensesPage() {
     setShowModal(true);
   }
 
-  function openDetailModal(expense: any) {
+  async function openDetailModal(expense: any) {
     setSelectedExpense(expense);
     setShowDetailModal(true);
+
+    try {
+      const receipts = await getExpenseReceipts(expense.id);
+      const urls: Record<string, string> = {};
+      for (const receipt of receipts) {
+        const url = await getReceiptUrl(receipt.storage_path);
+        urls[receipt.id] = url;
+      }
+      setReceiptUrls(urls);
+    } catch (error) {
+      console.error("Error loading receipt URLs:", error);
+    }
+  }
+
+  function handleReceiptUploadComplete(receiptId: string, result: OCRResult | null) {
+    setUploadedReceiptId(receiptId);
+    setOcrResult(result);
+
+    if (result) {
+      setShowOcrPreview(true);
+    }
+  }
+
+  function handleAcceptOCR() {
+    if (!ocrResult) return;
+
+    setFormData({
+      ...formData,
+      vendor: ocrResult.vendor || formData.vendor,
+      expense_date: ocrResult.date || formData.expense_date,
+      amount: ocrResult.amount ? ocrResult.amount.toString() : formData.amount,
+      description: formData.description || `Receipt from ${ocrResult.vendor || 'vendor'}`,
+      notes: ocrResult.receiptNumber
+        ? `Receipt #: ${ocrResult.receiptNumber}${formData.notes ? '\n' + formData.notes : ''}`
+        : formData.notes,
+    });
+
+    setShowOcrPreview(false);
+  }
+
+  function handleEditManually() {
+    setShowOcrPreview(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -147,10 +227,24 @@ export default function ExpensesPage() {
         status: "pending" as const,
       };
 
+      let expenseId: string;
+
       if (editingExpense) {
         await supabase.from("expenses").update(payload).eq("id", editingExpense.id);
+        expenseId = editingExpense.id;
       } else {
-        await createExpense(payload);
+        const { data: newExpense, error } = await supabase
+          .from("expenses")
+          .insert(payload)
+          .select()
+          .single();
+
+        if (error) throw error;
+        expenseId = newExpense.id;
+      }
+
+      if (uploadedReceiptId) {
+        await linkReceiptToExpense(uploadedReceiptId, expenseId);
       }
 
       setShowModal(false);
@@ -347,12 +441,33 @@ export default function ExpensesPage() {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <h2 className="mb-6 text-xl font-bold text-slate-900">
               {editingExpense ? "Edit Expense" : "Add Expense"}
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {!editingExpense && companyId && userId && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Receipt Upload (Optional)
+                  </label>
+                  <ReceiptUpload
+                    companyId={companyId}
+                    userId={userId}
+                    onUploadComplete={handleReceiptUploadComplete}
+                  />
+                </div>
+              )}
+
+              {showOcrPreview && ocrResult && (
+                <OCRPreview
+                  ocrResult={ocrResult}
+                  onAccept={handleAcceptOCR}
+                  onEdit={handleEditManually}
+                />
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">Date *</label>
@@ -450,27 +565,6 @@ export default function ExpensesPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Receipt URL</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={formData.receipt_url}
-                    onChange={(e) => setFormData({ ...formData, receipt_url: e.target.value })}
-                    className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                    placeholder="https://..."
-                  />
-                  <button
-                    type="button"
-                    className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    <Upload size={16} />
-                    Upload
-                  </button>
-                </div>
-                <p className="mt-1 text-xs text-slate-500">Add a link to the receipt image or PDF</p>
-              </div>
-
-              <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
                 <textarea
                   rows={3}
@@ -503,7 +597,7 @@ export default function ExpensesPage() {
 
       {showDetailModal && selectedExpense && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">Expense Details</h2>
@@ -571,9 +665,29 @@ export default function ExpensesPage() {
                 </div>
               )}
 
+              {Object.keys(receiptUrls).length > 0 && (
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Receipts</div>
+                  <div className="space-y-2">
+                    {Object.entries(receiptUrls).map(([id, url]) => (
+                      <a
+                        key={id}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm font-medium text-blue-600 hover:bg-slate-50"
+                      >
+                        <ImageIcon size={16} />
+                        View Receipt
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {selectedExpense.receipt_url && (
                 <div>
-                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Receipt</div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Legacy Receipt</div>
                   <a
                     href={selectedExpense.receipt_url}
                     target="_blank"
