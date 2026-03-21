@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from "react";
+import { Sparkles } from "lucide-react";
 import { createDailyLog, type CreateDailyLogData } from "../lib/dailyLogs";
+import { AIDailyLogEnhancer } from "./AIDailyLogEnhancer";
+import type { DailyLogEnhancement } from "../lib/aiEnhancer";
 
 interface MobileDailyLogFormProps {
   projectId: string;
@@ -33,6 +36,8 @@ export default function MobileDailyLogForm({
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAIEnhancer, setShowAIEnhancer] = useState(false);
+  const [quickNotes, setQuickNotes] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -71,8 +76,44 @@ export default function MobileDailyLogForm({
     setSubmitting(false);
   }
 
+  function handleAIEnhancement(suggestions: DailyLogEnhancement["suggestions"]) {
+    if (suggestions.workPerformed) setWorkPerformed(suggestions.workPerformed);
+    if (suggestions.deliveries) setDeliveries(suggestions.deliveries);
+    if (suggestions.issues) setIssues(suggestions.issues);
+    if (suggestions.notes) setNotes(suggestions.notes);
+    setQuickNotes("");
+  }
+
+  const hasQuickNotes = quickNotes.trim().length > 10;
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-blue-500/10 rounded-xl p-4 border border-blue-500/30 mb-4">
+          <div className="flex items-start gap-3">
+            <Sparkles className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-blue-300 mb-2">Quick Notes (AI Enhanced)</p>
+              <textarea
+                value={quickNotes}
+                onChange={(e) => setQuickNotes(e.target.value)}
+                placeholder="Type rough notes... AI will organize them into proper sections"
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAIEnhancer(true)}
+                disabled={!hasQuickNotes}
+                className="mt-2 px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white text-sm font-medium hover:from-purple-600 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                Enhance with AI
+              </button>
+            </div>
+          </div>
+        </div>
+
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -202,5 +243,13 @@ export default function MobileDailyLogForm({
         </button>
       </div>
     </form>
+
+      <AIDailyLogEnhancer
+        isOpen={showAIEnhancer}
+        onClose={() => setShowAIEnhancer(false)}
+        onAccept={handleAIEnhancement}
+        initialNotes={quickNotes}
+      />
+    </>
   );
 }

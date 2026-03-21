@@ -8,6 +8,7 @@ import type { Expense } from "../lib/finance";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 import AIAssistantPanel from "../components/AIAssistantPanel";
+import { AIReceiptCategorizer } from "../components/AIReceiptCategorizer";
 
 export default function ExpensesPage() {
   const financeAccess = useFinanceAccess();
@@ -27,6 +28,8 @@ export default function ExpensesPage() {
   const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const [showOcrPreview, setShowOcrPreview] = useState(false);
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
+  const [showAICategorizer, setShowAICategorizer] = useState(false);
+  const [pendingOCRData, setPendingOCRData] = useState<OCRResult | null>(null);
 
   if (financeAccess.loading) {
     return (
@@ -206,7 +209,21 @@ export default function ExpensesPage() {
         : formData.notes,
     });
 
+    setPendingOCRData(ocrResult);
     setShowOcrPreview(false);
+    setShowAICategorizer(true);
+  }
+
+  function handleAICategorization(categorization: { category: string; description: string; vendorType?: string }) {
+    const matchedCategory = categories.find(c => c.name === categorization.category);
+
+    setFormData({
+      ...formData,
+      category_id: matchedCategory?.id || formData.category_id,
+      description: categorization.description,
+    });
+    setShowAICategorizer(false);
+    setPendingOCRData(null);
   }
 
   function handleEditManually() {
@@ -793,6 +810,18 @@ export default function ExpensesPage() {
             window.location.href = "/finance";
           }
         }}
+      />
+
+      <AIReceiptCategorizer
+        isOpen={showAICategorizer}
+        onClose={() => {
+          setShowAICategorizer(false);
+          setPendingOCRData(null);
+        }}
+        onAccept={handleAICategorization}
+        vendor={pendingOCRData?.vendor || formData.vendor}
+        amount={pendingOCRData?.amount || parseFloat(formData.amount) || 0}
+        ocrText={pendingOCRData?.rawText}
       />
     </>
   );
