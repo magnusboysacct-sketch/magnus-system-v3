@@ -32,15 +32,32 @@ type PurchaseOrderItemRow = {
 type ReceivingRecordRow = {
   id: string;
   purchase_order_id?: string | null;
-  purchase_order_item_id?: string | null;
-  received_qty?: number | string | null;
-  quantity_received?: number | string | null;
-  qty_received?: number | string | null;
-  notes?: string | null;
-  note?: string | null;
-  reference_no?: string | null;
+  receiving_no?: string | null;
+  supplier_name?: string | null;
   delivery_note_no?: string | null;
-  received_at?: string | null;
+  invoice_no?: string | null;
+  received_date?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+};
+
+type ReceivingRecordItemRow = {
+  id: string;
+  receiving_record_id: string;
+  purchase_order_id?: string | null;
+  purchase_order_item_id?: string | null;
+  item_name: string;
+  description?: string | null;
+  unit?: string | null;
+  ordered_qty: number;
+  previously_received_qty: number;
+  received_qty: number;
+  unit_cost: number;
+  delivered_cost?: number | null;
+  notes?: string | null;
   created_at?: string | null;
   [key: string]: unknown;
 };
@@ -96,21 +113,18 @@ function getBalance(item: PurchaseOrderItemRow): number {
   return Math.max(0, toNumber(item.quantity) - toNumber(item.delivered_qty));
 }
 
-function getReceivedValue(record: ReceivingRecordRow): number {
-  return Math.max(
-    0,
-    toNumber(record.received_qty) ||
-      toNumber(record.quantity_received) ||
-      toNumber(record.qty_received)
-  );
+function getReceivedValue(recordId: string, items: ReceivingRecordItemRow[]): number {
+  const recordItems = items.filter((item) => item.receiving_record_id === recordId);
+  const total = recordItems.reduce((sum, item) => sum + toNumber(item.received_qty), 0);
+  return Math.max(0, total);
 }
 
 function getRecordDate(record: ReceivingRecordRow): string | null {
-  return (record.received_at as string | null) || (record.created_at as string | null) || null;
+  return (record.received_date as string | null) || (record.created_at as string | null) || null;
 }
 
 function getRecordNotes(record: ReceivingRecordRow): string {
-  return String(record.notes || record.note || record.reference_no || record.delivery_note_no || "").trim();
+  return String(record.notes || record.delivery_note_no || record.invoice_no || "").trim();
 }
 
 function getHeaderStatusLabel(status: string | null | undefined): string {
@@ -174,6 +188,7 @@ export default function ReceivingPage() {
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderRow[]>([]);
   const [purchaseOrderItems, setPurchaseOrderItems] = useState<PurchaseOrderItemRow[]>([]);
   const [receivingHistory, setReceivingHistory] = useState<ReceivingRecordRow[]>([]);
+  const [receivingItems, setReceivingItems] = useState<ReceivingRecordItemRow[]>([]);
 
   const [selectedPOId, setSelectedPOId] = useState<string | null>(
     searchParams.get("poId") || searchParams.get("po") || null
@@ -191,6 +206,7 @@ export default function ReceivingPage() {
           setPurchaseOrders([]);
           setPurchaseOrderItems([]);
           setReceivingHistory([]);
+          setReceivingItems([]);
           return;
         }
 
@@ -210,6 +226,7 @@ export default function ReceivingPage() {
         if (poIds.length === 0) {
           setPurchaseOrderItems([]);
           setReceivingHistory([]);
+          setReceivingItems([]);
           return;
         }
 
@@ -234,8 +251,28 @@ export default function ReceivingPage() {
         if (historyRes.error) {
           console.warn("Receiving history query failed:", historyRes.error);
           setReceivingHistory([]);
+          setReceivingItems([]);
         } else {
           setReceivingHistory((historyRes.data || []) as ReceivingRecordRow[]);
+
+          const recordIds = (historyRes.data || []).map((r: any) => r.id);
+
+          if (recordIds.length > 0) {
+            const itemsRes = await supabase
+              .from("receiving_record_items")
+              .select("*")
+              .in("receiving_record_id", recordIds)
+              .order("created_at", { ascending: false });
+
+            if (itemsRes.error) {
+              console.warn("Receiving items query failed:", itemsRes.error);
+              setReceivingItems([]);
+            } else {
+              setReceivingItems((itemsRes.data || []) as ReceivingRecordItemRow[]);
+            }
+          } else {
+            setReceivingItems([]);
+          }
         }
       } catch (error: any) {
         console.error(error);
@@ -506,6 +543,44 @@ export default function ReceivingPage() {
     setSuccessMessage(null);
 
     try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id || null;
+
+      const { data: companyData } = await supabase
+        .from("projects")
+        .select("company_id")
+        .eq("id", currentProjectId)
+        .single();
+
+      const companyId = companyData?.company_id;
+
+      if (!companyId) {
+        throw new Error("Company ID not found for current project");
+      }
+
+      const receivingNo = `RCV-${new Date().toISOString().replace(/[-:T.]/g, "").slice(0, 14)}`;
+
+      const headerInsertRes = await supabase
+        .from("receiving_records")
+        .insert({
+          company_id: companyId,
+          project_id: currentProjectId,
+          purchase_order_id: selectedPO.id,
+          receiving_no: receivingNo,
+          supplier_name: selectedPO.supplier_name,
+          delivery_note_no: receiveNotes || null,
+          received_date: new Date().toISOString().split('T')[0],
+          status: "received",
+          notes: receiveNotes || null,
+          created_by: userId,
+        })
+        .select()
+        .single();
+
+      if (headerInsertRes.error) throw headerInsertRes.error;
+
+      const receivingRecordId = headerInsertRes.data.id;
+
       for (const line of lines) {
         const newDelivered = line.item.delivered + line.qty;
 
@@ -516,15 +591,25 @@ export default function ReceivingPage() {
 
         if (updateItemRes.error) throw updateItemRes.error;
 
-        const insertRecordRes = await supabase.from("receiving_records").insert({
+        const lineInsertRes = await supabase.from("receiving_record_items").insert({
+          receiving_record_id: receivingRecordId,
+          company_id: companyId,
+          project_id: currentProjectId,
           purchase_order_id: selectedPO.id,
           purchase_order_item_id: line.item.id,
+          item_name: line.item.material_name || "Unnamed Material",
+          description: line.item.description,
+          unit: line.item.unit,
+          ordered_qty: line.item.ordered,
+          previously_received_qty: line.item.delivered,
           received_qty: line.qty,
-          notes: receiveNotes || null,
+          unit_cost: toNumber(line.item.unit_rate),
+          delivered_cost: toNumber(line.item.unit_rate) * line.qty,
+          notes: null,
         });
 
-        if (insertRecordRes.error) {
-          console.warn("receiving_records insert failed:", insertRecordRes.error);
+        if (lineInsertRes.error) {
+          console.warn("receiving_record_items insert failed:", lineInsertRes.error);
         }
       }
 
@@ -741,8 +826,10 @@ export default function ReceivingPage() {
                   <div className="space-y-3">
                     {recentHistory.map((record) => {
                       const po = record.purchase_order_id ? poMap.get(record.purchase_order_id) : undefined;
-                      const item = record.purchase_order_item_id ? itemMap.get(record.purchase_order_item_id) : undefined;
-                      const qty = getReceivedValue(record);
+                      const recordItems = receivingItems.filter((item) => item.receiving_record_id === record.id);
+                      const primaryItem = recordItems.length > 0 ? recordItems[0] : null;
+                      const itemFromPO = primaryItem?.purchase_order_item_id ? itemMap.get(primaryItem.purchase_order_item_id) : undefined;
+                      const qty = getReceivedValue(record.id, receivingItems);
                       const badge = getHistoryBadge(qty);
                       const notes = getRecordNotes(record);
 
@@ -780,10 +867,12 @@ export default function ReceivingPage() {
 
                                 <div>
                                   <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                                    Item
+                                    Item{recordItems.length > 1 ? "s" : ""}
                                   </div>
                                   <div className="mt-0.5 truncate text-slate-300">
-                                    {item?.material_name || item?.description || "Receiving entry"}
+                                    {recordItems.length > 1
+                                      ? `${recordItems.length} items received`
+                                      : primaryItem?.item_name || itemFromPO?.material_name || "Receiving entry"}
                                   </div>
                                 </div>
                               </div>
@@ -803,7 +892,7 @@ export default function ReceivingPage() {
                                 Quantity
                               </div>
                               <div className={`mt-1 text-sm font-semibold ${getHistoryQtyTone(qty)}`}>
-                                {getHistoryQtyLabel(qty, item?.unit)}
+                                {getHistoryQtyLabel(qty, primaryItem?.unit || itemFromPO?.unit)}
                               </div>
                               <div className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">
                                 Logged
@@ -1016,10 +1105,10 @@ export default function ReceivingPage() {
                   ) : (
                     <div className="space-y-3">
                       {selectedPOHistory.map((record) => {
-                        const item = record.purchase_order_item_id
-                          ? itemMap.get(record.purchase_order_item_id)
-                          : undefined;
-                        const qty = getReceivedValue(record);
+                        const recordItems = receivingItems.filter((item) => item.receiving_record_id === record.id);
+                        const primaryItem = recordItems.length > 0 ? recordItems[0] : null;
+                        const itemFromPO = primaryItem?.purchase_order_item_id ? itemMap.get(primaryItem.purchase_order_item_id) : undefined;
+                        const qty = getReceivedValue(record.id, receivingItems);
                         const badge = getHistoryBadge(qty);
                         const notes = getRecordNotes(record);
 
@@ -1029,7 +1118,9 @@ export default function ReceivingPage() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <div className="text-sm font-medium text-slate-100">
-                                    {item?.material_name || item?.description || "Receiving entry"}
+                                    {recordItems.length > 1
+                                      ? `${recordItems.length} items received`
+                                      : primaryItem?.item_name || itemFromPO?.material_name || "Receiving entry"}
                                   </div>
                                   <span
                                     className={`rounded-full border px-2 py-0.5 text-[11px] ${badge.className}`}
@@ -1037,6 +1128,16 @@ export default function ReceivingPage() {
                                     {badge.text}
                                   </span>
                                 </div>
+
+                                {recordItems.length > 1 ? (
+                                  <div className="mt-2 space-y-1">
+                                    {recordItems.map((rItem) => (
+                                      <div key={rItem.id} className="text-xs text-slate-400">
+                                        • {rItem.item_name}: {formatQty(toNumber(rItem.received_qty))} {rItem.unit || ""}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null}
 
                                 {notes ? (
                                   <div className="mt-2 text-xs text-slate-400">{notes}</div>
@@ -1049,10 +1150,10 @@ export default function ReceivingPage() {
 
                               <div className="shrink-0 text-left sm:text-right">
                                 <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                                  Quantity
+                                  Total Quantity
                                 </div>
                                 <div className={`mt-1 text-sm font-semibold ${getHistoryQtyTone(qty)}`}>
-                                  {getHistoryQtyLabel(qty, item?.unit)}
+                                  {getHistoryQtyLabel(qty, recordItems.length === 1 ? primaryItem?.unit || itemFromPO?.unit : null)}
                                 </div>
                                 <div className="mt-2 text-xs text-slate-400">
                                   {formatDate(getRecordDate(record))}
