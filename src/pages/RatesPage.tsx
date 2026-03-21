@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import MasterCategorySelect from "../components/master/MasterCategorySelect.tsx";
 import MasterUnitSelect from "../components/master/MasterUnitSelect.tsx";
 import { buildDefaultVars, computeQuantity } from "../lib/calculatorEngine";
+import { SmartItemSelectorButton } from "../components/SmartItemSelectorButton";
 
 // ✅ Standard construction categories (future-proof baseline)
 const STANDARD_CATEGORIES = [
@@ -410,6 +411,7 @@ function toNum(v: string) {
 export default function RatesPage() {
   const [items, setItems] = useState<CostItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [companyId, setCompanyId] = useState<string>("");
 
   // ✅ Toolbar state
   const [categoryFilter, setCategoryFilter] = useState<string>("__ALL__");
@@ -884,6 +886,19 @@ export default function RatesPage() {
 
     async function load() {
       setLoading(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("company_id")
+          .eq("id", user.id)
+          .single();
+        if (profile?.company_id && alive) {
+          setCompanyId(profile.company_id);
+        }
+      }
+
       const baseSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
       const fullSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
 
@@ -1802,6 +1817,31 @@ export default function RatesPage() {
             </div>
 
             <div className="p-5 space-y-4">
+              {mode === "add" && companyId && (
+                <div className="pb-4 border-b border-white/10">
+                  <SmartItemSelectorButton
+                    companyId={companyId}
+                    onSelect={(selection) => {
+                      if (selection.itemName) setFName(selection.itemName);
+                      if (selection.category) setFCategory(selection.category);
+                      if (selection.unit) setFUnit(selection.unit);
+                      if (selection.variantCode || selection.materialType) {
+                        const variantParts = [];
+                        if (selection.materialType) variantParts.push(selection.materialType);
+                        if (selection.itemSize) variantParts.push(selection.itemSize);
+                        if (selection.variantCode) variantParts.push(selection.variantCode);
+                        setFVariant(variantParts.join(" "));
+                      }
+                      if (selection.currentRate !== null) {
+                        setFRate(selection.currentRate.toString());
+                      }
+                    }}
+                    className="w-full"
+                    label="🪄 Use Smart Selector (Guided Selection)"
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <div className="text-xs opacity-70 mb-1">Item</div>

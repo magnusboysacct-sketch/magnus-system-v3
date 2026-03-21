@@ -7,6 +7,7 @@ import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
 import { generateProcurementFromBOQ } from "../lib/procurement";
 import { generateEstimateFromBOQ } from "../lib/estimates";
 import { useProjectContext } from "../context/ProjectContext";
+import { SmartItemSelector } from "../components/SmartItemSelector";
 
 type RateItem = {
   id: string;
@@ -173,12 +174,29 @@ export default function BOQPage() {
   const [rateError, setRateError] = useState<string | null>(null);
   const [rateSource, setRateSource] = useState<"v_cost_items_current" | "cost_items" | null>(null);
 
+  // Smart selector state
+  const [companyId, setCompanyId] = useState<string>("");
+  const [showSmartSelector, setShowSmartSelector] = useState(false);
+  const [smartSelectorContext, setSmartSelectorContext] = useState<{ sectionId: string; rowId: string } | null>(null);
+
   useEffect(() => {
     let alive = true;
 
     async function loadRateItems() {
       setRateLoading(true);
       setRateError(null);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("company_id")
+          .eq("id", user.id)
+          .single();
+        if (profile?.company_id && alive) {
+          setCompanyId(profile.company_id);
+        }
+      }
 
       try {
         const { data, error } = await supabase
@@ -1291,6 +1309,42 @@ useEffect(() => {
     });
   }
 
+  function openSmartSelector(sectionId: string, rowId: string) {
+    setSmartSelectorContext({ sectionId, rowId });
+    setShowSmartSelector(true);
+  }
+
+  function handleSmartSelection(selection: any) {
+    if (!smartSelectorContext) return;
+
+    const { sectionId, rowId } = smartSelectorContext;
+    const sec = sections.find((s) => s.id === sectionId);
+    if (!sec) return;
+
+    const updates: Partial<BOQItemRow> = {
+      pick_category: selection.category || "",
+      pick_item: selection.itemName || "",
+      pick_variant: selection.variantCode || selection.materialType || "",
+      item_name: selection.itemName || "",
+      cost_item_id: selection.costItemId || null,
+    };
+
+    if (selection.unit) {
+      const matchedUnit = usableUnits.find((u: any) => getUnitLabel(u) === selection.unit);
+      if (matchedUnit) {
+        updates.unit_id = getUnitId(matchedUnit);
+      }
+    }
+
+    if (selection.currentRate !== null) {
+      updates.rate = selection.currentRate;
+    }
+
+    updateItem(sectionId, rowId, updates);
+    setShowSmartSelector(false);
+    setSmartSelectorContext(null);
+  }
+
   function goPickerStep(step: PickerStep) {
     setPicker((p) => ({ ...p, step, search: "" }));
   }
@@ -1651,11 +1705,22 @@ useEffect(() => {
                             type="button"
                             onClick={() => openPicker(s.id, it.id)}
                             disabled={!canEdit || rateLoading}
-                            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50 text-left"
+                            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50 text-left text-sm"
                             title="Pick from Rate Library (Type → Category → Item → Variant)"
                           >
                             Pick item…
                           </button>
+                          {companyId && (
+                            <button
+                              type="button"
+                              onClick={() => openSmartSelector(s.id, it.id)}
+                              disabled={!canEdit || rateLoading}
+                              className="w-full px-3 py-2 rounded bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white disabled:opacity-50 text-left text-xs font-medium"
+                              title="Smart Selector (Guided cascading selection)"
+                            >
+                              🪄 Smart Selector
+                            </button>
+                          )}
                           <div className="text-[11px] text-slate-400 break-words">{pickLabel || "—"}</div>
                         </div>
 
@@ -2018,6 +2083,18 @@ useEffect(() => {
         projectId={routeProjectId || ""}
         onImport={handleImportTakeoff}
       />
+
+      {showSmartSelector && companyId && (
+        <SmartItemSelector
+          companyId={companyId}
+          onSelect={handleSmartSelection}
+          onCancel={() => {
+            setShowSmartSelector(false);
+            setSmartSelectorContext(null);
+          }}
+          title="Smart Item Selector - BOQ"
+        />
+      )}
     </div>
   );
 }
