@@ -43,6 +43,12 @@ export default function ExpensesPage() {
     notes: "",
   });
 
+  useEffect(() => {
+    loadExpenses();
+    loadProjectsAndCategories();
+    loadUserInfo();
+  }, []);
+
   if (financeAccess.loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -54,12 +60,6 @@ export default function ExpensesPage() {
   if (!financeAccess.canViewExpenses) {
     return <FinanceAccessDenied />;
   }
-
-  useEffect(() => {
-    loadExpenses();
-    loadProjectsAndCategories();
-    loadUserInfo();
-  }, []);
 
   async function loadUserInfo() {
     try {

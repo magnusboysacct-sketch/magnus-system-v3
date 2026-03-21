@@ -66,6 +66,12 @@ export default function AccountsReceivablePage() {
     notes: "",
   });
 
+  useEffect(() => {
+    loadInvoices();
+    loadClientsAndProjects();
+    loadContracts();
+  }, []);
+
   if (financeAccess.loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -77,12 +83,6 @@ export default function AccountsReceivablePage() {
   if (!financeAccess.canViewCompanyReports) {
     return <FinanceAccessDenied />;
   }
-
-  useEffect(() => {
-    loadInvoices();
-    loadClientsAndProjects();
-    loadContracts();
-  }, []);
 
   async function loadInvoices() {
     try {
