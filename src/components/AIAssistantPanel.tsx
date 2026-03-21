@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Sparkles, X, ChevronRight, CircleAlert as AlertCircle, Lightbulb, TriangleAlert as AlertTriangle, TrendingUp } from "lucide-react";
 import { generateSuggestions, type AISuggestion, type AIContext, type AIPromptData } from "../lib/aiAssistant";
 import { Button } from "./common/Button";
+import { theme } from "../lib/theme";
 
 interface AIAssistantPanelProps {
   context: AIContext;
@@ -57,27 +58,27 @@ export default function AIAssistantPanel({
   function getColorClasses(type: string, priority: string) {
     if (type === "warning") {
       return {
-        border: "border-yellow-800",
-        bg: "bg-yellow-950/30",
-        icon: "text-yellow-400",
-        iconBg: "bg-yellow-500/20",
+        border: theme.status.warning.border,
+        bg: theme.status.warning.bg,
+        icon: theme.status.warning.text,
+        iconBg: "bg-yellow-500/20 dark:bg-yellow-500/20",
       };
     }
 
     if (priority === "high") {
       return {
-        border: "border-blue-800",
-        bg: "bg-blue-950/30",
-        icon: "text-blue-400",
-        iconBg: "bg-blue-500/20",
+        border: theme.status.info.border,
+        bg: theme.status.info.bg,
+        icon: theme.status.info.text,
+        iconBg: "bg-blue-500/20 dark:bg-blue-500/20",
       };
     }
 
     return {
-      border: "border-slate-800",
-      bg: "bg-slate-900/30",
-      icon: "text-slate-400",
-      iconBg: "bg-slate-500/20",
+      border: theme.border.base,
+      bg: theme.surface.muted,
+      icon: theme.text.muted,
+      iconBg: "bg-slate-500/20 dark:bg-slate-500/20",
     };
   }
 

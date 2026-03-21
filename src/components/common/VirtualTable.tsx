@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { theme } from "../../lib/theme";
 
 interface VirtualTableProps<T> {
   data: T[];
@@ -58,7 +59,7 @@ export function VirtualTable<T>({
 
   return (
     <div ref={containerRef} className={`overflow-auto ${className}`}>
-      <div style={{ height: headerHeight }} className="sticky top-0 z-10 bg-slate-900">
+      <div style={{ height: headerHeight }} className={`sticky top-0 z-10 ${theme.table.header}`}>
         {renderHeader()}
       </div>
       <div style={{ height: totalHeight, position: "relative" }}>

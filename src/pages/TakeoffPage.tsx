@@ -1648,7 +1648,7 @@ export default function TakeoffPage() {
                   }}
                   className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                     toolMode === mode
-                      ? "bg-slate-900 text-white"
+                      ? "bg-slate-900 dark:bg-slate-900 text-white"
                       : "bg-white text-slate-700 hover:bg-slate-100"
                   }`}
                 >
@@ -1727,7 +1727,7 @@ export default function TakeoffPage() {
             <button
               type="button"
               onClick={commitCalibration}
-              className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+              className="rounded-lg bg-slate-800 dark:bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-800"
             >
               Apply
             </button>
@@ -1826,7 +1826,7 @@ export default function TakeoffPage() {
                     onClick={() => setCurrentPage(pageNo)}
                     className={`mb-3 w-full rounded-2xl border p-3 text-left transition ${
                       active
-                        ? "border-slate-900 bg-slate-900 text-white"
+                        ? "border-slate-800 dark:border-slate-900 bg-slate-800 dark:bg-slate-900 text-white"
                         : "border-slate-200 bg-white hover:bg-slate-50"
                     }`}
                   >
@@ -1890,7 +1890,7 @@ export default function TakeoffPage() {
                 <button
                   type="button"
                   onClick={triggerPdfSelect}
-                  className="mt-5 rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800"
+                  className="mt-5 rounded-xl bg-slate-800 dark:bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-800"
                 >
                   Upload Drawing PDF
                 </button>
@@ -2572,7 +2572,7 @@ export default function TakeoffPage() {
                 <button
                   type="button"
                   onClick={addGroup}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                  className="rounded-lg bg-slate-800 dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-800"
                 >
                   Add Group
                 </button>
@@ -2586,7 +2586,7 @@ export default function TakeoffPage() {
                     <div
                       key={group.id}
                       className={`rounded-2xl border p-3 ${
-                        active ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"
+                        active ? "border-slate-700 dark:border-slate-900 bg-slate-100 dark:bg-slate-50" : "border-slate-200 bg-white"
                       }`}
                     >
                       <div className="mb-2 flex items-center gap-2">
@@ -2637,7 +2637,7 @@ export default function TakeoffPage() {
                         <div
                           key={m.id}
                           className={`rounded-2xl border p-3 transition ${
-                            active ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"
+                            active ? "border-slate-700 dark:border-slate-900 bg-slate-100 dark:bg-slate-50" : "border-slate-200 bg-white"
                           }`}
                         >
                           <div className="flex items-start justify-between gap-3">

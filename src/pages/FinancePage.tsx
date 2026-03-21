@@ -8,6 +8,7 @@ import CostCodeSummary from "../components/CostCodeSummary";
 import CashFlowForecast from "../components/CashFlowForecast";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
+import { theme } from "../lib/theme";
 
 function numOr(value: unknown, fallback = 0): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -189,15 +190,15 @@ export default function FinancePage() {
             <h1 className="text-2xl font-semibold">Finance</h1>
 
             {currentProject && (
-              <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              <div className={`mt-2 text-sm ${theme.text.muted}`}>
                 Project:{" "}
-                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                <span className={`font-semibold ${theme.text.secondary}`}>
                   {currentProject.name}
                 </span>
               </div>
             )}
 
-            <p className="text-slate-400 mt-1">Select a project to view financial details</p>
+            <p className={`${theme.text.muted} mt-1`}>Select a project to view financial details</p>
           </div>
         </div>
 
@@ -221,15 +222,15 @@ export default function FinancePage() {
           <h1 className="text-2xl font-semibold">Finance</h1>
 
           {currentProject && (
-            <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            <div className={`mt-2 text-sm ${theme.text.muted}`}>
               Project:{" "}
-              <span className="font-semibold text-slate-700 dark:text-slate-200">
+              <span className={`font-semibold ${theme.text.secondary}`}>
                 {currentProject.name}
               </span>
             </div>
           )}
 
-          <p className="text-slate-400 mt-1">
+          <p className={`${theme.text.muted} mt-1`}>
             {projectName ? `${projectName} - ` : ""}
             Budget, commitments, and delivery tracking
           </p>

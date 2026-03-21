@@ -12,6 +12,7 @@ import { SmartItemSelector } from "../components/SmartItemSelector";
 import AIAssistantPanel from "../components/AIAssistantPanel";
 import { BOQSuggestionCard } from "../components/BOQSuggestionCard";
 import { addSuggestionToBOQ, type BOQSuggestion } from "../lib/boqSuggestions";
+import { theme } from "../lib/theme";
 
 type RateItem = {
   id: string;
@@ -1536,7 +1537,7 @@ useEffect(() => {
           <button
             onClick={loadLatestClick}
             disabled={!activeProjectId || persistLoading}
-            className="px-3 py-2 rounded bg-slate-700 text-white disabled:opacity-50"
+            className="px-3 py-2 rounded bg-slate-600 dark:bg-slate-700 text-white disabled:opacity-50"
           >
             Load Latest
           </button>
@@ -1544,7 +1545,7 @@ useEffect(() => {
           <button
             onClick={saveDraftClick}
             disabled={!activeProjectId || persistLoading}
-            className="px-3 py-2 rounded bg-slate-700 text-white disabled:opacity-50"
+            className="px-3 py-2 rounded bg-slate-600 dark:bg-slate-700 text-white disabled:opacity-50"
           >
             Save Draft
           </button>
@@ -1552,7 +1553,7 @@ useEffect(() => {
           <button
             onClick={approveAndLock}
             disabled={!activeProjectId || persistLoading}
-            className="px-3 py-2 rounded bg-slate-700 text-white disabled:opacity-50"
+            className="px-3 py-2 rounded bg-slate-600 dark:bg-slate-700 text-white disabled:opacity-50"
           >
             Approve
           </button>
@@ -1641,12 +1642,12 @@ useEffect(() => {
         <button
           onClick={addSection}
           disabled={!canEdit || !activeProjectId}
-          className="px-3 py-2 rounded bg-slate-700 text-white disabled:opacity-50"
+          className="px-3 py-2 rounded bg-slate-600 dark:bg-slate-700 text-white disabled:opacity-50"
         >
           Add Section
         </button>
 
-        <button onClick={goEditScopes} className="px-3 py-2 rounded bg-slate-700 text-white">
+        <button onClick={goEditScopes} className="px-3 py-2 rounded bg-slate-600 dark:bg-slate-700 text-white">
           Edit Scopes
         </button>
       </div>
@@ -1658,15 +1659,15 @@ useEffect(() => {
           </div>
         ) : (
           sections.map((s) => (
-            <div key={s.id} className="p-4 border border-slate-700 rounded space-y-4 bg-slate-950/20">
+            <div key={s.id} className="p-4 border border-slate-300 dark:border-slate-700 rounded space-y-4 bg-slate-100/50 dark:bg-slate-950/20">
               <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-                <div className="text-sm text-slate-300 w-[120px]">Section Category</div>
+                <div className="text-sm text-slate-700 dark:text-slate-300 w-[120px]">Section Category</div>
 
                 <select
                   value={s.masterCategoryId ?? ""}
                   disabled={!canEdit}
                   onChange={(e) => onPickMasterCategory(s.id, e.target.value)}
-                  className="w-full lg:max-w-[320px] px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
+                  className="w-full lg:max-w-[320px] px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50"
                 >
                   <option value="">Select…</option>
                   {usableCategories.map((c: any) => (
@@ -1680,7 +1681,7 @@ useEffect(() => {
                   value={s.title}
                   disabled={!canEdit}
                   onChange={(e) => updateSection(s.id, { title: e.target.value })}
-                  className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
+                  className="w-full px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50"
                   placeholder="New Section"
                 />
 
@@ -1688,7 +1689,7 @@ useEffect(() => {
                   <button
                     onClick={() => addItem(s.id)}
                     disabled={!canEdit}
-                    className="px-3 py-2 rounded bg-slate-800 text-white disabled:opacity-50"
+                    className="px-3 py-2 rounded bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white disabled:opacity-50"
                   >
                     Add Item
                   </button>
@@ -1696,7 +1697,7 @@ useEffect(() => {
                   <button
                     onClick={() => openAssemblyModal(s.id)}
                     disabled={!canEdit || assemblyLoading}
-                    className="px-3 py-2 rounded bg-slate-800 text-white disabled:opacity-50"
+                    className="px-3 py-2 rounded bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white disabled:opacity-50"
                     title="Add from Assembly (PlanSwift-style)"
                   >
                     Add Assembly
@@ -1718,7 +1719,7 @@ useEffect(() => {
                   value={s.scope}
                   disabled={!canEdit}
                   onChange={(e) => updateSection(s.id, { scope: e.target.value })}
-                  className="w-full px-3 py-3 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
+                  className="w-full px-3 py-3 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50"
                   rows={4}
                   placeholder="Section scope/remarks (prints later)"
                 />
@@ -1744,7 +1745,7 @@ useEffect(() => {
                             type="button"
                             onClick={() => openPicker(s.id, it.id)}
                             disabled={!canEdit || rateLoading}
-                            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50 text-left text-sm"
+                            className="w-full px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50 text-left text-sm"
                             title="Pick from Rate Library (Type → Category → Item → Variant)"
                           >
                             Pick item…
@@ -1769,7 +1770,7 @@ useEffect(() => {
                             value={it.item_name}
                             disabled={!canEdit}
                             onChange={(e) => updateItem(s.id, it.id, { item_name: e.target.value })}
-                            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
+                            className="w-full px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50"
                             placeholder="Item"
                           />
                         </div>
@@ -1780,7 +1781,7 @@ useEffect(() => {
                             value={it.description}
                             disabled={!canEdit}
                             onChange={(e) => updateItem(s.id, it.id, { description: e.target.value })}
-                            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
+                            className="w-full px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50"
                             rows={2}
                             placeholder="Description"
                           />
@@ -1792,7 +1793,7 @@ useEffect(() => {
                             value={it.unit_id ?? ""}
                             disabled={!canEdit}
                             onChange={(e) => updateItem(s.id, it.id, { unit_id: e.target.value || null })}
-                            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
+                            className="w-full px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50"
                           >
                             <option value="">Unit…</option>
                             {usableUnits.map((u: any) => (
@@ -1811,7 +1812,7 @@ useEffect(() => {
                               value={Number.isFinite(it.qty) ? it.qty : 0}
                               disabled={!canEdit}
                               onChange={(e) => updateItem(s.id, it.id, { qty: numOr(e.target.value, 0) })}
-                              className="flex-1 px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
+                              className="flex-1 px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50"
                             />
                             {canEdit && routeProjectId && (
                               <button
@@ -1840,14 +1841,14 @@ useEffect(() => {
                             value={Number.isFinite(it.rate) ? it.rate : 0}
                             disabled={!canEdit}
                             onChange={(e) => updateItem(s.id, it.id, { rate: numOr(e.target.value, 0) })}
-                            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white disabled:opacity-50"
+                            className="w-full px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white disabled:opacity-50"
                           />
                         </div>
 
                         <div className="col-span-12 md:col-span-1 flex items-end gap-2">
                           <div className="flex-1">
                             <div className="text-xs text-slate-400 mb-1">Amt</div>
-                            <div className="px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white">
+                            <div className="px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white">
                               {amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </div>
                           </div>
@@ -1879,15 +1880,15 @@ useEffect(() => {
       {/* Picker modal */}
       {picker.open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-3xl rounded border border-slate-700 bg-slate-950 text-white shadow-xl">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <div className="w-full max-w-3xl rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
               <div className="space-y-1">
                 <div className="text-sm font-semibold">Pick Item</div>
                 <div className="text-xs text-slate-400">
                   {pickerBreadcrumb() ? pickerBreadcrumb() : "Type → Category → Item → Variant"}
                 </div>
               </div>
-              <button onClick={closePicker} className="px-3 py-2 rounded bg-slate-800 text-white">
+              <button onClick={closePicker} className="px-3 py-2 rounded bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white">
                 Close
               </button>
             </div>
@@ -1897,7 +1898,7 @@ useEffect(() => {
                 <button
                   onClick={() => goPickerStep("type")}
                   className={`px-3 py-2 rounded border ${
-                    picker.step === "type" ? "bg-slate-800 border-slate-600" : "bg-slate-900 border-slate-800"
+                    picker.step === "type" ? "bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-600" : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800"
                   }`}
                 >
                   1. Type{stepDone("type") ? " ✓" : ""}
@@ -1907,7 +1908,7 @@ useEffect(() => {
                   onClick={() => (stepDone("type") ? goPickerStep("category") : null)}
                   disabled={!stepDone("type")}
                   className={`px-3 py-2 rounded border disabled:opacity-50 ${
-                    picker.step === "category" ? "bg-slate-800 border-slate-600" : "bg-slate-900 border-slate-800"
+                    picker.step === "category" ? "bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-600" : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800"
                   }`}
                 >
                   2. Category{stepDone("category") ? " ✓" : ""}
@@ -1917,7 +1918,7 @@ useEffect(() => {
                   onClick={() => (stepDone("category") ? goPickerStep("item") : null)}
                   disabled={!stepDone("category")}
                   className={`px-3 py-2 rounded border disabled:opacity-50 ${
-                    picker.step === "item" ? "bg-slate-800 border-slate-600" : "bg-slate-900 border-slate-800"
+                    picker.step === "item" ? "bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-600" : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800"
                   }`}
                 >
                   3. Item{stepDone("item") ? " ✓" : ""}
@@ -1927,7 +1928,7 @@ useEffect(() => {
                   onClick={() => (stepDone("item") ? goPickerStep("variant") : null)}
                   disabled={!stepDone("item")}
                   className={`px-3 py-2 rounded border disabled:opacity-50 ${
-                    picker.step === "variant" ? "bg-slate-800 border-slate-600" : "bg-slate-900 border-slate-800"
+                    picker.step === "variant" ? "bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-600" : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-800"
                   }`}
                 >
                   4. Variant
@@ -1940,7 +1941,7 @@ useEffect(() => {
                   <input
                     value={picker.search}
                     onChange={(e) => setPicker((p) => ({ ...p, search: e.target.value }))}
-                    className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
+                    className="w-full px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
                     placeholder={`Search ${stepTitle(picker.step)}…`}
                     autoFocus
                   />
@@ -1948,8 +1949,8 @@ useEffect(() => {
                 <div className="text-xs text-slate-500">{rateLoading ? "Loading rate items…" : `${rateItems.length} rate items`}</div>
               </div>
 
-              <div className="border border-slate-800 rounded overflow-hidden">
-                <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 text-sm font-medium">
+              <div className="border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+                <div className="px-3 py-2 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-sm font-medium">
                   Step {picker.step === "type" ? "1" : picker.step === "category" ? "2" : picker.step === "item" ? "3" : "4"}:{" "}
                   {stepTitle(picker.step)}
                 </div>
@@ -1957,7 +1958,7 @@ useEffect(() => {
                 <div className="max-h-[360px] overflow-auto">
                   {picker.step === "variant" && pickerOptions.hasNone ? (
                     <div className="p-3">
-                      <div className="text-sm text-slate-200">No variants found for this item.</div>
+                      <div className="text-sm text-slate-900 dark:text-slate-200">No variants found for this item.</div>
                       <div className="text-xs text-slate-400 mt-1">Continue with “No variant”.</div>
                       <div className="mt-3">
                         <button onClick={() => void finalizePick("")} className="px-3 py-2 rounded bg-blue-700 text-white">
@@ -1968,7 +1969,7 @@ useEffect(() => {
                   ) : pickerOptions.list.length === 0 ? (
                     <div className="p-3 text-sm text-slate-400">No matches.</div>
                   ) : (
-                    <div className="divide-y divide-slate-800">
+                    <div className="divide-y divide-slate-200 dark:divide-slate-800">
                       {pickerOptions.list.map((opt) => (
                         <button
                           key={opt}
@@ -1978,7 +1979,7 @@ useEffect(() => {
                             else if (picker.step === "item") pickItem(opt);
                             else void finalizePick(opt);
                           }}
-                          className="w-full text-left px-3 py-3 hover:bg-slate-900"
+                          className="w-full text-left px-3 py-3 hover:bg-slate-100 dark:hover:bg-slate-900"
                         >
                           <div className="text-sm">{opt}</div>
                         </button>
@@ -1996,7 +1997,7 @@ useEffect(() => {
                     else if (picker.step === "category") goPickerStep("type");
                   }}
                   disabled={picker.step === "type"}
-                  className="px-3 py-2 rounded bg-slate-800 text-white disabled:opacity-50"
+                  className="px-3 py-2 rounded bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white disabled:opacity-50"
                 >
                   Back
                 </button>
@@ -2013,13 +2014,13 @@ useEffect(() => {
       {/* Assembly modal */}
       {asmModal.open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-3xl rounded border border-slate-700 bg-slate-950 text-white shadow-xl">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+          <div className="w-full max-w-3xl rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white shadow-xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
               <div className="space-y-1">
                 <div className="text-sm font-semibold">Add From Assembly</div>
                 <div className="text-xs text-slate-400">Select an assembly and quantity, then explode into BOQ lines.</div>
               </div>
-              <button onClick={closeAssemblyModal} className="px-3 py-2 rounded bg-slate-800 text-white">
+              <button onClick={closeAssemblyModal} className="px-3 py-2 rounded bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white">
                 Close
               </button>
             </div>
@@ -2033,7 +2034,7 @@ useEffect(() => {
                   <input
                     value={asmModal.search}
                     onChange={(e) => setAsmModal((p) => ({ ...p, search: e.target.value }))}
-                    className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
+                    className="w-full px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
                     placeholder="Search assembly…"
                     autoFocus
                   />
@@ -2044,14 +2045,14 @@ useEffect(() => {
                   <input
                     value={asmModal.qty}
                     onChange={(e) => setAsmModal((p) => ({ ...p, qty: e.target.value }))}
-                    className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
+                    className="w-full px-3 py-2 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
                     placeholder="1"
                   />
                 </div>
               </div>
 
-              <div className="border border-slate-800 rounded overflow-hidden">
-                <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 text-sm font-medium">
+              <div className="border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+                <div className="px-3 py-2 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-sm font-medium">
                   Assemblies ({assemblies.length})
                 </div>
 
@@ -2074,8 +2075,8 @@ useEffect(() => {
                         <button
                           key={a.id}
                           onClick={() => setAsmModal((p) => ({ ...p, selectedAssemblyId: a.id }))}
-                          className={`w-full text-left px-3 py-3 hover:bg-slate-900 border-b border-slate-800 ${
-                            selected ? "bg-slate-900" : ""
+                          className={`w-full text-left px-3 py-3 hover:bg-slate-100 dark:hover:bg-slate-900 border-b border-slate-200 dark:border-slate-800 ${
+                            selected ? "bg-slate-100 dark:bg-slate-900" : ""
                           }`}
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -2132,7 +2133,7 @@ useEffect(() => {
                   <Sparkles className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-200">AI BOQ Suggestions</h3>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-200">AI BOQ Suggestions</h3>
                   <p className="text-sm text-slate-400">
                     {aiSuggestionsModal.suggestions.filter((s) => !ignoredSuggestions.has(s.id)).length} items recommended
                   </p>
@@ -2140,7 +2141,7 @@ useEffect(() => {
               </div>
               <button
                 onClick={() => setAiSuggestionsModal({ open: false, suggestions: [] })}
-                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-800 text-slate-400 hover:text-slate-300 transition-colors"
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2175,7 +2176,7 @@ useEffect(() => {
                 </p>
                 <button
                   onClick={() => setAiSuggestionsModal({ open: false, suggestions: [] })}
-                  className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors"
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
                 >
                   Close
                 </button>

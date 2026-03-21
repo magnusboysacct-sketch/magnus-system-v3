@@ -43,6 +43,7 @@ import {
   type PurchaseOrderStatus,
 } from "../lib/purchaseOrders";
 import { useProjectContext } from "../context/ProjectContext";
+import { theme } from "../lib/theme";
 
 export default function ProcurementPage() {
   const { currentProjectId, currentProject } = useProjectContext();
@@ -493,9 +494,9 @@ function ListView({
           <h1 className="text-2xl font-semibold">Procurement Documents</h1>
 
           {currentProjectName && (
-            <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            <div className={`mt-2 text-sm ${theme.text.muted}`}>
               Project:{" "}
-              <span className="font-semibold text-slate-700 dark:text-slate-200">
+              <span className={`font-semibold ${theme.text.secondary}`}>
                 {currentProjectName}
               </span>
             </div>
@@ -1525,9 +1526,9 @@ function PurchaseOrdersListView({
         <div>
           <h1 className="text-2xl font-semibold">Purchase Orders</h1>
           {currentProjectName && (
-            <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            <div className={`mt-2 text-sm ${theme.text.muted}`}>
               Project:{" "}
-              <span className="font-semibold text-slate-700 dark:text-slate-200">
+              <span className={`font-semibold ${theme.text.secondary}`}>
                 {currentProjectName}
               </span>
             </div>
@@ -1799,9 +1800,9 @@ function PurchaseOrderDocumentView({
             </div>
 
             {currentProjectName && (
-              <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              <div className={`mt-2 text-sm ${theme.text.muted}`}>
                 Project:{" "}
-                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                <span className={`font-semibold ${theme.text.secondary}`}>
                   {currentProjectName}
                 </span>
               </div>

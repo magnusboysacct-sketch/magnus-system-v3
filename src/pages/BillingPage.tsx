@@ -5,6 +5,7 @@ import type { Plan } from "../lib/plans";
 import { PLAN_FEATURES } from "../lib/plans";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
+import { theme } from "../lib/theme";
 
 export default function BillingPage() {
   const { plan, setPlan } = usePlan();
@@ -36,12 +37,12 @@ export default function BillingPage() {
   return (
     <div className="p-8 max-w-7xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">Billing & Plans</h1>
-        <p className="text-slate-600 dark:text-slate-400">Choose the plan that fits your needs</p>
+        <h1 className={`text-3xl font-bold ${theme.text.primary} mb-2`}>Billing & Plans</h1>
+        <p className={theme.text.muted}>Choose the plan that fits your needs</p>
       </div>
 
-      <div className="mb-8 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
-        <p className="text-sm text-blue-900 dark:text-blue-100">
+      <div className={`mb-8 p-4 ${theme.status.info.bg} border ${theme.status.info.border} rounded-lg`}>
+        <p className={`text-sm ${theme.status.info.text}`}>
           <strong>Current Plan:</strong> {PLAN_FEATURES[plan].name} ({PLAN_FEATURES[plan].price})
         </p>
       </div>
@@ -57,8 +58,8 @@ export default function BillingPage() {
               className={`
                 relative rounded-lg border-2 p-6 transition-all
                 ${isCurrent
-                  ? "border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-950/20"
-                  : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
+                  ? `border-blue-500 ${theme.status.info.bg}`
+                  : `${theme.border.base} ${theme.surface.base}`
                 }
               `}
             >
@@ -69,12 +70,12 @@ export default function BillingPage() {
               )}
 
               <div className="mb-6">
-                <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-2">
+                <h3 className={`text-xl font-bold ${theme.text.primary} mb-2`}>
                   {planInfo.name}
                 </h3>
-                <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                <div className={`text-3xl font-bold ${theme.text.primary}`}>
                   {planInfo.price.split("/")[0]}
-                  <span className="text-sm font-normal text-slate-500 dark:text-slate-400">
+                  <span className={`text-sm font-normal ${theme.text.muted}`}>
                     /{planInfo.price.split("/")[1]}
                   </span>
                 </div>
@@ -89,7 +90,7 @@ export default function BillingPage() {
                   if (feature.getValue) {
                     display = feature.getValue(p);
                   } else if (typeof value === "boolean") {
-                    display = value ? <Check size={16} className="text-green-600 dark:text-green-400" /> : <X size={16} className="text-slate-300 dark:text-slate-600" />;
+                    display = value ? <Check size={16} className={theme.status.success.text} /> : <X size={16} className={theme.text.muted} />;
                   } else if (typeof value === "number") {
                     display = value;
                   } else if (value === null) {
@@ -99,7 +100,7 @@ export default function BillingPage() {
                   }
 
                   return (
-                    <li key={feature.key} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                    <li key={feature.key} className={`flex items-center gap-2 text-sm ${theme.text.secondary}`}>
                       {typeof display === "object" && display !== null ? (
                         <>
                           {display}
@@ -122,7 +123,7 @@ export default function BillingPage() {
                 className={`
                   w-full py-2 px-4 rounded-lg font-semibold transition-all
                   ${isCurrent
-                    ? "bg-slate-200 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed"
+                    ? `${theme.input.disabled} ${theme.text.muted} cursor-not-allowed`
                     : "bg-blue-600 hover:bg-blue-700 text-white"
                   }
                 `}
@@ -134,8 +135,8 @@ export default function BillingPage() {
         })}
       </div>
 
-      <div className="mt-8 p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg">
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+      <div className={`mt-8 p-4 ${theme.surface.muted} border ${theme.border.base} rounded-lg`}>
+        <p className={`text-xs ${theme.text.muted}`}>
           <strong>Note:</strong> This is a demo monetization system. No real payments are processed.
           Plan selection is stored locally for testing purposes.
         </p>

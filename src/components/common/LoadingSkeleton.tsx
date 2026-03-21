@@ -1,4 +1,5 @@
 import React from "react";
+import { theme } from "../../lib/theme";
 
 interface LoadingSkeletonProps {
   className?: string;
@@ -6,7 +7,7 @@ interface LoadingSkeletonProps {
 
 export function LoadingSkeleton({ className = "" }: LoadingSkeletonProps) {
   return (
-    <div className={`animate-pulse bg-slate-800 rounded ${className}`} />
+    <div className={`animate-pulse ${theme.loading.skeleton} rounded ${className}`} />
   );
 }
 
@@ -37,7 +38,7 @@ export function CardSkeleton({ count = 3 }: { count?: number }) {
   return (
     <div className="space-y-4">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-slate-900 rounded-lg border border-slate-800 p-6">
+        <div key={i} className={`${theme.surface.base} rounded-lg border ${theme.border.base} p-6`}>
           <LoadingSkeleton className="h-6 w-1/3 mb-4" />
           <LoadingSkeleton className="h-4 w-2/3 mb-2" />
           <LoadingSkeleton className="h-4 w-1/2" />
