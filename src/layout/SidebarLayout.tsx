@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle, ChevronDown, ChevronUp, Wallet, ChartBar as BarChart, Package, Library, ClipboardList, Truck, Calculator, Building2, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle, ChevronDown, ChevronUp, Wallet, ChartBar as BarChart, Package, Library, ClipboardList, Truck, Calculator, Building2, ShieldCheck, Smartphone } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
 import ProjectSelector from "../components/ProjectSelector";
@@ -24,7 +24,10 @@ interface NavSection {
 const navSections: NavSection[] = [
   {
     title: "Main",
-    items: [{ to: "/", label: "Dashboard", icon: LayoutDashboard }],
+    items: [
+      { to: "/", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/field-ops", label: "Field Ops", icon: Smartphone },
+    ],
   },
   {
     title: "CRM",

@@ -30,6 +30,7 @@ import LoginPage from "./pages/LoginPage";
 import AcceptInvitePage from "./pages/AcceptInvitePage";
 import ClientProjectPage from "./pages/ClientProjectPage";
 import WorkerPortalPage from "./pages/WorkerPortalPage";
+import FieldOpsPage from "./pages/FieldOpsPage";
 import { supabase } from "./lib/supabase";
 import CompanyUsersPage from "./pages/CompanyUsersPage";
 import { ProjectProvider } from "./context/ProjectContext";
@@ -131,8 +132,18 @@ export default function App() {
             }
           />
 
+          {/* Field Operations routes */}
+          <Route
+            path="/field-ops"
+            element={
+              <RequireAuth>
+                <FieldOpsPage />
+              </RequireAuth>
+            }
+          />
+
           {/* Protected routes */}
-                   <Route
+          <Route
             element={
               <RequireAuth>
                 <SidebarLayout />
