@@ -8,6 +8,7 @@ import { generateProcurementFromBOQ } from "../lib/procurement";
 import { generateEstimateFromBOQ } from "../lib/estimates";
 import { useProjectContext } from "../context/ProjectContext";
 import { SmartItemSelector } from "../components/SmartItemSelector";
+import AIAssistantPanel from "../components/AIAssistantPanel";
 
 type RateItem = {
   id: string;
@@ -2095,6 +2096,32 @@ useEffect(() => {
           title="Smart Item Selector - BOQ"
         />
       )}
+
+      <AIAssistantPanel
+        context="boq"
+        currentData={{
+          itemCount: sections.reduce((sum, s) => sum + s.items.length, 0),
+          missingUnits: sections.reduce(
+            (sum, s) => sum + s.items.filter((i) => !i.unit_id).length,
+            0
+          ),
+          hasContingency: sections.some((s) =>
+            s.items.some((i) => i.item_name.toLowerCase().includes("contingency"))
+          ),
+        }}
+        projectId={routeProjectId || undefined}
+        onAction={(action, data) => {
+          if (action === "Import from Takeoff") {
+            setImportTakeoffModal({ open: true, sectionId: sections[0]?.id || null, itemId: null });
+          } else if (action === "Create Assembly") {
+            nav("/assemblies");
+          } else if (action === "Export to Procurement") {
+            handleGenerateProcurement();
+          } else if (data.route) {
+            nav(data.route);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { linkReceiptToExpense, getExpenseReceipts, getReceiptUrl, type OCRResult
 import type { Expense } from "../lib/finance";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
+import AIAssistantPanel from "../components/AIAssistantPanel";
 
 export default function ExpensesPage() {
   const financeAccess = useFinanceAccess();
@@ -776,6 +777,23 @@ export default function ExpensesPage() {
           </div>
         </div>
       )}
+
+      <AIAssistantPanel
+        context="expense"
+        currentData={{
+          isNewExpense: showModal && !editingExpense,
+          missingCostCodes: expenses.filter((e) => !e.cost_code_id).length,
+          hasExpenses: expenses.length > 0,
+          duplicateWarning: false,
+        }}
+        onAction={(action, data) => {
+          if (action === "Upload Receipt") {
+            setShowModal(true);
+          } else if (action === "View Budget") {
+            window.location.href = "/finance";
+          }
+        }}
+      />
     </>
   );
 }

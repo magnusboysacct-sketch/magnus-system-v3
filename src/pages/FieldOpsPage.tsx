@@ -8,6 +8,7 @@ import { fetchProjectActivity, type ProjectActivity } from "../lib/activity";
 import MobileDailyLogForm from "../components/MobileDailyLogForm";
 import MobilePhotoCapture from "../components/MobilePhotoCapture";
 import { BaseModal } from "../components/common/BaseModal";
+import AIAssistantPanel from "../components/AIAssistantPanel";
 
 export default function FieldOpsPage() {
   const navigate = useNavigate();
@@ -337,6 +338,28 @@ export default function FieldOpsPage() {
           onCancel={() => setShowPhotoModal(false)}
         />
       </BaseModal>
+
+      {currentProject && (
+        <AIAssistantPanel
+          context="daily_log"
+          currentData={{
+            hasLogToday: !!todayLog,
+            consecutiveDaysWithoutLog: recentLogs.length === 0 ? 7 : 0,
+            weatherConditions: todayLog?.weather === "rainy" || todayLog?.weather === "stormy" ? "poor" : "good",
+            hasDelays: todayLog?.issues ? true : false,
+          }}
+          projectId={currentProject.id}
+          onAction={(action, data) => {
+            if (action === "Create Daily Log") {
+              setShowLogModal(true);
+            } else if (action === "View Today's Log") {
+              setShowLogModal(true);
+            } else if (action === "Add Photos") {
+              setShowPhotoModal(true);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
