@@ -8,6 +8,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import SidebarLayout from "./layout/SidebarLayout";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 import DashboardPage from "./pages/DashboardPage";
 import ClientsPage from "./pages/ClientsPage";
@@ -103,9 +104,10 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <ProjectProvider>
-      <BrowserRouter>
-        <AuthHashRouter />
+    <ErrorBoundary context="Application">
+      <ProjectProvider>
+        <BrowserRouter>
+          <AuthHashRouter />
 
         <Routes>
           {/* Public routes */}
@@ -187,5 +189,6 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </ProjectProvider>
+    </ErrorBoundary>
   );
 }
