@@ -1,6 +1,7 @@
 // src/pages/BOQPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Sparkles, X } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists";
 import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
@@ -9,6 +10,8 @@ import { generateEstimateFromBOQ } from "../lib/estimates";
 import { useProjectContext } from "../context/ProjectContext";
 import { SmartItemSelector } from "../components/SmartItemSelector";
 import AIAssistantPanel from "../components/AIAssistantPanel";
+import { BOQSuggestionCard } from "../components/BOQSuggestionCard";
+import { addSuggestionToBOQ, type BOQSuggestion } from "../lib/boqSuggestions";
 
 type RateItem = {
   id: string;
@@ -319,6 +322,17 @@ export default function BOQPage() {
     sectionId: null,
     itemId: null,
   });
+
+  const [aiSuggestionsModal, setAiSuggestionsModal] = useState<{
+    open: boolean;
+    suggestions: BOQSuggestion[];
+  }>({
+    open: false,
+    suggestions: [],
+  });
+
+  const [ignoredSuggestions, setIgnoredSuggestions] = useState<Set<string>>(new Set());
+  const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -1128,6 +1142,30 @@ useEffect(() => {
     } finally {
       setPersistLoading(false);
     }
+  }
+
+  async function handleAddSuggestion(suggestion: BOQSuggestion) {
+    if (!boqId) {
+      setPersistError("Please save the BOQ before adding suggestions");
+      return;
+    }
+
+    setAddingSuggestion(suggestion.id);
+
+    const result = await addSuggestionToBOQ(suggestion, boqId);
+
+    if (result.success) {
+      setIgnoredSuggestions((prev) => new Set(prev).add(suggestion.id));
+      await loadLatestBoqForProject(routeProjectId || "");
+    } else {
+      setPersistError(result.error || "Failed to add suggestion");
+    }
+
+    setAddingSuggestion(null);
+  }
+
+  function handleIgnoreSuggestion(suggestionId: string) {
+    setIgnoredSuggestions((prev) => new Set(prev).add(suggestionId));
   }
 
   function goEditScopes() {
@@ -2085,6 +2123,68 @@ useEffect(() => {
         onImport={handleImportTakeoff}
       />
 
+      {aiSuggestionsModal.open && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-700">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-200">AI BOQ Suggestions</h3>
+                  <p className="text-sm text-slate-400">
+                    {aiSuggestionsModal.suggestions.filter((s) => !ignoredSuggestions.has(s.id)).length} items recommended
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAiSuggestionsModal({ open: false, suggestions: [] })}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-800 text-slate-400 hover:text-slate-300 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {aiSuggestionsModal.suggestions.filter((s) => !ignoredSuggestions.has(s.id)).length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <p className="text-sm text-slate-400">All suggestions have been added or ignored</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {aiSuggestionsModal.suggestions
+                    .filter((s) => !ignoredSuggestions.has(s.id))
+                    .map((suggestion) => (
+                      <BOQSuggestionCard
+                        key={suggestion.id}
+                        suggestion={suggestion}
+                        onAdd={handleAddSuggestion}
+                        onIgnore={handleIgnoreSuggestion}
+                        isAdding={addingSuggestion === suggestion.id}
+                      />
+                    ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-700 p-6 bg-slate-900/50">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-slate-500">
+                  AI analyzes your BOQ to suggest missing items and related materials
+                </p>
+                <button
+                  onClick={() => setAiSuggestionsModal({ open: false, suggestions: [] })}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSmartSelector && companyId && (
         <SmartItemSelector
           companyId={companyId}
@@ -2108,6 +2208,17 @@ useEffect(() => {
           hasContingency: sections.some((s) =>
             s.items.some((i) => i.item_name.toLowerCase().includes("contingency"))
           ),
+          boqItems: sections.flatMap((s) =>
+            s.items.map((item) => ({
+              id: item.id,
+              item_code: "",
+              description: item.item_name,
+              unit: "",
+              quantity: item.qty || 0,
+              rate: item.rate || 0,
+              category: s.title || "",
+            }))
+          ),
         }}
         projectId={routeProjectId || undefined}
         onAction={(action, data) => {
@@ -2117,6 +2228,8 @@ useEffect(() => {
             nav("/assemblies");
           } else if (action === "Export to Procurement") {
             handleGenerateProcurement();
+          } else if (action === "show_ai_suggestions" && data.suggestions) {
+            setAiSuggestionsModal({ open: true, suggestions: data.suggestions });
           } else if (data.route) {
             nav(data.route);
           }

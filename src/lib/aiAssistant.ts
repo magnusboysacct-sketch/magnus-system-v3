@@ -1,4 +1,10 @@
 import { supabase } from "./supabase";
+import {
+  detectBOQContext,
+  generateBOQSuggestions,
+  type BOQItem,
+  type BOQSuggestion,
+} from "./boqSuggestions";
 
 export type AIContext =
   | "estimating"
@@ -37,7 +43,7 @@ export async function generateSuggestions(promptData: AIPromptData): Promise<AIS
       suggestions.push(...getEstimatingSuggestions(promptData));
       break;
     case "boq":
-      suggestions.push(...getBOQSuggestions(promptData));
+      suggestions.push(...(await getBOQSuggestions(promptData)));
       break;
     case "procurement":
       suggestions.push(...getProcurementSuggestions(promptData));
@@ -99,7 +105,7 @@ function getEstimatingSuggestions(data: AIPromptData): AISuggestion[] {
   return suggestions;
 }
 
-function getBOQSuggestions(data: AIPromptData): AISuggestion[] {
+async function getBOQSuggestions(data: AIPromptData): Promise<AISuggestion[]> {
   const suggestions: AISuggestion[] = [];
 
   if (!data.currentData || data.currentData?.itemCount === 0) {
@@ -108,7 +114,7 @@ function getBOQSuggestions(data: AIPromptData): AISuggestion[] {
       context: "boq",
       type: "recommendation",
       title: "Help me build my BOQ",
-      description: "Start by importing from takeoff measurements or adding items from the Smart Library. Structure your BOQ by trade for clarity.",
+      description: "Start by importing from takeoff measurements or adding items from the Smart Library. AI can suggest common items to get you started.",
       action: {
         label: "Import from Takeoff",
         data: { action: "import_takeoff" },
@@ -159,6 +165,30 @@ function getBOQSuggestions(data: AIPromptData): AISuggestion[] {
       description: `${data.currentData.missingUnits} items are missing units of measure. Add units for accurate quantity tracking.`,
       priority: "high",
     });
+  }
+
+  if (data.currentData?.boqItems && Array.isArray(data.currentData.boqItems)) {
+    try {
+      const context = await detectBOQContext(data.currentData.boqItems);
+      const boqSuggestions = await generateBOQSuggestions(context);
+
+      if (boqSuggestions.length > 0) {
+        suggestions.push({
+          id: "boq-ai-suggestions",
+          context: "boq",
+          type: "recommendation",
+          title: `AI Suggests ${boqSuggestions.length} Items`,
+          description: "Based on your current BOQ, AI has identified missing items and related materials you might need.",
+          action: {
+            label: "View Suggestions",
+            data: { action: "show_ai_suggestions", suggestions: boqSuggestions },
+          },
+          priority: "high",
+        });
+      }
+    } catch (error) {
+      console.error("Error generating AI BOQ suggestions:", error);
+    }
   }
 
   if (data.currentData?.itemCount > 0) {
