@@ -487,12 +487,7 @@ export default function ReceivingPage() {
   }
 
   function setReceiveQty(itemId: string, value: string) {
-    console.log(`setReceiveQty called: itemId=${itemId}, value="${value}"`);
-    setReceiveQtyByItemId((prev) => {
-      const updated = { ...prev, [itemId]: value };
-      console.log("Updated receiveQtyByItemId:", updated);
-      return updated;
-    });
+    setReceiveQtyByItemId((prev) => ({ ...prev, [itemId]: value }));
   }
 
   function clampReceiveQtyOnBlur(itemId: string, balance: number) {
@@ -517,35 +512,40 @@ export default function ReceivingPage() {
   async function handleSaveReceiving() {
     if (!selectedPO) return;
 
-    console.log("=== SAVE RECEIVING DEBUG ===");
-    console.log("receiveQtyByItemId state:", receiveQtyByItemId);
-    console.log("selectedPOItems:", selectedPOItems.map(i => ({ id: i.id, name: i.material_name })));
-
     const lines = selectedPOItems
       .map((item) => {
         const raw = receiveQtyByItemId[item.id] || "";
-        const qty = Math.max(0, toNumber(raw));
-        console.log(`Item ${item.material_name}: raw="${raw}", qty=${qty}`);
+        const qty = toNumber(raw);
+
+        if (!raw || qty <= 0) {
+          return null;
+        }
+
         return {
-          item,
-          qty,
+          itemId: item.id,
+          materialName: item.material_name || "Unnamed Material",
+          description: item.description,
+          unit: item.unit,
+          orderedQty: item.ordered,
+          deliveredQty: item.delivered,
+          receiveQty: qty,
+          balance: item.balance,
+          unitRate: toNumber(item.unit_rate),
         };
       })
-      .filter((row) => row.qty > 0);
-
-    console.log("Lines to save:", lines.map(l => ({ name: l.item.material_name, qty: l.qty })));
+      .filter((row): row is NonNullable<typeof row> => row !== null);
 
     if (lines.length === 0) {
       setPageError("Enter at least one received quantity before saving.");
       return;
     }
 
-    const overReceived = lines.find((row) => row.qty > row.item.balance);
+    const overReceived = lines.find((row) => row.receiveQty > row.balance);
     if (overReceived) {
       setPageError(
-        `Entered qty for "${overReceived.item.material_name || "item"}" is ${formatQty(
-          overReceived.qty
-        )}, but remaining balance is only ${formatQty(overReceived.item.balance)}.`
+        `Entered qty for "${overReceived.materialName}" is ${formatQty(
+          overReceived.receiveQty
+        )}, but remaining balance is only ${formatQty(overReceived.balance)}.`
       );
       return;
     }
@@ -594,17 +594,12 @@ export default function ReceivingPage() {
       const receivingRecordId = headerInsertRes.data.id;
 
       for (const line of lines) {
-        const newDelivered = line.item.delivered + line.qty;
-
-        console.log(`Processing line: ${line.item.material_name}`);
-        console.log(`  - line.qty: ${line.qty} (type: ${typeof line.qty})`);
-        console.log(`  - line.item.delivered: ${line.item.delivered}`);
-        console.log(`  - newDelivered: ${newDelivered}`);
+        const newDeliveredQty = line.deliveredQty + line.receiveQty;
 
         const updateItemRes = await supabase
           .from("purchase_order_items")
-          .update({ delivered_qty: newDelivered })
-          .eq("id", line.item.id);
+          .update({ delivered_qty: newDeliveredQty })
+          .eq("id", line.itemId);
 
         if (updateItemRes.error) throw updateItemRes.error;
 
@@ -613,29 +608,26 @@ export default function ReceivingPage() {
           company_id: companyId,
           project_id: currentProjectId,
           purchase_order_id: selectedPO.id,
-          purchase_order_item_id: line.item.id,
-          item_name: line.item.material_name || "Unnamed Material",
-          description: line.item.description,
-          unit: line.item.unit,
-          ordered_qty: Number(line.item.ordered),
-          previously_received_qty: Number(line.item.delivered),
-          received_qty: Number(line.qty),
-          unit_cost: toNumber(line.item.unit_rate),
-          delivered_cost: Number(toNumber(line.item.unit_rate) * line.qty),
+          purchase_order_item_id: line.itemId,
+          item_name: line.materialName,
+          description: line.description,
+          unit: line.unit,
+          ordered_qty: line.orderedQty,
+          previously_received_qty: line.deliveredQty,
+          received_qty: line.receiveQty,
+          unit_cost: line.unitRate,
+          delivered_cost: line.unitRate * line.receiveQty,
           notes: null,
         };
 
-        console.log("Insert payload:", insertPayload);
-        console.log("received_qty type check:", typeof insertPayload.received_qty, "value:", insertPayload.received_qty);
-
-        const lineInsertRes = await supabase.from("receiving_record_items").insert(insertPayload);
+        const lineInsertRes = await supabase
+          .from("receiving_record_items")
+          .insert(insertPayload);
 
         if (lineInsertRes.error) {
-          console.error("receiving_record_items insert failed:", lineInsertRes.error);
+          console.error("Insert failed for item:", line.materialName, lineInsertRes.error);
           throw lineInsertRes.error;
         }
-
-        console.log("Insert successful for:", line.item.material_name);
       }
 
       const refreshedItemsRes = await supabase
