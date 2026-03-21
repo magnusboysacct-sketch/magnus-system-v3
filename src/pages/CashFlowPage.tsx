@@ -7,8 +7,11 @@ import {
   getARSummary,
   getAPSummary,
 } from "../lib/finance";
+import { useFinanceAccess } from "../hooks/useFinanceAccess";
+import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 
 export default function CashFlowPage() {
+  const financeAccess = useFinanceAccess();
   const [loading, setLoading] = useState(true);
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -23,6 +26,18 @@ export default function CashFlowPage() {
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0],
     end: new Date().toISOString().split("T")[0],
   });
+
+  if (financeAccess.loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-slate-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!financeAccess.canViewCashFlow) {
+    return <FinanceAccessDenied />;
+  }
 
   useEffect(() => {
     loadData();

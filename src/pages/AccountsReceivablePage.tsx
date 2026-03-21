@@ -13,6 +13,8 @@ import {
 } from "../lib/finance";
 import type { ClientInvoice, ClientInvoiceLineItem, ClientPayment } from "../lib/finance";
 import ContractProgressBilling from "../components/ContractProgressBilling";
+import { useFinanceAccess } from "../hooks/useFinanceAccess";
+import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 
 interface LineItem {
   id?: string;
@@ -24,10 +26,23 @@ interface LineItem {
 }
 
 export default function AccountsReceivablePage() {
+  const financeAccess = useFinanceAccess();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "draft" | "sent" | "partial" | "overdue" | "paid">("all");
   const [showModal, setShowModal] = useState(false);
+
+  if (financeAccess.loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-slate-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!financeAccess.canViewCompanyReports) {
+    return <FinanceAccessDenied />;
+  }
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);

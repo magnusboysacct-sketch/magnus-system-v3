@@ -3,9 +3,24 @@ import { Check, X } from "lucide-react";
 import { usePlan } from "../hooks/usePlan";
 import type { Plan } from "../lib/plans";
 import { PLAN_FEATURES } from "../lib/plans";
+import { useFinanceAccess } from "../hooks/useFinanceAccess";
+import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 
 export default function BillingPage() {
   const { plan, setPlan } = usePlan();
+  const financeAccess = useFinanceAccess();
+
+  if (financeAccess.loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-slate-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!financeAccess.canViewBilling) {
+    return <FinanceAccessDenied />;
+  }
 
   const features = [
     { key: "takeoffExport", label: "Export Takeoff to CSV" },

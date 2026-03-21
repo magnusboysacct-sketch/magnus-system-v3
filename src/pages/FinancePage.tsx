@@ -6,6 +6,8 @@ import { getCommittedDeliveredSummary, getCategoryBreakdown } from "../lib/costs
 import SupplierInvoiceManager from "../components/SupplierInvoiceManager";
 import CostCodeSummary from "../components/CostCodeSummary";
 import CashFlowForecast from "../components/CashFlowForecast";
+import { useFinanceAccess } from "../hooks/useFinanceAccess";
+import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 
 function numOr(value: unknown, fallback = 0): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -23,8 +25,21 @@ export default function FinancePage() {
   const navigate = useNavigate();
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
   const { currentProjectId, currentProject } = useProjectContext();
+  const financeAccess = useFinanceAccess();
 
   const projectId = routeProjectId || currentProjectId || null;
+
+  if (financeAccess.loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-slate-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!financeAccess.canViewCompanyReports) {
+    return <FinanceAccessDenied />;
+  }
 
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState("");

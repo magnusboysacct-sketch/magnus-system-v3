@@ -5,8 +5,11 @@ import { ReceiptUpload } from "../components/ReceiptUpload";
 import { OCRPreview } from "../components/OCRPreview";
 import { linkReceiptToExpense, getExpenseReceipts, getReceiptUrl, type OCRResult } from "../lib/receiptOCR";
 import type { Expense } from "../lib/finance";
+import { useFinanceAccess } from "../hooks/useFinanceAccess";
+import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 
 export default function ExpensesPage() {
+  const financeAccess = useFinanceAccess();
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -23,6 +26,18 @@ export default function ExpensesPage() {
   const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
   const [showOcrPreview, setShowOcrPreview] = useState(false);
   const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
+
+  if (financeAccess.loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-slate-600">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!financeAccess.canViewExpenses) {
+    return <FinanceAccessDenied />;
+  }
 
   const [formData, setFormData] = useState({
     expense_date: new Date().toISOString().split("T")[0],

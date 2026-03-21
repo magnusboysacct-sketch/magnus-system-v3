@@ -6,6 +6,7 @@ import { useTheme } from "../hooks/useTheme";
 import ProjectSelector from "../components/ProjectSelector";
 import { useProjectContext } from "../context/ProjectContext";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useFinanceAccess } from "../hooks/useFinanceAccess";
 
 const navSections = [
   {
@@ -72,6 +73,7 @@ export default function SidebarLayout() {
   const { currentProjectId } = useProjectContext();
   const navigate = useNavigate();
   const location = useLocation();
+  const financeAccess = useFinanceAccess();
 
   useEffect(() => {
     localStorage.setItem("mb_sidebar_collapsed", collapsed ? "1" : "0");
@@ -180,6 +182,27 @@ export default function SidebarLayout() {
         if (item.to === "/settings/users" && userRole !== "director") {
           return false;
         }
+
+        if (financeAccess.loading) {
+          return true;
+        }
+
+        if (item.to === "/cash-flow" && !financeAccess.canViewCashFlow) {
+          return false;
+        }
+        if (item.to === "/accounts-receivable" && !financeAccess.canViewCompanyReports) {
+          return false;
+        }
+        if (item.to === "/expenses" && !financeAccess.canViewExpenses) {
+          return false;
+        }
+        if (item.to === "/finance" && !financeAccess.canViewCompanyReports) {
+          return false;
+        }
+        if (item.to === "/billing" && !financeAccess.canViewBilling) {
+          return false;
+        }
+
         return true;
       }),
     }))
