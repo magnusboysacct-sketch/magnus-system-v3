@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle } from "lucide-react";
+import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle, ChevronDown, ChevronUp, Wallet, ChartBar as BarChart, Package, Library, ClipboardList, Truck, Calculator, Building2, ShieldCheck } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
 import ProjectSelector from "../components/ProjectSelector";
@@ -8,13 +8,28 @@ import { useProjectContext } from "../context/ProjectContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 
-const navSections = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: React.ElementType;
+}
+
+interface NavSection {
+  title: string;
+  icon?: React.ElementType;
+  collapsible?: boolean;
+  items: NavItem[];
+}
+
+const navSections: NavSection[] = [
   {
     title: "Main",
     items: [{ to: "/", label: "Dashboard", icon: LayoutDashboard }],
   },
   {
     title: "CRM",
+    icon: Building2,
+    collapsible: true,
     items: [
       { to: "/clients", label: "Clients", icon: Users },
       { to: "/projects", label: "Projects", icon: BriefcaseBusiness },
@@ -22,38 +37,50 @@ const navSections = [
   },
   {
     title: "Estimating",
+    icon: Calculator,
+    collapsible: true,
     items: [
       { to: "/estimates", label: "Estimates", icon: FileSpreadsheet },
-      { to: "/boq", label: "BOQ Builder", icon: Layers },
-      { to: "/assemblies", label: "Assemblies", icon: Layers },
-      { to: "/rates", label: "Rate Library", icon: Layers },
       { to: "/takeoff", label: "Takeoff", icon: Ruler },
+      { to: "/boq", label: "BOQ Builder", icon: ClipboardList },
+      { to: "/rates", label: "Smart Library", icon: Library },
+      { to: "/assemblies", label: "Assemblies", icon: Layers },
     ],
   },
   {
     title: "Procurement",
+    icon: Package,
+    collapsible: true,
     items: [
-      { to: "/procurement", label: "Procurement", icon: ShoppingCart },
+      { to: "/procurement", label: "Purchase Orders", icon: ShoppingCart },
       { to: "/receiving", label: "Receiving", icon: PackageCheck },
     ],
   },
   {
     title: "Finance",
+    icon: Wallet,
+    collapsible: true,
     items: [
+      { to: "/finance", label: "Finance Hub", icon: Landmark },
+      { to: "/expenses", label: "Expenses", icon: Receipt },
       { to: "/cash-flow", label: "Cash Flow", icon: TrendingUp },
       { to: "/accounts-receivable", label: "Receivables", icon: FileText },
-      { to: "/expenses", label: "Expenses", icon: Receipt },
-      { to: "/workers", label: "Workers", icon: UserCircle },
-      { to: "/finance", label: "Finance Hub", icon: Landmark },
       { to: "/billing", label: "Billing", icon: CreditCard },
+      { to: "/workers", label: "Payroll", icon: UserCircle },
     ],
   },
   {
-    title: "Analytics",
-    items: [{ to: "/reports", label: "Reports", icon: BarChart3 }],
+    title: "Reports",
+    icon: BarChart,
+    collapsible: true,
+    items: [
+      { to: "/reports", label: "Analytics", icon: BarChart3 }
+    ],
   },
   {
-    title: "System",
+    title: "Admin",
+    icon: ShieldCheck,
+    collapsible: true,
     items: [
       { to: "/settings", label: "Settings", icon: Settings },
       { to: "/settings/users", label: "User Manager", icon: Users },
@@ -75,9 +102,32 @@ export default function SidebarLayout() {
   const location = useLocation();
   const financeAccess = useFinanceAccess();
 
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem("mb_expanded_sections");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return {};
+      }
+    }
+    return {
+      "CRM": true,
+      "Estimating": true,
+      "Procurement": true,
+      "Finance": true,
+      "Reports": true,
+      "Admin": true,
+    };
+  });
+
   useEffect(() => {
     localStorage.setItem("mb_sidebar_collapsed", collapsed ? "1" : "0");
   }, [collapsed]);
+
+  useEffect(() => {
+    localStorage.setItem("mb_expanded_sections", JSON.stringify(expandedSections));
+  }, [expandedSections]);
 
   useEffect(() => {
     const allowedWithoutProject = [
@@ -175,7 +225,14 @@ export default function SidebarLayout() {
     window.location.href = "/login";
   }
 
-   const visibleSections = navSections
+  function toggleSection(sectionTitle: string) {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionTitle]: !prev[sectionTitle]
+    }));
+  }
+
+  const visibleSections = navSections
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {
@@ -207,7 +264,7 @@ export default function SidebarLayout() {
       }),
     }))
     .filter((section) => section.items.length > 0);
-  
+
   return (
     <div className="h-full w-full bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       <div className="flex h-full">
@@ -243,71 +300,130 @@ export default function SidebarLayout() {
             {!collapsed && (
               <div className="min-w-0">
                 <div className="text-lg font-semibold tracking-wide truncate text-slate-900 dark:text-slate-100">
-                  {companyName || "Magnus Boys System"}
+                  {companyName || "Magnus System"}
                 </div>
                 <div className="text-xs text-slate-600 dark:text-slate-400">
-                  Fresh build • future-ready
+                  v3 • Construction ERP
                 </div>
               </div>
             )}
           </div>
 
-                  <nav className="p-3 space-y-4">
-            {visibleSections.map((section) => (
-              <div key={section.title} className="space-y-1">
-                {!collapsed && (
-                  <div className="px-3 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-500">
-                    {section.title}
-                  </div>
-                )}
+          <nav className="p-3 space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+            {visibleSections.map((section) => {
+              const isExpanded = expandedSections[section.title] !== false;
+              const SectionIcon = section.icon;
+              const isCollapsible = section.collapsible && !collapsed;
 
-                {section.items.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      className={({ isActive }) =>
-                        [
-                          "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition",
-                          isActive
-                            ? "bg-slate-300/60 dark:bg-slate-800/60 text-slate-900 dark:text-white"
-                            : "text-slate-600 dark:text-slate-300 hover:bg-slate-200/30 dark:hover:bg-slate-800/30 hover:text-slate-900 dark:hover:text-white",
-                          collapsed ? "justify-center" : "",
-                        ].join(" ")
-                      }
-                      title={collapsed ? item.label : undefined}
-                    >
-                      <Icon size={18} />
-                      {!collapsed && <span className="truncate">{item.label}</span>}
-                    </NavLink>
-                  );
-                })}
-              </div>
-            ))}
+              return (
+                <div key={section.title} className="space-y-1">
+                  {section.title === "Main" ? (
+                    section.items.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          className={({ isActive }) =>
+                            [
+                              "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition",
+                              isActive
+                                ? "bg-slate-300/60 dark:bg-slate-800/60 text-slate-900 dark:text-white font-medium"
+                                : "text-slate-600 dark:text-slate-300 hover:bg-slate-200/30 dark:hover:bg-slate-800/30 hover:text-slate-900 dark:hover:text-white",
+                              collapsed ? "justify-center" : "",
+                            ].join(" ")
+                          }
+                          title={collapsed ? item.label : undefined}
+                        >
+                          <Icon size={18} />
+                          {!collapsed && <span className="truncate">{item.label}</span>}
+                        </NavLink>
+                      );
+                    })
+                  ) : (
+                    <>
+                      {isCollapsible ? (
+                        <button
+                          onClick={() => toggleSection(section.title)}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400 hover:bg-slate-200/30 dark:hover:bg-slate-800/30 transition"
+                        >
+                          {SectionIcon && <SectionIcon size={14} />}
+                          <span className="flex-1 text-left">{section.title}</span>
+                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2 px-3 py-2">
+                          {collapsed && SectionIcon ? (
+                            <div className="w-full flex justify-center opacity-40">
+                              <SectionIcon size={16} />
+                            </div>
+                          ) : (
+                            <>
+                              {SectionIcon && <SectionIcon size={14} className="text-slate-500 dark:text-slate-500" />}
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-500">
+                                {section.title}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {(isExpanded || !isCollapsible) && (
+                        <div className="space-y-1">
+                          {section.items.map((item) => {
+                            const Icon = item.icon;
+                            return (
+                              <NavLink
+                                key={item.to}
+                                to={item.to}
+                                className={({ isActive }) =>
+                                  [
+                                    "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition",
+                                    isActive
+                                      ? "bg-slate-300/60 dark:bg-slate-800/60 text-slate-900 dark:text-white font-medium"
+                                      : "text-slate-600 dark:text-slate-300 hover:bg-slate-200/30 dark:hover:bg-slate-800/30 hover:text-slate-900 dark:hover:text-white",
+                                    collapsed ? "justify-center" : "",
+                                  ].join(" ")
+                                }
+                                title={collapsed ? item.label : undefined}
+                              >
+                                <Icon size={18} />
+                                {!collapsed && <span className="truncate">{item.label}</span>}
+                              </NavLink>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </nav>
 
-          <div className="mt-auto border-t border-slate-200 dark:border-slate-800 p-3">
-            <div className="text-xs text-slate-600 dark:text-slate-400 truncate">
-              {userEmail || "Signed in"}
+          <div className="absolute bottom-0 left-0 right-0 bg-slate-50 dark:bg-slate-950">
+            <div className="border-t border-slate-200 dark:border-slate-800 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400 truncate">
+                {userEmail || "Signed in"}
+              </div>
+              <button
+                type="button"
+                onClick={doLogout}
+                className="mt-2 w-full bg-slate-200/50 dark:bg-slate-800/50 hover:bg-slate-300/50 dark:hover:bg-slate-700/50 border border-slate-300 dark:border-slate-700 rounded-md px-3 py-2 text-sm transition"
+              >
+                Logout
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={doLogout}
-              className="mt-2 w-full bg-slate-200/50 dark:bg-slate-800/50 hover:bg-slate-300/50 dark:hover:bg-slate-700/50 border border-slate-300 dark:border-slate-700 rounded-md px-3 py-2 text-sm transition"
-            >
-              Logout
-            </button>
-          </div>
 
-          {!collapsed && (
-            <div className="p-4 text-xs text-slate-500 dark:text-slate-500 border-t border-slate-200 dark:border-slate-800">
-              Tip: keep commits small + push often.
-            </div>
-          )}
+            {!collapsed && (
+              <div className="p-4 text-xs text-slate-500 dark:text-slate-500 border-t border-slate-200 dark:border-slate-800">
+                Magnus System v3
+              </div>
+            )}
+          </div>
         </aside>
 
-              <main className="flex-1 bg-white dark:bg-slate-950">
+        <main className="flex-1 bg-white dark:bg-slate-950">
           <div className="h-full overflow-auto relative">
             <div className="sticky top-0 z-40 flex items-center justify-end gap-3 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-950/90 px-4 py-3 backdrop-blur-sm">
               <ProjectSelector />
@@ -324,7 +440,7 @@ export default function SidebarLayout() {
             <Outlet />
           </div>
         </main>
-        </div>
+      </div>
     </div>
   );
 }
