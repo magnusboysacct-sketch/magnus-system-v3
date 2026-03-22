@@ -1,158 +1,134 @@
-"use strict";
-var __extends = (this && this.__extends) || (function () {
-    var extendStatics = function (d, b) {
-        extendStatics = Object.setPrototypeOf ||
-            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-            function (d, b) { for (var p in b) if (Object.prototype.hasOwnProperty.call(b, p)) d[p] = b[p]; };
-        return extendStatics(d, b);
-    };
-    return function (d, b) {
-        if (typeof b !== "function" && b !== null)
-            throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
-        extendStatics(d, b);
-        function __() { this.constructor = d; }
-        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
-    };
-})();
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __generator = (this && this.__generator) || function (thisArg, body) {
-    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
-    return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
-    function verb(n) { return function (v) { return step([n, v]); }; }
-    function step(op) {
-        if (f) throw new TypeError("Generator is already executing.");
-        while (g && (g = 0, op[0] && (_ = 0)), _) try {
-            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
-            if (y = 0, t) op = [op[0] & 2, t.value];
-            switch (op[0]) {
-                case 0: case 1: t = op; break;
-                case 4: _.label++; return { value: op[1], done: false };
-                case 5: _.label++; y = op[1]; op = [0]; continue;
-                case 7: op = _.ops.pop(); _.trys.pop(); continue;
-                default:
-                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
-                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
-                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
-                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
-                    if (t[2]) _.ops.pop();
-                    _.trys.pop(); continue;
-            }
-            op = body.call(thisArg, _);
-        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
-        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { usePanZoom } from "../features/takeoff/hooks/usePanZoom";
+import { useMeasurements } from "../features/takeoff/hooks/useMeasurements";
+import { MeasurementLayer } from "../features/takeoff/components/MeasurementLayer";
+import {
+  getOrCreateSession,
+  loadTakeoff,
+  saveTakeoffDebounced,
+  cancelPendingSave,
+} from "../features/takeoff/persistence/takeoffPersistence";
+import { usePlan } from "../hooks/usePlan";
+import PaywallModal from "../components/PaywallModal";
+import { supabase } from "../lib/supabase";
+import { saveMeasurementsToDB } from "../lib/takeoffDB";
+
+GlobalWorkerOptions.workerSrc = workerSrc;
+
+type Point = { x: number; y: number };
+type CalibPoint = { x: number; y: number };
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n));
+}
+
+function dist(a: Point, b: Point) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function parseFraction(input: string): number | null {
+  const s = input.trim();
+  if (!s) return 0;
+  if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+  const m = s.match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (!m) return null;
+  const a = parseInt(m[1], 10);
+  const b = parseInt(m[2], 10);
+  if (!b) return null;
+  return a / b;
+}
+
+function feetFromFIS(feet: number, inches: number, frac: number) {
+  return feet + (inches + frac) / 12;
+}
+
+type ScaleMode = "standard" | "fis" | "metric" | "auto";
+
+function ScaleModal(props: {
+  open: boolean;
+  onClose: () => void;
+  onApply: (feet: number, opts: { applyAllPages: boolean; autoDimLine: boolean }) => void;
+  canApply: boolean;
+  isCalibrating?: boolean;
+  calibPointsCount?: number;
+  canConfirmCalibration?: boolean;
+  onCalibrationOk?: (lengthFeet: number) => void;
+  onCalibrationCancel?: () => void;
+}) {
+  const { open, onClose, onApply, canApply, isCalibrating = false, calibPointsCount = 0, canConfirmCalibration = false, onCalibrationOk, onCalibrationCancel } = props;
+  const [tab, setTab] = useState<ScaleMode>("standard");
+
+  const [stdFeet, setStdFeet] = useState("10");
+
+  const [fisFeet, setFisFeet] = useState("");
+  const [fisInch, setFisInch] = useState("");
+  const [fisFrac, setFisFrac] = useState("");
+
+  const [metricMeters, setMetricMeters] = useState("3");
+  const [applyAllPages, setApplyAllPages] = useState(true);
+  const [autoDimLine, setAutoDimLine] = useState(true);
+
+  const canStartCalibration = Number(stdFeet || 0) > 0;
+
+  useEffect(() => {
+    if (!open) return;
+    setTab("standard");
+  }, [open]);
+
+  if (!open) return null;
+
+  function apply() {
+    let feet: number | null = null;
+
+    if (tab === "standard") {
+      const n = Number(stdFeet);
+      if (Number.isFinite(n) && n > 0) feet = n;
     }
-};
-var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
-    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
-        if (ar || !(i in from)) {
-            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
-            ar[i] = from[i];
-        }
+
+    if (tab === "fis") {
+      const f = Number(fisFeet || 0);
+      const i = Number(fisInch || 0);
+      const fr = parseFraction(fisFrac);
+      if (fr == null) {
+        alert("Invalid fraction (use 1/2, 3/8, etc.)");
+        return;
+      }
+      const total = feetFromFIS(f, i, fr);
+      if (Number.isFinite(total) && total > 0) feet = total;
     }
-    return to.concat(ar || Array.prototype.slice.call(from));
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.default = TakeoffPage;
-var react_1 = require("react");
-var pdfjs_dist_1 = require("pdfjs-dist");
-var pdf_worker_min_mjs_url_1 = require("pdfjs-dist/build/pdf.worker.min.mjs?url");
-pdfjs_dist_1.GlobalWorkerOptions.workerSrc = pdf_worker_min_mjs_url_1.default;
-function clamp(n, min, max) {
-    return Math.min(max, Math.max(min, n));
-}
-function dist(a, b) {
-    var dx = b.x - a.x;
-    var dy = b.y - a.y;
-    return Math.sqrt(dx * dx + dy * dy);
-}
-function parseFraction(input) {
-    var s = input.trim();
-    if (!s)
-        return 0;
-    // Accept: "1/2", "3/8", "0.25"
-    if (/^\d+(\.\d+)?$/.test(s))
-        return parseFloat(s);
-    var m = s.match(/^(\d+)\s*\/\s*(\d+)$/);
-    if (!m)
-        return null;
-    var a = parseInt(m[1], 10);
-    var b = parseInt(m[2], 10);
-    if (!b)
-        return null;
-    return a / b;
-}
-function feetFromFIS(feet, inches, frac) {
-    return feet + (inches + frac) / 12;
-}
-function ScaleModal(props) {
-    var open = props.open, onClose = props.onClose, onApply = props.onApply, canApply = props.canApply, _a = props.isCalibrating, isCalibrating = _a === void 0 ? false : _a, _b = props.calibPointsCount, calibPointsCount = _b === void 0 ? 0 : _b, _c = props.canConfirmCalibration, canConfirmCalibration = _c === void 0 ? false : _c, onCalibrationOk = props.onCalibrationOk, onCalibrationCancel = props.onCalibrationCancel;
-    var _d = (0, react_1.useState)("standard"), tab = _d[0], setTab = _d[1];
-    var _e = (0, react_1.useState)("10"), stdFeet = _e[0], setStdFeet = _e[1];
-    var _f = (0, react_1.useState)(""), fisFeet = _f[0], setFisFeet = _f[1];
-    var _g = (0, react_1.useState)(""), fisInch = _g[0], setFisInch = _g[1];
-    var _h = (0, react_1.useState)(""), fisFrac = _h[0], setFisFrac = _h[1];
-    var _j = (0, react_1.useState)("3"), metricMeters = _j[0], setMetricMeters = _j[1];
-    var _k = (0, react_1.useState)(true), applyAllPages = _k[0], setApplyAllPages = _k[1];
-    var _l = (0, react_1.useState)(true), autoDimLine = _l[0], setAutoDimLine = _l[1];
-    var canStartCalibration = Number(stdFeet || 0) > 0;
-    (0, react_1.useEffect)(function () {
-        if (!open)
-            return;
-        setTab("standard");
-    }, [open]);
-    if (!open)
-        return null;
-    function apply() {
-        var feet = null;
-        if (tab === "standard") {
-            var n = Number(stdFeet);
-            if (Number.isFinite(n) && n > 0)
-                feet = n;
-        }
-        if (tab === "fis") {
-            var f = Number(fisFeet || 0);
-            var i = Number(fisInch || 0);
-            var fr = parseFraction(fisFrac);
-            if (fr == null) {
-                alert("Invalid fraction (use 1/2, 3/8, etc.)");
-                return;
-            }
-            var total = feetFromFIS(f, i, fr);
-            if (Number.isFinite(total) && total > 0)
-                feet = total;
-        }
-        if (tab === "metric") {
-            var m = Number(metricMeters);
-            if (Number.isFinite(m) && m > 0)
-                feet = m * 3.28084;
-        }
-        if (tab === "auto") {
-            alert("Auto scale is coming next (read scale from title block).");
-            return;
-        }
-        if (!feet) {
-            alert("Please enter a valid scale distance.");
-            return;
-        }
-        // Two-phase calibration: if calibrating, start point picking mode
-        if (isCalibrating) {
-            if (onCalibrationOk) {
-                onCalibrationOk(feet);
-            }
-            return;
-        }
-        // Original behavior: apply scale directly
-        onApply(feet, { applyAllPages: applyAllPages, autoDimLine: autoDimLine });
+
+    if (tab === "metric") {
+      const m = Number(metricMeters);
+      if (Number.isFinite(m) && m > 0) feet = m * 3.28084;
     }
-    return (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+
+    if (tab === "auto") {
+      alert("Auto scale is coming next (read scale from title block).");
+      return;
+    }
+
+    if (!feet) {
+      alert("Please enter a valid scale distance.");
+      return;
+    }
+
+    if (isCalibrating) {
+      if (onCalibrationOk) {
+        onCalibrationOk(feet);
+      }
+      return;
+    }
+
+    onApply(feet, { applyAllPages, autoDimLine });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-950 shadow-xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
           <div className="text-lg font-semibold">Scale</div>
@@ -164,83 +140,126 @@ function ScaleModal(props) {
         <div className="px-5 pt-4">
           <div className="flex gap-2 text-sm">
             {[
-            ["standard", "Standard"],
-            ["fis", "F-I-S"],
-            ["metric", "Metric"],
-            ["auto", "Auto"],
-        ].map(function (_a) {
-            var k = _a[0], label = _a[1];
-            return (<button key={k} onClick={function () { return setTab(k); }} className={"px-3 py-2 rounded-xl border " +
-                    (tab === k ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}>
+              ["standard", "Standard"],
+              ["fis", "F-I-S"],
+              ["metric", "Metric"],
+              ["auto", "Auto"],
+            ].map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setTab(k as ScaleMode)}
+                className={
+                  "px-3 py-2 rounded-xl border " +
+                  (tab === k ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")
+                }
+              >
                 {label}
-              </button>);
-        })}
+              </button>
+            ))}
           </div>
 
           <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
-            {isCalibrating && (<div className="text-sm text-slate-300 mb-3">
+            {isCalibrating && (
+              <div className="text-sm text-slate-300 mb-3">
                 Calibration mode: Click {calibPointsCount}/2 points on the drawing
-              </div>)}
+              </div>
+            )}
 
-            {tab === "standard" && (<div className="grid grid-cols-2 gap-3 items-end">
+            {tab === "standard" && (
+              <div className="grid grid-cols-2 gap-3 items-end">
                 <div className="col-span-2 text-sm text-slate-300">
                   Enter the real distance between your two clicked points:
                 </div>
                 <label className="text-xs text-slate-400">
                   Feet
-                  <input value={stdFeet} onChange={function (e) { return setStdFeet(e.target.value); }} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm" placeholder="10"/>
+                  <input
+                    value={stdFeet}
+                    onChange={(e) => setStdFeet(e.target.value)}
+                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
+                    placeholder="10"
+                  />
                 </label>
                 <div className="text-xs text-slate-400 flex items-center">ft</div>
-              </div>)}
+              </div>
+            )}
 
-            {tab === "fis" && (<div className="grid grid-cols-3 gap-3 items-end">
+            {tab === "fis" && (
+              <div className="grid grid-cols-3 gap-3 items-end">
                 <label className="text-xs text-slate-400">
                   Feet
-                  <input value={fisFeet} onChange={function (e) { return setFisFeet(e.target.value); }} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm" placeholder="45"/>
+                  <input
+                    value={fisFeet}
+                    onChange={(e) => setFisFeet(e.target.value)}
+                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
+                    placeholder="45"
+                  />
                 </label>
 
                 <label className="text-xs text-slate-400">
                   Inch
-                  <input value={fisInch} onChange={function (e) { return setFisInch(e.target.value); }} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm" placeholder="6"/>
+                  <input
+                    value={fisInch}
+                    onChange={(e) => setFisInch(e.target.value)}
+                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
+                    placeholder="6"
+                  />
                 </label>
 
                 <label className="text-xs text-slate-400">
                   Fraction
-                  <input value={fisFrac} onChange={function (e) { return setFisFrac(e.target.value); }} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm" placeholder="1/2"/>
+                  <input
+                    value={fisFrac}
+                    onChange={(e) => setFisFrac(e.target.value)}
+                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
+                    placeholder="1/2"
+                  />
                 </label>
 
                 <div className="col-span-3 text-xs text-slate-500">
                   Tip: Fraction accepts 1/2, 3/8, 0.25, etc.
                 </div>
-              </div>)}
+              </div>
+            )}
 
-            {tab === "metric" && (<div className="grid grid-cols-2 gap-3 items-end">
+            {tab === "metric" && (
+              <div className="grid grid-cols-2 gap-3 items-end">
                 <div className="col-span-2 text-sm text-slate-300">Enter the distance in meters:</div>
                 <label className="text-xs text-slate-400">
                   Meters
-                  <input value={metricMeters} onChange={function (e) { return setMetricMeters(e.target.value); }} className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm" placeholder="3"/>
+                  <input
+                    value={metricMeters}
+                    onChange={(e) => setMetricMeters(e.target.value)}
+                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
+                    placeholder="3"
+                  />
                 </label>
                 <div className="text-xs text-slate-400 flex items-center">m</div>
-              </div>)}
+              </div>
+            )}
 
-            {tab === "auto" && (<div className="text-sm text-slate-300">
+            {tab === "auto" && (
+              <div className="text-sm text-slate-300">
                 Auto scale (read scale from drawing title block) — coming next.
-              </div>)}
+              </div>
+            )}
           </div>
 
           <div className="mt-4 space-y-2 text-sm">
             <label className="flex items-center gap-2 text-slate-300">
-              <input type="checkbox" checked={applyAllPages} onChange={function (e) { return setApplyAllPages(e.target.checked); }}/>
+              <input type="checkbox" checked={applyAllPages} onChange={(e) => setApplyAllPages(e.target.checked)} />
               Apply scale to all pages
             </label>
             <label className="flex items-center gap-2 text-slate-300">
-              <input type="checkbox" checked={autoDimLine} onChange={function (e) { return setAutoDimLine(e.target.checked); }}/>
+              <input type="checkbox" checked={autoDimLine} onChange={(e) => setAutoDimLine(e.target.checked)} />
               Automatically create dimension line
             </label>
           </div>
 
           <div className="mt-5 flex items-center justify-between pb-5">
-            <button onClick={function () { return onApply(0, { applyAllPages: applyAllPages, autoDimLine: autoDimLine }); }} className="px-3 py-2 rounded-xl bg-slate-800/40 hover:bg-slate-800/60 text-sm">
+            <button
+              onClick={() => onApply(0, { applyAllPages, autoDimLine })}
+              className="px-3 py-2 rounded-xl bg-slate-800/40 hover:bg-slate-800/60 text-sm"
+            >
               Clear Scale
             </button>
 
@@ -248,709 +267,1310 @@ function ScaleModal(props) {
               <button onClick={onCalibrationCancel || onClose} className="px-4 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm">
                 Cancel
               </button>
-              <button disabled={isCalibrating ? !canStartCalibration : !canApply} onClick={apply} className={"px-4 py-2 rounded-xl text-sm " +
-            ((isCalibrating ? canStartCalibration : canApply) ? "bg-emerald-900/50 hover:bg-emerald-900/70 border border-emerald-900/40" : "bg-slate-800/20 text-slate-500")}>
+              <button
+                disabled={isCalibrating ? !canStartCalibration : !canApply}
+                onClick={apply}
+                className={
+                  "px-4 py-2 rounded-xl text-sm " +
+                  ((isCalibrating ? canStartCalibration : canApply) ? "bg-emerald-900/50 hover:bg-emerald-900/70 border border-emerald-900/40" : "bg-slate-800/20 text-slate-500")
+                }
+              >
                 OK
               </button>
             </div>
           </div>
 
-          {!(isCalibrating ? canConfirmCalibration : canApply) && (<div className="pb-5 text-xs text-slate-500">
+          {!(isCalibrating ? canConfirmCalibration : canApply) && (
+            <div className="pb-5 text-xs text-slate-500">
               {isCalibrating
-                ? "Click ".concat(2 - calibPointsCount, " more point").concat(calibPointsCount === 1 ? '' : 's', " on the drawing first, then press OK.")
-                : "Click two points on the drawing first, then press OK."}
-            </div>)}
+                ? `Click ${2 - calibPointsCount} more point${calibPointsCount === 1 ? '' : 's'} on the drawing first, then press OK.`
+                : "Click two points on the drawing first, then press OK."
+              }
+            </div>
+          )}
         </div>
       </div>
-    </div>);
+    </div>
+  );
 }
-var TakeoffErrorBoundary = /** @class */ (function (_super) {
-    __extends(TakeoffErrorBoundary, _super);
-    function TakeoffErrorBoundary(props) {
-        var _this = _super.call(this, props) || this;
-        _this.state = { err: null };
-        return _this;
-    }
-    TakeoffErrorBoundary.getDerivedStateFromError = function (err) {
-        return { err: err };
-    };
-    TakeoffErrorBoundary.prototype.componentDidCatch = function (err) {
-        console.error("TAKEOFF PAGE CRASH:", err);
-    };
-    TakeoffErrorBoundary.prototype.render = function () {
-        var _a, _b;
-        if (this.state.err) {
-            return (<div style={{ padding: 16, color: "#fff", background: "#111" }}>
+
+class TakeoffErrorBoundary extends React.Component<{ children: React.ReactNode }, { err: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { err: null };
+  }
+  static getDerivedStateFromError(err: any) {
+    return { err };
+  }
+  componentDidCatch(err: any) {
+    console.error("TAKEOFF PAGE CRASH:", err);
+  }
+  render() {
+    if (this.state.err) {
+      return (
+        <div style={{ padding: 16, color: "#fff", background: "#111" }}>
           <h2 style={{ marginBottom: 8 }}>Takeoff crashed</h2>
           <pre style={{ whiteSpace: "pre-wrap" }}>
-            {String(((_a = this.state.err) === null || _a === void 0 ? void 0 : _a.message) || this.state.err)}
+            {String(this.state.err?.message || this.state.err)}
           </pre>
           <pre style={{ whiteSpace: "pre-wrap", opacity: 0.8 }}>
-            {String(((_b = this.state.err) === null || _b === void 0 ? void 0 : _b.stack) || "")}
+            {String(this.state.err?.stack || "")}
           </pre>
-        </div>);
-        }
-        return this.props.children;
-    };
-    return TakeoffErrorBoundary;
-}(react_1.default.Component));
+        </div>
+      );
+    }
+    return this.props.children as any;
+  }
+}
+
 function TakeoffPageInner() {
-    var _this = this;
-    var canvasRef = (0, react_1.useRef)(null);
-    var viewerRef = (0, react_1.useRef)(null);
-    var renderTaskRef = (0, react_1.useRef)(null);
-    var renderSeqRef = (0, react_1.useRef)(0);
-    var _a = (0, react_1.useState)(null), pdf = _a[0], setPdf = _a[1];
-    var _b = (0, react_1.useState)(1), pageNumber = _b[0], setPageNumber = _b[1];
-    var _c = (0, react_1.useState)(0), numPages = _c[0], setNumPages = _c[1];
-    var _d = (0, react_1.useState)(1.0), scale = _d[0], setScale = _d[1];
-    var _e = (0, react_1.useState)(0), panX = _e[0], setPanX = _e[1];
-    var _f = (0, react_1.useState)(0), panY = _f[0], setPanY = _f[1];
-    var _g = (0, react_1.useState)(false), calibrating = _g[0], setCalibrating = _g[1];
-    var _h = (0, react_1.useState)([]), calPoints = _h[0], setCalPoints = _h[1];
-    var _j = (0, react_1.useState)(null), feetPerPixel = _j[0], setFeetPerPixel = _j[1];
-    var _k = (0, react_1.useState)(false), isCalibrating = _k[0], setIsCalibrating = _k[1];
-    var _l = (0, react_1.useState)([]), calibPoints = _l[0], setCalibPoints = _l[1];
-    var _m = (0, react_1.useState)(null), pendingCalibLength = _m[0], setPendingCalibLength = _m[1];
-    function getEnteredFeet() {
-        // This needs to be passed from ScaleModal - for now return 1 as placeholder
-        return 1;
+  const nav = useNavigate();
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewerRef = useRef<HTMLDivElement | null>(null);
+
+  const renderTaskRef = useRef<any>(null);
+  const renderSeqRef = useRef(0);
+
+  const [pdf, setPdf] = useState<any>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [numPages, setNumPages] = useState(0);
+
+  const panZoom = usePanZoom({
+    minZoom: 0.2,
+    maxZoom: 6,
+    zoomSpeed: 0.08,
+    initialZoom: 1.0,
+  });
+
+  const {
+    measurements,
+    addMeasurement,
+    removeMeasurement,
+    updateMeasurement,
+    setAllMeasurements,
+  } = useMeasurements();
+
+  const [calibrating, setCalibrating] = useState(false);
+  const [calPoints, setCalPoints] = useState<Point[]>([]);
+  const [feetPerPixel, setFeetPerPixel] = useState<number | null>(null);
+
+  const [isCalibrating, setIsCalibrating] = useState(false);
+  const [calibPoints, setCalibPoints] = useState<CalibPoint[]>([]);
+  const [pendingCalibLength, setPendingCalibLength] = useState<number | null>(null);
+
+  function getEnteredFeet(): number {
+    return 1;
+  }
+
+  const canStartCalibration = getEnteredFeet() > 0;
+
+  const [error, setError] = useState<string | null>(null);
+  const [loadingPdf, setLoadingPdf] = useState(false);
+  const [overViewer, setOverViewer] = useState(false);
+
+  const [scaleModalOpen, setScaleModalOpen] = useState(false);
+
+  const fitScaleRef = useRef<number | null>(null);
+
+  const isSpaceDownRef = useRef(false);
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const activePointerIdRef = useRef<number | null>(null);
+
+  type ToolMode = "select" | "line" | "area" | "count" | "volume";
+  const [tool, setTool] = useState<ToolMode>("select");
+
+  const [lineStart, setLineStart] = useState<Point | null>(null);
+  const [lineEnd, setLineEnd] = useState<Point | null>(null);
+  const [hoverPt, setHoverPt] = useState<Point | null>(null);
+
+  const [areaPoints, setAreaPoints] = useState<Point[]>([]);
+  const [areaHoverPt, setAreaHoverPt] = useState<Point | null>(null);
+
+  const [countPoints, setCountPoints] = useState<Point[]>([]);
+
+  const [volumePoints, setVolumePoints] = useState<Point[]>([]);
+  const [volumeHoverPt, setVolumeHoverPt] = useState<Point | null>(null);
+  const [showDepthPrompt, setShowDepthPrompt] = useState(false);
+  const [depthInput, setDepthInput] = useState("4");
+  const [feetPerPdfUnit, setFeetPerPdfUnit] = useState<number | null>(null);
+
+  const [canvasWidth, setCanvasWidth] = useState(0);
+  const [canvasHeight, setCanvasHeight] = useState(0);
+
+  const [groups, setGroups] = useState<Array<{
+    id: string;
+    name: string;
+    color: string;
+    visible: boolean;
+    sortOrder: number;
+  }>>([]);
+
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(() => {
+    if (routeProjectId) return routeProjectId;
+    const keys = ["active_project_id", "selected_project_id", "project_id"];
+    for (const k of keys) {
+      const v = localStorage.getItem(k);
+      if (v && v.trim()) return v.trim();
     }
-    var canStartCalibration = getEnteredFeet() > 0;
-    var _o = (0, react_1.useState)(null), error = _o[0], setError = _o[1];
-    var _p = (0, react_1.useState)(false), loadingPdf = _p[0], setLoadingPdf = _p[1];
-    var _q = (0, react_1.useState)(false), overViewer = _q[0], setOverViewer = _q[1];
-    var _r = (0, react_1.useState)(false), scaleModalOpen = _r[0], setScaleModalOpen = _r[1];
-    var fitScaleRef = (0, react_1.useRef)(null);
-    // PlanSwift navigation refs
-    var isSpaceDownRef = (0, react_1.useRef)(false);
-    var isPanningRef = (0, react_1.useRef)(false);
-    var panStartRef = (0, react_1.useRef)({ x: 0, y: 0, panX: 0, panY: 0 });
-    var activePointerIdRef = (0, react_1.useRef)(null);
-    var _s = (0, react_1.useState)("select"), tool = _s[0], setTool = _s[1];
-    var _t = (0, react_1.useState)(null), lineStart = _t[0], setLineStart = _t[1];
-    var _u = (0, react_1.useState)(null), lineEnd = _u[0], setLineEnd = _u[1];
-    var _v = (0, react_1.useState)(null), hoverPt = _v[0], setHoverPt = _v[1];
-    var _w = (0, react_1.useState)(null), feetPerPdfUnit = _w[0], setFeetPerPdfUnit = _w[1];
-    function distFeet(a, b) {
-        var dx = b.x - a.x;
-        var dy = b.y - a.y;
-        var d = Math.sqrt(dx * dx + dy * dy);
-        if (!d)
-            return 0;
-        // If calibration state is feetPerPdfUnit:
-        if (!feetPerPdfUnit)
-            return 0;
-        return d * feetPerPdfUnit;
+    return null;
+  });
+  const [dbLoaded, setDbLoaded] = useState(false);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [showNewGroupForm, setShowNewGroupForm] = useState(false);
+
+  const [currentProject, setCurrentProject] = useState<{ id: string; name: string | null } | null>(null);
+
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { hasFeature, features } = usePlan();
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [paywallFeature, setPaywallFeature] = useState("");
+
+  function distFeet(a:{x:number;y:number}, b:{x:number;y:number}) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const d = Math.sqrt(dx*dx + dy*dy);
+    if (!d) return 0;
+
+    if (!feetPerPdfUnit) return 0;
+    return d * feetPerPdfUnit;
+  }
+
+  function formatFeetInches(totalFeet:number) {
+    if (!isFinite(totalFeet) || totalFeet <= 0) return "";
+    const feet = Math.floor(totalFeet);
+    const inchesTotal = (totalFeet - feet) * 12;
+    const inches = Math.floor(inchesTotal);
+    const frac = inchesTotal - inches;
+
+    const denom = 16;
+    let num = Math.round(frac * denom);
+    let fFeet = feet;
+    let fIn = inches;
+
+    if (num === denom) { num = 0; fIn += 1; }
+    if (fIn === 12) { fIn = 0; fFeet += 1; }
+
+    const fracStr = num === 0 ? "" : ` ${num}/${denom}`;
+    return `${fFeet}' ${fIn}"${fracStr}`;
+  }
+
+  useEffect(() => {
+    if (routeProjectId && routeProjectId !== activeProjectId) {
+      setActiveProjectId(routeProjectId);
     }
-    function formatFeetInches(totalFeet) {
-        if (!isFinite(totalFeet) || totalFeet <= 0)
-            return "";
-        var feet = Math.floor(totalFeet);
-        var inchesTotal = (totalFeet - feet) * 12;
-        var inches = Math.floor(inchesTotal);
-        var frac = inchesTotal - inches;
-        // round to nearest 1/16
-        var denom = 16;
-        var num = Math.round(frac * denom);
-        var fFeet = feet;
-        var fIn = inches;
-        if (num === denom) {
-            num = 0;
-            fIn += 1;
+  }, [routeProjectId, activeProjectId]);
+
+  useEffect(() => {
+    if (!routeProjectId) {
+      setCurrentProject(null);
+      return;
+    }
+
+    let alive = true;
+    async function loadProject() {
+      try {
+        const { data, error } = await supabase
+          .from("projects")
+          .select("id, name")
+          .eq("id", routeProjectId)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!alive) return;
+        if (data) {
+          setCurrentProject(data);
         }
-        if (fIn === 12) {
-            fIn = 0;
-            fFeet += 1;
-        }
-        var fracStr = num === 0 ? "" : " ".concat(num, "/").concat(denom);
-        return "".concat(fFeet, "' ").concat(fIn, "\"").concat(fracStr);
+      } catch (e) {
+        console.error("Failed to load project:", e);
+      }
     }
-    function onPickFile(file) {
-        return __awaiter(this, void 0, void 0, function () {
-            var arrayBuffer, task, loadedPdf, e_1;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0:
-                        setError(null);
-                        if (!file)
-                            return [2 /*return*/];
-                        if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-                            setError("Please upload a PDF file.");
-                            return [2 /*return*/];
-                        }
-                        _a.label = 1;
-                    case 1:
-                        _a.trys.push([1, 4, 5, 6]);
-                        setLoadingPdf(true);
-                        return [4 /*yield*/, file.arrayBuffer()];
-                    case 2:
-                        arrayBuffer = _a.sent();
-                        task = (0, pdfjs_dist_1.getDocument)({ data: arrayBuffer });
-                        return [4 /*yield*/, task.promise];
-                    case 3:
-                        loadedPdf = _a.sent();
-                        setPdf(loadedPdf);
-                        setNumPages(loadedPdf.numPages);
-                        setPageNumber(1);
-                        setFeetPerPixel(null);
-                        setCalibrating(false);
-                        setIsCalibrating(false);
-                        setCalPoints([]);
-                        setCalibPoints([]);
-                        setPanX(0);
-                        setPanY(0);
-                        setTool("select");
-                        setLineStart(null);
-                        setLineEnd(null);
-                        setHoverPt(null);
-                        fitScaleRef.current = null;
-                        setScale(1.0);
-                        if (viewerRef.current) {
-                            viewerRef.current.scrollLeft = 0;
-                            viewerRef.current.scrollTop = 0;
-                        }
-                        return [3 /*break*/, 6];
-                    case 4:
-                        e_1 = _a.sent();
-                        setError("PDF load failed: " + ((e_1 === null || e_1 === void 0 ? void 0 : e_1.message) || String(e_1)));
-                        setPdf(null);
-                        setNumPages(0);
-                        setPageNumber(1);
-                        return [3 /*break*/, 6];
-                    case 5:
-                        setLoadingPdf(false);
-                        return [7 /*endfinally*/];
-                    case 6: return [2 /*return*/];
-                }
-            });
-        });
+    loadProject();
+    return () => {
+      alive = false;
+    };
+  }, [routeProjectId]);
+
+  useEffect(() => {
+    if (groups.length === 0) {
+      const defaultGroups = [
+        { id: crypto.randomUUID(), name: "Concrete", color: "#10b981", visible: true, sortOrder: 0 },
+        { id: crypto.randomUUID(), name: "Masonry", color: "#f59e0b", visible: true, sortOrder: 1 },
+        { id: crypto.randomUUID(), name: "Electrical", color: "#3b82f6", visible: true, sortOrder: 2 },
+        { id: crypto.randomUUID(), name: "Plumbing", color: "#06b6d4", visible: true, sortOrder: 3 },
+      ];
+      setGroups(defaultGroups);
+      setActiveGroupId(defaultGroups[0].id);
     }
-    function computeFitScale() {
-        return __awaiter(this, void 0, void 0, function () {
-            var viewer, page, v, pad, vw, vh, fit;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0:
-                        if (!pdf)
-                            return [2 /*return*/, null];
-                        viewer = viewerRef.current;
-                        if (!viewer)
-                            return [2 /*return*/, null];
-                        return [4 /*yield*/, pdf.getPage(pageNumber)];
-                    case 1:
-                        page = _a.sent();
-                        v = page.getViewport({ scale: 1 });
-                        pad = 24;
-                        vw = Math.max(200, viewer.clientWidth - pad);
-                        vh = Math.max(200, viewer.clientHeight - pad);
-                        fit = Math.min(vw / v.width, vh / v.height) * 0.98;
-                        return [2 /*return*/, clamp(fit, 0.3, 4)];
-                }
-            });
-        });
+  }, []);
+
+  async function onPickFile(file: File | null) {
+    setError(null);
+    if (!file) return;
+
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setError("Please upload a PDF file.");
+      return;
     }
-    function drawOverlay(ctx) {
-        if (calPoints.length > 0) {
-            ctx.save();
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = "#22c55e";
-            ctx.fillStyle = "#22c55e";
-            for (var _i = 0, calPoints_1 = calPoints; _i < calPoints_1.length; _i++) {
-                var p = calPoints_1[_i];
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-                ctx.fill();
+
+    try {
+      setLoadingPdf(true);
+
+      const arrayBuffer = await file.arrayBuffer();
+      const task = getDocument({ data: arrayBuffer });
+      const loadedPdf = await task.promise;
+
+      setPdf(loadedPdf);
+      setNumPages(loadedPdf.numPages);
+      setPageNumber(1);
+
+      setFeetPerPixel(null);
+      setCalibrating(false);
+      setIsCalibrating(false);
+      setCalPoints([]);
+      setCalibPoints([]);
+
+      if (activeProjectId) {
+        const session = await getOrCreateSession(activeProjectId, file.name);
+        if (session) {
+          setSessionId(session.id);
+          const data = await loadTakeoff(session.id);
+          if (data && !dbLoaded) {
+            if (data.groups && data.groups.length > 0) {
+              setGroups(data.groups);
             }
-            if (calPoints.length === 2) {
-                ctx.beginPath();
-                ctx.moveTo(calPoints[0].x, calPoints[0].y);
-                ctx.lineTo(calPoints[1].x, calPoints[1].y);
-                ctx.stroke();
+            if (data.measurements && data.measurements.length > 0) {
+              setAllMeasurements(data.measurements);
             }
-            ctx.restore();
+            setDbLoaded(true);
+          }
         }
-        var a = lineStart;
-        var b = lineEnd !== null && lineEnd !== void 0 ? lineEnd : (tool === "line" ? hoverPt : null);
-        if (tool === "line" && a && b) {
-            ctx.save();
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = "#60a5fa";
-            ctx.fillStyle = "#60a5fa";
+      }
+
+      panZoom.resetView();
+
+      setTool("select");
+      setLineStart(null);
+      setLineEnd(null);
+      setHoverPt(null);
+      setAreaPoints([]);
+      setAreaHoverPt(null);
+      setCountPoints([]);
+      setVolumePoints([]);
+      setVolumeHoverPt(null);
+      setShowDepthPrompt(false);
+
+      fitScaleRef.current = null;
+
+      if (viewerRef.current) {
+        viewerRef.current.scrollLeft = 0;
+        viewerRef.current.scrollTop = 0;
+      }
+    } catch (e: any) {
+      setError("PDF load failed: " + (e?.message || String(e)));
+      setPdf(null);
+      setNumPages(0);
+      setPageNumber(1);
+    } finally {
+      setLoadingPdf(false);
+    }
+  }
+
+  async function computeFitScale() {
+    if (!pdf) return null;
+    const viewer = viewerRef.current;
+    if (!viewer) return null;
+
+    const page = await pdf.getPage(pageNumber);
+    const v = page.getViewport({ scale: 1 });
+
+    const pad = 24;
+    const vw = Math.max(200, viewer.clientWidth - pad);
+    const vh = Math.max(200, viewer.clientHeight - pad);
+
+    const fit = Math.min(vw / v.width, vh / v.height) * 0.98;
+    return clamp(fit, 0.3, 4);
+  }
+
+  function drawOverlay(ctx: CanvasRenderingContext2D) {
+    if (calPoints.length > 0) {
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#22c55e";
+      ctx.fillStyle = "#22c55e";
+
+      for (const p of calPoints) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if (calPoints.length === 2) {
+        ctx.beginPath();
+        ctx.moveTo(calPoints[0].x, calPoints[0].y);
+        ctx.lineTo(calPoints[1].x, calPoints[1].y);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    const a = lineStart;
+    const b = lineEnd ?? (tool === "line" ? hoverPt : null);
+    if (tool === "line" && a && b) {
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#60a5fa";
+      ctx.fillStyle = "#60a5fa";
+
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+
+      const px = dist(a, b);
+      const totalFeet = distFeet(a, b);
+      const label = totalFeet > 0 ? formatFeetInches(totalFeet) : `${px.toFixed(0)} px (calibrate to get feet)`;
+
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+
+      ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+      const pad = 6;
+      const w = ctx.measureText(label).width + pad * 2;
+      const h = 22;
+
+      ctx.fillStyle = "rgba(2,6,23,0.85)";
+      ctx.strokeStyle = "rgba(96,165,250,0.9)";
+      ctx.lineWidth = 1;
+
+      (ctx as any).roundRect
+        ? (ctx as any).roundRect(midX - w / 2, midY - h - 8, w, h, 8)
+        : (() => {
             ctx.beginPath();
-            ctx.arc(a.x, a.y, 5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.stroke();
-            var px = dist(a, b);
-            var totalFeet = distFeet(a, b);
-            var label = totalFeet > 0 ? formatFeetInches(totalFeet) : "".concat(px.toFixed(0), " px (calibrate to get feet)");
-            var midX_1 = (a.x + b.x) / 2;
-            var midY_1 = (a.y + b.y) / 2;
-            ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-            var pad = 6;
-            var w_1 = ctx.measureText(label).width + pad * 2;
-            var h_1 = 22;
-            ctx.fillStyle = "rgba(2,6,23,0.85)";
-            ctx.strokeStyle = "rgba(96,165,250,0.9)";
-            ctx.lineWidth = 1;
-            ctx.roundRect
-                ? ctx.roundRect(midX_1 - w_1 / 2, midY_1 - h_1 - 8, w_1, h_1, 8)
-                : (function () {
-                    ctx.beginPath();
-                    ctx.rect(midX_1 - w_1 / 2, midY_1 - h_1 - 8, w_1, h_1);
-                })();
-            ctx.fill();
-            ctx.stroke();
-            ctx.fillStyle = "#e2e8f0";
-            ctx.fillText(label, midX_1 - w_1 / 2 + pad, midY_1 - 12);
-            ctx.restore();
+            ctx.rect(midX - w / 2, midY - h - 8, w, h);
+          })();
+
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "#e2e8f0";
+      ctx.fillText(label, midX - w / 2 + pad, midY - 12);
+
+      ctx.restore();
+    }
+
+    if (tool === "area" && areaPoints.length > 0) {
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#a78bfa";
+      ctx.fillStyle = "rgba(167,139,250,0.2)";
+
+      ctx.beginPath();
+      ctx.moveTo(areaPoints[0].x, areaPoints[0].y);
+      for (let i = 1; i < areaPoints.length; i++) {
+        ctx.lineTo(areaPoints[i].x, areaPoints[i].y);
+      }
+
+      if (areaHoverPt && areaPoints.length >= 1) {
+        ctx.lineTo(areaHoverPt.x, areaHoverPt.y);
+        ctx.lineTo(areaPoints[0].x, areaPoints[0].y);
+      }
+
+      if (areaPoints.length >= 3) {
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      ctx.stroke();
+
+      ctx.fillStyle = "#a78bfa";
+      for (const p of areaPoints) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    if (tool === "volume" && volumePoints.length > 0) {
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#10b981";
+      ctx.fillStyle = "rgba(16,185,129,0.2)";
+
+      ctx.beginPath();
+      ctx.moveTo(volumePoints[0].x, volumePoints[0].y);
+      for (let i = 1; i < volumePoints.length; i++) {
+        ctx.lineTo(volumePoints[i].x, volumePoints[i].y);
+      }
+
+      if (volumeHoverPt && volumePoints.length >= 1) {
+        ctx.lineTo(volumeHoverPt.x, volumeHoverPt.y);
+        ctx.lineTo(volumePoints[0].x, volumePoints[0].y);
+      }
+
+      if (volumePoints.length >= 3) {
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      ctx.stroke();
+
+      ctx.fillStyle = "#10b981";
+      for (const p of volumePoints) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+  }
+
+  async function render() {
+    try {
+      if (!pdf) return;
+
+      const canvas = canvasRef.current;
+      const viewer = viewerRef.current;
+      if (!canvas || !viewer) return;
+
+      const seq = ++renderSeqRef.current;
+
+      const page = await pdf.getPage(pageNumber);
+
+      if (fitScaleRef.current == null) {
+        const fit = await computeFitScale();
+        if (fit != null) {
+          fitScaleRef.current = fit;
+          panZoom.fitToView(
+            page.getViewport({ scale: 1 }).width,
+            page.getViewport({ scale: 1 }).height,
+            viewer.clientWidth,
+            viewer.clientHeight
+          );
+          return;
         }
+      }
+
+      const viewport = page.getViewport({ scale: panZoom.zoom });
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+
+      setCanvasWidth(canvas.width);
+      setCanvasHeight(canvas.height);
+
+      canvas.style.width = canvas.width + "px";
+      canvas.style.height = canvas.height + "px";
+      canvas.style.maxWidth = "none";
+      canvas.style.maxHeight = "none";
+      canvas.style.display = "block";
+
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {}
+        renderTaskRef.current = null;
+      }
+
+      const task = page.render({ canvasContext: ctx, viewport });
+      renderTaskRef.current = task;
+
+      try {
+        await task.promise;
+      } catch (err: any) {
+        if (err?.name !== "RenderingCancelledException") throw err;
+        return;
+      } finally {
+        if (renderTaskRef.current === task) renderTaskRef.current = null;
+      }
+
+      if (seq !== renderSeqRef.current) return;
+
+      drawOverlay(ctx);
+    } catch (e: any) {
+      setError("Render failed: " + (e?.message || String(e)));
     }
-    function render() {
-        return __awaiter(this, void 0, void 0, function () {
-            var canvas, viewer, seq, page, fit, viewport, ctx, task, err_1, e_2;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0:
-                        _a.trys.push([0, 9, , 10]);
-                        if (!pdf)
-                            return [2 /*return*/];
-                        canvas = canvasRef.current;
-                        viewer = viewerRef.current;
-                        if (!canvas || !viewer)
-                            return [2 /*return*/];
-                        seq = ++renderSeqRef.current;
-                        return [4 /*yield*/, pdf.getPage(pageNumber)];
-                    case 1:
-                        page = _a.sent();
-                        if (!(fitScaleRef.current == null)) return [3 /*break*/, 3];
-                        return [4 /*yield*/, computeFitScale()];
-                    case 2:
-                        fit = _a.sent();
-                        if (fit != null) {
-                            fitScaleRef.current = fit;
-                            setScale(fit);
-                            return [2 /*return*/];
-                        }
-                        _a.label = 3;
-                    case 3:
-                        viewport = page.getViewport({ scale: scale });
-                        ctx = canvas.getContext("2d");
-                        if (!ctx)
-                            return [2 /*return*/];
-                        canvas.width = Math.floor(viewport.width);
-                        canvas.height = Math.floor(viewport.height);
-                        canvas.style.width = canvas.width + "px";
-                        canvas.style.height = canvas.height + "px";
-                        canvas.style.maxWidth = "none";
-                        canvas.style.maxHeight = "none";
-                        canvas.style.display = "block";
-                        if (renderTaskRef.current) {
-                            try {
-                                renderTaskRef.current.cancel();
-                            }
-                            catch (_b) { }
-                            renderTaskRef.current = null;
-                        }
-                        task = page.render({ canvasContext: ctx, viewport: viewport });
-                        renderTaskRef.current = task;
-                        _a.label = 4;
-                    case 4:
-                        _a.trys.push([4, 6, 7, 8]);
-                        return [4 /*yield*/, task.promise];
-                    case 5:
-                        _a.sent();
-                        return [3 /*break*/, 8];
-                    case 6:
-                        err_1 = _a.sent();
-                        if ((err_1 === null || err_1 === void 0 ? void 0 : err_1.name) !== "RenderingCancelledException")
-                            throw err_1;
-                        return [2 /*return*/];
-                    case 7:
-                        if (renderTaskRef.current === task)
-                            renderTaskRef.current = null;
-                        return [7 /*endfinally*/];
-                    case 8:
-                        if (seq !== renderSeqRef.current)
-                            return [2 /*return*/];
-                        drawOverlay(ctx);
-                        return [3 /*break*/, 10];
-                    case 9:
-                        e_2 = _a.sent();
-                        setError("Render failed: " + ((e_2 === null || e_2 === void 0 ? void 0 : e_2.message) || String(e_2)));
-                        return [3 /*break*/, 10];
-                    case 10: return [2 /*return*/];
-                }
-            });
-        });
-    }
-    (0, react_1.useEffect)(function () {
-        var cancelled = false;
-        (function () { return __awaiter(_this, void 0, void 0, function () {
-            var e_3;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0:
-                        _a.trys.push([0, 3, , 4]);
-                        if (!!cancelled) return [3 /*break*/, 2];
-                        return [4 /*yield*/, render()];
-                    case 1:
-                        _a.sent();
-                        _a.label = 2;
-                    case 2: return [3 /*break*/, 4];
-                    case 3:
-                        e_3 = _a.sent();
-                        if (!cancelled)
-                            setError("Render failed: " + ((e_3 === null || e_3 === void 0 ? void 0 : e_3.message) || String(e_3)));
-                        return [3 /*break*/, 4];
-                    case 4: return [2 /*return*/];
-                }
-            });
-        }); })();
-        return function () {
-            cancelled = true;
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [pdf, pageNumber, scale, panX, panY, calPoints.length, calibPoints.length, tool, lineStart === null || lineStart === void 0 ? void 0 : lineStart.x, lineStart === null || lineStart === void 0 ? void 0 : lineStart.y, lineEnd === null || lineEnd === void 0 ? void 0 : lineEnd.x, lineEnd === null || lineEnd === void 0 ? void 0 : lineEnd.y, hoverPt === null || hoverPt === void 0 ? void 0 : hoverPt.x, hoverPt === null || hoverPt === void 0 ? void 0 : hoverPt.y]);
-    // Remove old zoom anchor logic - now using pan system
-    (0, react_1.useEffect)(function () {
-        var onKeyDown = function (e) {
-            if (e.code === "Space") {
-                // prevent page scrolling when space is pressed
-                e.preventDefault();
-                isSpaceDownRef.current = true;
-            }
-        };
-        var onKeyUp = function (e) {
-            if (e.code === "Space") {
-                isSpaceDownRef.current = false;
-                isPanningRef.current = false;
-                activePointerIdRef.current = null;
-            }
-        };
-        window.addEventListener("keydown", onKeyDown, { passive: false });
-        window.addEventListener("keyup", onKeyUp);
-        return function () {
-            window.removeEventListener("keydown", onKeyDown);
-            window.removeEventListener("keyup", onKeyUp);
-        };
-    }, []);
-    (0, react_1.useEffect)(function () {
-        function onWheel(e) {
-            if (!overViewer)
-                return;
-            if (e.ctrlKey || e.metaKey)
-                e.preventDefault();
-        }
-        function onKeyDown(e) {
-            if (!overViewer)
-                return;
-            if (e.ctrlKey || e.metaKey) {
-                var k = e.key.toLowerCase();
-                if (k === "+" || k === "=" || k === "-" || k === "0")
-                    e.preventDefault();
-            }
-        }
-        window.addEventListener("wheel", onWheel, { passive: false, capture: true });
-        window.addEventListener("keydown", onKeyDown, { capture: true });
-        return function () {
-            window.removeEventListener("wheel", onWheel, { capture: true });
-            window.removeEventListener("keydown", onKeyDown, { capture: true });
-        };
-    }, [overViewer]);
-    function nextPage() {
-        if (pageNumber < numPages) {
-            setPageNumber(function (p) { return p + 1; });
-            fitScaleRef.current = null;
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setCalPoints([]);
-            setCalibrating(false);
-            setIsCalibrating(false);
-            setCalibPoints([]);
-        }
-    }
-    function prevPage() {
-        if (pageNumber > 1) {
-            setPageNumber(function (p) { return p - 1; });
-            fitScaleRef.current = null;
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setCalPoints([]);
-            setCalibrating(false);
-            setIsCalibrating(false);
-            setCalibPoints([]);
-        }
-    }
-    function startCalibrate() {
-        setError(null);
-        setCalibrating(true);
-        setIsCalibrating(true);
-        setCalibPoints([]);
-        setTool("select");
-        setLineStart(null);
-        setLineEnd(null);
-        setHoverPt(null);
-        setCalPoints([]);
-        setScaleModalOpen(true);
-    }
-    function cancelCalibrate() {
-        setCalibrating(false);
-        setIsCalibrating(false);
-        setCalibPoints([]);
-        setCalPoints([]);
-        setScaleModalOpen(false);
-    }
-    function canvasPointFromEvent(e) {
-        var canvas = canvasRef.current;
-        var rect = canvas.getBoundingClientRect();
-        return {
-            x: Math.round(e.clientX - rect.left),
-            y: Math.round(e.clientY - rect.top),
-        };
-    }
-    // PlanSwift navigation handlers
-    function shouldStartPan(e) {
-        var LEFT = 0;
-        var MIDDLE = 1;
-        // Middle mouse drag pans
-        if (e.button === MIDDLE)
-            return true;
-        // Space + left drag pans
-        if (e.button === LEFT && isSpaceDownRef.current)
-            return true;
-        return false;
-    }
-    function onViewerPointerDown(e) {
-        // If calibration click-mode is ON, we must NOT pan unless it's explicitly a pan gesture
-        // (space+drag or middle drag). Normal click should record points (your existing logic).
-        var el = viewerRef.current;
-        if (!el)
-            return;
-        if (!shouldStartPan(e))
-            return; // let normal click flow continue
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!cancelled) await render();
+      } catch (e: any) {
+        if (!cancelled) setError("Render failed: " + (e?.message || String(e)));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pdf, pageNumber, panZoom.zoom, panZoom.panX, panZoom.panY, calPoints.length, calibPoints.length, tool, lineStart?.x, lineStart?.y, lineEnd?.x, lineEnd?.y, hoverPt?.x, hoverPt?.y, areaPoints.length, areaHoverPt?.x, areaHoverPt?.y, volumePoints.length, volumeHoverPt?.x, volumeHoverPt?.y]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
         e.preventDefault();
-        e.stopPropagation();
-        isPanningRef.current = true;
-        activePointerIdRef.current = e.pointerId;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        panStartRef.current = {
-            x: e.clientX,
-            y: e.clientY,
-            panX: panX,
-            panY: panY,
-        };
-    }
-    function onViewerPointerMove(e) {
-        if (!isPanningRef.current)
-            return;
-        if (activePointerIdRef.current !== e.pointerId)
-            return;
-        e.preventDefault();
-        var dx = e.clientX - panStartRef.current.x;
-        var dy = e.clientY - panStartRef.current.y;
-        // Pan in screen pixels
-        setPanX(panStartRef.current.panX + dx);
-        setPanY(panStartRef.current.panY + dy);
-    }
-    function endPan(e) {
-        if (!isPanningRef.current)
-            return;
+        isSpaceDownRef.current = true;
+      }
+
+      if (tool === "area") {
+        if (e.code === "Enter" && areaPoints.length >= 3) {
+          e.preventDefault();
+          finishAreaPolygon();
+        }
+        if (e.code === "Escape") {
+          e.preventDefault();
+          setAreaPoints([]);
+          setAreaHoverPt(null);
+        }
+      }
+
+      if (tool === "count") {
+        if (e.code === "Escape") {
+          e.preventDefault();
+          setCountPoints([]);
+        }
+      }
+
+      if (tool === "volume") {
+        if (e.code === "Enter" && volumePoints.length >= 3) {
+          e.preventDefault();
+          finishVolumePolygon();
+        }
+        if (e.code === "Escape") {
+          e.preventDefault();
+          setVolumePoints([]);
+          setVolumeHoverPt(null);
+          setShowDepthPrompt(false);
+        }
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        isSpaceDownRef.current = false;
         isPanningRef.current = false;
-        if (e && activePointerIdRef.current === e.pointerId) {
-            try {
-                e.currentTarget.releasePointerCapture(e.pointerId);
-            }
-            catch (_a) { }
-        }
         activePointerIdRef.current = null;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, { passive: false });
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown as any);
+      window.removeEventListener("keyup", onKeyUp as any);
+    };
+  }, [tool, areaPoints, countPoints, volumePoints]);
+
+  useEffect(() => {
+    function onWheel(e: WheelEvent) {
+      if (!overViewer) return;
+      if (e.ctrlKey || e.metaKey) e.preventDefault();
     }
-    function onViewerPointerUp(e) {
-        if (!isPanningRef.current)
-            return;
-        e.preventDefault();
-        e.stopPropagation();
-        endPan(e);
+    function onKeyDown(e: KeyboardEvent) {
+      if (!overViewer) return;
+      if (e.ctrlKey || e.metaKey) {
+        const k = e.key.toLowerCase();
+        if (k === "+" || k === "=" || k === "-" || k === "0") e.preventDefault();
+      }
     }
-    function onViewerPointerLeave(e) {
-        endPan(e);
+
+    window.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+
+    return () => {
+      window.removeEventListener("wheel", onWheel as any, { capture: true } as any);
+      window.removeEventListener("keydown", onKeyDown as any, { capture: true } as any);
+    };
+  }, [overViewer]);
+
+  function nextPage() {
+    if (pageNumber < numPages) {
+      setPageNumber((p) => p + 1);
+      fitScaleRef.current = null;
+      setLineStart(null);
+      setLineEnd(null);
+      setHoverPt(null);
+      setAreaPoints([]);
+      setAreaHoverPt(null);
+      setCountPoints([]);
+      setVolumePoints([]);
+      setVolumeHoverPt(null);
+      setShowDepthPrompt(false);
+      setCalPoints([]);
+      setCalibrating(false);
+      setIsCalibrating(false);
+      setCalibPoints([]);
     }
-    function onViewerWheel(e) {
-        var el = viewerRef.current;
-        if (!el)
-            return;
-        // Prevent page scroll when interacting with drawing
-        e.preventDefault();
-        // Trackpads usually emit small deltas; normalize zoom with a gentle factor
-        var isZoomGesture = e.ctrlKey; // ctrl+wheel commonly equals pinch-to-zoom on trackpads
-        if (!isZoomGesture) {
-            // Two-finger scroll pans the drawing (PlanSwift feel)
-            setPanX(function (v) { return v - e.deltaX; });
-            setPanY(function (v) { return v - e.deltaY; });
-            return;
+  }
+
+  function prevPage() {
+    if (pageNumber > 1) {
+      setPageNumber((p) => p - 1);
+      fitScaleRef.current = null;
+      setLineStart(null);
+      setLineEnd(null);
+      setHoverPt(null);
+      setAreaPoints([]);
+      setAreaHoverPt(null);
+      setCountPoints([]);
+      setVolumePoints([]);
+      setVolumeHoverPt(null);
+      setShowDepthPrompt(false);
+      setCalPoints([]);
+      setCalibrating(false);
+      setIsCalibrating(false);
+      setCalibPoints([]);
+    }
+  }
+
+  function startCalibrate() {
+    setError(null);
+    setCalibrating(true);
+    setIsCalibrating(true);
+    setCalibPoints([]);
+    setTool("select");
+    setLineStart(null);
+    setLineEnd(null);
+    setHoverPt(null);
+    setCalPoints([]);
+    setScaleModalOpen(true);
+  }
+
+  function cancelCalibrate() {
+    setCalibrating(false);
+    setIsCalibrating(false);
+    setCalibPoints([]);
+    setCalPoints([]);
+    setScaleModalOpen(false);
+  }
+
+  function canvasPointFromEvent(e: React.MouseEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: Math.round(e.clientX - rect.left),
+      y: Math.round(e.clientY - rect.top),
+    };
+  }
+
+  function shouldStartPan(e: React.PointerEvent) {
+    const LEFT = 0;
+    const MIDDLE = 1;
+
+    if (e.button === MIDDLE) return true;
+
+    if (e.button === LEFT && isSpaceDownRef.current) return true;
+
+    return false;
+  }
+
+  function onViewerPointerDown(e: React.PointerEvent) {
+    const el = viewerRef.current;
+    if (!el) return;
+
+    if (!shouldStartPan(e)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    isPanningRef.current = true;
+    activePointerIdRef.current = e.pointerId;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+
+    panZoom.startPan(e.clientX, e.clientY);
+  }
+
+  function onViewerPointerMove(e: React.PointerEvent) {
+    if (!isPanningRef.current) return;
+    if (activePointerIdRef.current !== e.pointerId) return;
+
+    e.preventDefault();
+
+    panZoom.updatePan(e.clientX, e.clientY);
+  }
+
+  function endPan(e?: React.PointerEvent) {
+    if (!isPanningRef.current) return;
+    isPanningRef.current = false;
+    if (e && activePointerIdRef.current === e.pointerId) {
+      try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+    }
+    activePointerIdRef.current = null;
+    panZoom.endPan();
+  }
+
+  function onViewerPointerUp(e: React.PointerEvent) {
+    if (!isPanningRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    endPan(e);
+  }
+
+  function onViewerPointerLeave(e: React.PointerEvent) {
+    endPan(e);
+  }
+
+  function onViewerWheel(e: React.WheelEvent) {
+    const el = viewerRef.current;
+    if (!el) return;
+
+    e.preventDefault();
+
+    const isZoomGesture = e.ctrlKey;
+
+    if (!isZoomGesture) {
+      panZoom.updatePan(e.clientX + e.deltaX, e.clientY + e.deltaY);
+      return;
+    }
+
+    const rect = el.getBoundingClientRect();
+    panZoom.handleWheel(e.nativeEvent, rect);
+  }
+
+  function onCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (isPanningRef.current) return;
+
+    if (isCalibrating) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const el = viewerRef.current;
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+
+      const x = (mx - panZoom.panX) / panZoom.zoom;
+      const y = (my - panZoom.panY) / panZoom.zoom;
+
+      const newPoint = { x, y };
+
+      setCalibPoints((prev) => {
+        if (prev.length >= 2) return [newPoint];
+        return [...prev, newPoint];
+      });
+
+      return;
+    }
+
+    if (calibrating) {
+      const p = canvasPointFromEvent(e);
+      setCalPoints((prev) => {
+        if (prev.length >= 2) return [p];
+        return [...prev, p];
+      });
+      return;
+    }
+
+    if (tool === "line") {
+      const p = canvasPointFromEvent(e);
+      if (!lineStart) {
+        setLineStart(p);
+        setLineEnd(null);
+        return;
+      }
+      if (!lineEnd) {
+        setLineEnd(p);
+
+        if (feetPerPixel && feetPerPixel > 0) {
+          const pixelsPerUnit = 1 / feetPerPixel;
+          const activeGroup = groups.find(g => g.id === activeGroupId);
+          addMeasurement({
+            type: "line",
+            points: [lineStart, p],
+            pixelsPerUnit,
+            unit: "ft",
+            label: `Line measurement ${measurements.length + 1}`,
+            color: activeGroup?.color || "#60a5fa",
+            groupId: activeGroupId || undefined,
+          });
         }
-        // Zoom to cursor: keep content point under cursor stable
-        var rect = el.getBoundingClientRect();
-        var mx = e.clientX - rect.left;
-        var my = e.clientY - rect.top;
-        // current content coords under cursor
-        var cx = (mx - panX) / scale;
-        var cy = (my - panY) / scale;
-        // Zoom step
-        var direction = e.deltaY > 0 ? -1 : 1; // invert if needed
-        var factor = Math.exp(direction * 0.08); // smooth
-        var nextZoom = clamp(scale * factor, 0.2, 6); // adjust if you have your own bounds
-        // new pan to keep (cx,cy) under cursor
-        var nextPanX = mx - cx * nextZoom;
-        var nextPanY = my - cy * nextZoom;
-        setScale(nextZoom);
-        setPanX(nextPanX);
-        setPanY(nextPanY);
+
+        return;
+      }
+      setLineStart(p);
+      setLineEnd(null);
+      return;
     }
-    function onCanvasClick(e) {
-        // Don't record calibration points when panning
-        if (isPanningRef.current)
-            return;
-        if (isCalibrating) {
-            e.preventDefault();
-            e.stopPropagation();
-            var el = viewerRef.current;
-            if (!el)
-                return;
-            var rect = el.getBoundingClientRect();
-            var mx = e.clientX - rect.left;
-            var my = e.clientY - rect.top;
-            var x = (mx - panX) / scale;
-            var y = (my - panY) / scale;
-            var newPoint_1 = { x: x, y: y };
-            setCalibPoints(function (prev) {
-                if (prev.length >= 2)
-                    return [newPoint_1]; // restart if third click
-                return __spreadArray(__spreadArray([], prev, true), [newPoint_1], false);
-            });
-            return; // IMPORTANT: stop normal takeoff logic
-        }
-        if (calibrating) {
-            var p_1 = canvasPointFromEvent(e);
-            setCalPoints(function (prev) {
-                if (prev.length >= 2)
-                    return [p_1];
-                return __spreadArray(__spreadArray([], prev, true), [p_1], false);
-            });
-            return;
-        }
-        if (tool === "line") {
-            var p = canvasPointFromEvent(e);
-            if (!lineStart) {
-                setLineStart(p);
-                setLineEnd(null);
-                return;
-            }
-            if (!lineEnd) {
-                setLineEnd(p);
-                return;
-            }
-            setLineStart(p);
-            setLineEnd(null);
-            return;
-        }
+
+    if (tool === "area") {
+      const p = canvasPointFromEvent(e);
+      setAreaPoints((prev) => [...prev, p]);
+      return;
     }
-    function onCanvasMove(e) {
-        if (tool !== "line")
-            return;
-        if (!lineStart)
-            return;
-        if (lineEnd)
-            return;
-        setHoverPt(canvasPointFromEvent(e));
+
+    if (tool === "volume") {
+      const p = canvasPointFromEvent(e);
+      setVolumePoints((prev) => [...prev, p]);
+      return;
     }
-    function applyScaleFromModal(realFeet, opts) {
-        // Clear scale
-        if (realFeet === 0) {
-            setFeetPerPixel(null);
-            setCalibrating(false);
-            setIsCalibrating(false);
-            setCalPoints([]);
-            setCalibPoints([]);
-            setScaleModalOpen(false);
-            setError(null);
-            return;
-        }
-        // Use new calibration points if in calibration mode, otherwise use old points
-        var pointsToUse = isCalibrating ? calibPoints : calPoints;
-        var pointsLength = isCalibrating ? calibPoints.length : calPoints.length;
-        if (pointsLength !== 2) {
-            setError("Click two points on the drawing first.");
-            return;
-        }
-        var pixelDist = dist(pointsToUse[0], pointsToUse[1]);
-        if (pixelDist <= 0) {
-            setError("Points too close.");
-            return;
-        }
-        var fpp = realFeet / pixelDist;
-        setFeetPerPixel(fpp);
-        // NOTE: opts.applyAllPages and opts.autoDimLine are stored later when we save takeoff to DB.
-        // For now, this is just UI behavior (we'll persist it in the next upgrade).
-        setCalibrating(false);
-        setIsCalibrating(false);
-        setScaleModalOpen(false);
-        setError(null);
-        // keep overlay showing the 2 points until next click
-        // (this feels like PlanSwift's "dimension line" behavior)
-        if (!opts.autoDimLine) {
-            setCalPoints([]);
-            setCalibPoints([]);
-        }
+
+    if (tool === "count") {
+      const p = canvasPointFromEvent(e);
+
+      if (feetPerPixel && feetPerPixel > 0) {
+        const pixelsPerUnit = 1 / feetPerPixel;
+        const activeGroup = groups.find(g => g.id === activeGroupId);
+        addMeasurement({
+          type: "count",
+          points: [p],
+          pixelsPerUnit,
+          unit: "ea",
+          label: `Count ${measurements.length + 1}`,
+          color: activeGroup?.color || "#f59e0b",
+          groupId: activeGroupId || undefined,
+        });
+      }
+      return;
     }
-    function handleCalibrationOk(lengthFeet) {
-        if (!lengthFeet)
-            return;
-        setPendingCalibLength(lengthFeet);
-        setCalibPoints([]);
-        setIsCalibrating(true);
-        setScaleModalOpen(false);
+  }
+
+  function onCanvasDoubleClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (tool === "area" && areaPoints.length >= 3) {
+      e.preventDefault();
+      e.stopPropagation();
+      finishAreaPolygon();
     }
-    function onCalibrationCancel() {
-        setIsCalibrating(false);
-        setCalibPoints([]);
-        setPendingCalibLength(null);
-        setScaleModalOpen(false);
+
+    if (tool === "volume" && volumePoints.length >= 3) {
+      e.preventDefault();
+      e.stopPropagation();
+      finishVolumePolygon();
     }
-    var canConfirmCalibration = calibPoints.length === 2;
-    // Auto-apply when 2 points are selected
-    (0, react_1.useEffect)(function () {
-        if (!isCalibrating)
-            return;
-        if (calibPoints.length !== 2)
-            return;
-        if (!pendingCalibLength)
-            return;
-        var a = calibPoints[0], b = calibPoints[1];
-        var dx = b.x - a.x;
-        var dy = b.y - a.y;
-        var pixelDist = Math.sqrt(dx * dx + dy * dy);
-        if (!pixelDist || pixelDist <= 0)
-            return;
-        // Apply scale: feet per pixel
-        var newFeetPerPixel = pendingCalibLength / pixelDist;
-        setFeetPerPixel(newFeetPerPixel);
-        setFeetPerPdfUnit(newFeetPerPixel);
-        // Done
-        setIsCalibrating(false);
-        setPendingCalibLength(null);
-        setCalibPoints([]);
-    }, [isCalibrating, calibPoints, pendingCalibLength]);
-    return (<div className="p-6 h-full flex flex-col">
-      <ScaleModal open={scaleModalOpen} onClose={onCalibrationCancel} onApply={applyScaleFromModal} canApply={calPoints && calPoints.length === 2} isCalibrating={isCalibrating} calibPointsCount={calibPoints.length} canConfirmCalibration={canConfirmCalibration} onCalibrationOk={handleCalibrationOk} onCalibrationCancel={onCalibrationCancel}/>
+  }
+
+  function onCanvasMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (tool === "line") {
+      if (!lineStart) return;
+      if (lineEnd) return;
+      setHoverPt(canvasPointFromEvent(e));
+      return;
+    }
+
+    if (tool === "area" && areaPoints.length > 0) {
+      setAreaHoverPt(canvasPointFromEvent(e));
+      return;
+    }
+
+    if (tool === "volume" && volumePoints.length > 0) {
+      setVolumeHoverPt(canvasPointFromEvent(e));
+      return;
+    }
+  }
+
+  function applyScaleFromModal(realFeet: number, opts: { applyAllPages: boolean; autoDimLine: boolean }) {
+    if (realFeet === 0) {
+      setFeetPerPixel(null);
+      setCalibrating(false);
+      setIsCalibrating(false);
+      setCalPoints([]);
+      setCalibPoints([]);
+      setScaleModalOpen(false);
+      setError(null);
+      return;
+    }
+
+    const pointsToUse = isCalibrating ? calibPoints : calPoints;
+    const pointsLength = isCalibrating ? calibPoints.length : calPoints.length;
+
+    if (pointsLength !== 2) {
+      setError("Click two points on the drawing first.");
+      return;
+    }
+
+    const pixelDist = dist(pointsToUse[0], pointsToUse[1]);
+    if (pixelDist <= 0) {
+      setError("Points too close.");
+      return;
+    }
+
+    const fpp = realFeet / pixelDist;
+    setFeetPerPixel(fpp);
+
+    setCalibrating(false);
+    setIsCalibrating(false);
+    setScaleModalOpen(false);
+    setError(null);
+
+    if (!opts.autoDimLine) {
+      setCalPoints([]);
+      setCalibPoints([]);
+    }
+  }
+
+  function handleCalibrationOk(lengthFeet: number) {
+    if (!lengthFeet) return;
+
+    setPendingCalibLength(lengthFeet);
+    setCalibPoints([]);
+    setIsCalibrating(true);
+    setScaleModalOpen(false);
+  }
+
+  function onCalibrationCancel() {
+    setIsCalibrating(false);
+    setCalibPoints([]);
+    setPendingCalibLength(null);
+    setScaleModalOpen(false);
+  }
+
+  function finishAreaPolygon() {
+    if (areaPoints.length < 3) return;
+
+    if (feetPerPixel && feetPerPixel > 0) {
+      const pixelsPerUnit = 1 / feetPerPixel;
+
+      let areaPixels = 0;
+      for (let i = 0; i < areaPoints.length; i++) {
+        const j = (i + 1) % areaPoints.length;
+        areaPixels += areaPoints[i].x * areaPoints[j].y;
+        areaPixels -= areaPoints[j].x * areaPoints[i].y;
+      }
+      areaPixels = Math.abs(areaPixels / 2);
+
+      const areaFt2 = areaPixels / (pixelsPerUnit * pixelsPerUnit);
+
+      const activeGroup = groups.find(g => g.id === activeGroupId);
+      addMeasurement({
+        type: "area",
+        points: [...areaPoints],
+        pixelsPerUnit,
+        unit: "ft²",
+        label: `Area ${measurements.length + 1}`,
+        color: activeGroup?.color || "#a78bfa",
+        groupId: activeGroupId || undefined,
+      });
+    }
+
+    setAreaPoints([]);
+    setAreaHoverPt(null);
+  }
+
+  function finishVolumePolygon() {
+    if (volumePoints.length < 3) return;
+    setShowDepthPrompt(true);
+  }
+
+  function confirmVolumeWithDepth() {
+    if (volumePoints.length < 3) return;
+
+    const depthInches = parseFloat(depthInput);
+    if (!depthInches || depthInches <= 0) {
+      alert("Please enter a valid depth in inches");
+      return;
+    }
+
+    if (feetPerPixel && feetPerPixel > 0) {
+      const pixelsPerUnit = 1 / feetPerPixel;
+
+      let areaPixels = 0;
+      for (let i = 0; i < volumePoints.length; i++) {
+        const j = (i + 1) % volumePoints.length;
+        areaPixels += volumePoints[i].x * volumePoints[j].y;
+        areaPixels -= volumePoints[j].x * volumePoints[i].y;
+      }
+      areaPixels = Math.abs(areaPixels / 2);
+
+      const areaFt2 = areaPixels / (pixelsPerUnit * pixelsPerUnit);
+      const depthFt = depthInches / 12;
+      const volumeFt3 = areaFt2 * depthFt;
+      const volumeYd3 = volumeFt3 / 27;
+      const volumeM3 = volumeFt3 * 0.028316846592;
+
+      const activeGroup = groups.find(g => g.id === activeGroupId);
+      addMeasurement({
+        type: "volume",
+        points: [...volumePoints],
+        pixelsPerUnit,
+        unit: "yd³",
+        label: `Volume ${measurements.length + 1}`,
+        color: activeGroup?.color || "#10b981",
+        groupId: activeGroupId || undefined,
+        meta: {
+          depthInches,
+          volumeM3,
+        },
+      });
+    }
+
+    setVolumePoints([]);
+    setVolumeHoverPt(null);
+    setShowDepthPrompt(false);
+    setDepthInput("4");
+  }
+
+  const canConfirmCalibration = calibPoints.length === 2;
+
+  useEffect(() => {
+    if (!isCalibrating) return;
+    if (calibPoints.length !== 2) return;
+    if (!pendingCalibLength) return;
+
+    const [a,b] = calibPoints;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const pixelDist = Math.sqrt(dx*dx + dy*dy);
+    if (!pixelDist || pixelDist <= 0) return;
+
+    const newFeetPerPixel = pendingCalibLength / pixelDist;
+    setFeetPerPixel(newFeetPerPixel);
+    setFeetPerPdfUnit(newFeetPerPixel);
+
+    setIsCalibrating(false);
+    setPendingCalibLength(null);
+    setCalibPoints([]);
+  }, [isCalibrating, calibPoints, pendingCalibLength]);
+
+  function toggleGroupVisibility(groupId: string) {
+    setGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, visible: !g.visible } : g
+    ));
+  }
+
+  function addNewGroup() {
+    if (!newGroupName.trim()) return;
+
+    const maxGroups = features.maxTakeoffGroups;
+    if (maxGroups !== null && groups.length >= maxGroups) {
+      setPaywallFeature("Unlimited Takeoff Groups");
+      setShowPaywall(true);
+      return;
+    }
+
+    const colors = ["#ef4444", "#84cc16", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+    const newGroup = {
+      id: crypto.randomUUID(),
+      name: newGroupName.trim(),
+      color: randomColor,
+      visible: true,
+      sortOrder: groups.length,
+    };
+
+    setGroups(prev => [...prev, newGroup]);
+    setNewGroupName("");
+    setShowNewGroupForm(false);
+  }
+
+  function deleteGroup(groupId: string) {
+    setGroups(prev => prev.filter(g => g.id !== groupId));
+    if (activeGroupId === groupId) {
+      setActiveGroupId(groups.find(g => g.id !== groupId)?.id || null);
+    }
+  }
+
+  function exportToCSV() {
+    if (!hasFeature("takeoffExport")) {
+      setPaywallFeature("Export Takeoff to CSV");
+      setShowPaywall(true);
+      return;
+    }
+
+    const rows = [["Group", "Type", "Label", "Result", "Unit"]];
+
+    groups.forEach(group => {
+      const groupMeasurements = measurements.filter(m => m.groupId === group.id);
+      groupMeasurements.forEach(m => {
+        const unit = m.type === "line" ? "ft" : m.type === "area" ? "ft²" : m.type === "volume" ? "ft³" : "count";
+        rows.push([
+          group.name,
+          m.type,
+          m.label || "",
+          m.result.toFixed(2),
+          unit
+        ]);
+      });
+    });
+
+    const csv = rows.map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "takeoff-export.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function changeMeasurementGroup(measurementId: string, newGroupId: string | null) {
+    updateMeasurement(measurementId, { groupId: newGroupId || undefined });
+  }
+
+  function getGroupTotals(groupId: string) {
+    const groupMeasurements = measurements.filter(m => m.groupId === groupId);
+
+    return {
+      line: groupMeasurements
+        .filter(m => m.type === "line")
+        .reduce((sum, m) => sum + m.result, 0),
+      area: groupMeasurements
+        .filter(m => m.type === "area")
+        .reduce((sum, m) => sum + m.result, 0),
+      volume: groupMeasurements
+        .filter(m => m.type === "volume")
+        .reduce((sum, m) => sum + m.result, 0),
+      count: groupMeasurements
+        .filter(m => m.type === "count")
+        .reduce((sum, m) => sum + m.result, 0),
+    };
+  }
+
+  const visibleMeasurements = measurements.filter(m => {
+    if (!m.groupId) return true;
+    const group = groups.find(g => g.id === m.groupId);
+    return group?.visible !== false;
+  });
+
+  useEffect(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    setSaveStatus("saving");
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        const groupTotalsMap: Record<string, {
+          line_ft: number;
+          area_ft2: number;
+          volume_yd3: number;
+          count_ea: number;
+        }> = {};
+
+        groups.forEach(group => {
+          const totals = getGroupTotals(group.id);
+          groupTotalsMap[group.id] = {
+            line_ft: totals.line,
+            area_ft2: totals.area,
+            volume_yd3: totals.volume,
+            count_ea: totals.count,
+          };
+        });
+
+        localStorage.setItem("takeoff_group_totals", JSON.stringify(groupTotalsMap));
+
+        const groupsMetadata = groups.map(g => ({
+          id: g.id,
+          name: g.name,
+          color: g.color,
+          visible: g.visible,
+        }));
+        localStorage.setItem("takeoff_groups", JSON.stringify(groupsMetadata));
+
+        if (activeProjectId && measurements.length > 0) {
+          await saveMeasurementsToDB(
+            activeProjectId,
+            sessionId,
+            measurements,
+            groups
+          );
+        }
+
+        setSaveStatus("saved");
+      } catch (err) {
+        console.error("Save failed:", err);
+        setSaveStatus("error");
+      }
+    }, 400);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [measurements, groups, activeProjectId, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || !dbLoaded) return;
+
+    const calibrationData = feetPerPixel ? {
+      isCalibrated: true,
+      point1: calPoints[0] || null,
+      point2: calPoints[1] || null,
+      realDistance: 0,
+      unit: "ft" as const,
+      pixelsPerUnit: 1 / (feetPerPixel || 1),
+    } : null;
+
+    saveTakeoffDebounced(sessionId, {
+      groups: groups.map(g => ({
+        ...g,
+        locked: false,
+        trade: undefined,
+      })),
+      measurements,
+      calibration: calibrationData,
+    }, 800);
+
+    return () => {
+      cancelPendingSave();
+    };
+  }, [sessionId, measurements, groups, feetPerPixel, dbLoaded]);
+
+  return (
+    <div className="p-6 h-full flex gap-6">
+      <div className="flex-1 flex flex-col min-w-0">
+        <ScaleModal
+          open={scaleModalOpen}
+          onClose={onCalibrationCancel}
+          onApply={applyScaleFromModal}
+          canApply={calPoints && calPoints.length === 2}
+          isCalibrating={isCalibrating}
+          calibPointsCount={calibPoints.length}
+          canConfirmCalibration={canConfirmCalibration}
+          onCalibrationOk={handleCalibrationOk}
+          onCalibrationCancel={onCalibrationCancel}
+        />
+
+      {routeProjectId ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-xs text-slate-500 mb-1">Project Context</div>
+              <div className="text-sm font-semibold">
+                {currentProject?.name || `Project ${routeProjectId}`}
+              </div>
+              <div className="text-xs text-slate-400 mt-1">
+                Project ID: {routeProjectId}
+              </div>
+            </div>
+            <button
+              onClick={() => nav(`/projects/${routeProjectId}`)}
+              className="px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 text-sm"
+            >
+              Back to Project
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 p-4 mb-4">
+          <div className="text-sm font-semibold text-amber-300">Global Takeoff Mode</div>
+          <div className="text-xs text-amber-400/70 mt-1">
+            No project context. Access takeoff from a project dashboard for project-specific measurements.
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -959,48 +1579,221 @@ function TakeoffPageInner() {
         </div>
 
         <div className="flex items-center gap-2">
+          <div
+            className={`px-3 py-1 rounded-lg text-xs font-medium ${
+              saveStatus === "saved"
+                ? "bg-emerald-900/20 text-emerald-300 border border-emerald-900/30"
+                : saveStatus === "saving"
+                ? "bg-slate-800/50 text-slate-400 border border-slate-700"
+                : "bg-red-900/20 text-red-300 border border-red-900/30"
+            }`}
+          >
+            {saveStatus === "saved" ? "Saved ✓" : saveStatus === "saving" ? "Saving…" : "Save failed"}
+          </div>
+
           <label className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm cursor-pointer">
             Upload PDF
-            <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={function (e) { var _a, _b; return onPickFile((_b = (_a = e.target.files) === null || _a === void 0 ? void 0 : _a[0]) !== null && _b !== void 0 ? _b : null); }}/>
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              className="hidden"
+              onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
+            />
           </label>
 
-          {pdf && (<button onClick={startCalibrate} className="px-3 py-2 rounded-xl bg-emerald-900/25 hover:bg-emerald-900/40 border border-emerald-900/40 text-sm">
-              Calibrate Scale
-            </button>)}
+          {pdf && (
+            <>
+              <button
+                onClick={startCalibrate}
+                className="px-3 py-2 rounded-xl bg-emerald-900/25 hover:bg-emerald-900/40 border border-emerald-900/40 text-sm"
+              >
+                Calibrate Scale
+              </button>
+              <button
+                onClick={exportToCSV}
+                className="px-3 py-2 rounded-xl bg-blue-900/25 hover:bg-blue-900/40 border border-blue-900/40 text-sm"
+              >
+                Export CSV
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       <div className="mt-4 flex items-center gap-2">
-        <button onClick={function () {
+        <button
+          onClick={() => {
             setTool("select");
             setLineStart(null);
             setLineEnd(null);
             setHoverPt(null);
-        }} className={"px-3 py-2 rounded-xl text-sm border " + (tool === "select" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}>
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "select" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
           Select
         </button>
 
-        <button onClick={function () {
+        <button
+          onClick={() => {
             setTool("line");
             setLineStart(null);
             setLineEnd(null);
             setHoverPt(null);
-        }} className={"px-3 py-2 rounded-xl text-sm border " + (tool === "line" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}>
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "line" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
           Line
         </button>
 
-        <div className="flex-1"/>
+        <button
+          onClick={() => {
+            setTool("area");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "area" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Area
+        </button>
+
+        <button
+          onClick={() => {
+            setTool("count");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "count" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Count
+        </button>
+
+        <button
+          onClick={() => {
+            setTool("volume");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "volume" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Volume
+        </button>
+
+        <div className="flex-1" />
 
         {tool === "line" && <div className="text-xs text-slate-400">Click 2 points to measure. 3rd click starts new line.</div>}
+        {tool === "area" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points). ESC to cancel.</div>}
+        {tool === "count" && <div className="text-xs text-slate-400">Click to place count markers. ESC to cancel.</div>}
+        {tool === "volume" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points), then enter depth. ESC to cancel.</div>}
+        {measurements.length > 0 && (
+          <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
+            {measurements.length} measurement{measurements.length === 1 ? '' : 's'}
+          </div>
+        )}
       </div>
 
-      {error && (<div className="mt-4 rounded-xl border border-red-900/40 bg-red-950/30 p-3 text-sm text-red-200">
+      {groups.length > 0 && (
+        <div className="mt-4 flex items-center gap-2">
+          <label className="text-sm text-slate-400">Group:</label>
+          <select
+            value={activeGroupId || ""}
+            onChange={(e) => setActiveGroupId(e.target.value || null)}
+            className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm"
+          >
+            <option value="">None</option>
+            {groups.map(group => (
+              <option key={group.id} value={group.id}>
+                {group.name}
+              </option>
+            ))}
+          </select>
+          {activeGroupId && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-slate-800 rounded-lg text-xs">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: groups.find(g => g.id === activeGroupId)?.color }}
+              />
+              <span>{groups.find(g => g.id === activeGroupId)?.name}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showDepthPrompt && (
+        <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/30 p-4">
+          <div className="text-sm font-semibold text-emerald-200 mb-2">Enter Depth</div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={depthInput}
+              onChange={(e) => setDepthInput(e.target.value)}
+              className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm w-24"
+              placeholder="4"
+              autoFocus
+            />
+            <span className="text-sm text-slate-400">inches</span>
+            <button
+              onClick={confirmVolumeWithDepth}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => {
+                setShowDepthPrompt(false);
+                setVolumePoints([]);
+                setVolumeHoverPt(null);
+              }}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-4 rounded-xl border border-red-900/40 bg-red-950/30 p-3 text-sm text-red-200">
           {error}
-        </div>)}
+        </div>
+      )}
 
       {loadingPdf && <div className="mt-4 text-sm text-slate-400">Loading PDF…</div>}
 
-      {pdf && (<div className="mt-4 flex items-center gap-2">
+      {pdf && (
+        <div className="mt-4 flex items-center gap-2">
           <button onClick={prevPage} className="px-3 py-2 bg-slate-800 rounded-lg">
             Prev
           </button>
@@ -1013,55 +1806,287 @@ function TakeoffPageInner() {
             Next
           </button>
 
-          <div className="flex-1"/>
+          <div className="flex-1" />
 
-          {feetPerPixel ? (<div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
+          {feetPerPixel ? (
+            <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
               Scale set: {feetPerPixel.toFixed(4)} ft / px
-            </div>) : (<div className="text-xs text-slate-400">Scale not set (calibrate before measuring)</div>)}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400">Scale not set (calibrate before measuring)</div>
+          )}
 
-          <div className="w-3"/>
-          <span className="text-sm">{Math.round(scale * 100)}%</span>
+          <div className="w-3" />
+          <span className="text-sm">{Math.round(panZoom.zoom * 100)}%</span>
 
-          <button onClick={function () { return __awaiter(_this, void 0, void 0, function () {
-                var fit;
-                return __generator(this, function (_a) {
-                    switch (_a.label) {
-                        case 0:
-                            fitScaleRef.current = null;
-                            return [4 /*yield*/, computeFitScale()];
-                        case 1:
-                            fit = _a.sent();
-                            if (fit != null) {
-                                fitScaleRef.current = fit;
-                                setScale(fit);
-                                setPanX(0);
-                                setPanY(0);
-                            }
-                            return [2 /*return*/];
-                    }
-                });
-            }); }} className="ml-2 px-3 py-2 bg-slate-800 rounded-lg text-sm">
+          <button
+            onClick={async () => {
+              fitScaleRef.current = null;
+              const fit = await computeFitScale();
+              if (fit != null) {
+                fitScaleRef.current = fit;
+                const page = await pdf.getPage(pageNumber);
+                const v = page.getViewport({ scale: 1 });
+                const viewer = viewerRef.current;
+                if (viewer) {
+                  panZoom.fitToView(v.width, v.height, viewer.clientWidth, viewer.clientHeight);
+                }
+              }
+            }}
+            className="ml-2 px-3 py-2 bg-slate-800 rounded-lg text-sm"
+          >
             Fit
           </button>
-        </div>)}
+        </div>
+      )}
 
       <div className="mt-4 flex-1 border border-slate-800 rounded-xl bg-slate-950 overflow-hidden">
-        {pdf ? (<div ref={viewerRef} onPointerDown={onViewerPointerDown} onPointerMove={onViewerPointerMove} onPointerUp={onViewerPointerUp} onPointerLeave={onViewerPointerLeave} onWheel={onViewerWheel} onMouseEnter={function () { return setOverViewer(true); }} onMouseLeave={function () { return setOverViewer(false); }} className="p-3 h-full" style={{ touchAction: "none", cursor: "default" }}>
-            <div style={{ display: "inline-block", transform: "translate(".concat(panX, "px, ").concat(panY, "px)") }}>
-              <canvas ref={canvasRef} onClick={onCanvasClick} onMouseMove={onCanvasMove} className={calibrating || isPanningRef.current ? "cursor-crosshair" : tool === "line" ? "cursor-crosshair" : "cursor-default"} style={{ userSelect: "none" }}/>
+        {pdf ? (
+          <div
+            ref={viewerRef}
+            onPointerDown={onViewerPointerDown}
+            onPointerMove={onViewerPointerMove}
+            onPointerUp={onViewerPointerUp}
+            onPointerLeave={onViewerPointerLeave}
+            onWheel={onViewerWheel}
+            onMouseEnter={() => setOverViewer(true)}
+            onMouseLeave={() => setOverViewer(false)}
+            className="p-3 h-full relative"
+            style={{ touchAction: "none", cursor: "default" }}
+          >
+            <div style={{ display: "inline-block", transform: `translate(${panZoom.panX}px, ${panZoom.panY}px)` }}>
+              <canvas
+                ref={canvasRef}
+                onClick={onCanvasClick}
+                onDoubleClick={onCanvasDoubleClick}
+                onMouseMove={onCanvasMove}
+                className={calibrating || isPanningRef.current ? "cursor-crosshair" : (tool === "line" || tool === "area" || tool === "count" || tool === "volume") ? "cursor-crosshair" : "cursor-default"}
+                style={{ userSelect: "none" }}
+              />
+
+              <MeasurementLayer
+                measurements={visibleMeasurements}
+                scale={panZoom.zoom}
+                offsetX={0}
+                offsetY={0}
+                width={canvasWidth}
+                height={canvasHeight}
+                onMeasurementClick={(id) => {
+                  console.log("Clicked measurement:", id);
+                }}
+              />
             </div>
 
             <div className="mt-2 text-xs text-slate-400">
               {isCalibrating
-                ? "Calibration: click 2 points on drawing (".concat(calibPoints.length, "/2).")
-                : "Calibrate: open Scale, click 2 points on drawing, then OK."}
+                ? `Calibration: click 2 points on drawing (${calibPoints.length}/2).`
+                : "Calibrate: open Scale, click 2 points on drawing, then OK."
+              }
             </div>
-          </div>) : (<div className="h-full flex items-center justify-center text-slate-500">Upload a PDF drawing to begin.</div>)}
+          </div>
+        ) : (
+          <div className="h-full flex items-center justify-center text-slate-500">Upload a PDF drawing to begin.</div>
+        )}
       </div>
-    </div>);
+    </div>
+
+    <div className="w-80 flex-shrink-0 border-l border-slate-800 pl-6 flex flex-col overflow-hidden">
+      <div className="mb-4 flex-shrink-0">
+        <h2 className="text-xl font-semibold mb-2">Groups</h2>
+        <p className="text-slate-400 text-xs">Organize measurements by trade or category</p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+        {groups.map(group => {
+          const totals = getGroupTotals(group.id);
+          const hasData = totals.line > 0 || totals.area > 0 || totals.volume > 0 || totals.count > 0;
+          const groupMeasurements = measurements.filter(m => m.groupId === group.id);
+
+          return (
+            <div
+              key={group.id}
+              className={`rounded-lg border p-3 ${
+                activeGroupId === group.id
+                  ? "bg-slate-800/50 border-slate-700"
+                  : "bg-slate-900/30 border-slate-800 hover:bg-slate-900/50"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <button
+                  onClick={() => toggleGroupVisibility(group.id)}
+                  className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-slate-700"
+                >
+                  {group.visible ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  )}
+                </button>
+
+                <div
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: group.color }}
+                />
+
+                <button
+                  onClick={() => setActiveGroupId(group.id)}
+                  className="flex-1 text-left text-sm font-medium"
+                >
+                  {group.name}
+                </button>
+
+                {groupMeasurements.length > 0 && (
+                  <div className="px-2 py-0.5 bg-slate-700/50 rounded-full text-xs text-slate-300">
+                    {groupMeasurements.length}
+                  </div>
+                )}
+
+                <button
+                  onClick={() => deleteGroup(group.id)}
+                  className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-red-900/30 text-slate-400 hover:text-red-400"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {hasData && (
+                <div className="mt-2 pt-2 border-t border-slate-700/50 space-y-1 text-xs">
+                  {totals.line > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Line:</span>
+                      <span className="font-mono">{totals.line.toFixed(2)} ft</span>
+                    </div>
+                  )}
+                  {totals.area > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Area:</span>
+                      <span className="font-mono">{totals.area.toFixed(2)} ft²</span>
+                    </div>
+                  )}
+                  {totals.volume > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Volume:</span>
+                      <span className="font-mono">{totals.volume.toFixed(2)} yd³</span>
+                    </div>
+                  )}
+                  {totals.count > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Count:</span>
+                      <span className="font-mono">{totals.count} ea</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {measurements.filter(m => !m.groupId).length > 0 && (
+          <div className="mt-4 pt-4 border-t border-slate-700/50">
+            <div className="text-xs font-semibold text-slate-400 mb-2">Ungrouped Measurements</div>
+            <div className="space-y-1">
+              {measurements.filter(m => !m.groupId).map(m => (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-2 p-2 bg-slate-900/30 rounded text-xs"
+                >
+                  <div className="flex-1 truncate">
+                    <div className="font-medium">{m.label || `${m.type} measurement`}</div>
+                    <div className="text-slate-400">
+                      {m.result.toFixed(2)} {m.unit}
+                    </div>
+                  </div>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        changeMeasurementGroup(m.id, e.target.value);
+                      }
+                    }}
+                    className="px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs"
+                  >
+                    <option value="">Move to...</option>
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-slate-800 flex-shrink-0">
+        {showNewGroupForm ? (
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addNewGroup();
+                if (e.key === "Escape") {
+                  setShowNewGroupForm(false);
+                  setNewGroupName("");
+                }
+              }}
+              placeholder="Group name"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={addNewGroup}
+                className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => {
+                  setShowNewGroupForm(false);
+                  setNewGroupName("");
+                }}
+                className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowNewGroupForm(true)}
+            className="w-full px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm flex items-center justify-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Group
+          </button>
+        )}
+      </div>
+    </div>
+
+    <PaywallModal
+      isOpen={showPaywall}
+      onClose={() => setShowPaywall(false)}
+      featureName={paywallFeature}
+    />
+  </div>
+  );
 }
-function TakeoffPage() {
-    return (<TakeoffErrorBoundary>
+
+export default function TakeoffPage() {
+  return (
+    <TakeoffErrorBoundary>
       <TakeoffPageInner />
-    </TakeoffErrorBoundary>);
+    </TakeoffErrorBoundary>
+  );
 }
