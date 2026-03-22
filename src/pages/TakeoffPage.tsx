@@ -1374,6 +1374,41 @@ export default function TakeoffPage() {
     }
   }, [isPanning, panMode]);
 
+  const handleWorkspaceWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (!event.ctrlKey) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const delta = -event.deltaY;
+      const zoomFactor = delta > 0 ? 0.1 : -0.1;
+      const newZoom = clamp(zoom + zoomFactor, 0.25, 4);
+
+      if (newZoom === zoom) return;
+
+      const workspace = workspaceRef.current;
+      if (!workspace) {
+        setZoom(newZoom);
+        return;
+      }
+
+      const rect = workspace.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+
+      const beforeZoomX = (mouseX - pan.x) / zoom;
+      const beforeZoomY = (mouseY - pan.y) / zoom;
+
+      const afterPanX = mouseX - beforeZoomX * newZoom;
+      const afterPanY = mouseY - beforeZoomY * newZoom;
+
+      setZoom(newZoom);
+      setPan({ x: afterPanX, y: afterPanY });
+    },
+    [zoom, pan]
+  );
+
   const handleHandleMouseDown = useCallback(
     (
       event: React.MouseEvent,
@@ -1873,6 +1908,7 @@ export default function TakeoffPage() {
           onMouseMove={handleWorkspaceMouseMove}
           onMouseUp={handleWorkspaceMouseUp}
           onMouseLeave={handleWorkspaceMouseUp}
+          onWheel={handleWorkspaceWheel}
           onAuxClick={(e) => e.preventDefault()}
           onContextMenu={(e) => {
             if (e.button === 1 || isPanning) {
