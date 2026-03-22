@@ -108,7 +108,9 @@ type MeasurementRow = {
 type CalibrationDraft = {
   p1: Point | null;
   p2: Point | null;
-  distanceText: string;
+  feet: string;
+  inches: string;
+  fraction: string;
   unit: UnitSystem;
 };
 
@@ -198,56 +200,30 @@ function formatFeetInches(feet: number): string {
   return `${wholeFeet}'-${inchString}`;
 }
 
-function parseCalibrationInput(input: string): number | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-
-  const feetInchesMatch = trimmed.match(/^(\d+)'(?:\s*-?\s*)?(?:(\d+(?:\.\d+)?|\d+\s+\d+\/\d+|\d+\/\d+)"?)?$/);
-  if (feetInchesMatch) {
-    const feet = parseInt(feetInchesMatch[1], 10);
-    let inches = 0;
-
-    if (feetInchesMatch[2]) {
-      const inchPart = feetInchesMatch[2].trim();
-      const fractionMatch = inchPart.match(/^(\d+)\s+(\d+)\/(\d+)$/);
-      const simpleFractionMatch = inchPart.match(/^(\d+)\/(\d+)$/);
-
-      if (fractionMatch) {
-        inches = parseInt(fractionMatch[1], 10) + parseInt(fractionMatch[2], 10) / parseInt(fractionMatch[3], 10);
-      } else if (simpleFractionMatch) {
-        inches = parseInt(simpleFractionMatch[1], 10) / parseInt(simpleFractionMatch[2], 10);
-      } else {
-        inches = parseFloat(inchPart);
-      }
+function parseFraction(fractionStr: string): number {
+  if (!fractionStr || fractionStr === "0") return 0;
+  const parts = fractionStr.split("/");
+  if (parts.length === 2) {
+    const numerator = parseInt(parts[0], 10);
+    const denominator = parseInt(parts[1], 10);
+    if (denominator !== 0) {
+      return numerator / denominator;
     }
-
-    return feet + inches / 12;
   }
+  return 0;
+}
 
-  const inchesOnlyMatch = trimmed.match(/^(\d+(?:\.\d+)?|\d+\s+\d+\/\d+|\d+\/\d+)"?$/);
-  if (inchesOnlyMatch) {
-    const inchPart = inchesOnlyMatch[1];
-    const fractionMatch = inchPart.match(/^(\d+)\s+(\d+)\/(\d+)$/);
-    const simpleFractionMatch = inchPart.match(/^(\d+)\/(\d+)$/);
+function convertCalibrationToFeet(feet: string, inches: string, fraction: string): number | null {
+  const feetVal = parseInt(feet, 10) || 0;
+  const inchesVal = parseInt(inches, 10) || 0;
+  const fractionVal = parseFraction(fraction);
 
-    let inches = 0;
-    if (fractionMatch) {
-      inches = parseInt(fractionMatch[1], 10) + parseInt(fractionMatch[2], 10) / parseInt(fractionMatch[3], 10);
-    } else if (simpleFractionMatch) {
-      inches = parseInt(simpleFractionMatch[1], 10) / parseInt(simpleFractionMatch[2], 10);
-    } else {
-      inches = parseFloat(inchPart);
-    }
+  const totalInches = inchesVal + fractionVal;
+  const totalFeet = feetVal + (totalInches / 12);
 
-    return inches / 12;
-  }
+  if (totalFeet <= 0) return null;
 
-  const decimal = parseFloat(trimmed);
-  if (Number.isFinite(decimal) && decimal > 0) {
-    return decimal;
-  }
-
-  return null;
+  return totalFeet;
 }
 
 function toolToKind(tool: ToolMode): MeasurementKind | null {
@@ -565,7 +541,9 @@ export default function TakeoffPage() {
   const [calibrationDraft, setCalibrationDraft] = useState<CalibrationDraft>({
     p1: null,
     p2: null,
-    distanceText: "1",
+    feet: "1",
+    inches: "0",
+    fraction: "0",
     unit: "ft",
   });
 
@@ -1278,14 +1256,16 @@ export default function TakeoffPage() {
   const commitCalibration = useCallback(() => {
     const p1 = calibrationDraft.p1;
     const p2 = calibrationDraft.p2;
-    const parsedDistance = parseCalibrationInput(calibrationDraft.distanceText);
+    const distance = convertCalibrationToFeet(
+      calibrationDraft.feet,
+      calibrationDraft.inches,
+      calibrationDraft.fraction
+    );
 
-    if (!p1 || !p2 || parsedDistance === null || parsedDistance <= 0) {
-      setErrorText("Calibration requires two points and a valid distance. Try formats like: 12'6\", 6.5\", 1/2\", or 12'6 1/2\"");
+    if (!p1 || !p2 || distance === null || distance <= 0) {
+      setErrorText("Calibration requires two points and a valid distance.");
       return;
     }
-
-    const distance = parsedDistance;
 
     const pxDistance = distanceBetween(p1, p2);
     if (pxDistance <= 0) {
@@ -1868,17 +1848,58 @@ export default function TakeoffPage() {
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <Ruler className="h-4 w-4 text-slate-500" />
             <span className="text-xs uppercase tracking-wide text-slate-500">Calibration</span>
-            <input
-              value={calibrationDraft.distanceText}
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                value={calibrationDraft.feet}
+                onChange={(e) =>
+                  setCalibrationDraft((prev) => ({
+                    ...prev,
+                    feet: e.target.value,
+                  }))
+                }
+                placeholder="0"
+                min="0"
+                className="w-14 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none placeholder:text-slate-400"
+              />
+              <span className="text-xs text-slate-600">ft</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                value={calibrationDraft.inches}
+                onChange={(e) =>
+                  setCalibrationDraft((prev) => ({
+                    ...prev,
+                    inches: e.target.value,
+                  }))
+                }
+                placeholder="0"
+                min="0"
+                max="11"
+                className="w-14 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none placeholder:text-slate-400"
+              />
+              <span className="text-xs text-slate-600">in</span>
+            </div>
+            <select
+              value={calibrationDraft.fraction}
               onChange={(e) =>
                 setCalibrationDraft((prev) => ({
                   ...prev,
-                  distanceText: e.target.value,
+                  fraction: e.target.value,
                 }))
               }
-              placeholder='12&#39;6" or 6.5" or 1/2"'
-              className="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none placeholder:text-slate-400"
-            />
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none"
+            >
+              <option value="0">0</option>
+              <option value="1/8">1/8</option>
+              <option value="1/4">1/4</option>
+              <option value="3/8">3/8</option>
+              <option value="1/2">1/2</option>
+              <option value="5/8">5/8</option>
+              <option value="3/4">3/4</option>
+              <option value="7/8">7/8</option>
+            </select>
             <select
               value={calibrationDraft.unit}
               onChange={(e) =>
@@ -3149,8 +3170,20 @@ export default function TakeoffPage() {
         } else if (toolMode === "calibrate") {
           if (calibrationDraft.p1 && calibrationDraft.p2) {
             const distPx = distanceBetween(calibrationDraft.p1, calibrationDraft.p2);
-            const targetDist = calibrationDraft.distanceText || "0";
+            const targetFeet = calibrationDraft.feet || "0";
+            const targetInches = calibrationDraft.inches || "0";
+            const targetFraction = calibrationDraft.fraction !== "0" ? calibrationDraft.fraction : "";
             const targetUnit = calibrationDraft.unit;
+
+            let targetDisplay = `${targetFeet}'`;
+            if (targetInches !== "0" || targetFraction) {
+              targetDisplay += ` ${targetInches}`;
+              if (targetFraction) {
+                targetDisplay += ` ${targetFraction}`;
+              }
+              targetDisplay += '"';
+            }
+
             hudContent = (
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-4">
@@ -3159,7 +3192,7 @@ export default function TakeoffPage() {
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-xs text-slate-500">Target:</span>
-                  <span className="text-sm font-semibold text-slate-700">{targetDist} {targetUnit}</span>
+                  <span className="text-sm font-semibold text-slate-700">{targetDisplay} {targetUnit}</span>
                 </div>
               </div>
             );
