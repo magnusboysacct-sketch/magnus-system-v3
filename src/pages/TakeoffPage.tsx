@@ -483,6 +483,9 @@ export default function TakeoffPage() {
   const [measurementCounter, setMeasurementCounter] = useState(1);
   const [currentMousePoint, setCurrentMousePoint] = useState<Point | null>(null);
   const [cursorScreenPos, setCursorScreenPos] = useState<{ x: number; y: number } | null>(null);
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<
+  "drawings" | "measurements" | "extracted" | "boq" | "settings"
+>("drawings");
 
   const [calibrationDraft, setCalibrationDraft] = useState<CalibrationDraft>({
     p1: null,
