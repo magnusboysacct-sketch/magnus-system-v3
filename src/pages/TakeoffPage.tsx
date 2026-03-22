@@ -336,13 +336,24 @@ function buildMeasurementFromDraft(args: {
   scale: number | null;
   baseUnit: UnitSystem;
   depth: number | null;
+  width?: number | null;
+  count?: number | null;
 }): MeasurementRow {
-  const { id, sessionId, companyId, pageNumber, groupId, type, points, scale, baseUnit, depth } = args;
+  const { id, sessionId, companyId, pageNumber, groupId, type, points, scale, baseUnit, depth, width, count } = args;
   const lengthPx = polylineLength(points);
   const areaPx = polygonArea(points);
   const realLength = scale ? lengthPx * scale : 0;
-  const realArea = scale ? areaPx * scale * scale : 0;
-  const realVolume = scale ? realArea * (depth ?? 0) : 0;
+
+  // Calculate area: If width provided, use length × width, otherwise use polygon area
+  let realArea = 0;
+  if (width && width > 0) {
+    realArea = realLength * width;
+  } else {
+    realArea = scale ? areaPx * scale * scale : 0;
+  }
+
+  // Calculate volume: area × depth
+  const realVolume = realArea * (depth ?? 0);
 
   let result = 0;
   let unit: string = baseUnit;
@@ -354,7 +365,7 @@ function buildMeasurementFromDraft(args: {
     result = realArea;
     unit = getAreaUnit(baseUnit);
   } else if (type === "count") {
-    result = 1;
+    result = count ?? 1;
     unit = "ea";
   } else if (type === "volume") {
     result = realVolume;
@@ -373,11 +384,11 @@ function buildMeasurementFromDraft(args: {
     result,
     raw_length: lengthPx,
     raw_area: areaPx,
-    raw_count: type === "count" ? 1 : null,
+    raw_count: type === "count" ? (count ?? 1) : null,
     raw_volume: areaPx * (depth ?? 0),
     scale_x: scale,
     scale_y: scale,
-    meta: { depth },
+    meta: { depth, width, count },
     sort_order: 0,
   };
 }
@@ -386,10 +397,21 @@ function recalculateMeasurement(measurement: MeasurementRow, scale: number, base
   const lengthPx = measurement.raw_length ?? 0;
   const areaPx = measurement.raw_area ?? 0;
   const depth = measurement.meta?.depth ?? 0;
+  const width = measurement.meta?.width ?? null;
+  const count = measurement.meta?.count ?? null;
 
   const realLength = lengthPx * scale;
-  const realArea = areaPx * scale * scale;
-  const realVolume = areaPx * scale * scale * depth;
+
+  // Calculate area: If width provided, use length × width, otherwise use polygon area
+  let realArea = 0;
+  if (width && width > 0) {
+    realArea = realLength * width;
+  } else {
+    realArea = areaPx * scale * scale;
+  }
+
+  // Calculate volume: area × depth
+  const realVolume = realArea * depth;
 
   let result = 0;
   let unit: string = baseUnit;
@@ -401,7 +423,7 @@ function recalculateMeasurement(measurement: MeasurementRow, scale: number, base
     result = realArea;
     unit = getAreaUnit(baseUnit);
   } else if (measurement.type === "count") {
-    result = 1;
+    result = count ?? 1;
     unit = "ea";
   } else if (measurement.type === "volume") {
     result = realVolume;
@@ -1266,6 +1288,46 @@ export default function TakeoffPage() {
     },
     [selectedMeasurementId]
   );
+
+  const updateMeasurementDimensions = useCallback((measurementId: string, dimensions: { width?: number | null; depth?: number | null; count?: number | null }) => {
+    setMeasurements((prev) => prev.map((m) => {
+      if (m.id !== measurementId) return m;
+
+      const updatedMeta = { ...m.meta, ...dimensions };
+      const lengthPx = m.raw_length ?? 0;
+      const areaPx = m.raw_area ?? 0;
+      const realLength = calibrationScale ? lengthPx * calibrationScale : 0;
+
+      const width = updatedMeta.width ?? null;
+      const depth = updatedMeta.depth ?? 0;
+      const count = updatedMeta.count ?? null;
+
+      // Recalculate based on type
+      let realArea = 0;
+      if (width && width > 0) {
+        realArea = realLength * width;
+      } else {
+        realArea = calibrationScale ? areaPx * calibrationScale * calibrationScale : 0;
+      }
+
+      const realVolume = realArea * depth;
+
+      let result = m.result;
+      if (m.type === "area") {
+        result = realArea;
+      } else if (m.type === "volume") {
+        result = realVolume;
+      } else if (m.type === "count") {
+        result = count ?? 1;
+      }
+
+      return {
+        ...m,
+        meta: updatedMeta,
+        result,
+      };
+    }));
+  }, [calibrationScale]);
 
   const getPagePointFromEvent = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
     const svg = overlayRef.current;
@@ -3251,11 +3313,79 @@ export default function TakeoffPage() {
                       </div>
                     </div>
 
-                    {selectedMeasurement.meta?.depth && (
-                      <div className="rounded-lg bg-white p-2 shadow-sm">
-                        <div className="text-xs text-slate-500">Depth: {selectedMeasurement.meta.depth} {calibrationUnit}</div>
-                      </div>
-                    )}
+                    {/* Dimension Inputs */}
+                    <div className="mt-3 space-y-2 rounded-lg bg-white p-3 shadow-sm">
+                      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Dimensions</div>
+
+                      {selectedMeasurement.type === "line" && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <label className="w-16 text-xs text-slate-600">Width:</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              value={selectedMeasurement.meta?.width ?? ""}
+                              onChange={(e) => {
+                                const val = e.target.value ? parseFloat(e.target.value) : null;
+                                updateMeasurementDimensions(selectedMeasurement.id, { width: val });
+                              }}
+                              placeholder="Optional"
+                              className="flex-1 rounded-lg border border-slate-200 px-2 py-1 text-sm outline-none focus:border-blue-400"
+                            />
+                            <span className="text-xs text-slate-500">{calibrationUnit}</span>
+                          </div>
+                          {selectedMeasurement.meta?.width && (
+                            <div className="text-xs text-slate-500">
+                              Area: {formatNumber((selectedMeasurement.raw_length ?? 0) * (calibrationScale ?? 0) * selectedMeasurement.meta.width)} {getAreaUnit(calibrationUnit)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {(selectedMeasurement.type === "area" || selectedMeasurement.type === "line") && (
+                        <div className="flex items-center gap-2">
+                          <label className="w-16 text-xs text-slate-600">Depth:</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={selectedMeasurement.meta?.depth ?? ""}
+                            onChange={(e) => {
+                              const val = e.target.value ? parseFloat(e.target.value) : null;
+                              updateMeasurementDimensions(selectedMeasurement.id, { depth: val });
+                            }}
+                            placeholder="Optional"
+                            className="flex-1 rounded-lg border border-slate-200 px-2 py-1 text-sm outline-none focus:border-blue-400"
+                          />
+                          <span className="text-xs text-slate-500">{calibrationUnit}</span>
+                        </div>
+                      )}
+
+                      {selectedMeasurement.type === "count" && (
+                        <div className="flex items-center gap-2">
+                          <label className="w-16 text-xs text-slate-600">Count:</label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={selectedMeasurement.meta?.count ?? 1}
+                            onChange={(e) => {
+                              const val = e.target.value ? parseInt(e.target.value) : 1;
+                              updateMeasurementDimensions(selectedMeasurement.id, { count: val });
+                            }}
+                            className="flex-1 rounded-lg border border-slate-200 px-2 py-1 text-sm outline-none focus:border-blue-400"
+                          />
+                          <span className="text-xs text-slate-500">ea</span>
+                        </div>
+                      )}
+
+                      {selectedMeasurement.type === "volume" && selectedMeasurement.meta?.depth && (
+                        <div className="text-xs text-slate-500">
+                          Depth: {selectedMeasurement.meta.depth} {calibrationUnit}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : null}
