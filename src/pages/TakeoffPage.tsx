@@ -24,7 +24,8 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  Move
+  Move,
+  X
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
@@ -588,6 +589,7 @@ export default function TakeoffPage() {
 
   const calibrationScale = currentPageRow?.calibration_scale ?? null;
   const calibrationUnit = (currentPageRow?.calibration_unit ?? "ft") as UnitSystem;
+  const calibrationDistance = currentPageRow?.calibration_distance ?? null;
 
   const safeMeasurements = useMemo(
     () =>
@@ -791,7 +793,19 @@ export default function TakeoffPage() {
         groupData = (groupsRes.data ?? []) as GroupRow[];
         measurementData = (measurementsRes.data ?? []) as MeasurementRow[];
 
-        setPageRows([]);
+        const loadedPageRows: PageRow[] = [];
+        if (sessionRow.calibration && typeof sessionRow.calibration === 'object') {
+          Object.keys(sessionRow.calibration).forEach((key) => {
+            if (key.startsWith('page_')) {
+              const pageData = sessionRow.calibration[key];
+              if (pageData && typeof pageData === 'object') {
+                loadedPageRows.push(pageData as PageRow);
+              }
+            }
+          });
+        }
+
+        setPageRows(loadedPageRows);
         setGroups(groupData);
         setMeasurements(measurementData);
 
@@ -1262,7 +1276,44 @@ export default function TakeoffPage() {
     return { x, y };
   }, [basePageSize.width, basePageSize.height]);
 
-  const commitCalibration = useCallback(() => {
+  const savePageCalibrationToDB = useCallback(async (pageRow: PageRow) => {
+    if (!session?.id) return;
+
+    try {
+      const calibrationData = {
+        session_id: pageRow.session_id,
+        page_number: pageRow.page_number,
+        page_label: pageRow.page_label,
+        width: pageRow.width,
+        height: pageRow.height,
+        calibration_point_1: pageRow.calibration_point_1,
+        calibration_point_2: pageRow.calibration_point_2,
+        calibration_distance: pageRow.calibration_distance,
+        calibration_unit: pageRow.calibration_unit,
+        calibration_scale: pageRow.calibration_scale,
+      };
+
+      const { error } = await supabase
+        .from("takeoff_sessions")
+        .update({
+          calibration: {
+            ...(session.calibration || {}),
+            [`page_${pageRow.page_number}`]: calibrationData,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", session.id);
+
+      if (error) {
+        console.error("Failed to save calibration:", error);
+        setErrorText("Failed to save calibration to database.");
+      }
+    } catch (err) {
+      console.error("Exception saving calibration:", err);
+    }
+  }, [session]);
+
+  const commitCalibration = useCallback(async () => {
     const p1 = calibrationDraft.p1;
     const p2 = calibrationDraft.p2;
     const distance = convertCalibrationToFeet(
@@ -1284,10 +1335,12 @@ export default function TakeoffPage() {
 
     const scale = distance / pxDistance;
 
+    let updatedPageRow: PageRow | null = null;
+
     setPageRows((prev) => {
       const found = prev.find((p) => p.page_number === currentPage);
       if (found) {
-        return prev.map((p) =>
+        const updated = prev.map((p) =>
           p.page_number === currentPage
             ? {
                 ...p,
@@ -1301,25 +1354,26 @@ export default function TakeoffPage() {
               }
             : p
         );
+        updatedPageRow = updated.find((p) => p.page_number === currentPage) || null;
+        return updated;
       }
 
       if (!session) return prev;
 
-      return [
-        ...prev,
-        {
-          session_id: session.id,
-          page_number: currentPage,
-          width: basePageSize.width,
-          height: basePageSize.height,
-          calibration_point_1: p1,
-          calibration_point_2: p2,
-          calibration_distance: distance,
-          calibration_unit: calibrationDraft.unit,
-          calibration_scale: scale,
-          updated_at: new Date().toISOString(),
-        },
-      ];
+      const newPageRow: PageRow = {
+        session_id: session.id,
+        page_number: currentPage,
+        width: basePageSize.width,
+        height: basePageSize.height,
+        calibration_point_1: p1,
+        calibration_point_2: p2,
+        calibration_distance: distance,
+        calibration_unit: calibrationDraft.unit,
+        calibration_scale: scale,
+        updated_at: new Date().toISOString(),
+      };
+      updatedPageRow = newPageRow;
+      return [...prev, newPageRow];
     });
 
     setMeasurements((prev) =>
@@ -1331,7 +1385,69 @@ export default function TakeoffPage() {
 
     setToolMode("select");
     setDraftPoints([]);
-  }, [calibrationDraft, currentPage, basePageSize, session]);
+    setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
+
+    if (updatedPageRow) {
+      await savePageCalibrationToDB(updatedPageRow);
+    }
+  }, [calibrationDraft, currentPage, basePageSize, session, savePageCalibrationToDB]);
+
+  const cancelCalibration = useCallback(() => {
+    setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
+    setToolMode("select");
+    setErrorText("");
+  }, []);
+
+  const clearCalibration = useCallback(async () => {
+    if (!session?.id) return;
+
+    const updatedPageRows = pageRows.map((p) =>
+      p.page_number === currentPage
+        ? {
+            ...p,
+            calibration_point_1: null,
+            calibration_point_2: null,
+            calibration_distance: null,
+            calibration_unit: null,
+            calibration_scale: null,
+            updated_at: new Date().toISOString(),
+          }
+        : p
+    );
+
+    setPageRows(updatedPageRows);
+
+    try {
+      const updatedCalibration = { ...(session.calibration || {}) };
+      delete updatedCalibration[`page_${currentPage}`];
+
+      const { error } = await supabase
+        .from("takeoff_sessions")
+        .update({
+          calibration: updatedCalibration,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", session.id);
+
+      if (error) {
+        console.error("Failed to clear calibration:", error);
+        setErrorText("Failed to clear calibration from database.");
+      }
+
+      setSession((prev) => prev ? { ...prev, calibration: updatedCalibration } : prev);
+    } catch (err) {
+      console.error("Exception clearing calibration:", err);
+    }
+
+    setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
+    setErrorText("");
+  }, [session, pageRows, currentPage]);
+
+  const recalibrateCurrentPage = useCallback(() => {
+    setToolMode("calibrate");
+    setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
+    setErrorText("");
+  }, []);
 
   const finishDraftMeasurement = useCallback(
     (kind: MeasurementKind, points: Point[]) => {
@@ -1943,11 +2059,44 @@ export default function TakeoffPage() {
             <button
               type="button"
               onClick={commitCalibration}
-              className="rounded-lg bg-slate-800 dark:bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-800"
+              disabled={!calibrationDraft.p1 || !calibrationDraft.p2}
+              className="rounded-lg bg-slate-800 dark:bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Apply
             </button>
+            {toolMode === "calibrate" && (calibrationDraft.p1 || calibrationDraft.p2) && (
+              <button
+                type="button"
+                onClick={cancelCalibration}
+                className="rounded-lg bg-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-300"
+              >
+                Cancel
+              </button>
+            )}
           </div>
+
+          {calibrationScale && toolMode !== "calibrate" && (
+            <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <Ruler className="h-4 w-4 text-emerald-600" />
+              <span className="text-xs font-medium text-emerald-700">
+                Page {currentPage} Calibrated: {calibrationScale ? (calibrationUnit === "ft" ? formatFeetInches(calibrationDistance || 0) : `${formatNumber(calibrationDistance || 0)} ${calibrationUnit}`) : "Not set"}
+              </span>
+              <button
+                type="button"
+                onClick={recalibrateCurrentPage}
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
+              >
+                Recalibrate
+              </button>
+              <button
+                type="button"
+                onClick={clearCalibration}
+                className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700"
+              >
+                Clear
+              </button>
+            </div>
+          )}
 
           {toolMode === "tape" && (tapeMeasure.p1 || tapeMeasure.p2) && (
             <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
