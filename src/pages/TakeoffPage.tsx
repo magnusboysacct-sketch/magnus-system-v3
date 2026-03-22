@@ -8,6 +8,23 @@ import React, {
 import { useParams } from "react-router-dom";
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Ruler,
+  Square,
+  MapPin,
+  Box,
+  Hand,
+  MousePointer,
+  ZoomIn,
+  ZoomOut,
+  Maximize,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen
+} from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { ExportToBOQModal } from "../components/ExportToBOQModal";
@@ -179,6 +196,58 @@ function formatFeetInches(feet: number): string {
   }
 
   return `${wholeFeet}'-${inchString}`;
+}
+
+function parseCalibrationInput(input: string): number | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const feetInchesMatch = trimmed.match(/^(\d+)'(?:\s*-?\s*)?(?:(\d+(?:\.\d+)?|\d+\s+\d+\/\d+|\d+\/\d+)"?)?$/);
+  if (feetInchesMatch) {
+    const feet = parseInt(feetInchesMatch[1], 10);
+    let inches = 0;
+
+    if (feetInchesMatch[2]) {
+      const inchPart = feetInchesMatch[2].trim();
+      const fractionMatch = inchPart.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+      const simpleFractionMatch = inchPart.match(/^(\d+)\/(\d+)$/);
+
+      if (fractionMatch) {
+        inches = parseInt(fractionMatch[1], 10) + parseInt(fractionMatch[2], 10) / parseInt(fractionMatch[3], 10);
+      } else if (simpleFractionMatch) {
+        inches = parseInt(simpleFractionMatch[1], 10) / parseInt(simpleFractionMatch[2], 10);
+      } else {
+        inches = parseFloat(inchPart);
+      }
+    }
+
+    return feet + inches / 12;
+  }
+
+  const inchesOnlyMatch = trimmed.match(/^(\d+(?:\.\d+)?|\d+\s+\d+\/\d+|\d+\/\d+)"?$/);
+  if (inchesOnlyMatch) {
+    const inchPart = inchesOnlyMatch[1];
+    const fractionMatch = inchPart.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+    const simpleFractionMatch = inchPart.match(/^(\d+)\/(\d+)$/);
+
+    let inches = 0;
+    if (fractionMatch) {
+      inches = parseInt(fractionMatch[1], 10) + parseInt(fractionMatch[2], 10) / parseInt(fractionMatch[3], 10);
+    } else if (simpleFractionMatch) {
+      inches = parseInt(simpleFractionMatch[1], 10) / parseInt(simpleFractionMatch[2], 10);
+    } else {
+      inches = parseFloat(inchPart);
+    }
+
+    return inches / 12;
+  }
+
+  const decimal = parseFloat(trimmed);
+  if (Number.isFinite(decimal) && decimal > 0) {
+    return decimal;
+  }
+
+  return null;
 }
 
 function toolToKind(tool: ToolMode): MeasurementKind | null {
@@ -468,6 +537,15 @@ export default function TakeoffPage() {
 
   const [toolMode, setToolMode] = useState<ToolMode>("select");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+
+  const [leftPanelVisible, setLeftPanelVisible] = useState(() => {
+    const saved = localStorage.getItem("takeoff-left-panel-visible");
+    return saved !== null ? saved === "true" : true;
+  });
+  const [rightPanelVisible, setRightPanelVisible] = useState(() => {
+    const saved = localStorage.getItem("takeoff-right-panel-visible");
+    return saved !== null ? saved === "true" : true;
+  });
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
   const [highlightedGroupId, setHighlightedGroupId] = useState<string | null>(null);
 
@@ -1013,6 +1091,14 @@ export default function TakeoffPage() {
     };
   }, [performWorkspaceZoom]);
 
+  useEffect(() => {
+    localStorage.setItem("takeoff-left-panel-visible", String(leftPanelVisible));
+  }, [leftPanelVisible]);
+
+  useEffect(() => {
+    localStorage.setItem("takeoff-right-panel-visible", String(rightPanelVisible));
+  }, [rightPanelVisible]);
+
   const queueAutosave = useCallback(() => {
     if (!session) return;
     if (saveTimeoutRef.current) {
@@ -1192,12 +1278,14 @@ export default function TakeoffPage() {
   const commitCalibration = useCallback(() => {
     const p1 = calibrationDraft.p1;
     const p2 = calibrationDraft.p2;
-    const distance = Number(calibrationDraft.distanceText);
+    const parsedDistance = parseCalibrationInput(calibrationDraft.distanceText);
 
-    if (!p1 || !p2 || !Number.isFinite(distance) || distance <= 0) {
-      setErrorText("Calibration requires two points and a valid distance.");
+    if (!p1 || !p2 || parsedDistance === null || parsedDistance <= 0) {
+      setErrorText("Calibration requires two points and a valid distance. Try formats like: 12'6\", 6.5\", 1/2\", or 12'6 1/2\"");
       return;
     }
+
+    const distance = parsedDistance;
 
     const pxDistance = distanceBetween(p1, p2);
     if (pxDistance <= 0) {
@@ -1696,28 +1784,55 @@ export default function TakeoffPage() {
                       setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
                     }
                   }}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                     toolMode === mode
                       ? "bg-slate-900 dark:bg-slate-900 text-white"
                       : "bg-white text-slate-700 hover:bg-slate-100"
                   }`}
                 >
-                  {mode === "select" ? "Select" : mode === "hand" ? "Hand" : mode[0].toUpperCase() + mode.slice(1)}
+                  {mode === "select" && <MousePointer className="h-4 w-4" />}
+                  {mode === "hand" && <Hand className="h-4 w-4" />}
+                  {mode === "calibrate" && <Ruler className="h-4 w-4" />}
+                  {mode === "line" && <Ruler className="h-4 w-4" />}
+                  {mode === "area" && <Square className="h-4 w-4" />}
+                  {mode === "count" && <MapPin className="h-4 w-4" />}
+                  {mode === "volume" && <Box className="h-4 w-4" />}
+                  <span>{mode === "select" ? "Select" : mode === "hand" ? "Hand" : mode[0].toUpperCase() + mode.slice(1)}</span>
                 </button>
               )
             )}
           </div>
 
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
-            <button type="button" onClick={zoomOut} className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
-              −
+            <button
+              type="button"
+              onClick={() => setLeftPanelVisible(!leftPanelVisible)}
+              className="rounded-lg bg-white px-2.5 py-1.5 hover:bg-slate-100"
+              title={leftPanelVisible ? "Hide pages panel" : "Show pages panel"}
+            >
+              {leftPanelVisible ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setRightPanelVisible(!rightPanelVisible)}
+              className="rounded-lg bg-white px-2.5 py-1.5 hover:bg-slate-100"
+              title={rightPanelVisible ? "Hide groups panel" : "Show groups panel"}
+            >
+              {rightPanelVisible ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
+            <button type="button" onClick={zoomOut} className="rounded-lg bg-white px-2.5 py-1.5 text-sm hover:bg-slate-100" title="Zoom out">
+              <ZoomOut className="h-4 w-4" />
             </button>
             <div className="min-w-[72px] text-center text-sm font-medium">{Math.round(zoom * 100)}%</div>
-            <button type="button" onClick={zoomIn} className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
-              +
+            <button type="button" onClick={zoomIn} className="rounded-lg bg-white px-2.5 py-1.5 text-sm hover:bg-slate-100" title="Zoom in">
+              <ZoomIn className="h-4 w-4" />
             </button>
-            <button type="button" onClick={zoomFit} className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
-              Fit
+            <button type="button" onClick={zoomFit} className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100" title="Fit to screen">
+              <Maximize className="h-4 w-4" />
+              <span>Fit</span>
             </button>
             <button type="button" onClick={resetView} className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
               Reset
@@ -1730,9 +1845,10 @@ export default function TakeoffPage() {
                 type="button"
                 onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg bg-white px-2.5 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                title="Previous page"
               >
-                ←
+                <ChevronLeft className="h-4 w-4" />
               </button>
               <div className="min-w-[80px] text-center text-sm font-medium">
                 Page {currentPage} / {pageCount}
@@ -1741,14 +1857,16 @@ export default function TakeoffPage() {
                 type="button"
                 onClick={() => setCurrentPage((prev) => Math.min(pageCount, prev + 1))}
                 disabled={currentPage === pageCount}
-                className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg bg-white px-2.5 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                title="Next page"
               >
-                →
+                <ChevronRight className="h-4 w-4" />
               </button>
             </div>
           )}
 
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <Ruler className="h-4 w-4 text-slate-500" />
             <span className="text-xs uppercase tracking-wide text-slate-500">Calibration</span>
             <input
               value={calibrationDraft.distanceText}
@@ -1758,7 +1876,8 @@ export default function TakeoffPage() {
                   distanceText: e.target.value,
                 }))
               }
-              className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none"
+              placeholder='12&#39;6" or 6.5" or 1/2"'
+              className="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none placeholder:text-slate-400"
             />
             <select
               value={calibrationDraft.unit}
@@ -1784,11 +1903,13 @@ export default function TakeoffPage() {
           </div>
 
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <Box className="h-4 w-4 text-slate-500" />
             <span className="text-xs uppercase tracking-wide text-slate-500">Volume Depth</span>
             <input
               value={draftVolumeDepth}
               onChange={(e) => setDraftVolumeDepth(e.target.value)}
-              className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none"
+              placeholder="1.0"
+              className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none placeholder:text-slate-400"
             />
             <span className="text-sm text-slate-600">{calibrationUnit}</span>
           </div>
@@ -1853,8 +1974,17 @@ export default function TakeoffPage() {
         ) : null}
       </div>
 
-      <div className="grid min-h-[calc(100vh-88px)] grid-cols-[280px_minmax(0,1fr)_360px] gap-0">
-        <aside className="border-r border-slate-200 bg-white">
+      <div className={`grid min-h-[calc(100vh-88px)] gap-0 ${
+        leftPanelVisible && rightPanelVisible
+          ? "grid-cols-[280px_minmax(0,1fr)_360px]"
+          : leftPanelVisible
+          ? "grid-cols-[280px_minmax(0,1fr)]"
+          : rightPanelVisible
+          ? "grid-cols-[minmax(0,1fr)_360px]"
+          : "grid-cols-1"
+      }`}>
+        {leftPanelVisible && (
+          <aside className="border-r border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="text-sm font-semibold text-slate-900">Pages</div>
             <div className="mt-1 text-xs text-slate-500">Drawing navigation</div>
@@ -1915,6 +2045,7 @@ export default function TakeoffPage() {
             )}
           </div>
         </aside>
+        )}
 
         <main
           ref={workspaceRef}
@@ -2521,7 +2652,8 @@ export default function TakeoffPage() {
           )}
         </main>
 
-        <aside className="border-l border-slate-200 bg-white">
+        {rightPanelVisible && (
+          <aside className="border-l border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="text-sm font-semibold text-slate-900">Groups & Measurements</div>
             <div className="mt-1 text-xs text-slate-500">Live totals and takeoff items</div>
@@ -2836,6 +2968,7 @@ export default function TakeoffPage() {
             </div>
           </div>
         </aside>
+        )}
       </div>
 
       <ExportToBOQModal
