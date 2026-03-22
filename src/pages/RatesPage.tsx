@@ -1825,12 +1825,8 @@ export default function RatesPage() {
                       if (selection.itemName) setFName(selection.itemName);
                       if (selection.category) setFCategory(selection.category);
                       if (selection.unit) setFUnit(selection.unit);
-                      if (selection.variantCode || selection.materialType) {
-                        const variantParts = [];
-                        if (selection.materialType) variantParts.push(selection.materialType);
-                        if (selection.itemSize) variantParts.push(selection.itemSize);
-                        if (selection.variantCode) variantParts.push(selection.variantCode);
-                        setFVariant(variantParts.join(" "));
+                      if (selection.variant) {
+                        setFVariant(selection.variant);
                       }
                       if (selection.currentRate !== null) {
                         setFRate(selection.currentRate.toString());

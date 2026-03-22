@@ -1362,9 +1362,10 @@ useEffect(() => {
     if (!sec) return;
 
     const updates: Partial<BOQItemRow> = {
+      pick_type: selection.type || "",
       pick_category: selection.category || "",
-      pick_item: selection.itemName || "",
-      pick_variant: selection.variantCode || selection.materialType || "",
+      pick_item: selection.item || "",
+      pick_variant: selection.variant || "",
       item_name: selection.itemName || "",
       cost_item_id: selection.costItemId || null,
     };
