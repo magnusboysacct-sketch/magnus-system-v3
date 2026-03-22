@@ -963,6 +963,56 @@ export default function TakeoffPage() {
     void renderCurrentPage();
   }, [renderCurrentPage]);
 
+  const performWorkspaceZoom = useCallback(
+    (deltaY: number, clientX: number, clientY: number) => {
+      const delta = -deltaY;
+      const zoomFactor = delta > 0 ? 0.1 : -0.1;
+      const newZoom = clamp(zoom + zoomFactor, 0.25, 4);
+
+      if (newZoom === zoom) return;
+
+      const workspace = workspaceRef.current;
+      if (!workspace) {
+        setZoom(newZoom);
+        return;
+      }
+
+      const rect = workspace.getBoundingClientRect();
+      const mouseX = clientX - rect.left;
+      const mouseY = clientY - rect.top;
+
+      const beforeZoomX = (mouseX - pan.x) / zoom;
+      const beforeZoomY = (mouseY - pan.y) / zoom;
+
+      const afterPanX = mouseX - beforeZoomX * newZoom;
+      const afterPanY = mouseY - beforeZoomY * newZoom;
+
+      setZoom(newZoom);
+      setPan({ x: afterPanX, y: afterPanY });
+    },
+    [zoom, pan]
+  );
+
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+
+    const handleNativeWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      performWorkspaceZoom(event.deltaY, event.clientX, event.clientY);
+    };
+
+    workspace.addEventListener("wheel", handleNativeWheel, { passive: false });
+
+    return () => {
+      workspace.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, [performWorkspaceZoom]);
+
   const queueAutosave = useCallback(() => {
     if (!session) return;
     if (saveTimeoutRef.current) {
@@ -1373,41 +1423,6 @@ export default function TakeoffPage() {
       setPanMode("none");
     }
   }, [isPanning, panMode]);
-
-  const handleWorkspaceWheel = useCallback(
-    (event: React.WheelEvent<HTMLDivElement>) => {
-      if (!event.ctrlKey) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      const delta = -event.deltaY;
-      const zoomFactor = delta > 0 ? 0.1 : -0.1;
-      const newZoom = clamp(zoom + zoomFactor, 0.25, 4);
-
-      if (newZoom === zoom) return;
-
-      const workspace = workspaceRef.current;
-      if (!workspace) {
-        setZoom(newZoom);
-        return;
-      }
-
-      const rect = workspace.getBoundingClientRect();
-      const mouseX = event.clientX - rect.left;
-      const mouseY = event.clientY - rect.top;
-
-      const beforeZoomX = (mouseX - pan.x) / zoom;
-      const beforeZoomY = (mouseY - pan.y) / zoom;
-
-      const afterPanX = mouseX - beforeZoomX * newZoom;
-      const afterPanY = mouseY - beforeZoomY * newZoom;
-
-      setZoom(newZoom);
-      setPan({ x: afterPanX, y: afterPanY });
-    },
-    [zoom, pan]
-  );
 
   const handleHandleMouseDown = useCallback(
     (
@@ -1908,7 +1923,6 @@ export default function TakeoffPage() {
           onMouseMove={handleWorkspaceMouseMove}
           onMouseUp={handleWorkspaceMouseUp}
           onMouseLeave={handleWorkspaceMouseUp}
-          onWheel={handleWorkspaceWheel}
           onAuxClick={(e) => e.preventDefault()}
           onContextMenu={(e) => {
             if (e.button === 1 || isPanning) {
