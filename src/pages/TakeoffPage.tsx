@@ -23,7 +23,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
-  PanelRightOpen
+  PanelRightOpen,
+  Move
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
@@ -31,7 +32,7 @@ import { ExportToBOQModal } from "../components/ExportToBOQModal";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
-type ToolMode = "select" | "hand" | "calibrate" | "line" | "area" | "count" | "volume";
+type ToolMode = "select" | "hand" | "calibrate" | "tape" | "line" | "area" | "count" | "volume";
 type UnitSystem = "ft" | "m" | "in";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -545,6 +546,14 @@ export default function TakeoffPage() {
     inches: "0",
     fraction: "0",
     unit: "ft",
+  });
+
+  const [tapeMeasure, setTapeMeasure] = useState<{
+    p1: Point | null;
+    p2: Point | null;
+  }>({
+    p1: null,
+    p2: null,
   });
 
   const [showExportModal, setShowExportModal] = useState(false);
@@ -1384,6 +1393,15 @@ export default function TakeoffPage() {
         return;
       }
 
+      if (toolMode === "tape") {
+        setTapeMeasure((prev) => {
+          if (!prev.p1) return { ...prev, p1: point };
+          if (!prev.p2) return { ...prev, p2: point };
+          return { p1: point, p2: null };
+        });
+        return;
+      }
+
       if (toolMode === "count") {
         finishDraftMeasurement("count", [point]);
         return;
@@ -1710,6 +1728,10 @@ export default function TakeoffPage() {
       const count = Number(Boolean(calibrationDraft.p1)) + Number(Boolean(calibrationDraft.p2));
       return `Calibration points: ${count}/2`;
     }
+    if (toolMode === "tape") {
+      const count = Number(Boolean(tapeMeasure.p1)) + Number(Boolean(tapeMeasure.p2));
+      return `Tape measure: ${count}/2 points`;
+    }
     if (toolMode === "area" || toolMode === "volume") {
       return `Draft points: ${draftPoints.length} (double-click to finish)`;
     }
@@ -1717,7 +1739,7 @@ export default function TakeoffPage() {
       return `Draft points: ${draftPoints.length}/2`;
     }
     return "";
-  }, [toolMode, calibrationDraft, draftPoints.length]);
+  }, [toolMode, calibrationDraft, tapeMeasure, draftPoints.length]);
 
   if (loading) {
     return (
@@ -1752,7 +1774,7 @@ export default function TakeoffPage() {
       <div className="border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
-            {(["select", "hand", "calibrate", "line", "area", "count", "volume"] as ToolMode[]).map(
+            {(["select", "hand", "calibrate", "tape", "line", "area", "count", "volume"] as ToolMode[]).map(
               (mode) => (
                 <button
                   key={mode}
@@ -1762,6 +1784,9 @@ export default function TakeoffPage() {
                     setDraftPoints([]);
                     if (mode !== "calibrate") {
                       setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
+                    }
+                    if (mode !== "tape") {
+                      setTapeMeasure({ p1: null, p2: null });
                     }
                   }}
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
@@ -1773,6 +1798,7 @@ export default function TakeoffPage() {
                   {mode === "select" && <MousePointer className="h-4 w-4" />}
                   {mode === "hand" && <Hand className="h-4 w-4" />}
                   {mode === "calibrate" && <Ruler className="h-4 w-4" />}
+                  {mode === "tape" && <Move className="h-4 w-4" />}
                   {mode === "line" && <Ruler className="h-4 w-4" />}
                   {mode === "area" && <Square className="h-4 w-4" />}
                   {mode === "count" && <MapPin className="h-4 w-4" />}
@@ -1922,6 +1948,20 @@ export default function TakeoffPage() {
               Apply
             </button>
           </div>
+
+          {toolMode === "tape" && (tapeMeasure.p1 || tapeMeasure.p2) && (
+            <div className="flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+              <Move className="h-4 w-4 text-sky-600" />
+              <span className="text-xs uppercase tracking-wide text-sky-600">Tape Measure</span>
+              <button
+                type="button"
+                onClick={() => setTapeMeasure({ p1: null, p2: null })}
+                className="rounded-lg bg-sky-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-800"
+              >
+                Clear
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <Box className="h-4 w-4 text-slate-500" />
@@ -2523,6 +2563,90 @@ export default function TakeoffPage() {
                         strokeDasharray="8 6"
                       />
                     </>
+                  ) : null}
+
+                  {toolMode === "tape" && tapeMeasure.p1 ? (
+                    <g>
+                      <circle
+                        cx={tapeMeasure.p1.x}
+                        cy={tapeMeasure.p1.y}
+                        r={6}
+                        fill="#0ea5e9"
+                        stroke="white"
+                        strokeWidth={2}
+                      />
+                      {tapeMeasure.p2 && (() => {
+                        const distPx = distanceBetween(tapeMeasure.p1, tapeMeasure.p2);
+                        const midX = (tapeMeasure.p1.x + tapeMeasure.p2.x) / 2;
+                        const midY = (tapeMeasure.p1.y + tapeMeasure.p2.y) / 2;
+
+                        let labelText = "";
+                        if (calibrationScale) {
+                          const realDistance = distPx * calibrationScale;
+                          labelText = calibrationUnit === "ft"
+                            ? formatFeetInches(realDistance)
+                            : `${formatNumber(realDistance)} ${calibrationUnit}`;
+                        } else {
+                          labelText = `${formatNumber(distPx)} px`;
+                        }
+
+                        return (
+                          <>
+                            <circle
+                              cx={tapeMeasure.p2.x}
+                              cy={tapeMeasure.p2.y}
+                              r={6}
+                              fill="#0ea5e9"
+                              stroke="white"
+                              strokeWidth={2}
+                            />
+                            <line
+                              x1={tapeMeasure.p1.x}
+                              y1={tapeMeasure.p1.y}
+                              x2={tapeMeasure.p2.x}
+                              y2={tapeMeasure.p2.y}
+                              stroke="#0ea5e9"
+                              strokeWidth={3}
+                              strokeLinecap="round"
+                            />
+                            <g>
+                              <rect
+                                x={midX - 50}
+                                y={midY - 18}
+                                width={100}
+                                height={36}
+                                fill="white"
+                                stroke="#0ea5e9"
+                                strokeWidth={2}
+                                rx={6}
+                              />
+                              <text
+                                x={midX}
+                                y={midY + 5}
+                                textAnchor="middle"
+                                fontSize={14}
+                                fontWeight="600"
+                                fill="#0369a1"
+                              >
+                                {labelText}
+                              </text>
+                            </g>
+                          </>
+                        );
+                      })()}
+                      {!tapeMeasure.p2 && currentMousePoint && (
+                        <line
+                          x1={tapeMeasure.p1.x}
+                          y1={tapeMeasure.p1.y}
+                          x2={currentMousePoint.x}
+                          y2={currentMousePoint.y}
+                          stroke="#0ea5e9"
+                          strokeWidth={2}
+                          strokeDasharray="4 4"
+                          opacity={0.5}
+                        />
+                      )}
+                    </g>
                   ) : null}
 
                   {(toolMode === "line" || toolMode === "area" || toolMode === "volume") && draftPoints.length > 0 ? (
@@ -3207,6 +3331,65 @@ export default function TakeoffPage() {
               </div>
             );
           }
+        } else if (toolMode === "tape") {
+          if (tapeMeasure.p1 && tapeMeasure.p2) {
+            const distPx = distanceBetween(tapeMeasure.p1, tapeMeasure.p2);
+            if (calibrationScale) {
+              const realDistance = distPx * calibrationScale;
+              const distanceText = calibrationUnit === "ft"
+                ? formatFeetInches(realDistance)
+                : `${formatNumber(realDistance)} ${calibrationUnit}`;
+
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Distance:</span>
+                    <span className="text-sm font-bold text-sky-700">{distanceText}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Pixels:</span>
+                    <span className="text-sm font-semibold text-slate-600">{formatNumber(distPx)} px</span>
+                  </div>
+                </div>
+              );
+            } else {
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Distance:</span>
+                    <span className="text-sm font-bold text-sky-700">{formatNumber(distPx)} px</span>
+                  </div>
+                  <div className="text-xs text-amber-600 mt-2">⚠ Calibrate first for real units</div>
+                </div>
+              );
+            }
+          } else if (tapeMeasure.p1 && currentMousePoint) {
+            const distPx = distanceBetween(tapeMeasure.p1, currentMousePoint);
+            if (calibrationScale) {
+              const realDistance = distPx * calibrationScale;
+              const distanceText = calibrationUnit === "ft"
+                ? formatFeetInches(realDistance)
+                : `${formatNumber(realDistance)} ${calibrationUnit}`;
+
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Distance:</span>
+                    <span className="text-sm font-bold text-sky-700">{distanceText}</span>
+                  </div>
+                </div>
+              );
+            } else {
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Distance:</span>
+                    <span className="text-sm font-bold text-sky-700">{formatNumber(distPx)} px</span>
+                  </div>
+                </div>
+              );
+            }
+          }
         }
 
         if (!hudContent) return null;
@@ -3240,7 +3423,7 @@ export default function TakeoffPage() {
             }}
           >
             <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-blue-600">
-              {toolMode === "calibrate" ? "Calibrating" : "Drawing"}
+              {toolMode === "calibrate" ? "Calibrating" : toolMode === "tape" ? "Measuring" : "Drawing"}
             </div>
             {hudContent}
           </div>
