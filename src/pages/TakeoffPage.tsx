@@ -546,6 +546,11 @@ const [calibrationForm, setCalibrationForm] = useState({
     return pageRows.find((p) => p.page_number === currentPage) ?? null;
   }, [pageRows, currentPage]);
 
+  const calibrationStorageKey = useMemo(
+    () => (session?.id ? `takeoff-page-rows-${session.id}` : null),
+    [session?.id]
+  );
+
   const calibrationScale = currentPageRow?.calibration_scale ?? null;
   const calibrationUnit = (currentPageRow?.calibration_unit ?? "ft") as UnitSystem;
 
@@ -786,6 +791,54 @@ const [calibrationForm, setCalibrationForm] = useState({
     }
     void loadSessionData(activeProjectId);
   }, [activeProjectId, loadSessionData]);
+
+  useEffect(() => {
+    if (!calibrationStorageKey) return;
+
+    try {
+      const raw = window.localStorage.getItem(calibrationStorageKey);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+
+      setPageRows(
+        parsed
+          .filter((row) => row && typeof row.page_number === "number")
+          .map((row) => ({
+            id: typeof row.id === "string" ? row.id : undefined,
+            session_id: session?.id ?? row.session_id,
+            page_number: row.page_number,
+            page_label: typeof row.page_label === "string" ? row.page_label : null,
+            width: typeof row.width === "number" ? row.width : null,
+            height: typeof row.height === "number" ? row.height : null,
+            calibration_point_1:
+              row.calibration_point_1 &&
+              typeof row.calibration_point_1.x === "number" &&
+              typeof row.calibration_point_1.y === "number"
+                ? row.calibration_point_1
+                : null,
+            calibration_point_2:
+              row.calibration_point_2 &&
+              typeof row.calibration_point_2.x === "number" &&
+              typeof row.calibration_point_2.y === "number"
+                ? row.calibration_point_2
+                : null,
+            calibration_distance:
+              typeof row.calibration_distance === "number" ? row.calibration_distance : null,
+            calibration_unit:
+              row.calibration_unit === "ft" || row.calibration_unit === "m" || row.calibration_unit === "in"
+                ? row.calibration_unit
+                : null,
+            calibration_scale:
+              typeof row.calibration_scale === "number" ? row.calibration_scale : null,
+            updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
+          }))
+      );
+    } catch (error) {
+      console.error("Failed to restore saved page calibration.", error);
+    }
+  }, [calibrationStorageKey, session?.id]);
 
   useEffect(() => {
     if (!pdfUrl) {
@@ -1146,6 +1199,16 @@ const [calibrationForm, setCalibrationForm] = useState({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!calibrationStorageKey) return;
+
+    try {
+      window.localStorage.setItem(calibrationStorageKey, JSON.stringify(pageRows));
+    } catch (error) {
+      console.error("Failed to persist page calibration.", error);
+    }
+  }, [calibrationStorageKey, pageRows]);
 
   const addGroup = useCallback(() => {
     if (!session) return;
