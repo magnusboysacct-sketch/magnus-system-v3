@@ -2863,6 +2863,198 @@ const [calibrationForm, setCalibrationForm] = useState({
         </aside>
       </div>
 
+            {showCalibrationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Calibration</h3>
+                <p className="text-sm text-slate-500">
+                  Select two points on the drawing, then enter the real distance.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCalibrationModal(false)}
+                className="rounded-lg px-3 py-1 text-sm text-slate-500 hover:bg-slate-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Point 1</div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">
+                    {calibrationDraft.p1 ? "Selected" : "Not selected"}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Point 2</div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">
+                    {calibrationDraft.p2 ? "Selected" : "Not selected"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Feet</label>
+                  <input
+                    value={calibrationForm.feet}
+                    onChange={(e) =>
+                      setCalibrationForm((prev) => ({
+                        ...prev,
+                        feet: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                    placeholder="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Inches</label>
+                  <input
+                    value={calibrationForm.inches}
+                    onChange={(e) =>
+                      setCalibrationForm((prev) => ({
+                        ...prev,
+                        inches: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                    placeholder="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Fraction</label>
+                  <select
+                    value={calibrationForm.fraction}
+                    onChange={(e) =>
+                      setCalibrationForm((prev) => ({
+                        ...prev,
+                        fraction: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                  >
+                    <option value="0">0</option>
+                    <option value="1/8">1/8</option>
+                    <option value="1/4">1/4</option>
+                    <option value="3/8">3/8</option>
+                    <option value="1/2">1/2</option>
+                    <option value="5/8">5/8</option>
+                    <option value="3/4">3/4</option>
+                    <option value="7/8">7/8</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Unit</label>
+                <select
+                  value={calibrationForm.unit}
+                  onChange={(e) =>
+                    setCalibrationForm((prev) => ({
+                      ...prev,
+                      unit: e.target.value as UnitSystem,
+                    }))
+                  }
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                >
+                  <option value="ft">ft</option>
+                  <option value="m">m</option>
+                  <option value="in">in</option>
+                </select>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setToolMode("calibrate");
+                    setCalibrationDraft((prev) => ({
+                      ...prev,
+                      p1: null,
+                      p2: null,
+                    }));
+                  }}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium hover:bg-slate-100"
+                >
+                  Start / Restart
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCalibrationDraft({
+                      p1: null,
+                      p2: null,
+                      distanceText: "1",
+                      unit: "ft",
+                    });
+                    setCalibrationForm({
+                      feet: "",
+                      inches: "",
+                      fraction: "0",
+                      unit: "ft",
+                    });
+                  }}
+                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setShowCalibrationModal(false)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const feet = Number(calibrationForm.feet || 0);
+                  const inches = Number(calibrationForm.inches || 0);
+                  const fraction = fractionToDecimal(calibrationForm.fraction);
+
+                  let distance = 0;
+
+                  if (calibrationForm.unit === "ft") {
+                    distance = feet + (inches + fraction) / 12;
+                  } else if (calibrationForm.unit === "in") {
+                    distance = feet * 12 + inches + fraction;
+                  } else {
+                    distance = feet + inches / 100 + fraction / 100;
+                  }
+
+                  setCalibrationDraft((prev) => ({
+                    ...prev,
+                    distanceText: String(distance || 0),
+                    unit: calibrationForm.unit,
+                  }));
+
+                  commitCalibration();
+                  setShowCalibrationModal(false);
+                }}
+                className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+              >
+                Apply Calibration
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ExportToBOQModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
