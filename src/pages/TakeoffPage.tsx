@@ -1713,13 +1713,11 @@ const [calibrationForm, setCalibrationForm] = useState({
                 <button
                   key={mode}
                   type="button"
-                  onClick={() => {
-                    setToolMode(mode);
-                    setDraftPoints([]);
-                    if (mode !== "calibrate") {
-                      setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
-                    }
-                  }}
+                onClick={() => {
+  setToolMode(mode);
+  setDraftPoints([]);
+  setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
+}}
                   className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                     toolMode === mode
                       ? "bg-slate-900 dark:bg-slate-900 text-white"
@@ -2975,14 +2973,16 @@ const [calibrationForm, setCalibrationForm] = useState({
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setToolMode("calibrate");
-                    setCalibrationDraft((prev) => ({
-                      ...prev,
-                      p1: null,
-                      p2: null,
-                    }));
-                  }}
+                onClick={() => {
+  setToolMode("calibrate");
+  setDraftPoints([]);
+  setCalibrationDraft((prev) => ({
+    ...prev,
+    p1: null,
+    p2: null,
+  }));
+  setShowCalibrationModal(false);
+}}
                   className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium hover:bg-slate-100"
                 >
                   Start / Restart
