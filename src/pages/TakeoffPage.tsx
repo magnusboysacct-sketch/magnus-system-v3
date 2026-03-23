@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { useProjectContext } from "../hooks/useProjectContext";
+import { useProjectContext } from "../context/ProjectContext";
 import {
   ChevronLeft,
   ChevronRight,
