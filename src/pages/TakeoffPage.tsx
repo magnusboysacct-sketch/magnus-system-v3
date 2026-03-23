@@ -1,207 +1,290 @@
-// src/pages/TakeoffPage.tsx
+// UPDATED TakeoffPage.tsx (REAL SCHEMA VERSION)
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Compass,
-  FileDigit,
-  FileText,
-  Gauge,
-  Layers3,
-  Link2,
-  Maximize2,
-  Minimize2,
-  MousePointer2,
-  PencilRuler,
-  Plus,
-  RefreshCcw,
-  Ruler,
-  Save,
-  Search,
-  Settings,
-  Square,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
+import { useProjectContext } from "../context/ProjectContext";
 
-type MainTab = "drawings" | "measurements" | "details" | "boq" | "settings";
-type DrawMode = "pan" | "calibration" | "line" | "area" | "count";
-type UnitType = "ft" | "m" | "in" | "mm";
+/* ---------------- TYPES ---------------- */
 
-type Point = {
-  x: number;
-  y: number;
-};
-
-type CalibrationDraft = {
-  p1: Point | null;
-  p2: Point | null;
-  distanceText: string;
-  unit: UnitType;
-};
-
-type CalibrationForm = {
-  feet: string;
-  inches: string;
-  fraction: string;
-  unit: UnitType;
-};
-
-type CalibrationState = {
-  p1: Point | null;
-  p2: Point | null;
-  distance: number;
-  unit: UnitType;
-  scale: number;
-};
-
-type MeasurementRow = {
-  id: string;
-  type: "line" | "area" | "count";
-  label: string;
-  unit: string;
-  value: number;
-  points: Point[];
-  description?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  source?: "db" | "local";
-};
-
-type TakeoffSessionRow = {
-  id: string;
-  company_id?: string | null;
-  project_id?: string | null;
-  drawing_id?: string | null;
-  name?: string | null;
-  status?: string | null;
-  pdf_url?: string | null;
-  pdf_name?: string | null;
-  pdf_path?: string | null;
-  pdf_storage_path?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
-
-type PageDataShape = {
-  previewUrl?: string | null;
-  fileName?: string | null;
-  detailNotes?: string | null;
-  boqLink?: string | null;
-  rotation?: number | null;
-  [key: string]: any;
-};
+type Point = { x: number; y: number };
 
 type TakeoffPageRow = {
   id: string;
-  project_id?: string | null;
-  drawing_id?: string | null;
-  page_number: number;
-  calibration_scale?: number | null;
-  calibration_unit?: string | null;
-  calibration_p1?: Point | null;
-  calibration_p2?: Point | null;
-  page_data?: PageDataShape | null;
-  created_at?: string | null;
-  updated_at?: string | null;
   session_id: string;
-  page_label?: string | null;
-  width?: number | null;
-  height?: number | null;
-  calibration_point_1?: Point | null;
-  calibration_point_2?: Point | null;
-  calibration_distance?: number | null;
+  project_id: string;
+  page_number: number;
+  page_label: string | null;
+  drawing_id: string | null;
+
+  calibration_scale: number | null;
+  calibration_unit: string | null;
+  calibration_distance: number | null;
+
+  calibration_point_1: Point | null;
+  calibration_point_2: Point | null;
+
+  calibration_p1: Point | null;
+  calibration_p2: Point | null;
+
+  page_data: any;
+
+  width: number | null;
+  height: number | null;
 };
 
-type ViewerClickCapture =
-  | { mode: "calibration"; points: Point[] }
-  | { mode: "line"; points: Point[] }
-  | { mode: "area"; points: Point[] }
-  | { mode: "count"; points: Point[] }
-  | null;
+/* ---------------- HELPERS ---------------- */
 
-type ProjectRow = {
-  id: string;
-  company_id?: string | null;
-  name?: string | null;
-  project_name?: string | null;
-  title?: string | null;
-  is_active?: boolean | null;
-};
-
-const TAB_OPTIONS: Array<{
-  key: MainTab;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-}> = [
-  { key: "drawings", label: "Drawings", icon: FileText },
-  { key: "measurements", label: "Measurements", icon: Ruler },
-  { key: "details", label: "Extracted Details", icon: FileDigit },
-  { key: "boq", label: "BOQ Links", icon: Link2 },
-  { key: "settings", label: "Settings", icon: Settings },
-];
-
-const FRACTION_OPTIONS = [
-  "0",
-  "1/16",
-  "1/8",
-  "3/16",
-  "1/4",
-  "5/16",
-  "3/8",
-  "7/16",
-  "1/2",
-  "9/16",
-  "5/8",
-  "11/16",
-  "3/4",
-  "13/16",
-  "7/8",
-  "15/16",
-];
-
-const DEFAULT_CALIBRATION_FORM: CalibrationForm = {
-  feet: "",
-  inches: "",
-  fraction: "0",
-  unit: "ft",
-};
-
-const DEFAULT_CALIBRATION_DRAFT: CalibrationDraft = {
-  p1: null,
-  p2: null,
-  distanceText: "1",
-  unit: "ft",
-};
-
-function uid(prefix = "id") {
-  return `${prefix}_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+function uid() {
+  return `${Math.random().toString(36).slice(2)}_${Date.now()}`;
 }
 
-function clsx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
+function dist(a: Point, b: Point) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
-function fractionToDecimal(value: string): number {
-  if (!value || value === "0") return 0;
-  const [a, b] = value.split("/").map(Number);
-  if (!a || !b) return 0;
-  return a / b;
-}
+/* ---------------- MAIN ---------------- */
 
-function calibrationFormToDistance(form: CalibrationForm): number {
-  if (form.unit === "ft") {
-    const feet = Number(form.feet || 0);
-    const inches = Number(form.inches || 0);
-    const frac = fractionToDecimal(form.fraction || "0");
-    return feet + (inches + frac) / 12;
+export default function TakeoffPage() {
+  const { projectId: routeProjectId } = useParams();
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const projectContext = useProjectContext();
+
+  const [projectId, setProjectId] = useState<string | null>(null);
+
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [pages, setPages] = useState<TakeoffPageRow[]>([]);
+  const [activePage, setActivePage] = useState<TakeoffPageRow | null>(null);
+
+  const [calibration, setCalibration] = useState<any>(null);
+
+  /* ---------------- PROJECT RESOLVE ---------------- */
+
+  useEffect(() => {
+    const resolved =
+      projectContext?.activeProjectId ||
+      routeProjectId ||
+      searchParams.get("projectId") ||
+      (location.state as any)?.projectId ||
+      null;
+
+    setProjectId(resolved);
+  }, [projectContext, routeProjectId, searchParams, location]);
+
+  /* ---------------- SESSION ---------------- */
+
+  const ensureSession = useCallback(async () => {
+    if (!projectId) return null;
+
+    const existing = await supabase
+      .from("takeoff_sessions")
+      .select("*")
+      .eq("project_id", projectId)
+      .limit(1)
+      .maybeSingle();
+
+    if (existing.data) {
+      setSessionId(existing.data.id);
+      return existing.data.id;
+    }
+
+    const created = await supabase
+      .from("takeoff_sessions")
+      .insert({
+        project_id: projectId,
+        name: "Takeoff Session",
+        status: "active",
+      })
+      .select("*")
+      .single();
+
+    if (created.data) {
+      setSessionId(created.data.id);
+      return created.data.id;
+    }
+
+    return null;
+  }, [projectId]);
+
+  /* ---------------- PAGE ---------------- */
+
+  const ensurePage = useCallback(
+    async (sessionId: string) => {
+      const existing = await supabase
+        .from("takeoff_pages")
+        .select("*")
+        .eq("session_id", sessionId)
+        .eq("page_number", 1)
+        .maybeSingle();
+
+      if (existing.data) {
+        setActivePage(existing.data);
+        return existing.data;
+      }
+
+      const created = await supabase
+        .from("takeoff_pages")
+        .insert({
+          session_id: sessionId,
+          project_id: projectId,
+          page_number: 1,
+          page_label: "Page 1",
+          page_data: {},
+        })
+        .select("*")
+        .single();
+
+      if (created.data) {
+        setActivePage(created.data);
+        return created.data;
+      }
+
+      return null;
+    },
+    [projectId]
+  );
+
+  /* ---------------- BOOTSTRAP ---------------- */
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    (async () => {
+      const s = await ensureSession();
+      if (!s) return;
+
+      const p = await ensurePage(s);
+      if (!p) return;
+
+      setCalibration(
+        p.calibration_scale
+          ? {
+              scale: p.calibration_scale,
+              unit: p.calibration_unit,
+              distance: p.calibration_distance,
+              p1: p.calibration_point_1 || p.calibration_p1,
+              p2: p.calibration_point_2 || p.calibration_p2,
+            }
+          : null
+      );
+    })();
+  }, [projectId, ensureSession, ensurePage]);
+
+  /* ---------------- SAVE ---------------- */
+
+  const savePage = useCallback(
+    async (patch: Partial<TakeoffPageRow>) => {
+      if (!activePage) return;
+
+      const payload = {
+        ...patch,
+        page_label: patch.page_label ?? activePage.page_label,
+        page_data: patch.page_data ?? activePage.page_data,
+      };
+
+      const { data } = await supabase
+        .from("takeoff_pages")
+        .update(payload)
+        .eq("id", activePage.id)
+        .select("*")
+        .single();
+
+      if (data) setActivePage(data);
+    },
+    [activePage]
+  );
+
+  /* ---------------- CALIBRATION ---------------- */
+
+  const applyCalibration = async (p1: Point, p2: Point, realDistance: number, unit: string) => {
+    const pxDistance = dist(p1, p2);
+    const scale = realDistance / pxDistance;
+
+    const payload = {
+      calibration_scale: scale,
+      calibration_unit: unit,
+      calibration_distance: realDistance,
+
+      calibration_point_1: p1,
+      calibration_point_2: p2,
+
+      calibration_p1: p1,
+      calibration_p2: p2,
+    };
+
+    await savePage(payload);
+
+    setCalibration({
+      scale,
+      unit,
+      distance: realDistance,
+      p1,
+      p2,
+    });
+  };
+
+  /* ---------------- UI ---------------- */
+
+  if (!projectId) {
+    return (
+      <div className="p-10 text-center text-slate-500">
+        Select a project to start Takeoff
+      </div>
+    );
   }
-  if (form.unit === "in") {
-    const inches = Number(form.inches || 0);
-    const frac = fractionToDecimal(form.fraction || "0");
-    return inches + frac;
-  }
-  return Number(form
+
+  return (
+    <div className="h-screen bg-slate-100 p-3">
+      <div className="h-full rounded-2xl bg-white shadow p-4 flex flex-col gap-3">
+        
+        {/* HEADER */}
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="font-semibold text-lg">Takeoff</h1>
+            <p className="text-xs text-slate-500">
+              {activePage?.page_label || "No Page"}
+            </p>
+          </div>
+
+          <button
+            onClick={() => savePage({})}
+            className="bg-slate-900 text-white px-3 py-2 rounded-xl text-sm"
+          >
+            Save
+          </button>
+        </div>
+
+        {/* DRAWING AREA */}
+        <div className="flex-1 border rounded-xl relative bg-slate-50 flex items-center justify-center">
+          <div className="text-slate-400 text-sm">
+            Drawing Viewer (ready for PDF integration)
+          </div>
+
+          {/* CALIBRATION LINE */}
+          {calibration?.p1 && calibration?.p2 && (
+            <svg className="absolute inset-0">
+              <line
+                x1={`${calibration.p1.x * 100}%`}
+                y1={`${calibration.p1.y * 100}%`}
+                x2={`${calibration.p2.x * 100}%`}
+                y2={`${calibration.p2.y * 100}%`}
+                stroke="green"
+                strokeWidth="2"
+              />
+            </svg>
+          )}
+        </div>
+
+        {/* FOOTER */}
+        <div className="text-xs text-slate-500">
+          {calibration
+            ? `Calibrated (${calibration.unit})`
+            : "Not calibrated"}
+        </div>
+      </div>
+    </div>
+  );
+}
