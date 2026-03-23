@@ -493,6 +493,16 @@ export default function TakeoffPage() {
     distanceText: "1",
     unit: "ft",
   });
+  
+const [showCalibrationModal, setShowCalibrationModal] = useState(false);
+
+const [calibrationForm, setCalibrationForm] = useState({
+  feet: "",
+  inches: "",
+  fraction: "0",
+  unit: "ft" as UnitSystem,
+});
+  
 
   const [showExportModal, setShowExportModal] = useState(false);
 
