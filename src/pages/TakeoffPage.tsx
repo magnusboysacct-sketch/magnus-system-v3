@@ -1794,8 +1794,21 @@ const [calibrationForm, setCalibrationForm] = useState({
             </div>
           )}
 
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Calibration</span>
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+  <button
+    type="button"
+    onClick={() => setShowCalibrationModal(true)}
+    className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-100"
+  >
+    Calibration
+  </button>
+
+  <span className="text-xs text-slate-500">
+    {calibrationScale
+      ? `Calibrated (${calibrationUnit})`
+      : "Not calibrated"}
+  </span>
+</div>
             <input
               value={calibrationDraft.distanceText}
               onChange={(e) =>
