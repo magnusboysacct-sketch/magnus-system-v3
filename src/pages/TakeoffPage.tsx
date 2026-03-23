@@ -3064,7 +3064,39 @@ const [calibrationForm, setCalibrationForm] = useState({
                   Start / Restart
                 </button>
 
-               <button
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCalibrationDraft({
+                      p1: null,
+                      p2: null,
+                      distanceText: "1",
+                      unit: "ft",
+                    });
+                    setCalibrationForm({
+                      feet: "",
+                      inches: "",
+                      fraction: "0",
+                      unit: "ft",
+                    });
+                  }}
+                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setShowCalibrationModal(false)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+
+             <button
   type="button"
   disabled={!calibrationDraft.p1 || !calibrationDraft.p2}
   onClick={() => {
@@ -3101,10 +3133,10 @@ const [calibrationForm, setCalibrationForm] = useState({
 >
   Apply Calibration
 </button>
-  </div>
-</div>
- </div>
- )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <ExportToBOQModal
         isOpen={showExportModal}
