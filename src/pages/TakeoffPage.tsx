@@ -23,6 +23,28 @@ type Point = {
   y: number;
 };
 
+<div className="flex border-b bg-white px-2 text-sm">
+  {[
+    { key: "drawings", label: "Drawings" },
+    { key: "measurements", label: "Measurements" },
+    { key: "extracted", label: "Extracted Details" },
+    { key: "boq", label: "BOQ Links" },
+    { key: "settings", label: "Settings" },
+  ].map((tab) => (
+    <button
+      key={tab.key}
+      onClick={() => setActiveWorkspaceTab(tab.key as any)}
+      className={`px-4 py-2 ${
+        activeWorkspaceTab === tab.key
+          ? "border-b-2 border-blue-600 font-semibold text-blue-600"
+          : "text-gray-500"
+      }`}
+    >
+      {tab.label}
+    </button>
+  ))}
+</div>
+
 type SessionRow = {
   id: string;
   project_id: string;
