@@ -736,8 +736,9 @@ const [calibrationForm, setCalibrationForm] = useState({
 
         let groupData: GroupRow[] = [];
         let measurementData: MeasurementRow[] = [];
+        let pageData: PageRow[] = [];
 
-        const [groupsRes, measurementsRes] = await Promise.all([
+        const [groupsRes, measurementsRes, pagesRes] = await Promise.all([
           supabase
             .from("takeoff_groups")
             .select("*")
@@ -748,15 +749,74 @@ const [calibrationForm, setCalibrationForm] = useState({
             .select("*")
             .eq("session_id", sessionRow.id)
             .order("updated_at", { ascending: false }),
+          supabase
+            .from("takeoff_pages")
+            .select("*")
+            .eq("session_id", sessionRow.id)
+            .order("page_number", { ascending: true }),
         ]);
 
         if (groupsRes.error) throw groupsRes.error;
         if (measurementsRes.error) throw measurementsRes.error;
+        if (pagesRes.error && pagesRes.error.code !== "PGRST116") throw pagesRes.error;
 
         groupData = (groupsRes.data ?? []) as GroupRow[];
         measurementData = (measurementsRes.data ?? []) as MeasurementRow[];
+        pageData = (pagesRes.data ?? []) as PageRow[];
 
-        setPageRows([]);
+        if (typeof window !== "undefined") {
+          try {
+            const storageKey = `takeoff-page-rows-${sessionRow.id}`;
+            const raw = window.localStorage.getItem(storageKey);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                const localPageData = parsed
+                  .filter((row) => row && typeof row.page_number === "number")
+                  .map((row) => ({
+                    id: typeof row.id === "string" ? row.id : undefined,
+                    session_id: sessionRow.id,
+                    page_number: row.page_number,
+                    page_label: typeof row.page_label === "string" ? row.page_label : null,
+                    width: typeof row.width === "number" ? row.width : null,
+                    height: typeof row.height === "number" ? row.height : null,
+                    calibration_point_1:
+                      row.calibration_point_1 &&
+                      typeof row.calibration_point_1.x === "number" &&
+                      typeof row.calibration_point_1.y === "number"
+                        ? row.calibration_point_1
+                        : null,
+                    calibration_point_2:
+                      row.calibration_point_2 &&
+                      typeof row.calibration_point_2.x === "number" &&
+                      typeof row.calibration_point_2.y === "number"
+                        ? row.calibration_point_2
+                        : null,
+                    calibration_distance:
+                      typeof row.calibration_distance === "number" ? row.calibration_distance : null,
+                    calibration_unit:
+                      row.calibration_unit === "ft" || row.calibration_unit === "m" || row.calibration_unit === "in"
+                        ? row.calibration_unit
+                        : null,
+                    calibration_scale:
+                      typeof row.calibration_scale === "number" ? row.calibration_scale : null,
+                    updated_at: typeof row.updated_at === "string" ? row.updated_at : null,
+                  })) as PageRow[];
+
+                if (localPageData.length > 0) {
+                  const pageMap = new Map<number, PageRow>();
+                  pageData.forEach((row) => pageMap.set(row.page_number, row));
+                  localPageData.forEach((row) => pageMap.set(row.page_number, row));
+                  pageData = Array.from(pageMap.values()).sort((a, b) => a.page_number - b.page_number);
+                }
+              }
+            }
+          } catch (storageError) {
+            console.error("Failed to restore saved page calibration during session load.", storageError);
+          }
+        }
+
+        setPageRows(pageData);
         setGroups(groupData);
         setMeasurements(measurementData);
 
@@ -1145,7 +1205,22 @@ const [calibrationForm, setCalibrationForm] = useState({
           sort_order: index,
         }));
 
-        const [sessionRes, groupsRes, measurementsRes] = await Promise.all([
+        const pagePayload = pageRows.map((p) => ({
+          id: p.id,
+          session_id: session.id,
+          page_number: p.page_number,
+          page_label: p.page_label ?? null,
+          width: p.width ?? null,
+          height: p.height ?? null,
+          calibration_point_1: p.calibration_point_1 ?? null,
+          calibration_point_2: p.calibration_point_2 ?? null,
+          calibration_distance: p.calibration_distance ?? null,
+          calibration_unit: p.calibration_unit ?? null,
+          calibration_scale: p.calibration_scale ?? null,
+          updated_at: p.updated_at ?? new Date().toISOString(),
+        }));
+
+        const [sessionRes, groupsRes, measurementsRes, pagesRes] = await Promise.all([
           supabase.from("takeoff_sessions").upsert(sessionPayload, { onConflict: "id" }),
           groupPayload.length
             ? supabase.from("takeoff_groups").upsert(groupPayload, { onConflict: "id" })
@@ -1155,11 +1230,15 @@ const [calibrationForm, setCalibrationForm] = useState({
                 onConflict: "id",
               })
             : Promise.resolve({ error: null } as any),
+          pagePayload.length
+            ? supabase.from("takeoff_pages").upsert(pagePayload, { onConflict: "id" })
+            : Promise.resolve({ error: null } as any),
         ]);
 
         if (sessionRes.error) throw sessionRes.error;
         if (groupsRes.error) throw groupsRes.error;
         if (measurementsRes.error) throw measurementsRes.error;
+        if (pagesRes.error) throw pagesRes.error;
 
         if (deletedMeasurementIdsRef.current.length) {
           const delRes = await supabase
@@ -1185,12 +1264,12 @@ const [calibrationForm, setCalibrationForm] = useState({
         setErrorText(error?.message ?? "Autosave failed.");
       }
     }, 700);
-  }, [session, currentPage, groups, measurements, pdfName, pdfUrl]);
+  }, [session, currentPage, groups, measurements, pageRows, pdfName, pdfUrl]);
 
   useEffect(() => {
     if (!session) return;
     queueAutosave();
-  }, [session, currentPage, groups, measurements, pdfName, pdfUrl, queueAutosave]);
+  }, [session, currentPage, groups, measurements, pageRows, pdfName, pdfUrl, queueAutosave]);
 
   useEffect(() => {
     return () => {
