@@ -370,6 +370,17 @@ function recalculateMeasurement(measurement: MeasurementRow, scale: number, base
   };
 }
 
+function fractionToDecimal(value: string) {
+  if (value === "1/8") return 0.125;
+  if (value === "1/4") return 0.25;
+  if (value === "3/8") return 0.375;
+  if (value === "1/2") return 0.5;
+  if (value === "5/8") return 0.625;
+  if (value === "3/4") return 0.75;
+  if (value === "7/8") return 0.875;
+  return 0;
+}
+
 async function tryRpc<T = any>(fn: string, params?: Record<string, any>): Promise<T | null> {
   const { data, error } = await supabase.rpc(fn, params ?? {});
   if (error) return null;
