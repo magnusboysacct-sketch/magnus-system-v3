@@ -3063,8 +3063,7 @@ const [calibrationForm, setCalibrationForm] = useState({
                 >
                   Start / Restart
                 </button>
-
-             <button
+<button
   type="button"
   disabled={!calibrationDraft.p1 || !calibrationDraft.p2}
   onClick={() => {
@@ -3101,6 +3100,10 @@ const [calibrationForm, setCalibrationForm] = useState({
 >
   Apply Calibration
 </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ExportToBOQModal
         isOpen={showExportModal}
