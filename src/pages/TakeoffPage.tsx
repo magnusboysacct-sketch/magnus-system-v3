@@ -3100,9 +3100,6 @@ const [calibrationForm, setCalibrationForm] = useState({
 >
   Apply Calibration
 </button>
-            </div>
-          </div>
-        </div>
       )}
 
       <ExportToBOQModal
