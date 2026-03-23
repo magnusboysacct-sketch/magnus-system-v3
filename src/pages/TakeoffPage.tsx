@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { useProjectContext } from "../hooks/useProjectContext";
 import {
   ChevronLeft,
   ChevronRight,
@@ -123,9 +124,11 @@ type ViewerClickCapture =
 
 type ProjectRow = {
   id: string;
+  company_id?: string | null;
   name?: string | null;
   project_name?: string | null;
   title?: string | null;
+  is_active?: boolean | null;
 };
 
 const TAB_OPTIONS: Array<{
@@ -254,6 +257,48 @@ function getProjectIdFallback() {
   return candidates.find(Boolean) || null;
 }
 
+function getProjectDisplayName(project: Partial<ProjectRow> | null | undefined) {
+  if (!project) return "";
+  return project.name || project.project_name || project.title || "";
+}
+
+function normalizeProjectRow(input: any): ProjectRow | null {
+  if (!input) return null;
+
+  if (typeof input === "string") {
+    return { id: input, name: "" };
+  }
+
+  const id =
+    input.id ||
+    input.project_id ||
+    input.value ||
+    input.projectId ||
+    input.selectedProjectId;
+
+  if (!id) return null;
+
+  return {
+    id: String(id),
+    company_id: input.company_id ?? null,
+    name: input.name ?? null,
+    project_name: input.project_name ?? input.projectName ?? null,
+    title: input.title ?? null,
+    is_active: input.is_active ?? null,
+  };
+}
+
+function uniqueProjects(rows: ProjectRow[]) {
+  const map = new Map<string, ProjectRow>();
+  for (const row of rows) {
+    if (!row?.id) continue;
+    if (!map.has(row.id)) map.set(row.id, row);
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    getProjectDisplayName(a).localeCompare(getProjectDisplayName(b))
+  );
+}
+
 async function safeUpsertTakeoffPage(payload: Record<string, any>) {
   const candidates: Array<Record<string, any>> = [
     payload,
@@ -348,6 +393,34 @@ async function safeUpdateTakeoffPage(pageId: string, payload: Record<string, any
     .single();
 }
 
+async function safeLoadProjects(companyId: string | null) {
+  const attempts: Array<() => Promise<any>> = [];
+
+  if (companyId) {
+    attempts.push(() =>
+      supabase
+        .from("projects")
+        .select("id, company_id, name, project_name, title, is_active")
+        .eq("company_id", companyId)
+    );
+  }
+
+  attempts.push(() =>
+    supabase
+      .from("projects")
+      .select("id, company_id, name, project_name, title, is_active")
+  );
+
+  for (const attempt of attempts) {
+    const result = await attempt();
+    if (!result.error && Array.isArray(result.data)) {
+      return (result.data as any[]).map(normalizeProjectRow).filter(Boolean) as ProjectRow[];
+    }
+  }
+
+  return [] as ProjectRow[];
+}
+
 export default function TakeoffPage() {
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
@@ -356,6 +429,8 @@ export default function TakeoffPage() {
   const routeParams = useParams();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+
+  const projectContext = (useProjectContext?.() ?? {}) as any;
 
   const [tab, setTab] = useState<MainTab>("drawings");
   const [drawMode, setDrawMode] = useState<DrawMode>("pan");
@@ -366,6 +441,8 @@ export default function TakeoffPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pageLoading, setPageLoading] = useState(false);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [changingProject, setChangingProject] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -373,6 +450,7 @@ export default function TakeoffPage() {
 
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>("");
+  const [availableProjects, setAvailableProjects] = useState<ProjectRow[]>([]);
 
   const [sessions, setSessions] = useState<TakeoffSessionRow[]>([]);
   const [pages, setPages] = useState<TakeoffPageRow[]>([]);
@@ -411,6 +489,50 @@ export default function TakeoffPage() {
     ((location.state as any)?.selectedProjectId as string | undefined) ||
     null;
 
+  const contextProjects = useMemo(() => {
+    const raw =
+      projectContext.projects ||
+      projectContext.availableProjects ||
+      projectContext.projectOptions ||
+      projectContext.filteredProjects ||
+      projectContext.allProjects ||
+      [];
+    if (!Array.isArray(raw)) return [] as ProjectRow[];
+    return uniqueProjects(
+      raw.map(normalizeProjectRow).filter(Boolean) as ProjectRow[]
+    );
+  }, [projectContext]);
+
+  const contextProject = useMemo(() => {
+    return (
+      normalizeProjectRow(projectContext.activeProject) ||
+      normalizeProjectRow(projectContext.selectedProject) ||
+      normalizeProjectRow(projectContext.currentProject) ||
+      normalizeProjectRow(projectContext.project) ||
+      null
+    );
+  }, [projectContext]);
+
+  const contextProjectId = useMemo(() => {
+    return (
+      contextProject?.id ||
+      projectContext.activeProjectId ||
+      projectContext.selectedProjectId ||
+      projectContext.currentProjectId ||
+      projectContext.projectId ||
+      null
+    );
+  }, [contextProject, projectContext]);
+
+  const contextProjectName = useMemo(() => {
+    return (
+      getProjectDisplayName(contextProject) ||
+      projectContext.activeProjectName ||
+      projectContext.selectedProjectName ||
+      ""
+    );
+  }, [contextProject, projectContext]);
+
   const selectedMeasurement = useMemo(
     () => measurements.find((m) => m.id === selectedMeasurementId) || null,
     [measurements, selectedMeasurementId]
@@ -429,9 +551,9 @@ export default function TakeoffPage() {
   }, [measurements, searchText]);
 
   const activePageDisplayTitle = useMemo(() => {
-    if (!activePage) return "Untitled Page";
+    if (!activePage) return projectId ? "Untitled Page" : "No Page Loaded";
     return activePage.title || activePage.file_name || `Page ${activePage.page_number}`;
-  }, [activePage]);
+  }, [activePage, projectId]);
 
   const measurementSummary = useMemo(() => {
     const lines = measurements.filter((m) => m.type === "line").length;
@@ -444,8 +566,22 @@ export default function TakeoffPage() {
     calibration?.p1 && calibration?.p2 && calibration?.scale
   );
 
+  const canWork = Boolean(projectId && !loading && !changingProject);
+
   const setStatus = useCallback((text: string) => {
     setStatusText(text);
+  }, []);
+
+  const persistProjectFallback = useCallback((nextProjectId: string | null) => {
+    if (nextProjectId) {
+      localStorage.setItem("magnus:selectedProjectId", nextProjectId);
+      sessionStorage.setItem("magnus:selectedProjectId", nextProjectId);
+      localStorage.setItem("selectedProjectId", nextProjectId);
+      sessionStorage.setItem("selectedProjectId", nextProjectId);
+    } else {
+      localStorage.removeItem("magnus:selectedProjectId");
+      sessionStorage.removeItem("magnus:selectedProjectId");
+    }
   }, []);
 
   const persistLocalPageState = useCallback(
@@ -512,34 +648,107 @@ export default function TakeoffPage() {
     setLoading(false);
   }, []);
 
-  const resolveProjectContext = useCallback(async () => {
-    const candidate = resolvedRouteProjectId || getProjectIdFallback() || null;
-    setProjectId(candidate);
+  const loadAvailableProjects = useCallback(async () => {
+    setProjectsLoading(true);
 
-    if (candidate) {
-      localStorage.setItem("magnus:selectedProjectId", candidate);
-      sessionStorage.setItem("magnus:selectedProjectId", candidate);
+    let merged: ProjectRow[] = [];
+
+    if (contextProjects.length > 0) {
+      merged = uniqueProjects(contextProjects);
     }
 
-    if (!candidate) {
-      setProjectName("");
-      return;
+    const dbProjects = await safeLoadProjects(companyId);
+    if (dbProjects.length > 0) {
+      merged = uniqueProjects([...merged, ...dbProjects]);
     }
 
-    const projectResult = await supabase
-      .from("projects")
-      .select("id,name,project_name,title")
-      .eq("id", candidate)
-      .maybeSingle();
+    setAvailableProjects(merged);
+    setProjectsLoading(false);
+  }, [companyId, contextProjects]);
 
-    if (!projectResult.error && projectResult.data) {
-      const project = projectResult.data as ProjectRow;
-      setProjectName(project.name || project.project_name || project.title || "");
-      return;
-    }
+  const pushProjectIntoContext = useCallback(
+    async (project: ProjectRow | null) => {
+      const nextId = project?.id || null;
 
-    setProjectName("");
-  }, [resolvedRouteProjectId]);
+      const attempts: Array<() => any> = [];
+
+      if (typeof projectContext.setActiveProjectId === "function") {
+        attempts.push(() => projectContext.setActiveProjectId(nextId));
+      }
+      if (typeof projectContext.setSelectedProjectId === "function") {
+        attempts.push(() => projectContext.setSelectedProjectId(nextId));
+      }
+      if (typeof projectContext.setCurrentProjectId === "function") {
+        attempts.push(() => projectContext.setCurrentProjectId(nextId));
+      }
+      if (typeof projectContext.setProjectId === "function") {
+        attempts.push(() => projectContext.setProjectId(nextId));
+      }
+      if (typeof projectContext.selectProject === "function") {
+        attempts.push(() => projectContext.selectProject(project || nextId));
+      }
+      if (typeof projectContext.setActiveProject === "function") {
+        attempts.push(() => projectContext.setActiveProject(project || nextId));
+      }
+      if (typeof projectContext.setSelectedProject === "function") {
+        attempts.push(() => projectContext.setSelectedProject(project || nextId));
+      }
+      if (typeof projectContext.setCurrentProject === "function") {
+        attempts.push(() => projectContext.setCurrentProject(project || nextId));
+      }
+      if (typeof projectContext.setProject === "function") {
+        attempts.push(() => projectContext.setProject(project || nextId));
+      }
+
+      for (const attempt of attempts) {
+        try {
+          const maybePromise = attempt();
+          if (maybePromise && typeof maybePromise.then === "function") {
+            await maybePromise;
+          }
+        } catch {
+          // keep trying the next setter shape
+        }
+      }
+
+      persistProjectFallback(nextId);
+    },
+    [persistProjectFallback, projectContext]
+  );
+
+  const applySelectedProject = useCallback(
+    async (nextProject: ProjectRow | null) => {
+      const nextId = nextProject?.id || null;
+      const nextName = getProjectDisplayName(nextProject);
+
+      setChangingProject(true);
+      setErrorText(null);
+      setStatus(nextId ? "Switching project..." : "Project cleared");
+
+      bootstrapKeyRef.current = "";
+      setSessions([]);
+      setPages([]);
+      setActiveSessionId(null);
+      setActivePageNumber(1);
+      setActivePage(null);
+      setMeasurements([]);
+      setSelectedMeasurementId(null);
+      setCalibration(null);
+      setPageTitleInput("");
+      setPageUrlInput("");
+      setDetailNotes("");
+      setBoqLink("");
+
+      setProjectId(nextId);
+      setProjectName(nextName);
+
+      await pushProjectIntoContext(nextProject);
+
+      setChangingProject(false);
+      setStatus(nextId ? "Project selected" : "Ready");
+    },
+    [pushProjectIntoContext, setStatus]
+  );
 
   const loadMeasurementsFromDb = useCallback(
     async (page: TakeoffPageRow, nextCalibration: CalibrationState | null) => {
@@ -635,30 +844,54 @@ export default function TakeoffPage() {
     [loadLocalPageState, loadMeasurementsFromDb]
   );
 
-  const ensureSession = useCallback(async () => {
-    if (!projectId) return null;
-
-    if (activeSessionId) return activeSessionId;
+  const loadSessionsForProject = useCallback(async () => {
+    if (!projectId) {
+      setSessions([]);
+      return [] as TakeoffSessionRow[];
+    }
 
     let query = supabase
       .from("takeoff_sessions")
       .select("*")
       .eq("project_id", projectId)
-      .order("updated_at", { ascending: false })
-      .limit(1);
+      .order("updated_at", { ascending: false });
 
-    if (companyId) query = query.eq("company_id", companyId);
+    if (companyId) {
+      query = query.eq("company_id", companyId);
+    }
 
-    const existing = await query.maybeSingle();
+    let result = await query;
+    if (result.error && companyId) {
+      result = await supabase
+        .from("takeoff_sessions")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false });
+    }
 
-    if (!existing.error && existing.data) {
-      const session = existing.data as TakeoffSessionRow;
-      setSessions((prev) => {
-        const next = [session, ...prev.filter((row) => row.id !== session.id)];
-        return next;
-      });
-      setActiveSessionId(session.id);
-      return session.id;
+    if (result.error) {
+      setErrorText(result.error.message);
+      setSessions([]);
+      return [] as TakeoffSessionRow[];
+    }
+
+    const rows = (result.data || []) as TakeoffSessionRow[];
+    setSessions(rows);
+    return rows;
+  }, [companyId, projectId]);
+
+  const ensureSession = useCallback(async () => {
+    if (!projectId) return null;
+
+    if (activeSessionId && sessions.some((s) => s.id === activeSessionId)) {
+      return activeSessionId;
+    }
+
+    const loadedSessions = sessions.length > 0 ? sessions : await loadSessionsForProject();
+    const existing = loadedSessions[0];
+    if (existing?.id) {
+      setActiveSessionId(existing.id);
+      return existing.id;
     }
 
     const createPayload: Record<string, any> = {
@@ -680,36 +913,33 @@ export default function TakeoffPage() {
     }
 
     const session = created.data as TakeoffSessionRow;
-    setSessions([session]);
+    setSessions([session, ...loadedSessions]);
     setActiveSessionId(session.id);
     return session.id;
-  }, [activeSessionId, companyId, projectId]);
+  }, [activeSessionId, companyId, loadSessionsForProject, projectId, sessions]);
 
-  const loadPages = useCallback(
-    async (sessionId: string) => {
-      setPageLoading(true);
+  const loadPages = useCallback(async (sessionId: string) => {
+    setPageLoading(true);
 
-      const result = await supabase
-        .from("takeoff_pages")
-        .select("*")
-        .eq("session_id", sessionId)
-        .order("page_number", { ascending: true });
+    const result = await supabase
+      .from("takeoff_pages")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("page_number", { ascending: true });
 
-      setPageLoading(false);
+    setPageLoading(false);
 
-      if (result.error) {
-        setErrorText(result.error.message);
-        setPages([]);
-        setActivePage(null);
-        return [];
-      }
+    if (result.error) {
+      setErrorText(result.error.message);
+      setPages([]);
+      setActivePage(null);
+      return [] as TakeoffPageRow[];
+    }
 
-      const rows = (result.data || []) as TakeoffPageRow[];
-      setPages(rows);
-      return rows;
-    },
-    []
-  );
+    const rows = (result.data || []) as TakeoffPageRow[];
+    setPages(rows);
+    return rows;
+  }, []);
 
   const ensurePage = useCallback(
     async (pageNumber: number, sessionIdOverride?: string | null) => {
@@ -741,10 +971,10 @@ export default function TakeoffPage() {
 
       const row = result.data as TakeoffPageRow;
       setPages((prev) => {
-        const otherRows = prev.filter(
+        const next = prev.filter(
           (p) => !(p.session_id === row.session_id && p.page_number === row.page_number)
         );
-        return [...otherRows, row].sort((a, b) => a.page_number - b.page_number);
+        return [...next, row].sort((a, b) => a.page_number - b.page_number);
       });
 
       return row;
@@ -753,18 +983,32 @@ export default function TakeoffPage() {
   );
 
   const bootstrapTakeoff = useCallback(async () => {
-    if (loading) return;
-    if (!projectId) return;
+    if (loading || changingProject || !projectId) return;
 
     const bootstrapKey = `${companyId || "no-company"}:${projectId}`;
-    if (bootstrapKeyRef.current === bootstrapKey && activeSessionId && pages.length > 0) {
+    if (
+      bootstrapKeyRef.current === bootstrapKey &&
+      activeSessionId &&
+      pages.length > 0 &&
+      activePage
+    ) {
       return;
     }
 
     bootstrapKeyRef.current = bootstrapKey;
     setErrorText(null);
 
-    const sessionId = await ensureSession();
+    const loadedSessions = await loadSessionsForProject();
+
+    let sessionId =
+      (activeSessionId && loadedSessions.find((s) => s.id === activeSessionId)?.id) ||
+      loadedSessions[0]?.id ||
+      null;
+
+    if (!sessionId) {
+      sessionId = await ensureSession();
+    }
+
     if (!sessionId) return;
 
     const loadedPages = await loadPages(sessionId);
@@ -784,13 +1028,16 @@ export default function TakeoffPage() {
     await hydratePageState(targetPage);
     setStatus("Takeoff ready");
   }, [
+    activePage,
     activePageNumber,
     activeSessionId,
+    changingProject,
     companyId,
     ensurePage,
     ensureSession,
     hydratePageState,
     loadPages,
+    loadSessionsForProject,
     loading,
     pages.length,
     projectId,
@@ -800,7 +1047,7 @@ export default function TakeoffPage() {
   const saveActivePage = useCallback(
     async (patch?: Partial<TakeoffPageRow>) => {
       if (!projectId) {
-        setErrorText("Project is required before saving takeoff pages.");
+        setErrorText("Select a project before saving takeoff pages.");
         return null;
       }
 
@@ -808,7 +1055,7 @@ export default function TakeoffPage() {
       setErrorText(null);
 
       const pageNumber = activePage?.page_number || activePageNumber || 1;
-      let targetPage = activePage ?? (await ensurePage(pageNumber));
+      const targetPage = activePage ?? (await ensurePage(pageNumber));
       if (!targetPage) {
         setSaving(false);
         return null;
@@ -833,7 +1080,6 @@ export default function TakeoffPage() {
       }
 
       const updated = result.data as TakeoffPageRow;
-
       setPages((prev) =>
         prev.map((p) => (p.id === updated.id ? updated : p)).sort((a, b) => a.page_number - b.page_number)
       );
@@ -855,14 +1101,15 @@ export default function TakeoffPage() {
 
   const queueAutoSave = useCallback(
     (patch?: Partial<TakeoffPageRow>) => {
+      if (!projectId) return;
       if (autoSaveTimerRef.current) {
         window.clearTimeout(autoSaveTimerRef.current);
       }
       autoSaveTimerRef.current = window.setTimeout(() => {
         void saveActivePage(patch);
-      }, 550);
+      }, 500);
     },
-    [saveActivePage]
+    [projectId, saveActivePage]
   );
 
   const saveCalibrationToPage = useCallback(
@@ -1132,10 +1379,12 @@ export default function TakeoffPage() {
         unit: (calibration?.unit || "ft") as UnitType,
       });
     } else {
-      setCalibrationForm((prev) => ({
-        ...prev,
+      setCalibrationForm({
+        feet: calibration?.distance != null ? String(calibration.distance) : "",
+        inches: "",
+        fraction: "0",
         unit: (calibration?.unit || "ft") as UnitType,
-      }));
+      });
     }
   }, [calibration]);
 
@@ -1209,6 +1458,8 @@ export default function TakeoffPage() {
 
   const goToPage = useCallback(
     async (pageNumber: number) => {
+      if (!projectId) return;
+
       setActivePageNumber(pageNumber);
 
       const existing = pages.find((p) => p.page_number === pageNumber);
@@ -1222,10 +1473,11 @@ export default function TakeoffPage() {
         await hydratePageState(created);
       }
     },
-    [ensurePage, hydratePageState, pages]
+    [ensurePage, hydratePageState, pages, projectId]
   );
 
   const addPage = useCallback(async () => {
+    if (!projectId) return;
     const nextPageNumber =
       pages.length > 0 ? Math.max(...pages.map((p) => p.page_number)) + 1 : 1;
     const row = await ensurePage(nextPageNumber);
@@ -1234,7 +1486,7 @@ export default function TakeoffPage() {
       await hydratePageState(row);
       setStatus(`Page ${row.page_number} created`);
     }
-  }, [ensurePage, hydratePageState, pages, setStatus]);
+  }, [ensurePage, hydratePageState, pages, projectId, setStatus]);
 
   const handleViewerClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1254,8 +1506,46 @@ export default function TakeoffPage() {
   }, [loadUserContext]);
 
   useEffect(() => {
-    void resolveProjectContext();
-  }, [resolveProjectContext]);
+    if (!loading) {
+      void loadAvailableProjects();
+    }
+  }, [loadAvailableProjects, loading]);
+
+  useEffect(() => {
+    if (!loading) {
+      const nextProjectId =
+        contextProjectId || resolvedRouteProjectId || getProjectIdFallback() || null;
+
+      if (!nextProjectId) {
+        setProjectId(null);
+        setProjectName("");
+        return;
+      }
+
+      const projectFromContext =
+        (contextProject?.id === nextProjectId ? contextProject : null) ||
+        availableProjects.find((p) => p.id === nextProjectId) ||
+        null;
+
+      setProjectId(nextProjectId);
+      setProjectName(
+        getProjectDisplayName(projectFromContext) ||
+          contextProjectName ||
+          projectName ||
+          ""
+      );
+      persistProjectFallback(nextProjectId);
+    }
+  }, [
+    availableProjects,
+    contextProject,
+    contextProjectId,
+    contextProjectName,
+    loading,
+    persistProjectFallback,
+    projectName,
+    resolvedRouteProjectId,
+  ]);
 
   useEffect(() => {
     if (!loading && projectId) {
@@ -1303,9 +1593,7 @@ export default function TakeoffPage() {
             {m.type === "area" && m.points.length >= 3 && (
               <svg className="pointer-events-none absolute inset-0 h-full w-full">
                 <polygon
-                  points={m.points
-                    .map((p) => `${p.x * 100},${p.y * 100}`)
-                    .join(" ")}
+                  points={m.points.map((p) => `${p.x * 100},${p.y * 100}`).join(" ")}
                   fill="rgba(15,23,42,0.10)"
                   stroke={m.id === selectedMeasurementId ? "#0f172a" : "#334155"}
                   strokeWidth={m.id === selectedMeasurementId ? 3 : 2}
@@ -1418,6 +1706,66 @@ export default function TakeoffPage() {
     );
   };
 
+  const emptyState = (
+    <div className="flex h-full items-center justify-center p-6">
+      <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white">
+          <PencilRuler className="h-7 w-7" />
+        </div>
+        <h2 className="text-xl font-semibold tracking-tight text-slate-900">
+          Select a project to start takeoff
+        </h2>
+        <p className="mt-2 text-sm text-slate-500">
+          This page now stays usable even when no active project is already set.
+          Pick a project below and the takeoff session and first page will be created automatically.
+        </p>
+
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+          <select
+            value={projectId || ""}
+            onChange={async (e) => {
+              const next = availableProjects.find((p) => p.id === e.target.value) || null;
+              await applySelectedProject(next);
+            }}
+            disabled={projectsLoading || changingProject}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-slate-300 disabled:opacity-60"
+          >
+            <option value="">
+              {projectsLoading ? "Loading projects..." : "Select project"}
+            </option>
+            {availableProjects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {getProjectDisplayName(project) || project.id}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={async () => {
+              const first = availableProjects[0] || null;
+              if (first) {
+                await applySelectedProject(first);
+              }
+            }}
+            disabled={availableProjects.length === 0 || projectsLoading || changingProject}
+            className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {changingProject ? "Opening..." : "Select Project"}
+          </button>
+        </div>
+
+        <div className="mt-4 text-xs text-slate-500">
+          {availableProjects.length > 0
+            ? `${availableProjects.length} project${availableProjects.length === 1 ? "" : "s"} available`
+            : projectsLoading
+            ? "Loading available projects..."
+            : "No projects found for this user/company yet."}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="mx-auto flex h-screen max-w-[1800px] flex-col gap-3 p-3">
@@ -1444,11 +1792,34 @@ export default function TakeoffPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-[240px]">
+                  <select
+                    value={projectId || ""}
+                    onChange={async (e) => {
+                      const next =
+                        availableProjects.find((p) => p.id === e.target.value) || null;
+                      await applySelectedProject(next);
+                    }}
+                    disabled={projectsLoading || changingProject}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300 disabled:opacity-60"
+                  >
+                    <option value="">
+                      {projectsLoading ? "Loading projects..." : "Select project"}
+                    </option>
+                    {availableProjects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {getProjectDisplayName(project) || project.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
                   <button
                     type="button"
                     onClick={() => void goToPage(Math.max(1, activePageNumber - 1))}
-                    className="rounded-lg p-2 text-slate-600 hover:bg-white hover:text-slate-900"
+                    disabled={!canWork}
+                    className="rounded-lg p-2 text-slate-600 hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
                     title="Previous page"
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -1459,7 +1830,8 @@ export default function TakeoffPage() {
                   <button
                     type="button"
                     onClick={() => void goToPage(activePageNumber + 1)}
-                    className="rounded-lg p-2 text-slate-600 hover:bg-white hover:text-slate-900"
+                    disabled={!canWork}
+                    className="rounded-lg p-2 text-slate-600 hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
                     title="Next page"
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -1467,7 +1839,8 @@ export default function TakeoffPage() {
                   <button
                     type="button"
                     onClick={() => void addPage()}
-                    className="rounded-lg p-2 text-slate-600 hover:bg-white hover:text-slate-900"
+                    disabled={!canWork}
+                    className="rounded-lg p-2 text-slate-600 hover:bg-white hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
                     title="Add page"
                   >
                     <Plus className="h-4 w-4" />
@@ -1524,7 +1897,8 @@ export default function TakeoffPage() {
                 <button
                   type="button"
                   onClick={openCalibrationModal}
-                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+                  disabled={!canWork}
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Compass className="h-4 w-4" />
                   Calibration
@@ -1543,7 +1917,7 @@ export default function TakeoffPage() {
                 <button
                   type="button"
                   onClick={() => void saveActivePage()}
-                  disabled={!projectId || saving}
+                  disabled={!canWork || saving}
                   className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Save className="h-4 w-4" />
@@ -1566,6 +1940,7 @@ export default function TakeoffPage() {
                     <button
                       key={tool.key}
                       type="button"
+                      disabled={!canWork}
                       onClick={() => {
                         setErrorText(null);
                         setDrawMode(tool.key as DrawMode);
@@ -1580,7 +1955,8 @@ export default function TakeoffPage() {
                         "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition",
                         isActive
                           ? "bg-slate-900 text-white shadow-sm"
-                          : "text-slate-600 hover:bg-white hover:text-slate-900"
+                          : "text-slate-600 hover:bg-white hover:text-slate-900",
+                        !canWork && "cursor-not-allowed opacity-40"
                       )}
                     >
                       <Icon className="h-3.5 w-3.5" />
@@ -1589,7 +1965,7 @@ export default function TakeoffPage() {
                   );
                 })}
 
-                {viewerCapture?.mode === "area" && (
+                {viewerCapture?.mode === "area" && canWork && (
                   <>
                     <button
                       type="button"
@@ -1627,7 +2003,7 @@ export default function TakeoffPage() {
                   <Layers3 className="h-4 w-4" />
                   <span>{measurementSummary.total} items</span>
                   <span className="text-slate-300">|</span>
-                  <span>{statusText}</span>
+                  <span>{changingProject ? "Switching project..." : statusText}</span>
                 </div>
               </div>
             </div>
@@ -1663,592 +2039,555 @@ export default function TakeoffPage() {
           </div>
         )}
 
-        {!projectId && !loading && (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm">
-            No project context was found for this page. Open Takeoff from a selected
-            project route or pass <code>projectId</code> in the route/query.
-          </div>
-        )}
-
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[260px_minmax(0,1fr)_360px]">
-          <div className="min-h-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <div>
-                <h2 className="text-sm font-semibold text-slate-900">Pages</h2>
-                <p className="text-xs text-slate-500">
-                  Session drawings and page navigation
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void addPage()}
-                disabled={!projectId}
-                className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-                title="Add page"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex h-[calc(100%-73px)] flex-col">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Session
-                </label>
-                <select
-                  value={activeSessionId || ""}
-                  onChange={async (e) => {
-                    const nextSessionId = e.target.value || null;
-                    setActiveSessionId(nextSessionId);
-                    if (!nextSessionId) return;
-
-                    const loadedPages = await loadPages(nextSessionId);
-                    let nextPage =
-                      loadedPages.find((p) => p.page_number === activePageNumber) ||
-                      loadedPages[0] ||
-                      null;
-
-                    if (!nextPage) {
-                      nextPage = await ensurePage(1, nextSessionId);
-                    }
-
-                    if (nextPage) {
-                      setActivePageNumber(nextPage.page_number);
-                      await hydratePageState(nextPage);
-                    }
-                  }}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                >
-                  <option value="">
-                    {projectId ? "Create / Select session" : "No project context"}
-                  </option>
-                  {sessions.map((session) => (
-                    <option key={session.id} value={session.id}>
-                      {session.name || session.id}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
-                {pageLoading ? (
-                  <div className="px-3 py-8 text-center text-sm text-slate-500">
-                    Loading pages...
-                  </div>
-                ) : pages.length === 0 ? (
-                  <div className="px-3 py-8 text-center text-sm text-slate-500">
-                    {projectId
-                      ? "Preparing page 1..."
-                      : "Select a project to load takeoff pages."}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {pages.map((page) => {
-                      const isActive = page.page_number === activePageNumber;
-                      return (
-                        <button
-                          key={page.id}
-                          type="button"
-                          onClick={() => void goToPage(page.page_number)}
-                          className={clsx(
-                            "w-full rounded-xl border px-3 py-3 text-left transition",
-                            isActive
-                              ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-semibold">
-                                {page.title || page.file_name || `Page ${page.page_number}`}
-                              </div>
-                              <div
-                                className={clsx(
-                                  "truncate text-xs",
-                                  isActive ? "text-slate-300" : "text-slate-500"
-                                )}
-                              >
-                                Page {page.page_number}
-                              </div>
-                            </div>
-                            {page.calibration_scale ? (
-                              <span
-                                className={clsx(
-                                  "rounded-full px-2 py-1 text-[10px] font-semibold",
-                                  isActive
-                                    ? "bg-white/15 text-white"
-                                    : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
-                                )}
-                              >
-                                Calibrated
-                              </span>
-                            ) : null}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="min-h-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <div className="min-w-0">
-                <h2 className="truncate text-sm font-semibold text-slate-900">
-                  {activePageDisplayTitle}
-                </h2>
-                <p className="truncate text-xs text-slate-500">
-                  {activePage?.preview_url
-                    ? "Interactive drawing view"
-                    : "Add a drawing URL or upload a local preview"}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {calibrationReady && calibration && (
-                  <div className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                    {formatMeasurement(calibration.distance, calibration.unit)}
-                  </div>
-                )}
+        {!projectId ? (
+          emptyState
+        ) : (
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[260px_minmax(0,1fr)_360px]">
+            <div className="min-h-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">Pages</h2>
+                  <p className="text-xs text-slate-500">
+                    Session drawings and page navigation
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={() => void saveActivePage()}
-                  disabled={!projectId || saving}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => void addPage()}
+                  disabled={!canWork}
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Add page"
                 >
-                  Save View
+                  <Plus className="h-4 w-4" />
                 </button>
               </div>
-            </div>
 
-            <div className="flex h-[calc(100%-73px)] flex-col">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <div className="grid grid-cols-1 gap-2 lg:grid-cols-[1.1fr_1.4fr_auto]">
-                  <input
-                    value={pageTitleInput}
-                    onChange={(e) => {
-                      setPageTitleInput(e.target.value);
-                      queueAutoSave({ title: e.target.value });
-                    }}
-                    placeholder="Page title"
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                  />
-                  <input
-                    value={pageUrlInput}
-                    onChange={(e) => {
-                      setPageUrlInput(e.target.value);
-                      queueAutoSave({ preview_url: e.target.value });
-                    }}
-                    placeholder="Drawing URL / public file URL"
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                  />
-                  <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
-                    <Upload className="h-4 w-4" />
-                    Local Preview
-                    <input
-                      type="file"
-                      accept="image/*,.pdf"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const localUrl = URL.createObjectURL(file);
-                        const nextTitle = pageTitleInput || file.name;
-                        setPageTitleInput(nextTitle);
-                        setPageUrlInput(localUrl);
-                        queueAutoSave({
-                          title: nextTitle,
-                          file_name: file.name,
-                          preview_url: localUrl,
-                        });
-                        setStatus("Local preview attached");
-                      }}
-                    />
+              <div className="flex h-[calc(100%-73px)] flex-col">
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Session
                   </label>
-                </div>
-              </div>
+                  <select
+                    value={activeSessionId || ""}
+                    onChange={async (e) => {
+                      const nextSessionId = e.target.value || null;
+                      setActiveSessionId(nextSessionId);
+                      if (!nextSessionId) return;
 
-              <div className="min-h-0 flex-1 overflow-hidden bg-slate-50 p-3">
-                <div
-                  ref={viewerRef}
-                  onClick={handleViewerClick}
-                  className={clsx(
-                    "relative h-full w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner",
-                    drawMode === "pan" ? "cursor-default" : "cursor-crosshair"
-                  )}
-                >
-                  <div
-                    className="absolute inset-0 origin-center transition-transform"
-                    style={{
-                      transform: `scale(${zoom})`,
+                      const loadedPages = await loadPages(nextSessionId);
+                      let nextPage =
+                        loadedPages.find((p) => p.page_number === activePageNumber) ||
+                        loadedPages[0] ||
+                        null;
+
+                      if (!nextPage) {
+                        nextPage = await ensurePage(1, nextSessionId);
+                      }
+
+                      if (nextPage) {
+                        setActivePageNumber(nextPage.page_number);
+                        await hydratePageState(nextPage);
+                      }
                     }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
                   >
-                    {pageUrlInput ? (
-                      pageUrlInput.toLowerCase().includes(".pdf") ? (
-                        <iframe
-                          src={pageUrlInput}
-                          title="Drawing PDF"
-                          className="h-full w-full"
-                        />
-                      ) : (
-                        <img
-                          src={pageUrlInput}
-                          alt={activePageDisplayTitle}
-                          className={clsx(
-                            "h-full w-full",
-                            fitMode === "fit" ? "object-contain" : "object-none"
-                          )}
-                        />
-                      )
-                    ) : (
-                      <div className="flex h-full items-center justify-center">
-                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center">
-                          <PencilRuler className="mx-auto mb-3 h-8 w-8 text-slate-400" />
-                          <div className="text-sm font-semibold text-slate-700">
-                            No drawing loaded
-                          </div>
-                          <p className="mt-1 text-xs text-slate-500">
-                            Add a drawing URL above or attach a local file preview.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    {renderOverlay()}
-                  </div>
-
-                  <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-medium text-slate-700 shadow ring-1 ring-slate-200 backdrop-blur">
-                    Mode: {drawMode.toUpperCase()}
-                    {viewerCapture?.mode === "area" && (
-                      <span className="ml-2 text-violet-700">
-                        • {viewerCapture.points.length} points
-                      </span>
-                    )}
-                  </div>
+                    <option value="">Create / Select session</option>
+                    {sessions.map((session) => (
+                      <option key={session.id} value={session.id}>
+                        {session.name || session.id}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </div>
-            </div>
-          </div>
 
-          <div className="min-h-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-4 py-3">
-              <h2 className="text-sm font-semibold text-slate-900">
-                {TAB_OPTIONS.find((t) => t.key === tab)?.label}
-              </h2>
-              <p className="text-xs text-slate-500">
-                Context tools and page-specific data
-              </p>
-            </div>
-
-            <div className="h-[calc(100%-73px)] overflow-auto">
-              {tab === "drawings" && (
-                <div className="space-y-4 p-4">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="mb-2 text-sm font-semibold text-slate-900">
-                      Drawing Summary
+                <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
+                  {pageLoading ? (
+                    <div className="px-3 py-8 text-center text-sm text-slate-500">
+                      Loading pages...
                     </div>
-                    <div className="space-y-2 text-sm text-slate-600">
-                      <div className="flex justify-between gap-3">
-                        <span>Project</span>
-                        <span className="font-medium text-slate-900">
-                          {projectName || projectId || "—"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Page</span>
-                        <span className="font-medium text-slate-900">
-                          {activePageNumber}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Calibration</span>
-                        <span className="font-medium text-slate-900">
-                          {calibrationReady ? "Configured" : "Not set"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Measurements</span>
-                        <span className="font-medium text-slate-900">
-                          {measurementSummary.total}
-                        </span>
-                      </div>
+                  ) : pages.length === 0 ? (
+                    <div className="px-3 py-8 text-center text-sm text-slate-500">
+                      Preparing page 1...
                     </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={openCalibrationModal}
-                    className="flex w-full items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left hover:bg-emerald-100"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-emerald-800">
-                        Calibration
-                      </div>
-                      <div className="text-xs text-emerald-700">
-                        Manage saved scale and reset points
-                      </div>
-                    </div>
-                    <RefreshCcw className="h-4 w-4 text-emerald-700" />
-                  </button>
-                </div>
-              )}
-
-              {tab === "measurements" && (
-                <div className="flex h-full flex-col">
-                  <div className="grid grid-cols-3 gap-2 border-b border-slate-100 p-4">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                        Lines
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-slate-900">
-                        {measurementSummary.lines}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                        Areas
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-slate-900">
-                        {measurementSummary.areas}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                      <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                        Counts
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-slate-900">
-                        {measurementSummary.counts}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="min-h-0 flex-1 overflow-auto p-3">
-                    {filteredMeasurements.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
-                        No measurements yet. Use Line, Area, or Count on the drawing.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {filteredMeasurements.map((m) => (
-                          <div
-                            key={m.id}
+                  ) : (
+                    <div className="space-y-2">
+                      {pages.map((page) => {
+                        const isActive = page.page_number === activePageNumber;
+                        return (
+                          <button
+                            key={page.id}
+                            type="button"
+                            onClick={() => void goToPage(page.page_number)}
                             className={clsx(
-                              "rounded-2xl border p-3 transition",
-                              m.id === selectedMeasurementId
+                              "w-full rounded-xl border px-3 py-3 text-left transition",
+                              isActive
                                 ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                                : "border-slate-200 bg-white hover:border-slate-300"
+                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                             )}
                           >
-                            <button
-                              type="button"
-                              onClick={() => setSelectedMeasurementId(m.id)}
-                              className="w-full text-left"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-semibold">
-                                    {m.label}
-                                  </div>
-                                  <div
-                                    className={clsx(
-                                      "mt-1 text-xs",
-                                      m.id === selectedMeasurementId
-                                        ? "text-slate-300"
-                                        : "text-slate-500"
-                                    )}
-                                  >
-                                    {m.type.toUpperCase()} •{" "}
-                                    {formatMeasurement(m.value, m.unit)}
-                                  </div>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold">
+                                  {page.title || page.file_name || `Page ${page.page_number}`}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    void removeMeasurement(m.id);
-                                  }}
+                                <div
                                   className={clsx(
-                                    "rounded-lg p-2",
-                                    m.id === selectedMeasurementId
-                                      ? "hover:bg-white/10"
-                                      : "hover:bg-slate-100"
+                                    "truncate text-xs",
+                                    isActive ? "text-slate-300" : "text-slate-500"
                                   )}
                                 >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
+                                  Page {page.page_number}
+                                </div>
                               </div>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {selectedMeasurement && (
-                    <div className="border-t border-slate-100 p-4">
-                      <div className="mb-2 text-sm font-semibold text-slate-900">
-                        Edit Measurement
-                      </div>
-                      <div className="space-y-2">
-                        <input
-                          value={selectedMeasurement.label}
-                          onChange={(e) =>
-                            void updateMeasurement(selectedMeasurement.id, {
-                              label: e.target.value,
-                            })
-                          }
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="number"
-                            value={selectedMeasurement.value}
-                            onChange={(e) =>
-                              void updateMeasurement(selectedMeasurement.id, {
-                                value: Number(e.target.value || 0),
-                              })
-                            }
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                          />
-                          <input
-                            value={selectedMeasurement.unit}
-                            onChange={(e) =>
-                              void updateMeasurement(selectedMeasurement.id, {
-                                unit: e.target.value,
-                              })
-                            }
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                          />
-                        </div>
-                      </div>
+                              {page.calibration_scale ? (
+                                <span
+                                  className={clsx(
+                                    "rounded-full px-2 py-1 text-[10px] font-semibold",
+                                    isActive
+                                      ? "bg-white/15 text-white"
+                                      : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+                                  )}
+                                >
+                                  Calibrated
+                                </span>
+                              ) : null}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
-              )}
+              </div>
+            </div>
 
-              {tab === "details" && (
-                <div className="space-y-4 p-4">
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-900">
-                      Extracted Details / Notes
-                    </label>
-                    <textarea
-                      value={detailNotes}
-                      onChange={(e) => setDetailNotes(e.target.value)}
-                      rows={12}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-slate-300"
-                      placeholder="Store room names, wall types, slab notes, finish notes, or takeoff observations here."
-                    />
-                  </div>
+            <div className="min-h-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                <div className="min-w-0">
+                  <h2 className="truncate text-sm font-semibold text-slate-900">
+                    {activePageDisplayTitle}
+                  </h2>
+                  <p className="truncate text-xs text-slate-500">
+                    {activePage?.preview_url
+                      ? "Interactive drawing view"
+                      : "Add a drawing URL or upload a local preview"}
+                  </p>
                 </div>
-              )}
-
-              {tab === "boq" && (
-                <div className="space-y-4 p-4">
-                  <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-900">
-                      Linked BOQ / Estimate Reference
-                    </label>
-                    <input
-                      value={boqLink}
-                      onChange={(e) => setBoqLink(e.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-slate-300"
-                      placeholder="Paste BOQ ID, estimate link, or route reference"
-                    />
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-sm font-semibold text-slate-900">
-                      Measurement Rollup
+                <div className="flex items-center gap-2">
+                  {calibrationReady && calibration && (
+                    <div className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      {formatMeasurement(calibration.distance, calibration.unit)}
                     </div>
-                    <div className="mt-3 space-y-2 text-sm text-slate-600">
-                      <div className="flex justify-between gap-3">
-                        <span>Total items</span>
-                        <span className="font-medium text-slate-900">
-                          {measurementSummary.total}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Line measurements</span>
-                        <span className="font-medium text-slate-900">
-                          {measurementSummary.lines}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Area measurements</span>
-                        <span className="font-medium text-slate-900">
-                          {measurementSummary.areas}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-3">
-                        <span>Count items</span>
-                        <span className="font-medium text-slate-900">
-                          {measurementSummary.counts}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {tab === "settings" && (
-                <div className="space-y-4 p-4">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-sm font-semibold text-slate-900">
-                      Takeoff Session Settings
-                    </div>
-                    <div className="mt-3 space-y-3 text-sm">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-600">User</span>
-                        <span className="font-medium text-slate-900">
-                          {userId || "—"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-600">Company</span>
-                        <span className="font-medium text-slate-900">
-                          {companyId || "—"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-600">Project</span>
-                        <span className="font-medium text-slate-900">
-                          {projectName || projectId || "—"}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-600">Session</span>
-                        <span className="font-medium text-slate-900">
-                          {activeSessionId || "—"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
+                  )}
                   <button
                     type="button"
-                    onClick={async () => {
-                      setErrorText(null);
-                      await saveCalibrationToPage(null);
-                      setStatus("Calibration reset");
-                    }}
-                    className="flex w-full items-center justify-between rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left hover:bg-rose-100"
+                    onClick={() => void saveActivePage()}
+                    disabled={!canWork || saving}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <div>
-                      <div className="text-sm font-semibold text-rose-800">
-                        Reset Calibration
-                      </div>
-                      <div className="text-xs text-rose-700">
-                        Remove saved scale from this page
-                      </div>
-                    </div>
-                    <X className="h-4 w-4 text-rose-700" />
+                    Save View
                   </button>
                 </div>
-              )}
+              </div>
+
+              <div className="flex h-[calc(100%-73px)] flex-col">
+                <div className="border-b border-slate-100 px-4 py-3">
+                  <div className="grid grid-cols-1 gap-2 lg:grid-cols-[1.1fr_1.4fr_auto]">
+                    <input
+                      value={pageTitleInput}
+                      onChange={(e) => {
+                        setPageTitleInput(e.target.value);
+                        queueAutoSave({ title: e.target.value });
+                      }}
+                      placeholder="Page title"
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                    />
+                    <input
+                      value={pageUrlInput}
+                      onChange={(e) => {
+                        setPageUrlInput(e.target.value);
+                        queueAutoSave({ preview_url: e.target.value });
+                      }}
+                      placeholder="Drawing URL / public file URL"
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                    />
+                    <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+                      <Upload className="h-4 w-4" />
+                      Local Preview
+                      <input
+                        type="file"
+                        accept="image/*,.pdf"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const localUrl = URL.createObjectURL(file);
+                          const nextTitle = pageTitleInput || file.name;
+                          setPageTitleInput(nextTitle);
+                          setPageUrlInput(localUrl);
+                          queueAutoSave({
+                            title: nextTitle,
+                            file_name: file.name,
+                            preview_url: localUrl,
+                          });
+                          setStatus("Local preview attached");
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-hidden bg-slate-50 p-3">
+                  <div
+                    ref={viewerRef}
+                    onClick={handleViewerClick}
+                    className={clsx(
+                      "relative h-full w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner",
+                      drawMode === "pan" ? "cursor-default" : "cursor-crosshair"
+                    )}
+                  >
+                    <div
+                      className="absolute inset-0 origin-center transition-transform"
+                      style={{
+                        transform: `scale(${zoom})`,
+                      }}
+                    >
+                      {pageUrlInput ? (
+                        pageUrlInput.toLowerCase().includes(".pdf") ? (
+                          <iframe
+                            src={pageUrlInput}
+                            title="Drawing PDF"
+                            className="h-full w-full"
+                          />
+                        ) : (
+                          <img
+                            src={pageUrlInput}
+                            alt={activePageDisplayTitle}
+                            className={clsx(
+                              "h-full w-full",
+                              fitMode === "fit" ? "object-contain" : "object-none"
+                            )}
+                          />
+                        )
+                      ) : (
+                        <div className="flex h-full items-center justify-center">
+                          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center">
+                            <PencilRuler className="mx-auto mb-3 h-8 w-8 text-slate-400" />
+                            <div className="text-sm font-semibold text-slate-700">
+                              No drawing loaded
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Add a drawing URL above or attach a local file preview.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      {renderOverlay()}
+                    </div>
+
+                    <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-medium text-slate-700 shadow ring-1 ring-slate-200 backdrop-blur">
+                      Mode: {drawMode.toUpperCase()}
+                      {viewerCapture?.mode === "area" && (
+                        <span className="ml-2 text-violet-700">
+                          • {viewerCapture.points.length} points
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="min-h-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <h2 className="text-sm font-semibold text-slate-900">
+                  {TAB_OPTIONS.find((t) => t.key === tab)?.label}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Context tools and page-specific data
+                </p>
+              </div>
+
+              <div className="h-[calc(100%-73px)] overflow-auto">
+                {tab === "drawings" && (
+                  <div className="space-y-4 p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-2 text-sm font-semibold text-slate-900">
+                        Drawing Summary
+                      </div>
+                      <div className="space-y-2 text-sm text-slate-600">
+                        <div className="flex justify-between gap-3">
+                          <span>Project</span>
+                          <span className="font-medium text-slate-900">
+                            {projectName || projectId || "—"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Page</span>
+                          <span className="font-medium text-slate-900">
+                            {activePageNumber}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Calibration</span>
+                          <span className="font-medium text-slate-900">
+                            {calibrationReady ? "Configured" : "Not set"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Measurements</span>
+                          <span className="font-medium text-slate-900">
+                            {measurementSummary.total}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={openCalibrationModal}
+                      className="flex w-full items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left hover:bg-emerald-100"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold text-emerald-800">
+                          Calibration
+                        </div>
+                        <div className="text-xs text-emerald-700">
+                          Manage saved scale and reset points
+                        </div>
+                      </div>
+                      <RefreshCcw className="h-4 w-4 text-emerald-700" />
+                    </button>
+                  </div>
+                )}
+
+                {tab === "measurements" && (
+                  <div className="flex h-full flex-col">
+                    <div className="grid grid-cols-3 gap-2 border-b border-slate-100 p-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                          Lines
+                        </div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900">
+                          {measurementSummary.lines}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                          Areas
+                        </div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900">
+                          {measurementSummary.areas}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                          Counts
+                        </div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900">
+                          {measurementSummary.counts}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-auto p-3">
+                      {filteredMeasurements.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+                          No measurements yet. Use Line, Area, or Count tools to start.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {filteredMeasurements.map((row) => {
+                            const isActive = row.id === selectedMeasurementId;
+                            return (
+                              <div
+                                key={row.id}
+                                className={clsx(
+                                  "rounded-2xl border p-3",
+                                  isActive
+                                    ? "border-slate-900 bg-slate-900 text-white"
+                                    : "border-slate-200 bg-white"
+                                )}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedMeasurementId(row.id)}
+                                    className="min-w-0 flex-1 text-left"
+                                  >
+                                    <div className="truncate text-sm font-semibold">
+                                      {row.label}
+                                    </div>
+                                    <div
+                                      className={clsx(
+                                        "mt-1 text-xs",
+                                        isActive ? "text-slate-300" : "text-slate-500"
+                                      )}
+                                    >
+                                      {row.type.toUpperCase()} •{" "}
+                                      {formatMeasurement(row.value, row.unit)}
+                                    </div>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void removeMeasurement(row.id)}
+                                    className={clsx(
+                                      "rounded-lg p-2",
+                                      isActive
+                                        ? "text-slate-300 hover:bg-white/10 hover:text-white"
+                                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                                    )}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+
+                                {isActive && (
+                                  <div className="mt-3 grid grid-cols-1 gap-2">
+                                    <input
+                                      value={row.label}
+                                      onChange={(e) =>
+                                        void updateMeasurement(row.id, {
+                                          label: e.target.value,
+                                        })
+                                      }
+                                      className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-slate-300 outline-none"
+                                      placeholder="Measurement label"
+                                    />
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <input
+                                        value={row.value}
+                                        onChange={(e) =>
+                                          void updateMeasurement(row.id, {
+                                            value: Number(e.target.value || 0),
+                                          })
+                                        }
+                                        className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white outline-none"
+                                        placeholder="Value"
+                                        type="number"
+                                        step="0.01"
+                                      />
+                                      <input
+                                        value={row.unit}
+                                        onChange={(e) =>
+                                          void updateMeasurement(row.id, {
+                                            unit: e.target.value,
+                                          })
+                                        }
+                                        className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white outline-none"
+                                        placeholder="Unit"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {tab === "details" && (
+                  <div className="space-y-4 p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-2 text-sm font-semibold text-slate-900">
+                        Extracted Details
+                      </div>
+                      <textarea
+                        value={detailNotes}
+                        onChange={(e) => setDetailNotes(e.target.value)}
+                        placeholder="Store extracted notes, plan marks, room references, elevations, etc."
+                        className="min-h-[220px] w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-slate-300"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {tab === "boq" && (
+                  <div className="space-y-4 p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-2 text-sm font-semibold text-slate-900">
+                        BOQ Link / Reference
+                      </div>
+                      <input
+                        value={boqLink}
+                        onChange={(e) => setBoqLink(e.target.value)}
+                        placeholder="Paste linked BOQ id, route, or note"
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-slate-300"
+                      />
+                      <p className="mt-2 text-xs text-slate-500">
+                        Use this for a BOQ route, BOQ ID, estimate note, or future takeoff-to-BOQ mapping.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {tab === "settings" && (
+                  <div className="space-y-4 p-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-3 text-sm font-semibold text-slate-900">
+                        Page Settings
+                      </div>
+                      <div className="space-y-2 text-sm text-slate-600">
+                        <div className="flex justify-between gap-3">
+                          <span>Current project</span>
+                          <span className="font-medium text-slate-900">
+                            {projectName || projectId || "—"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Session</span>
+                          <span className="font-medium text-slate-900">
+                            {activeSessionId || "—"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Page</span>
+                          <span className="font-medium text-slate-900">
+                            {activePageNumber}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-3">
+                          <span>Calibration</span>
+                          <span className="font-medium text-slate-900">
+                            {calibrationReady
+                              ? formatMeasurement(
+                                  calibration?.distance || 0,
+                                  calibration?.unit || "ft"
+                                )
+                              : "Not set"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setErrorText(null);
+                        await saveCalibrationToPage(null);
+                        setStatus("Calibration reset");
+                      }}
+                      className="flex w-full items-center justify-between rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left hover:bg-rose-100"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold text-rose-800">
+                          Reset Calibration
+                        </div>
+                        <div className="text-xs text-rose-700">
+                          Remove saved scale from this page
+                        </div>
+                      </div>
+                      <X className="h-4 w-4 text-rose-700" />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {showCalibrationModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
