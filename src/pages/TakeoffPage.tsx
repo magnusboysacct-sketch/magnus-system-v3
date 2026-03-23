@@ -1707,28 +1707,32 @@ const [calibrationForm, setCalibrationForm] = useState({
 
       <div className="border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
-            (["select", "hand", "line", "area", "count", "volume"] as ToolMode[])
-              (mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                onClick={() => {
-  setToolMode(mode);
-  setDraftPoints([]);
-  setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
-}}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                    toolMode === mode
-                      ? "bg-slate-900 dark:bg-slate-900 text-white"
-                      : "bg-white text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  {mode === "select" ? "Select" : mode === "hand" ? "Hand" : mode[0].toUpperCase() + mode.slice(1)}
-                </button>
-              )
-            )}
-          </div>
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
+  {(["select", "hand", "line", "area", "count", "volume"] as ToolMode[]).map(
+    (mode) => (
+      <button
+        key={mode}
+        type="button"
+        onClick={() => {
+          setToolMode(mode);
+          setDraftPoints([]);
+          setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
+        }}
+        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+          toolMode === mode
+            ? "bg-slate-900 dark:bg-slate-900 text-white"
+            : "bg-white text-slate-700 hover:bg-slate-100"
+        }`}
+      >
+        {mode === "select"
+          ? "Select"
+          : mode === "hand"
+          ? "Hand"
+          : mode[0].toUpperCase() + mode.slice(1)}
+      </button>
+    )
+  )}
+</div>
 
           <div className="flex border-b bg-white px-2 text-sm">
   {[
