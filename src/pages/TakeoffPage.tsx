@@ -3064,72 +3064,43 @@ const [calibrationForm, setCalibrationForm] = useState({
                   Start / Restart
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCalibrationDraft({
-                      p1: null,
-                      p2: null,
-                      distanceText: "1",
-                      unit: "ft",
-                    });
-                    setCalibrationForm({
-                      feet: "",
-                      inches: "",
-                      fraction: "0",
-                      unit: "ft",
-                    });
-                  }}
-                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
-                >
-                  Reset
-                </button>
-              </div>
-            </div>
+             <button
+  type="button"
+  disabled={!calibrationDraft.p1 || !calibrationDraft.p2}
+  onClick={() => {
+    const p1 = calibrationDraft.p1;
+    const p2 = calibrationDraft.p2;
 
-            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
-              <button
-                type="button"
-                onClick={() => setShowCalibrationModal(false)}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
-              >
-                Cancel
-              </button>
+    if (!p1 || !p2) {
+      setErrorText("Click 'Start / Restart', then select two points on the drawing.");
+      return;
+    }
 
-              <button
-                type="button"
-                onClick={() => {
-                  const feet = Number(calibrationForm.feet || 0);
-                  const inches = Number(calibrationForm.inches || 0);
-                  const fraction = fractionToDecimal(calibrationForm.fraction);
+    const feet = Number(calibrationForm.feet || 0);
+    const inches = Number(calibrationForm.inches || 0);
+    const fraction = fractionToDecimal(calibrationForm.fraction);
 
-                  let distance = 0;
+    let distance = 0;
 
-                  if (calibrationForm.unit === "ft") {
-                    distance = feet + (inches + fraction) / 12;
-                  } else if (calibrationForm.unit === "in") {
-                    distance = feet * 12 + inches + fraction;
-                  } else {
-                    distance = feet + inches / 100 + fraction / 100;
-                  }
+    if (calibrationForm.unit === "ft") {
+      distance = feet + (inches + fraction) / 12;
+    } else if (calibrationForm.unit === "in") {
+      distance = feet * 12 + inches + fraction;
+    } else {
+      distance = Number(calibrationForm.feet || 0);
+    }
 
-                  setCalibrationDraft((prev) => ({
-                    ...prev,
-                    distanceText: String(distance || 0),
-                    unit: calibrationForm.unit,
-                  }));
-
-                  commitCalibration();
-                  setShowCalibrationModal(false);
-                }}
-                className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-              >
-                Apply Calibration
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+    commitCalibrationWithValues(p1, p2, distance, calibrationForm.unit);
+    setShowCalibrationModal(false);
+  }}
+  className={`rounded-xl px-4 py-2 text-sm font-medium text-white ${
+    calibrationDraft.p1 && calibrationDraft.p2
+      ? "bg-slate-800 hover:bg-slate-700"
+      : "cursor-not-allowed bg-slate-300"
+  }`}
+>
+  Apply Calibration
+</button>
 
       <ExportToBOQModal
         isOpen={showExportModal}
