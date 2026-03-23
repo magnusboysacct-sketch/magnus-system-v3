@@ -1794,7 +1794,7 @@ const [calibrationForm, setCalibrationForm] = useState({
             </div>
           )}
 
-        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+       <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
   <button
     type="button"
     onClick={() => setShowCalibrationModal(true)}
@@ -1804,43 +1804,9 @@ const [calibrationForm, setCalibrationForm] = useState({
   </button>
 
   <span className="text-xs text-slate-500">
-    {calibrationScale
-      ? `Calibrated (${calibrationUnit})`
-      : "Not calibrated"}
+    {calibrationScale ? `Calibrated (${calibrationUnit})` : "Not calibrated"}
   </span>
 </div>
-            <input
-              value={calibrationDraft.distanceText}
-              onChange={(e) =>
-                setCalibrationDraft((prev) => ({
-                  ...prev,
-                  distanceText: e.target.value,
-                }))
-              }
-              className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none"
-            />
-            <select
-              value={calibrationDraft.unit}
-              onChange={(e) =>
-                setCalibrationDraft((prev) => ({
-                  ...prev,
-                  unit: e.target.value as UnitSystem,
-                }))
-              }
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none"
-            >
-              <option value="ft">ft</option>
-              <option value="m">m</option>
-              <option value="in">in</option>
-            </select>
-            <button
-              type="button"
-              onClick={commitCalibration}
-              className="rounded-lg bg-slate-800 dark:bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-800"
-            >
-              Apply
-            </button>
-          </div>
 
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
             <span className="text-xs uppercase tracking-wide text-slate-500">Volume Depth</span>
