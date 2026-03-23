@@ -334,7 +334,7 @@ function buildMeasurementFromDraft(args: {
     sort_order: 0,
   };
 }
-const commitCalibrationWithValues = useCallback(
+
   (p1: Point, p2: Point, distance: number, unit: UnitSystem) => {
     if (!Number.isFinite(distance) || distance <= 0) {
       setErrorText("Calibration requires a valid distance.");
@@ -1285,6 +1285,7 @@ const [calibrationForm, setCalibrationForm] = useState({
     return { x, y };
   }, [basePageSize.width, basePageSize.height]);
 
+  const commitCalibrationWithValues = useCallback(
   const commitCalibration = useCallback(() => {
     const p1 = calibrationDraft.p1;
     const p2 = calibrationDraft.p2;
