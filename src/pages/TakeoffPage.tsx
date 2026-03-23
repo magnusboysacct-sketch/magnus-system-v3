@@ -334,6 +334,78 @@ function buildMeasurementFromDraft(args: {
     sort_order: 0,
   };
 }
+const commitCalibrationWithValues = useCallback(
+  (p1: Point, p2: Point, distance: number, unit: UnitSystem) => {
+    if (!Number.isFinite(distance) || distance <= 0) {
+      setErrorText("Calibration requires a valid distance.");
+      return;
+    }
+
+    const pxDistance = distanceBetween(p1, p2);
+    if (pxDistance <= 0) {
+      setErrorText("Calibration points are invalid.");
+      return;
+    }
+
+    const scale = distance / pxDistance;
+
+    setPageRows((prev) => {
+      const found = prev.find((p) => p.page_number === currentPage);
+      if (found) {
+        return prev.map((p) =>
+          p.page_number === currentPage
+            ? {
+                ...p,
+                session_id: session?.id ?? p.session_id,
+                calibration_point_1: p1,
+                calibration_point_2: p2,
+                calibration_distance: distance,
+                calibration_unit: unit,
+                calibration_scale: scale,
+                updated_at: new Date().toISOString(),
+              }
+            : p
+        );
+      }
+
+      if (!session) return prev;
+
+      return [
+        ...prev,
+        {
+          session_id: session.id,
+          page_number: currentPage,
+          width: basePageSize.width,
+          height: basePageSize.height,
+          calibration_point_1: p1,
+          calibration_point_2: p2,
+          calibration_distance: distance,
+          calibration_unit: unit,
+          calibration_scale: scale,
+          updated_at: new Date().toISOString(),
+        },
+      ];
+    });
+
+    setMeasurements((prev) =>
+      prev.map((m) => {
+        if (m.page_number !== currentPage) return m;
+        return recalculateMeasurement(m, scale, unit);
+      })
+    );
+
+    setCalibrationDraft({
+      p1,
+      p2,
+      distanceText: String(distance),
+      unit,
+    });
+
+    setToolMode("select");
+    setDraftPoints([]);
+  },
+  [currentPage, basePageSize, session]
+);
 
 function recalculateMeasurement(measurement: MeasurementRow, scale: number, baseUnit: UnitSystem): MeasurementRow {
   const lengthPx = measurement.raw_length ?? 0;
