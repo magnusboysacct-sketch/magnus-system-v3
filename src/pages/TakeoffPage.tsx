@@ -1713,11 +1713,13 @@ const [calibrationForm, setCalibrationForm] = useState({
                 <button
                   key={mode}
                   type="button"
-               onClick={() => {
-  setToolMode(mode);
-  setDraftPoints([]);
-  setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
-}}
+                  onClick={() => {
+                    setToolMode(mode);
+                    setDraftPoints([]);
+                    if (mode !== "calibrate") {
+                      setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
+                    }
+                  }}
                   className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
                     toolMode === mode
                       ? "bg-slate-900 dark:bg-slate-900 text-white"
