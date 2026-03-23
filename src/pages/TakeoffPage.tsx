@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
   ChevronLeft,
@@ -40,12 +41,11 @@ type MainTab =
   | "settings";
 
 type DrawMode = "pan" | "calibration" | "line" | "area" | "count";
-
 type UnitType = "ft" | "m" | "in" | "mm";
 
 type Point = {
-  x: number; // normalized 0..1
-  y: number; // normalized 0..1
+  x: number;
+  y: number;
 };
 
 type CalibrationDraft = {
@@ -67,7 +67,7 @@ type CalibrationState = {
   p2: Point | null;
   distance: number;
   unit: UnitType;
-  scale: number; // real-world units per normalized viewer distance
+  scale: number;
 };
 
 type MeasurementRow = {
@@ -115,23 +115,18 @@ type TakeoffPageRow = {
 };
 
 type ViewerClickCapture =
-  | {
-      mode: "calibration";
-      points: Point[];
-    }
-  | {
-      mode: "line";
-      points: Point[];
-    }
-  | {
-      mode: "area";
-      points: Point[];
-    }
-  | {
-      mode: "count";
-      points: Point[];
-    }
+  | { mode: "calibration"; points: Point[] }
+  | { mode: "line"; points: Point[] }
+  | { mode: "area"; points: Point[] }
+  | { mode: "count"; points: Point[] }
   | null;
+
+type ProjectRow = {
+  id: string;
+  name?: string | null;
+  project_name?: string | null;
+  title?: string | null;
+};
 
 const TAB_OPTIONS: Array<{
   key: MainTab;
@@ -239,19 +234,6 @@ function tryParseStoredJson<T>(value: string | null, fallback: T): T {
   }
 }
 
-function getProjectIdFallback() {
-  const candidates = [
-    new URLSearchParams(window.location.search).get("projectId"),
-    new URLSearchParams(window.location.search).get("project_id"),
-    localStorage.getItem("magnus:selectedProjectId"),
-    localStorage.getItem("selectedProjectId"),
-    localStorage.getItem("projectId"),
-    sessionStorage.getItem("magnus:selectedProjectId"),
-    sessionStorage.getItem("selectedProjectId"),
-  ];
-  return candidates.find(Boolean) || null;
-}
-
 function getLocalMeasurementsKey(pageId: string | null) {
   return `magnus_takeoff_measurements_${pageId || "none"}`;
 }
@@ -260,17 +242,29 @@ function getLocalPageStateKey(pageId: string | null) {
   return `magnus_takeoff_page_state_${pageId || "none"}`;
 }
 
+function getProjectIdFallback() {
+  const candidates = [
+    localStorage.getItem("magnus:selectedProjectId"),
+    localStorage.getItem("selectedProjectId"),
+    localStorage.getItem("projectId"),
+    sessionStorage.getItem("magnus:selectedProjectId"),
+    sessionStorage.getItem("selectedProjectId"),
+    sessionStorage.getItem("projectId"),
+  ];
+  return candidates.find(Boolean) || null;
+}
+
 async function safeUpsertTakeoffPage(payload: Record<string, any>) {
-  const attempts: Array<Record<string, any>> = [
+  const candidates: Array<Record<string, any>> = [
     payload,
     {
       session_id: payload.session_id,
       page_number: payload.page_number,
       project_id: payload.project_id,
       company_id: payload.company_id,
-      title: payload.title,
-      file_name: payload.file_name,
-      preview_url: payload.preview_url,
+      title: payload.title ?? null,
+      file_name: payload.file_name ?? null,
+      preview_url: payload.preview_url ?? null,
       rotation: payload.rotation ?? 0,
       calibration_unit: payload.calibration_unit ?? null,
       calibration_distance: payload.calibration_distance ?? null,
@@ -284,25 +278,17 @@ async function safeUpsertTakeoffPage(payload: Record<string, any>) {
       session_id: payload.session_id,
       page_number: payload.page_number,
       project_id: payload.project_id,
-      title: payload.title,
-      file_name: payload.file_name,
-      preview_url: payload.preview_url,
-    },
-    {
-      session_id: payload.session_id,
-      page_number: payload.page_number,
-      project_id: payload.project_id,
+      company_id: payload.company_id,
+      title: payload.title ?? null,
     },
   ];
 
   let lastError: any = null;
 
-  for (const candidate of attempts) {
+  for (const candidate of candidates) {
     const result = await supabase
       .from("takeoff_pages")
-      .upsert(candidate, {
-        onConflict: "session_id,page_number",
-      })
+      .upsert(candidate, { onConflict: "session_id,page_number" })
       .select("*")
       .single();
 
@@ -310,16 +296,36 @@ async function safeUpsertTakeoffPage(payload: Record<string, any>) {
     lastError = result.error;
   }
 
-  return { data: null, error: lastError };
+  const fallback = await supabase
+    .from("takeoff_pages")
+    .select("*")
+    .eq("session_id", payload.session_id)
+    .eq("page_number", payload.page_number)
+    .maybeSingle();
+
+  if (!fallback.error && fallback.data) {
+    return { data: fallback.data, error: null };
+  }
+
+  return { data: null, error: lastError || fallback.error };
 }
 
-async function safeUpdateTakeoffPage(
-  pageId: string,
-  payload: Record<string, any>
-) {
-  const attempts: Array<Record<string, any>> = [
-    payload,
-    {
+async function safeUpdateTakeoffPage(pageId: string, payload: Record<string, any>) {
+  const cleaned = Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined)
+  );
+
+  const result = await supabase
+    .from("takeoff_pages")
+    .update(cleaned)
+    .eq("id", pageId)
+    .select("*")
+    .single();
+
+  if (!result.error && result.data) return result;
+
+  const lighter = Object.fromEntries(
+    Object.entries({
       title: payload.title,
       file_name: payload.file_name,
       preview_url: payload.preview_url,
@@ -331,38 +337,26 @@ async function safeUpdateTakeoffPage(
       calibration_p1_y: payload.calibration_p1_y,
       calibration_p2_x: payload.calibration_p2_x,
       calibration_p2_y: payload.calibration_p2_y,
-    },
-    {
-      title: payload.title,
-      file_name: payload.file_name,
-      preview_url: payload.preview_url,
-      rotation: payload.rotation,
-    },
-  ];
+    }).filter(([, value]) => value !== undefined)
+  );
 
-  let lastError: any = null;
-  for (const candidate of attempts) {
-    const cleaned = Object.fromEntries(
-      Object.entries(candidate).filter(([, v]) => v !== undefined)
-    );
-
-    const result = await supabase
-      .from("takeoff_pages")
-      .update(cleaned)
-      .eq("id", pageId)
-      .select("*")
-      .single();
-
-    if (!result.error && result.data) return result;
-    lastError = result.error;
-  }
-
-  return { data: null, error: lastError };
+  return supabase
+    .from("takeoff_pages")
+    .update(lighter)
+    .eq("id", pageId)
+    .select("*")
+    .single();
 }
 
 export default function TakeoffPage() {
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const autoSaveTimerRef = useRef<number | null>(null);
+  const bootstrapKeyRef = useRef<string>("");
+
+  const routeParams = useParams();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+
   const [tab, setTab] = useState<MainTab>("drawings");
   const [drawMode, setDrawMode] = useState<DrawMode>("pan");
   const [zoom, setZoom] = useState(1);
@@ -376,7 +370,9 @@ export default function TakeoffPage() {
 
   const [userId, setUserId] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState<string | null>(getProjectIdFallback());
+
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string>("");
 
   const [sessions, setSessions] = useState<TakeoffSessionRow[]>([]);
   const [pages, setPages] = useState<TakeoffPageRow[]>([]);
@@ -404,6 +400,17 @@ export default function TakeoffPage() {
   const [detailNotes, setDetailNotes] = useState("");
   const [boqLink, setBoqLink] = useState("");
 
+  const activePageId = activePage?.id || null;
+
+  const resolvedRouteProjectId =
+    (routeParams as Record<string, string | undefined>).projectId ||
+    (routeParams as Record<string, string | undefined>).id ||
+    searchParams.get("projectId") ||
+    searchParams.get("project_id") ||
+    ((location.state as any)?.projectId as string | undefined) ||
+    ((location.state as any)?.selectedProjectId as string | undefined) ||
+    null;
+
   const selectedMeasurement = useMemo(
     () => measurements.find((m) => m.id === selectedMeasurementId) || null,
     [measurements, selectedMeasurementId]
@@ -423,11 +430,7 @@ export default function TakeoffPage() {
 
   const activePageDisplayTitle = useMemo(() => {
     if (!activePage) return "Untitled Page";
-    return (
-      activePage.title ||
-      activePage.file_name ||
-      `Page ${activePage.page_number}`
-    );
+    return activePage.title || activePage.file_name || `Page ${activePage.page_number}`;
   }, [activePage]);
 
   const measurementSummary = useMemo(() => {
@@ -437,13 +440,13 @@ export default function TakeoffPage() {
     return { lines, areas, counts, total: measurements.length };
   }, [measurements]);
 
-  const calibrationReady = Boolean(calibration?.p1 && calibration?.p2 && calibration?.scale);
+  const calibrationReady = Boolean(
+    calibration?.p1 && calibration?.p2 && calibration?.scale
+  );
 
   const setStatus = useCallback((text: string) => {
     setStatusText(text);
   }, []);
-
-  const activePageId = activePage?.id || null;
 
   const persistLocalPageState = useCallback(
     (pageId: string | null, next: Partial<{ detailNotes: string; boqLink: string }>) => {
@@ -495,156 +498,51 @@ export default function TakeoffPage() {
 
     setUserId(user.id);
 
-    const profile = await supabase
+    const profileResult = await supabase
       .from("user_profiles")
       .select("company_id")
       .eq("id", user.id)
       .maybeSingle();
 
-    if (!profile.error) {
-      setCompanyId(profile.data?.company_id || null);
+    if (profileResult.error) {
+      setErrorText(profileResult.error.message);
     }
 
+    setCompanyId(profileResult.data?.company_id || null);
     setLoading(false);
   }, []);
 
-  const loadSessions = useCallback(async () => {
-    if (!projectId) {
-      setSessions([]);
+  const resolveProjectContext = useCallback(async () => {
+    const candidate = resolvedRouteProjectId || getProjectIdFallback() || null;
+    setProjectId(candidate);
+
+    if (candidate) {
+      localStorage.setItem("magnus:selectedProjectId", candidate);
+      sessionStorage.setItem("magnus:selectedProjectId", candidate);
+    }
+
+    if (!candidate) {
+      setProjectName("");
       return;
     }
 
-    let query = supabase
-      .from("takeoff_sessions")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("updated_at", { ascending: false });
+    const projectResult = await supabase
+      .from("projects")
+      .select("id,name,project_name,title")
+      .eq("id", candidate)
+      .maybeSingle();
 
-    if (companyId) query = query.eq("company_id", companyId);
-
-    const result = await query;
-    if (result.error) {
-      setErrorText(result.error.message);
+    if (!projectResult.error && projectResult.data) {
+      const project = projectResult.data as ProjectRow;
+      setProjectName(project.name || project.project_name || project.title || "");
       return;
     }
 
-    const rows = (result.data || []) as TakeoffSessionRow[];
-    setSessions(rows);
+    setProjectName("");
+  }, [resolvedRouteProjectId]);
 
-    if (!activeSessionId && rows.length > 0) {
-      setActiveSessionId(rows[0].id);
-    }
-  }, [activeSessionId, companyId, projectId]);
-
-  const ensureSession = useCallback(async () => {
-    if (!projectId) {
-      setErrorText("Select or load a project before saving takeoff pages.");
-      return null;
-    }
-
-    if (activeSessionId) return activeSessionId;
-
-    const payload: Record<string, any> = {
-      project_id: projectId,
-      name: `Takeoff ${new Date().toLocaleDateString()}`,
-      status: "active",
-    };
-    if (companyId) payload.company_id = companyId;
-
-    const created = await supabase
-      .from("takeoff_sessions")
-      .insert(payload)
-      .select("*")
-      .single();
-
-    if (created.error || !created.data) {
-      setErrorText(created.error?.message || "Failed to create takeoff session.");
-      return null;
-    }
-
-    const session = created.data as TakeoffSessionRow;
-    setActiveSessionId(session.id);
-    setSessions((prev) => [session, ...prev]);
-    return session.id;
-  }, [activeSessionId, companyId, projectId]);
-
-  const loadPages = useCallback(
-    async (sessionId: string) => {
-      setPageLoading(true);
-      const result = await supabase
-        .from("takeoff_pages")
-        .select("*")
-        .eq("session_id", sessionId)
-        .order("page_number", { ascending: true });
-
-      setPageLoading(false);
-
-      if (result.error) {
-        setErrorText(result.error.message);
-        setPages([]);
-        setActivePage(null);
-        return;
-      }
-
-      const rows = (result.data || []) as TakeoffPageRow[];
-      setPages(rows);
-
-      if (rows.length === 0) {
-        setActivePage(null);
-        return;
-      }
-
-      const matching =
-        rows.find((p) => p.page_number === activePageNumber) || rows[0];
-      setActivePageNumber(matching.page_number);
-      setActivePage(matching);
-    },
-    [activePageNumber]
-  );
-
-  const hydratePageState = useCallback(
-    async (page: TakeoffPageRow | null) => {
-      setActivePage(page);
-      if (!page) {
-        setMeasurements([]);
-        setSelectedMeasurementId(null);
-        setCalibration(null);
-        setPageTitleInput("");
-        setPageUrlInput("");
-        setDetailNotes("");
-        setBoqLink("");
-        return;
-      }
-
-      setPageTitleInput(page.title || page.file_name || "");
-      setPageUrlInput(page.preview_url || "");
-
-      const localState = loadLocalPageState(page.id);
-      setDetailNotes(localState.detailNotes || "");
-      setBoqLink(localState.boqLink || "");
-
-      const nextCalibration =
-        page.calibration_scale &&
-        page.calibration_distance &&
-        page.calibration_unit &&
-        Number.isFinite(page.calibration_scale)
-          ? {
-              p1:
-                page.calibration_p1_x != null && page.calibration_p1_y != null
-                  ? { x: Number(page.calibration_p1_x), y: Number(page.calibration_p1_y) }
-                  : null,
-              p2:
-                page.calibration_p2_x != null && page.calibration_p2_y != null
-                  ? { x: Number(page.calibration_p2_x), y: Number(page.calibration_p2_y) }
-                  : null,
-              distance: Number(page.calibration_distance),
-              unit: page.calibration_unit as UnitType,
-              scale: Number(page.calibration_scale),
-            }
-          : null;
-
-      setCalibration(nextCalibration);
-
+  const loadMeasurementsFromDb = useCallback(
+    async (page: TakeoffPageRow, nextCalibration: CalibrationState | null) => {
       const localMeasurements = loadMeasurementsLocal(page.id);
 
       const dbRows = await supabase
@@ -674,20 +572,153 @@ export default function TakeoffPage() {
         setMeasurements(mapped);
         setSelectedMeasurementId(mapped[0]?.id || null);
         saveMeasurementsLocal(page.id, mapped);
-      } else {
-        setMeasurements(localMeasurements);
-        setSelectedMeasurementId(localMeasurements[0]?.id || null);
+        return;
       }
+
+      setMeasurements(localMeasurements);
+      setSelectedMeasurementId(localMeasurements[0]?.id || null);
     },
-    [loadLocalPageState, loadMeasurementsLocal, saveMeasurementsLocal]
+    [loadMeasurementsLocal, saveMeasurementsLocal]
+  );
+
+  const hydratePageState = useCallback(
+    async (page: TakeoffPageRow | null) => {
+      setActivePage(page);
+
+      if (!page) {
+        setMeasurements([]);
+        setSelectedMeasurementId(null);
+        setCalibration(null);
+        setPageTitleInput("");
+        setPageUrlInput("");
+        setDetailNotes("");
+        setBoqLink("");
+        return;
+      }
+
+      setPageTitleInput(page.title || page.file_name || "");
+      setPageUrlInput(page.preview_url || "");
+
+      const localState = loadLocalPageState(page.id);
+      setDetailNotes(localState.detailNotes || "");
+      setBoqLink(localState.boqLink || "");
+
+      const nextCalibration =
+        page.calibration_scale &&
+        page.calibration_distance &&
+        page.calibration_unit &&
+        Number.isFinite(Number(page.calibration_scale))
+          ? {
+              p1:
+                page.calibration_p1_x != null && page.calibration_p1_y != null
+                  ? {
+                      x: Number(page.calibration_p1_x),
+                      y: Number(page.calibration_p1_y),
+                    }
+                  : null,
+              p2:
+                page.calibration_p2_x != null && page.calibration_p2_y != null
+                  ? {
+                      x: Number(page.calibration_p2_x),
+                      y: Number(page.calibration_p2_y),
+                    }
+                  : null,
+              distance: Number(page.calibration_distance),
+              unit: page.calibration_unit as UnitType,
+              scale: Number(page.calibration_scale),
+            }
+          : null;
+
+      setCalibration(nextCalibration);
+      await loadMeasurementsFromDb(page, nextCalibration);
+    },
+    [loadLocalPageState, loadMeasurementsFromDb]
+  );
+
+  const ensureSession = useCallback(async () => {
+    if (!projectId) return null;
+
+    if (activeSessionId) return activeSessionId;
+
+    let query = supabase
+      .from("takeoff_sessions")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+
+    if (companyId) query = query.eq("company_id", companyId);
+
+    const existing = await query.maybeSingle();
+
+    if (!existing.error && existing.data) {
+      const session = existing.data as TakeoffSessionRow;
+      setSessions((prev) => {
+        const next = [session, ...prev.filter((row) => row.id !== session.id)];
+        return next;
+      });
+      setActiveSessionId(session.id);
+      return session.id;
+    }
+
+    const createPayload: Record<string, any> = {
+      project_id: projectId,
+      name: `Takeoff ${new Date().toLocaleDateString()}`,
+      status: "active",
+    };
+    if (companyId) createPayload.company_id = companyId;
+
+    const created = await supabase
+      .from("takeoff_sessions")
+      .insert(createPayload)
+      .select("*")
+      .single();
+
+    if (created.error || !created.data) {
+      setErrorText(created.error?.message || "Failed to create takeoff session.");
+      return null;
+    }
+
+    const session = created.data as TakeoffSessionRow;
+    setSessions([session]);
+    setActiveSessionId(session.id);
+    return session.id;
+  }, [activeSessionId, companyId, projectId]);
+
+  const loadPages = useCallback(
+    async (sessionId: string) => {
+      setPageLoading(true);
+
+      const result = await supabase
+        .from("takeoff_pages")
+        .select("*")
+        .eq("session_id", sessionId)
+        .order("page_number", { ascending: true });
+
+      setPageLoading(false);
+
+      if (result.error) {
+        setErrorText(result.error.message);
+        setPages([]);
+        setActivePage(null);
+        return [];
+      }
+
+      const rows = (result.data || []) as TakeoffPageRow[];
+      setPages(rows);
+      return rows;
+    },
+    []
   );
 
   const ensurePage = useCallback(
-    async (pageNumber: number) => {
-      const sessionId = await ensureSession();
+    async (pageNumber: number, sessionIdOverride?: string | null) => {
+      const sessionId = sessionIdOverride || (await ensureSession());
       if (!sessionId || !projectId) return null;
 
-      const existing = pages.find((p) => p.page_number === pageNumber);
+      const existing = pages.find(
+        (p) => p.session_id === sessionId && p.page_number === pageNumber
+      );
       if (existing) return existing;
 
       const payload: Record<string, any> = {
@@ -710,13 +741,61 @@ export default function TakeoffPage() {
 
       const row = result.data as TakeoffPageRow;
       setPages((prev) => {
-        const others = prev.filter((p) => p.id !== row.id && p.page_number !== row.page_number);
-        return [...others, row].sort((a, b) => a.page_number - b.page_number);
+        const otherRows = prev.filter(
+          (p) => !(p.session_id === row.session_id && p.page_number === row.page_number)
+        );
+        return [...otherRows, row].sort((a, b) => a.page_number - b.page_number);
       });
+
       return row;
     },
     [companyId, ensureSession, pages, projectId]
   );
+
+  const bootstrapTakeoff = useCallback(async () => {
+    if (loading) return;
+    if (!projectId) return;
+
+    const bootstrapKey = `${companyId || "no-company"}:${projectId}`;
+    if (bootstrapKeyRef.current === bootstrapKey && activeSessionId && pages.length > 0) {
+      return;
+    }
+
+    bootstrapKeyRef.current = bootstrapKey;
+    setErrorText(null);
+
+    const sessionId = await ensureSession();
+    if (!sessionId) return;
+
+    const loadedPages = await loadPages(sessionId);
+    let targetPage =
+      loadedPages.find((p) => p.page_number === activePageNumber) ||
+      loadedPages[0] ||
+      null;
+
+    if (!targetPage) {
+      targetPage = await ensurePage(1, sessionId);
+    }
+
+    if (!targetPage) return;
+
+    setActiveSessionId(sessionId);
+    setActivePageNumber(targetPage.page_number);
+    await hydratePageState(targetPage);
+    setStatus("Takeoff ready");
+  }, [
+    activePageNumber,
+    activeSessionId,
+    companyId,
+    ensurePage,
+    ensureSession,
+    hydratePageState,
+    loadPages,
+    loading,
+    pages.length,
+    projectId,
+    setStatus,
+  ]);
 
   const saveActivePage = useCallback(
     async (patch?: Partial<TakeoffPageRow>) => {
@@ -728,7 +807,7 @@ export default function TakeoffPage() {
       setSaving(true);
       setErrorText(null);
 
-      const pageNumber = activePage?.page_number || activePageNumber;
+      const pageNumber = activePage?.page_number || activePageNumber || 1;
       let targetPage = activePage ?? (await ensurePage(pageNumber));
       if (!targetPage) {
         setSaving(false);
@@ -746,7 +825,6 @@ export default function TakeoffPage() {
       };
 
       const result = await safeUpdateTakeoffPage(targetPage.id, payload);
-
       setSaving(false);
 
       if (result.error || !result.data) {
@@ -755,6 +833,7 @@ export default function TakeoffPage() {
       }
 
       const updated = result.data as TakeoffPageRow;
+
       setPages((prev) =>
         prev.map((p) => (p.id === updated.id ? updated : p)).sort((a, b) => a.page_number - b.page_number)
       );
@@ -789,7 +868,6 @@ export default function TakeoffPage() {
   const saveCalibrationToPage = useCallback(
     async (nextCalibration: CalibrationState | null) => {
       setCalibration(nextCalibration);
-      if (!activePage && !projectId) return;
 
       const patch: Partial<TakeoffPageRow> = nextCalibration
         ? {
@@ -813,54 +891,51 @@ export default function TakeoffPage() {
 
       await saveActivePage(patch);
     },
-    [activePage, projectId, saveActivePage]
+    [saveActivePage]
   );
 
-  const saveMeasurementDb = useCallback(
-    async (row: MeasurementRow) => {
-      if (!row.page_id) return;
+  const saveMeasurementDb = useCallback(async (row: MeasurementRow) => {
+    if (!row.page_id) return;
 
-      const payloadVariants: Array<Record<string, any>> = [
-        {
-          id: row.id,
-          page_id: row.page_id,
-          type: row.type,
-          label: row.label,
-          unit: row.unit,
-          value: row.value,
-          points_json: row.points,
-        },
-        {
-          id: row.id,
-          page_id: row.page_id,
-          type: row.type,
-          label: row.label,
-          unit: row.unit,
-          value: row.value,
-          points: row.points,
-        },
-        {
-          id: row.id,
-          page_id: row.page_id,
-          type: row.type,
-          label: row.label,
-          unit: row.unit,
-          value: row.value,
-        },
-      ];
+    const candidates: Array<Record<string, any>> = [
+      {
+        id: row.id,
+        page_id: row.page_id,
+        type: row.type,
+        label: row.label,
+        unit: row.unit,
+        value: row.value,
+        points_json: row.points,
+      },
+      {
+        id: row.id,
+        page_id: row.page_id,
+        type: row.type,
+        label: row.label,
+        unit: row.unit,
+        value: row.value,
+        points: row.points,
+      },
+      {
+        id: row.id,
+        page_id: row.page_id,
+        type: row.type,
+        label: row.label,
+        unit: row.unit,
+        value: row.value,
+      },
+    ];
 
-      for (const payload of payloadVariants) {
-        const result = await supabase
-          .from("takeoff_measurements")
-          .upsert(payload)
-          .select("*")
-          .single();
+    for (const payload of candidates) {
+      const result = await supabase
+        .from("takeoff_measurements")
+        .upsert(payload)
+        .select("*")
+        .maybeSingle();
 
-        if (!result.error) return;
-      }
-    },
-    []
-  );
+      if (!result.error) return;
+    }
+  }, []);
 
   const commitMeasurements = useCallback(
     async (rows: MeasurementRow[]) => {
@@ -886,10 +961,9 @@ export default function TakeoffPage() {
           p2: nextPoints[1] || null,
         }));
         setStatus(
-          nextPoints.length === 1
-            ? "Calibration point 1 set"
-            : "Calibration point 2 set"
+          nextPoints.length === 1 ? "Calibration point 1 set" : "Calibration point 2 set"
         );
+        setShowCalibrationModal(true);
         return;
       }
 
@@ -949,9 +1023,11 @@ export default function TakeoffPage() {
           points: [point],
           source: "local",
         };
+
         const nextRows = [...measurements, row];
         await commitMeasurements(nextRows);
         setSelectedMeasurementId(row.id);
+        setViewerCapture({ mode: "count", points: [] });
         setStatus("Count point added");
       }
     },
@@ -1022,10 +1098,45 @@ export default function TakeoffPage() {
         calibration?.distance != null ? String(calibration.distance) : "1",
       unit: (calibration?.unit || "ft") as UnitType,
     });
-    setCalibrationForm((prev) => ({
-      ...prev,
-      unit: (calibration?.unit || prev.unit || "ft") as UnitType,
-    }));
+
+    if ((calibration?.unit || "ft") === "ft") {
+      const totalFeet = calibration?.distance ?? 0;
+      const wholeFeet = Math.floor(totalFeet);
+      const remainingInches = Math.round((totalFeet - wholeFeet) * 12 * 16) / 16;
+      const wholeInches = Math.floor(remainingInches);
+      const frac = remainingInches - wholeInches;
+
+      const fractionMap: Record<number, string> = {
+        0: "0",
+        0.0625: "1/16",
+        0.125: "1/8",
+        0.1875: "3/16",
+        0.25: "1/4",
+        0.3125: "5/16",
+        0.375: "3/8",
+        0.4375: "7/16",
+        0.5: "1/2",
+        0.5625: "9/16",
+        0.625: "5/8",
+        0.6875: "11/16",
+        0.75: "3/4",
+        0.8125: "13/16",
+        0.875: "7/8",
+        0.9375: "15/16",
+      };
+
+      setCalibrationForm({
+        feet: calibration ? String(wholeFeet) : "",
+        inches: calibration ? String(wholeInches) : "",
+        fraction: fractionMap[frac] || "0",
+        unit: (calibration?.unit || "ft") as UnitType,
+      });
+    } else {
+      setCalibrationForm((prev) => ({
+        ...prev,
+        unit: (calibration?.unit || "ft") as UnitType,
+      }));
+    }
   }, [calibration]);
 
   const startCalibrationCapture = useCallback(() => {
@@ -1044,7 +1155,6 @@ export default function TakeoffPage() {
     }
 
     let distanceValue = Number(calibrationDraft.distanceText || 0);
-
     if (!distanceValue || Number.isNaN(distanceValue)) {
       distanceValue = calibrationFormToDistance(calibrationForm);
     }
@@ -1072,23 +1182,15 @@ export default function TakeoffPage() {
     setShowCalibrationModal(false);
     setViewerCapture(null);
     setDrawMode("pan");
-    setStatus(
-      `Calibrated: ${formatMeasurement(distanceValue, nextCalibration.unit)}`
-    );
-  }, [
-    calibrationDraft,
-    calibrationForm,
-    saveCalibrationToPage,
-    setStatus,
-  ]);
+    setStatus(`Calibrated: ${formatMeasurement(distanceValue, nextCalibration.unit)}`);
+  }, [calibrationDraft, calibrationForm, saveCalibrationToPage, setStatus]);
 
   const removeMeasurement = useCallback(
     async (id: string) => {
-      const next = measurements.filter((m) => m.id !== id);
-      setMeasurements(next);
-      setSelectedMeasurementId(next[0]?.id || null);
-      saveMeasurementsLocal(activePageId, next);
-
+      const nextRows = measurements.filter((m) => m.id !== id);
+      setMeasurements(nextRows);
+      setSelectedMeasurementId(nextRows[0]?.id || null);
+      saveMeasurementsLocal(activePageId, nextRows);
       await supabase.from("takeoff_measurements").delete().eq("id", id);
     },
     [activePageId, measurements, saveMeasurementsLocal]
@@ -1096,10 +1198,10 @@ export default function TakeoffPage() {
 
   const updateMeasurement = useCallback(
     async (id: string, patch: Partial<MeasurementRow>) => {
-      const next = measurements.map((m) => (m.id === id ? { ...m, ...patch } : m));
-      setMeasurements(next);
-      saveMeasurementsLocal(activePageId, next);
-      const row = next.find((m) => m.id === id);
+      const nextRows = measurements.map((m) => (m.id === id ? { ...m, ...patch } : m));
+      setMeasurements(nextRows);
+      saveMeasurementsLocal(activePageId, nextRows);
+      const row = nextRows.find((m) => m.id === id);
       if (row) void saveMeasurementDb(row);
     },
     [activePageId, measurements, saveMeasurementDb, saveMeasurementsLocal]
@@ -1108,11 +1210,13 @@ export default function TakeoffPage() {
   const goToPage = useCallback(
     async (pageNumber: number) => {
       setActivePageNumber(pageNumber);
+
       const existing = pages.find((p) => p.page_number === pageNumber);
       if (existing) {
         await hydratePageState(existing);
         return;
       }
+
       const created = await ensurePage(pageNumber);
       if (created) {
         await hydratePageState(created);
@@ -1150,33 +1254,14 @@ export default function TakeoffPage() {
   }, [loadUserContext]);
 
   useEffect(() => {
-    if (!projectId) {
-      const fallback = getProjectIdFallback();
-      if (fallback) setProjectId(fallback);
-    }
-  }, [projectId]);
+    void resolveProjectContext();
+  }, [resolveProjectContext]);
 
   useEffect(() => {
     if (!loading && projectId) {
-      void loadSessions();
+      void bootstrapTakeoff();
     }
-  }, [companyId, loadSessions, loading, projectId]);
-
-  useEffect(() => {
-    if (activeSessionId) {
-      void loadPages(activeSessionId);
-    } else {
-      setPages([]);
-      setActivePage(null);
-    }
-  }, [activeSessionId, loadPages]);
-
-  useEffect(() => {
-    const page = pages.find((p) => p.page_number === activePageNumber) || null;
-    if (page) {
-      void hydratePageState(page);
-    }
-  }, [activePageNumber, hydratePageState, pages]);
+  }, [bootstrapTakeoff, loading, projectId]);
 
   useEffect(() => {
     if (!activePageId) return;
@@ -1192,10 +1277,8 @@ export default function TakeoffPage() {
   }, []);
 
   const renderOverlay = () => {
-    const linePoints =
-      viewerCapture?.mode === "line" ? viewerCapture.points : [];
-    const areaPoints =
-      viewerCapture?.mode === "area" ? viewerCapture.points : [];
+    const linePoints = viewerCapture?.mode === "line" ? viewerCapture.points : [];
+    const areaPoints = viewerCapture?.mode === "area" ? viewerCapture.points : [];
     const calPoints =
       viewerCapture?.mode === "calibration" ? viewerCapture.points : [];
 
@@ -1216,11 +1299,12 @@ export default function TakeoffPage() {
                 />
               </svg>
             )}
+
             {m.type === "area" && m.points.length >= 3 && (
               <svg className="pointer-events-none absolute inset-0 h-full w-full">
                 <polygon
                   points={m.points
-                    .map((p) => `${p.x * 100}%,${p.y * 100}%`)
+                    .map((p) => `${p.x * 100},${p.y * 100}`)
                     .join(" ")}
                   fill="rgba(15,23,42,0.10)"
                   stroke={m.id === selectedMeasurementId ? "#0f172a" : "#334155"}
@@ -1228,6 +1312,7 @@ export default function TakeoffPage() {
                 />
               </svg>
             )}
+
             {m.type === "count" &&
               m.points.map((p, i) => (
                 <div
@@ -1242,13 +1327,19 @@ export default function TakeoffPage() {
         {calibration?.p1 && (
           <div
             className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-emerald-600 shadow"
-            style={{ left: `${calibration.p1.x * 100}%`, top: `${calibration.p1.y * 100}%` }}
+            style={{
+              left: `${calibration.p1.x * 100}%`,
+              top: `${calibration.p1.y * 100}%`,
+            }}
           />
         )}
         {calibration?.p2 && (
           <div
             className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-emerald-600 shadow"
-            style={{ left: `${calibration.p2.x * 100}%`, top: `${calibration.p2.y * 100}%` }}
+            style={{
+              left: `${calibration.p2.x * 100}%`,
+              top: `${calibration.p2.y * 100}%`,
+            }}
           />
         )}
         {calibration?.p1 && calibration?.p2 && (
@@ -1267,7 +1358,10 @@ export default function TakeoffPage() {
         {linePoints.length >= 1 && (
           <div
             className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-sky-600 shadow"
-            style={{ left: `${linePoints[0].x * 100}%`, top: `${linePoints[0].y * 100}%` }}
+            style={{
+              left: `${linePoints[0].x * 100}%`,
+              top: `${linePoints[0].y * 100}%`,
+            }}
           />
         )}
         {linePoints.length >= 2 && (
@@ -1293,9 +1387,7 @@ export default function TakeoffPage() {
         {areaPoints.length >= 2 && (
           <svg className="pointer-events-none absolute inset-0 h-full w-full">
             <polyline
-              points={areaPoints
-                .map((p) => `${p.x * 100}%,${p.y * 100}%`)
-                .join(" ")}
+              points={areaPoints.map((p) => `${p.x * 100},${p.y * 100}`).join(" ")}
               fill="rgba(124,58,237,0.08)"
               stroke="#7c3aed"
               strokeWidth={3}
@@ -1342,8 +1434,10 @@ export default function TakeoffPage() {
                       Takeoff
                     </h1>
                     <p className="truncate text-xs text-slate-500">
-                      {projectId ? `Project: ${projectId}` : "No project selected"} •{" "}
-                      {activePageDisplayTitle}
+                      {projectId
+                        ? `Project: ${projectName || projectId}`
+                        : "No project selected"}{" "}
+                      • {activePageDisplayTitle}
                     </p>
                   </div>
                 </div>
@@ -1353,7 +1447,7 @@ export default function TakeoffPage() {
                 <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
                   <button
                     type="button"
-                    onClick={() => goToPage(Math.max(1, activePageNumber - 1))}
+                    onClick={() => void goToPage(Math.max(1, activePageNumber - 1))}
                     className="rounded-lg p-2 text-slate-600 hover:bg-white hover:text-slate-900"
                     title="Previous page"
                   >
@@ -1364,7 +1458,7 @@ export default function TakeoffPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => goToPage(activePageNumber + 1)}
+                    onClick={() => void goToPage(activePageNumber + 1)}
                     className="rounded-lg p-2 text-slate-600 hover:bg-white hover:text-slate-900"
                     title="Next page"
                   >
@@ -1372,7 +1466,7 @@ export default function TakeoffPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={addPage}
+                    onClick={() => void addPage()}
                     className="rounded-lg p-2 text-slate-600 hover:bg-white hover:text-slate-900"
                     title="Add page"
                   >
@@ -1449,7 +1543,8 @@ export default function TakeoffPage() {
                 <button
                   type="button"
                   onClick={() => void saveActivePage()}
-                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                  disabled={!projectId || saving}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Save className="h-4 w-4" />
                   {saving ? "Saving..." : "Save"}
@@ -1472,11 +1567,12 @@ export default function TakeoffPage() {
                       key={tool.key}
                       type="button"
                       onClick={() => {
+                        setErrorText(null);
                         setDrawMode(tool.key as DrawMode);
                         setViewerCapture(
                           tool.key === "pan"
                             ? null
-                            : { mode: tool.key as any, points: [] }
+                            : { mode: tool.key as "line" | "area" | "count", points: [] }
                         );
                         setStatus(`${tool.label} mode selected`);
                       }}
@@ -1523,7 +1619,7 @@ export default function TakeoffPage() {
                     value={searchText}
                     onChange={(e) => setSearchText(e.target.value)}
                     placeholder="Search measurements..."
-                    className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none ring-0 placeholder:text-slate-400 focus:border-slate-300"
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-slate-300"
                   />
                 </div>
 
@@ -1567,6 +1663,13 @@ export default function TakeoffPage() {
           </div>
         )}
 
+        {!projectId && !loading && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 shadow-sm">
+            No project context was found for this page. Open Takeoff from a selected
+            project route or pass <code>projectId</code> in the route/query.
+          </div>
+        )}
+
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[260px_minmax(0,1fr)_360px]">
           <div className="min-h-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -1578,8 +1681,9 @@ export default function TakeoffPage() {
               </div>
               <button
                 type="button"
-                onClick={addPage}
-                className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600 hover:bg-slate-100"
+                onClick={() => void addPage()}
+                disabled={!projectId}
+                className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                 title="Add page"
               >
                 <Plus className="h-4 w-4" />
@@ -1593,10 +1697,31 @@ export default function TakeoffPage() {
                 </label>
                 <select
                   value={activeSessionId || ""}
-                  onChange={(e) => setActiveSessionId(e.target.value || null)}
+                  onChange={async (e) => {
+                    const nextSessionId = e.target.value || null;
+                    setActiveSessionId(nextSessionId);
+                    if (!nextSessionId) return;
+
+                    const loadedPages = await loadPages(nextSessionId);
+                    let nextPage =
+                      loadedPages.find((p) => p.page_number === activePageNumber) ||
+                      loadedPages[0] ||
+                      null;
+
+                    if (!nextPage) {
+                      nextPage = await ensurePage(1, nextSessionId);
+                    }
+
+                    if (nextPage) {
+                      setActivePageNumber(nextPage.page_number);
+                      await hydratePageState(nextPage);
+                    }
+                  }}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
                 >
-                  <option value="">Create / Select session</option>
+                  <option value="">
+                    {projectId ? "Create / Select session" : "No project context"}
+                  </option>
                   {sessions.map((session) => (
                     <option key={session.id} value={session.id}>
                       {session.name || session.id}
@@ -1612,7 +1737,9 @@ export default function TakeoffPage() {
                   </div>
                 ) : pages.length === 0 ? (
                   <div className="px-3 py-8 text-center text-sm text-slate-500">
-                    No pages yet. Create your first page to start takeoff.
+                    {projectId
+                      ? "Preparing page 1..."
+                      : "Select a project to load takeoff pages."}
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -1687,7 +1814,8 @@ export default function TakeoffPage() {
                 <button
                   type="button"
                   onClick={() => void saveActivePage()}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                  disabled={!projectId || saving}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Save View
                 </button>
@@ -1726,10 +1854,11 @@ export default function TakeoffPage() {
                         const file = e.target.files?.[0];
                         if (!file) return;
                         const localUrl = URL.createObjectURL(file);
-                        setPageTitleInput((prev) => prev || file.name);
+                        const nextTitle = pageTitleInput || file.name;
+                        setPageTitleInput(nextTitle);
                         setPageUrlInput(localUrl);
                         queueAutoSave({
-                          title: pageTitleInput || file.name,
+                          title: nextTitle,
                           file_name: file.name,
                           preview_url: localUrl,
                         });
@@ -1752,7 +1881,7 @@ export default function TakeoffPage() {
                   <div
                     className="absolute inset-0 origin-center transition-transform"
                     style={{
-                      transform: `scale(${fitMode === "actual" ? zoom : zoom})`,
+                      transform: `scale(${zoom})`,
                     }}
                   >
                     {pageUrlInput ? (
@@ -1766,7 +1895,10 @@ export default function TakeoffPage() {
                         <img
                           src={pageUrlInput}
                           alt={activePageDisplayTitle}
-                          className="h-full w-full object-contain"
+                          className={clsx(
+                            "h-full w-full",
+                            fitMode === "fit" ? "object-contain" : "object-none"
+                          )}
                         />
                       )
                     ) : (
@@ -1816,6 +1948,12 @@ export default function TakeoffPage() {
                       Drawing Summary
                     </div>
                     <div className="space-y-2 text-sm text-slate-600">
+                      <div className="flex justify-between gap-3">
+                        <span>Project</span>
+                        <span className="font-medium text-slate-900">
+                          {projectName || projectId || "—"}
+                        </span>
+                      </div>
                       <div className="flex justify-between gap-3">
                         <span>Page</span>
                         <span className="font-medium text-slate-900">
@@ -2056,236 +2194,74 @@ export default function TakeoffPage() {
               {tab === "settings" && (
                 <div className="space-y-4 p-4">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="mb-2 text-sm font-semibold text-slate-900">
-                      Save / Upsert Safeguards
-                    </div>
-                    <ul className="space-y-2 text-sm text-slate-600">
-                      <li>• project_id is always included before page save/upsert</li>
-                      <li>• page save uses onConflict: session_id,page_number</li>
-                      <li>• calibration autosaves directly to the active page</li>
-                      <li>• measurements save to local storage fallback when DB tables vary</li>
-                    </ul>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void saveActivePage()}
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left hover:bg-slate-50"
-                    >
-                      <div className="text-sm font-semibold text-slate-900">
-                        Save Current Page
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        Save page title, preview URL, and calibration data
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void saveCalibrationToPage(null);
-                        setStatus("Calibration reset");
-                      }}
-                      className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left hover:bg-rose-100"
-                    >
-                      <div className="text-sm font-semibold text-rose-800">
-                        Reset Calibration
-                      </div>
-                      <div className="text-xs text-rose-700">
-                        Clear current saved scale from this page
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {showCalibrationModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white shadow-2xl">
-            <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  Calibration
-                </h3>
-                <p className="text-sm text-slate-500">
-                  Use two points on the drawing to set the real-world scale.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCalibrationModal(false)}
-                className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="space-y-5 px-5 py-5">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
                     <div className="text-sm font-semibold text-slate-900">
-                      Calibration points
+                      Takeoff Session Settings
                     </div>
-                    <div className="text-xs text-slate-500">
-                      Select two points on the drawing, then enter the true distance.
+                    <div className="mt-3 space-y-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-600">User</span>
+                        <span className="font-medium text-slate-900">
+                          {userId || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-600">Company</span>
+                        <span className="font-medium text-slate-900">
+                          {companyId || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-600">Project</span>
+                        <span className="font-medium text-slate-900">
+                          {projectName || projectId || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-600">Session</span>
+                        <span className="font-medium text-slate-900">
+                          {activeSessionId || "—"}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
                   <button
                     type="button"
-                    onClick={startCalibrationCapture}
-                    className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                    onClick={async () => {
+                      setErrorText(null);
+                      await saveCalibrationToPage(null);
+                      setStatus("Calibration reset");
+                    }}
+                    className="flex w-full items-center justify-between rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left hover:bg-rose-100"
                   >
-                    Start / Restart
+                    <div>
+                      <div className="text-sm font-semibold text-rose-800">
+                        Reset Calibration
+                      </div>
+                      <div className="text-xs text-rose-700">
+                        Remove saved scale from this page
+                      </div>
+                    </div>
+                    <X className="h-4 w-4 text-rose-700" />
                   </button>
                 </div>
-
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Point 1
-                    </div>
-                    <div className="mt-1 text-slate-900">
-                      {calibrationDraft.p1
-                        ? `${(calibrationDraft.p1.x * 100).toFixed(1)}%, ${(calibrationDraft.p1.y * 100).toFixed(1)}%`
-                        : "Not set"}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Point 2
-                    </div>
-                    <div className="mt-1 text-slate-900">
-                      {calibrationDraft.p2
-                        ? `${(calibrationDraft.p2.x * 100).toFixed(1)}%, ${(calibrationDraft.p2.y * 100).toFixed(1)}%`
-                        : "Not set"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_1fr_120px]">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Feet / Value
-                  </label>
-                  <input
-                    value={calibrationForm.feet}
-                    onChange={(e) =>
-                      setCalibrationForm((prev) => ({
-                        ...prev,
-                        feet: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                    placeholder={calibrationForm.unit === "ft" ? "Feet" : "Value"}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Inches
-                  </label>
-                  <input
-                    value={calibrationForm.inches}
-                    onChange={(e) =>
-                      setCalibrationForm((prev) => ({
-                        ...prev,
-                        inches: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                    placeholder="Inches"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Fraction
-                  </label>
-                  <select
-                    value={calibrationForm.fraction}
-                    onChange={(e) =>
-                      setCalibrationForm((prev) => ({
-                        ...prev,
-                        fraction: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                  >
-                    {FRACTION_OPTIONS.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Unit
-                  </label>
-                  <select
-                    value={calibrationForm.unit}
-                    onChange={(e) =>
-                      setCalibrationForm((prev) => ({
-                        ...prev,
-                        unit: e.target.value as UnitType,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                  >
-                    <option value="ft">ft</option>
-                    <option value="m">m</option>
-                    <option value="in">in</option>
-                    <option value="mm">mm</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Direct distance override
-                </label>
-                <input
-                  value={calibrationDraft.distanceText}
-                  onChange={(e) =>
-                    setCalibrationDraft((prev) => ({
-                      ...prev,
-                      distanceText: e.target.value,
-                    }))
-                  }
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
-                  placeholder="Optional exact distance value"
-                />
-              </div>
+              )}
             </div>
+          </div>
+        </div>
 
-            <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4">
-              <div className="text-xs text-slate-500">
-                {calibrationReady && calibration
-                  ? `Current scale: ${formatMeasurement(calibration.distance, calibration.unit)}`
-                  : "No saved calibration yet"}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    resetCalibrationDraft();
-                    void saveCalibrationToPage(null);
-                    setShowCalibrationModal(false);
-                  }}
-                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
-                >
-                  Reset
-                </button>
+        {showCalibrationModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+            <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">
+                    Calibrate Drawing
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Pick two points and enter the real-world distance.
+                  </p>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
@@ -2293,7 +2269,170 @@ export default function TakeoffPage() {
                     setViewerCapture(null);
                     setDrawMode("pan");
                   }}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-5 px-5 py-5">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="mb-2 text-sm font-semibold text-slate-900">
+                    Points
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                      Point 1:{" "}
+                      <span className="font-medium text-slate-900">
+                        {calibrationDraft.p1
+                          ? `${(calibrationDraft.p1.x * 100).toFixed(1)}%, ${(calibrationDraft.p1.y * 100).toFixed(1)}%`
+                          : "Not selected"}
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                      Point 2:{" "}
+                      <span className="font-medium text-slate-900">
+                        {calibrationDraft.p2
+                          ? `${(calibrationDraft.p2.x * 100).toFixed(1)}%, ${(calibrationDraft.p2.y * 100).toFixed(1)}%`
+                          : "Not selected"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={startCalibrationCapture}
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-100"
+                    >
+                      Start / Restart
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetCalibrationDraft();
+                        setStatus("Calibration draft reset");
+                      }}
+                      className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="mb-3 text-sm font-semibold text-slate-900">
+                    Real Distance
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Feet / Main
+                      </label>
+                      <input
+                        value={calibrationForm.feet}
+                        onChange={(e) =>
+                          setCalibrationForm((prev) => ({
+                            ...prev,
+                            feet: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                        placeholder={calibrationForm.unit === "ft" ? "Feet" : "Value"}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Inches
+                      </label>
+                      <input
+                        value={calibrationForm.inches}
+                        onChange={(e) =>
+                          setCalibrationForm((prev) => ({
+                            ...prev,
+                            inches: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                        placeholder="Inches"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Fraction
+                      </label>
+                      <select
+                        value={calibrationForm.fraction}
+                        onChange={(e) =>
+                          setCalibrationForm((prev) => ({
+                            ...prev,
+                            fraction: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                      >
+                        {FRACTION_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-slate-600">
+                        Unit
+                      </label>
+                      <select
+                        value={calibrationForm.unit}
+                        onChange={(e) =>
+                          setCalibrationForm((prev) => ({
+                            ...prev,
+                            unit: e.target.value as UnitType,
+                          }))
+                        }
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                      >
+                        <option value="ft">ft</option>
+                        <option value="m">m</option>
+                        <option value="in">in</option>
+                        <option value="mm">mm</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      Direct Distance Override
+                    </label>
+                    <input
+                      value={calibrationDraft.distanceText}
+                      onChange={(e) =>
+                        setCalibrationDraft((prev) => ({
+                          ...prev,
+                          distanceText: e.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-300"
+                      placeholder="Optional direct distance value"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCalibrationModal(false);
+                    setViewerCapture(null);
+                    setDrawMode("pan");
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
                 >
                   Cancel
                 </button>
@@ -2307,8 +2446,8 @@ export default function TakeoffPage() {
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
