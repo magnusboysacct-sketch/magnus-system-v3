@@ -1,2092 +1,3386 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useParams } from "react-router-dom";
+import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { usePanZoom } from "../features/takeoff/hooks/usePanZoom";
-import { useMeasurements } from "../features/takeoff/hooks/useMeasurements";
-import { MeasurementLayer } from "../features/takeoff/components/MeasurementLayer";
-import {
-  getOrCreateSession,
-  loadTakeoff,
-  saveTakeoffDebounced,
-  cancelPendingSave,
-} from "../features/takeoff/persistence/takeoffPersistence";
-import { usePlan } from "../hooks/usePlan";
-import PaywallModal from "../components/PaywallModal";
 import { supabase } from "../lib/supabase";
-import { saveMeasurementsToDB } from "../lib/takeoffDB";
+import { useProjectContext } from "../context/ProjectContext";
+import { ExportToBOQModal } from "../components/ExportToBOQModal";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
-type Point = { x: number; y: number };
-type CalibPoint = { x: number; y: number };
+type ToolMode = "select" | "hand" | "calibrate" | "line" | "area" | "count" | "volume";
+type UnitSystem = "ft" | "m" | "in";
+type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-function clamp(n: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, n));
+type Point = {
+  x: number;
+  y: number;
+};
+
+type SessionRow = {
+  id: string;
+  project_id: string;
+  company_id: string;
+  name?: string | null;
+  pdf_name?: string | null;
+  pdf_storage_path?: string | null;
+  pdf_bucket?: string | null;
+  pdf_path?: string | null;
+  pdf_url?: string | null;
+  calibration?: any;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type PageRow = {
+  id?: string;
+  session_id: string;
+  page_number: number;
+  page_label?: string | null;
+  width?: number | null;
+  height?: number | null;
+  calibration_point_1?: Point | null;
+  calibration_point_2?: Point | null;
+  calibration_distance?: number | null;
+  calibration_unit?: UnitSystem | null;
+  calibration_scale?: number | null; // real units per PDF pixel
+  updated_at?: string | null;
+};
+
+type GroupRow = {
+  id: string;
+  session_id: string;
+  company_id: string;
+  name: string;
+  color: string;
+  trade?: string | null;
+  is_hidden?: boolean;
+  sort_order: number;
+  created_at?: string | null;
+};
+
+type MeasurementKind = "line" | "area" | "count" | "volume";
+
+type MeasurementRow = {
+  id: string;
+  session_id: string;
+  company_id: string;
+  page_number: number;
+  group_id: string | null;
+  type: MeasurementKind;
+  points: Point[];
+  unit: string;
+  result: number;
+  raw_length?: number | null;
+  raw_area?: number | null;
+  raw_count?: number | null;
+  raw_volume?: number | null;
+  scale_x?: number | null;
+  scale_y?: number | null;
+  meta?: any;
+  sort_order?: number;
+  created_at?: string | null;
+};
+
+type CalibrationDraft = {
+  p1: Point | null;
+  p2: Point | null;
+  distanceText: string;
+  unit: UnitSystem;
+};
+
+const COLORS = [
+  "#2563eb",
+  "#16a34a",
+  "#dc2626",
+  "#9333ea",
+  "#ea580c",
+  "#0891b2",
+  "#4f46e5",
+  "#ca8a04",
+];
+
+const STORAGE_BUCKET_CANDIDATES = ["project-files"];
+const SIGNED_URL_EXPIRY = 3600; // 1 hour in seconds
+
+function uid() {
+  return crypto.randomUUID();
 }
 
-function dist(a: Point, b: Point) {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  return Math.sqrt(dx * dx + dy * dy);
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
-function parseFraction(input: string): number | null {
-  const s = input.trim();
-  if (!s) return 0;
-  if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
-  const m = s.match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (!m) return null;
-  const a = parseInt(m[1], 10);
-  const b = parseInt(m[2], 10);
-  if (!b) return null;
-  return a / b;
+function distanceBetween(a: Point, b: Point) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-function feetFromFIS(feet: number, inches: number, frac: number) {
-  return feet + (inches + frac) / 12;
-}
-
-type ScaleMode = "standard" | "fis" | "metric" | "auto";
-
-function ScaleModal(props: {
-  open: boolean;
-  onClose: () => void;
-  onApply: (feet: number, opts: { applyAllPages: boolean; autoDimLine: boolean }) => void;
-  canApply: boolean;
-  isCalibrating?: boolean;
-  calibPointsCount?: number;
-  canConfirmCalibration?: boolean;
-  onCalibrationOk?: (lengthFeet: number) => void;
-  onCalibrationCancel?: () => void;
-}) {
-  const { open, onClose, onApply, canApply, isCalibrating = false, calibPointsCount = 0, canConfirmCalibration = false, onCalibrationOk, onCalibrationCancel } = props;
-  const [tab, setTab] = useState<ScaleMode>("standard");
-
-  const [stdFeet, setStdFeet] = useState("10");
-
-  const [fisFeet, setFisFeet] = useState("");
-  const [fisInch, setFisInch] = useState("");
-  const [fisFrac, setFisFrac] = useState("");
-
-  const [metricMeters, setMetricMeters] = useState("3");
-  const [applyAllPages, setApplyAllPages] = useState(true);
-  const [autoDimLine, setAutoDimLine] = useState(true);
-
-  const canStartCalibration = Number(stdFeet || 0) > 0;
-
-  useEffect(() => {
-    if (!open) return;
-    setTab("standard");
-  }, [open]);
-
-  if (!open) return null;
-
-  function apply() {
-    let feet: number | null = null;
-
-    if (tab === "standard") {
-      const n = Number(stdFeet);
-      if (Number.isFinite(n) && n > 0) feet = n;
-    }
-
-    if (tab === "fis") {
-      const f = Number(fisFeet || 0);
-      const i = Number(fisInch || 0);
-      const fr = parseFraction(fisFrac);
-      if (fr == null) {
-        alert("Invalid fraction (use 1/2, 3/8, etc.)");
-        return;
-      }
-      const total = feetFromFIS(f, i, fr);
-      if (Number.isFinite(total) && total > 0) feet = total;
-    }
-
-    if (tab === "metric") {
-      const m = Number(metricMeters);
-      if (Number.isFinite(m) && m > 0) feet = m * 3.28084;
-    }
-
-    if (tab === "auto") {
-      alert("Auto scale is coming next (read scale from title block).");
-      return;
-    }
-
-    if (!feet) {
-      alert("Please enter a valid scale distance.");
-      return;
-    }
-
-    if (isCalibrating) {
-      if (onCalibrationOk) {
-        onCalibrationOk(feet);
-      }
-      return;
-    }
-
-    onApply(feet, { applyAllPages, autoDimLine });
+function polylineLength(points: Point[]) {
+  if (points.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    total += distanceBetween(points[i - 1], points[i]);
   }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-950 shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-          <div className="text-lg font-semibold">Scale</div>
-          <button onClick={onClose} className="px-2 py-1 rounded-lg hover:bg-slate-800/50">
-            ✕
-          </button>
-        </div>
-
-        <div className="px-5 pt-4">
-          <div className="flex gap-2 text-sm">
-            {[
-              ["standard", "Standard"],
-              ["fis", "F-I-S"],
-              ["metric", "Metric"],
-              ["auto", "Auto"],
-            ].map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => setTab(k as ScaleMode)}
-                className={
-                  "px-3 py-2 rounded-xl border " +
-                  (tab === k ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
-            {isCalibrating && (
-              <div className="text-sm text-slate-300 mb-3">
-                Calibration mode: Click {calibPointsCount}/2 points on the drawing
-              </div>
-            )}
-
-            {tab === "standard" && (
-              <div className="grid grid-cols-2 gap-3 items-end">
-                <div className="col-span-2 text-sm text-slate-300">
-                  Enter the real distance between your two clicked points:
-                </div>
-                <label className="text-xs text-slate-400">
-                  Feet
-                  <input
-                    value={stdFeet}
-                    onChange={(e) => setStdFeet(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                    placeholder="10"
-                  />
-                </label>
-                <div className="text-xs text-slate-400 flex items-center">ft</div>
-              </div>
-            )}
-
-            {tab === "fis" && (
-              <div className="grid grid-cols-3 gap-3 items-end">
-                <label className="text-xs text-slate-400">
-                  Feet
-                  <input
-                    value={fisFeet}
-                    onChange={(e) => setFisFeet(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                    placeholder="45"
-                  />
-                </label>
-
-                <label className="text-xs text-slate-400">
-                  Inch
-                  <input
-                    value={fisInch}
-                    onChange={(e) => setFisInch(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                    placeholder="6"
-                  />
-                </label>
-
-                <label className="text-xs text-slate-400">
-                  Fraction
-                  <input
-                    value={fisFrac}
-                    onChange={(e) => setFisFrac(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                    placeholder="1/2"
-                  />
-                </label>
-
-                <div className="col-span-3 text-xs text-slate-500">
-                  Tip: Fraction accepts 1/2, 3/8, 0.25, etc.
-                </div>
-              </div>
-            )}
-
-            {tab === "metric" && (
-              <div className="grid grid-cols-2 gap-3 items-end">
-                <div className="col-span-2 text-sm text-slate-300">Enter the distance in meters:</div>
-                <label className="text-xs text-slate-400">
-                  Meters
-                  <input
-                    value={metricMeters}
-                    onChange={(e) => setMetricMeters(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                    placeholder="3"
-                  />
-                </label>
-                <div className="text-xs text-slate-400 flex items-center">m</div>
-              </div>
-            )}
-
-            {tab === "auto" && (
-              <div className="text-sm text-slate-300">
-                Auto scale (read scale from drawing title block) — coming next.
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 space-y-2 text-sm">
-            <label className="flex items-center gap-2 text-slate-300">
-              <input type="checkbox" checked={applyAllPages} onChange={(e) => setApplyAllPages(e.target.checked)} />
-              Apply scale to all pages
-            </label>
-            <label className="flex items-center gap-2 text-slate-300">
-              <input type="checkbox" checked={autoDimLine} onChange={(e) => setAutoDimLine(e.target.checked)} />
-              Automatically create dimension line
-            </label>
-          </div>
-
-          <div className="mt-5 flex items-center justify-between pb-5">
-            <button
-              onClick={() => onApply(0, { applyAllPages, autoDimLine })}
-              className="px-3 py-2 rounded-xl bg-slate-800/40 hover:bg-slate-800/60 text-sm"
-            >
-              Clear Scale
-            </button>
-
-            <div className="flex gap-2">
-              <button onClick={onCalibrationCancel || onClose} className="px-4 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm">
-                Cancel
-              </button>
-              <button
-                disabled={isCalibrating ? !canStartCalibration : !canApply}
-                onClick={apply}
-                className={
-                  "px-4 py-2 rounded-xl text-sm " +
-                  ((isCalibrating ? canStartCalibration : canApply) ? "bg-emerald-900/50 hover:bg-emerald-900/70 border border-emerald-900/40" : "bg-slate-800/20 text-slate-500")
-                }
-              >
-                OK
-              </button>
-            </div>
-          </div>
-
-          {!(isCalibrating ? canConfirmCalibration : canApply) && (
-            <div className="pb-5 text-xs text-slate-500">
-              {isCalibrating
-                ? `Click ${2 - calibPointsCount} more point${calibPointsCount === 1 ? '' : 's'} on the drawing first, then press OK.`
-                : "Click two points on the drawing first, then press OK."
-              }
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  return total;
 }
 
-class TakeoffErrorBoundary extends React.Component<{ children: React.ReactNode }, { err: any }> {
-  constructor(props: any) {
-    super(props);
-    this.state = { err: null };
+function polygonArea(points: Point[]) {
+  if (points.length < 3) return 0;
+  let sum = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    sum += a.x * b.y - b.x * a.y;
   }
-  static getDerivedStateFromError(err: any) {
-    return { err };
-  }
-  componentDidCatch(err: any) {
-    console.error("TAKEOFF PAGE CRASH:", err);
-  }
-  render() {
-    if (this.state.err) {
-      return (
-        <div style={{ padding: 16, color: "#fff", background: "#111" }}>
-          <h2 style={{ marginBottom: 8 }}>Takeoff crashed</h2>
-          <pre style={{ whiteSpace: "pre-wrap" }}>
-            {String(this.state.err?.message || this.state.err)}
-          </pre>
-          <pre style={{ whiteSpace: "pre-wrap", opacity: 0.8 }}>
-            {String(this.state.err?.stack || "")}
-          </pre>
-        </div>
-      );
-    }
-    return this.props.children as any;
-  }
+  return Math.abs(sum) / 2;
 }
 
-function TakeoffPageInner() {
-  const nav = useNavigate();
-  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
-
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const viewerRef = useRef<HTMLDivElement | null>(null);
-
-  const renderTaskRef = useRef<any>(null);
-  const renderSeqRef = useRef(0);
-
-  const [pdf, setPdf] = useState<any>(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [numPages, setNumPages] = useState(0);
-
-  const panZoom = usePanZoom({
-    minZoom: 0.2,
-    maxZoom: 6,
-    zoomSpeed: 0.08,
-    initialZoom: 1.0,
+function formatNumber(value: number, digits = 2) {
+  if (!Number.isFinite(value)) return "0";
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits,
   });
+}
 
-  const {
-    measurements,
-    addMeasurement,
-    removeMeasurement,
-    updateMeasurement,
-    setAllMeasurements,
-  } = useMeasurements();
+function formatFeetInches(feet: number): string {
+  if (!Number.isFinite(feet)) return "0'-0\"";
 
-  const [calibrating, setCalibrating] = useState(false);
-  const [calPoints, setCalPoints] = useState<Point[]>([]);
-  const [feetPerPixel, setFeetPerPixel] = useState<number | null>(null);
+  const totalInches = feet * 12;
+  const wholeFeet = Math.floor(feet);
+  const remainingInches = totalInches - (wholeFeet * 12);
 
-  const [isCalibrating, setIsCalibrating] = useState(false);
-  const [calibPoints, setCalibPoints] = useState<CalibPoint[]>([]);
-  const [pendingCalibLength, setPendingCalibLength] = useState<number | null>(null);
-
-  function getEnteredFeet(): number {
-    return 1;
+  if (remainingInches < 0.25) {
+    return `${wholeFeet}'-0"`;
   }
 
-  const canStartCalibration = getEnteredFeet() > 0;
+  const roundedInches = Math.round(remainingInches * 2) / 2;
 
-  const [error, setError] = useState<string | null>(null);
-  const [loadingPdf, setLoadingPdf] = useState(false);
-  const [overViewer, setOverViewer] = useState(false);
-
-  const [scaleModalOpen, setScaleModalOpen] = useState(false);
-
-  const fitScaleRef = useRef<number | null>(null);
-
-  const isSpaceDownRef = useRef(false);
-  const isPanningRef = useRef(false);
-  const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
-  const activePointerIdRef = useRef<number | null>(null);
-
-  type ToolMode = "select" | "line" | "area" | "count" | "volume";
-  const [tool, setTool] = useState<ToolMode>("select");
-
-  const [lineStart, setLineStart] = useState<Point | null>(null);
-  const [lineEnd, setLineEnd] = useState<Point | null>(null);
-  const [hoverPt, setHoverPt] = useState<Point | null>(null);
-
-  const [areaPoints, setAreaPoints] = useState<Point[]>([]);
-  const [areaHoverPt, setAreaHoverPt] = useState<Point | null>(null);
-
-  const [countPoints, setCountPoints] = useState<Point[]>([]);
-
-  const [volumePoints, setVolumePoints] = useState<Point[]>([]);
-  const [volumeHoverPt, setVolumeHoverPt] = useState<Point | null>(null);
-  const [showDepthPrompt, setShowDepthPrompt] = useState(false);
-  const [depthInput, setDepthInput] = useState("4");
-  const [feetPerPdfUnit, setFeetPerPdfUnit] = useState<number | null>(null);
-
-  const [canvasWidth, setCanvasWidth] = useState(0);
-  const [canvasHeight, setCanvasHeight] = useState(0);
-
-  const [groups, setGroups] = useState<Array<{
-    id: string;
-    name: string;
-    color: string;
-    visible: boolean;
-    sortOrder: number;
-  }>>([]);
-
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(() => {
-    if (routeProjectId) return routeProjectId;
-    const keys = ["active_project_id", "selected_project_id", "project_id"];
-    for (const k of keys) {
-      const v = localStorage.getItem(k);
-      if (v && v.trim()) return v.trim();
-    }
-    return null;
-  });
-  const [dbLoaded, setDbLoaded] = useState(false);
-  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
-  const [newGroupName, setNewGroupName] = useState("");
-  const [showNewGroupForm, setShowNewGroupForm] = useState(false);
-
-  const [currentProject, setCurrentProject] = useState<{ id: string; name: string | null } | null>(null);
-
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const { hasFeature, features } = usePlan();
-  const [showPaywall, setShowPaywall] = useState(false);
-  const [paywallFeature, setPaywallFeature] = useState("");
-
-  function distFeet(a:{x:number;y:number}, b:{x:number;y:number}) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const d = Math.sqrt(dx*dx + dy*dy);
-    if (!d) return 0;
-
-    if (!feetPerPdfUnit) return 0;
-    return d * feetPerPdfUnit;
+  if (roundedInches >= 12) {
+    return `${wholeFeet + 1}'-0"`;
   }
 
-  function formatFeetInches(totalFeet:number) {
-    if (!isFinite(totalFeet) || totalFeet <= 0) return "";
-    const feet = Math.floor(totalFeet);
-    const inchesTotal = (totalFeet - feet) * 12;
-    const inches = Math.floor(inchesTotal);
-    const frac = inchesTotal - inches;
+  const wholeInches = Math.floor(roundedInches);
+  const fraction = roundedInches - wholeInches;
 
-    const denom = 16;
-    let num = Math.round(frac * denom);
-    let fFeet = feet;
-    let fIn = inches;
-
-    if (num === denom) { num = 0; fIn += 1; }
-    if (fIn === 12) { fIn = 0; fFeet += 1; }
-
-    const fracStr = num === 0 ? "" : ` ${num}/${denom}`;
-    return `${fFeet}' ${fIn}"${fracStr}`;
+  let inchString = "";
+  if (fraction === 0) {
+    inchString = `${wholeInches}"`;
+  } else if (fraction === 0.5) {
+    inchString = wholeInches > 0 ? `${wholeInches} 1/2"` : `1/2"`;
+  } else {
+    inchString = `${roundedInches}"`;
   }
 
-  useEffect(() => {
-    if (routeProjectId && routeProjectId !== activeProjectId) {
-      setActiveProjectId(routeProjectId);
+  return `${wholeFeet}'-${inchString}`;
+}
+
+function toolToKind(tool: ToolMode): MeasurementKind | null {
+  if (tool === "line") return "line";
+  if (tool === "area") return "area";
+  if (tool === "count") return "count";
+  if (tool === "volume") return "volume";
+  return null;
+}
+
+function getAreaUnit(base: UnitSystem) {
+  if (base === "ft") return "ft²";
+  if (base === "m") return "m²";
+  return "in²";
+}
+
+function getVolumeUnit(base: UnitSystem) {
+  if (base === "ft") return "ft³";
+  if (base === "m") return "m³";
+  return "in³";
+}
+
+function linePointsToSvg(points: Point[]) {
+  return points.map((p) => `${p.x},${p.y}`).join(" ");
+}
+
+function polygonPointsToSvg(points: Point[]) {
+  return points.map((p) => `${p.x},${p.y}`).join(" ");
+}
+
+function getMeasurementDisplayValue(measurement: MeasurementRow, isCalibrated: boolean) {
+  if (!isCalibrated) {
+    if (measurement.type === "line" && measurement.raw_length) {
+      return measurement.raw_length;
+    } else if (measurement.type === "area" && measurement.raw_area) {
+      return measurement.raw_area;
+    } else if (measurement.type === "count") {
+      return 1;
+    } else if (measurement.type === "volume" && measurement.raw_volume) {
+      return measurement.raw_volume;
     }
-  }, [routeProjectId, activeProjectId]);
-
-  useEffect(() => {
-    if (!routeProjectId) {
-      setCurrentProject(null);
-      return;
-    }
-
-    let alive = true;
-    async function loadProject() {
-      try {
-        const { data, error } = await supabase
-          .from("projects")
-          .select("id, name")
-          .eq("id", routeProjectId)
-          .maybeSingle();
-
-        if (error) throw error;
-        if (!alive) return;
-        if (data) {
-          setCurrentProject(data);
-        }
-      } catch (e) {
-        console.error("Failed to load project:", e);
-      }
-    }
-    loadProject();
-    return () => {
-      alive = false;
-    };
-  }, [routeProjectId]);
-
-  useEffect(() => {
-    if (groups.length === 0) {
-      const defaultGroups = [
-        { id: crypto.randomUUID(), name: "Concrete", color: "#10b981", visible: true, sortOrder: 0 },
-        { id: crypto.randomUUID(), name: "Masonry", color: "#f59e0b", visible: true, sortOrder: 1 },
-        { id: crypto.randomUUID(), name: "Electrical", color: "#3b82f6", visible: true, sortOrder: 2 },
-        { id: crypto.randomUUID(), name: "Plumbing", color: "#06b6d4", visible: true, sortOrder: 3 },
-      ];
-      setGroups(defaultGroups);
-      setActiveGroupId(defaultGroups[0].id);
-    }
-  }, []);
-
-  async function onPickFile(file: File | null) {
-    setError(null);
-    if (!file) return;
-
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      setError("Please upload a PDF file.");
-      return;
-    }
-
-    try {
-      setLoadingPdf(true);
-
-      const arrayBuffer = await file.arrayBuffer();
-      const task = getDocument({ data: arrayBuffer });
-      const loadedPdf = await task.promise;
-
-      setPdf(loadedPdf);
-      setNumPages(loadedPdf.numPages);
-      setPageNumber(1);
-
-      setFeetPerPixel(null);
-      setCalibrating(false);
-      setIsCalibrating(false);
-      setCalPoints([]);
-      setCalibPoints([]);
-
-      if (activeProjectId) {
-        const session = await getOrCreateSession(activeProjectId, file.name);
-        if (session) {
-          setSessionId(session.id);
-          const data = await loadTakeoff(session.id);
-          if (data && !dbLoaded) {
-            if (data.groups && data.groups.length > 0) {
-              setGroups(data.groups);
-            }
-            if (data.measurements && data.measurements.length > 0) {
-              setAllMeasurements(data.measurements);
-            }
-            setDbLoaded(true);
-          }
-        }
-      }
-
-      panZoom.resetView();
-
-      setTool("select");
-      setLineStart(null);
-      setLineEnd(null);
-      setHoverPt(null);
-      setAreaPoints([]);
-      setAreaHoverPt(null);
-      setCountPoints([]);
-      setVolumePoints([]);
-      setVolumeHoverPt(null);
-      setShowDepthPrompt(false);
-
-      fitScaleRef.current = null;
-
-      if (viewerRef.current) {
-        viewerRef.current.scrollLeft = 0;
-        viewerRef.current.scrollTop = 0;
-      }
-    } catch (e: any) {
-      setError("PDF load failed: " + (e?.message || String(e)));
-      setPdf(null);
-      setNumPages(0);
-      setPageNumber(1);
-    } finally {
-      setLoadingPdf(false);
-    }
+    return 0;
   }
+  return measurement.result ?? 0;
+}
 
-  async function computeFitScale() {
-    if (!pdf) return null;
-    const viewer = viewerRef.current;
-    if (!viewer) return null;
-
-    const page = await pdf.getPage(pageNumber);
-    const v = page.getViewport({ scale: 1 });
-
-    const pad = 24;
-    const vw = Math.max(200, viewer.clientWidth - pad);
-    const vh = Math.max(200, viewer.clientHeight - pad);
-
-    const fit = Math.min(vw / v.width, vh / v.height) * 0.98;
-    return clamp(fit, 0.3, 4);
-  }
-
-  function drawOverlay(ctx: CanvasRenderingContext2D) {
-    if (calPoints.length > 0) {
-      ctx.save();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#22c55e";
-      ctx.fillStyle = "#22c55e";
-
-      for (const p of calPoints) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      if (calPoints.length === 2) {
-        ctx.beginPath();
-        ctx.moveTo(calPoints[0].x, calPoints[0].y);
-        ctx.lineTo(calPoints[1].x, calPoints[1].y);
-        ctx.stroke();
-      }
-
-      ctx.restore();
-    }
-
-    const a = lineStart;
-    const b = lineEnd ?? (tool === "line" ? hoverPt : null);
-    if (tool === "line" && a && b) {
-      ctx.save();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#60a5fa";
-      ctx.fillStyle = "#60a5fa";
-
-      ctx.beginPath();
-      ctx.arc(a.x, a.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-
-      const px = dist(a, b);
-      const totalFeet = distFeet(a, b);
-      const label = totalFeet > 0 ? formatFeetInches(totalFeet) : `${px.toFixed(0)} px (calibrate to get feet)`;
-
-      const midX = (a.x + b.x) / 2;
-      const midY = (a.y + b.y) / 2;
-
-      ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-      const pad = 6;
-      const w = ctx.measureText(label).width + pad * 2;
-      const h = 22;
-
-      ctx.fillStyle = "rgba(2,6,23,0.85)";
-      ctx.strokeStyle = "rgba(96,165,250,0.9)";
-      ctx.lineWidth = 1;
-
-      (ctx as any).roundRect
-        ? (ctx as any).roundRect(midX - w / 2, midY - h - 8, w, h, 8)
-        : (() => {
-            ctx.beginPath();
-            ctx.rect(midX - w / 2, midY - h - 8, w, h);
-          })();
-
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = "#e2e8f0";
-      ctx.fillText(label, midX - w / 2 + pad, midY - 12);
-
-      ctx.restore();
-    }
-
-    if (tool === "area" && areaPoints.length > 0) {
-      ctx.save();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#a78bfa";
-      ctx.fillStyle = "rgba(167,139,250,0.2)";
-
-      ctx.beginPath();
-      ctx.moveTo(areaPoints[0].x, areaPoints[0].y);
-      for (let i = 1; i < areaPoints.length; i++) {
-        ctx.lineTo(areaPoints[i].x, areaPoints[i].y);
-      }
-
-      if (areaHoverPt && areaPoints.length >= 1) {
-        ctx.lineTo(areaHoverPt.x, areaHoverPt.y);
-        ctx.lineTo(areaPoints[0].x, areaPoints[0].y);
-      }
-
-      if (areaPoints.length >= 3) {
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      ctx.stroke();
-
-      ctx.fillStyle = "#a78bfa";
-      for (const p of areaPoints) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.restore();
-    }
-
-    if (tool === "volume" && volumePoints.length > 0) {
-      ctx.save();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#10b981";
-      ctx.fillStyle = "rgba(16,185,129,0.2)";
-
-      ctx.beginPath();
-      ctx.moveTo(volumePoints[0].x, volumePoints[0].y);
-      for (let i = 1; i < volumePoints.length; i++) {
-        ctx.lineTo(volumePoints[i].x, volumePoints[i].y);
-      }
-
-      if (volumeHoverPt && volumePoints.length >= 1) {
-        ctx.lineTo(volumeHoverPt.x, volumeHoverPt.y);
-        ctx.lineTo(volumePoints[0].x, volumePoints[0].y);
-      }
-
-      if (volumePoints.length >= 3) {
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      ctx.stroke();
-
-      ctx.fillStyle = "#10b981";
-      for (const p of volumePoints) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.restore();
-    }
-  }
-
-  async function render() {
-    try {
-      if (!pdf) return;
-
-      const canvas = canvasRef.current;
-      const viewer = viewerRef.current;
-      if (!canvas || !viewer) return;
-
-      const seq = ++renderSeqRef.current;
-
-      const page = await pdf.getPage(pageNumber);
-
-      if (fitScaleRef.current == null) {
-        const fit = await computeFitScale();
-        if (fit != null) {
-          fitScaleRef.current = fit;
-          panZoom.fitToView(
-            page.getViewport({ scale: 1 }).width,
-            page.getViewport({ scale: 1 }).height,
-            viewer.clientWidth,
-            viewer.clientHeight
-          );
-          return;
-        }
-      }
-
-      const viewport = page.getViewport({ scale: panZoom.zoom });
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-
-      setCanvasWidth(canvas.width);
-      setCanvasHeight(canvas.height);
-
-      canvas.style.width = canvas.width + "px";
-      canvas.style.height = canvas.height + "px";
-      canvas.style.maxWidth = "none";
-      canvas.style.maxHeight = "none";
-      canvas.style.display = "block";
-
-      if (renderTaskRef.current) {
-        try {
-          renderTaskRef.current.cancel();
-        } catch {}
-        renderTaskRef.current = null;
-      }
-
-      const task = page.render({ canvasContext: ctx, viewport });
-      renderTaskRef.current = task;
-
-      try {
-        await task.promise;
-      } catch (err: any) {
-        if (err?.name !== "RenderingCancelledException") throw err;
-        return;
-      } finally {
-        if (renderTaskRef.current === task) renderTaskRef.current = null;
-      }
-
-      if (seq !== renderSeqRef.current) return;
-
-      drawOverlay(ctx);
-    } catch (e: any) {
-      setError("Render failed: " + (e?.message || String(e)));
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (!cancelled) await render();
-      } catch (e: any) {
-        if (!cancelled) setError("Render failed: " + (e?.message || String(e)));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [pdf, pageNumber, panZoom.zoom, panZoom.panX, panZoom.panY, calPoints.length, calibPoints.length, tool, lineStart?.x, lineStart?.y, lineEnd?.x, lineEnd?.y, hoverPt?.x, hoverPt?.y, areaPoints.length, areaHoverPt?.x, areaHoverPt?.y, volumePoints.length, volumeHoverPt?.x, volumeHoverPt?.y]);
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        e.preventDefault();
-        isSpaceDownRef.current = true;
-      }
-
-      if (tool === "area") {
-        if (e.code === "Enter" && areaPoints.length >= 3) {
-          e.preventDefault();
-          finishAreaPolygon();
-        }
-        if (e.code === "Escape") {
-          e.preventDefault();
-          setAreaPoints([]);
-          setAreaHoverPt(null);
-        }
-      }
-
-      if (tool === "count") {
-        if (e.code === "Escape") {
-          e.preventDefault();
-          setCountPoints([]);
-        }
-      }
-
-      if (tool === "volume") {
-        if (e.code === "Enter" && volumePoints.length >= 3) {
-          e.preventDefault();
-          finishVolumePolygon();
-        }
-        if (e.code === "Escape") {
-          e.preventDefault();
-          setVolumePoints([]);
-          setVolumeHoverPt(null);
-          setShowDepthPrompt(false);
-        }
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        isSpaceDownRef.current = false;
-        isPanningRef.current = false;
-        activePointerIdRef.current = null;
-      }
-    };
-    window.addEventListener("keydown", onKeyDown, { passive: false });
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown as any);
-      window.removeEventListener("keyup", onKeyUp as any);
-    };
-  }, [tool, areaPoints, countPoints, volumePoints]);
-
-  useEffect(() => {
-    function onWheel(e: WheelEvent) {
-      if (!overViewer) return;
-      if (e.ctrlKey || e.metaKey) e.preventDefault();
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (!overViewer) return;
-      if (e.ctrlKey || e.metaKey) {
-        const k = e.key.toLowerCase();
-        if (k === "+" || k === "=" || k === "-" || k === "0") e.preventDefault();
-      }
-    }
-
-    window.addEventListener("wheel", onWheel, { passive: false, capture: true });
-    window.addEventListener("keydown", onKeyDown, { capture: true });
-
-    return () => {
-      window.removeEventListener("wheel", onWheel as any, { capture: true } as any);
-      window.removeEventListener("keydown", onKeyDown as any, { capture: true } as any);
-    };
-  }, [overViewer]);
-
-  function nextPage() {
-    if (pageNumber < numPages) {
-      setPageNumber((p) => p + 1);
-      fitScaleRef.current = null;
-      setLineStart(null);
-      setLineEnd(null);
-      setHoverPt(null);
-      setAreaPoints([]);
-      setAreaHoverPt(null);
-      setCountPoints([]);
-      setVolumePoints([]);
-      setVolumeHoverPt(null);
-      setShowDepthPrompt(false);
-      setCalPoints([]);
-      setCalibrating(false);
-      setIsCalibrating(false);
-      setCalibPoints([]);
-    }
-  }
-
-  function prevPage() {
-    if (pageNumber > 1) {
-      setPageNumber((p) => p - 1);
-      fitScaleRef.current = null;
-      setLineStart(null);
-      setLineEnd(null);
-      setHoverPt(null);
-      setAreaPoints([]);
-      setAreaHoverPt(null);
-      setCountPoints([]);
-      setVolumePoints([]);
-      setVolumeHoverPt(null);
-      setShowDepthPrompt(false);
-      setCalPoints([]);
-      setCalibrating(false);
-      setIsCalibrating(false);
-      setCalibPoints([]);
-    }
-  }
-
-  function startCalibrate() {
-    setError(null);
-    setCalibrating(true);
-    setIsCalibrating(true);
-    setCalibPoints([]);
-    setTool("select");
-    setLineStart(null);
-    setLineEnd(null);
-    setHoverPt(null);
-    setCalPoints([]);
-    setScaleModalOpen(true);
-  }
-
-  function cancelCalibrate() {
-    setCalibrating(false);
-    setIsCalibrating(false);
-    setCalibPoints([]);
-    setCalPoints([]);
-    setScaleModalOpen(false);
-  }
-
-  function canvasPointFromEvent(e: React.MouseEvent<HTMLCanvasElement>) {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
+function getLineMidpoint(points: Point[]): Point | null {
+  if (points.length < 2) return null;
+  const mid = Math.floor(points.length / 2);
+  if (points.length === 2) {
     return {
-      x: Math.round(e.clientX - rect.left),
-      y: Math.round(e.clientY - rect.top),
+      x: (points[0].x + points[1].x) / 2,
+      y: (points[0].y + points[1].y) / 2,
     };
   }
+  return points[mid];
+}
 
-  function shouldStartPan(e: React.PointerEvent) {
-    const LEFT = 0;
-    const MIDDLE = 1;
+function getPolygonCentroid(points: Point[]): Point | null {
+  if (points.length < 3) return null;
+  let x = 0;
+  let y = 0;
+  for (const p of points) {
+    x += p.x;
+    y += p.y;
+  }
+  return {
+    x: x / points.length,
+    y: y / points.length,
+  };
+}
 
-    if (e.button === MIDDLE) return true;
+function getMeasurementBadge(measurement: MeasurementRow, isCalibrated: boolean) {
+  const value = getMeasurementDisplayValue(measurement, isCalibrated);
 
-    if (e.button === LEFT && isSpaceDownRef.current) return true;
-
-    return false;
+  if (!isCalibrated && measurement.type !== "count") {
+    return `${formatNumber(value)} px (uncalibrated)`;
   }
 
-  function onViewerPointerDown(e: React.PointerEvent) {
-    const el = viewerRef.current;
-    if (!el) return;
+  const unit = measurement.unit ?? "";
+  return `${formatNumber(value)} ${unit}`.trim();
+}
 
-    if (!shouldStartPan(e)) return;
+function brightenColor(hex: string, percent: number = 30): string {
+  const num = parseInt(hex.replace("#", ""), 16);
+  const r = Math.min(255, ((num >> 16) & 255) + (255 - ((num >> 16) & 255)) * (percent / 100));
+  const g = Math.min(255, ((num >> 8) & 255) + (255 - ((num >> 8) & 255)) * (percent / 100));
+  const b = Math.min(255, (num & 255) + (255 - (num & 255)) * (percent / 100));
+  return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+}
 
-    e.preventDefault();
-    e.stopPropagation();
+function calculateAngle(p1: Point, p2: Point): number {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  if (angle < 0) angle += 360;
+  return angle;
+}
 
-    isPanningRef.current = true;
-    activePointerIdRef.current = e.pointerId;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+function buildMeasurementFromDraft(args: {
+  id?: string;
+  sessionId: string;
+  companyId: string;
+  pageNumber: number;
+  groupId: string | null;
+  type: MeasurementKind;
+  points: Point[];
+  scale: number | null;
+  baseUnit: UnitSystem;
+  depth: number | null;
+}): MeasurementRow {
+  const { id, sessionId, companyId, pageNumber, groupId, type, points, scale, baseUnit, depth } = args;
+  const lengthPx = polylineLength(points);
+  const areaPx = polygonArea(points);
+  const realLength = scale ? lengthPx * scale : 0;
+  const realArea = scale ? areaPx * scale * scale : 0;
+  const realVolume = scale ? realArea * (depth ?? 0) : 0;
 
-    panZoom.startPan(e.clientX, e.clientY);
+  let result = 0;
+  let unit: string = baseUnit;
+
+  if (type === "line") {
+    result = realLength;
+    unit = baseUnit;
+  } else if (type === "area") {
+    result = realArea;
+    unit = getAreaUnit(baseUnit);
+  } else if (type === "count") {
+    result = 1;
+    unit = "ea";
+  } else if (type === "volume") {
+    result = realVolume;
+    unit = getVolumeUnit(baseUnit);
   }
 
-  function onViewerPointerMove(e: React.PointerEvent) {
-    if (!isPanningRef.current) return;
-    if (activePointerIdRef.current !== e.pointerId) return;
+  return {
+    id: id ?? uid(),
+    session_id: sessionId,
+    company_id: companyId,
+    page_number: pageNumber,
+    group_id: groupId,
+    type,
+    points,
+    unit,
+    result,
+    raw_length: lengthPx,
+    raw_area: areaPx,
+    raw_count: type === "count" ? 1 : null,
+    raw_volume: areaPx * (depth ?? 0),
+    scale_x: scale,
+    scale_y: scale,
+    meta: { depth },
+    sort_order: 0,
+  };
+}
 
-    e.preventDefault();
-
-    panZoom.updatePan(e.clientX, e.clientY);
-  }
-
-  function endPan(e?: React.PointerEvent) {
-    if (!isPanningRef.current) return;
-    isPanningRef.current = false;
-    if (e && activePointerIdRef.current === e.pointerId) {
-      try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
-    }
-    activePointerIdRef.current = null;
-    panZoom.endPan();
-  }
-
-  function onViewerPointerUp(e: React.PointerEvent) {
-    if (!isPanningRef.current) return;
-    e.preventDefault();
-    e.stopPropagation();
-    endPan(e);
-  }
-
-  function onViewerPointerLeave(e: React.PointerEvent) {
-    endPan(e);
-  }
-
-  function onViewerWheel(e: React.WheelEvent) {
-    const el = viewerRef.current;
-    if (!el) return;
-
-    e.preventDefault();
-
-    const isZoomGesture = e.ctrlKey;
-
-    if (!isZoomGesture) {
-      panZoom.updatePan(e.clientX + e.deltaX, e.clientY + e.deltaY);
+  (p1: Point, p2: Point, distance: number, unit: UnitSystem) => {
+    if (!Number.isFinite(distance) || distance <= 0) {
+      setErrorText("Calibration requires a valid distance.");
       return;
     }
 
-    const rect = el.getBoundingClientRect();
-    panZoom.handleWheel(e.nativeEvent, rect);
-  }
-
-  function onCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (isPanningRef.current) return;
-
-    if (isCalibrating) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const el = viewerRef.current;
-      if (!el) return;
-
-      const rect = el.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-
-      const x = (mx - panZoom.panX) / panZoom.zoom;
-      const y = (my - panZoom.panY) / panZoom.zoom;
-
-      const newPoint = { x, y };
-
-      setCalibPoints((prev) => {
-        if (prev.length >= 2) return [newPoint];
-        return [...prev, newPoint];
-      });
-
+    const pxDistance = distanceBetween(p1, p2);
+    if (pxDistance <= 0) {
+      setErrorText("Calibration points are invalid.");
       return;
     }
 
-    if (calibrating) {
-      const p = canvasPointFromEvent(e);
-      setCalPoints((prev) => {
-        if (prev.length >= 2) return [p];
-        return [...prev, p];
-      });
-      return;
-    }
+    const scale = distance / pxDistance;
 
-    if (tool === "line") {
-      const p = canvasPointFromEvent(e);
-      if (!lineStart) {
-        setLineStart(p);
-        setLineEnd(null);
-        return;
+    setPageRows((prev) => {
+      const found = prev.find((p) => p.page_number === currentPage);
+      if (found) {
+        return prev.map((p) =>
+          p.page_number === currentPage
+            ? {
+                ...p,
+                session_id: session?.id ?? p.session_id,
+                calibration_point_1: p1,
+                calibration_point_2: p2,
+                calibration_distance: distance,
+                calibration_unit: unit,
+                calibration_scale: scale,
+                updated_at: new Date().toISOString(),
+              }
+            : p
+        );
       }
-      if (!lineEnd) {
-        setLineEnd(p);
 
-        if (feetPerPixel && feetPerPixel > 0) {
-          const pixelsPerUnit = 1 / feetPerPixel;
-          const activeGroup = groups.find(g => g.id === activeGroupId);
-          addMeasurement({
-            type: "line",
-            points: [lineStart, p],
-            pixelsPerUnit,
-            unit: "ft",
-            label: `Line measurement ${measurements.length + 1}`,
-            color: activeGroup?.color || "#60a5fa",
-            groupId: activeGroupId || undefined,
-          });
-        }
+      if (!session) return prev;
 
-        return;
-      }
-      setLineStart(p);
-      setLineEnd(null);
-      return;
-    }
-
-    if (tool === "area") {
-      const p = canvasPointFromEvent(e);
-      setAreaPoints((prev) => [...prev, p]);
-      return;
-    }
-
-    if (tool === "volume") {
-      const p = canvasPointFromEvent(e);
-      setVolumePoints((prev) => [...prev, p]);
-      return;
-    }
-
-    if (tool === "count") {
-      const p = canvasPointFromEvent(e);
-
-      if (feetPerPixel && feetPerPixel > 0) {
-        const pixelsPerUnit = 1 / feetPerPixel;
-        const activeGroup = groups.find(g => g.id === activeGroupId);
-        addMeasurement({
-          type: "count",
-          points: [p],
-          pixelsPerUnit,
-          unit: "ea",
-          label: `Count ${measurements.length + 1}`,
-          color: activeGroup?.color || "#f59e0b",
-          groupId: activeGroupId || undefined,
-        });
-      }
-      return;
-    }
-  }
-
-  function onCanvasDoubleClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (tool === "area" && areaPoints.length >= 3) {
-      e.preventDefault();
-      e.stopPropagation();
-      finishAreaPolygon();
-    }
-
-    if (tool === "volume" && volumePoints.length >= 3) {
-      e.preventDefault();
-      e.stopPropagation();
-      finishVolumePolygon();
-    }
-  }
-
-  function onCanvasMove(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (tool === "line") {
-      if (!lineStart) return;
-      if (lineEnd) return;
-      setHoverPt(canvasPointFromEvent(e));
-      return;
-    }
-
-    if (tool === "area" && areaPoints.length > 0) {
-      setAreaHoverPt(canvasPointFromEvent(e));
-      return;
-    }
-
-    if (tool === "volume" && volumePoints.length > 0) {
-      setVolumeHoverPt(canvasPointFromEvent(e));
-      return;
-    }
-  }
-
-  function applyScaleFromModal(realFeet: number, opts: { applyAllPages: boolean; autoDimLine: boolean }) {
-    if (realFeet === 0) {
-      setFeetPerPixel(null);
-      setCalibrating(false);
-      setIsCalibrating(false);
-      setCalPoints([]);
-      setCalibPoints([]);
-      setScaleModalOpen(false);
-      setError(null);
-      return;
-    }
-
-    const pointsToUse = isCalibrating ? calibPoints : calPoints;
-    const pointsLength = isCalibrating ? calibPoints.length : calPoints.length;
-
-    if (pointsLength !== 2) {
-      setError("Click two points on the drawing first.");
-      return;
-    }
-
-    const pixelDist = dist(pointsToUse[0], pointsToUse[1]);
-    if (pixelDist <= 0) {
-      setError("Points too close.");
-      return;
-    }
-
-    const fpp = realFeet / pixelDist;
-    setFeetPerPixel(fpp);
-
-    setCalibrating(false);
-    setIsCalibrating(false);
-    setScaleModalOpen(false);
-    setError(null);
-
-    if (!opts.autoDimLine) {
-      setCalPoints([]);
-      setCalibPoints([]);
-    }
-  }
-
-  function handleCalibrationOk(lengthFeet: number) {
-    if (!lengthFeet) return;
-
-    setPendingCalibLength(lengthFeet);
-    setCalibPoints([]);
-    setIsCalibrating(true);
-    setScaleModalOpen(false);
-  }
-
-  function onCalibrationCancel() {
-    setIsCalibrating(false);
-    setCalibPoints([]);
-    setPendingCalibLength(null);
-    setScaleModalOpen(false);
-  }
-
-  function finishAreaPolygon() {
-    if (areaPoints.length < 3) return;
-
-    if (feetPerPixel && feetPerPixel > 0) {
-      const pixelsPerUnit = 1 / feetPerPixel;
-
-      let areaPixels = 0;
-      for (let i = 0; i < areaPoints.length; i++) {
-        const j = (i + 1) % areaPoints.length;
-        areaPixels += areaPoints[i].x * areaPoints[j].y;
-        areaPixels -= areaPoints[j].x * areaPoints[i].y;
-      }
-      areaPixels = Math.abs(areaPixels / 2);
-
-      const areaFt2 = areaPixels / (pixelsPerUnit * pixelsPerUnit);
-
-      const activeGroup = groups.find(g => g.id === activeGroupId);
-      addMeasurement({
-        type: "area",
-        points: [...areaPoints],
-        pixelsPerUnit,
-        unit: "ft²",
-        label: `Area ${measurements.length + 1}`,
-        color: activeGroup?.color || "#a78bfa",
-        groupId: activeGroupId || undefined,
-      });
-    }
-
-    setAreaPoints([]);
-    setAreaHoverPt(null);
-  }
-
-  function finishVolumePolygon() {
-    if (volumePoints.length < 3) return;
-    setShowDepthPrompt(true);
-  }
-
-  function confirmVolumeWithDepth() {
-    if (volumePoints.length < 3) return;
-
-    const depthInches = parseFloat(depthInput);
-    if (!depthInches || depthInches <= 0) {
-      alert("Please enter a valid depth in inches");
-      return;
-    }
-
-    if (feetPerPixel && feetPerPixel > 0) {
-      const pixelsPerUnit = 1 / feetPerPixel;
-
-      let areaPixels = 0;
-      for (let i = 0; i < volumePoints.length; i++) {
-        const j = (i + 1) % volumePoints.length;
-        areaPixels += volumePoints[i].x * volumePoints[j].y;
-        areaPixels -= volumePoints[j].x * volumePoints[i].y;
-      }
-      areaPixels = Math.abs(areaPixels / 2);
-
-      const areaFt2 = areaPixels / (pixelsPerUnit * pixelsPerUnit);
-      const depthFt = depthInches / 12;
-      const volumeFt3 = areaFt2 * depthFt;
-      const volumeYd3 = volumeFt3 / 27;
-      const volumeM3 = volumeFt3 * 0.028316846592;
-
-      const activeGroup = groups.find(g => g.id === activeGroupId);
-      addMeasurement({
-        type: "volume",
-        points: [...volumePoints],
-        pixelsPerUnit,
-        unit: "yd³",
-        label: `Volume ${measurements.length + 1}`,
-        color: activeGroup?.color || "#10b981",
-        groupId: activeGroupId || undefined,
-        meta: {
-          depthInches,
-          volumeM3,
+      return [
+        ...prev,
+        {
+          session_id: session.id,
+          page_number: currentPage,
+          width: basePageSize.width,
+          height: basePageSize.height,
+          calibration_point_1: p1,
+          calibration_point_2: p2,
+          calibration_distance: distance,
+          calibration_unit: unit,
+          calibration_scale: scale,
+          updated_at: new Date().toISOString(),
         },
-      });
-    }
-
-    setVolumePoints([]);
-    setVolumeHoverPt(null);
-    setShowDepthPrompt(false);
-    setDepthInput("4");
-  }
-
-  const canConfirmCalibration = calibPoints.length === 2;
-
-  useEffect(() => {
-    if (!isCalibrating) return;
-    if (calibPoints.length !== 2) return;
-    if (!pendingCalibLength) return;
-
-    const [a,b] = calibPoints;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const pixelDist = Math.sqrt(dx*dx + dy*dy);
-    if (!pixelDist || pixelDist <= 0) return;
-
-    const newFeetPerPixel = pendingCalibLength / pixelDist;
-    setFeetPerPixel(newFeetPerPixel);
-    setFeetPerPdfUnit(newFeetPerPixel);
-
-    setIsCalibrating(false);
-    setPendingCalibLength(null);
-    setCalibPoints([]);
-  }, [isCalibrating, calibPoints, pendingCalibLength]);
-
-  function toggleGroupVisibility(groupId: string) {
-    setGroups(prev => prev.map(g =>
-      g.id === groupId ? { ...g, visible: !g.visible } : g
-    ));
-  }
-
-  function addNewGroup() {
-    if (!newGroupName.trim()) return;
-
-    const maxGroups = features.maxTakeoffGroups;
-    if (maxGroups !== null && groups.length >= maxGroups) {
-      setPaywallFeature("Unlimited Takeoff Groups");
-      setShowPaywall(true);
-      return;
-    }
-
-    const colors = ["#ef4444", "#84cc16", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
-
-    const newGroup = {
-      id: crypto.randomUUID(),
-      name: newGroupName.trim(),
-      color: randomColor,
-      visible: true,
-      sortOrder: groups.length,
-    };
-
-    setGroups(prev => [...prev, newGroup]);
-    setNewGroupName("");
-    setShowNewGroupForm(false);
-  }
-
-  function deleteGroup(groupId: string) {
-    setGroups(prev => prev.filter(g => g.id !== groupId));
-    if (activeGroupId === groupId) {
-      setActiveGroupId(groups.find(g => g.id !== groupId)?.id || null);
-    }
-  }
-
-  function exportToCSV() {
-    if (!hasFeature("takeoffExport")) {
-      setPaywallFeature("Export Takeoff to CSV");
-      setShowPaywall(true);
-      return;
-    }
-
-    const rows = [["Group", "Type", "Label", "Result", "Unit"]];
-
-    groups.forEach(group => {
-      const groupMeasurements = measurements.filter(m => m.groupId === group.id);
-      groupMeasurements.forEach(m => {
-        const unit = m.type === "line" ? "ft" : m.type === "area" ? "ft²" : m.type === "volume" ? "ft³" : "count";
-        rows.push([
-          group.name,
-          m.type,
-          m.label || "",
-          m.result.toFixed(2),
-          unit
-        ]);
-      });
+      ];
     });
 
-    const csv = rows.map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "takeoff-export.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    setMeasurements((prev) =>
+      prev.map((m) => {
+        if (m.page_number !== currentPage) return m;
+        return recalculateMeasurement(m, scale, unit);
+      })
+    );
+
+    setCalibrationDraft({
+      p1,
+      p2,
+      distanceText: String(distance),
+      unit,
+    });
+
+    setToolMode("select");
+    setDraftPoints([]);
+  },
+  [currentPage, basePageSize, session]
+);
+
+function recalculateMeasurement(measurement: MeasurementRow, scale: number, baseUnit: UnitSystem): MeasurementRow {
+  const lengthPx = measurement.raw_length ?? 0;
+  const areaPx = measurement.raw_area ?? 0;
+  const depth = measurement.meta?.depth ?? 0;
+
+  const realLength = lengthPx * scale;
+  const realArea = areaPx * scale * scale;
+  const realVolume = areaPx * scale * scale * depth;
+
+  let result = 0;
+  let unit: string = baseUnit;
+
+  if (measurement.type === "line") {
+    result = realLength;
+    unit = baseUnit;
+  } else if (measurement.type === "area") {
+    result = realArea;
+    unit = getAreaUnit(baseUnit);
+  } else if (measurement.type === "count") {
+    result = 1;
+    unit = "ea";
+  } else if (measurement.type === "volume") {
+    result = realVolume;
+    unit = getVolumeUnit(baseUnit);
   }
 
-  function changeMeasurementGroup(measurementId: string, newGroupId: string | null) {
-    updateMeasurement(measurementId, { groupId: newGroupId || undefined });
-  }
+  return {
+    ...measurement,
+    unit,
+    result,
+    scale_x: scale,
+    scale_y: scale,
+  };
+}
 
-  function getGroupTotals(groupId: string) {
-    const groupMeasurements = measurements.filter(m => m.groupId === groupId);
+function fractionToDecimal(value: string) {
+  if (value === "1/8") return 0.125;
+  if (value === "1/4") return 0.25;
+  if (value === "3/8") return 0.375;
+  if (value === "1/2") return 0.5;
+  if (value === "5/8") return 0.625;
+  if (value === "3/4") return 0.75;
+  if (value === "7/8") return 0.875;
+  return 0;
+}
 
-    return {
-      line: groupMeasurements
-        .filter(m => m.type === "line")
-        .reduce((sum, m) => sum + m.result, 0),
-      area: groupMeasurements
-        .filter(m => m.type === "area")
-        .reduce((sum, m) => sum + m.result, 0),
-      volume: groupMeasurements
-        .filter(m => m.type === "volume")
-        .reduce((sum, m) => sum + m.result, 0),
-      count: groupMeasurements
-        .filter(m => m.type === "count")
-        .reduce((sum, m) => sum + m.result, 0),
-    };
-  }
+async function tryRpc<T = any>(fn: string, params?: Record<string, any>): Promise<T | null> {
+  const { data, error } = await supabase.rpc(fn, params ?? {});
+  if (error) return null;
+  return (data as T) ?? null;
+}
 
-  const visibleMeasurements = measurements.filter(m => {
-    if (!m.groupId) return true;
-    const group = groups.find(g => g.id === m.groupId);
-    return group?.visible !== false;
-  });
+async function getStorageUrl(bucket: string, path: string): Promise<string> {
+  // For project-files bucket (private), use signed URL with long expiry
+  if (bucket === 'project-files') {
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(path, SIGNED_URL_EXPIRY);
 
-  useEffect(() => {
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+    if (error) {
+      console.error('Failed to create signed URL:', error);
+      throw new Error(`Failed to generate PDF URL: ${error.message}`);
     }
 
-    setSaveStatus("saving");
+    if (!data?.signedUrl) {
+      throw new Error('No signed URL returned from storage');
+    }
 
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        const groupTotalsMap: Record<string, {
-          line_ft: number;
-          area_ft2: number;
-          volume_yd3: number;
-          count_ea: number;
-        }> = {};
+    return data.signedUrl;
+  }
 
-        groups.forEach(group => {
-          const totals = getGroupTotals(group.id);
-          groupTotalsMap[group.id] = {
-            line_ft: totals.line,
-            area_ft2: totals.area,
-            volume_yd3: totals.volume,
-            count_ea: totals.count,
-          };
-        });
+  // For public buckets, use public URL
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
 
-        localStorage.setItem("takeoff_group_totals", JSON.stringify(groupTotalsMap));
+  if (!data?.publicUrl) {
+    throw new Error('No public URL returned from storage');
+  }
 
-        const groupsMetadata = groups.map(g => ({
-          id: g.id,
-          name: g.name,
-          color: g.color,
-          visible: g.visible,
-        }));
-        localStorage.setItem("takeoff_groups", JSON.stringify(groupsMetadata));
+  return data.publicUrl;
+}
 
-        if (activeProjectId && measurements.length > 0) {
-          await saveMeasurementsToDB(
-            activeProjectId,
-            sessionId,
-            measurements,
-            groups
-          );
-        }
+async function uploadPdfToStorage(file: File, projectId: string, sessionId: string) {
+  // Remove extension from filename and sanitize
+  const nameWithoutExt = file.name.replace(/\.pdf$/i, "").replace(/[^\w-]+/g, "_");
+  const timestamp = Date.now();
+  const fileName = `${timestamp}-${nameWithoutExt}.pdf`;
+  const path = `${projectId}/${sessionId}/${fileName}`;
 
-        setSaveStatus("saved");
-      } catch (err) {
-        console.error("Save failed:", err);
-        setSaveStatus("error");
-      }
-    }, 400);
+  for (const bucket of STORAGE_BUCKET_CANDIDATES) {
+    const { error } = await supabase.storage.from(bucket).upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+      contentType: "application/pdf",
+    });
 
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [measurements, groups, activeProjectId, sessionId]);
+    if (!error) {
+      return {
+        bucket,
+        path,
+      };
+    }
+  }
 
-  useEffect(() => {
-    if (!sessionId || !dbLoaded) return;
-
-    const calibrationData = feetPerPixel ? {
-      isCalibrated: true,
-      point1: calPoints[0] || null,
-      point2: calPoints[1] || null,
-      realDistance: 0,
-      unit: "ft" as const,
-      pixelsPerUnit: 1 / (feetPerPixel || 1),
-    } : null;
-
-    saveTakeoffDebounced(sessionId, {
-      groups: groups.map(g => ({
-        ...g,
-        locked: false,
-        trade: undefined,
-      })),
-      measurements,
-      calibration: calibrationData,
-    }, 800);
-
-    return () => {
-      cancelPendingSave();
-    };
-  }, [sessionId, measurements, groups, feetPerPixel, dbLoaded]);
-
-  return (
-    <div className="p-6 h-full flex gap-6">
-      <div className="flex-1 flex flex-col min-w-0">
-        <ScaleModal
-          open={scaleModalOpen}
-          onClose={onCalibrationCancel}
-          onApply={applyScaleFromModal}
-          canApply={calPoints && calPoints.length === 2}
-          isCalibrating={isCalibrating}
-          calibPointsCount={calibPoints.length}
-          canConfirmCalibration={canConfirmCalibration}
-          onCalibrationOk={handleCalibrationOk}
-          onCalibrationCancel={onCalibrationCancel}
-        />
-
-      {routeProjectId ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-xs text-slate-500 mb-1">Project Context</div>
-              <div className="text-sm font-semibold">
-                {currentProject?.name || `Project ${routeProjectId}`}
-              </div>
-              <div className="text-xs text-slate-400 mt-1">
-                Project ID: {routeProjectId}
-              </div>
-            </div>
-            <button
-              onClick={() => nav(`/projects/${routeProjectId}`)}
-              className="px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 text-sm"
-            >
-              Back to Project
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 p-4 mb-4">
-          <div className="text-sm font-semibold text-amber-300">Global Takeoff Mode</div>
-          <div className="text-xs text-amber-400/70 mt-1">
-            No project context. Access takeoff from a project dashboard for project-specific measurements.
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Takeoff</h1>
-          <p className="text-slate-400 text-sm">Fit-to-view on load. Ctrl+wheel zoom-to-cursor. Line tool measures.</p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div
-            className={`px-3 py-1 rounded-lg text-xs font-medium ${
-              saveStatus === "saved"
-                ? "bg-emerald-900/20 text-emerald-300 border border-emerald-900/30"
-                : saveStatus === "saving"
-                ? "bg-slate-800/50 text-slate-400 border border-slate-700"
-                : "bg-red-900/20 text-red-300 border border-red-900/30"
-            }`}
-          >
-            {saveStatus === "saved" ? "Saved ✓" : saveStatus === "saving" ? "Saving…" : "Save failed"}
-          </div>
-
-          <label className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm cursor-pointer">
-            Upload PDF
-            <input
-              type="file"
-              accept="application/pdf,.pdf"
-              className="hidden"
-              onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
-
-          {pdf && (
-            <>
-              <button
-                onClick={startCalibrate}
-                className="px-3 py-2 rounded-xl bg-emerald-900/25 hover:bg-emerald-900/40 border border-emerald-900/40 text-sm"
-              >
-                Calibrate Scale
-              </button>
-              <button
-                onClick={exportToCSV}
-                className="px-3 py-2 rounded-xl bg-blue-900/25 hover:bg-blue-900/40 border border-blue-900/40 text-sm"
-              >
-                Export CSV
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 flex items-center gap-2">
-        <button
-          onClick={() => {
-            setTool("select");
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setAreaPoints([]);
-            setAreaHoverPt(null);
-            setCountPoints([]);
-            setVolumePoints([]);
-            setVolumeHoverPt(null);
-            setShowDepthPrompt(false);
-          }}
-          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "select" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
-        >
-          Select
-        </button>
-
-        <button
-          onClick={() => {
-            setTool("line");
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setAreaPoints([]);
-            setAreaHoverPt(null);
-            setCountPoints([]);
-            setVolumePoints([]);
-            setVolumeHoverPt(null);
-            setShowDepthPrompt(false);
-          }}
-          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "line" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
-        >
-          Line
-        </button>
-
-        <button
-          onClick={() => {
-            setTool("area");
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setAreaPoints([]);
-            setAreaHoverPt(null);
-            setCountPoints([]);
-            setVolumePoints([]);
-            setVolumeHoverPt(null);
-            setShowDepthPrompt(false);
-          }}
-          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "area" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
-        >
-          Area
-        </button>
-
-        <button
-          onClick={() => {
-            setTool("count");
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setAreaPoints([]);
-            setAreaHoverPt(null);
-            setCountPoints([]);
-            setVolumePoints([]);
-            setVolumeHoverPt(null);
-            setShowDepthPrompt(false);
-          }}
-          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "count" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
-        >
-          Count
-        </button>
-
-        <button
-          onClick={() => {
-            setTool("volume");
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setAreaPoints([]);
-            setAreaHoverPt(null);
-            setCountPoints([]);
-            setVolumePoints([]);
-            setVolumeHoverPt(null);
-            setShowDepthPrompt(false);
-          }}
-          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "volume" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
-        >
-          Volume
-        </button>
-
-        <div className="flex-1" />
-
-        {tool === "line" && <div className="text-xs text-slate-400">Click 2 points to measure. 3rd click starts new line.</div>}
-        {tool === "area" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points). ESC to cancel.</div>}
-        {tool === "count" && <div className="text-xs text-slate-400">Click to place count markers. ESC to cancel.</div>}
-        {tool === "volume" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points), then enter depth. ESC to cancel.</div>}
-        {measurements.length > 0 && (
-          <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
-            {measurements.length} measurement{measurements.length === 1 ? '' : 's'}
-          </div>
-        )}
-      </div>
-
-      {groups.length > 0 && (
-        <div className="mt-4 flex items-center gap-2">
-          <label className="text-sm text-slate-400">Group:</label>
-          <select
-            value={activeGroupId || ""}
-            onChange={(e) => setActiveGroupId(e.target.value || null)}
-            className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm"
-          >
-            <option value="">None</option>
-            {groups.map(group => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
-          {activeGroupId && (
-            <div className="flex items-center gap-1 px-2 py-1 bg-slate-800 rounded-lg text-xs">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: groups.find(g => g.id === activeGroupId)?.color }}
-              />
-              <span>{groups.find(g => g.id === activeGroupId)?.name}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {showDepthPrompt && (
-        <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/30 p-4">
-          <div className="text-sm font-semibold text-emerald-200 mb-2">Enter Depth</div>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={depthInput}
-              onChange={(e) => setDepthInput(e.target.value)}
-              className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm w-24"
-              placeholder="4"
-              autoFocus
-            />
-            <span className="text-sm text-slate-400">inches</span>
-            <button
-              onClick={confirmVolumeWithDepth}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium"
-            >
-              Confirm
-            </button>
-            <button
-              onClick={() => {
-                setShowDepthPrompt(false);
-                setVolumePoints([]);
-                setVolumeHoverPt(null);
-              }}
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="mt-4 rounded-xl border border-red-900/40 bg-red-950/30 p-3 text-sm text-red-200">
-          {error}
-        </div>
-      )}
-
-      {loadingPdf && <div className="mt-4 text-sm text-slate-400">Loading PDF…</div>}
-
-      {pdf && (
-        <div className="mt-4 flex items-center gap-2">
-          <button onClick={prevPage} className="px-3 py-2 bg-slate-800 rounded-lg">
-            Prev
-          </button>
-
-          <span className="text-sm">
-            Page {pageNumber} / {numPages}
-          </span>
-
-          <button onClick={nextPage} className="px-3 py-2 bg-slate-800 rounded-lg">
-            Next
-          </button>
-
-          <div className="flex-1" />
-
-          {feetPerPixel ? (
-            <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
-              Scale set: {feetPerPixel.toFixed(4)} ft / px
-            </div>
-          ) : (
-            <div className="text-xs text-slate-400">Scale not set (calibrate before measuring)</div>
-          )}
-
-          <div className="w-3" />
-          <span className="text-sm">{Math.round(panZoom.zoom * 100)}%</span>
-
-          <button
-            onClick={async () => {
-              fitScaleRef.current = null;
-              const fit = await computeFitScale();
-              if (fit != null) {
-                fitScaleRef.current = fit;
-                const page = await pdf.getPage(pageNumber);
-                const v = page.getViewport({ scale: 1 });
-                const viewer = viewerRef.current;
-                if (viewer) {
-                  panZoom.fitToView(v.width, v.height, viewer.clientWidth, viewer.clientHeight);
-                }
-              }
-            }}
-            className="ml-2 px-3 py-2 bg-slate-800 rounded-lg text-sm"
-          >
-            Fit
-          </button>
-        </div>
-      )}
-
-      <div className="mt-4 flex-1 border border-slate-800 rounded-xl bg-slate-950 overflow-hidden">
-        {pdf ? (
-          <div
-            ref={viewerRef}
-            onPointerDown={onViewerPointerDown}
-            onPointerMove={onViewerPointerMove}
-            onPointerUp={onViewerPointerUp}
-            onPointerLeave={onViewerPointerLeave}
-            onWheel={onViewerWheel}
-            onMouseEnter={() => setOverViewer(true)}
-            onMouseLeave={() => setOverViewer(false)}
-            className="p-3 h-full relative"
-            style={{ touchAction: "none", cursor: "default" }}
-          >
-            <div style={{ display: "inline-block", transform: `translate(${panZoom.panX}px, ${panZoom.panY}px)` }}>
-              <canvas
-                ref={canvasRef}
-                onClick={onCanvasClick}
-                onDoubleClick={onCanvasDoubleClick}
-                onMouseMove={onCanvasMove}
-                className={calibrating || isPanningRef.current ? "cursor-crosshair" : (tool === "line" || tool === "area" || tool === "count" || tool === "volume") ? "cursor-crosshair" : "cursor-default"}
-                style={{ userSelect: "none" }}
-              />
-
-              <MeasurementLayer
-                measurements={visibleMeasurements}
-                scale={panZoom.zoom}
-                offsetX={0}
-                offsetY={0}
-                width={canvasWidth}
-                height={canvasHeight}
-                onMeasurementClick={(id) => {
-                  console.log("Clicked measurement:", id);
-                }}
-              />
-            </div>
-
-            <div className="mt-2 text-xs text-slate-400">
-              {isCalibrating
-                ? `Calibration: click 2 points on drawing (${calibPoints.length}/2).`
-                : "Calibrate: open Scale, click 2 points on drawing, then OK."
-              }
-            </div>
-          </div>
-        ) : (
-          <div className="h-full flex items-center justify-center text-slate-500">Upload a PDF drawing to begin.</div>
-        )}
-      </div>
-    </div>
-
-    <div className="w-80 flex-shrink-0 border-l border-slate-800 pl-6 flex flex-col overflow-hidden">
-      <div className="mb-4 flex-shrink-0">
-        <h2 className="text-xl font-semibold mb-2">Groups</h2>
-        <p className="text-slate-400 text-xs">Organize measurements by trade or category</p>
-      </div>
-
-      <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-        {groups.map(group => {
-          const totals = getGroupTotals(group.id);
-          const hasData = totals.line > 0 || totals.area > 0 || totals.volume > 0 || totals.count > 0;
-          const groupMeasurements = measurements.filter(m => m.groupId === group.id);
-
-          return (
-            <div
-              key={group.id}
-              className={`rounded-lg border p-3 ${
-                activeGroupId === group.id
-                  ? "bg-slate-800/50 border-slate-700"
-                  : "bg-slate-900/30 border-slate-800 hover:bg-slate-900/50"
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <button
-                  onClick={() => toggleGroupVisibility(group.id)}
-                  className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-slate-700"
-                >
-                  {group.visible ? (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                  )}
-                </button>
-
-                <div
-                  className="w-3 h-3 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: group.color }}
-                />
-
-                <button
-                  onClick={() => setActiveGroupId(group.id)}
-                  className="flex-1 text-left text-sm font-medium"
-                >
-                  {group.name}
-                </button>
-
-                {groupMeasurements.length > 0 && (
-                  <div className="px-2 py-0.5 bg-slate-700/50 rounded-full text-xs text-slate-300">
-                    {groupMeasurements.length}
-                  </div>
-                )}
-
-                <button
-                  onClick={() => deleteGroup(group.id)}
-                  className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-red-900/30 text-slate-400 hover:text-red-400"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {hasData && (
-                <div className="mt-2 pt-2 border-t border-slate-700/50 space-y-1 text-xs">
-                  {totals.line > 0 && (
-                    <div className="flex justify-between text-slate-400">
-                      <span>Line:</span>
-                      <span className="font-mono">{totals.line.toFixed(2)} ft</span>
-                    </div>
-                  )}
-                  {totals.area > 0 && (
-                    <div className="flex justify-between text-slate-400">
-                      <span>Area:</span>
-                      <span className="font-mono">{totals.area.toFixed(2)} ft²</span>
-                    </div>
-                  )}
-                  {totals.volume > 0 && (
-                    <div className="flex justify-between text-slate-400">
-                      <span>Volume:</span>
-                      <span className="font-mono">{totals.volume.toFixed(2)} yd³</span>
-                    </div>
-                  )}
-                  {totals.count > 0 && (
-                    <div className="flex justify-between text-slate-400">
-                      <span>Count:</span>
-                      <span className="font-mono">{totals.count} ea</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {measurements.filter(m => !m.groupId).length > 0 && (
-          <div className="mt-4 pt-4 border-t border-slate-700/50">
-            <div className="text-xs font-semibold text-slate-400 mb-2">Ungrouped Measurements</div>
-            <div className="space-y-1">
-              {measurements.filter(m => !m.groupId).map(m => (
-                <div
-                  key={m.id}
-                  className="flex items-center gap-2 p-2 bg-slate-900/30 rounded text-xs"
-                >
-                  <div className="flex-1 truncate">
-                    <div className="font-medium">{m.label || `${m.type} measurement`}</div>
-                    <div className="text-slate-400">
-                      {m.result.toFixed(2)} {m.unit}
-                    </div>
-                  </div>
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        changeMeasurementGroup(m.id, e.target.value);
-                      }
-                    }}
-                    className="px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs"
-                  >
-                    <option value="">Move to...</option>
-                    {groups.map(g => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-4 pt-4 border-t border-slate-800 flex-shrink-0">
-        {showNewGroupForm ? (
-          <div className="space-y-2">
-            <input
-              type="text"
-              value={newGroupName}
-              onChange={(e) => setNewGroupName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") addNewGroup();
-                if (e.key === "Escape") {
-                  setShowNewGroupForm(false);
-                  setNewGroupName("");
-                }
-              }}
-              placeholder="Group name"
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm"
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={addNewGroup}
-                className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium"
-              >
-                Add
-              </button>
-              <button
-                onClick={() => {
-                  setShowNewGroupForm(false);
-                  setNewGroupName("");
-                }}
-                className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowNewGroupForm(true)}
-            className="w-full px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm flex items-center justify-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Group
-          </button>
-        )}
-      </div>
-    </div>
-
-    <PaywallModal
-      isOpen={showPaywall}
-      onClose={() => setShowPaywall(false)}
-      featureName={paywallFeature}
-    />
-  </div>
-  );
+  return null;
 }
 
 export default function TakeoffPage() {
+  const params = useParams();
+  const projectContext = useProjectContext() as any;
+
+  const activeProjectId: string | null =
+    params.projectId ??
+    projectContext?.currentProjectId ??
+    projectContext?.selectedProjectId ??
+    projectContext?.projectId ??
+    projectContext?.activeProjectId ??
+    null;
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayRef = useRef<SVGSVGElement | null>(null);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [loadingPdf, setLoadingPdf] = useState(false);
+  const [errorText, setErrorText] = useState<string>("");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [companyId, setCompanyId] = useState<string | null>(null);
+
+  const [session, setSession] = useState<SessionRow | null>(null);
+  const [pageRows, setPageRows] = useState<PageRow[]>([]);
+  const [groups, setGroups] = useState<GroupRow[]>([]);
+  const [measurements, setMeasurements] = useState<MeasurementRow[]>([]);
+
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string>("");
+  const [pdfName, setPdfName] = useState<string>("");
+  const [pageCount, setPageCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [basePageSize, setBasePageSize] = useState({ width: 1, height: 1 });
+  const [pageThumbnails, setPageThumbnails] = useState<Map<number, string>>(new Map());
+
+  const [toolMode, setToolMode] = useState<ToolMode>("select");
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  const [highlightedGroupId, setHighlightedGroupId] = useState<string | null>(null);
+
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 24, y: 24 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [isSpacebarPressed, setIsSpacebarPressed] = useState(false);
+  const [panMode, setPanMode] = useState<"none" | "middle" | "spacebar">("none");
+
+  const [draftPoints, setDraftPoints] = useState<Point[]>([]);
+  const [draftVolumeDepth, setDraftVolumeDepth] = useState<string>("1");
+  const [measurementCounter, setMeasurementCounter] = useState(1);
+  const [currentMousePoint, setCurrentMousePoint] = useState<Point | null>(null);
+  const [cursorScreenPos, setCursorScreenPos] = useState<{ x: number; y: number } | null>(null);
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<
+  "drawings" | "measurements" | "extracted" | "boq" | "settings"
+>("drawings");
+
+  const [calibrationDraft, setCalibrationDraft] = useState<CalibrationDraft>({
+    p1: null,
+    p2: null,
+    distanceText: "1",
+    unit: "ft",
+  });
+  
+const [showCalibrationModal, setShowCalibrationModal] = useState(false);
+
+const [calibrationForm, setCalibrationForm] = useState({
+  feet: "",
+  inches: "",
+  fraction: "0",
+  unit: "ft" as UnitSystem,
+});
+  
+
+  const [showExportModal, setShowExportModal] = useState(false);
+
+  const [dragState, setDragState] = useState<{
+    type: "measurement" | "calibration" | null;
+    measurementId: string | null;
+    pointIndex: number | null;
+    calibrationPoint: "p1" | "p2" | null;
+  }>({
+    type: null,
+    measurementId: null,
+    pointIndex: null,
+    calibrationPoint: null,
+  });
+
+  const deletedMeasurementIdsRef = useRef<string[]>([]);
+  const deletedGroupIdsRef = useRef<string[]>([]);
+  const saveTimeoutRef = useRef<number | null>(null);
+
+  const safeGroups = useMemo(
+    () =>
+      [...groups]
+        .filter(Boolean)
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
+    [groups]
+  );
+
+  const currentPageRow = useMemo<PageRow | null>(() => {
+    return pageRows.find((p) => p.page_number === currentPage) ?? null;
+  }, [pageRows, currentPage]);
+
+  const calibrationScale = currentPageRow?.calibration_scale ?? null;
+  const calibrationUnit = (currentPageRow?.calibration_unit ?? "ft") as UnitSystem;
+
+  const safeMeasurements = useMemo(
+    () =>
+      [...measurements]
+        .filter(Boolean)
+        .sort((a, b) => {
+          const pageDiff = a.page_number - b.page_number;
+          if (pageDiff !== 0) return pageDiff;
+          const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return bTime - aTime;
+        }),
+    [measurements]
+  );
+
+  const pageMeasurements = useMemo(
+    () => safeMeasurements.filter((m) => m.page_number === currentPage),
+    [safeMeasurements, currentPage]
+  );
+
+  const selectedMeasurement = useMemo(
+    () => safeMeasurements.find((m) => m.id === selectedMeasurementId) ?? null,
+    [safeMeasurements, selectedMeasurementId]
+  );
+
+  const totalsByGroup = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        group: GroupRow | null;
+        line: number;
+        area: number;
+        count: number;
+        volume: number;
+        lineUnit: string;
+        areaUnit: string;
+        countUnit: string;
+        volumeUnit: string;
+      }
+    >();
+
+    const ensure = (groupId: string | null) => {
+      const key = groupId ?? "__ungrouped__";
+      if (!map.has(key)) {
+        map.set(key, {
+          group: safeGroups.find((g) => g.id === groupId) ?? null,
+          line: 0,
+          area: 0,
+          count: 0,
+          volume: 0,
+          lineUnit: calibrationUnit,
+          areaUnit: getAreaUnit(calibrationUnit),
+          countUnit: "ea",
+          volumeUnit: getVolumeUnit(calibrationUnit),
+        });
+      }
+      return map.get(key)!;
+    };
+
+    safeMeasurements.forEach((m) => {
+      const row = ensure(m.group_id);
+      if (m.type === "line") {
+        row.line += m.result ?? 0;
+        row.lineUnit = m.unit ?? row.lineUnit;
+      }
+      if (m.type === "area") {
+        row.area += m.result ?? 0;
+        row.areaUnit = m.unit ?? row.areaUnit;
+      }
+      if (m.type === "count") {
+        row.count += m.result ?? 0;
+        row.countUnit = m.unit ?? row.countUnit;
+      }
+      if (m.type === "volume") {
+        row.volume += m.result ?? 0;
+        row.volumeUnit = m.unit ?? row.volumeUnit;
+      }
+    });
+
+    return Array.from(map.values());
+  }, [safeMeasurements, safeGroups, calibrationUnit]);
+
+  const groupSummariesForExport = useMemo(() => {
+    return totalsByGroup
+      .filter((t) => t.group !== null)
+      .map((t) => ({
+        groupId: t.group!.id,
+        groupName: t.group!.name,
+        color: t.group!.color,
+        totalLength: t.line,
+        totalArea: t.area,
+        totalVolume: t.volume,
+        totalCount: t.count,
+        lengthUnit: t.lineUnit,
+        areaUnit: t.areaUnit,
+        volumeUnit: t.volumeUnit,
+      }));
+  }, [totalsByGroup]);
+
+  const currentStageWidth = basePageSize.width * zoom;
+  const currentStageHeight = basePageSize.height * zoom;
+
+  const createDefaultGroup = useCallback((sessionId: string, companyId: string) => {
+    const next: GroupRow = {
+      id: uid(),
+      session_id: sessionId,
+      company_id: companyId,
+      name: "General",
+      color: COLORS[0],
+      trade: null,
+      is_hidden: false,
+      sort_order: 1,
+    };
+    setGroups([next]);
+    setSelectedGroupId(next.id);
+  }, []);
+
+  const loadSessionData = useCallback(
+    async (projectId: string) => {
+      setLoading(true);
+      setErrorText("");
+
+      try {
+        // Fetch user's company_id first
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Not authenticated");
+
+        const { data: profile, error: profileError } = await supabase
+          .from("user_profiles")
+          .select("company_id")
+          .eq("id", user.id)
+          .single();
+
+        if (profileError) throw profileError;
+        if (!profile?.company_id) throw new Error("User has no company");
+
+        const userCompanyId = profile.company_id;
+        setCompanyId(userCompanyId);
+
+        let sessionRow: SessionRow | null = null;
+
+        const rpcSession = await tryRpc<any>("get_or_create_takeoff_session", {
+          p_project_id: projectId,
+        });
+
+        if (rpcSession) {
+          sessionRow = Array.isArray(rpcSession) ? rpcSession[0] : rpcSession;
+        }
+
+        if (!sessionRow) {
+          const { data: existing, error: existingError } = await supabase
+            .from("takeoff_sessions")
+            .select("*")
+            .eq("project_id", projectId)
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (existingError && existingError.code !== "PGRST116") throw existingError;
+
+          if (existing) {
+            sessionRow = existing as SessionRow;
+          } else {
+            const { data: inserted, error: insertError } = await supabase
+              .from("takeoff_sessions")
+              .insert({
+                project_id: projectId,
+                company_id: userCompanyId,
+                pdf_name: "",
+              })
+              .select("*")
+              .single();
+
+            if (insertError) throw insertError;
+            sessionRow = inserted as SessionRow;
+          }
+        }
+
+        setSession(sessionRow);
+     setCurrentPage(1);
+
+        let groupData: GroupRow[] = [];
+        let measurementData: MeasurementRow[] = [];
+
+        const [groupsRes, measurementsRes] = await Promise.all([
+          supabase
+            .from("takeoff_groups")
+            .select("*")
+            .eq("session_id", sessionRow.id)
+            .order("sort_order", { ascending: true }),
+          supabase
+            .from("takeoff_measurements")
+            .select("*")
+            .eq("session_id", sessionRow.id)
+            .order("updated_at", { ascending: false }),
+        ]);
+
+        if (groupsRes.error) throw groupsRes.error;
+        if (measurementsRes.error) throw measurementsRes.error;
+
+        groupData = (groupsRes.data ?? []) as GroupRow[];
+        measurementData = (measurementsRes.data ?? []) as MeasurementRow[];
+
+        setPageRows([]);
+        setGroups(groupData);
+        setMeasurements(measurementData);
+
+        if (groupData.length > 0) {
+          setSelectedGroupId(groupData[0].id);
+        } else {
+          createDefaultGroup(sessionRow.id, sessionRow.company_id);
+        }
+
+        // Always generate fresh URL from bucket+path (never trust cached pdf_url)
+        let resolvedPdfUrl = "";
+        if (sessionRow.pdf_bucket && sessionRow.pdf_path) {
+          resolvedPdfUrl = await getStorageUrl(sessionRow.pdf_bucket, sessionRow.pdf_path);
+        }
+
+        setPdfUrl(resolvedPdfUrl);
+        setPdfName(sessionRow.pdf_name ?? "");
+      } catch (error: any) {
+        setErrorText(error?.message ?? "Failed to load takeoff session.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [createDefaultGroup]
+  );
+
+  useEffect(() => {
+    if (!activeProjectId) {
+      setLoading(false);
+      setErrorText("No active project selected.");
+      return;
+    }
+    void loadSessionData(activeProjectId);
+  }, [activeProjectId, loadSessionData]);
+
+  useEffect(() => {
+    if (!pdfUrl) {
+      setPdfDoc(null);
+      setPageCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      setLoadingPdf(true);
+      setErrorText("");
+      try {
+        const pdf = await getDocument(pdfUrl).promise;
+        if (cancelled) return;
+        setPdfDoc(pdf);
+        setPageCount(pdf.numPages);
+        setCurrentPage((prev) => clamp(prev, 1, pdf.numPages));
+      } catch (error: any) {
+        if (!cancelled) {
+          setErrorText(error?.message ?? "Failed to load PDF.");
+          setPdfDoc(null);
+          setPageCount(0);
+        }
+      } finally {
+        if (!cancelled) setLoadingPdf(false);
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfUrl]);
+
+  useEffect(() => {
+    if (!pdfDoc) {
+      setPageThumbnails(new Map());
+      return;
+    }
+
+    let cancelled = false;
+
+    const generateThumbnails = async () => {
+      const thumbnails = new Map<number, string>();
+
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        if (cancelled) break;
+
+        try {
+          const page = await pdfDoc.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 0.2 });
+
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d");
+          if (!context) continue;
+
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+
+          await page.render({
+            canvasContext: context,
+            viewport: viewport,
+            canvas: canvas,
+          }).promise;
+
+          const thumbnailDataUrl = canvas.toDataURL("image/png");
+          thumbnails.set(pageNum, thumbnailDataUrl);
+
+          if (!cancelled) {
+            setPageThumbnails(new Map(thumbnails));
+          }
+        } catch (error) {
+          console.error(`Failed to generate thumbnail for page ${pageNum}:`, error);
+        }
+      }
+    };
+
+    void generateThumbnails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfDoc]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if ((event.key === "ArrowLeft" || event.key === "PageUp") && currentPage > 1) {
+        event.preventDefault();
+        setCurrentPage((prev) => Math.max(1, prev - 1));
+      } else if ((event.key === "ArrowRight" || event.key === "PageDown") && currentPage < pageCount) {
+        event.preventDefault();
+        setCurrentPage((prev) => Math.min(pageCount, prev + 1));
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        setCurrentPage(1);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        setCurrentPage(pageCount);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentPage, pageCount]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (event.code === "Space" && !isSpacebarPressed) {
+        event.preventDefault();
+        setIsSpacebarPressed(true);
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        setIsSpacebarPressed(false);
+        if (panMode === "spacebar") {
+          setIsPanning(false);
+          setPanMode("none");
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [isSpacebarPressed, panMode]);
+
+  const renderCurrentPage = useCallback(async () => {
+    if (!pdfDoc || !canvasRef.current) return;
+
+    const page = await pdfDoc.getPage(currentPage);
+    const dpr = window.devicePixelRatio || 1;
+    const cssViewport = page.getViewport({ scale: 1 });
+    const renderViewport = page.getViewport({ scale: zoom * dpr });
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    canvas.width = Math.floor(renderViewport.width);
+    canvas.height = Math.floor(renderViewport.height);
+    canvas.style.width = `${cssViewport.width * zoom}px`;
+    canvas.style.height = `${cssViewport.height * zoom}px`;
+
+    setBasePageSize({
+      width: cssViewport.width,
+      height: cssViewport.height,
+    });
+
+    await page.render({
+      canvasContext: ctx,
+      viewport: renderViewport,
+      canvas: canvas,
+    }).promise;
+
+    setPageRows((prev) => {
+      const existing = prev.find((p) => p.page_number === currentPage);
+      if (existing) {
+        return prev.map((p) =>
+          p.page_number === currentPage
+            ? {
+                ...p,
+                width: cssViewport.width,
+                height: cssViewport.height,
+              }
+            : p
+        );
+      }
+
+      if (!session) return prev;
+
+      return [
+        ...prev,
+        {
+          session_id: session.id,
+          page_number: currentPage,
+          width: cssViewport.width,
+          height: cssViewport.height,
+        },
+      ].sort((a, b) => a.page_number - b.page_number);
+    });
+  }, [pdfDoc, currentPage, zoom, session]);
+
+  useEffect(() => {
+    void renderCurrentPage();
+  }, [renderCurrentPage]);
+
+  const performWorkspaceZoom = useCallback(
+    (deltaY: number, clientX: number, clientY: number) => {
+      const delta = -deltaY;
+      const zoomFactor = delta > 0 ? 0.1 : -0.1;
+      const newZoom = clamp(zoom + zoomFactor, 0.25, 4);
+
+      if (newZoom === zoom) return;
+
+      const workspace = workspaceRef.current;
+      if (!workspace) {
+        setZoom(newZoom);
+        return;
+      }
+
+      const rect = workspace.getBoundingClientRect();
+      const mouseX = clientX - rect.left;
+      const mouseY = clientY - rect.top;
+
+      const beforeZoomX = (mouseX - pan.x) / zoom;
+      const beforeZoomY = (mouseY - pan.y) / zoom;
+
+      const afterPanX = mouseX - beforeZoomX * newZoom;
+      const afterPanY = mouseY - beforeZoomY * newZoom;
+
+      setZoom(newZoom);
+      setPan({ x: afterPanX, y: afterPanY });
+    },
+    [zoom, pan]
+  );
+
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+
+    const handleNativeWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      performWorkspaceZoom(event.deltaY, event.clientX, event.clientY);
+    };
+
+    workspace.addEventListener("wheel", handleNativeWheel, { passive: false });
+
+    return () => {
+      workspace.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, [performWorkspaceZoom]);
+
+  const queueAutosave = useCallback(() => {
+    if (!session) return;
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    setSaveStatus("saving");
+
+    saveTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        const sessionPayload = {
+          id: session.id,
+          project_id: session.project_id,
+          company_id: session.company_id,
+          pdf_name: session.pdf_name ?? "",
+          name: session.name ?? null,
+          pdf_bucket: session.pdf_bucket ?? null,
+          pdf_path: session.pdf_path ?? null,
+          pdf_url: session.pdf_url ?? null,
+          calibration: session.calibration ?? null,
+          updated_at: new Date().toISOString(),
+        };
+
+        const groupPayload = groups.map((g, index) => ({
+          id: g.id,
+          session_id: session.id,
+          company_id: g.company_id,
+          name: g.name,
+          color: g.color,
+          trade: g.trade ?? null,
+          is_hidden: g.is_hidden ?? false,
+          sort_order: index + 1,
+        }));
+
+        const measurementPayload = measurements.map((m, index) => ({
+          id: m.id,
+          session_id: session.id,
+          company_id: m.company_id,
+          page_number: m.page_number,
+          group_id: m.group_id,
+          tool_type: m.type,
+          type: m.type,
+          points: m.points,
+          unit: m.unit,
+          result: m.result,
+          raw_length: m.raw_length ?? null,
+          raw_area: m.raw_area ?? null,
+          raw_count: m.raw_count ?? null,
+          raw_volume: m.raw_volume ?? null,
+          scale_x: m.scale_x ?? null,
+          scale_y: m.scale_y ?? null,
+          meta: m.meta ?? null,
+          sort_order: index,
+        }));
+
+        const [sessionRes, groupsRes, measurementsRes] = await Promise.all([
+          supabase.from("takeoff_sessions").upsert(sessionPayload, { onConflict: "id" }),
+          groupPayload.length
+            ? supabase.from("takeoff_groups").upsert(groupPayload, { onConflict: "id" })
+            : Promise.resolve({ error: null } as any),
+          measurementPayload.length
+            ? supabase.from("takeoff_measurements").upsert(measurementPayload, {
+                onConflict: "id",
+              })
+            : Promise.resolve({ error: null } as any),
+        ]);
+
+        if (sessionRes.error) throw sessionRes.error;
+        if (groupsRes.error) throw groupsRes.error;
+        if (measurementsRes.error) throw measurementsRes.error;
+
+        if (deletedMeasurementIdsRef.current.length) {
+          const delRes = await supabase
+            .from("takeoff_measurements")
+            .delete()
+            .in("id", deletedMeasurementIdsRef.current);
+          if (delRes.error) throw delRes.error;
+        }
+
+        if (deletedGroupIdsRef.current.length) {
+          const delRes = await supabase
+            .from("takeoff_groups")
+            .delete()
+            .in("id", deletedGroupIdsRef.current);
+          if (delRes.error) throw delRes.error;
+        }
+
+        deletedGroupIdsRef.current = [];
+        deletedMeasurementIdsRef.current = [];
+        setSaveStatus("saved");
+      } catch (error: any) {
+        setSaveStatus("error");
+        setErrorText(error?.message ?? "Autosave failed.");
+      }
+    }, 700);
+  }, [session, currentPage, groups, measurements, pdfName, pdfUrl]);
+
+  useEffect(() => {
+    if (!session) return;
+    queueAutosave();
+  }, [session, currentPage, groups, measurements, pdfName, pdfUrl, queueAutosave]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const addGroup = useCallback(() => {
+    if (!session) return;
+    const next: GroupRow = {
+      id: uid(),
+      session_id: session.id,
+      company_id: session.company_id,
+      name: `Group ${groups.length + 1}`,
+      color: COLORS[groups.length % COLORS.length],
+      trade: null,
+      is_hidden: false,
+      sort_order: groups.length + 1,
+    };
+    setGroups((prev) => [...prev, next]);
+    setSelectedGroupId(next.id);
+  }, [session, groups.length]);
+
+  const updateGroupName = useCallback((groupId: string, name: string) => {
+    setGroups((prev) =>
+      prev.map((g) =>
+        g.id === groupId
+          ? {
+              ...g,
+              name,
+              updated_at: new Date().toISOString(),
+            }
+          : g
+      )
+    );
+  }, []);
+
+  const deleteGroup = useCallback(
+    (groupId: string) => {
+      const hasMeasurements = measurements.some((m) => m.group_id === groupId);
+      if (hasMeasurements) {
+        setErrorText("Delete or reassign measurements in this group first.");
+        return;
+      }
+      deletedGroupIdsRef.current.push(groupId);
+      setGroups((prev) => prev.filter((g) => g.id !== groupId));
+      if (selectedGroupId === groupId) {
+        const next = safeGroups.find((g) => g.id !== groupId);
+        setSelectedGroupId(next?.id ?? null);
+      }
+    },
+    [measurements, selectedGroupId, safeGroups]
+  );
+
+  const removeMeasurement = useCallback(
+    (measurementId: string) => {
+      deletedMeasurementIdsRef.current.push(measurementId);
+      setMeasurements((prev) => prev.filter((m) => m.id !== measurementId));
+      if (selectedMeasurementId === measurementId) {
+        setSelectedMeasurementId(null);
+      }
+    },
+    [selectedMeasurementId]
+  );
+
+  const getPagePointFromEvent = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
+    const svg = overlayRef.current;
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * basePageSize.width;
+    const y = ((event.clientY - rect.top) / rect.height) * basePageSize.height;
+    return { x, y };
+  }, [basePageSize.width, basePageSize.height]);
+
+  const commitCalibrationWithValues = useCallback(
+  const commitCalibration = useCallback(() => {
+    const p1 = calibrationDraft.p1;
+    const p2 = calibrationDraft.p2;
+    const distance = Number(calibrationDraft.distanceText);
+
+    if (!p1 || !p2 || !Number.isFinite(distance) || distance <= 0) {
+      setErrorText("Calibration requires two points and a valid distance.");
+      return;
+    }
+
+    const pxDistance = distanceBetween(p1, p2);
+    if (pxDistance <= 0) {
+      setErrorText("Calibration points are invalid.");
+      return;
+    }
+
+    const scale = distance / pxDistance;
+
+    setPageRows((prev) => {
+      const found = prev.find((p) => p.page_number === currentPage);
+      if (found) {
+        return prev.map((p) =>
+          p.page_number === currentPage
+            ? {
+                ...p,
+                session_id: session?.id ?? p.session_id,
+                calibration_point_1: p1,
+                calibration_point_2: p2,
+                calibration_distance: distance,
+                calibration_unit: calibrationDraft.unit,
+                calibration_scale: scale,
+                updated_at: new Date().toISOString(),
+              }
+            : p
+        );
+      }
+
+      if (!session) return prev;
+
+      return [
+        ...prev,
+        {
+          session_id: session.id,
+          page_number: currentPage,
+          width: basePageSize.width,
+          height: basePageSize.height,
+          calibration_point_1: p1,
+          calibration_point_2: p2,
+          calibration_distance: distance,
+          calibration_unit: calibrationDraft.unit,
+          calibration_scale: scale,
+          updated_at: new Date().toISOString(),
+        },
+      ];
+    });
+
+    setMeasurements((prev) =>
+      prev.map((m) => {
+        if (m.page_number !== currentPage) return m;
+        return recalculateMeasurement(m, scale, calibrationDraft.unit);
+      })
+    );
+
+    setToolMode("select");
+    setDraftPoints([]);
+  }, [calibrationDraft, currentPage, basePageSize, session]);
+
+  const finishDraftMeasurement = useCallback(
+    (kind: MeasurementKind, points: Point[]) => {
+      if (!session) return;
+      if (!selectedGroupId && safeGroups.length > 0) {
+        setSelectedGroupId(safeGroups[0].id);
+      }
+
+      const nextName = `${kind[0].toUpperCase()}${kind.slice(1)} ${measurementCounter}`;
+      const depth =
+        kind === "volume" ? Math.max(Number(draftVolumeDepth) || 0, 0) : null;
+
+      const next = buildMeasurementFromDraft({
+        sessionId: session.id,
+        companyId: session.company_id,
+        pageNumber: currentPage,
+        groupId: selectedGroupId ?? safeGroups[0]?.id ?? null,
+        type: kind,
+        points,
+        scale: calibrationScale,
+        baseUnit: calibrationUnit,
+        depth,
+      });
+
+      setMeasurements((prev) => [next, ...prev]);
+      setSelectedMeasurementId(next.id);
+      setMeasurementCounter((prev) => prev + 1);
+      setDraftPoints([]);
+      setToolMode("select");
+    },
+    [
+      session,
+      currentPage,
+      selectedGroupId,
+      safeGroups,
+      measurementCounter,
+      draftVolumeDepth,
+      calibrationScale,
+      calibrationUnit,
+    ]
+  );
+
+  const handleOverlayClick = useCallback(
+    (event: React.MouseEvent<SVGSVGElement>) => {
+      if (!pdfDoc) return;
+      if (isSpacebarPressed || isPanning) return;
+
+      const point = getPagePointFromEvent(event);
+      if (!point) return;
+
+      setErrorText("");
+
+      if (toolMode === "calibrate") {
+        setCalibrationDraft((prev) => {
+          if (!prev.p1) return { ...prev, p1: point };
+          if (!prev.p2) return { ...prev, p2: point };
+          return { ...prev, p1: point, p2: null };
+        });
+        return;
+      }
+
+      if (toolMode === "count") {
+        finishDraftMeasurement("count", [point]);
+        return;
+      }
+
+      if (toolMode === "line") {
+        setDraftPoints((prev) => {
+          const next = [...prev, point];
+          if (next.length >= 2) {
+            finishDraftMeasurement("line", next);
+            return [];
+          }
+          return next;
+        });
+        return;
+      }
+
+      if (toolMode === "area" || toolMode === "volume") {
+        setDraftPoints((prev) => [...prev, point]);
+      }
+    },
+    [pdfDoc, getPagePointFromEvent, toolMode, finishDraftMeasurement, isSpacebarPressed, isPanning]
+  );
+
+  const handleOverlayDoubleClick = useCallback(() => {
+    if (toolMode === "area" && draftPoints.length >= 3) {
+      finishDraftMeasurement("area", draftPoints);
+      return;
+    }
+    if (toolMode === "volume" && draftPoints.length >= 3) {
+      finishDraftMeasurement("volume", draftPoints);
+    }
+  }, [toolMode, draftPoints, finishDraftMeasurement]);
+
+  const handleOverlayMouseMove = useCallback(
+    (event: React.MouseEvent<SVGSVGElement>) => {
+      if (!pdfDoc) return;
+      const point = getPagePointFromEvent(event);
+      if (!point) return;
+      setCurrentMousePoint(point);
+      setCursorScreenPos({ x: event.clientX, y: event.clientY });
+    },
+    [pdfDoc, getPagePointFromEvent]
+  );
+
+  const handleOverlayMouseLeave = useCallback(() => {
+    setCurrentMousePoint(null);
+    setCursorScreenPos(null);
+  }, []);
+
+  const handleWorkspaceMouseDown = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const isMiddleMouse = event.button === 1;
+      const isLeftMouse = event.button === 0;
+      const shouldPan =
+        toolMode === "hand" ||
+        isMiddleMouse ||
+        (isLeftMouse && isSpacebarPressed);
+
+      if (!shouldPan) return;
+
+      if (isMiddleMouse || (isLeftMouse && isSpacebarPressed)) {
+        event.preventDefault();
+      }
+
+      setIsPanning(true);
+      setPanMode(isMiddleMouse ? "middle" : isSpacebarPressed ? "spacebar" : "none");
+      setPanStart({
+        x: event.clientX - pan.x,
+        y: event.clientY - pan.y,
+      });
+    },
+    [toolMode, pan.x, pan.y, isSpacebarPressed]
+  );
+
+  const handleWorkspaceMouseMove = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (!isPanning) return;
+
+      const shouldPan =
+        toolMode === "hand" ||
+        panMode === "middle" ||
+        panMode === "spacebar";
+
+      if (!shouldPan) return;
+
+      event.preventDefault();
+      setPan({
+        x: event.clientX - panStart.x,
+        y: event.clientY - panStart.y,
+      });
+    },
+    [isPanning, toolMode, panStart.x, panStart.y, panMode]
+  );
+
+  const handleWorkspaceMouseUp = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const isMiddleMouse = event.button === 1;
+
+    if (isPanning && (panMode === "middle" || isMiddleMouse)) {
+      event.preventDefault();
+    }
+
+    setIsPanning(false);
+    if (panMode !== "spacebar") {
+      setPanMode("none");
+    }
+  }, [isPanning, panMode]);
+
+  const handleHandleMouseDown = useCallback(
+    (
+      event: React.MouseEvent,
+      type: "measurement" | "calibration",
+      measurementId: string | null,
+      pointIndex: number | null,
+      calibrationPoint: "p1" | "p2" | null
+    ) => {
+      event.stopPropagation();
+      setDragState({ type, measurementId, pointIndex, calibrationPoint });
+    },
+    []
+  );
+
+  const handleOverlayMouseMoveWithDrag = useCallback(
+    (event: React.MouseEvent<SVGSVGElement>) => {
+      if (!pdfDoc) return;
+      const point = getPagePointFromEvent(event);
+      if (!point) return;
+
+      setCurrentMousePoint(point);
+      setCursorScreenPos({ x: event.clientX, y: event.clientY });
+
+      if (dragState.type === "measurement" && dragState.measurementId && dragState.pointIndex !== null) {
+        const measurement = measurements.find((m) => m.id === dragState.measurementId);
+        if (!measurement) return;
+
+        const updatedPoints = [...measurement.points];
+        updatedPoints[dragState.pointIndex] = point;
+
+        let updatedMeasurement = { ...measurement, points: updatedPoints };
+
+        if (measurement.type === "line") {
+          const rawLength = polylineLength(updatedPoints);
+          updatedMeasurement = { ...updatedMeasurement, raw_length: rawLength };
+          if (calibrationScale) {
+            updatedMeasurement.result = rawLength * calibrationScale;
+          }
+        } else if (measurement.type === "area" || measurement.type === "volume") {
+          const rawArea = polygonArea(updatedPoints);
+          updatedMeasurement = { ...updatedMeasurement, raw_area: rawArea };
+          if (calibrationScale) {
+            const realArea = rawArea * calibrationScale * calibrationScale;
+            if (measurement.type === "volume") {
+              const depth = measurement.meta?.depth ?? 1;
+              updatedMeasurement.result = realArea * depth;
+              updatedMeasurement.raw_volume = rawArea * depth;
+            } else {
+              updatedMeasurement.result = realArea;
+            }
+          }
+        }
+
+        setMeasurements((prev) =>
+          prev.map((m) => (m.id === dragState.measurementId ? updatedMeasurement : m))
+        );
+      } else if (dragState.type === "calibration" && dragState.calibrationPoint) {
+        const propName = dragState.calibrationPoint === "p1" ? "calibration_point_1" : "calibration_point_2";
+        setPageRows((prev) =>
+          prev.map((p) =>
+            p.page_number === currentPage
+              ? {
+                  ...p,
+                  [propName]: point,
+                }
+              : p
+          )
+        );
+      }
+    },
+    [
+      pdfDoc,
+      getPagePointFromEvent,
+      dragState,
+      measurements,
+      calibrationScale,
+      pageMeasurements,
+      currentPage,
+    ]
+  );
+
+  const handleOverlayMouseUpWithDrag = useCallback(() => {
+    if (dragState.type === "measurement" && dragState.measurementId) {
+      queueAutosave();
+    } else if (dragState.type === "calibration") {
+      queueAutosave();
+    }
+    setDragState({ type: null, measurementId: null, pointIndex: null, calibrationPoint: null });
+  }, [dragState, queueAutosave]);
+
+  const zoomIn = useCallback(() => setZoom((prev) => clamp(prev + 0.1, 0.25, 4)), []);
+  const zoomOut = useCallback(() => setZoom((prev) => clamp(prev - 0.1, 0.25, 4)), []);
+  const zoomFit = useCallback(() => {
+    const wrapper = workspaceRef.current;
+    if (!wrapper) return;
+    const availableWidth = Math.max(wrapper.clientWidth - 64, 320);
+    const fit = availableWidth / Math.max(basePageSize.width, 1);
+    setZoom(clamp(fit, 0.25, 2.5));
+    setPan({ x: 24, y: 24 });
+  }, [basePageSize.width]);
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 24, y: 24 });
+  }, []);
+
+  const triggerPdfSelect = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handlePdfChosen = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file || !session || !activeProjectId) return;
+
+      setLoadingPdf(true);
+      setErrorText("");
+
+      try {
+        const uploaded = await uploadPdfToStorage(file, activeProjectId, session.id);
+        const localUrl = URL.createObjectURL(file);
+
+        if (uploaded) {
+          // Generate correct URL based on bucket type (signed for private, public for public)
+          const storageUrl = await getStorageUrl(uploaded.bucket, uploaded.path);
+
+          setPdfUrl(storageUrl);
+          setPdfName(file.name);
+          setSession((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  pdf_name: file.name,
+                  pdf_bucket: uploaded.bucket,
+                  pdf_path: uploaded.path,
+                  pdf_url: null,
+                  updated_at: new Date().toISOString(),
+                }
+              : prev
+          );
+        } else {
+          setPdfUrl(localUrl);
+          setPdfName(file.name);
+          setSession((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  pdf_name: file.name,
+                  pdf_bucket: null,
+                  pdf_path: null,
+                  pdf_url: localUrl,
+                  updated_at: new Date().toISOString(),
+                }
+              : prev
+          );
+        }
+
+        setCurrentPage(1);
+        setPan({ x: 24, y: 24 });
+        setZoom(1);
+      } catch (error: any) {
+        setErrorText(error?.message ?? "Failed to upload PDF.");
+      } finally {
+        setLoadingPdf(false);
+        if (event.target) event.target.value = "";
+      }
+    },
+    [session, activeProjectId]
+  );
+
+  const exportCsv = useCallback(() => {
+    const lines = [
+      [
+        "Page",
+        "Group",
+        "Name",
+        "Type",
+        "Value",
+        "Unit",
+        "Depth",
+        "Points",
+      ].join(","),
+    ];
+
+    safeMeasurements.forEach((m) => {
+      const groupName = safeGroups.find((g) => g.id === m.group_id)?.name ?? "Ungrouped";
+      const value = getMeasurementDisplayValue(m, calibrationScale !== null);
+      lines.push(
+        [
+          m.page_number,
+          `"${groupName.replace(/"/g, '""')}"`,
+          "",
+          m.type,
+          value,
+          `"${m.unit.replace(/"/g, '""')}"`,
+          "",
+          `"${JSON.stringify(m.points).replace(/"/g, '""')}"`,
+        ].join(",")
+      );
+    });
+
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${pdfName || "takeoff"}-measurements.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [safeMeasurements, safeGroups, pdfName]);
+
+  const selectedGroupColor =
+    safeGroups.find((g) => g.id === selectedGroupId)?.color ?? COLORS[0];
+
+  const draftLabel = useMemo(() => {
+    if (toolMode === "calibrate") {
+      const count = Number(Boolean(calibrationDraft.p1)) + Number(Boolean(calibrationDraft.p2));
+      return `Calibration points: ${count}/2`;
+    }
+    if (toolMode === "area" || toolMode === "volume") {
+      return `Draft points: ${draftPoints.length} (double-click to finish)`;
+    }
+    if (toolMode === "line") {
+      return `Draft points: ${draftPoints.length}/2`;
+    }
+    return "";
+  }, [toolMode, calibrationDraft, draftPoints.length]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-100 p-6 text-slate-700">
+        <div className="mx-auto max-w-7xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+          Loading Takeoff workspace...
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeProjectId) {
+    return (
+      <div className="min-h-screen bg-slate-100 p-6 text-slate-700">
+        <div className="mx-auto max-w-7xl rounded-2xl border border-amber-200 bg-amber-50 p-8 shadow-sm">
+          No active project selected. Open this page from a project context or route with a project ID.
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <TakeoffErrorBoundary>
-      <TakeoffPageInner />
-    </TakeoffErrorBoundary>
+    <div className="min-h-screen bg-slate-100 text-slate-800">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={handlePdfChosen}
+      />
+
+      <div className="border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
+  {(["select", "hand", "line", "area", "count", "volume"] as ToolMode[]).map(
+    (mode) => (
+      <button
+        key={mode}
+        type="button"
+        onClick={() => {
+          setToolMode(mode);
+          setDraftPoints([]);
+          setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
+        }}
+        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+          toolMode === mode
+            ? "bg-slate-900 dark:bg-slate-900 text-white"
+            : "bg-white text-slate-700 hover:bg-slate-100"
+        }`}
+      >
+        {mode === "select"
+          ? "Select"
+          : mode === "hand"
+          ? "Hand"
+          : mode[0].toUpperCase() + mode.slice(1)}
+      </button>
+    )
+  )}
+</div>
+
+          <div className="flex border-b bg-white px-2 text-sm">
+  {[
+    { key: "drawings", label: "Drawings" },
+    { key: "measurements", label: "Measurements" },
+    { key: "extracted", label: "Extracted Details" },
+    { key: "boq", label: "BOQ Links" },
+    { key: "settings", label: "Settings" },
+  ].map((tab) => (
+    <button
+      key={tab.key}
+      onClick={() => setActiveWorkspaceTab(tab.key as any)}
+      className={`px-4 py-2 ${
+        activeWorkspaceTab === tab.key
+          ? "border-b-2 border-blue-600 font-semibold text-blue-600"
+          : "text-gray-500"
+      }`}
+    >
+      {tab.label}
+    </button>
+  ))}
+</div>
+
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
+            <button type="button" onClick={zoomOut} className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
+              −
+            </button>
+            <div className="min-w-[72px] text-center text-sm font-medium">{Math.round(zoom * 100)}%</div>
+            <button type="button" onClick={zoomIn} className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
+              +
+            </button>
+            <button type="button" onClick={zoomFit} className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
+              Fit
+            </button>
+            <button type="button" onClick={resetView} className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
+              Reset
+            </button>
+          </div>
+
+          {pageCount > 1 && (
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ←
+              </button>
+              <div className="min-w-[80px] text-center text-sm font-medium">
+                Page {currentPage} / {pageCount}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((prev) => Math.min(pageCount, prev + 1))}
+                disabled={currentPage === pageCount}
+                className="rounded-lg bg-white px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                →
+              </button>
+            </div>
+          )}
+
+       <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+  <button
+    type="button"
+    onClick={() => setShowCalibrationModal(true)}
+    className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-100"
+  >
+    Calibration
+  </button>
+
+  <span className="text-xs text-slate-500">
+    {calibrationScale ? `Calibrated (${calibrationUnit})` : "Not calibrated"}
+  </span>
+</div>
+
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <span className="text-xs uppercase tracking-wide text-slate-500">Volume Depth</span>
+            <input
+              value={draftVolumeDepth}
+              onChange={(e) => setDraftVolumeDepth(e.target.value)}
+              className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none"
+            />
+            <span className="text-sm text-slate-600">{calibrationUnit}</span>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={triggerPdfSelect}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+            >
+              {pdfUrl ? "Replace PDF" : "Upload PDF"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowExportModal(true)}
+              disabled={safeMeasurements.length === 0}
+              className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Send to BOQ
+            </button>
+            <button
+              type="button"
+              onClick={exportCsv}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+            >
+              Export CSV
+            </button>
+            <div
+              className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                saveStatus === "saving"
+                  ? "bg-amber-100 text-amber-800"
+                  : saveStatus === "saved"
+                  ? "bg-emerald-100 text-emerald-800"
+                  : saveStatus === "error"
+                  ? "bg-rose-100 text-rose-800"
+                  : "bg-slate-100 text-slate-700"
+              }`}
+            >
+              {saveStatus === "saving"
+                ? "Saving..."
+                : saveStatus === "saved"
+                ? "Saved"
+                : saveStatus === "error"
+                ? "Save error"
+                : "Idle"}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-600">
+          <div>Project: <span className="font-medium text-slate-900">{activeProjectId}</span></div>
+          <div>Page: <span className="font-medium text-slate-900">{currentPage}{pageCount ? ` / ${pageCount}` : ""}</span></div>
+          <div>PDF: <span className="font-medium text-slate-900">{pdfName || "None selected"}</span></div>
+          <div>Scale: <span className="font-medium text-slate-900">{calibrationScale ? `1 px = ${formatNumber(calibrationScale, 6)} ${calibrationUnit}` : "Not calibrated"}</span></div>
+          {draftLabel ? <div className="font-medium text-slate-900">{draftLabel}</div> : null}
+        </div>
+
+        {errorText ? (
+          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            {errorText}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="grid min-h-[calc(100vh-88px)] grid-cols-[280px_minmax(0,1fr)_360px] gap-0">
+        <aside className="border-r border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <div className="text-sm font-semibold text-slate-900">Pages</div>
+            <div className="mt-1 text-xs text-slate-500">Drawing navigation</div>
+          </div>
+
+          <div className="max-h-[calc(100vh-145px)] overflow-y-auto p-3">
+            {!pageCount ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+                Upload a PDF to start measuring.
+              </div>
+            ) : (
+              Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNo) => {
+                const pageMeasurementCount = safeMeasurements.filter((m) => m.page_number === pageNo).length;
+                const active = pageNo === currentPage;
+                return (
+                  <button
+                    key={pageNo}
+                    type="button"
+                    onClick={() => setCurrentPage(pageNo)}
+                    className={`mb-3 w-full rounded-2xl border p-3 text-left transition ${
+                      active
+                        ? "border-slate-800 dark:border-slate-900 bg-slate-800 dark:bg-slate-900 text-white"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <div className="text-sm font-semibold">Page {pageNo}</div>
+                      <div
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          active ? "bg-white/15 text-white" : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {pageMeasurementCount} items
+                      </div>
+                    </div>
+                    <div
+                      className={`flex h-28 items-center justify-center overflow-hidden rounded-xl border ${
+                        active
+                          ? "border-white/15 bg-white/5"
+                          : "border-slate-200 bg-slate-50"
+                      }`}
+                    >
+                      {pageThumbnails.get(pageNo) ? (
+                        <img
+                          src={pageThumbnails.get(pageNo)}
+                          alt={`Page ${pageNo} preview`}
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <div className={`text-xs ${active ? "text-white/80" : "text-slate-500"}`}>
+                          Loading preview...
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </aside>
+
+        <main
+          ref={workspaceRef}
+          className="relative overflow-hidden bg-slate-200"
+          onMouseDown={handleWorkspaceMouseDown}
+          onMouseMove={handleWorkspaceMouseMove}
+          onMouseUp={handleWorkspaceMouseUp}
+          onMouseLeave={handleWorkspaceMouseUp}
+          onAuxClick={(e) => e.preventDefault()}
+          onContextMenu={(e) => {
+            if (e.button === 1 || isPanning) {
+              e.preventDefault();
+            }
+          }}
+        >
+          {!pdfUrl ? (
+            <div className="flex h-full items-center justify-center p-8">
+              <div className="max-w-md rounded-3xl border border-dashed border-slate-400 bg-white/80 p-8 text-center shadow-sm backdrop-blur">
+                <div className="text-xl font-semibold text-slate-900">Start a New Takeoff</div>
+                <div className="mt-2 text-sm text-slate-600">
+                  Upload your drawing PDF, calibrate a known distance, then begin measuring.
+                </div>
+                <button
+                  type="button"
+                  onClick={triggerPdfSelect}
+                  className="mt-5 rounded-xl bg-slate-800 dark:bg-slate-900 px-5 py-3 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-800"
+                >
+                  Upload Drawing PDF
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="absolute left-0 top-0"
+              style={{
+                transform: `translate(${pan.x}px, ${pan.y}px)`,
+                width: `${currentStageWidth}px`,
+                height: `${currentStageHeight}px`,
+              }}
+            >
+              <div className="relative rounded-2xl bg-white shadow-2xl">
+                {loadingPdf ? (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/80 text-sm font-medium text-slate-700 backdrop-blur-sm">
+                    Rendering PDF...
+                  </div>
+                ) : null}
+
+                <canvas
+                  ref={canvasRef}
+                  className="block rounded-2xl"
+                  style={{
+                    width: `${currentStageWidth}px`,
+                    height: `${currentStageHeight}px`,
+                  }}
+                />
+
+                <svg
+                  ref={overlayRef}
+                  viewBox={`0 0 ${basePageSize.width} ${basePageSize.height}`}
+                  className="absolute left-0 top-0 rounded-2xl"
+                  style={{
+                    width: `${currentStageWidth}px`,
+                    height: `${currentStageHeight}px`,
+                    cursor:
+                      isPanning
+                        ? "grabbing"
+                        : toolMode === "hand" || isSpacebarPressed
+                        ? "grab"
+                        : toolMode === "select"
+                        ? "default"
+                        : "crosshair",
+                  }}
+                  onClick={handleOverlayClick}
+                  onDoubleClick={handleOverlayDoubleClick}
+                  onMouseMove={handleOverlayMouseMoveWithDrag}
+                  onMouseUp={handleOverlayMouseUpWithDrag}
+                  onMouseLeave={handleOverlayMouseLeave}
+                >
+                  {pageMeasurements
+                    .slice()
+                    .sort((a, b) => {
+                      const aSelected = selectedMeasurementId === a.id;
+                      const bSelected = selectedMeasurementId === b.id;
+                      if (aSelected && !bSelected) return 1;
+                      if (!aSelected && bSelected) return -1;
+                      return 0;
+                    })
+                    .map((m) => {
+                    const groupColor =
+                      safeGroups.find((g) => g.id === m.group_id)?.color ?? "#2563eb";
+                    const selected = selectedMeasurementId === m.id;
+                    const isDimmed = highlightedGroupId !== null && m.group_id !== highlightedGroupId;
+                    const baseOpacity = isDimmed ? 0.15 : 1;
+
+                    if (m.type === "line") {
+                      const midpoint = getLineMidpoint(m.points);
+                      const lengthPx = m.raw_length ?? 0;
+                      let labelText = "";
+                      if (calibrationScale) {
+                        const realLength = lengthPx * calibrationScale;
+                        if (calibrationUnit === "ft") {
+                          labelText = formatFeetInches(realLength);
+                        } else {
+                          labelText = `${formatNumber(realLength)} ${calibrationUnit}`;
+                        }
+                      } else {
+                        labelText = `${formatNumber(lengthPx)} px`;
+                      }
+
+                      const displayColor = selected ? brightenColor(groupColor, 40) : groupColor;
+
+                      return (
+                        <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)} style={{ cursor: "pointer" }} opacity={baseOpacity}>
+                          {selected && (
+                            <polyline
+                              points={linePointsToSvg(m.points)}
+                              fill="none"
+                              stroke={displayColor}
+                              strokeWidth={8}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              opacity={0.3}
+                            />
+                          )}
+                          <polyline
+                            points={linePointsToSvg(m.points)}
+                            fill="none"
+                            stroke={displayColor}
+                            strokeWidth={selected ? 4 : 2}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          {m.points.map((p, idx) => (
+                            <circle
+                              key={`${m.id}-${idx}`}
+                              cx={p.x}
+                              cy={p.y}
+                              r={selected ? 5 : 3}
+                              fill={displayColor}
+                              stroke={selected ? "white" : "none"}
+                              strokeWidth={selected ? 1.5 : 0}
+                            />
+                          ))}
+                          {selected && m.points.map((p, idx) => (
+                            <g key={`handle-${m.id}-${idx}`}>
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={10}
+                                fill="white"
+                                stroke={displayColor}
+                                strokeWidth={2.5}
+                                style={{ cursor: "move" }}
+                                onMouseDown={(e) => handleHandleMouseDown(e, "measurement", m.id, idx, null)}
+                              />
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={3.5}
+                                fill={displayColor}
+                                pointerEvents="none"
+                              />
+                            </g>
+                          ))}
+                          {midpoint && (
+                            <g>
+                              <rect
+                                x={midpoint.x - 30}
+                                y={midpoint.y - 20}
+                                width={60}
+                                height={18}
+                                rx={9}
+                                fill="white"
+                                fillOpacity={0.95}
+                                stroke={displayColor}
+                                strokeWidth={selected ? 2 : 1.5}
+                              />
+                              <text
+                                x={midpoint.x}
+                                y={midpoint.y - 8}
+                                fill={displayColor}
+                                fontSize={selected ? 12 : 11}
+                                fontWeight="600"
+                                textAnchor="middle"
+                              >
+                                {labelText}
+                              </text>
+                            </g>
+                          )}
+                        </g>
+                      );
+                    }
+
+                    if (m.type === "area" || m.type === "volume") {
+                      const centroid = getPolygonCentroid(m.points);
+                      const areaPx = m.raw_area ?? 0;
+                      let labelLines: string[] = [];
+
+                      if (calibrationScale) {
+                        const realArea = areaPx * calibrationScale * calibrationScale;
+                        const areaUnit = getAreaUnit(calibrationUnit);
+
+                        if (m.type === "volume") {
+                          const depth = m.meta?.depth ?? 1;
+                          const realVolume = realArea * depth;
+                          const volumeUnit = getVolumeUnit(calibrationUnit);
+                          labelLines = [`${formatNumber(realVolume)} ${volumeUnit}`];
+                        } else {
+                          labelLines = [`${formatNumber(realArea)} ${areaUnit}`];
+                        }
+                      } else {
+                        if (m.type === "volume") {
+                          labelLines = [`${formatNumber(areaPx)} px²`];
+                        } else {
+                          labelLines = [`${formatNumber(areaPx)} px²`];
+                        }
+                      }
+
+                      const displayColor = selected ? brightenColor(groupColor, 40) : groupColor;
+
+                      return (
+                        <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)} style={{ cursor: "pointer" }} opacity={baseOpacity}>
+                          {selected && (
+                            <polygon
+                              points={polygonPointsToSvg(m.points)}
+                              fill={displayColor}
+                              fillOpacity={0.15}
+                              stroke={displayColor}
+                              strokeWidth={8}
+                              strokeLinejoin="round"
+                              opacity={0.3}
+                            />
+                          )}
+                          <polygon
+                            points={polygonPointsToSvg(m.points)}
+                            fill={displayColor}
+                            fillOpacity={m.type === "volume" ? 0.22 : 0.16}
+                            stroke={displayColor}
+                            strokeWidth={selected ? 4 : 2}
+                            strokeLinejoin="round"
+                          />
+                          {m.points.map((p, idx) => (
+                            <circle
+                              key={`${m.id}-${idx}`}
+                              cx={p.x}
+                              cy={p.y}
+                              r={selected ? 5 : 3}
+                              fill={displayColor}
+                              stroke={selected ? "white" : "none"}
+                              strokeWidth={selected ? 1.5 : 0}
+                            />
+                          ))}
+                          {selected && m.points.map((p, idx) => (
+                            <g key={`handle-${m.id}-${idx}`}>
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={10}
+                                fill="white"
+                                stroke={displayColor}
+                                strokeWidth={2.5}
+                                style={{ cursor: "move" }}
+                                onMouseDown={(e) => handleHandleMouseDown(e, "measurement", m.id, idx, null)}
+                              />
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={3.5}
+                                fill={displayColor}
+                                pointerEvents="none"
+                              />
+                            </g>
+                          ))}
+                          {centroid && labelLines.length > 0 && (
+                            <g>
+                              {labelLines.map((line, idx) => {
+                                const textWidth = line.length * 6 + 16;
+                                const yOffset = idx * 20;
+                                return (
+                                  <g key={idx}>
+                                    <rect
+                                      x={centroid.x - textWidth / 2}
+                                      y={centroid.y - 10 + yOffset}
+                                      width={textWidth}
+                                      height={18}
+                                      rx={9}
+                                      fill="white"
+                                      fillOpacity={0.95}
+                                      stroke={displayColor}
+                                      strokeWidth={selected ? 2 : 1.5}
+                                    />
+                                    <text
+                                      x={centroid.x}
+                                      y={centroid.y + 2 + yOffset}
+                                      fill={displayColor}
+                                      fontSize={selected ? 12 : 11}
+                                      fontWeight="600"
+                                      textAnchor="middle"
+                                    >
+                                      {line}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                            </g>
+                          )}
+                        </g>
+                      );
+                    }
+
+                    const displayColor = selected ? brightenColor(groupColor, 40) : groupColor;
+
+                    return (
+                      <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)} style={{ cursor: "pointer" }} opacity={baseOpacity}>
+                        {selected && (
+                          <circle
+                            cx={m.points[0]?.x ?? 0}
+                            cy={m.points[0]?.y ?? 0}
+                            r={16}
+                            fill={displayColor}
+                            fillOpacity={0.2}
+                            stroke="none"
+                          />
+                        )}
+                        <circle
+                          cx={m.points[0]?.x ?? 0}
+                          cy={m.points[0]?.y ?? 0}
+                          r={selected ? 10 : 7}
+                          fill={displayColor}
+                          fillOpacity={0.9}
+                          stroke="white"
+                          strokeWidth={selected ? 2.5 : 2}
+                        />
+                        {selected && (
+                          <g>
+                            <circle
+                              cx={m.points[0]?.x ?? 0}
+                              cy={m.points[0]?.y ?? 0}
+                              r={14}
+                              fill="white"
+                              stroke={displayColor}
+                              strokeWidth={2.5}
+                              style={{ cursor: "move" }}
+                              onMouseDown={(e) => handleHandleMouseDown(e, "measurement", m.id, 0, null)}
+                            />
+                            <circle
+                              cx={m.points[0]?.x ?? 0}
+                              cy={m.points[0]?.y ?? 0}
+                              r={5}
+                              fill={displayColor}
+                              pointerEvents="none"
+                            />
+                          </g>
+                        )}
+                        <g>
+                          <rect
+                            x={(m.points[0]?.x ?? 0) + 12}
+                            y={(m.points[0]?.y ?? 0) - 10}
+                            width={24}
+                            height={18}
+                            rx={9}
+                            fill="white"
+                            fillOpacity={0.95}
+                            stroke={displayColor}
+                            strokeWidth={selected ? 2 : 1.5}
+                          />
+                          <text
+                            x={(m.points[0]?.x ?? 0) + 24}
+                            y={(m.points[0]?.y ?? 0) + 2}
+                            fill={displayColor}
+                            fontSize={selected ? 12 : 11}
+                            fontWeight="600"
+                            textAnchor="middle"
+                          >
+                            1
+                          </text>
+                        </g>
+                      </g>
+                    );
+                  })}
+
+                  {currentPageRow?.calibration_point_1 && currentPageRow?.calibration_point_2 && toolMode === "select" ? (
+                    <g>
+                      <line
+                        x1={currentPageRow.calibration_point_1.x}
+                        y1={currentPageRow.calibration_point_1.y}
+                        x2={currentPageRow.calibration_point_2.x}
+                        y2={currentPageRow.calibration_point_2.y}
+                        stroke="#7c3aed"
+                        strokeWidth={2}
+                        strokeDasharray="4 4"
+                        opacity={0.6}
+                      />
+                      <g>
+                        <circle
+                          cx={currentPageRow.calibration_point_1.x}
+                          cy={currentPageRow.calibration_point_1.y}
+                          r={8}
+                          fill="white"
+                          stroke="#7c3aed"
+                          strokeWidth={2}
+                          style={{ cursor: "move" }}
+                          onMouseDown={(e) => handleHandleMouseDown(e, "calibration", null, null, "p1")}
+                        />
+                        <circle
+                          cx={currentPageRow.calibration_point_1.x}
+                          cy={currentPageRow.calibration_point_1.y}
+                          r={3}
+                          fill="#7c3aed"
+                          pointerEvents="none"
+                        />
+                      </g>
+                      <g>
+                        <circle
+                          cx={currentPageRow.calibration_point_2.x}
+                          cy={currentPageRow.calibration_point_2.y}
+                          r={8}
+                          fill="white"
+                          stroke="#7c3aed"
+                          strokeWidth={2}
+                          style={{ cursor: "move" }}
+                          onMouseDown={(e) => handleHandleMouseDown(e, "calibration", null, null, "p2")}
+                        />
+                        <circle
+                          cx={currentPageRow.calibration_point_2.x}
+                          cy={currentPageRow.calibration_point_2.y}
+                          r={3}
+                          fill="#7c3aed"
+                          pointerEvents="none"
+                        />
+                      </g>
+                    </g>
+                  ) : null}
+
+                  {toolMode === "calibrate" && calibrationDraft.p1 ? (
+                    <circle
+                      cx={calibrationDraft.p1.x}
+                      cy={calibrationDraft.p1.y}
+                      r={5}
+                      fill="#dc2626"
+                    />
+                  ) : null}
+
+                  {toolMode === "calibrate" && calibrationDraft.p1 && calibrationDraft.p2 ? (
+                    <>
+                      <circle cx={calibrationDraft.p2.x} cy={calibrationDraft.p2.y} r={5} fill="#dc2626" />
+                      <line
+                        x1={calibrationDraft.p1.x}
+                        y1={calibrationDraft.p1.y}
+                        x2={calibrationDraft.p2.x}
+                        y2={calibrationDraft.p2.y}
+                        stroke="#dc2626"
+                        strokeWidth={3}
+                        strokeDasharray="8 6"
+                      />
+                    </>
+                  ) : null}
+
+                  {(toolMode === "line" || toolMode === "area" || toolMode === "volume") && draftPoints.length > 0 ? (
+                    <g>
+                      {draftPoints.length > 1 ? (
+                        <polyline
+                          points={linePointsToSvg(draftPoints)}
+                          fill="none"
+                          stroke={selectedGroupColor}
+                          strokeWidth={2}
+                          strokeDasharray="6 4"
+                        />
+                      ) : null}
+                      {draftPoints.map((p, idx) => (
+                        <circle key={`draft-${idx}`} cx={p.x} cy={p.y} r={4} fill={selectedGroupColor} />
+                      ))}
+                    </g>
+                  ) : null}
+
+                  {currentMousePoint && toolMode === "line" && draftPoints.length === 1 ? (
+                    <g>
+                      <line
+                        x1={draftPoints[0].x}
+                        y1={draftPoints[0].y}
+                        x2={currentMousePoint.x}
+                        y2={currentMousePoint.y}
+                        stroke={selectedGroupColor}
+                        strokeWidth={2}
+                        strokeDasharray="3 3"
+                        opacity={0.6}
+                      />
+                      <circle cx={currentMousePoint.x} cy={currentMousePoint.y} r={3} fill={selectedGroupColor} opacity={0.6} />
+                    </g>
+                  ) : null}
+
+                  {currentMousePoint && (toolMode === "area" || toolMode === "volume") && draftPoints.length === 1 ? (
+                    <g>
+                      <line
+                        x1={draftPoints[0].x}
+                        y1={draftPoints[0].y}
+                        x2={currentMousePoint.x}
+                        y2={currentMousePoint.y}
+                        stroke={selectedGroupColor}
+                        strokeWidth={2}
+                        strokeDasharray="3 3"
+                        opacity={0.6}
+                      />
+                      <circle cx={currentMousePoint.x} cy={currentMousePoint.y} r={3} fill={selectedGroupColor} opacity={0.6} />
+                    </g>
+                  ) : null}
+
+                  {currentMousePoint && (toolMode === "area" || toolMode === "volume") && draftPoints.length >= 2 ? (
+                    <g>
+                      <polygon
+                        points={polygonPointsToSvg([...draftPoints, currentMousePoint])}
+                        fill={selectedGroupColor}
+                        fillOpacity={toolMode === "volume" ? 0.15 : 0.1}
+                        stroke={selectedGroupColor}
+                        strokeWidth={2}
+                        strokeDasharray="3 3"
+                        opacity={0.6}
+                      />
+                      <circle cx={currentMousePoint.x} cy={currentMousePoint.y} r={3} fill={selectedGroupColor} opacity={0.6} />
+                    </g>
+                  ) : null}
+
+                  {currentMousePoint && (toolMode === "line" || toolMode === "area" || toolMode === "volume") && draftPoints.length > 0 ? (
+                    (() => {
+                      let previewPoints: Point[] = [];
+                      let displayValue = "";
+
+                      if (toolMode === "line" && draftPoints.length === 1) {
+                        previewPoints = [draftPoints[0], currentMousePoint];
+                        const lengthPx = polylineLength(previewPoints);
+                        if (calibrationScale) {
+                          const realLength = lengthPx * calibrationScale;
+                          if (calibrationUnit === "ft") {
+                            displayValue = formatFeetInches(realLength);
+                          } else {
+                            displayValue = `${formatNumber(realLength)} ${calibrationUnit}`;
+                          }
+                        } else {
+                          displayValue = `${formatNumber(lengthPx)} px (uncalibrated)`;
+                        }
+                      } else if ((toolMode === "area" || toolMode === "volume") && draftPoints.length >= 2) {
+                        previewPoints = [...draftPoints, currentMousePoint];
+                        const areaPx = polygonArea(previewPoints);
+                        if (calibrationScale) {
+                          const realArea = areaPx * calibrationScale * calibrationScale;
+                          const areaUnit = getAreaUnit(calibrationUnit);
+                          if (toolMode === "volume") {
+                            const depth = Math.max(Number(draftVolumeDepth) || 0, 0);
+                            const realVolume = realArea * depth;
+                            const volumeUnit = getVolumeUnit(calibrationUnit);
+                            displayValue = `Area: ${formatNumber(realArea)} ${areaUnit}\nVolume: ${formatNumber(realVolume)} ${volumeUnit}`;
+                          } else {
+                            displayValue = `${formatNumber(realArea)} ${areaUnit}`;
+                          }
+                        } else {
+                          if (toolMode === "volume") {
+                            displayValue = `${formatNumber(areaPx)} px² (uncalibrated)`;
+                          } else {
+                            displayValue = `${formatNumber(areaPx)} px² (uncalibrated)`;
+                          }
+                        }
+                      }
+
+                      if (!displayValue) return null;
+
+                      const textLines = displayValue.split('\n');
+                      const offsetX = 12;
+                      const offsetY = -12;
+
+                      return (
+                        <g>
+                          {textLines.map((line, idx) => (
+                            <g key={idx}>
+                              <text
+                                x={currentMousePoint.x + offsetX}
+                                y={currentMousePoint.y + offsetY + (idx * 20)}
+                                fill="white"
+                                stroke="white"
+                                strokeWidth={4}
+                                fontSize={14}
+                                fontWeight="600"
+                                paintOrder="stroke"
+                              >
+                                {line}
+                              </text>
+                              <text
+                                x={currentMousePoint.x + offsetX}
+                                y={currentMousePoint.y + offsetY + (idx * 20)}
+                                fill={selectedGroupColor}
+                                fontSize={14}
+                                fontWeight="600"
+                              >
+                                {line}
+                              </text>
+                            </g>
+                          ))}
+                        </g>
+                      );
+                    })()
+                  ) : null}
+                </svg>
+              </div>
+            </div>
+          )}
+        </main>
+
+        <aside className="border-l border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-4 py-3">
+            <div className="text-sm font-semibold text-slate-900">Groups & Measurements</div>
+            <div className="mt-1 text-xs text-slate-500">Live totals and takeoff items</div>
+          </div>
+
+          {totalsByGroup.filter((t) => t.group !== null).length > 0 && (
+            <div className="border-b border-slate-200 bg-slate-50/50 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-semibold text-slate-900">Measurement Legend</div>
+                {highlightedGroupId && (
+                  <button
+                    type="button"
+                    onClick={() => setHighlightedGroupId(null)}
+                    className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    Clear Filter
+                  </button>
+                )}
+              </div>
+              <div className="space-y-2">
+                {totalsByGroup
+                  .filter((t) => t.group !== null)
+                  .map((total) => {
+                    const group = total.group!;
+                    const measurementCount = safeMeasurements.filter((m) => m.group_id === group.id).length;
+                    const isHighlighted = highlightedGroupId === group.id;
+                    const hasMeasurements = measurementCount > 0;
+
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => setHighlightedGroupId(isHighlighted ? null : group.id)}
+                        className={`w-full rounded-xl border p-3 text-left transition-all ${
+                          isHighlighted
+                            ? "border-blue-400 bg-blue-50 shadow-sm"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center gap-2">
+                          <div
+                            className="h-4 w-4 flex-shrink-0 rounded-full border-2 border-white shadow-sm"
+                            style={{ backgroundColor: group.color }}
+                          />
+                          <div className="min-w-0 flex-1 text-sm font-semibold text-slate-900">{group.name}</div>
+                          <div className="flex-shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">
+                            {measurementCount}
+                          </div>
+                        </div>
+
+                        {hasMeasurements && (
+                          <div className="ml-6 space-y-1 text-xs">
+                            {total.line > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-600">Length:</span>
+                                <span className="font-semibold text-slate-900">
+                                  {formatNumber(total.line)} {total.lineUnit}
+                                </span>
+                              </div>
+                            )}
+                            {total.area > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-600">Area:</span>
+                                <span className="font-semibold text-slate-900">
+                                  {formatNumber(total.area)} {total.areaUnit}
+                                </span>
+                              </div>
+                            )}
+                            {total.count > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-600">Count:</span>
+                                <span className="font-semibold text-slate-900">
+                                  {formatNumber(total.count)} {total.countUnit}
+                                </span>
+                              </div>
+                            )}
+                            {total.volume > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-600">Volume:</span>
+                                <span className="font-semibold text-slate-900">
+                                  {formatNumber(total.volume)} {total.volumeUnit}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          <div className="grid h-[calc(100vh-145px)] grid-rows-[auto_1fr_auto]">
+            <div className="border-b border-slate-200 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-semibold text-slate-900">Groups</div>
+                <button
+                  type="button"
+                  onClick={addGroup}
+                  className="rounded-lg bg-slate-800 dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-800"
+                >
+                  Add Group
+                </button>
+              </div>
+
+              <div className="max-h-48 space-y-2 overflow-y-auto">
+                {safeGroups.map((group) => {
+                  const measurementCount = safeMeasurements.filter((m) => m.group_id === group.id).length;
+                  const active = selectedGroupId === group.id;
+                  return (
+                    <div
+                      key={group.id}
+                      className={`rounded-2xl border p-3 ${
+                        active ? "border-slate-700 dark:border-slate-900 bg-slate-100 dark:bg-slate-50" : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="mb-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="h-4 w-4 rounded-full border border-white shadow-sm"
+                          style={{ backgroundColor: group.color }}
+                          onClick={() => setSelectedGroupId(group.id)}
+                          title={group.name}
+                        />
+                        <input
+                          value={group.name}
+                          onChange={(e) => updateGroupName(group.id, e.target.value)}
+                          onFocus={() => setSelectedGroupId(group.id)}
+                          className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1 text-sm outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => deleteGroup(group.id)}
+                          className="rounded-lg px-2 py-1 text-xs text-rose-600 hover:bg-rose-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                      <div className="text-xs text-slate-500">{measurementCount} measurements</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="overflow-hidden">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <div className="text-sm font-semibold text-slate-900">Page {currentPage} Measurements</div>
+              </div>
+
+              <div className="max-h-full overflow-y-auto p-4">
+                {pageMeasurements.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+                    No measurements on this page yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {pageMeasurements.map((m) => {
+                      const group = safeGroups.find((g) => g.id === m.group_id) ?? null;
+                      const active = selectedMeasurementId === m.id;
+                      return (
+                        <div
+                          key={m.id}
+                          className={`rounded-2xl border p-3 transition ${
+                            active ? "border-slate-700 dark:border-slate-900 bg-slate-100 dark:bg-slate-50" : "border-slate-200 bg-white"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMeasurementId(m.id)}
+                              className="min-w-0 flex-1 text-left"
+                            >
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="h-3 w-3 rounded-full"
+                                  style={{ backgroundColor: group?.color ?? "#2563eb" }}
+                                />
+                                <div className="truncate text-sm font-semibold text-slate-900">Measurement</div>
+                              </div>
+                              <div className="mt-1 text-xs text-slate-500">
+                                {group?.name ?? "Ungrouped"} • {m.type.toUpperCase()}
+                              </div>
+                              <div className="mt-2 text-sm font-medium text-slate-800">
+                                {getMeasurementBadge(m, calibrationScale !== null)}
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeMeasurement(m.id)}
+                              className="rounded-lg px-2 py-1 text-xs text-rose-600 hover:bg-rose-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+
+                          {active && m.type === "volume" ? (
+                            <div className="mt-2 text-xs text-slate-500">
+                              Depth: {formatNumber(m.meta?.depth ?? 0)} {calibrationUnit}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 bg-slate-50 p-4">
+              <div className="mb-3 text-sm font-semibold text-slate-900">Totals</div>
+              <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
+                {totalsByGroup.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">
+                    Totals will appear here after you start measuring.
+                  </div>
+                ) : (
+                  totalsByGroup.map((row, index) => (
+                    <div key={`${row.group?.id ?? "ungrouped"}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        <div
+                          className="h-3 w-3 rounded-full"
+                          style={{ backgroundColor: row.group?.color ?? "#64748b" }}
+                        />
+                        <div className="text-sm font-semibold text-slate-900">
+                          {row.group?.name ?? "Ungrouped"}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-xl bg-slate-50 px-3 py-2">
+                          <div className="text-slate-500">Length</div>
+                          <div className="font-semibold text-slate-900">
+                            {formatNumber(row.line)} {row.lineUnit}
+                          </div>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 px-3 py-2">
+                          <div className="text-slate-500">Area</div>
+                          <div className="font-semibold text-slate-900">
+                            {formatNumber(row.area)} {row.areaUnit}
+                          </div>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 px-3 py-2">
+                          <div className="text-slate-500">Count</div>
+                          <div className="font-semibold text-slate-900">
+                            {formatNumber(row.count)} {row.countUnit}
+                          </div>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 px-3 py-2">
+                          <div className="text-slate-500">Volume</div>
+                          <div className="font-semibold text-slate-900">
+                            {formatNumber(row.volume)} {row.volumeUnit}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {selectedMeasurement ? (
+                <div className="mt-4 rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-blue-600">Selected</div>
+                    <button
+                      onClick={() => setSelectedMeasurementId(null)}
+                      className="rounded-lg p-1 text-slate-400 hover:bg-blue-100 hover:text-slate-600"
+                      title="Deselect"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="h-3 w-3 rounded"
+                        style={{
+                          backgroundColor: safeGroups.find(g => g.id === selectedMeasurement.group_id)?.color ?? "#2563eb"
+                        }}
+                      />
+                      <div className="flex-1 text-sm font-semibold text-slate-900">
+                        {safeGroups.find(g => g.id === selectedMeasurement.group_id)?.name ?? "Measurement"}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <span className="rounded-md bg-slate-100 px-2 py-1 font-medium">
+                        {selectedMeasurement.type.toUpperCase()}
+                      </span>
+                      <span>•</span>
+                      <span>Page {selectedMeasurement.page_number}</span>
+                    </div>
+
+                    <div className="mt-3 rounded-lg bg-white p-3 shadow-sm">
+                      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Value</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900">
+                        {getMeasurementBadge(selectedMeasurement, calibrationScale !== null)}
+                      </div>
+                    </div>
+
+                    {selectedMeasurement.meta?.depth && (
+                      <div className="rounded-lg bg-white p-2 shadow-sm">
+                        <div className="text-xs text-slate-500">Depth: {selectedMeasurement.meta.depth} {calibrationUnit}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </aside>
+      </div>
+
+            {showCalibrationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Calibration</h3>
+                <p className="text-sm text-slate-500">
+                  Select two points on the drawing, then enter the real distance.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCalibrationModal(false)}
+                className="rounded-lg px-3 py-1 text-sm text-slate-500 hover:bg-slate-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Point 1</div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">
+                    {calibrationDraft.p1 ? "Selected" : "Not selected"}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">Point 2</div>
+                  <div className="mt-1 text-sm font-medium text-slate-900">
+                    {calibrationDraft.p2 ? "Selected" : "Not selected"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Feet</label>
+                  <input
+                    value={calibrationForm.feet}
+                    onChange={(e) =>
+                      setCalibrationForm((prev) => ({
+                        ...prev,
+                        feet: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                    placeholder="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Inches</label>
+                  <input
+                    value={calibrationForm.inches}
+                    onChange={(e) =>
+                      setCalibrationForm((prev) => ({
+                        ...prev,
+                        inches: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                    placeholder="0"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Fraction</label>
+                  <select
+                    value={calibrationForm.fraction}
+                    onChange={(e) =>
+                      setCalibrationForm((prev) => ({
+                        ...prev,
+                        fraction: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                  >
+                    <option value="0">0</option>
+                    <option value="1/8">1/8</option>
+                    <option value="1/4">1/4</option>
+                    <option value="3/8">3/8</option>
+                    <option value="1/2">1/2</option>
+                    <option value="5/8">5/8</option>
+                    <option value="3/4">3/4</option>
+                    <option value="7/8">7/8</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Unit</label>
+                <select
+                  value={calibrationForm.unit}
+                  onChange={(e) =>
+                    setCalibrationForm((prev) => ({
+                      ...prev,
+                      unit: e.target.value as UnitSystem,
+                    }))
+                  }
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+                >
+                  <option value="ft">ft</option>
+                  <option value="m">m</option>
+                  <option value="in">in</option>
+                </select>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                onClick={() => {
+  setToolMode("calibrate");
+  setDraftPoints([]);
+  setCalibrationDraft((prev) => ({
+    ...prev,
+    p1: null,
+    p2: null,
+  }));
+  setShowCalibrationModal(false);
+}}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium hover:bg-slate-100"
+                >
+                  Start / Restart
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCalibrationDraft({
+                      p1: null,
+                      p2: null,
+                      distanceText: "1",
+                      unit: "ft",
+                    });
+                    setCalibrationForm({
+                      feet: "",
+                      inches: "",
+                      fraction: "0",
+                      unit: "ft",
+                    });
+                  }}
+                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setShowCalibrationModal(false)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+
+             <button
+  type="button"
+  disabled={!calibrationDraft.p1 || !calibrationDraft.p2}
+  onClick={() => {
+    const p1 = calibrationDraft.p1;
+    const p2 = calibrationDraft.p2;
+
+    if (!p1 || !p2) {
+      setErrorText("Click 'Start / Restart', then select two points on the drawing.");
+      return;
+    }
+
+    const feet = Number(calibrationForm.feet || 0);
+    const inches = Number(calibrationForm.inches || 0);
+    const fraction = fractionToDecimal(calibrationForm.fraction);
+
+    let distance = 0;
+
+    if (calibrationForm.unit === "ft") {
+      distance = feet + (inches + fraction) / 12;
+    } else if (calibrationForm.unit === "in") {
+      distance = feet * 12 + inches + fraction;
+    } else {
+      distance = Number(calibrationForm.feet || 0);
+    }
+
+    commitCalibrationWithValues(p1, p2, distance, calibrationForm.unit);
+    setShowCalibrationModal(false);
+  }}
+  className={`rounded-xl px-4 py-2 text-sm font-medium text-white ${
+    calibrationDraft.p1 && calibrationDraft.p2
+      ? "bg-slate-800 hover:bg-slate-700"
+      : "cursor-not-allowed bg-slate-300"
+  }`}
+>
+  Apply Calibration
+</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ExportToBOQModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        projectId={activeProjectId || ""}
+        groupSummaries={groupSummariesForExport}
+        sessionId={session?.id || ""}
+      />
+
+      {cursorScreenPos && (() => {
+        let hudContent: React.ReactNode = null;
+
+        if (toolMode === "line" && draftPoints.length > 0 && currentMousePoint) {
+          const previewPoints = draftPoints.length === 1
+            ? [draftPoints[0], currentMousePoint]
+            : [...draftPoints, currentMousePoint];
+
+          const totalLengthPx = polylineLength(previewPoints);
+          const lastSegmentPx = draftPoints.length > 0
+            ? distanceBetween(draftPoints[draftPoints.length - 1], currentMousePoint)
+            : 0;
+
+          const angle = draftPoints.length > 0
+            ? calculateAngle(draftPoints[draftPoints.length - 1], currentMousePoint)
+            : 0;
+
+          if (calibrationScale) {
+            const totalLength = totalLengthPx * calibrationScale;
+            const segmentLength = lastSegmentPx * calibrationScale;
+
+            const totalText = calibrationUnit === "ft"
+              ? formatFeetInches(totalLength)
+              : `${formatNumber(totalLength)} ${calibrationUnit}`;
+            const segmentText = calibrationUnit === "ft"
+              ? formatFeetInches(segmentLength)
+              : `${formatNumber(segmentLength)} ${calibrationUnit}`;
+
+            hudContent = (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Total:</span>
+                  <span className="text-sm font-bold text-slate-900">{totalText}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Segment:</span>
+                  <span className="text-sm font-semibold text-slate-700">{segmentText}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Angle:</span>
+                  <span className="text-sm font-semibold text-slate-700">{formatNumber(angle)}°</span>
+                </div>
+              </div>
+            );
+          } else {
+            hudContent = (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Total:</span>
+                  <span className="text-sm font-bold text-slate-900">{formatNumber(totalLengthPx)} px</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Segment:</span>
+                  <span className="text-sm font-semibold text-slate-700">{formatNumber(lastSegmentPx)} px</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Angle:</span>
+                  <span className="text-sm font-semibold text-slate-700">{formatNumber(angle)}°</span>
+                </div>
+              </div>
+            );
+          }
+        } else if ((toolMode === "area" || toolMode === "volume") && draftPoints.length >= 2 && currentMousePoint) {
+          const previewPoints = [...draftPoints, currentMousePoint];
+          const areaPx = polygonArea(previewPoints);
+          const perimeterPx = polylineLength([...previewPoints, previewPoints[0]]);
+
+          if (toolMode === "volume") {
+            const depth = Number(draftVolumeDepth) || 1;
+            if (calibrationScale) {
+              const realArea = areaPx * calibrationScale * calibrationScale;
+              const realVolume = realArea * depth;
+              const areaUnit = getAreaUnit(calibrationUnit);
+              const volumeUnit = getVolumeUnit(calibrationUnit);
+
+              const depthText = calibrationUnit === "ft"
+                ? formatFeetInches(depth)
+                : `${depth} ${calibrationUnit}`;
+
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Area:</span>
+                    <span className="text-sm font-semibold text-slate-700">{formatNumber(realArea)} {areaUnit}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Depth:</span>
+                    <span className="text-sm font-semibold text-slate-700">{depthText}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Volume:</span>
+                    <span className="text-sm font-bold text-slate-900">{formatNumber(realVolume)} {volumeUnit}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Points:</span>
+                    <span className="text-sm font-semibold text-slate-700">{draftPoints.length}</span>
+                  </div>
+                </div>
+              );
+            } else {
+              const volumePx = areaPx * depth;
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Area:</span>
+                    <span className="text-sm font-semibold text-slate-700">{formatNumber(areaPx)} px²</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Depth:</span>
+                    <span className="text-sm font-semibold text-slate-700">{depth} px</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Volume:</span>
+                    <span className="text-sm font-bold text-slate-900">{formatNumber(volumePx)} px³</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Points:</span>
+                    <span className="text-sm font-semibold text-slate-700">{draftPoints.length}</span>
+                  </div>
+                </div>
+              );
+            }
+          } else {
+            if (calibrationScale) {
+              const realArea = areaPx * calibrationScale * calibrationScale;
+              const realPerimeter = perimeterPx * calibrationScale;
+              const areaUnit = getAreaUnit(calibrationUnit);
+
+              const perimeterText = calibrationUnit === "ft"
+                ? formatFeetInches(realPerimeter)
+                : `${formatNumber(realPerimeter)} ${calibrationUnit}`;
+
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Area:</span>
+                    <span className="text-sm font-bold text-slate-900">{formatNumber(realArea)} {areaUnit}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Perimeter:</span>
+                    <span className="text-sm font-semibold text-slate-700">{perimeterText}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Points:</span>
+                    <span className="text-sm font-semibold text-slate-700">{draftPoints.length}</span>
+                  </div>
+                </div>
+              );
+            } else {
+              hudContent = (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Area:</span>
+                    <span className="text-sm font-bold text-slate-900">{formatNumber(areaPx)} px²</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Perimeter:</span>
+                    <span className="text-sm font-semibold text-slate-700">{formatNumber(perimeterPx)} px</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-slate-500">Points:</span>
+                    <span className="text-sm font-semibold text-slate-700">{draftPoints.length}</span>
+                  </div>
+                </div>
+              );
+            }
+          }
+        } else if (toolMode === "calibrate") {
+          if (calibrationDraft.p1 && calibrationDraft.p2) {
+            const distPx = distanceBetween(calibrationDraft.p1, calibrationDraft.p2);
+            const targetDist = calibrationDraft.distanceText || "0";
+            const targetUnit = calibrationDraft.unit;
+            hudContent = (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Distance:</span>
+                  <span className="text-sm font-bold text-slate-900">{formatNumber(distPx)} px</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Target:</span>
+                  <span className="text-sm font-semibold text-slate-700">{targetDist} {targetUnit}</span>
+                </div>
+              </div>
+            );
+          } else if (calibrationDraft.p1 && currentMousePoint) {
+            const distPx = distanceBetween(calibrationDraft.p1, currentMousePoint);
+            hudContent = (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-xs text-slate-500">Distance:</span>
+                  <span className="text-sm font-bold text-slate-900">{formatNumber(distPx)} px</span>
+                </div>
+              </div>
+            );
+          }
+        }
+
+        if (!hudContent) return null;
+
+        const hudWidth = 240;
+        const hudHeight = 120;
+        const offset = 20;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        let hudX = cursorScreenPos.x + offset;
+        let hudY = cursorScreenPos.y + offset;
+
+        if (hudX + hudWidth > viewportWidth - 20) {
+          hudX = cursorScreenPos.x - hudWidth - offset;
+        }
+
+        if (hudY + hudHeight > viewportHeight - 20) {
+          hudY = cursorScreenPos.y - hudHeight - offset;
+        }
+
+        if (hudX < 20) hudX = 20;
+        if (hudY < 20) hudY = 20;
+
+        return (
+          <div
+            className="pointer-events-none fixed z-50 rounded-xl border-2 border-blue-300 bg-white px-4 py-3 shadow-2xl"
+            style={{
+              left: `${hudX}px`,
+              top: `${hudY}px`,
+            }}
+          >
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-blue-600">
+              {toolMode === "calibrate" ? "Calibrating" : "Drawing"}
+            </div>
+            {hudContent}
+          </div>
+        );
+      })()}
+    </div>
   );
 }
