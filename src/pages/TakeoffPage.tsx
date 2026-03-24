@@ -691,6 +691,14 @@ export default function TakeoffPage() {
   }
 }, [loadMeasurements, resolvedProjectId]);
 
+  const initializedRef = useRef(false);
+
+useEffect(() => {
+  if (initializedRef.current) return;
+  initializedRef.current = true;
+  void ensureSessionAndPage();
+}, [ensureSessionAndPage]);
+
   useEffect(() => {
     void ensureSessionAndPage();
   }, [ensureSessionAndPage]);
