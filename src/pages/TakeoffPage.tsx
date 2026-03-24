@@ -126,62 +126,83 @@ export default function TakeoffPage() {
 
   /* ================= INIT ================= */
 
-  const init = useCallback(async () => {
-    if (!resolvedProjectId) return;
+const init = useCallback(async () => {
+  console.log("🚀 INIT START");
 
+  if (!resolvedProjectId) {
+    console.error("❌ NO PROJECT ID");
+    setLoading(false);
+    return;
+  }
+
+  try {
     setLoading(true);
-    setProjectId(resolvedProjectId);
+
+    console.log("📌 Project:", resolvedProjectId);
 
     // SESSION
-    let { data: s } = await supabase
+    let { data: session, error: sErr } = await supabase
       .from("takeoff_sessions")
       .select("*")
       .eq("project_id", resolvedProjectId)
       .limit(1)
       .maybeSingle();
 
-    if (!s) {
+    if (sErr) throw sErr;
+
+    if (!session) {
+      console.log("➕ Creating session...");
       const res = await supabase
         .from("takeoff_sessions")
         .insert({ project_id: resolvedProjectId })
-        .select("*")
+        .select()
         .single();
-      s = res.data;
+
+      if (res.error) throw res.error;
+      session = res.data;
     }
 
-    setSessionId(s.id);
+    console.log("✅ Session:", session.id);
+    setSessionId(session.id);
 
-    // PAGE (SAFE UPSERT)
-    let { data: p } = await supabase
+    // PAGE
+    let { data: page, error: pErr } = await supabase
       .from("takeoff_pages")
       .select("*")
       .eq("project_id", resolvedProjectId)
-      .eq("session_id", s.id)
+      .eq("session_id", session.id)
       .eq("page_number", 1)
       .maybeSingle();
 
-    if (!p) {
+    if (pErr) throw pErr;
+
+    if (!page) {
+      console.log("➕ Creating page...");
       const res = await supabase
         .from("takeoff_pages")
         .insert({
           project_id: resolvedProjectId,
-          session_id: s.id,
+          session_id: session.id,
           page_number: 1,
           page_label: "Page 1",
         })
-        .select("*")
+        .select()
         .single();
 
-      p = res.data;
+      if (res.error) throw res.error;
+      page = res.data;
     }
 
-    setPageId(p.id);
+    console.log("✅ Page:", page.id);
+    setPageId(page.id);
 
-    // LOAD MEASUREMENTS
-    const { data: m } = await supabase
+    // MEASUREMENTS
+    const { data: m, error: mErr } = await supabase
       .from("takeoff_measurements")
       .select("*")
-      .eq("page_id", p.id);
+      .eq("page_id", page.id);
+
+    if (mErr) throw mErr;
 
     setMeasurements(
       (m || []).map((x: any) => ({
@@ -193,8 +214,13 @@ export default function TakeoffPage() {
       }))
     );
 
+    console.log("✅ INIT COMPLETE");
+  } catch (err: any) {
+    console.error("🔥 INIT FAILED:", err.message);
+  } finally {
     setLoading(false);
-  }, [resolvedProjectId]);
+  }
+}, [resolvedProjectId]);
 
   useEffect(() => {
     init();
