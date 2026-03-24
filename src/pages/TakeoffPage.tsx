@@ -2,6 +2,7 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -44,23 +45,6 @@ type TakeoffPageRow = {
   calibration_distance: number | null;
 };
 
-type TakeoffMeasurementRow = {
-  id: string;
-  project_id: string;
-  page_id: string;
-  session_id?: string | null;
-  type: "line" | "area" | "count";
-  label?: string | null;
-  points: Point[];
-  raw_value?: number | null;
-  scaled_value?: number | null;
-  unit?: string | null;
-  color?: string | null;
-  meta?: Record<string, any> | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
-
 type LocalMeasurement = {
   id: string;
   type: "line" | "area" | "count";
@@ -92,6 +76,8 @@ type CalibrationForm = {
   fraction: string;
   unit: "ft" | "m";
 };
+
+type FitMode = "manual" | "width" | "page";
 
 const STORAGE_KEY_PREFIX = "magnus_takeoff_session_";
 
@@ -153,6 +139,15 @@ function polygonArea(points: Point[]) {
   return Math.abs(area) / 2;
 }
 
+function polygonCentroid(points: Point[]) {
+  if (!points.length) return { x: 0, y: 0 };
+  const sum = points.reduce(
+    (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
+    { x: 0, y: 0 }
+  );
+  return { x: sum.x / points.length, y: sum.y / points.length };
+}
+
 function inchesFromFraction(fraction: string) {
   const value = fraction.trim();
   if (!value || value === "0") return 0;
@@ -174,6 +169,34 @@ function calibrationDistanceFromForm(form: CalibrationForm) {
   const inches = Number(form.inches || "0");
   const frac = inchesFromFraction(form.fraction || "0");
   return feet + (inches + frac) / 12;
+}
+
+function splitFeetAndInches(totalFeet: number) {
+  if (!Number.isFinite(totalFeet) || totalFeet <= 0) {
+    return { feet: "1", inches: "", fraction: "0" };
+  }
+  const wholeFeet = Math.floor(totalFeet);
+  const totalInches = (totalFeet - wholeFeet) * 12;
+  const wholeInches = Math.floor(totalInches);
+  const remainder = totalInches - wholeInches;
+  const sixteenths = Math.round(remainder * 16);
+
+  if (sixteenths === 0) {
+    return {
+      feet: String(wholeFeet),
+      inches: wholeInches ? String(wholeInches) : "",
+      fraction: "0",
+    };
+  }
+
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const divisor = gcd(sixteenths, 16);
+
+  return {
+    feet: String(wholeFeet),
+    inches: wholeInches ? String(wholeInches) : "",
+    fraction: `${sixteenths / divisor}/${16 / divisor}`,
+  };
 }
 
 function formatNumber(value: number, digits = 2) {
@@ -198,7 +221,9 @@ function dbToLocalMeasurement(row: any): LocalMeasurement {
     points,
     rawValue: Number(row.raw_value || 0),
     scaledValue: Number(row.scaled_value || 0),
-    unit: row.unit || (row.type === "area" ? "ft²" : row.type === "line" ? "ft" : "ct"),
+    unit:
+      row.unit ||
+      (row.type === "area" ? "ft²" : row.type === "line" ? "ft" : "ct"),
     color:
       row.color ||
       TOOL_COLORS[(row.type as LocalMeasurement["type"]) || "line"] ||
@@ -263,11 +288,14 @@ async function renderPdfPages(file: File): Promise<DrawingAsset> {
 
 async function renderImageFile(file: File): Promise<DrawingAsset> {
   const objectUrl = URL.createObjectURL(file);
-  const size = await new Promise<{ width: number; height: number }>((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    img.src = objectUrl;
-  });
+  const size = await new Promise<{ width: number; height: number }>(
+    (resolve) => {
+      const img = new Image();
+      img.onload = () =>
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.src = objectUrl;
+    }
+  );
 
   return {
     kind: "image",
@@ -304,12 +332,15 @@ export default function TakeoffPage() {
 
   const [rightTab, setRightTab] = useState<RightTab>("drawings");
   const [tool, setTool] = useState<ToolMode>("pan");
+  const [fitMode, setFitMode] = useState<FitMode>("page");
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
 
   const [draftPoints, setDraftPoints] = useState<Point[]>([]);
+  const [draftHoverPoint, setDraftHoverPoint] = useState<Point | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [hoverCanvasPoint, setHoverCanvasPoint] = useState<Point | null>(null);
 
   const [showCalibration, setShowCalibration] = useState(false);
   const [calibrationPicking, setCalibrationPicking] = useState(false);
@@ -336,6 +367,7 @@ export default function TakeoffPage() {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement | null>(null);
   const saveTimerRef = useRef<number | null>(null);
+  const autoFitPendingRef = useRef<boolean>(false);
 
   const activePage = useMemo(
     () => pages.find((p) => p.id === activePageId) || null,
@@ -361,11 +393,7 @@ export default function TakeoffPage() {
 
   const calibrationDistance = useMemo(() => {
     if (!activePage) return 0;
-    return Number(
-      activePage.calibration_distance ??
-        activePage.calibration_scale ??
-        0
-    );
+    return Number(activePage.calibration_distance ?? activePage.calibration_scale ?? 0);
   }, [activePage]);
 
   const calibrationUnit = useMemo(() => {
@@ -406,6 +434,104 @@ export default function TakeoffPage() {
     return { line, area, count };
   }, [measurements]);
 
+  const hasRenderedPages = useMemo(() => {
+    return pages.some((page) => {
+      const pageData =
+        typeof page.page_data === "object" && page.page_data ? page.page_data : {};
+      return Boolean(pageData?.rendered_image_url || pageData?.image_url);
+    });
+  }, [pages]);
+
+  const fitToWidth = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !drawingWidth || !drawingHeight) return;
+    const vpW = viewport.clientWidth;
+    const vpH = viewport.clientHeight;
+    if (!vpW || !vpH) return;
+
+    const padding = 32;
+    const nextZoom = Math.max(
+      0.1,
+      Math.min(8, Number(((vpW - padding * 2) / drawingWidth).toFixed(4)))
+    );
+
+    const scaledHeight = drawingHeight * nextZoom;
+    const nextPanX = Math.round((vpW - drawingWidth * nextZoom) / 2);
+    const nextPanY = scaledHeight < vpH ? Math.round((vpH - scaledHeight) / 2) : padding;
+
+    setZoom(nextZoom);
+    setPan({ x: nextPanX, y: nextPanY });
+    setFitMode("width");
+  }, [drawingWidth, drawingHeight]);
+
+  const fitToPage = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !drawingWidth || !drawingHeight) return;
+    const vpW = viewport.clientWidth;
+    const vpH = viewport.clientHeight;
+    if (!vpW || !vpH) return;
+
+    const padding = 32;
+    const scaleX = (vpW - padding * 2) / drawingWidth;
+    const scaleY = (vpH - padding * 2) / drawingHeight;
+    const nextZoom = Math.max(
+      0.1,
+      Math.min(8, Number(Math.min(scaleX, scaleY).toFixed(4)))
+    );
+
+    const nextPanX = Math.round((vpW - drawingWidth * nextZoom) / 2);
+    const nextPanY = Math.round((vpH - drawingHeight * nextZoom) / 2);
+
+    setZoom(nextZoom);
+    setPan({ x: nextPanX, y: nextPanY });
+    setFitMode("page");
+  }, [drawingWidth, drawingHeight]);
+
+  const setHundredPercent = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !drawingWidth || !drawingHeight) return;
+    const vpW = viewport.clientWidth;
+    const vpH = viewport.clientHeight;
+    const nextZoom = 1;
+    const nextPanX = Math.round((vpW - drawingWidth * nextZoom) / 2);
+    const nextPanY = Math.round((vpH - drawingHeight * nextZoom) / 2);
+
+    setZoom(nextZoom);
+    setPan({ x: nextPanX, y: nextPanY });
+    setFitMode("manual");
+  }, [drawingWidth, drawingHeight]);
+
+  const scheduleAutoFit = useCallback(
+    (mode: FitMode = "page") => {
+      autoFitPendingRef.current = true;
+      setFitMode(mode);
+    },
+    []
+  );
+
+  useLayoutEffect(() => {
+    if (!autoFitPendingRef.current) return;
+    if (!drawingWidth || !drawingHeight) return;
+    autoFitPendingRef.current = false;
+
+    const id = window.requestAnimationFrame(() => {
+      if (fitMode === "width") fitToWidth();
+      else fitToPage();
+    });
+
+    return () => window.cancelAnimationFrame(id);
+  }, [activePageId, drawingWidth, drawingHeight, fitMode, fitToPage, fitToWidth]);
+
+  useEffect(() => {
+    const onResize = () => {
+      if (!drawingWidth || !drawingHeight) return;
+      if (fitMode === "width") fitToWidth();
+      else if (fitMode === "page") fitToPage();
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [drawingWidth, drawingHeight, fitMode, fitToPage, fitToWidth]);
+
   const setStableSessionId = useCallback((pid: string) => {
     const key = `${STORAGE_KEY_PREFIX}${pid}`;
     let current = localStorage.getItem(key);
@@ -432,6 +558,50 @@ export default function TakeoffPage() {
     if (data?.[0]?.name) setProjectName(data[0].name);
   }, [projectId]);
 
+  const createPageRecord = useCallback(
+    async (
+      pid: string,
+      sid: string,
+      pageNumber: number,
+      seed?: Partial<TakeoffPageRow>
+    ): Promise<TakeoffPageRow | null> => {
+      const insertPayload = {
+        project_id: pid,
+        session_id: sid,
+        page_number: pageNumber,
+        drawing_id: seed?.drawing_id ?? null,
+        page_label: seed?.page_label ?? `Page ${pageNumber}`,
+        page_data: seed?.page_data ?? {},
+        width: seed?.width ?? null,
+        height: seed?.height ?? null,
+        calibration_scale: seed?.calibration_scale ?? null,
+        calibration_unit: seed?.calibration_unit ?? null,
+        calibration_distance: seed?.calibration_distance ?? null,
+        calibration_point_1: seed?.calibration_point_1 ?? null,
+        calibration_point_2: seed?.calibration_point_2 ?? null,
+        calibration_p1: seed?.calibration_p1 ?? null,
+        calibration_p2: seed?.calibration_p2 ?? null,
+      };
+
+      const inserted = await supabase.from("takeoff_pages").insert(insertPayload).select("*");
+      if (!inserted.error && inserted.data?.[0]) {
+        return inserted.data[0] as TakeoffPageRow;
+      }
+
+      const fallback = await supabase
+        .from("takeoff_pages")
+        .select("*")
+        .eq("project_id", pid)
+        .eq("session_id", sid)
+        .eq("page_number", pageNumber)
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      return (fallback.data?.[0] as TakeoffPageRow | undefined) || null;
+    },
+    []
+  );
+
   const ensurePage = useCallback(
     async (
       pid: string,
@@ -451,45 +621,9 @@ export default function TakeoffPage() {
       const first = existing.data?.[0] as TakeoffPageRow | undefined;
       if (first) return first;
 
-      const insertPayload = {
-        project_id: pid,
-        session_id: sid,
-        page_number: pageNumber,
-        drawing_id: seed?.drawing_id ?? null,
-        page_label: seed?.page_label ?? `Page ${pageNumber}`,
-        page_data: seed?.page_data ?? {},
-        width: seed?.width ?? null,
-        height: seed?.height ?? null,
-        calibration_scale: seed?.calibration_scale ?? null,
-        calibration_unit: seed?.calibration_unit ?? null,
-        calibration_distance: seed?.calibration_distance ?? null,
-        calibration_point_1: seed?.calibration_point_1 ?? null,
-        calibration_point_2: seed?.calibration_point_2 ?? null,
-        calibration_p1: seed?.calibration_p1 ?? null,
-        calibration_p2: seed?.calibration_p2 ?? null,
-      };
-
-      const inserted = await supabase
-        .from("takeoff_pages")
-        .insert(insertPayload)
-        .select("*");
-
-      if (!inserted.error && inserted.data?.[0]) {
-        return inserted.data[0] as TakeoffPageRow;
-      }
-
-      const fallback = await supabase
-        .from("takeoff_pages")
-        .select("*")
-        .eq("project_id", pid)
-        .eq("session_id", sid)
-        .eq("page_number", pageNumber)
-        .order("created_at", { ascending: true })
-        .limit(1);
-
-      return (fallback.data?.[0] as TakeoffPageRow | undefined) || null;
+      return createPageRecord(pid, sid, pageNumber, seed);
     },
-    []
+    [createPageRecord]
   );
 
   const loadPages = useCallback(
@@ -512,9 +646,35 @@ export default function TakeoffPage() {
         rows = firstPage ? [firstPage] : [];
       }
 
+      rows = [...rows].sort((a, b) => {
+        const aRendered = Boolean(
+          (typeof a.page_data === "object" && a.page_data
+            ? a.page_data.rendered_image_url || a.page_data.image_url
+            : null) || a.width || a.height
+        );
+        const bRendered = Boolean(
+          (typeof b.page_data === "object" && b.page_data
+            ? b.page_data.rendered_image_url || b.page_data.image_url
+            : null) || b.width || b.height
+        );
+        if (aRendered !== bRendered) return aRendered ? -1 : 1;
+        return (a.page_number || 0) - (b.page_number || 0);
+      });
+
       setPages(rows);
+
       if (rows.length) {
-        setActivePageId((prev) => (rows.some((r) => r.id === prev) ? prev : rows[0].id));
+        const firstRendered =
+          rows.find((row) => {
+            const data =
+              typeof row.page_data === "object" && row.page_data ? row.page_data : {};
+            return Boolean(data?.rendered_image_url || data?.image_url);
+          }) || rows[0];
+
+        setActivePageId((prev) => {
+          if (rows.some((r) => r.id === prev)) return prev;
+          return firstRendered.id;
+        });
       } else {
         setActivePageId("");
       }
@@ -522,19 +682,16 @@ export default function TakeoffPage() {
     [ensurePage]
   );
 
-  const loadMeasurements = useCallback(
-    async (pid: string, pageId: string) => {
-      const { data } = await supabase
-        .from("takeoff_measurements")
-        .select("*")
-        .eq("project_id", pid)
-        .eq("page_id", pageId)
-        .order("created_at", { ascending: true });
+  const loadMeasurements = useCallback(async (pid: string, pageId: string) => {
+    const { data } = await supabase
+      .from("takeoff_measurements")
+      .select("*")
+      .eq("project_id", pid)
+      .eq("page_id", pageId)
+      .order("created_at", { ascending: true });
 
-      setMeasurements((data || []).map(dbToLocalMeasurement));
-    },
-    []
-  );
+    setMeasurements((data || []).map(dbToLocalMeasurement));
+  }, []);
 
   const initialize = useCallback(async () => {
     if (!projectId) {
@@ -558,7 +715,8 @@ export default function TakeoffPage() {
     await loadProjectMeta();
     await loadPages(projectId, sid);
     setLoading(false);
-  }, [projectId, setStableSessionId, loadProjectMeta, loadPages]);
+    scheduleAutoFit("page");
+  }, [projectId, setStableSessionId, loadProjectMeta, loadPages, scheduleAutoFit]);
 
   useEffect(() => {
     initialize();
@@ -581,33 +739,47 @@ export default function TakeoffPage() {
 
     setCalibrationP1(p1);
     setCalibrationP2(p2);
-    setCalibrationForm({
-      feet:
-        activePage.calibration_unit === "m"
-          ? String(activePage.calibration_distance || activePage.calibration_scale || 1)
-          : String(
-              Math.floor(
-                Number(activePage.calibration_distance || activePage.calibration_scale || 1)
-              )
-            ),
-      inches: "",
-      fraction: "0",
-      unit: activePage.calibration_unit === "m" ? "m" : "ft",
-    });
-  }, [activePage]);
+
+    if ((activePage.calibration_unit || "ft") === "m") {
+      setCalibrationForm({
+        feet: String(
+          activePage.calibration_distance || activePage.calibration_scale || 1
+        ),
+        inches: "",
+        fraction: "0",
+        unit: "m",
+      });
+    } else {
+      const parsed = splitFeetAndInches(
+        Number(activePage.calibration_distance || activePage.calibration_scale || 1)
+      );
+      setCalibrationForm({
+        feet: parsed.feet,
+        inches: parsed.inches,
+        fraction: parsed.fraction,
+        unit: "ft",
+      });
+    }
+
+    setDraftPoints([]);
+    setDraftHoverPoint(null);
+    setHoverCanvasPoint(null);
+    setIsDrawing(false);
+    setSelectedMeasurementId("");
+    scheduleAutoFit(fitMode === "width" ? "width" : "page");
+  }, [activePage, fitMode, scheduleAutoFit]);
 
   const persistPage = useCallback(
     async (pageId: string, patch: Partial<TakeoffPageRow>) => {
       if (!pageId) return;
       setSaving(true);
+
       const payload: Record<string, any> = {
         ...patch,
         updated_at: new Date().toISOString(),
       };
-      const { error } = await supabase
-        .from("takeoff_pages")
-        .update(payload)
-        .eq("id", pageId);
+
+      const { error } = await supabase.from("takeoff_pages").update(payload).eq("id", pageId);
 
       if (!error) {
         setPages((prev) =>
@@ -655,17 +827,14 @@ export default function TakeoffPage() {
     saveTimerRef.current = window.setTimeout(() => {
       persistMeasurements(measurements);
     }, 700);
+
     return () => {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     };
   }, [measurements, persistMeasurements, projectId, activePageId]);
 
-  const resetView = useCallback(() => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  }, []);
-
   const zoomBy = useCallback((delta: number) => {
+    setFitMode("manual");
     setZoom((z) => Math.max(0.25, Math.min(6, Number((z + delta).toFixed(2)))));
   }, []);
 
@@ -674,18 +843,19 @@ export default function TakeoffPage() {
       const el = canvasWrapRef.current;
       if (!el || !drawingWidth || !drawingHeight) return null;
       const rect = el.getBoundingClientRect();
-      const x = (clientX - rect.left - pan.x) / zoom;
-      const y = (clientY - rect.top - pan.y) / zoom;
+      const x = (clientX - rect.left) / zoom;
+      const y = (clientY - rect.top) / zoom;
       const clampedX = Math.max(0, Math.min(drawingWidth, x));
       const clampedY = Math.max(0, Math.min(drawingHeight, y));
       return { x: clampedX, y: clampedY };
     },
-    [drawingWidth, drawingHeight, pan.x, pan.y, zoom]
+    [drawingWidth, drawingHeight, zoom]
   );
 
   const addMeasurement = useCallback(
     (type: LocalMeasurement["type"], points: Point[]) => {
       if (!points.length) return;
+
       let rawValue = 0;
       let scaledValue = 0;
       let unit = lineUnit;
@@ -727,11 +897,31 @@ export default function TakeoffPage() {
     [areaUnit, lineUnit, measurements, pxToUnitScale]
   );
 
+  const beginCalibrationWorkflow = useCallback(() => {
+    setShowCalibration(true);
+    setCalibrationPicking(true);
+    setTool("calibrate");
+    setDraftPoints([]);
+    setDraftHoverPoint(null);
+    setHoverCanvasPoint(null);
+    setIsDrawing(false);
+  }, []);
+
+  const resetCalibrationDraftOnly = useCallback(() => {
+    setCalibrationP1(null);
+    setCalibrationP2(null);
+    setCalibrationPicking(true);
+    setTool("calibrate");
+    setDraftPoints([]);
+    setDraftHoverPoint(null);
+  }, []);
+
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!activePage || !drawingImageUrl) return;
 
       if (tool === "pan") {
+        setFitMode("manual");
         setDragState({
           pointerId: e.pointerId,
           startClientX: e.clientX,
@@ -746,8 +936,9 @@ export default function TakeoffPage() {
       if (!point) return;
 
       if (tool === "calibrate" || calibrationPicking) {
-        if (!calibrationP1) {
+        if (!calibrationP1 || (calibrationP1 && calibrationP2)) {
           setCalibrationP1(point);
+          setCalibrationP2(null);
         } else {
           setCalibrationP2(point);
           setCalibrationPicking(false);
@@ -765,11 +956,13 @@ export default function TakeoffPage() {
       if (tool === "line") {
         if (!isDrawing) {
           setDraftPoints([point]);
+          setDraftHoverPoint(point);
           setIsDrawing(true);
         } else {
           const pts = [draftPoints[0], point];
           addMeasurement("line", pts);
           setDraftPoints([]);
+          setDraftHoverPoint(null);
           setIsDrawing(false);
           setTool("pan");
         }
@@ -779,6 +972,7 @@ export default function TakeoffPage() {
       if (tool === "area") {
         if (!isDrawing) {
           setDraftPoints([point]);
+          setDraftHoverPoint(point);
           setIsDrawing(true);
         } else {
           setDraftPoints((prev) => [...prev, point]);
@@ -791,25 +985,37 @@ export default function TakeoffPage() {
       tool,
       calibrationPicking,
       calibrationP1,
+      calibrationP2,
       getCanvasPoint,
       pan.x,
       pan.y,
       addMeasurement,
       isDrawing,
       draftPoints,
+      setFitMode,
     ]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      const point = getCanvasPoint(e.clientX, e.clientY);
+      setHoverCanvasPoint(point);
+
       if (dragState && dragState.pointerId === e.pointerId) {
         setPan({
           x: dragState.startPanX + (e.clientX - dragState.startClientX),
           y: dragState.startPanY + (e.clientY - dragState.startClientY),
         });
+        return;
+      }
+
+      if (!point) return;
+
+      if ((tool === "line" || tool === "area") && isDrawing) {
+        setDraftHoverPoint(point);
       }
     },
-    [dragState]
+    [dragState, getCanvasPoint, tool, isDrawing]
   );
 
   const handlePointerUp = useCallback(
@@ -821,10 +1027,18 @@ export default function TakeoffPage() {
     [dragState]
   );
 
+  const handlePointerLeave = useCallback(() => {
+    setHoverCanvasPoint(null);
+    if (tool !== "line" && tool !== "area") {
+      setDraftHoverPoint(null);
+    }
+  }, [tool]);
+
   const handleDoubleClick = useCallback(() => {
     if (tool === "area" && draftPoints.length >= 3) {
       addMeasurement("area", draftPoints);
       setDraftPoints([]);
+      setDraftHoverPoint(null);
       setIsDrawing(false);
       setTool("pan");
     }
@@ -833,6 +1047,7 @@ export default function TakeoffPage() {
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
+      setFitMode("manual");
       setZoom((prev) =>
         Math.max(0.25, Math.min(6, Number((prev + (e.deltaY > 0 ? -0.1 : 0.1)).toFixed(2))))
       );
@@ -856,6 +1071,7 @@ export default function TakeoffPage() {
 
     setShowCalibration(false);
     setCalibrationPicking(false);
+    setTool("pan");
   }, [activePage, calibrationP1, calibrationP2, calibrationForm, persistPage]);
 
   const resetCalibration = useCallback(async () => {
@@ -885,14 +1101,28 @@ export default function TakeoffPage() {
       setPageBusy(true);
 
       try {
-        const nextPages: TakeoffPageRow[] = [];
+        const currentRows = [...pages].sort((a, b) => (a.page_number || 0) - (b.page_number || 0));
+        const blankReusable =
+          currentRows.length === 1 &&
+          !hasRenderedPages &&
+          currentRows[0]
+            ? currentRows[0]
+            : null;
+
+        let nextPageNumber = blankReusable
+          ? blankReusable.page_number || 1
+          : currentRows.reduce((max, p) => Math.max(max, p.page_number || 0), 0) + 1;
+
+        let firstUploadedActiveId = "";
+        let reusedBlank = false;
 
         for (const file of Array.from(files)) {
-          const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+          const isPdf =
+            file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
           const asset = isPdf ? await renderPdfPages(file) : await renderImageFile(file);
 
           for (const page of asset.pages) {
-            const record = await ensurePage(projectId, sessionId, page.pageNumber, {
+            const commonPatch: Partial<TakeoffPageRow> = {
               page_label: page.label,
               width: page.width,
               height: page.height,
@@ -902,45 +1132,94 @@ export default function TakeoffPage() {
                 rendered_image_url: page.imageUrl,
                 image_url: page.imageUrl,
                 original_file_name: file.name,
+                source_url: asset.sourceUrl || null,
                 page_number: page.pageNumber,
                 width: page.width,
                 height: page.height,
               },
-            });
-            if (record) nextPages.push(record);
+            };
+
+            let record: TakeoffPageRow | null = null;
+
+            if (blankReusable && !reusedBlank) {
+              const { data, error } = await supabase
+                .from("takeoff_pages")
+                .update({
+                  ...commonPatch,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", blankReusable.id)
+                .select("*");
+
+              if (!error && data?.[0]) {
+                record = data[0] as TakeoffPageRow;
+                reusedBlank = true;
+                nextPageNumber = (blankReusable.page_number || 1) + 1;
+              }
+            }
+
+            if (!record) {
+              record = await createPageRecord(projectId, sessionId, nextPageNumber, {
+                ...commonPatch,
+                page_number: nextPageNumber,
+              });
+              nextPageNumber += 1;
+            }
+
+            if (record && !firstUploadedActiveId) {
+              firstUploadedActiveId = record.id;
+            }
           }
         }
 
-        if (nextPages.length) {
-          await loadPages(projectId, sessionId);
-          setActivePageId(nextPages[0].id);
-          resetView();
+        await loadPages(projectId, sessionId);
+
+        if (firstUploadedActiveId) {
+          setActivePageId(firstUploadedActiveId);
+          scheduleAutoFit("page");
         }
       } finally {
         setPageBusy(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
-    [projectId, sessionId, ensurePage, loadPages, resetView]
+    [
+      projectId,
+      sessionId,
+      pages,
+      hasRenderedPages,
+      loadPages,
+      createPageRecord,
+      scheduleAutoFit,
+    ]
   );
 
   const addBlankPage = useCallback(async () => {
     if (!projectId || !sessionId) return;
+
     const nextPageNumber =
       pages.reduce((max, p) => Math.max(max, p.page_number || 0), 0) + 1;
 
-    const record = await ensurePage(projectId, sessionId, nextPageNumber, {
+    const record = await createPageRecord(projectId, sessionId, nextPageNumber, {
       page_label: `Page ${nextPageNumber}`,
       page_data: {},
     });
 
     await loadPages(projectId, sessionId);
-    if (record) setActivePageId(record.id);
-  }, [projectId, sessionId, pages, ensurePage, loadPages]);
 
-  const removeMeasurement = useCallback((id: string) => {
-    setMeasurements((prev) => prev.filter((m) => m.id !== id));
-    if (selectedMeasurementId === id) setSelectedMeasurementId("");
-  }, [selectedMeasurementId]);
+    if (record) {
+      setActivePageId(record.id);
+      scheduleAutoFit("page");
+    }
+  }, [projectId, sessionId, pages, createPageRecord, loadPages, scheduleAutoFit]);
+
+  const removeMeasurement = useCallback(
+    (id: string) => {
+      setMeasurements((prev) => prev.filter((m) => m.id !== id));
+      if (selectedMeasurementId === id) setSelectedMeasurementId("");
+    },
+    [selectedMeasurementId]
+  );
 
   const selectedMeasurement = useMemo(
     () => measurements.find((m) => m.id === selectedMeasurementId) || null,
@@ -954,11 +1233,37 @@ export default function TakeoffPage() {
         ? "Pick the second calibration point."
         : "Pick the first calibration point.";
     }
-    if (tool === "line") return isDrawing ? "Click second point to finish line." : "Click first point to start line.";
-    if (tool === "area") return isDrawing ? "Click to keep adding points. Double-click to finish." : "Click to start area polygon.";
+    if (tool === "line") {
+      return isDrawing
+        ? "Move to preview. Click second point to finish."
+        : "Click first point to start line.";
+    }
+    if (tool === "area") {
+      return isDrawing
+        ? "Move to preview. Click to add points. Double-click to finish."
+        : "Click to start area polygon.";
+    }
     if (tool === "count") return "Click anywhere to place a count point.";
     return "";
   }, [tool, calibrationPicking, calibrationP1, isDrawing]);
+
+  const liveLinePreview = useMemo(() => {
+    if (tool !== "line" || !isDrawing || draftPoints.length !== 1 || !draftHoverPoint) return null;
+    const raw = distance(draftPoints[0], draftHoverPoint);
+    const scaled = pxToUnitScale ? raw * pxToUnitScale : 0;
+    return `${formatNumber(scaled)} ${lineUnit}`;
+  }, [tool, isDrawing, draftPoints, draftHoverPoint, pxToUnitScale, lineUnit]);
+
+  const liveAreaPreview = useMemo(() => {
+    if (tool !== "area" || !isDrawing || draftPoints.length < 2 || !draftHoverPoint) return null;
+    const previewPoints = [...draftPoints, draftHoverPoint];
+    if (previewPoints.length < 3) return null;
+    const raw = polygonArea(previewPoints);
+    const scaled = pxToUnitScale ? raw * pxToUnitScale * pxToUnitScale : 0;
+    return `${formatNumber(scaled)} ${areaUnit}`;
+  }, [tool, isDrawing, draftPoints, draftHoverPoint, pxToUnitScale, areaUnit]);
+
+  const livePreviewLabel = liveLinePreview || liveAreaPreview || "";
 
   if (!projectId) {
     return (
@@ -1004,7 +1309,7 @@ export default function TakeoffPage() {
       />
 
       <div className="flex h-full flex-col">
-        <header className="border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur">
+        <header className="border-b border-slate-800 bg-slate-950/95 px-4 py-2.5 backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -1019,7 +1324,8 @@ export default function TakeoffPage() {
                   Takeoff
                 </div>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <h1 className="truncate text-lg font-semibold text-white">
                   {projectName || "Project Takeoff"}
                 </h1>
@@ -1051,9 +1357,11 @@ export default function TakeoffPage() {
                     onClick={() => {
                       setTool(value);
                       if (value === "calibrate") {
-                        setCalibrationPicking(true);
-                        setShowCalibration(true);
+                        beginCalibrationWorkflow();
+                      } else {
+                        setCalibrationPicking(false);
                         setDraftPoints([]);
+                        setDraftHoverPoint(null);
                         setIsDrawing(false);
                       }
                     }}
@@ -1079,10 +1387,37 @@ export default function TakeoffPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={resetView}
-                  className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+                  onClick={setHundredPercent}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-xs font-medium",
+                    zoom === 1 ? "bg-slate-800 text-white" : "text-slate-200 hover:bg-slate-800"
+                  )}
                 >
-                  {Math.round(zoom * 100)}%
+                  100%
+                </button>
+                <button
+                  type="button"
+                  onClick={fitToWidth}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-xs font-medium",
+                    fitMode === "width"
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-300 hover:bg-slate-800"
+                  )}
+                >
+                  Fit W
+                </button>
+                <button
+                  type="button"
+                  onClick={fitToPage}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-xs font-medium",
+                    fitMode === "page"
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-300 hover:bg-slate-800"
+                  )}
+                >
+                  Fit P
                 </button>
                 <button
                   type="button"
@@ -1098,7 +1433,9 @@ export default function TakeoffPage() {
                 onClick={() => setShowCalibration(true)}
                 className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/15"
               >
-                {pxToUnitScale ? `Calibrated · 1px = ${formatNumber(pxToUnitScale, 4)} ${lineUnit}` : "Calibration"}
+                {pxToUnitScale
+                  ? `Calibrated · 1px = ${formatNumber(pxToUnitScale, 4)} ${lineUnit}`
+                  : "Calibration"}
               </button>
 
               <button
@@ -1123,7 +1460,7 @@ export default function TakeoffPage() {
             </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
             <span>{viewerHint}</span>
             {pageBusy && <span className="text-cyan-300">Processing drawing…</span>}
             {calibrationDistance > 0 && (
@@ -1131,11 +1468,14 @@ export default function TakeoffPage() {
                 Scale: {formatNumber(calibrationDistance)} {calibrationUnit}
               </span>
             )}
+            {livePreviewLabel && (
+              <span className="text-cyan-300">Live: {livePreviewLabel}</span>
+            )}
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)_330px]">
-          <aside className="border-r border-slate-800 bg-slate-925/50 flex min-h-0 flex-col bg-slate-950/70">
+        <div className="grid min-h-0 flex-1 grid-cols-[270px_minmax(0,1fr)_330px]">
+          <aside className="flex min-h-0 flex-col border-r border-slate-800 bg-slate-950/70">
             <div className="border-b border-slate-800 px-4 py-3">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                 Drawings
@@ -1152,7 +1492,7 @@ export default function TakeoffPage() {
                   No pages yet. Upload a PDF or image to begin.
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {pages.map((page) => {
                     const pageData =
                       typeof page.page_data === "object" && page.page_data ? page.page_data : {};
@@ -1167,39 +1507,48 @@ export default function TakeoffPage() {
                           setActivePageId(page.id);
                           setSelectedMeasurementId("");
                           setDraftPoints([]);
+                          setDraftHoverPoint(null);
                           setIsDrawing(false);
-                          resetView();
+                          scheduleAutoFit("page");
                         }}
                         className={cn(
                           "w-full rounded-2xl border p-2 text-left transition",
                           isActive
-                            ? "border-cyan-500/50 bg-cyan-500/10"
+                            ? "border-cyan-500/50 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
                             : "border-slate-800 bg-slate-900 hover:bg-slate-800/80"
                         )}
                       >
                         <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
                           {thumb ? (
-                            <img
-                              src={thumb}
-                              alt={page.page_label || `Page ${page.page_number}`}
-                              className="h-28 w-full object-cover"
-                            />
+                            <div className="relative">
+                              <img
+                                src={thumb}
+                                alt={page.page_label || `Page ${page.page_number}`}
+                                className="h-28 w-full object-cover object-top"
+                              />
+                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-transparent px-2 py-1.5">
+                                <div className="text-[10px] uppercase tracking-[0.16em] text-slate-300">
+                                  Drawing
+                                </div>
+                              </div>
+                            </div>
                           ) : (
                             <div className="flex h-28 items-center justify-center text-xs text-slate-500">
                               Blank Page
                             </div>
                           )}
                         </div>
-                        <div className="mt-2 flex items-center justify-between">
-                          <div>
-                            <div className="text-sm font-medium text-slate-100">
+
+                        <div className="mt-2 flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-slate-100">
                               {page.page_label || `Page ${page.page_number}`}
                             </div>
-                            <div className="text-[11px] text-slate-400">
+                            <div className="mt-0.5 text-[11px] text-slate-400">
                               Page #{page.page_number}
                             </div>
                           </div>
-                          <div className="text-[11px] text-slate-500">
+                          <div className="rounded-md border border-slate-800 bg-slate-950 px-1.5 py-1 text-[10px] text-slate-500">
                             {Number(page.width || 0)} × {Number(page.height || 0)}
                           </div>
                         </div>
@@ -1214,7 +1563,7 @@ export default function TakeoffPage() {
           <main className="relative min-w-0 bg-slate-950">
             <div
               ref={viewportRef}
-              className="relative h-full w-full overflow-hidden"
+              className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_center,rgba(30,41,59,0.35),rgba(2,6,23,0.98))]"
               onWheel={handleWheel}
             >
               {!activePage || !drawingImageUrl ? (
@@ -1239,7 +1588,16 @@ export default function TakeoffPage() {
                 <div className="absolute inset-0">
                   <div
                     ref={canvasWrapRef}
-                    className="absolute left-0 top-0 origin-top-left touch-none"
+                    className={cn(
+                      "absolute left-0 top-0 origin-top-left touch-none select-none",
+                      tool === "pan"
+                        ? "cursor-grab active:cursor-grabbing"
+                        : tool === "calibrate" || calibrationPicking
+                        ? "cursor-crosshair"
+                        : tool === "line" || tool === "area" || tool === "count"
+                        ? "cursor-crosshair"
+                        : "cursor-default"
+                    )}
                     style={{
                       width: drawingWidth || 1,
                       height: drawingHeight || 1,
@@ -1249,6 +1607,7 @@ export default function TakeoffPage() {
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
                     onPointerCancel={handlePointerUp}
+                    onPointerLeave={handlePointerLeave}
                     onDoubleClick={handleDoubleClick}
                   >
                     <img
@@ -1277,11 +1636,11 @@ export default function TakeoffPage() {
                               onClick={() => setSelectedMeasurementId(m.id)}
                               style={{ cursor: "pointer" }}
                             >
-                              <circle cx={pt.x} cy={pt.y} r={10} fill={m.color} fillOpacity={0.22} />
+                              <circle cx={pt.x} cy={pt.y} r={12} fill={m.color} fillOpacity={0.16} />
                               <circle
                                 cx={pt.x}
                                 cy={pt.y}
-                                r={4}
+                                r={5}
                                 fill={m.color}
                                 stroke={selectedMeasurementId === m.id ? "#ffffff" : "transparent"}
                                 strokeWidth={2}
@@ -1316,10 +1675,19 @@ export default function TakeoffPage() {
                               />
                               <circle cx={a.x} cy={a.y} r={4} fill={m.color} />
                               <circle cx={b.x} cy={b.y} r={4} fill={m.color} />
+                              <rect
+                                x={(a.x + b.x) / 2 - 34}
+                                y={(a.y + b.y) / 2 - 26}
+                                width={68}
+                                height={22}
+                                rx={8}
+                                fill="rgba(2,6,23,0.75)"
+                              />
                               <text
-                                x={(a.x + b.x) / 2 + 8}
-                                y={(a.y + b.y) / 2 - 8}
-                                fontSize="16"
+                                x={(a.x + b.x) / 2}
+                                y={(a.y + b.y) / 2 - 11}
+                                textAnchor="middle"
+                                fontSize="14"
                                 fill="#e2e8f0"
                               >
                                 {formatMeasurement(m)}
@@ -1330,10 +1698,7 @@ export default function TakeoffPage() {
 
                         if (m.type === "area" && m.points.length >= 3) {
                           const pointsStr = m.points.map((p) => `${p.x},${p.y}`).join(" ");
-                          const centroid = m.points.reduce(
-                            (acc, p) => ({ x: acc.x + p.x / m.points.length, y: acc.y + p.y / m.points.length }),
-                            { x: 0, y: 0 }
-                          );
+                          const centroid = polygonCentroid(m.points);
                           return (
                             <g
                               key={m.id}
@@ -1347,11 +1712,19 @@ export default function TakeoffPage() {
                                 stroke={m.color}
                                 strokeWidth={selectedMeasurementId === m.id ? 4 : 3}
                               />
+                              <rect
+                                x={centroid.x - 38}
+                                y={centroid.y - 14}
+                                width={76}
+                                height={24}
+                                rx={8}
+                                fill="rgba(2,6,23,0.75)"
+                              />
                               <text
                                 x={centroid.x}
-                                y={centroid.y}
+                                y={centroid.y + 2}
                                 textAnchor="middle"
-                                fontSize="16"
+                                fontSize="14"
                                 fill="#e2e8f0"
                               >
                                 {formatMeasurement(m)}
@@ -1363,34 +1736,72 @@ export default function TakeoffPage() {
                         return null;
                       })}
 
-                      {draftPoints.length > 0 && (
+                      {tool === "line" && isDrawing && draftPoints.length === 1 && draftHoverPoint && (
                         <g>
-                          {tool === "line" && draftPoints.length === 1 && (
-                            <circle cx={draftPoints[0].x} cy={draftPoints[0].y} r={5} fill="#ffffff" />
-                          )}
+                          <line
+                            x1={draftPoints[0].x}
+                            y1={draftPoints[0].y}
+                            x2={draftHoverPoint.x}
+                            y2={draftHoverPoint.y}
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                            strokeDasharray="6 6"
+                          />
+                          <circle cx={draftPoints[0].x} cy={draftPoints[0].y} r={5} fill="#ffffff" />
+                          <circle cx={draftHoverPoint.x} cy={draftHoverPoint.y} r={4} fill="#ffffff" fillOpacity={0.75} />
+                        </g>
+                      )}
 
-                          {tool === "area" && draftPoints.length >= 1 && (
-                            <>
-                              <polyline
-                                points={draftPoints.map((p) => `${p.x},${p.y}`).join(" ")}
-                                fill="none"
-                                stroke="#ffffff"
-                                strokeWidth={2}
-                                strokeDasharray="6 6"
-                              />
-                              {draftPoints.map((p, idx) => (
-                                <circle key={idx} cx={p.x} cy={p.y} r={4} fill="#ffffff" />
-                              ))}
-                            </>
+                      {tool === "area" && isDrawing && draftPoints.length >= 1 && (
+                        <g>
+                          <polyline
+                            points={draftPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                            fill="none"
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                            strokeDasharray="6 6"
+                          />
+                          {draftHoverPoint && (
+                            <polyline
+                              points={[...draftPoints, draftHoverPoint]
+                                .map((p) => `${p.x},${p.y}`)
+                                .join(" ")}
+                              fill="none"
+                              stroke="#ffffff"
+                              strokeWidth={2}
+                              strokeOpacity={0.8}
+                            />
+                          )}
+                          {draftPoints.length >= 2 && draftHoverPoint && (
+                            <polygon
+                              points={[...draftPoints, draftHoverPoint]
+                                .map((p) => `${p.x},${p.y}`)
+                                .join(" ")}
+                              fill="#ffffff"
+                              fillOpacity={0.08}
+                              stroke="none"
+                            />
+                          )}
+                          {draftPoints.map((p, idx) => (
+                            <circle key={idx} cx={p.x} cy={p.y} r={4} fill="#ffffff" />
+                          ))}
+                          {draftHoverPoint && (
+                            <circle cx={draftHoverPoint.x} cy={draftHoverPoint.y} r={4} fill="#ffffff" fillOpacity={0.75} />
                           )}
                         </g>
                       )}
 
                       {calibrationP1 && (
-                        <circle cx={calibrationP1.x} cy={calibrationP1.y} r={7} fill="#22c55e" />
+                        <g>
+                          <circle cx={calibrationP1.x} cy={calibrationP1.y} r={10} fill="#22c55e" fillOpacity={0.18} />
+                          <circle cx={calibrationP1.x} cy={calibrationP1.y} r={5} fill="#22c55e" />
+                        </g>
                       )}
                       {calibrationP2 && (
-                        <circle cx={calibrationP2.x} cy={calibrationP2.y} r={7} fill="#22c55e" />
+                        <g>
+                          <circle cx={calibrationP2.x} cy={calibrationP2.y} r={10} fill="#22c55e" fillOpacity={0.18} />
+                          <circle cx={calibrationP2.x} cy={calibrationP2.y} r={5} fill="#22c55e" />
+                        </g>
                       )}
                       {calibrationP1 && calibrationP2 && (
                         <line
@@ -1403,6 +1814,29 @@ export default function TakeoffPage() {
                           strokeDasharray="8 6"
                         />
                       )}
+
+                      {hoverCanvasPoint && (tool === "calibrate" || tool === "line" || tool === "area" || tool === "count") && (
+                        <g opacity={0.65}>
+                          <line
+                            x1={hoverCanvasPoint.x}
+                            y1={0}
+                            x2={hoverCanvasPoint.x}
+                            y2={drawingHeight || 1}
+                            stroke="#e2e8f0"
+                            strokeWidth={1}
+                            strokeDasharray="5 5"
+                          />
+                          <line
+                            x1={0}
+                            y1={hoverCanvasPoint.y}
+                            x2={drawingWidth || 1}
+                            y2={hoverCanvasPoint.y}
+                            stroke="#e2e8f0"
+                            strokeWidth={1}
+                            strokeDasharray="5 5"
+                          />
+                        </g>
+                      )}
                     </svg>
                   </div>
 
@@ -1413,6 +1847,15 @@ export default function TakeoffPage() {
                     <div className="mt-1 text-slate-400">
                       Zoom {Math.round(zoom * 100)}% · {measurements.length} marks
                     </div>
+                  </div>
+
+                  <div className="pointer-events-none absolute right-4 top-4 rounded-xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-xs text-slate-300 shadow-xl">
+                    <div>Fit: {fitMode === "width" ? "Width" : fitMode === "page" ? "Page" : "Manual"}</div>
+                    {hoverCanvasPoint && (
+                      <div className="mt-1 text-slate-400">
+                        X {Math.round(hoverCanvasPoint.x)} · Y {Math.round(hoverCanvasPoint.y)}
+                      </div>
+                    )}
                   </div>
 
                   <div className="pointer-events-none absolute bottom-4 left-4 rounded-xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-xs text-slate-300 shadow-xl">
@@ -1476,7 +1919,14 @@ export default function TakeoffPage() {
                           {drawingWidth || 0} × {drawingHeight || 0}
                         </span>
                       </div>
+                      <div className="flex items-center justify-between">
+                        <span>Active Drawings</span>
+                        <span className="text-slate-400">
+                          {hasRenderedPages ? "Loaded" : "Blank only"}
+                        </span>
+                      </div>
                     </div>
+
                     <div className="mt-4 flex gap-2">
                       <button
                         type="button"
@@ -1506,21 +1956,26 @@ export default function TakeoffPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Distance</span>
-                        <span>{calibrationDistance ? `${formatNumber(calibrationDistance)} ${calibrationUnit}` : "—"}</span>
+                        <span>
+                          {calibrationDistance
+                            ? `${formatNumber(calibrationDistance)} ${calibrationUnit}`
+                            : "—"}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Scale</span>
-                        <span>{pxToUnitScale ? `${formatNumber(pxToUnitScale, 5)} ${lineUnit}/px` : "—"}</span>
+                        <span>
+                          {pxToUnitScale
+                            ? `${formatNumber(pxToUnitScale, 5)} ${lineUnit}/px`
+                            : "—"}
+                        </span>
                       </div>
                     </div>
+
                     <div className="mt-4 flex gap-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          setShowCalibration(true);
-                          setCalibrationPicking(true);
-                          setTool("calibrate");
-                        }}
+                        onClick={beginCalibrationWorkflow}
                         className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
                       >
                         Start / Restart
@@ -1531,6 +1986,33 @@ export default function TakeoffPage() {
                         className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-300 hover:bg-rose-500/20"
                       >
                         Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <div className="text-sm font-semibold text-white">View</div>
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={fitToWidth}
+                        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700"
+                      >
+                        Fit Width
+                      </button>
+                      <button
+                        type="button"
+                        onClick={fitToPage}
+                        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700"
+                      >
+                        Fit Page
+                      </button>
+                      <button
+                        type="button"
+                        onClick={setHundredPercent}
+                        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700"
+                      >
+                        100%
                       </button>
                     </div>
                   </div>
@@ -1642,7 +2124,10 @@ export default function TakeoffPage() {
                           <span className="text-slate-100">{formatMeasurement(selectedMeasurement)}</span>
                         </div>
                         <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs text-slate-400">
-                          Points: {selectedMeasurement.points.map((p) => `(${Math.round(p.x)}, ${Math.round(p.y)})`).join(" · ")}
+                          Points:{" "}
+                          {selectedMeasurement.points
+                            .map((p) => `(${Math.round(p.x)}, ${Math.round(p.y)})`)
+                            .join(" · ")}
                         </div>
                       </div>
                     )}
@@ -1694,8 +2179,10 @@ export default function TakeoffPage() {
                           }}
                           onBlur={() => {
                             if (activePage) {
+                              const current =
+                                pages.find((p) => p.id === activePage.id)?.page_label || "";
                               persistPage(activePage.id, {
-                                page_label: activePage.page_label || "",
+                                page_label: current,
                               });
                             }
                           }}
@@ -1723,7 +2210,19 @@ export default function TakeoffPage() {
 
             <div className="space-y-5 px-5 py-5">
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-                <div className="text-sm font-medium text-white">Picked Points</div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-white">Picked Points</div>
+                  <div className="rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-400">
+                    {calibrationPicking
+                      ? calibrationP1
+                        ? "Waiting for point 2"
+                        : "Waiting for point 1"
+                      : calibrationP1 && calibrationP2
+                      ? "Points selected"
+                      : "Not started"}
+                  </div>
+                </div>
+
                 <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                   <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
                     <div className="text-xs uppercase tracking-wide text-slate-500">Point 1</div>
@@ -1746,12 +2245,7 @@ export default function TakeoffPage() {
                 <div className="mt-4 flex gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setCalibrationP1(null);
-                      setCalibrationP2(null);
-                      setCalibrationPicking(true);
-                      setTool("calibrate");
-                    }}
+                    onClick={beginCalibrationWorkflow}
                     className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"
                   >
                     Start / Restart
@@ -1759,16 +2253,7 @@ export default function TakeoffPage() {
 
                   <button
                     type="button"
-                    onClick={() => {
-                      setCalibrationP1(null);
-                      setCalibrationP2(null);
-                      setCalibrationForm({
-                        feet: "1",
-                        inches: "",
-                        fraction: "0",
-                        unit: "ft",
-                      });
-                    }}
+                    onClick={resetCalibrationDraftOnly}
                     className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-300 hover:bg-rose-500/20"
                   >
                     Reset Draft
@@ -1877,11 +2362,17 @@ export default function TakeoffPage() {
               </button>
               <button
                 type="button"
-                disabled={!calibrationP1 || !calibrationP2 || calibrationDistanceFromForm(calibrationForm) <= 0}
+                disabled={
+                  !calibrationP1 ||
+                  !calibrationP2 ||
+                  calibrationDistanceFromForm(calibrationForm) <= 0
+                }
                 onClick={applyCalibration}
                 className={cn(
                   "rounded-xl px-4 py-2 text-sm font-semibold",
-                  !calibrationP1 || !calibrationP2 || calibrationDistanceFromForm(calibrationForm) <= 0
+                  !calibrationP1 ||
+                    !calibrationP2 ||
+                    calibrationDistanceFromForm(calibrationForm) <= 0
                     ? "cursor-not-allowed bg-slate-700 text-slate-400"
                     : "bg-cyan-500 text-slate-950 hover:bg-cyan-400"
                 )}
