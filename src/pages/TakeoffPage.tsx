@@ -570,107 +570,126 @@ export default function TakeoffPage() {
     []
   );
 
-  const ensureSessionAndPage = useCallback(async () => {
-    if (!resolvedProjectId) {
-      setError("No project selected. Open Takeoff from a project or pass projectId in the route/query.");
-      setLoading(false);
-      return;
-    }
+ const ensureSessionAndPage = useCallback(async () => {
+  if (!resolvedProjectId) {
+    setError("No project selected. Open Takeoff from a project or pass projectId in the route/query.");
+    setLoading(false);
+    return;
+  }
 
-    setProjectId(resolvedProjectId);
-    setLoading(true);
-    setError(null);
+  setProjectId(resolvedProjectId);
+  setLoading(true);
+  setError(null);
 
-    try {
-      let activeSession: SessionRow | null = null;
+  try {
+    let activeSession: SessionRow | null = null;
 
-      const sessionSearch = await supabase
+    const sessionSearch = await supabase
+      .from("takeoff_sessions")
+      .select("*")
+      .eq("project_id", resolvedProjectId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (sessionSearch.error) throw sessionSearch.error;
+
+    if (sessionSearch.data) {
+      activeSession = sessionSearch.data as SessionRow;
+    } else {
+      const sessionInsert = await supabase
         .from("takeoff_sessions")
+        .insert({
+          project_id: resolvedProjectId,
+          name: "Takeoff Session",
+        })
         .select("*")
-        .eq("project_id", resolvedProjectId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .single();
 
-      if (sessionSearch.error) {
-        throw sessionSearch.error;
-      }
-
-      if (sessionSearch.data) {
-        activeSession = sessionSearch.data as SessionRow;
-      } else {
-        const sessionInsert = await supabase
-          .from("takeoff_sessions")
-          .insert({
-            project_id: resolvedProjectId,
-            name: "Takeoff Session",
-          })
-          .select("*")
-          .single();
-
-        if (sessionInsert.error) throw sessionInsert.error;
-        activeSession = sessionInsert.data as SessionRow;
-      }
-
-      setSession(activeSession);
-
-      let activePage: PageRow | null = null;
-      const pageSearch = await supabase
-        .from("takeoff_pages")
-        .select("*")
-        .eq("project_id", resolvedProjectId)
-        .eq("session_id", activeSession.id)
-        .order("page_number", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (pageSearch.error) throw pageSearch.error;
-
-      if (pageSearch.data) {
-        activePage = pageSearch.data as PageRow;
-      } else {
-        const pageInsert = await supabase
-          .from("takeoff_pages")
-          .insert({
-            project_id: resolvedProjectId,
-            session_id: activeSession.id,
-            page_number: 1,
-            page_label: "Page 1",
-            width: 1,
-            height: 1,
-            page_data: {
-              document: null,
-              measurementsSummary: {
-                line: 0,
-                area: 0,
-                count: 0,
-              },
-            },
-          })
-          .select("*")
-          .single();
-
-        if (pageInsert.error) throw pageInsert.error;
-        activePage = pageInsert.data as PageRow;
-      }
-
-      setPage(activePage);
-      setCalibrationDraftPoints({
-        p1: getPageCalibrationP1(activePage),
-        p2: getPageCalibrationP2(activePage),
-      });
-      setCalibrationForm((prev) => ({
-        ...prev,
-        unit: (activePage.calibration_unit as CalibrationUnit | null) || prev.unit,
-      }));
-
-      await loadMeasurements(activePage.id, resolvedProjectId, activeSession.id);
-    } catch (err: any) {
-      setError(err?.message || "Failed to initialize takeoff session");
-    } finally {
-      setLoading(false);
+      if (sessionInsert.error) throw sessionInsert.error;
+      activeSession = sessionInsert.data as SessionRow;
     }
-  }, [loadMeasurements, resolvedProjectId]);
+
+    setSession(activeSession);
+
+    // ---------- SAFE PAGE LOAD / CREATE ----------
+    let activePage: PageRow | null = null;
+
+    const existingPage = await supabase
+      .from("takeoff_pages")
+      .select("*")
+      .eq("project_id", resolvedProjectId)
+      .eq("session_id", activeSession.id)
+      .eq("page_number", 1)
+      .maybeSingle();
+
+    if (existingPage.error) throw existingPage.error;
+
+    if (existingPage.data) {
+      activePage = existingPage.data as PageRow;
+    } else {
+      const insertResult = await supabase
+        .from("takeoff_pages")
+        .insert({
+          project_id: resolvedProjectId,
+          session_id: activeSession.id,
+          page_number: 1,
+          page_label: "Page 1",
+          width: 1,
+          height: 1,
+          page_data: {
+            document: null,
+            measurementsSummary: {
+              line: 0,
+              area: 0,
+              count: 0,
+            },
+          },
+        })
+        .select("*")
+        .single();
+
+      if (insertResult.error) {
+        // if another render inserted page 1 first, reload it instead of failing
+        if (
+          insertResult.error.message?.includes("duplicate key value") ||
+          insertResult.error.code === "23505"
+        ) {
+          const reloadExisting = await supabase
+            .from("takeoff_pages")
+            .select("*")
+            .eq("project_id", resolvedProjectId)
+            .eq("session_id", activeSession.id)
+            .eq("page_number", 1)
+            .single();
+
+          if (reloadExisting.error) throw reloadExisting.error;
+          activePage = reloadExisting.data as PageRow;
+        } else {
+          throw insertResult.error;
+        }
+      } else {
+        activePage = insertResult.data as PageRow;
+      }
+    }
+
+    setPage(activePage);
+    setCalibrationDraftPoints({
+      p1: getPageCalibrationP1(activePage),
+      p2: getPageCalibrationP2(activePage),
+    });
+    setCalibrationForm((prev) => ({
+      ...prev,
+      unit: (activePage.calibration_unit as CalibrationUnit | null) || prev.unit,
+    }));
+
+    await loadMeasurements(activePage.id, resolvedProjectId, activeSession.id);
+  } catch (err: any) {
+    setError(err?.message || "Failed to initialize takeoff session");
+  } finally {
+    setLoading(false);
+  }
+}, [loadMeasurements, resolvedProjectId]);
 
   useEffect(() => {
     void ensureSessionAndPage();
