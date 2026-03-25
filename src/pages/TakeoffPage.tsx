@@ -1,66 +1,28 @@
+// src/pages/TakeoffPage.tsx
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  Search,
-  FolderTree,
-  Package,
-  Boxes,
-  Ruler,
-  Square,
-  Hash,
-  Move,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  Save,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  CheckCircle2,
-  AlertCircle,
-  FileText,
-  Layers3,
-  Settings,
-  Link2,
-  PencilRuler,
-  FolderOpen,
-} from "lucide-react";
-import * as pdfjs from "pdfjs-dist";
 import { supabase } from "../lib/supabase";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
-
-type ToolMode = "pan" | "line" | "area" | "count";
+type ToolMode = "pan" | "select" | "calibrate" | "line" | "area" | "count";
 type RightTab =
   | "drawings"
   | "measurements"
-  | "library"
-  | "extracted"
+  | "details"
   | "boq"
   | "settings";
-type LibraryTab = "items" | "assemblies";
-type PickerMode = "drawer" | "modal";
 
 type Point = { x: number; y: number };
-
-type TakeoffSessionRow = {
-  id: string;
-  project_id: string;
-  name?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
 
 type TakeoffPageRow = {
   id: string;
@@ -69,308 +31,1194 @@ type TakeoffPageRow = {
   page_number: number;
   calibration_scale: number | null;
   calibration_unit: string | null;
-  calibration_p1?: Point | null;
-  calibration_p2?: Point | null;
-  page_data: any;
-  created_at?: string | null;
-  updated_at?: string | null;
-  session_id: string;
+  calibration_p1: any | null;
+  calibration_p2: any | null;
+  page_data: any | null;
+  created_at: string | null;
+  updated_at: string | null;
+  session_id: string | null;
   page_label: string | null;
   width: number | null;
   height: number | null;
-  calibration_point_1?: Point | null;
-  calibration_point_2?: Point | null;
-  calibration_distance?: number | null;
+  calibration_point_1: any | null;
+  calibration_point_2: any | null;
+  calibration_distance: number | null;
 };
 
-type MeasurementRow = {
+type LocalMeasurement = {
   id: string;
-  project_id: string;
-  session_id: string | null;
-  page_id: string | null;
-  type: ToolMode;
-  name?: string | null;
+  type: "line" | "area" | "count";
+  label: string;
   points: Point[];
-  quantity: number | null;
-  unit: string | null;
-  notes?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  meta?: any;
-};
-
-type CategoryRow = {
-  id: string;
-  name: string;
-  code?: string | null;
-};
-
-type ItemRow = {
-  id: string;
-  name: string;
-  item_code?: string | null;
-  category_id?: string | null;
-  description?: string | null;
-  base_unit?: string | null;
-  unit_type?: string | null;
-  default_quantity?: number | null;
-  is_active?: boolean | null;
-};
-
-type AssemblyRow = {
-  id: string;
-  name: string;
-  assembly_code?: string | null;
-  category_id?: string | null;
-  description?: string | null;
-  output_unit?: string | null;
-  unit_type?: string | null;
-  is_active?: boolean | null;
+  rawValue: number;
+  scaledValue: number;
+  unit: string;
+  color: string;
+  meta?: Record<string, any>;
 };
 
 type DrawingAsset = {
   kind: "pdf" | "image";
   name: string;
-  dataUrl: string;
-  numPages?: number;
+  sourceUrl: string;
+  pages: Array<{
+    pageNumber: number;
+    imageUrl: string;
+    width: number;
+    height: number;
+    label: string;
+  }>;
 };
 
-type CalibrationDraft = {
-  p1: Point | null;
-  p2: Point | null;
-  distanceText: string;
-  unit: string;
+type CalibrationForm = {
+  feet: string;
+  inches: string;
+  fraction: string;
+  unit: "ft" | "m";
 };
 
-type LibrarySelection = {
-  type: "item" | "assembly";
-  id: string;
-  name: string;
-  code?: string | null;
-  unit?: string | null;
-  unitType?: string | null;
+type FitMode = "manual" | "width" | "page";
+
+const STORAGE_KEY_PREFIX = "magnus_takeoff_session_";
+
+const TOOL_COLORS: Record<LocalMeasurement["type"], string> = {
+  line: "#38bdf8",
+  area: "#22c55e",
+  count: "#f59e0b",
 };
 
-const FRACTIONS = [
-  "0",
-  "1/16",
-  "1/8",
-  "3/16",
-  "1/4",
-  "5/16",
-  "3/8",
-  "7/16",
-  "1/2",
-  "9/16",
-  "5/8",
-  "11/16",
-  "3/4",
-  "13/16",
-  "7/8",
-  "15/16",
-];
+function uid() {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `id_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  }
+}
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
-function isPoint(v: any): v is Point {
-  return !!v && typeof v.x === "number" && typeof v.y === "number";
-}
-
-function parseFraction(v: string) {
-  if (!v || v === "0") return 0;
-  const [a, b] = v.split("/");
-  const n = Number(a);
-  const d = Number(b);
-  if (!Number.isFinite(n) || !Number.isFinite(d) || d === 0) return 0;
-  return n / d;
-}
-
-function feetFromFIS(feet: string, inches: string, fraction: string) {
-  const f = Number(feet || 0);
-  const i = Number(inches || 0);
-  return f + i / 12 + parseFraction(fraction) / 12;
-}
-
-function distancePx(a: Point, b: Point) {
-  return Math.hypot(b.x - a.x, b.y - a.y);
-}
-
-function lineLength(points: Point[]) {
-  if (points.length < 2) return 0;
-  let total = 0;
-  for (let i = 1; i < points.length; i += 1) {
-    total += distancePx(points[i - 1], points[i]);
+function parseJsonPoint(value: any): Point | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (
+        parsed &&
+        typeof parsed.x === "number" &&
+        typeof parsed.y === "number"
+      ) {
+        return { x: parsed.x, y: parsed.y };
+      }
+    } catch {
+      return null;
+    }
   }
-  return total;
-}
-
-function polygonArea(points: Point[]) {
-  if (points.length < 3) return 0;
-  let sum = 0;
-  for (let i = 0; i < points.length; i += 1) {
-    const a = points[i];
-    const b = points[(i + 1) % points.length];
-    sum += a.x * b.y - b.x * a.y;
-  }
-  return Math.abs(sum / 2);
-}
-
-function formatNumber(n: number | null | undefined, digits = 2) {
-  if (n == null || Number.isNaN(n)) return "—";
-  return n.toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: digits,
-  });
-}
-
-function formatDate(d?: string | null) {
-  if (!d) return "";
-  const date = new Date(d);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString();
-}
-
-function getPageAsset(page: TakeoffPageRow | null): DrawingAsset | null {
-  if (!page?.page_data) return null;
-  const pd = page.page_data || {};
-  if (pd.asset?.dataUrl && pd.asset?.kind) return pd.asset as DrawingAsset;
-  if (pd.drawing?.dataUrl && pd.drawing?.kind) return pd.drawing as DrawingAsset;
-  if (typeof pd.imageDataUrl === "string") {
-    return {
-      kind: "image",
-      name: page.page_label || `Page ${page.page_number}`,
-      dataUrl: pd.imageDataUrl,
-    };
+  if (
+    typeof value === "object" &&
+    typeof value.x === "number" &&
+    typeof value.y === "number"
+  ) {
+    return { x: value.x, y: value.y };
   }
   return null;
 }
 
-function toSvgPoint(
-  e: React.MouseEvent<SVGSVGElement, MouseEvent>,
-  svgEl: SVGSVGElement
-): Point {
-  const pt = svgEl.createSVGPoint();
-  pt.x = e.clientX;
-  pt.y = e.clientY;
-  const transformed = pt.matrixTransform(svgEl.getScreenCTM()?.inverse());
-  return { x: transformed.x, y: transformed.y };
+function distance(a: Point, b: Point) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
-function toolLabel(mode: ToolMode) {
-  if (mode === "line") return "Linear";
-  if (mode === "area") return "Area";
-  if (mode === "count") return "Count";
-  return "Pan";
-}
-
-function measurementUnit(type: ToolMode, page: TakeoffPageRow | null) {
-  const u = page?.calibration_unit || "ft";
-  if (type === "line") return u;
-  if (type === "area") return `${u}²`;
-  if (type === "count") return "ea";
-  return "";
-}
-
-function computeMeasurementQuantity(
-  type: ToolMode,
-  points: Point[],
-  page: TakeoffPageRow | null
-) {
-  if (type === "count") return points.length;
-  const p1 = page?.calibration_point_1;
-  const p2 = page?.calibration_point_2;
-  const realDist = page?.calibration_distance || page?.calibration_scale;
-  if (!isPoint(p1) || !isPoint(p2) || !realDist) {
-    if (type === "line") return lineLength(points);
-    if (type === "area") return polygonArea(points);
-    return 0;
+function polygonArea(points: Point[]) {
+  if (points.length < 3) return 0;
+  let area = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const j = (i + 1) % points.length;
+    area += points[i].x * points[j].y - points[j].x * points[i].y;
   }
-  const px = distancePx(p1, p2);
-  if (!px) return 0;
-  const scale = realDist / px;
-  if (type === "line") return lineLength(points) * scale;
-  if (type === "area") return polygonArea(points) * scale * scale;
-  return 0;
+  return Math.abs(area) / 2;
+}
+
+function polygonCentroid(points: Point[]) {
+  if (!points.length) return { x: 0, y: 0 };
+  const sum = points.reduce(
+    (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
+    { x: 0, y: 0 }
+  );
+  return { x: sum.x / points.length, y: sum.y / points.length };
+}
+
+function inchesFromFraction(fraction: string) {
+  const value = fraction.trim();
+  if (!value || value === "0") return 0;
+  if (!value.includes("/")) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+  }
+  const [a, b] = value.split("/").map((v) => Number(v.trim()));
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b === 0) return 0;
+  return a / b;
+}
+
+function calibrationDistanceFromForm(form: CalibrationForm) {
+  if (form.unit === "m") {
+    const meters = Number(form.feet || "0");
+    return Number.isFinite(meters) ? meters : 0;
+  }
+  const feet = Number(form.feet || "0");
+  const inches = Number(form.inches || "0");
+  const frac = inchesFromFraction(form.fraction || "0");
+  return feet + (inches + frac) / 12;
+}
+
+function splitFeetAndInches(totalFeet: number) {
+  if (!Number.isFinite(totalFeet) || totalFeet <= 0) {
+    return { feet: "1", inches: "", fraction: "0" };
+  }
+  const wholeFeet = Math.floor(totalFeet);
+  const totalInches = (totalFeet - wholeFeet) * 12;
+  const wholeInches = Math.floor(totalInches);
+  const remainder = totalInches - wholeInches;
+  const sixteenths = Math.round(remainder * 16);
+
+  if (sixteenths === 0) {
+    return {
+      feet: String(wholeFeet),
+      inches: wholeInches ? String(wholeInches) : "",
+      fraction: "0",
+    };
+  }
+
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const divisor = gcd(sixteenths, 16);
+
+  return {
+    feet: String(wholeFeet),
+    inches: wholeInches ? String(wholeInches) : "",
+    fraction: `${sixteenths / divisor}/${16 / divisor}`,
+  };
+}
+
+function formatNumber(value: number, digits = 2) {
+  if (!Number.isFinite(value)) return "0";
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: 0,
+  });
+}
+
+function formatMeasurement(m: LocalMeasurement) {
+  if (m.type === "count") return `${formatNumber(m.scaledValue, 0)} ct`;
+  return `${formatNumber(m.scaledValue)} ${m.unit}`;
+}
+
+function dbToLocalMeasurement(row: any): LocalMeasurement {
+  const points = Array.isArray(row.points) ? row.points : [];
+  return {
+    id: row.id,
+    type: row.type,
+    label: row.label || row.type?.toUpperCase?.() || "Measurement",
+    points,
+    rawValue: Number(row.raw_value || 0),
+    scaledValue: Number(row.scaled_value || 0),
+    unit:
+      row.unit ||
+      (row.type === "area" ? "ft²" : row.type === "line" ? "ft" : "ct"),
+    color:
+      row.color ||
+      TOOL_COLORS[(row.type as LocalMeasurement["type"]) || "line"] ||
+      "#38bdf8",
+    meta: row.meta || {},
+  };
+}
+
+function localToDbMeasurement(
+  measurement: LocalMeasurement,
+  pageId: string,
+  projectId: string,
+  sessionId: string
+) {
+  return {
+    id: measurement.id,
+    page_id: pageId,
+    project_id: projectId,
+    session_id: sessionId,
+    type: measurement.type,
+    label: measurement.label,
+    points: measurement.points,
+    raw_value: measurement.rawValue,
+    scaled_value: measurement.scaledValue,
+    unit: measurement.unit,
+    color: measurement.color,
+    meta: measurement.meta || {},
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function renderPdfPages(file: File): Promise<DrawingAsset> {
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  const pages: DrawingAsset["pages"] = [];
+
+  for (let i = 1; i <= pdf.numPages; i += 1) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.6 });
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) continue;
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: context, viewport }).promise;
+    pages.push({
+      pageNumber: i,
+      imageUrl: canvas.toDataURL("image/png"),
+      width: viewport.width,
+      height: viewport.height,
+      label: `${file.name} · Page ${i}`,
+    });
+  }
+
+  return {
+    kind: "pdf",
+    name: file.name,
+    sourceUrl: "",
+    pages,
+  };
+}
+
+async function renderImageFile(file: File): Promise<DrawingAsset> {
+  const objectUrl = URL.createObjectURL(file);
+  const size = await new Promise<{ width: number; height: number }>(
+    (resolve) => {
+      const img = new Image();
+      img.onload = () =>
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.src = objectUrl;
+    }
+  );
+
+  return {
+    kind: "image",
+    name: file.name,
+    sourceUrl: objectUrl,
+    pages: [
+      {
+        pageNumber: 1,
+        imageUrl: objectUrl,
+        width: size.width,
+        height: size.height,
+        label: file.name,
+      },
+    ],
+  };
 }
 
 export default function TakeoffPage() {
   const navigate = useNavigate();
-  const params = useParams<{ projectId: string }>();
-  const projectId = params.projectId || "";
+  const { projectId } = useParams<{ projectId: string }>();
 
-  const viewerRef = useRef<HTMLDivElement | null>(null);
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const pdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const saveTimerRef = useRef<number | null>(null);
-  const isMountedRef = useRef(true);
-  const sessionRef = useRef<TakeoffSessionRow | null>(null);
-  const pagesRef = useRef<TakeoffPageRow[]>([]);
-  const activePageIdRef = useRef<string>("");
-  const activePageRef = useRef<TakeoffPageRow | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [projectName, setProjectName] = useState<string>("");
 
-  const [loading, setLoading] = useState(true);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(
-    "idle"
-  );
-  const [errorText, setErrorText] = useState<string>("");
-
-  const [session, setSession] = useState<TakeoffSessionRow | null>(null);
+  const [sessionId, setSessionId] = useState<string>("");
   const [pages, setPages] = useState<TakeoffPageRow[]>([]);
   const [activePageId, setActivePageId] = useState<string>("");
-  const activePage = useMemo(
-    () => pages.find((p) => p.id === activePageId) || pages[0] || null,
-    [pages, activePageId]
-  );
+  const [measurements, setMeasurements] = useState<LocalMeasurement[]>([]);
 
-  const [measurements, setMeasurements] = useState<MeasurementRow[]>([]);
-  const [activeTool, setActiveTool] = useState<ToolMode>("pan");
-  const [draftPoints, setDraftPoints] = useState<Point[]>([]);
-  const [selectedMeasurementId, setSelectedMeasurementId] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [pageBusy, setPageBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveStamp, setSaveStamp] = useState<string>("");
+
+  const [rightTab, setRightTab] = useState<RightTab>("drawings");
+  const [tool, setTool] = useState<ToolMode>("pan");
+  const [fitMode, setFitMode] = useState<FitMode>("page");
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState<Point | null>(null);
 
-  const [rightTab, setRightTab] = useState<RightTab>("drawings");
-  const [libraryTab, setLibraryTab] = useState<LibraryTab>("items");
-  const [pickerMode, setPickerMode] = useState<PickerMode>("drawer");
-  const [libraryOpen, setLibraryOpen] = useState(false);
-  const [librarySearch, setLibrarySearch] = useState("");
-  const [libraryCategoryId, setLibraryCategoryId] = useState("all");
-  const [categories, setCategories] = useState<CategoryRow[]>([]);
-  const [items, setItems] = useState<ItemRow[]>([]);
-  const [assemblies, setAssemblies] = useState<AssemblyRow[]>([]);
-  const [linkedSelection, setLinkedSelection] = useState<LibrarySelection | null>(
-    null
-  );
+  const [draftPoints, setDraftPoints] = useState<Point[]>([]);
+  const [draftHoverPoint, setDraftHoverPoint] = useState<Point | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [hoverCanvasPoint, setHoverCanvasPoint] = useState<Point | null>(null);
 
-  const [showCalibrationModal, setShowCalibrationModal] = useState(false);
-  const [calibrationDraft, setCalibrationDraft] = useState<CalibrationDraft>({
-    p1: null,
-    p2: null,
-    distanceText: "1",
-    unit: "ft",
-  });
-  const [calibrationForm, setCalibrationForm] = useState({
-    feet: "",
+  const [showCalibration, setShowCalibration] = useState(false);
+  const [calibrationPicking, setCalibrationPicking] = useState(false);
+  const [calibrationP1, setCalibrationP1] = useState<Point | null>(null);
+  const [calibrationP2, setCalibrationP2] = useState<Point | null>(null);
+  const [calibrationForm, setCalibrationForm] = useState<CalibrationForm>({
+    feet: "1",
     inches: "",
     fraction: "0",
     unit: "ft",
   });
-  const [isPickingCalibration, setIsPickingCalibration] = useState(false);
-  const [calibrationReopenAfterPoint2, setCalibrationReopenAfterPoint2] =
-    useState(false);
 
-  const [pdfNumPages, setPdfNumPages] = useState<number>(0);
-  const [isUploadingDrawing, setIsUploadingDrawing] = useState(false);
+  const [dragState, setDragState] = useState<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startPanX: number;
+    startPanY: number;
+  } | null>(null);
 
-  const activePageMeasurements = useMemo(
-    () => measurements.filter((m) => m.page_id === activePage?.id),
-    [measurements, activePage?.id]
+  const [selectedMeasurementId, setSelectedMeasurementId] = useState<string>("");
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const canvasWrapRef = useRef<HTMLDivElement | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+  const autoFitPendingRef = useRef<boolean>(false);
+
+  const activePage = useMemo(
+    () => pages.find((p) => p.id === activePageId) || null,
+    [pages, activePageId]
+  );
+
+  const activePageData = useMemo(() => {
+    const data = activePage?.page_data || {};
+    return typeof data === "object" && data ? data : {};
+  }, [activePage]);
+
+  const drawingImageUrl = useMemo(() => {
+    return activePageData?.rendered_image_url || activePageData?.image_url || "";
+  }, [activePageData]);
+
+  const drawingWidth = useMemo(() => {
+    return Number(activePage?.width || activePageData?.width || 0);
+  }, [activePage, activePageData]);
+
+  const drawingHeight = useMemo(() => {
+    return Number(activePage?.height || activePageData?.height || 0);
+  }, [activePage, activePageData]);
+
+  const calibrationDistance = useMemo(() => {
+    if (!activePage) return 0;
+    return Number(activePage.calibration_distance ?? activePage.calibration_scale ?? 0);
+  }, [activePage]);
+
+  const calibrationUnit = useMemo(() => {
+    return activePage?.calibration_unit || "ft";
+  }, [activePage]);
+
+  const pxToUnitScale = useMemo(() => {
+    const p1 =
+      parseJsonPoint(activePage?.calibration_point_1) ||
+      parseJsonPoint(activePage?.calibration_p1);
+    const p2 =
+      parseJsonPoint(activePage?.calibration_point_2) ||
+      parseJsonPoint(activePage?.calibration_p2);
+    const realDistance = calibrationDistance;
+    if (!p1 || !p2 || !realDistance) return 0;
+    const px = distance(p1, p2);
+    if (!px) return 0;
+    return realDistance / px;
+  }, [activePage, calibrationDistance]);
+
+  const areaUnit = useMemo(() => {
+    return calibrationUnit === "m" ? "m²" : "ft²";
+  }, [calibrationUnit]);
+
+  const lineUnit = useMemo(() => {
+    return calibrationUnit === "m" ? "m" : "ft";
+  }, [calibrationUnit]);
+
+  const totals = useMemo(() => {
+    let line = 0;
+    let area = 0;
+    let count = 0;
+    for (const item of measurements) {
+      if (item.type === "line") line += item.scaledValue;
+      else if (item.type === "area") area += item.scaledValue;
+      else if (item.type === "count") count += item.scaledValue;
+    }
+    return { line, area, count };
+  }, [measurements]);
+
+  const hasRenderedPages = useMemo(() => {
+    return pages.some((page) => {
+      const pageData =
+        typeof page.page_data === "object" && page.page_data ? page.page_data : {};
+      return Boolean(pageData?.rendered_image_url || pageData?.image_url);
+    });
+  }, [pages]);
+
+  const fitToWidth = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !drawingWidth || !drawingHeight) return;
+    const vpW = viewport.clientWidth;
+    const vpH = viewport.clientHeight;
+    if (!vpW || !vpH) return;
+
+    const padding = 32;
+    const nextZoom = Math.max(
+      0.1,
+      Math.min(8, Number(((vpW - padding * 2) / drawingWidth).toFixed(4)))
+    );
+
+    const scaledHeight = drawingHeight * nextZoom;
+    const nextPanX = Math.round((vpW - drawingWidth * nextZoom) / 2);
+    const nextPanY = scaledHeight < vpH ? Math.round((vpH - scaledHeight) / 2) : padding;
+
+    setZoom(nextZoom);
+    setPan({ x: nextPanX, y: nextPanY });
+    setFitMode("width");
+  }, [drawingWidth, drawingHeight]);
+
+  const fitToPage = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !drawingWidth || !drawingHeight) return;
+    const vpW = viewport.clientWidth;
+    const vpH = viewport.clientHeight;
+    if (!vpW || !vpH) return;
+
+    const padding = 32;
+    const scaleX = (vpW - padding * 2) / drawingWidth;
+    const scaleY = (vpH - padding * 2) / drawingHeight;
+    const nextZoom = Math.max(
+      0.1,
+      Math.min(8, Number(Math.min(scaleX, scaleY).toFixed(4)))
+    );
+
+    const nextPanX = Math.round((vpW - drawingWidth * nextZoom) / 2);
+    const nextPanY = Math.round((vpH - drawingHeight * nextZoom) / 2);
+
+    setZoom(nextZoom);
+    setPan({ x: nextPanX, y: nextPanY });
+    setFitMode("page");
+  }, [drawingWidth, drawingHeight]);
+
+  const setHundredPercent = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !drawingWidth || !drawingHeight) return;
+    const vpW = viewport.clientWidth;
+    const vpH = viewport.clientHeight;
+    const nextZoom = 1;
+    const nextPanX = Math.round((vpW - drawingWidth * nextZoom) / 2);
+    const nextPanY = Math.round((vpH - drawingHeight * nextZoom) / 2);
+
+    setZoom(nextZoom);
+    setPan({ x: nextPanX, y: nextPanY });
+    setFitMode("manual");
+  }, [drawingWidth, drawingHeight]);
+
+  const scheduleAutoFit = useCallback(
+    (mode: FitMode = "page") => {
+      autoFitPendingRef.current = true;
+      setFitMode(mode);
+    },
+    []
+  );
+
+  useLayoutEffect(() => {
+    if (!autoFitPendingRef.current) return;
+    if (!drawingWidth || !drawingHeight) return;
+    autoFitPendingRef.current = false;
+
+    const id = window.requestAnimationFrame(() => {
+      if (fitMode === "width") fitToWidth();
+      else fitToPage();
+    });
+
+    return () => window.cancelAnimationFrame(id);
+  }, [activePageId, drawingWidth, drawingHeight, fitMode, fitToPage, fitToWidth]);
+
+  useEffect(() => {
+    const onResize = () => {
+      if (!drawingWidth || !drawingHeight) return;
+      if (fitMode === "width") fitToWidth();
+      else if (fitMode === "page") fitToPage();
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [drawingWidth, drawingHeight, fitMode, fitToPage, fitToWidth]);
+
+  const setStableSessionId = useCallback((pid: string) => {
+    const key = `${STORAGE_KEY_PREFIX}${pid}`;
+    let current = localStorage.getItem(key);
+    if (!current) {
+      current = uid();
+      localStorage.setItem(key, current);
+    }
+    setSessionId(current);
+    return current;
+  }, []);
+
+  const markSaved = useCallback(() => {
+    setSaving(false);
+    setSaveStamp(new Date().toLocaleTimeString());
+  }, []);
+
+  const loadProjectMeta = useCallback(async () => {
+    if (!projectId) return;
+    const { data } = await supabase
+      .from("projects")
+      .select("id, name")
+      .eq("id", projectId)
+      .limit(1);
+    if (data?.[0]?.name) setProjectName(data[0].name);
+  }, [projectId]);
+
+  const createPageRecord = useCallback(
+    async (
+      pid: string,
+      sid: string,
+      pageNumber: number,
+      seed?: Partial<TakeoffPageRow>
+    ): Promise<TakeoffPageRow | null> => {
+      const insertPayload = {
+        project_id: pid,
+        session_id: sid,
+        page_number: pageNumber,
+        drawing_id: seed?.drawing_id ?? null,
+        page_label: seed?.page_label ?? `Page ${pageNumber}`,
+        page_data: seed?.page_data ?? {},
+        width: seed?.width ?? null,
+        height: seed?.height ?? null,
+        calibration_scale: seed?.calibration_scale ?? null,
+        calibration_unit: seed?.calibration_unit ?? null,
+        calibration_distance: seed?.calibration_distance ?? null,
+        calibration_point_1: seed?.calibration_point_1 ?? null,
+        calibration_point_2: seed?.calibration_point_2 ?? null,
+        calibration_p1: seed?.calibration_p1 ?? null,
+        calibration_p2: seed?.calibration_p2 ?? null,
+      };
+
+      const inserted = await supabase.from("takeoff_pages").insert(insertPayload).select("*");
+      if (!inserted.error && inserted.data?.[0]) {
+        return inserted.data[0] as TakeoffPageRow;
+      }
+
+      const fallback = await supabase
+        .from("takeoff_pages")
+        .select("*")
+        .eq("project_id", pid)
+        .eq("session_id", sid)
+        .eq("page_number", pageNumber)
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      return (fallback.data?.[0] as TakeoffPageRow | undefined) || null;
+    },
+    []
+  );
+
+  const ensurePage = useCallback(
+    async (
+      pid: string,
+      sid: string,
+      pageNumber: number,
+      seed?: Partial<TakeoffPageRow>
+    ): Promise<TakeoffPageRow | null> => {
+      const existing = await supabase
+        .from("takeoff_pages")
+        .select("*")
+        .eq("project_id", pid)
+        .eq("session_id", sid)
+        .eq("page_number", pageNumber)
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      const first = existing.data?.[0] as TakeoffPageRow | undefined;
+      if (first) return first;
+
+      return createPageRecord(pid, sid, pageNumber, seed);
+    },
+    [createPageRecord]
+  );
+
+  const loadPages = useCallback(
+    async (pid: string, sid: string) => {
+      const query = await supabase
+        .from("takeoff_pages")
+        .select("*")
+        .eq("project_id", pid)
+        .eq("session_id", sid)
+        .order("page_number", { ascending: true })
+        .order("created_at", { ascending: true });
+
+      let rows = (query.data || []) as TakeoffPageRow[];
+
+      if (!rows.length) {
+        const firstPage = await ensurePage(pid, sid, 1, {
+          page_label: "Page 1",
+          page_data: {},
+        });
+        rows = firstPage ? [firstPage] : [];
+      }
+
+      rows = [...rows].sort((a, b) => {
+        const aRendered = Boolean(
+          (typeof a.page_data === "object" && a.page_data
+            ? a.page_data.rendered_image_url || a.page_data.image_url
+            : null) || a.width || a.height
+        );
+        const bRendered = Boolean(
+          (typeof b.page_data === "object" && b.page_data
+            ? b.page_data.rendered_image_url || b.page_data.image_url
+            : null) || b.width || b.height
+        );
+        if (aRendered !== bRendered) return aRendered ? -1 : 1;
+        return (a.page_number || 0) - (b.page_number || 0);
+      });
+
+      setPages(rows);
+
+      if (rows.length) {
+        const firstRendered =
+          rows.find((row) => {
+            const data =
+              typeof row.page_data === "object" && row.page_data ? row.page_data : {};
+            return Boolean(data?.rendered_image_url || data?.image_url);
+          }) || rows[0];
+
+        setActivePageId((prev) => {
+          if (rows.some((r) => r.id === prev)) return prev;
+          return firstRendered.id;
+        });
+      } else {
+        setActivePageId("");
+      }
+    },
+    [ensurePage]
+  );
+
+  const loadMeasurements = useCallback(async (pid: string, pageId: string) => {
+    const { data } = await supabase
+      .from("takeoff_measurements")
+      .select("*")
+      .eq("project_id", pid)
+      .eq("page_id", pageId)
+      .order("created_at", { ascending: true });
+
+    setMeasurements((data || []).map(dbToLocalMeasurement));
+  }, []);
+
+  const initialize = useCallback(async () => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setAuthReady(true);
+      setLoading(false);
+      return;
+    }
+
+    setAuthReady(true);
+    const sid = setStableSessionId(projectId);
+    await loadProjectMeta();
+    await loadPages(projectId, sid);
+    setLoading(false);
+    scheduleAutoFit("page");
+  }, [projectId, setStableSessionId, loadProjectMeta, loadPages, scheduleAutoFit]);
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  useEffect(() => {
+    if (!projectId || !activePageId) return;
+    loadMeasurements(projectId, activePageId);
+  }, [projectId, activePageId, loadMeasurements]);
+
+  useEffect(() => {
+    if (!activePage) return;
+
+    const p1 =
+      parseJsonPoint(activePage.calibration_point_1) ||
+      parseJsonPoint(activePage.calibration_p1);
+    const p2 =
+      parseJsonPoint(activePage.calibration_point_2) ||
+      parseJsonPoint(activePage.calibration_p2);
+
+    setCalibrationP1(p1);
+    setCalibrationP2(p2);
+
+    if ((activePage.calibration_unit || "ft") === "m") {
+      setCalibrationForm({
+        feet: String(
+          activePage.calibration_distance || activePage.calibration_scale || 1
+        ),
+        inches: "",
+        fraction: "0",
+        unit: "m",
+      });
+    } else {
+      const parsed = splitFeetAndInches(
+        Number(activePage.calibration_distance || activePage.calibration_scale || 1)
+      );
+      setCalibrationForm({
+        feet: parsed.feet,
+        inches: parsed.inches,
+        fraction: parsed.fraction,
+        unit: "ft",
+      });
+    }
+
+    setDraftPoints([]);
+    setDraftHoverPoint(null);
+    setHoverCanvasPoint(null);
+    setIsDrawing(false);
+    setSelectedMeasurementId("");
+    scheduleAutoFit(fitMode === "width" ? "width" : "page");
+  }, [activePage, fitMode, scheduleAutoFit]);
+
+  const persistPage = useCallback(
+    async (pageId: string, patch: Partial<TakeoffPageRow>) => {
+      if (!pageId) return;
+      setSaving(true);
+
+      const payload: Record<string, any> = {
+        ...patch,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from("takeoff_pages").update(payload).eq("id", pageId);
+
+      if (!error) {
+        setPages((prev) =>
+          prev.map((p) => (p.id === pageId ? ({ ...p, ...payload } as TakeoffPageRow) : p))
+        );
+        markSaved();
+      } else {
+        setSaving(false);
+      }
+    },
+    [markSaved]
+  );
+
+  const persistMeasurements = useCallback(
+    async (nextMeasurements: LocalMeasurement[]) => {
+      if (!projectId || !activePageId || !sessionId) return;
+
+      setSaving(true);
+
+      const deleteIds = measurements
+        .map((m) => m.id)
+        .filter((id) => !nextMeasurements.some((n) => n.id === id));
+
+      if (deleteIds.length) {
+        await supabase.from("takeoff_measurements").delete().in("id", deleteIds);
+      }
+
+      if (nextMeasurements.length) {
+        const payload = nextMeasurements.map((m) =>
+          localToDbMeasurement(m, activePageId, projectId, sessionId)
+        );
+        await supabase.from("takeoff_measurements").upsert(payload, {
+          onConflict: "id",
+        });
+      }
+
+      markSaved();
+    },
+    [projectId, activePageId, sessionId, measurements, markSaved]
+  );
+
+  useEffect(() => {
+    if (!projectId || !activePageId) return;
+    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      persistMeasurements(measurements);
+    }, 700);
+
+    return () => {
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    };
+  }, [measurements, persistMeasurements, projectId, activePageId]);
+
+  const zoomBy = useCallback((delta: number) => {
+    setFitMode("manual");
+    setZoom((z) => Math.max(0.25, Math.min(6, Number((z + delta).toFixed(2)))));
+  }, []);
+
+  const getCanvasPoint = useCallback(
+    (clientX: number, clientY: number): Point | null => {
+      const el = canvasWrapRef.current;
+      if (!el || !drawingWidth || !drawingHeight) return null;
+      const rect = el.getBoundingClientRect();
+      const x = (clientX - rect.left) / zoom;
+      const y = (clientY - rect.top) / zoom;
+      const clampedX = Math.max(0, Math.min(drawingWidth, x));
+      const clampedY = Math.max(0, Math.min(drawingHeight, y));
+      return { x: clampedX, y: clampedY };
+    },
+    [drawingWidth, drawingHeight, zoom]
+  );
+
+  const addMeasurement = useCallback(
+    (type: LocalMeasurement["type"], points: Point[]) => {
+      if (!points.length) return;
+
+      let rawValue = 0;
+      let scaledValue = 0;
+      let unit = lineUnit;
+
+      if (type === "line" && points.length >= 2) {
+        rawValue = distance(points[0], points[1]);
+        scaledValue = pxToUnitScale ? rawValue * pxToUnitScale : 0;
+        unit = lineUnit;
+      } else if (type === "area" && points.length >= 3) {
+        rawValue = polygonArea(points);
+        scaledValue = pxToUnitScale ? rawValue * pxToUnitScale * pxToUnitScale : 0;
+        unit = areaUnit;
+      } else if (type === "count") {
+        rawValue = 1;
+        scaledValue = 1;
+        unit = "ct";
+      }
+
+      const next: LocalMeasurement = {
+        id: uid(),
+        type,
+        label:
+          type === "line"
+            ? `Line ${measurements.filter((m) => m.type === "line").length + 1}`
+            : type === "area"
+            ? `Area ${measurements.filter((m) => m.type === "area").length + 1}`
+            : `Count ${measurements.filter((m) => m.type === "count").length + 1}`,
+        points,
+        rawValue,
+        scaledValue,
+        unit,
+        color: TOOL_COLORS[type],
+        meta: {},
+      };
+
+      setMeasurements((prev) => [...prev, next]);
+      setSelectedMeasurementId(next.id);
+    },
+    [areaUnit, lineUnit, measurements, pxToUnitScale]
+  );
+
+  const beginCalibrationWorkflow = useCallback(() => {
+    setShowCalibration(true);
+    setCalibrationPicking(true);
+    setTool("calibrate");
+    setDraftPoints([]);
+    setDraftHoverPoint(null);
+    setHoverCanvasPoint(null);
+    setIsDrawing(false);
+  }, []);
+
+  const resetCalibrationDraftOnly = useCallback(() => {
+    setCalibrationP1(null);
+    setCalibrationP2(null);
+    setCalibrationPicking(true);
+    setTool("calibrate");
+    setDraftPoints([]);
+    setDraftHoverPoint(null);
+  }, []);
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!activePage || !drawingImageUrl) return;
+
+      if (tool === "pan") {
+        setFitMode("manual");
+        setDragState({
+          pointerId: e.pointerId,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          startPanX: pan.x,
+          startPanY: pan.y,
+        });
+        return;
+      }
+
+      const point = getCanvasPoint(e.clientX, e.clientY);
+      if (!point) return;
+
+      if (tool === "calibrate" || calibrationPicking) {
+        if (!calibrationP1 || (calibrationP1 && calibrationP2)) {
+          setCalibrationP1(point);
+          setCalibrationP2(null);
+        } else {
+          setCalibrationP2(point);
+          setCalibrationPicking(false);
+          setShowCalibration(true);
+          setTool("pan");
+        }
+        return;
+      }
+
+      if (tool === "count") {
+        addMeasurement("count", [point]);
+        return;
+      }
+
+      if (tool === "line") {
+        if (!isDrawing) {
+          setDraftPoints([point]);
+          setDraftHoverPoint(point);
+          setIsDrawing(true);
+        } else {
+          const pts = [draftPoints[0], point];
+          addMeasurement("line", pts);
+          setDraftPoints([]);
+          setDraftHoverPoint(null);
+          setIsDrawing(false);
+          setTool("pan");
+        }
+        return;
+      }
+
+      if (tool === "area") {
+        if (!isDrawing) {
+          setDraftPoints([point]);
+          setDraftHoverPoint(point);
+          setIsDrawing(true);
+        } else {
+          setDraftPoints((prev) => [...prev, point]);
+        }
+      }
+    },
+    [
+      activePage,
+      drawingImageUrl,
+      tool,
+      calibrationPicking,
+      calibrationP1,
+      calibrationP2,
+      getCanvasPoint,
+      pan.x,
+      pan.y,
+      addMeasurement,
+      isDrawing,
+      draftPoints,
+      setFitMode,
+    ]
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const point = getCanvasPoint(e.clientX, e.clientY);
+      setHoverCanvasPoint(point);
+
+      if (dragState && dragState.pointerId === e.pointerId) {
+        setPan({
+          x: dragState.startPanX + (e.clientX - dragState.startClientX),
+          y: dragState.startPanY + (e.clientY - dragState.startClientY),
+        });
+        return;
+      }
+
+      if (!point) return;
+
+      if ((tool === "line" || tool === "area") && isDrawing) {
+        setDraftHoverPoint(point);
+      }
+    },
+    [dragState, getCanvasPoint, tool, isDrawing]
+  );
+
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (dragState && dragState.pointerId === e.pointerId) {
+        setDragState(null);
+      }
+    },
+    [dragState]
+  );
+
+  const handlePointerLeave = useCallback(() => {
+    setHoverCanvasPoint(null);
+    if (tool !== "line" && tool !== "area") {
+      setDraftHoverPoint(null);
+    }
+  }, [tool]);
+
+  const handleDoubleClick = useCallback(() => {
+    if (tool === "area" && draftPoints.length >= 3) {
+      addMeasurement("area", draftPoints);
+      setDraftPoints([]);
+      setDraftHoverPoint(null);
+      setIsDrawing(false);
+      setTool("pan");
+    }
+  }, [tool, draftPoints, addMeasurement]);
+
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setFitMode("manual");
+      setZoom((prev) =>
+        Math.max(0.25, Math.min(6, Number((prev + (e.deltaY > 0 ? -0.1 : 0.1)).toFixed(2))))
+      );
+    }
+  }, []);
+
+  const applyCalibration = useCallback(async () => {
+    if (!activePage || !calibrationP1 || !calibrationP2) return;
+    const realDistance = calibrationDistanceFromForm(calibrationForm);
+    if (!realDistance) return;
+
+    await persistPage(activePage.id, {
+      calibration_scale: realDistance,
+      calibration_distance: realDistance,
+      calibration_unit: calibrationForm.unit,
+      calibration_point_1: calibrationP1,
+      calibration_point_2: calibrationP2,
+      calibration_p1: calibrationP1,
+      calibration_p2: calibrationP2,
+    });
+
+    setShowCalibration(false);
+    setCalibrationPicking(false);
+    setTool("pan");
+  }, [activePage, calibrationP1, calibrationP2, calibrationForm, persistPage]);
+
+  const resetCalibration = useCallback(async () => {
+    if (!activePage) return;
+    setCalibrationP1(null);
+    setCalibrationP2(null);
+    setCalibrationForm({
+      feet: "1",
+      inches: "",
+      fraction: "0",
+      unit: "ft",
+    });
+    await persistPage(activePage.id, {
+      calibration_scale: null,
+      calibration_distance: null,
+      calibration_unit: null,
+      calibration_point_1: null,
+      calibration_point_2: null,
+      calibration_p1: null,
+      calibration_p2: null,
+    });
+  }, [activePage, persistPage]);
+
+  const handleUploadFiles = useCallback(
+    async (files: FileList | null) => {
+      if (!files || !projectId || !sessionId) return;
+      setPageBusy(true);
+
+      try {
+        const currentRows = [...pages].sort((a, b) => (a.page_number || 0) - (b.page_number || 0));
+        const blankReusable =
+          currentRows.length === 1 &&
+          !hasRenderedPages &&
+          currentRows[0]
+            ? currentRows[0]
+            : null;
+
+        let nextPageNumber = blankReusable
+          ? blankReusable.page_number || 1
+          : currentRows.reduce((max, p) => Math.max(max, p.page_number || 0), 0) + 1;
+
+        let firstUploadedActiveId = "";
+        let reusedBlank = false;
+
+        for (const file of Array.from(files)) {
+          const isPdf =
+            file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+          const asset = isPdf ? await renderPdfPages(file) : await renderImageFile(file);
+
+          for (const page of asset.pages) {
+            const commonPatch: Partial<TakeoffPageRow> = {
+              page_label: page.label,
+              width: page.width,
+              height: page.height,
+              page_data: {
+                asset_kind: asset.kind,
+                asset_name: asset.name,
+                rendered_image_url: page.imageUrl,
+                image_url: page.imageUrl,
+                original_file_name: file.name,
+                source_url: asset.sourceUrl || null,
+                page_number: page.pageNumber,
+                width: page.width,
+                height: page.height,
+              },
+            };
+
+            let record: TakeoffPageRow | null = null;
+
+            if (blankReusable && !reusedBlank) {
+              const { data, error } = await supabase
+                .from("takeoff_pages")
+                .update({
+                  ...commonPatch,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", blankReusable.id)
+                .select("*");
+
+              if (!error && data?.[0]) {
+                record = data[0] as TakeoffPageRow;
+                reusedBlank = true;
+                nextPageNumber = (blankReusable.page_number || 1) + 1;
+              }
+            }
+
+            if (!record) {
+              record = await createPageRecord(projectId, sessionId, nextPageNumber, {
+                ...commonPatch,
+                page_number: nextPageNumber,
+              });
+              nextPageNumber += 1;
+            }
+
+            if (record && !firstUploadedActiveId) {
+              firstUploadedActiveId = record.id;
+            }
+          }
+        }
+
+        await loadPages(projectId, sessionId);
+
+        if (firstUploadedActiveId) {
+          setActivePageId(firstUploadedActiveId);
+          scheduleAutoFit("page");
+        }
+      } finally {
+        setPageBusy(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [
+      projectId,
+      sessionId,
+      pages,
+      hasRenderedPages,
+      loadPages,
+      createPageRecord,
+      scheduleAutoFit,
+    ]
+  );
+
+  const addBlankPage = useCallback(async () => {
+    if (!projectId || !sessionId) return;
+
+    const nextPageNumber =
+      pages.reduce((max, p) => Math.max(max, p.page_number || 0), 0) + 1;
+
+    const record = await createPageRecord(projectId, sessionId, nextPageNumber, {
+      page_label: `Page ${nextPageNumber}`,
+      page_data: {},
+    });
+
+    await loadPages(projectId, sessionId);
+
+    if (record) {
+      setActivePageId(record.id);
+      scheduleAutoFit("page");
+    }
+  }, [projectId, sessionId, pages, createPageRecord, loadPages, scheduleAutoFit]);
+
+  const removeMeasurement = useCallback(
+    (id: string) => {
+      setMeasurements((prev) => prev.filter((m) => m.id !== id));
+      if (selectedMeasurementId === id) setSelectedMeasurementId("");
+    },
+    [selectedMeasurementId]
   );
 
   const selectedMeasurement = useMemo(
@@ -378,1985 +1226,1155 @@ export default function TakeoffPage() {
     [measurements, selectedMeasurementId]
   );
 
-  const filteredCategories = useMemo(() => {
-    const s = librarySearch.trim().toLowerCase();
-    if (!s) return categories;
-    return categories.filter(
-      (c) =>
-        c.name.toLowerCase().includes(s) ||
-        (c.code || "").toLowerCase().includes(s)
-    );
-  }, [categories, librarySearch]);
-
-  const filteredItems = useMemo(() => {
-    const s = librarySearch.trim().toLowerCase();
-    return items.filter((row) => {
-      const catMatch =
-        libraryCategoryId === "all" || row.category_id === libraryCategoryId;
-      const searchMatch =
-        !s ||
-        row.name.toLowerCase().includes(s) ||
-        (row.item_code || "").toLowerCase().includes(s) ||
-        (row.description || "").toLowerCase().includes(s);
-      return catMatch && searchMatch;
-    });
-  }, [items, librarySearch, libraryCategoryId]);
-
-  const filteredAssemblies = useMemo(() => {
-    const s = librarySearch.trim().toLowerCase();
-    return assemblies.filter((row) => {
-      const catMatch =
-        libraryCategoryId === "all" || row.category_id === libraryCategoryId;
-      const searchMatch =
-        !s ||
-        row.name.toLowerCase().includes(s) ||
-        (row.assembly_code || "").toLowerCase().includes(s) ||
-        (row.description || "").toLowerCase().includes(s);
-      return catMatch && searchMatch;
-    });
-  }, [assemblies, librarySearch, libraryCategoryId]);
-
-  const activeAsset = useMemo(() => getPageAsset(activePage), [activePage]);
-
-  useEffect(() => {
-    sessionRef.current = session;
-  }, [session]);
-
-  useEffect(() => {
-    pagesRef.current = pages;
-  }, [pages]);
-
-  useEffect(() => {
-    activePageIdRef.current = activePageId;
-  }, [activePageId]);
-
-  useEffect(() => {
-    activePageRef.current = activePage;
-  }, [activePage]);
-
-  useEffect(() => {
-    if (!activePageId && pages[0]?.id) {
-      setActivePageId(pages[0].id);
+  const viewerHint = useMemo(() => {
+    if (tool === "pan") return "Drag to pan. Ctrl/Cmd + wheel to zoom.";
+    if (tool === "calibrate" || calibrationPicking) {
+      return calibrationP1
+        ? "Pick the second calibration point."
+        : "Pick the first calibration point.";
     }
-  }, [activePageId, pages]);
-
-  useEffect(() => {
-    if (activeAsset?.kind === "pdf") {
-      setPdfNumPages(activeAsset.numPages || activePage?.page_data?.asset?.numPages || 0);
-    } else {
-      setPdfNumPages(0);
+    if (tool === "line") {
+      return isDrawing
+        ? "Move to preview. Click second point to finish."
+        : "Click first point to start line.";
     }
-  }, [activeAsset, activePage]);
-
-  const updateSaveState = useCallback((state: typeof saveState) => {
-    setSaveState(state);
-    if (state === "saved") {
-      window.clearTimeout(saveTimerRef.current ?? undefined);
-      saveTimerRef.current = window.setTimeout(() => {
-        if (isMountedRef.current) setSaveState("idle");
-      }, 1500);
+    if (tool === "area") {
+      return isDrawing
+        ? "Move to preview. Click to add points. Double-click to finish."
+        : "Click to start area polygon.";
     }
-  }, []);
-
-  const loadProjectContext = useCallback(async () => {
-    if (!projectId) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setErrorText("");
-
-    try {
-      const { data: auth } = await supabase.auth.getUser();
-      const user = auth?.user;
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      const sessionQuery = await supabase
-        .from("takeoff_sessions")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: true })
-        .limit(1);
-
-      let currentSession = (sessionQuery.data?.[0] || null) as TakeoffSessionRow | null;
-
-      if (!currentSession) {
-        const insertSession = await supabase
-          .from("takeoff_sessions")
-          .insert({
-            project_id: projectId,
-            name: "Default Takeoff Session",
-          })
-          .select("*")
-          .limit(1);
-
-        currentSession = (insertSession.data?.[0] || null) as TakeoffSessionRow | null;
-      }
-
-      setSession(currentSession);
-
-      if (!currentSession?.id) {
-        throw new Error("Unable to create or load takeoff session.");
-      }
-
-      const pagesQuery = await supabase
-        .from("takeoff_pages")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("session_id", currentSession.id)
-        .order("page_number", { ascending: true });
-
-      let pageRows = (pagesQuery.data || []) as TakeoffPageRow[];
-
-      if (!pageRows.length) {
-        const newPageInsert = await supabase
-          .from("takeoff_pages")
-          .insert({
-            project_id: projectId,
-            session_id: currentSession.id,
-            page_number: 1,
-            page_label: "Page 1",
-            page_data: {},
-            width: 1200,
-            height: 900,
-            calibration_scale: null,
-            calibration_unit: "ft",
-            calibration_distance: null,
-            calibration_point_1: null,
-            calibration_point_2: null,
-          })
-          .select("*");
-
-        pageRows = (newPageInsert.data || []) as TakeoffPageRow[];
-      }
-
-      setPages(pageRows);
-      setActivePageId((prev) => prev || pageRows[0]?.id || "");
-
-      const measurementsQuery = await supabase
-        .from("takeoff_measurements")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("session_id", currentSession.id)
-        .order("created_at", { ascending: true });
-
-      const measurementRows = ((measurementsQuery.data || []) as any[]).map((row) => ({
-        ...row,
-        points: Array.isArray(row.points) ? row.points : [],
-        meta: row.meta || {},
-      })) as MeasurementRow[];
-
-      setMeasurements(measurementRows);
-
-      const [categoriesRes, itemsRes, assembliesRes] = await Promise.all([
-        supabase
-          .from("master_categories")
-          .select("id,name,code")
-          .order("sort_order", { ascending: true, nullsFirst: false })
-          .order("name", { ascending: true }),
-        supabase
-          .from("items")
-          .select(
-            "id,name,item_code,category_id,description,base_unit,unit_type,default_quantity,is_active"
-          )
-          .eq("is_active", true)
-          .order("name", { ascending: true }),
-        supabase
-          .from("assemblies")
-          .select(
-            "id,name,assembly_code,category_id,description,output_unit,unit_type,is_active"
-          )
-          .eq("is_active", true)
-          .order("name", { ascending: true }),
-      ]);
-
-      setCategories((categoriesRes.data || []) as CategoryRow[]);
-      setItems((itemsRes.data || []) as ItemRow[]);
-      setAssemblies((assembliesRes.data || []) as AssemblyRow[]);
-    } catch (err: any) {
-      setErrorText(err?.message || "Failed to load Takeoff page.");
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    loadProjectContext();
-    return () => {
-      isMountedRef.current = false;
-      window.clearTimeout(saveTimerRef.current ?? undefined);
-    };
-  }, [loadProjectContext]);
-
-  useEffect(() => {
-    if (!activePage) return;
-
-    const p1 = activePage.calibration_point_1 || activePage.calibration_p1 || null;
-    const p2 = activePage.calibration_point_2 || activePage.calibration_p2 || null;
-
-    setCalibrationDraft({
-      p1: isPoint(p1) ? p1 : null,
-      p2: isPoint(p2) ? p2 : null,
-      distanceText: activePage.calibration_distance
-        ? String(activePage.calibration_distance)
-        : activePage.calibration_scale
-        ? String(activePage.calibration_scale)
-        : "1",
-      unit: activePage.calibration_unit || "ft",
-    });
-
-    setCalibrationForm((prev) => ({
-      ...prev,
-      unit: activePage.calibration_unit || prev.unit || "ft",
-    }));
-  }, [activePage]);
-
-  const upsertPage = useCallback(
-    async (pageId: string, patch: Partial<TakeoffPageRow>) => {
-      if (!pageId) return;
-
-      updateSaveState("saving");
-      const payload: any = {
-        ...patch,
-        updated_at: new Date().toISOString(),
-      };
-
-      const res = await supabase
-        .from("takeoff_pages")
-        .update(payload)
-        .eq("id", pageId)
-        .select("*")
-        .limit(1);
-
-      if (res.error) {
-        setErrorText(res.error.message);
-        updateSaveState("error");
-        return;
-      }
-
-      const updated = (res.data?.[0] || null) as TakeoffPageRow | null;
-      if (!updated) {
-        updateSaveState("saved");
-        return;
-      }
-
-      setPages((prev) => prev.map((p) => (p.id === pageId ? { ...p, ...updated } : p)));
-      updateSaveState("saved");
-    },
-    [updateSaveState]
-  );
-
-  const ensureActivePage = useCallback(async () => {
-    const currentPages = pagesRef.current;
-    const currentActiveId = activePageIdRef.current;
-    const existing =
-      currentPages.find((p) => p.id === currentActiveId) || currentPages[0] || null;
-
-    if (existing) {
-      if (currentActiveId !== existing.id) {
-        setActivePageId(existing.id);
-      }
-      return existing;
-    }
-
-    const currentSession = sessionRef.current;
-    if (!projectId || !currentSession?.id) {
-      setErrorText("No active page selected.");
-      return null;
-    }
-
-    updateSaveState("saving");
-    const res = await supabase
-      .from("takeoff_pages")
-      .insert({
-        project_id: projectId,
-        session_id: currentSession.id,
-        page_number: 1,
-        page_label: "Page 1",
-        page_data: {},
-        width: 1200,
-        height: 900,
-        calibration_scale: null,
-        calibration_unit: "ft",
-        calibration_distance: null,
-        calibration_point_1: null,
-        calibration_point_2: null,
-      })
-      .select("*")
-      .limit(1);
-
-    if (res.error) {
-      setErrorText(res.error.message);
-      updateSaveState("error");
-      return null;
-    }
-
-    const row = (res.data?.[0] || null) as TakeoffPageRow | null;
-    if (!row) {
-      setErrorText("No active page selected.");
-      updateSaveState("error");
-      return null;
-    }
-
-    setPages((prev) => {
-      const exists = prev.some((p) => p.id === row.id);
-      return exists ? prev : [...prev, row];
-    });
-    setActivePageId(row.id);
-    updateSaveState("saved");
-    return row;
-  }, [projectId, updateSaveState]);
-
-  const createNewPage = useCallback(async () => {
-    if (!session?.id || !projectId) return;
-
-    const nextNumber =
-      pages.reduce((max, p) => Math.max(max, p.page_number || 0), 0) + 1;
-
-    updateSaveState("saving");
-    const res = await supabase
-      .from("takeoff_pages")
-      .insert({
-        project_id: projectId,
-        session_id: session.id,
-        page_number: nextNumber,
-        page_label: `Page ${nextNumber}`,
-        page_data: {},
-        width: 1200,
-        height: 900,
-        calibration_unit: "ft",
-      })
-      .select("*");
-
-    if (res.error) {
-      setErrorText(res.error.message);
-      updateSaveState("error");
-      return;
-    }
-
-    const row = (res.data?.[0] || null) as TakeoffPageRow | null;
-    if (row) {
-      setPages((prev) => [...prev, row]);
-      setActivePageId(row.id);
-    }
-    updateSaveState("saved");
-  }, [pages, projectId, session?.id, updateSaveState]);
-
-  const removeMeasurementDraft = useCallback(() => {
-    setDraftPoints([]);
-  }, []);
-
-  const saveMeasurement = useCallback(
-    async (type: ToolMode, points: Point[]) => {
-      if (!projectId || !session?.id || !activePage?.id || !points.length) return;
-
-      const quantity = computeMeasurementQuantity(type, points, activePage);
-      const unit = measurementUnit(type, activePage);
-
-      updateSaveState("saving");
-      const res = await supabase
-        .from("takeoff_measurements")
-        .insert({
-          project_id: projectId,
-          session_id: session.id,
-          page_id: activePage.id,
-          type,
-          name: `${toolLabel(type)} ${activePageMeasurements.length + 1}`,
-          points,
-          quantity,
-          unit,
-          meta: linkedSelection
-            ? {
-                linked_library_type: linkedSelection.type,
-                linked_library_id: linkedSelection.id,
-                linked_library_name: linkedSelection.name,
-                linked_library_code: linkedSelection.code || null,
-                linked_library_unit: linkedSelection.unit || null,
-                linked_library_unit_type: linkedSelection.unitType || null,
-              }
-            : {},
-        })
-        .select("*");
-
-      if (res.error) {
-        setErrorText(res.error.message);
-        updateSaveState("error");
-        return;
-      }
-
-      const row = (res.data?.[0] || null) as any;
-      if (row) {
-        const mapped: MeasurementRow = {
-          ...row,
-          points: Array.isArray(row.points) ? row.points : [],
-          meta: row.meta || {},
-        };
-        setMeasurements((prev) => [...prev, mapped]);
-        setSelectedMeasurementId(mapped.id);
-      }
-
-      setDraftPoints([]);
-      updateSaveState("saved");
-    },
-    [
-      activePage,
-      activePageMeasurements.length,
-      linkedSelection,
-      projectId,
-      session?.id,
-      updateSaveState,
-    ]
-  );
-
-  const deleteMeasurement = useCallback(
-    async (id: string) => {
-      if (!id) return;
-      updateSaveState("saving");
-      const res = await supabase.from("takeoff_measurements").delete().eq("id", id);
-      if (res.error) {
-        setErrorText(res.error.message);
-        updateSaveState("error");
-        return;
-      }
-      setMeasurements((prev) => prev.filter((m) => m.id !== id));
-      if (selectedMeasurementId === id) setSelectedMeasurementId("");
-      updateSaveState("saved");
-    },
-    [selectedMeasurementId, updateSaveState]
-  );
-
-  const startCalibrationPick = useCallback(() => {
-    setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
-    setIsPickingCalibration(true);
-    setCalibrationReopenAfterPoint2(true);
-    setShowCalibrationModal(false);
-    setActiveTool("pan");
-    removeMeasurementDraft();
-  }, [removeMeasurementDraft]);
-
-  const startCalibrationPickSecondary = useCallback(() => {
-    setCalibrationDraft((prev) => ({ ...prev, p1: null, p2: null }));
-    setIsPickingCalibration(true);
-    setCalibrationReopenAfterPoint2(true);
-    setShowCalibrationModal(false);
-    setActiveTool("pan");
-    removeMeasurementDraft();
-  }, [removeMeasurementDraft]);
-
-  const applyCalibration = useCallback(async () => {
-    if (!activePage?.id || !calibrationDraft.p1 || !calibrationDraft.p2) return;
-
-    const fisValue = feetFromFIS(
-      calibrationForm.feet,
-      calibrationForm.inches,
-      calibrationForm.fraction
-    );
-    const fallbackValue = Number(calibrationDraft.distanceText || 0);
-    const distance =
-      calibrationForm.unit === "ft" && (calibrationForm.feet || calibrationForm.inches)
-        ? fisValue
-        : fallbackValue;
-
-    if (!distance || Number.isNaN(distance) || distance <= 0) return;
-
-    const patch: Partial<TakeoffPageRow> = {
-      calibration_unit: calibrationForm.unit || calibrationDraft.unit || "ft",
-      calibration_distance: distance,
-      calibration_scale: distance,
-      calibration_point_1: calibrationDraft.p1,
-      calibration_point_2: calibrationDraft.p2,
-      calibration_p1: calibrationDraft.p1,
-      calibration_p2: calibrationDraft.p2,
-      page_data: {
-        ...(activePage.page_data || {}),
-        calibration: {
-          p1: calibrationDraft.p1,
-          p2: calibrationDraft.p2,
-          unit: calibrationForm.unit || calibrationDraft.unit || "ft",
-          distance,
-        },
-      },
-    };
-
-    await upsertPage(activePage.id, patch);
-    setShowCalibrationModal(false);
-    setIsPickingCalibration(false);
-    setCalibrationReopenAfterPoint2(false);
-  }, [activePage, calibrationDraft, calibrationForm, upsertPage]);
-
-  const resetCalibration = useCallback(async () => {
-    if (!activePage?.id) return;
-    setCalibrationDraft({
-      p1: null,
-      p2: null,
-      distanceText: "1",
-      unit: "ft",
-    });
-    setCalibrationForm({
-      feet: "",
-      inches: "",
-      fraction: "0",
-      unit: "ft",
-    });
-    await upsertPage(activePage.id, {
-      calibration_unit: "ft",
-      calibration_distance: null,
-      calibration_scale: null,
-      calibration_point_1: null,
-      calibration_point_2: null,
-      calibration_p1: null,
-      calibration_p2: null,
-      page_data: {
-        ...(activePage.page_data || {}),
-        calibration: null,
-      },
-    });
-  }, [activePage, upsertPage]);
-
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (!viewerRef.current) return;
-    e.preventDefault();
-    const delta = e.deltaY < 0 ? 0.1 : -0.1;
-    setZoom((prev) => Math.min(4, Math.max(0.25, +(prev + delta).toFixed(2))));
-  }, []);
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (activeTool !== "pan") return;
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-    },
-    [activeTool, pan.x, pan.y]
-  );
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (!isPanning || !panStart) return;
-      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
-    },
-    [isPanning, panStart]
-  );
-
-  const handleMouseUp = useCallback(() => {
-    setIsPanning(false);
-    setPanStart(null);
-  }, []);
-
-  const handleCanvasClick = useCallback(
-    async (e: React.MouseEvent<SVGSVGElement, MouseEvent>) => {
-      if (!activePage || !svgRef.current) return;
-      const pt = toSvgPoint(e, svgRef.current);
-
-      if (isPickingCalibration) {
-        if (!calibrationDraft.p1) {
-          setCalibrationDraft((prev) => ({ ...prev, p1: pt }));
-          return;
-        }
-        if (!calibrationDraft.p2) {
-          setCalibrationDraft((prev) => ({ ...prev, p2: pt }));
-          setIsPickingCalibration(false);
-          if (calibrationReopenAfterPoint2) {
-            setTimeout(() => {
-              if (!isMountedRef.current) return;
-              setShowCalibrationModal(true);
-            }, 50);
-          }
-          return;
-        }
-      }
-
-      if (activeTool === "pan") return;
-
-      if (activeTool === "count") {
-        await saveMeasurement("count", [pt]);
-        return;
-      }
-
-      if (activeTool === "line") {
-        const next = [...draftPoints, pt];
-        setDraftPoints(next);
-        if (next.length >= 2) {
-          await saveMeasurement("line", next);
-        }
-        return;
-      }
-
-      if (activeTool === "area") {
-        const next = [...draftPoints, pt];
-        setDraftPoints(next);
-      }
-    },
-    [
-      activePage,
-      activeTool,
-      calibrationDraft.p1,
-      calibrationDraft.p2,
-      calibrationReopenAfterPoint2,
-      draftPoints,
-      isPickingCalibration,
-      saveMeasurement,
-    ]
-  );
-
-  const finishAreaMeasurement = useCallback(async () => {
-    if (activeTool !== "area" || draftPoints.length < 3) return;
-    await saveMeasurement("area", draftPoints);
-  }, [activeTool, draftPoints, saveMeasurement]);
-
-  const openUpload = useCallback(async () => {
-    const readyPage = await ensureActivePage();
-    if (!readyPage?.id) return;
-    fileInputRef.current?.click();
-  }, [ensureActivePage]);
-
-  const handleUploadFile = useCallback(
-    async (file: File) => {
-      const page = (await ensureActivePage()) || activePageRef.current;
-
-      console.log("UPLOAD START", {
-        fileName: file?.name,
-        fileType: file?.type,
-        fileSize: file?.size,
-        activePageId: page?.id,
-      });
-
-      if (!page?.id) {
-        console.error("No active page id, upload cancelled");
-        setErrorText("No active page selected.");
-        return;
-      }
-
-      setActivePageId(page.id);
-      setIsUploadingDrawing(true);
-      setErrorText("");
-
-      try {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onerror = () => reject(new Error("Failed to read selected file."));
-          reader.onload = () => resolve(String(reader.result || ""));
-          reader.readAsDataURL(file);
-        });
-
-        console.log("FILE READER LOADED", {
-          hasDataUrl: !!dataUrl,
-          prefix: dataUrl.slice(0, 60),
-        });
-
-        const kind: "pdf" | "image" =
-          file.type === "application/pdf" ||
-          file.name.toLowerCase().endsWith(".pdf")
-            ? "pdf"
-            : "image";
-
-        let nextWidth = page.width || 1200;
-        let nextHeight = page.height || 900;
-        let numPages: number | undefined;
-
-        if (kind === "pdf") {
-          try {
-            const pdf = await pdfjs.getDocument(dataUrl).promise;
-            numPages = pdf.numPages || 1;
-            const firstPage = await pdf.getPage(1);
-            const viewport = firstPage.getViewport({ scale: 1.5 });
-            nextWidth = Math.max(800, Math.round(viewport.width));
-            nextHeight = Math.max(600, Math.round(viewport.height));
-            setPdfNumPages(numPages);
-          } catch (pdfErr) {
-            console.error("PDF metadata read failed", pdfErr);
-          }
-        } else {
-          try {
-            const imageSize = await new Promise<{ width: number; height: number }>(
-              (resolve, reject) => {
-                const img = new Image();
-                img.onload = () =>
-                  resolve({
-                    width: img.naturalWidth || page.width || 1200,
-                    height: img.naturalHeight || page.height || 900,
-                  });
-                img.onerror = reject;
-                img.src = dataUrl;
-              }
-            );
-            nextWidth = imageSize.width;
-            nextHeight = imageSize.height;
-          } catch (imgErr) {
-            console.error("Image size read failed", imgErr);
-          }
-        }
-
-        const asset: DrawingAsset = {
-          kind,
-          name: file.name,
-          dataUrl,
-          ...(numPages ? { numPages } : {}),
-        };
-
-        const pageData = {
-          ...(page.page_data || {}),
-          asset,
-          uploadedAt: new Date().toISOString(),
-        };
-
-        console.log("SAVING PAGE DATA", {
-          pageId: page.id,
-          kind,
-          fileName: file.name,
-          numPages,
-          nextWidth,
-          nextHeight,
-        });
-
-        const { data, error } = await supabase
-          .from("takeoff_pages")
-          .update({
-            page_label: page.page_label || file.name.replace(/\.[^.]+$/, ""),
-            page_data: pageData,
-            width: nextWidth,
-            height: nextHeight,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", page.id)
-          .select("*")
-          .limit(1);
-
-        if (error) {
-          console.error("SUPABASE UPDATE ERROR", error);
-          setErrorText(error.message);
-          return;
-        }
-
-        const updated = (data?.[0] || null) as TakeoffPageRow | null;
-        console.log("UPLOAD SUCCESS", updated);
-
-        if (updated) {
-          setPages((prev) =>
-            prev.map((p) => (p.id === page.id ? { ...p, ...updated } : p))
-          );
-          setActivePageId(updated.id);
-        }
-      } catch (err: any) {
-        console.error("UPLOAD PROCESS ERROR", err);
-        setErrorText(err?.message || "Upload failed.");
-      } finally {
-        setIsUploadingDrawing(false);
-      }
-    },
-    [ensureActivePage]
-  );
-
-  const handleFileInput = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      console.log("FILE INPUT CHANGE", file);
-
-      if (!file) {
-        console.warn("No file selected");
-        return;
-      }
-
-      handleUploadFile(file);
-      e.target.value = "";
-    },
-    [handleUploadFile]
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const renderPdfPreview = async () => {
-      if (!activeAsset || activeAsset.kind !== "pdf") {
-        const canvas = pdfCanvasRef.current;
-        if (canvas) {
-          const ctx = canvas.getContext("2d");
-          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
-        return;
-      }
-
-      try {
-        const loadingTask = pdfjs.getDocument(activeAsset.dataUrl);
-        const pdf = await loadingTask.promise;
-        if (cancelled) return;
-
-        const pageCount =
-          pdf.numPages ||
-          activeAsset.numPages ||
-          activePage?.page_data?.asset?.numPages ||
-          0;
-
-        setPdfNumPages(pageCount);
-
-        const page = await pdf.getPage(1);
-        if (cancelled) return;
-
-        const baseViewport = page.getViewport({ scale: 1 });
-        const targetWidth = activePage?.width || Math.max(800, Math.round(baseViewport.width));
-        const renderScale = targetWidth / baseViewport.width;
-        const viewport = page.getViewport({ scale: renderScale });
-
-        const canvas = pdfCanvasRef.current;
-        if (!canvas) return;
-
-        const context = canvas.getContext("2d");
-        if (!context) return;
-
-        canvas.width = Math.max(1, Math.round(viewport.width));
-        canvas.height = Math.max(1, Math.round(viewport.height));
-        canvas.style.width = `${Math.round(viewport.width)}px`;
-        canvas.style.height = `${Math.round(viewport.height)}px`;
-
-        await page.render({
-          canvasContext: context,
-          viewport,
-        }).promise;
-
-        if (cancelled) return;
-
-        const nextWidth = Math.round(viewport.width);
-        const nextHeight = Math.round(viewport.height);
-        const storedPageCount = activePage?.page_data?.asset?.numPages || 0;
-
-        if (
-          activePage?.id &&
-          (activePage.width !== nextWidth ||
-            activePage.height !== nextHeight ||
-            storedPageCount !== pageCount)
-        ) {
-          await upsertPage(activePage.id, {
-            width: nextWidth,
-            height: nextHeight,
-            page_data: {
-              ...(activePage.page_data || {}),
-              asset: {
-                ...(activePage.page_data?.asset || activeAsset),
-                numPages: pageCount,
-              },
-            },
-          });
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          console.error("PDF render error", err);
-          setErrorText(err?.message || "Failed to render PDF preview.");
-        }
-      }
-    };
-
-    renderPdfPreview();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeAsset, activePage, upsertPage]);
-
-  const linkLibrarySelection = useCallback(
-    (entry: LibrarySelection) => {
-      setLinkedSelection(entry);
-      setLibraryOpen(false);
-      setRightTab("library");
-    },
-    []
-  );
-
-  const currentCategoryName = useMemo(() => {
-    if (libraryCategoryId === "all") return "All Categories";
-    return categories.find((c) => c.id === libraryCategoryId)?.name || "Category";
-  }, [categories, libraryCategoryId]);
+    if (tool === "count") return "Click anywhere to place a count point.";
+    return "";
+  }, [tool, calibrationPicking, calibrationP1, isDrawing]);
+
+  const liveLinePreview = useMemo(() => {
+    if (tool !== "line" || !isDrawing || draftPoints.length !== 1 || !draftHoverPoint) return null;
+    const raw = distance(draftPoints[0], draftHoverPoint);
+    const scaled = pxToUnitScale ? raw * pxToUnitScale : 0;
+    return `${formatNumber(scaled)} ${lineUnit}`;
+  }, [tool, isDrawing, draftPoints, draftHoverPoint, pxToUnitScale, lineUnit]);
+
+  const liveAreaPreview = useMemo(() => {
+    if (tool !== "area" || !isDrawing || draftPoints.length < 2 || !draftHoverPoint) return null;
+    const previewPoints = [...draftPoints, draftHoverPoint];
+    if (previewPoints.length < 3) return null;
+    const raw = polygonArea(previewPoints);
+    const scaled = pxToUnitScale ? raw * pxToUnitScale * pxToUnitScale : 0;
+    return `${formatNumber(scaled)} ${areaUnit}`;
+  }, [tool, isDrawing, draftPoints, draftHoverPoint, pxToUnitScale, areaUnit]);
+
+  const livePreviewLabel = liveLinePreview || liveAreaPreview || "";
 
   if (!projectId) {
     return (
-      <div className="flex h-full min-h-[70vh] items-center justify-center bg-slate-950 text-slate-100">
-        <div className="w-full max-w-xl rounded-2xl border border-slate-800 bg-slate-900 p-8 text-center shadow-2xl">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-700 bg-slate-800">
-            <FolderOpen className="h-7 w-7 text-cyan-300" />
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-6 py-12">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl">
+            <div className="mb-4 text-sm font-medium uppercase tracking-[0.18em] text-cyan-400">
+              Magnus Takeoff
+            </div>
+            <h1 className="text-3xl font-semibold text-white">
+              Open Takeoff from a project dashboard
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              This page is route-based. Open it from a project using:
+              <span className="ml-2 rounded-md border border-slate-700 bg-slate-800 px-2 py-1 font-mono text-slate-200">
+                /projects/:projectId/takeoff
+              </span>
+            </p>
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => navigate("/projects")}
+                className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 hover:bg-cyan-500/20"
+              >
+                Go to Projects
+              </button>
+            </div>
           </div>
-          <h2 className="text-xl font-semibold">No project selected</h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Open Takeoff from a selected project route.
-          </p>
-          <button
-            onClick={() => navigate("/projects")}
-            className="mt-6 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-200 hover:bg-cyan-500/20"
-          >
-            Go to Projects
-          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-[calc(100vh-72px)] flex-col bg-slate-950 text-slate-100">
+    <div className="h-screen overflow-hidden bg-slate-950 text-slate-100">
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,image/*"
+        accept="application/pdf,image/*"
+        multiple
         className="hidden"
-        onChange={handleFileInput}
+        onChange={(e) => handleUploadFiles(e.target.files)}
       />
 
-      <div className="border-b border-slate-800 bg-slate-900/95 px-3 py-2 backdrop-blur">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="mr-2 flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-2.5 py-2">
-            <button
-              onClick={() => setActiveTool("pan")}
-              className={cn(
-                "rounded-lg px-2.5 py-1.5 text-xs font-medium transition",
-                activeTool === "pan"
-                  ? "bg-cyan-500/20 text-cyan-200"
-                  : "text-slate-300 hover:bg-slate-800"
-              )}
-            >
-              <span className="flex items-center gap-1.5">
-                <Move className="h-3.5 w-3.5" />
-                Pan
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTool("line")}
-              className={cn(
-                "rounded-lg px-2.5 py-1.5 text-xs font-medium transition",
-                activeTool === "line"
-                  ? "bg-cyan-500/20 text-cyan-200"
-                  : "text-slate-300 hover:bg-slate-800"
-              )}
-            >
-              <span className="flex items-center gap-1.5">
-                <Ruler className="h-3.5 w-3.5" />
-                Line
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTool("area")}
-              className={cn(
-                "rounded-lg px-2.5 py-1.5 text-xs font-medium transition",
-                activeTool === "area"
-                  ? "bg-cyan-500/20 text-cyan-200"
-                  : "text-slate-300 hover:bg-slate-800"
-              )}
-            >
-              <span className="flex items-center gap-1.5">
-                <Square className="h-3.5 w-3.5" />
-                Area
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveTool("count")}
-              className={cn(
-                "rounded-lg px-2.5 py-1.5 text-xs font-medium transition",
-                activeTool === "count"
-                  ? "bg-cyan-500/20 text-cyan-200"
-                  : "text-slate-300 hover:bg-slate-800"
-              )}
-            >
-              <span className="flex items-center gap-1.5">
-                <Hash className="h-3.5 w-3.5" />
-                Count
-              </span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 px-2 py-1.5">
-            <button
-              onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
-              className="rounded-lg p-1.5 text-slate-300 hover:bg-slate-800"
-            >
-              <ZoomOut className="h-4 w-4" />
-            </button>
-            <div className="min-w-[58px] text-center text-xs font-medium text-slate-200">
-              {Math.round(zoom * 100)}%
-            </div>
-            <button
-              onClick={() => setZoom((z) => Math.min(4, +(z + 0.1).toFixed(2)))}
-              className="rounded-lg p-1.5 text-slate-300 hover:bg-slate-800"
-            >
-              <ZoomIn className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => {
-                setZoom(1);
-                setPan({ x: 0, y: 0 });
-              }}
-              className="ml-1 rounded-lg p-1.5 text-slate-300 hover:bg-slate-800"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </button>
-          </div>
-
-          <button
-            onClick={() => setShowCalibrationModal(true)}
-            className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-200 hover:bg-amber-500/20"
-          >
-            <PencilRuler className="h-4 w-4" />
-            Calibration
-            {activePage?.calibration_distance ? (
-              <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                Saved
-              </span>
-            ) : (
-              <span className="rounded-md bg-slate-700 px-1.5 py-0.5 text-[10px] text-slate-300">
-                Not Set
-              </span>
-            )}
-          </button>
-
-       <button
-  onClick={openUpload}
-  className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800"
->
-  {isUploadingDrawing ? "Uploading..." : "Upload Drawing"}
-</button>
-
-          <button
-            onClick={createNewPage}
-            className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800"
-          >
-            Add Page
-          </button>
-
-          <button
-            onClick={() => {
-              setRightTab("library");
-              setLibraryOpen(true);
-            }}
-            className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
-          >
-            {linkedSelection ? (
-              <span className="flex items-center gap-2">
-                <Link2 className="h-4 w-4" />
-                Linked: {linkedSelection.name}
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <FolderTree className="h-4 w-4" />
-                Pick Item / Assembly
-              </span>
-            )}
-          </button>
-
-          <div className="ml-auto flex items-center gap-2">
-            {saveState === "saving" && (
-              <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-300">
-                <Save className="h-4 w-4" />
-                Saving...
-              </div>
-            )}
-            {saveState === "saved" && (
-              <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
-                <CheckCircle2 className="h-4 w-4" />
-                Saved
-              </div>
-            )}
-            {saveState === "error" && (
-              <div className="flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
-                <AlertCircle className="h-4 w-4" />
-                Save Error
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)_340px] gap-0">
-        <aside className="flex min-h-0 flex-col border-r border-slate-800 bg-slate-925">
-          <div className="border-b border-slate-800 px-3 py-3">
-            <div className="text-sm font-semibold text-slate-100">Pages</div>
-            <div className="mt-1 text-xs text-slate-400">
-              Session: {session?.name || "Default"}
-            </div>
-          </div>
-
-          <div className="flex-1 space-y-2 overflow-auto p-3">
-            {pages.map((page) => {
-              const pageAsset = getPageAsset(page);
-              const isActive = page.id === activePage?.id;
-
-              return (
-                <button
-                  key={page.id}
-                  onClick={() => setActivePageId(page.id)}
-                  className={cn(
-                    "w-full overflow-hidden rounded-2xl border text-left transition",
-                    isActive
-                      ? "border-cyan-500/40 bg-cyan-500/10"
-                      : "border-slate-800 bg-slate-900 hover:bg-slate-850"
-                  )}
-                >
-                  <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
-                    <div className="text-sm font-medium text-slate-100">
-                      {page.page_label || `Page ${page.page_number}`}
-                    </div>
-                    <div className="text-[11px] text-slate-400">#{page.page_number}</div>
-                  </div>
-                  <div className="p-3">
-                    <div className="flex h-28 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950 text-xs text-slate-500">
-                      {pageAsset ? pageAsset.name : "No drawing"}
-                    </div>
-                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-                      <span>
-                        {page.calibration_distance
-                          ? `${formatNumber(page.calibration_distance)} ${page.calibration_unit || "ft"}`
-                          : "Not calibrated"}
-                      </span>
-                      <span>
-                        {
-                          measurements.filter((m) => m.page_id === page.id).length
-                        }{" "}
-                        qty
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
-
-        <main className="relative min-h-0 overflow-hidden bg-slate-950">
-          <div className="flex h-full flex-col">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-100">
-                  {activePage?.page_label || "Untitled Page"}
-                </div>
-                <div className="mt-1 text-xs text-slate-400">
-                  Tool: {toolLabel(activeTool)}
-                  {linkedSelection ? ` • Linked: ${linkedSelection.name}` : ""}
-                </div>
-              </div>
-
+      <div className="flex h-full flex-col">
+        <header className="border-b border-slate-800 bg-slate-950/95 px-4 py-2.5 backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                {activeTool === "area" && draftPoints.length >= 3 && (
-                  <button
-                    onClick={finishAreaMeasurement}
-                    className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
-                  >
-                    Finish Area
-                  </button>
-                )}
-                {!!draftPoints.length && (
-                  <button
-                    onClick={removeMeasurementDraft}
-                    className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800"
-                  >
-                    Cancel Draft
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div
-              ref={viewerRef}
-              className="relative flex-1 overflow-hidden"
-              onWheel={handleWheel}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
-            >
-              <div
-                className="absolute inset-0 flex items-center justify-center"
-                style={{
-                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                  transformOrigin: "center center",
-                }}
-              >
-                <div
-                  className="relative overflow-hidden rounded-2xl border border-slate-800 bg-white shadow-[0_20px_70px_rgba(0,0,0,0.45)]"
-                  style={{
-                    width: activePage?.width || 1200,
-                    height: activePage?.height || 900,
-                  }}
+                <button
+                  type="button"
+                  onClick={() => navigate(`/projects/${projectId}`)}
+                  className="rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800"
                 >
-                  {loading ? (
-                    <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                      Loading...
-                    </div>
-                  ) : activeAsset?.kind === "image" ? (
-                    <img
-                      src={activeAsset.dataUrl}
-                      alt={activeAsset.name}
-                      className="h-full w-full object-contain"
-                    />
-                  ) : activeAsset?.kind === "pdf" ? (
-                    <div className="flex h-full w-full items-center justify-center bg-white">
-                      <canvas
-                        ref={pdfCanvasRef}
-                        aria-label={activeAsset.name}
-                        className="max-h-full max-w-full object-contain"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex h-full items-center justify-center bg-slate-100 text-sm text-slate-500">
-                      Upload a drawing or PDF to begin takeoff
-                    </div>
-                  )}
-
-                  <svg
-                    ref={svgRef}
-                    viewBox={`0 0 ${activePage?.width || 1200} ${activePage?.height || 900}`}
-                    className="absolute inset-0 h-full w-full"
-                    onClick={handleCanvasClick}
-                  >
-                    {activePageMeasurements.map((m) => {
-                      const isSelected = m.id === selectedMeasurementId;
-                      const baseColor =
-                        m.type === "line"
-                          ? "#22d3ee"
-                          : m.type === "area"
-                          ? "#f59e0b"
-                          : "#34d399";
-
-                      if (m.type === "count") {
-                        return (
-                          <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)}>
-                            {m.points.map((p, idx) => (
-                              <g key={idx}>
-                                <circle
-                                  cx={p.x}
-                                  cy={p.y}
-                                  r={isSelected ? 10 : 7}
-                                  fill={baseColor}
-                                  fillOpacity={0.85}
-                                  stroke="#0f172a"
-                                  strokeWidth={2}
-                                />
-                                <text
-                                  x={p.x + 12}
-                                  y={p.y - 10}
-                                  fontSize="12"
-                                  fill="#ffffff"
-                                  stroke="#0f172a"
-                                  strokeWidth="0.75"
-                                >
-                                  {m.name || "Count"}
-                                </text>
-                              </g>
-                            ))}
-                          </g>
-                        );
-                      }
-
-                      if (m.type === "line") {
-                        const d = m.points
-                          .map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`)
-                          .join(" ");
-                        const mid = m.points[Math.floor(m.points.length / 2)] || m.points[0];
-                        return (
-                          <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)}>
-                            <path
-                              d={d}
-                              fill="none"
-                              stroke={baseColor}
-                              strokeWidth={isSelected ? 4 : 3}
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                            {mid && (
-                              <g>
-                                <rect
-                                  x={mid.x + 8}
-                                  y={mid.y - 18}
-                                  width={88}
-                                  height={20}
-                                  rx={6}
-                                  fill="rgba(15,23,42,0.9)"
-                                />
-                                <text
-                                  x={mid.x + 14}
-                                  y={mid.y - 4}
-                                  fontSize="12"
-                                  fill="#e2e8f0"
-                                >
-                                  {formatNumber(m.quantity)} {m.unit || ""}
-                                </text>
-                              </g>
-                            )}
-                          </g>
-                        );
-                      }
-
-                      const pointsStr = m.points.map((p) => `${p.x},${p.y}`).join(" ");
-                      const first = m.points[0];
-                      return (
-                        <g key={m.id} onClick={() => setSelectedMeasurementId(m.id)}>
-                          <polygon
-                            points={pointsStr}
-                            fill={baseColor}
-                            fillOpacity={0.18}
-                            stroke={baseColor}
-                            strokeWidth={isSelected ? 4 : 3}
-                            strokeLinejoin="round"
-                          />
-                          {first && (
-                            <g>
-                              <rect
-                                x={first.x + 8}
-                                y={first.y - 18}
-                                width={96}
-                                height={20}
-                                rx={6}
-                                fill="rgba(15,23,42,0.9)"
-                              />
-                              <text
-                                x={first.x + 14}
-                                y={first.y - 4}
-                                fontSize="12"
-                                fill="#e2e8f0"
-                              >
-                                {formatNumber(m.quantity)} {m.unit || ""}
-                              </text>
-                            </g>
-                          )}
-                        </g>
-                      );
-                    })}
-
-                    {draftPoints.length > 0 && activeTool !== "count" && (
-                      <g pointerEvents="none">
-                        {activeTool === "line" && draftPoints.length >= 1 && (
-                          <>
-                            {draftPoints.map((p, idx) => (
-                              <circle
-                                key={idx}
-                                cx={p.x}
-                                cy={p.y}
-                                r={5}
-                                fill="#38bdf8"
-                              />
-                            ))}
-                            <path
-                              d={draftPoints
-                                .map(
-                                  (p, idx) => `${idx === 0 ? "M" : "L"} ${p.x} ${p.y}`
-                                )
-                                .join(" ")}
-                              fill="none"
-                              stroke="#38bdf8"
-                              strokeDasharray="6 4"
-                              strokeWidth={2.5}
-                            />
-                          </>
-                        )}
-                        {activeTool === "area" && (
-                          <>
-                            {draftPoints.map((p, idx) => (
-                              <circle
-                                key={idx}
-                                cx={p.x}
-                                cy={p.y}
-                                r={5}
-                                fill="#f59e0b"
-                              />
-                            ))}
-                            <polyline
-                              points={draftPoints.map((p) => `${p.x},${p.y}`).join(" ")}
-                              fill="rgba(245,158,11,0.08)"
-                              stroke="#f59e0b"
-                              strokeDasharray="6 4"
-                              strokeWidth={2.5}
-                            />
-                          </>
-                        )}
-                      </g>
-                    )}
-
-                    {(calibrationDraft.p1 || calibrationDraft.p2) && (
-                      <g pointerEvents="none">
-                        {calibrationDraft.p1 && (
-                          <>
-                            <circle
-                              cx={calibrationDraft.p1.x}
-                              cy={calibrationDraft.p1.y}
-                              r={8}
-                              fill="#f97316"
-                              stroke="#ffffff"
-                              strokeWidth={2}
-                            />
-                            <text
-                              x={calibrationDraft.p1.x + 10}
-                              y={calibrationDraft.p1.y - 10}
-                              fontSize="12"
-                              fill="#ffffff"
-                              stroke="#0f172a"
-                              strokeWidth="0.75"
-                            >
-                              P1
-                            </text>
-                          </>
-                        )}
-                        {calibrationDraft.p2 && (
-                          <>
-                            <circle
-                              cx={calibrationDraft.p2.x}
-                              cy={calibrationDraft.p2.y}
-                              r={8}
-                              fill="#f97316"
-                              stroke="#ffffff"
-                              strokeWidth={2}
-                            />
-                            <text
-                              x={calibrationDraft.p2.x + 10}
-                              y={calibrationDraft.p2.y - 10}
-                              fontSize="12"
-                              fill="#ffffff"
-                              stroke="#0f172a"
-                              strokeWidth="0.75"
-                            >
-                              P2
-                            </text>
-                          </>
-                        )}
-                        {calibrationDraft.p1 && calibrationDraft.p2 && (
-                          <line
-                            x1={calibrationDraft.p1.x}
-                            y1={calibrationDraft.p1.y}
-                            x2={calibrationDraft.p2.x}
-                            y2={calibrationDraft.p2.y}
-                            stroke="#f97316"
-                            strokeWidth={3}
-                            strokeDasharray="8 5"
-                          />
-                        )}
-                      </g>
-                    )}
-                  </svg>
+                  Back
+                </button>
+                <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-300">
+                  Takeoff
                 </div>
               </div>
 
-              {isPickingCalibration && (
-                <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-2xl border border-amber-500/30 bg-slate-900/95 px-4 py-3 shadow-xl backdrop-blur">
-                  <div className="text-sm font-semibold text-amber-200">
-                    Calibration Point Picking
-                  </div>
-                  <div className="mt-1 text-xs text-slate-300">
-                    {!calibrationDraft.p1
-                      ? "Click point 1 on the drawing."
-                      : !calibrationDraft.p2
-                      ? "Click point 2 on the drawing."
-                      : "Processing..."}
-                  </div>
-                </div>
-              )}
-
-              {errorText && (
-                <div className="absolute bottom-4 left-4 z-20 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200 shadow-xl">
-                  {errorText}
-                </div>
-              )}
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-lg font-semibold text-white">
+                  {projectName || "Project Takeoff"}
+                </h1>
+                <span className="rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] text-slate-400">
+                  Project ID: {projectId}
+                </span>
+                {activePage && (
+                  <span className="rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] text-slate-300">
+                    {activePage.page_label || `Page ${activePage.page_number}`}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        </main>
 
-        <aside className="flex min-h-0 flex-col border-l border-slate-800 bg-slate-925">
-          <div className="border-b border-slate-800 px-3 py-3">
-            <div className="grid grid-cols-3 gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1">
-              {[
-                { id: "drawings", label: "Drawings", icon: FileText },
-                { id: "measurements", label: "Measures", icon: Layers3 },
-                { id: "library", label: "Library", icon: FolderTree },
-                { id: "extracted", label: "Extracted", icon: Search },
-                { id: "boq", label: "BOQ", icon: Link2 },
-                { id: "settings", label: "Settings", icon: Settings },
-              ].map((tab) => {
-                const Icon = tab.icon;
-                const active = rightTab === (tab.id as RightTab);
-                return (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1">
+                {(
+                  [
+                    ["pan", "Pan"],
+                    ["calibrate", "Cal"],
+                    ["line", "Line"],
+                    ["area", "Area"],
+                    ["count", "Count"],
+                  ] as Array<[ToolMode, string]>
+                ).map(([value, label]) => (
                   <button
-                    key={tab.id}
-                    onClick={() => setRightTab(tab.id as RightTab)}
+                    key={value}
+                    type="button"
+                    onClick={() => {
+                      setTool(value);
+                      if (value === "calibrate") {
+                        beginCalibrationWorkflow();
+                      } else {
+                        setCalibrationPicking(false);
+                        setDraftPoints([]);
+                        setDraftHoverPoint(null);
+                        setIsDrawing(false);
+                      }
+                    }}
                     className={cn(
-                      "flex items-center justify-center gap-1 rounded-lg px-2 py-2 text-[11px] font-medium transition",
-                      active
-                        ? "bg-cyan-500/20 text-cyan-200"
+                      "rounded-lg px-2.5 py-1.5 text-xs font-medium transition",
+                      tool === value
+                        ? "bg-cyan-500 text-slate-950"
                         : "text-slate-300 hover:bg-slate-800"
                     )}
                   >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span>{tab.label}</span>
+                    {label}
                   </button>
-                );
-              })}
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1">
+                <button
+                  type="button"
+                  onClick={() => zoomBy(-0.1)}
+                  className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800"
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  onClick={setHundredPercent}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-xs font-medium",
+                    zoom === 1 ? "bg-slate-800 text-white" : "text-slate-200 hover:bg-slate-800"
+                  )}
+                >
+                  100%
+                </button>
+                <button
+                  type="button"
+                  onClick={fitToWidth}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-xs font-medium",
+                    fitMode === "width"
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-300 hover:bg-slate-800"
+                  )}
+                >
+                  Fit W
+                </button>
+                <button
+                  type="button"
+                  onClick={fitToPage}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-xs font-medium",
+                    fitMode === "page"
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-300 hover:bg-slate-800"
+                  )}
+                >
+                  Fit P
+                </button>
+                <button
+                  type="button"
+                  onClick={() => zoomBy(0.1)}
+                  className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800"
+                >
+                  +
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCalibration(true)}
+                className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/15"
+              >
+                {pxToUnitScale
+                  ? `Calibrated · 1px = ${formatNumber(pxToUnitScale, 4)} ${lineUnit}`
+                  : "Calibration"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800"
+              >
+                Upload PDF / Image
+              </button>
+
+              <button
+                type="button"
+                onClick={addBlankPage}
+                className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800"
+              >
+                Add Page
+              </button>
+
+              <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[11px] text-slate-400">
+                {saving ? "Saving…" : saveStamp ? `Saved ${saveStamp}` : "Ready"}
+              </div>
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto p-3">
-            {rightTab === "drawings" && (
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="text-sm font-semibold text-slate-100">Page Details</div>
-                  <div className="mt-3 space-y-2 text-xs text-slate-300">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Label</span>
-                      <span>{activePage?.page_label || "—"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Page #</span>
-                      <span>{activePage?.page_number || "—"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Size</span>
-                      <span>
-                        {activePage?.width || 0} × {activePage?.height || 0}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Drawing</span>
-                      <span className="max-w-[150px] truncate text-right">
-                        {activeAsset?.name || "None"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">PDF Pages</span>
-                      <span>{pdfNumPages || activeAsset?.numPages || "—"}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="mb-2 text-sm font-semibold text-slate-100">
-                    Calibration
-                  </div>
-                  <div className="text-xs text-slate-400">
-                    {activePage?.calibration_distance
-                      ? `Saved: ${formatNumber(activePage.calibration_distance)} ${
-                          activePage.calibration_unit || "ft"
-                        }`
-                      : "Not calibrated yet"}
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setShowCalibrationModal(true)}
-                      className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-200 hover:bg-amber-500/20"
-                    >
-                      Open
-                    </button>
-                    <button
-                      onClick={startCalibrationPickSecondary}
-                      className="rounded-xl border border-slate-800 bg-slate-850 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800"
-                    >
-                      Start / Restart
-                    </button>
-                  </div>
-                </div>
-              </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+            <span>{viewerHint}</span>
+            {pageBusy && <span className="text-cyan-300">Processing drawing…</span>}
+            {calibrationDistance > 0 && (
+              <span className="text-emerald-300">
+                Scale: {formatNumber(calibrationDistance)} {calibrationUnit}
+              </span>
             )}
-
-            {rightTab === "measurements" && (
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold text-slate-100">
-                      Measurements
-                    </div>
-                    <div className="text-xs text-slate-400">
-                      {activePageMeasurements.length}
-                    </div>
-                  </div>
-
-                  <div className="mt-3 space-y-2">
-                    {activePageMeasurements.length === 0 && (
-                      <div className="rounded-xl border border-dashed border-slate-700 px-3 py-5 text-center text-xs text-slate-500">
-                        No measurements on this page yet
-                      </div>
-                    )}
-
-                    {activePageMeasurements.map((m) => (
-                      <div
-                        key={m.id}
-                        className={cn(
-                          "rounded-xl border p-3",
-                          m.id === selectedMeasurementId
-                            ? "border-cyan-500/40 bg-cyan-500/10"
-                            : "border-slate-800 bg-slate-950"
-                        )}
-                      >
-                        <button
-                          onClick={() => setSelectedMeasurementId(m.id)}
-                          className="w-full text-left"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <div className="text-sm font-medium text-slate-100">
-                                {m.name || toolLabel(m.type)}
-                              </div>
-                              <div className="mt-1 text-[11px] text-slate-400">
-                                {toolLabel(m.type)}
-                                {m.meta?.linked_library_name
-                                  ? ` • ${m.meta.linked_library_name}`
-                                  : ""}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-semibold text-slate-100">
-                                {formatNumber(m.quantity)} {m.unit || ""}
-                              </div>
-                              <div className="text-[11px] text-slate-500">
-                                {formatDate(m.created_at)}
-                              </div>
-                            </div>
-                          </div>
-                        </button>
-
-                        <div className="mt-3 flex items-center justify-between">
-                          <div className="text-[11px] text-slate-500">
-                            {m.points.length} point{m.points.length === 1 ? "" : "s"}
-                          </div>
-                          <button
-                            onClick={() => deleteMeasurement(m.id)}
-                            className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-[11px] font-medium text-rose-200 hover:bg-rose-500/20"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {rightTab === "library" && (
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold text-slate-100">
-                      Rate Item / Assembly Link
-                    </div>
-                    <button
-                      onClick={() => setLibraryOpen(true)}
-                      className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20"
-                    >
-                      Open Picker
-                    </button>
-                  </div>
-
-                  {!linkedSelection ? (
-                    <div className="mt-3 rounded-xl border border-dashed border-slate-700 px-3 py-5 text-center text-xs text-slate-500">
-                      No item or assembly linked yet
-                    </div>
-                  ) : (
-                    <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950 p-3">
-                      <div className="flex items-center gap-2 text-sm font-medium text-slate-100">
-                        {linkedSelection.type === "item" ? (
-                          <Package className="h-4 w-4 text-cyan-300" />
-                        ) : (
-                          <Boxes className="h-4 w-4 text-amber-300" />
-                        )}
-                        {linkedSelection.name}
-                      </div>
-                      <div className="mt-2 text-xs text-slate-400">
-                        {linkedSelection.type === "item" ? "Item" : "Assembly"}
-                        {linkedSelection.code ? ` • ${linkedSelection.code}` : ""}
-                        {linkedSelection.unit ? ` • ${linkedSelection.unit}` : ""}
-                      </div>
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          onClick={() => setLibraryOpen(true)}
-                          className="rounded-xl border border-slate-800 bg-slate-850 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800"
-                        >
-                          Change
-                        </button>
-                        <button
-                          onClick={() => setLinkedSelection(null)}
-                          className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-200 hover:bg-rose-500/20"
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="text-sm font-semibold text-slate-100">
-                    Future Calculation Flow
-                  </div>
-                  <div className="mt-2 text-xs leading-5 text-slate-400">
-                    Link a Takeoff measurement to a library item or assembly now. The
-                    selection is stored in measurement meta so formula-driven quantity,
-                    waste, productivity, and assembly expansion can connect cleanly later.
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {rightTab === "extracted" && (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <div className="text-sm font-semibold text-slate-100">
-                  Extracted Details
-                </div>
-                <div className="mt-3 rounded-xl border border-dashed border-slate-700 px-3 py-8 text-center text-xs text-slate-500">
-                  Reserved for title block parsing, notes extraction, and smart detail capture
-                </div>
-              </div>
-            )}
-
-            {rightTab === "boq" && (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <div className="text-sm font-semibold text-slate-100">BOQ Links</div>
-                <div className="mt-3 rounded-xl border border-dashed border-slate-700 px-3 py-8 text-center text-xs text-slate-500">
-                  Reserved for takeoff-to-BOQ section, item, and assembly linking
-                </div>
-              </div>
-            )}
-
-            {rightTab === "settings" && (
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="text-sm font-semibold text-slate-100">
-                    Picker Layout
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setPickerMode("drawer")}
-                      className={cn(
-                        "rounded-xl px-3 py-2 text-xs font-medium",
-                        pickerMode === "drawer"
-                          ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                          : "border border-slate-800 bg-slate-950 text-slate-300"
-                      )}
-                    >
-                      Right Drawer
-                    </button>
-                    <button
-                      onClick={() => setPickerMode("modal")}
-                      className={cn(
-                        "rounded-xl px-3 py-2 text-xs font-medium",
-                        pickerMode === "modal"
-                          ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                          : "border border-slate-800 bg-slate-950 text-slate-300"
-                      )}
-                    >
-                      Center Modal
-                    </button>
-                  </div>
-                </div>
-              </div>
+            {livePreviewLabel && (
+              <span className="text-cyan-300">Live: {livePreviewLabel}</span>
             )}
           </div>
-        </aside>
+        </header>
+
+        <div className="grid min-h-0 flex-1 grid-cols-[270px_minmax(0,1fr)_330px]">
+          <aside className="flex min-h-0 flex-col border-r border-slate-800 bg-slate-950/70">
+            <div className="border-b border-slate-800 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Drawings
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {loading ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
+                  Loading takeoff…
+                </div>
+              ) : pages.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-400">
+                  No pages yet. Upload a PDF or image to begin.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {pages.map((page) => {
+                    const pageData =
+                      typeof page.page_data === "object" && page.page_data ? page.page_data : {};
+                    const thumb = pageData.rendered_image_url || pageData.image_url || "";
+                    const isActive = page.id === activePageId;
+
+                    return (
+                      <button
+                        key={page.id}
+                        type="button"
+                        onClick={() => {
+                          setActivePageId(page.id);
+                          setSelectedMeasurementId("");
+                          setDraftPoints([]);
+                          setDraftHoverPoint(null);
+                          setIsDrawing(false);
+                          scheduleAutoFit("page");
+                        }}
+                        className={cn(
+                          "w-full rounded-2xl border p-2 text-left transition",
+                          isActive
+                            ? "border-cyan-500/50 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
+                            : "border-slate-800 bg-slate-900 hover:bg-slate-800/80"
+                        )}
+                      >
+                        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+                          {thumb ? (
+                            <div className="relative">
+                              <img
+                                src={thumb}
+                                alt={page.page_label || `Page ${page.page_number}`}
+                                className="h-28 w-full object-cover object-top"
+                              />
+                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/90 via-slate-950/35 to-transparent px-2 py-1.5">
+                                <div className="text-[10px] uppercase tracking-[0.16em] text-slate-300">
+                                  Drawing
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex h-28 items-center justify-center text-xs text-slate-500">
+                              Blank Page
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-2 flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-slate-100">
+                              {page.page_label || `Page ${page.page_number}`}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-slate-400">
+                              Page #{page.page_number}
+                            </div>
+                          </div>
+                          <div className="rounded-md border border-slate-800 bg-slate-950 px-1.5 py-1 text-[10px] text-slate-500">
+                            {Number(page.width || 0)} × {Number(page.height || 0)}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </aside>
+
+          <main className="relative min-w-0 bg-slate-950">
+            <div
+              ref={viewportRef}
+              className="relative h-full w-full overflow-hidden bg-[radial-gradient(circle_at_center,rgba(30,41,59,0.35),rgba(2,6,23,0.98))]"
+              onWheel={handleWheel}
+            >
+              {!activePage || !drawingImageUrl ? (
+                <div className="flex h-full items-center justify-center p-6">
+                  <div className="w-full max-w-xl rounded-2xl border border-dashed border-slate-800 bg-slate-900/60 p-8 text-center">
+                    <div className="text-lg font-semibold text-white">No drawing loaded</div>
+                    <p className="mt-2 text-sm text-slate-400">
+                      Upload a PDF or image to start measuring. Pages will be created and saved to this project.
+                    </p>
+                    <div className="mt-5">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 hover:bg-cyan-500/20"
+                      >
+                        Upload Drawing
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="absolute inset-0">
+                  <div
+                    ref={canvasWrapRef}
+                    className={cn(
+                      "absolute left-0 top-0 origin-top-left touch-none select-none",
+                      tool === "pan"
+                        ? "cursor-grab active:cursor-grabbing"
+                        : tool === "calibrate" || calibrationPicking
+                        ? "cursor-crosshair"
+                        : tool === "line" || tool === "area" || tool === "count"
+                        ? "cursor-crosshair"
+                        : "cursor-default"
+                    )}
+                    style={{
+                      width: drawingWidth || 1,
+                      height: drawingHeight || 1,
+                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                    }}
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onPointerCancel={handlePointerUp}
+                    onPointerLeave={handlePointerLeave}
+                    onDoubleClick={handleDoubleClick}
+                  >
+                    <img
+                      src={drawingImageUrl}
+                      alt={activePage.page_label || "Drawing"}
+                      draggable={false}
+                      className="pointer-events-none block select-none"
+                      style={{
+                        width: drawingWidth || "auto",
+                        height: drawingHeight || "auto",
+                        maxWidth: "none",
+                      }}
+                    />
+
+                    <svg
+                      className="absolute inset-0 h-full w-full"
+                      viewBox={`0 0 ${drawingWidth || 1} ${drawingHeight || 1}`}
+                    >
+                      {measurements.map((m) => {
+                        if (m.type === "count") {
+                          const pt = m.points[0];
+                          if (!pt) return null;
+                          return (
+                            <g
+                              key={m.id}
+                              onClick={() => setSelectedMeasurementId(m.id)}
+                              style={{ cursor: "pointer" }}
+                            >
+                              <circle cx={pt.x} cy={pt.y} r={12} fill={m.color} fillOpacity={0.16} />
+                              <circle
+                                cx={pt.x}
+                                cy={pt.y}
+                                r={5}
+                                fill={m.color}
+                                stroke={selectedMeasurementId === m.id ? "#ffffff" : "transparent"}
+                                strokeWidth={2}
+                              />
+                              <text
+                                x={pt.x + 14}
+                                y={pt.y - 10}
+                                fontSize="16"
+                                fill="#e2e8f0"
+                              >
+                                {m.label}
+                              </text>
+                            </g>
+                          );
+                        }
+
+                        if (m.type === "line" && m.points.length >= 2) {
+                          const [a, b] = m.points;
+                          return (
+                            <g
+                              key={m.id}
+                              onClick={() => setSelectedMeasurementId(m.id)}
+                              style={{ cursor: "pointer" }}
+                            >
+                              <line
+                                x1={a.x}
+                                y1={a.y}
+                                x2={b.x}
+                                y2={b.y}
+                                stroke={m.color}
+                                strokeWidth={selectedMeasurementId === m.id ? 4 : 3}
+                              />
+                              <circle cx={a.x} cy={a.y} r={4} fill={m.color} />
+                              <circle cx={b.x} cy={b.y} r={4} fill={m.color} />
+                              <rect
+                                x={(a.x + b.x) / 2 - 34}
+                                y={(a.y + b.y) / 2 - 26}
+                                width={68}
+                                height={22}
+                                rx={8}
+                                fill="rgba(2,6,23,0.75)"
+                              />
+                              <text
+                                x={(a.x + b.x) / 2}
+                                y={(a.y + b.y) / 2 - 11}
+                                textAnchor="middle"
+                                fontSize="14"
+                                fill="#e2e8f0"
+                              >
+                                {formatMeasurement(m)}
+                              </text>
+                            </g>
+                          );
+                        }
+
+                        if (m.type === "area" && m.points.length >= 3) {
+                          const pointsStr = m.points.map((p) => `${p.x},${p.y}`).join(" ");
+                          const centroid = polygonCentroid(m.points);
+                          return (
+                            <g
+                              key={m.id}
+                              onClick={() => setSelectedMeasurementId(m.id)}
+                              style={{ cursor: "pointer" }}
+                            >
+                              <polygon
+                                points={pointsStr}
+                                fill={m.color}
+                                fillOpacity={0.18}
+                                stroke={m.color}
+                                strokeWidth={selectedMeasurementId === m.id ? 4 : 3}
+                              />
+                              <rect
+                                x={centroid.x - 38}
+                                y={centroid.y - 14}
+                                width={76}
+                                height={24}
+                                rx={8}
+                                fill="rgba(2,6,23,0.75)"
+                              />
+                              <text
+                                x={centroid.x}
+                                y={centroid.y + 2}
+                                textAnchor="middle"
+                                fontSize="14"
+                                fill="#e2e8f0"
+                              >
+                                {formatMeasurement(m)}
+                              </text>
+                            </g>
+                          );
+                        }
+
+                        return null;
+                      })}
+
+                      {tool === "line" && isDrawing && draftPoints.length === 1 && draftHoverPoint && (
+                        <g>
+                          <line
+                            x1={draftPoints[0].x}
+                            y1={draftPoints[0].y}
+                            x2={draftHoverPoint.x}
+                            y2={draftHoverPoint.y}
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                            strokeDasharray="6 6"
+                          />
+                          <circle cx={draftPoints[0].x} cy={draftPoints[0].y} r={5} fill="#ffffff" />
+                          <circle cx={draftHoverPoint.x} cy={draftHoverPoint.y} r={4} fill="#ffffff" fillOpacity={0.75} />
+                        </g>
+                      )}
+
+                      {tool === "area" && isDrawing && draftPoints.length >= 1 && (
+                        <g>
+                          <polyline
+                            points={draftPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                            fill="none"
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                            strokeDasharray="6 6"
+                          />
+                          {draftHoverPoint && (
+                            <polyline
+                              points={[...draftPoints, draftHoverPoint]
+                                .map((p) => `${p.x},${p.y}`)
+                                .join(" ")}
+                              fill="none"
+                              stroke="#ffffff"
+                              strokeWidth={2}
+                              strokeOpacity={0.8}
+                            />
+                          )}
+                          {draftPoints.length >= 2 && draftHoverPoint && (
+                            <polygon
+                              points={[...draftPoints, draftHoverPoint]
+                                .map((p) => `${p.x},${p.y}`)
+                                .join(" ")}
+                              fill="#ffffff"
+                              fillOpacity={0.08}
+                              stroke="none"
+                            />
+                          )}
+                          {draftPoints.map((p, idx) => (
+                            <circle key={idx} cx={p.x} cy={p.y} r={4} fill="#ffffff" />
+                          ))}
+                          {draftHoverPoint && (
+                            <circle cx={draftHoverPoint.x} cy={draftHoverPoint.y} r={4} fill="#ffffff" fillOpacity={0.75} />
+                          )}
+                        </g>
+                      )}
+
+                      {calibrationP1 && (
+                        <g>
+                          <circle cx={calibrationP1.x} cy={calibrationP1.y} r={10} fill="#22c55e" fillOpacity={0.18} />
+                          <circle cx={calibrationP1.x} cy={calibrationP1.y} r={5} fill="#22c55e" />
+                        </g>
+                      )}
+                      {calibrationP2 && (
+                        <g>
+                          <circle cx={calibrationP2.x} cy={calibrationP2.y} r={10} fill="#22c55e" fillOpacity={0.18} />
+                          <circle cx={calibrationP2.x} cy={calibrationP2.y} r={5} fill="#22c55e" />
+                        </g>
+                      )}
+                      {calibrationP1 && calibrationP2 && (
+                        <line
+                          x1={calibrationP1.x}
+                          y1={calibrationP1.y}
+                          x2={calibrationP2.x}
+                          y2={calibrationP2.y}
+                          stroke="#22c55e"
+                          strokeWidth={3}
+                          strokeDasharray="8 6"
+                        />
+                      )}
+
+                      {hoverCanvasPoint && (tool === "calibrate" || tool === "line" || tool === "area" || tool === "count") && (
+                        <g opacity={0.65}>
+                          <line
+                            x1={hoverCanvasPoint.x}
+                            y1={0}
+                            x2={hoverCanvasPoint.x}
+                            y2={drawingHeight || 1}
+                            stroke="#e2e8f0"
+                            strokeWidth={1}
+                            strokeDasharray="5 5"
+                          />
+                          <line
+                            x1={0}
+                            y1={hoverCanvasPoint.y}
+                            x2={drawingWidth || 1}
+                            y2={hoverCanvasPoint.y}
+                            stroke="#e2e8f0"
+                            strokeWidth={1}
+                            strokeDasharray="5 5"
+                          />
+                        </g>
+                      )}
+                    </svg>
+                  </div>
+
+                  <div className="pointer-events-none absolute left-4 top-4 rounded-xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-xs text-slate-300 shadow-xl">
+                    <div className="font-medium text-white">
+                      {activePage.page_label || `Page ${activePage.page_number}`}
+                    </div>
+                    <div className="mt-1 text-slate-400">
+                      Zoom {Math.round(zoom * 100)}% · {measurements.length} marks
+                    </div>
+                  </div>
+
+                  <div className="pointer-events-none absolute right-4 top-4 rounded-xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-xs text-slate-300 shadow-xl">
+                    <div>Fit: {fitMode === "width" ? "Width" : fitMode === "page" ? "Page" : "Manual"}</div>
+                    {hoverCanvasPoint && (
+                      <div className="mt-1 text-slate-400">
+                        X {Math.round(hoverCanvasPoint.x)} · Y {Math.round(hoverCanvasPoint.y)}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pointer-events-none absolute bottom-4 left-4 rounded-xl border border-slate-800 bg-slate-900/90 px-3 py-2 text-xs text-slate-300 shadow-xl">
+                    <div>Line: {formatNumber(totals.line)} {lineUnit}</div>
+                    <div>Area: {formatNumber(totals.area)} {areaUnit}</div>
+                    <div>Count: {formatNumber(totals.count, 0)}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </main>
+
+          <aside className="flex min-h-0 flex-col border-l border-slate-800 bg-slate-950/70">
+            <div className="border-b border-slate-800 p-2">
+              <div className="grid grid-cols-5 gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1">
+                {(
+                  [
+                    ["drawings", "Drawings"],
+                    ["measurements", "Measures"],
+                    ["details", "Details"],
+                    ["boq", "BOQ"],
+                    ["settings", "Settings"],
+                  ] as Array<[RightTab, string]>
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setRightTab(value)}
+                    className={cn(
+                      "rounded-lg px-2 py-2 text-[11px] font-medium transition",
+                      rightTab === value
+                        ? "bg-cyan-500 text-slate-950"
+                        : "text-slate-300 hover:bg-slate-800"
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {rightTab === "drawings" && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <div className="text-sm font-semibold text-white">Page Setup</div>
+                    <div className="mt-3 space-y-2 text-sm text-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span>Pages</span>
+                        <span>{pages.length}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Session</span>
+                        <span className="truncate pl-4 text-right text-slate-400">
+                          {sessionId || "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Canvas</span>
+                        <span className="text-slate-400">
+                          {drawingWidth || 0} × {drawingHeight || 0}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Active Drawings</span>
+                        <span className="text-slate-400">
+                          {hasRenderedPages ? "Loaded" : "Blank only"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700"
+                      >
+                        Upload
+                      </button>
+                      <button
+                        type="button"
+                        onClick={addBlankPage}
+                        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700"
+                      >
+                        Add Blank
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <div className="text-sm font-semibold text-white">Calibration</div>
+                    <div className="mt-3 space-y-2 text-sm text-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span>Status</span>
+                        <span className={cn(pxToUnitScale ? "text-emerald-300" : "text-amber-300")}>
+                          {pxToUnitScale ? "Ready" : "Not Set"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Distance</span>
+                        <span>
+                          {calibrationDistance
+                            ? `${formatNumber(calibrationDistance)} ${calibrationUnit}`
+                            : "—"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span>Scale</span>
+                        <span>
+                          {pxToUnitScale
+                            ? `${formatNumber(pxToUnitScale, 5)} ${lineUnit}/px`
+                            : "—"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={beginCalibrationWorkflow}
+                        className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
+                      >
+                        Start / Restart
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetCalibration}
+                        className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-300 hover:bg-rose-500/20"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <div className="text-sm font-semibold text-white">View</div>
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={fitToWidth}
+                        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700"
+                      >
+                        Fit Width
+                      </button>
+                      <button
+                        type="button"
+                        onClick={fitToPage}
+                        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700"
+                      >
+                        Fit Page
+                      </button>
+                      <button
+                        type="button"
+                        onClick={setHundredPercent}
+                        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700"
+                      >
+                        100%
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {rightTab === "measurements" && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <div className="text-sm font-semibold text-white">Totals</div>
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-500">Line</div>
+                        <div className="mt-1 text-sm font-semibold text-cyan-300">
+                          {formatNumber(totals.line)} {lineUnit}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-500">Area</div>
+                        <div className="mt-1 text-sm font-semibold text-emerald-300">
+                          {formatNumber(totals.area)} {areaUnit}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                        <div className="text-[11px] uppercase tracking-wide text-slate-500">Count</div>
+                        <div className="mt-1 text-sm font-semibold text-amber-300">
+                          {formatNumber(totals.count, 0)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900">
+                    <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold text-white">
+                      Measurements
+                    </div>
+                    <div className="max-h-[55vh] overflow-y-auto">
+                      {measurements.length === 0 ? (
+                        <div className="p-4 text-sm text-slate-400">
+                          No measurements yet.
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-slate-800">
+                          {measurements.map((m) => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setSelectedMeasurementId(m.id)}
+                              className={cn(
+                                "w-full px-4 py-3 text-left transition hover:bg-slate-800/60",
+                                selectedMeasurementId === m.id && "bg-slate-800/70"
+                              )}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="inline-block h-2.5 w-2.5 rounded-full"
+                                      style={{ backgroundColor: m.color }}
+                                    />
+                                    <div className="truncate text-sm font-medium text-slate-100">
+                                      {m.label}
+                                    </div>
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-400">
+                                    {m.type.toUpperCase()} · {formatMeasurement(m)}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeMeasurement(m.id);
+                                  }}
+                                  className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-800 hover:text-white"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {rightTab === "details" && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <div className="text-sm font-semibold text-white">Selected</div>
+                    {!selectedMeasurement ? (
+                      <div className="mt-3 text-sm text-slate-400">
+                        Select a measurement to inspect its details.
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-3 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Label</span>
+                          <span className="text-slate-100">{selectedMeasurement.label}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Type</span>
+                          <span className="text-slate-100">{selectedMeasurement.type}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Value</span>
+                          <span className="text-slate-100">{formatMeasurement(selectedMeasurement)}</span>
+                        </div>
+                        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs text-slate-400">
+                          Points:{" "}
+                          {selectedMeasurement.points
+                            .map((p) => `(${Math.round(p.x)}, ${Math.round(p.y)})`)
+                            .join(" · ")}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {rightTab === "boq" && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <div className="text-sm font-semibold text-white">BOQ Readiness</div>
+                    <div className="mt-3 space-y-2 text-sm text-slate-400">
+                      <p>
+                        Measurements are being saved by project and page and are ready for downstream BOQ linking.
+                      </p>
+                      <p>
+                        Next integration can map line, area, and count measurements to items, assemblies, and section quantities.
+                      </p>
+                    </div>
+                    <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs text-slate-500">
+                      Project: {projectId}
+                      <br />
+                      Session: {sessionId || "—"}
+                      <br />
+                      Page: {activePage?.id || "—"}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {rightTab === "settings" && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <div className="text-sm font-semibold text-white">Viewer</div>
+                    <div className="mt-4 space-y-3">
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium text-slate-400">
+                          Page Label
+                        </span>
+                        <input
+                          value={activePage?.page_label || ""}
+                          onChange={(e) => {
+                            const next = e.target.value;
+                            setPages((prev) =>
+                              prev.map((p) =>
+                                p.id === activePageId ? { ...p, page_label: next } : p
+                              )
+                            );
+                          }}
+                          onBlur={() => {
+                            if (activePage) {
+                              const current =
+                                pages.find((p) => p.id === activePage.id)?.page_label || "";
+                              persistPage(activePage.id, {
+                                page_label: current,
+                              });
+                            }
+                          }}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
       </div>
 
-      {showCalibrationModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl">
-            <div className="flex items-start justify-between border-b border-slate-800 px-5 py-4">
-              <div>
-                <div className="text-lg font-semibold text-slate-100">
-                  Calibrate Drawing
-                </div>
-                <div className="mt-1 text-sm text-slate-400">
-                  Pick two known points, then enter the real-world distance.
-                </div>
+      {showCalibration && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl">
+            <div className="border-b border-slate-800 px-5 py-4">
+              <div className="text-lg font-semibold text-white">Calibration</div>
+              <div className="mt-1 text-sm text-slate-400">
+                Pick two points on the drawing, then enter the real-world distance.
               </div>
-              <button
-                onClick={() => {
-                  setShowCalibrationModal(false);
-                  setIsPickingCalibration(false);
-                  setCalibrationReopenAfterPoint2(false);
-                }}
-                className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-              >
-                <X className="h-5 w-5" />
-              </button>
             </div>
 
             <div className="space-y-5 px-5 py-5">
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-                <div className="text-sm font-medium text-slate-200">
-                  Pick Points on Drawing
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-white">Picked Points</div>
+                  <div className="rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-400">
+                    {calibrationPicking
+                      ? calibrationP1
+                        ? "Waiting for point 2"
+                        : "Waiting for point 1"
+                      : calibrationP1 && calibrationP2
+                      ? "Points selected"
+                      : "Not started"}
+                  </div>
                 </div>
-                <div className="mt-2 text-xs leading-5 text-slate-400">
-                  Click Start / Restart. The modal will close so you can pick point 1
-                  and point 2 directly on the drawing. After point 2 is selected, this
-                  modal reopens automatically.
+
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Point 1</div>
+                    <div className="mt-1 text-slate-200">
+                      {calibrationP1
+                        ? `${Math.round(calibrationP1.x)}, ${Math.round(calibrationP1.y)}`
+                        : "Not selected"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Point 2</div>
+                    <div className="mt-1 text-slate-200">
+                      {calibrationP2
+                        ? `${Math.round(calibrationP2.x)}, ${Math.round(calibrationP2.y)}`
+                        : "Not selected"}
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-3 flex flex-wrap gap-2">
+
+                <div className="mt-4 flex gap-2">
                   <button
                     type="button"
-                    onClick={startCalibrationPick}
-                    className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-200 hover:bg-amber-500/20"
+                    onClick={beginCalibrationWorkflow}
+                    className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-500/20"
                   >
                     Start / Restart
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => {
-                      setCalibrationDraft({
-                        p1: null,
-                        p2: null,
-                        distanceText: "1",
-                        unit: "ft",
-                      });
-                      setCalibrationForm({
-                        feet: "",
-                        inches: "",
-                        fraction: "0",
-                        unit: "ft",
-                      });
-                    }}
-                    className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-200 hover:bg-rose-500/20"
+                    onClick={resetCalibrationDraftOnly}
+                    className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-300 hover:bg-rose-500/20"
                   >
                     Reset Draft
                   </button>
                 </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-                  <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3">
-                    <div className="text-slate-400">Point 1</div>
-                    <div className="mt-1 font-medium text-slate-200">
-                      {calibrationDraft.p1
-                        ? `${formatNumber(calibrationDraft.p1.x)} , ${formatNumber(
-                            calibrationDraft.p1.y
-                          )}`
-                        : "Not picked"}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3">
-                    <div className="text-slate-400">Point 2</div>
-                    <div className="mt-1 font-medium text-slate-200">
-                      {calibrationDraft.p2
-                        ? `${formatNumber(calibrationDraft.p2.x)} , ${formatNumber(
-                            calibrationDraft.p2.y
-                          )}`
-                        : "Not picked"}
-                    </div>
-                  </div>
-                </div>
               </div>
 
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
-                <div className="text-sm font-medium text-slate-200">
-                  Real-World Distance
+                <div className="mb-3 text-sm font-medium text-white">Real Distance</div>
+
+                <div className="mb-4 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCalibrationForm((prev) => ({ ...prev, unit: "ft" }))}
+                    className={cn(
+                      "rounded-xl px-4 py-2 text-sm font-medium",
+                      calibrationForm.unit === "ft"
+                        ? "bg-cyan-500 text-slate-950"
+                        : "border border-slate-700 bg-slate-900 text-slate-300"
+                    )}
+                  >
+                    Feet / Inches
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCalibrationForm((prev) => ({ ...prev, unit: "m" }))}
+                    className={cn(
+                      "rounded-xl px-4 py-2 text-sm font-medium",
+                      calibrationForm.unit === "m"
+                        ? "bg-cyan-500 text-slate-950"
+                        : "border border-slate-700 bg-slate-900 text-slate-300"
+                    )}
+                  >
+                    Meters
+                  </button>
                 </div>
 
-                <div className="mt-3 grid grid-cols-4 gap-3">
-                  <label className="space-y-1">
-                    <span className="text-xs text-slate-400">Feet</span>
+                {calibrationForm.unit === "ft" ? (
+                  <div className="grid grid-cols-3 gap-3">
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-400">Feet</span>
+                      <input
+                        value={calibrationForm.feet}
+                        onChange={(e) =>
+                          setCalibrationForm((prev) => ({ ...prev, feet: e.target.value }))
+                        }
+                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-400">Inches</span>
+                      <input
+                        value={calibrationForm.inches}
+                        onChange={(e) =>
+                          setCalibrationForm((prev) => ({ ...prev, inches: e.target.value }))
+                        }
+                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-400">Fraction</span>
+                      <input
+                        value={calibrationForm.fraction}
+                        onChange={(e) =>
+                          setCalibrationForm((prev) => ({ ...prev, fraction: e.target.value }))
+                        }
+                        placeholder="0, 1/2, 3/8"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500"
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-400">Meters</span>
                     <input
                       value={calibrationForm.feet}
                       onChange={(e) =>
-                        setCalibrationForm((prev) => ({
-                          ...prev,
-                          feet: e.target.value,
-                        }))
-                      }
-                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-cyan-500"
-                      placeholder="0"
-                    />
-                  </label>
-
-                  <label className="space-y-1">
-                    <span className="text-xs text-slate-400">Inches</span>
-                    <input
-                      value={calibrationForm.inches}
-                      onChange={(e) =>
-                        setCalibrationForm((prev) => ({
-                          ...prev,
-                          inches: e.target.value,
-                        }))
-                      }
-                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-cyan-500"
-                      placeholder="0"
-                    />
-                  </label>
-
-                  <label className="space-y-1">
-                    <span className="text-xs text-slate-400">Fraction</span>
-                    <select
-                      value={calibrationForm.fraction}
-                      onChange={(e) =>
-                        setCalibrationForm((prev) => ({
-                          ...prev,
-                          fraction: e.target.value,
-                        }))
+                        setCalibrationForm((prev) => ({ ...prev, feet: e.target.value }))
                       }
                       className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500"
-                    >
-                      {FRACTIONS.map((f) => (
-                        <option key={f} value={f}>
-                          {f}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="space-y-1">
-                    <span className="text-xs text-slate-400">Unit</span>
-                    <select
-                      value={calibrationForm.unit}
-                      onChange={(e) =>
-                        setCalibrationForm((prev) => ({
-                          ...prev,
-                          unit: e.target.value,
-                        }))
-                      }
-                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500"
-                    >
-                      <option value="ft">ft</option>
-                      <option value="m">m</option>
-                      <option value="mm">mm</option>
-                      <option value="in">in</option>
-                      <option value="yd">yd</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div className="mt-4">
-                  <label className="space-y-1">
-                    <span className="text-xs text-slate-400">
-                      Manual Distance Override
-                    </span>
-                    <input
-                      value={calibrationDraft.distanceText}
-                      onChange={(e) =>
-                        setCalibrationDraft((prev) => ({
-                          ...prev,
-                          distanceText: e.target.value,
-                        }))
-                      }
-                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-cyan-500"
-                      placeholder="1"
                     />
                   </label>
+                )}
+
+                <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm text-slate-300">
+                  Distance to save:{" "}
+                  <span className="font-semibold text-white">
+                    {formatNumber(calibrationDistanceFromForm(calibrationForm), 4)}{" "}
+                    {calibrationForm.unit}
+                  </span>
                 </div>
               </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-slate-800 px-5 py-4">
               <button
+                type="button"
                 onClick={() => {
-                  setShowCalibrationModal(false);
-                  setIsPickingCalibration(false);
-                  setCalibrationReopenAfterPoint2(false);
+                  setShowCalibration(false);
+                  setCalibrationPicking(false);
+                  setTool("pan");
                 }}
-                className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+                className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
               >
                 Cancel
               </button>
               <button
-                onClick={resetCalibration}
-                className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-200 hover:bg-rose-500/20"
-              >
-                Clear Saved Calibration
-              </button>
-              <button
+                type="button"
+                disabled={
+                  !calibrationP1 ||
+                  !calibrationP2 ||
+                  calibrationDistanceFromForm(calibrationForm) <= 0
+                }
                 onClick={applyCalibration}
-                disabled={!calibrationDraft.p1 || !calibrationDraft.p2}
                 className={cn(
-                  "rounded-xl px-4 py-2 text-sm font-medium",
-                  calibrationDraft.p1 && calibrationDraft.p2
-                    ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
-                    : "cursor-not-allowed border border-slate-800 bg-slate-900 text-slate-500"
+                  "rounded-xl px-4 py-2 text-sm font-semibold",
+                  !calibrationP1 ||
+                    !calibrationP2 ||
+                    calibrationDistanceFromForm(calibrationForm) <= 0
+                    ? "cursor-not-allowed bg-slate-700 text-slate-400"
+                    : "bg-cyan-500 text-slate-950 hover:bg-cyan-400"
                 )}
               >
                 Apply Calibration
@@ -2365,370 +2383,7 @@ export default function TakeoffPage() {
           </div>
         </div>
       )}
-
-      {libraryOpen && pickerMode === "drawer" && (
-        <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[420px] flex-col border-l border-slate-800 bg-slate-900 shadow-2xl">
-          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-4">
-            <div>
-              <div className="text-base font-semibold text-slate-100">
-                Pick Item / Assembly
-              </div>
-              <div className="mt-1 text-xs text-slate-400">{currentCategoryName}</div>
-            </div>
-            <button
-              onClick={() => setLibraryOpen(false)}
-              className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className="border-b border-slate-800 p-4">
-            <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2">
-              <Search className="h-4 w-4 text-slate-500" />
-              <input
-                value={librarySearch}
-                onChange={(e) => setLibrarySearch(e.target.value)}
-                placeholder="Search items or assemblies"
-                className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
-              />
-            </div>
-
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setLibraryTab("items")}
-                className={cn(
-                  "rounded-xl px-3 py-2 text-sm font-medium",
-                  libraryTab === "items"
-                    ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                    : "border border-slate-800 bg-slate-950 text-slate-300"
-                )}
-              >
-                Items
-              </button>
-              <button
-                onClick={() => setLibraryTab("assemblies")}
-                className={cn(
-                  "rounded-xl px-3 py-2 text-sm font-medium",
-                  libraryTab === "assemblies"
-                    ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                    : "border border-slate-800 bg-slate-950 text-slate-300"
-                )}
-              >
-                Assemblies
-              </button>
-            </div>
-
-            <div className="mt-3 overflow-x-auto">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setLibraryCategoryId("all")}
-                  className={cn(
-                    "whitespace-nowrap rounded-xl px-3 py-2 text-xs font-medium",
-                    libraryCategoryId === "all"
-                      ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                      : "border border-slate-800 bg-slate-950 text-slate-300"
-                  )}
-                >
-                  All
-                </button>
-                {filteredCategories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setLibraryCategoryId(cat.id)}
-                    className={cn(
-                      "whitespace-nowrap rounded-xl px-3 py-2 text-xs font-medium",
-                      libraryCategoryId === cat.id
-                        ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                        : "border border-slate-800 bg-slate-950 text-slate-300"
-                    )}
-                  >
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-auto p-4">
-            {libraryTab === "items" ? (
-              <div className="space-y-2">
-                {filteredItems.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-slate-700 px-3 py-8 text-center text-xs text-slate-500">
-                    No items found
-                  </div>
-                )}
-                {filteredItems.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() =>
-                      linkLibrarySelection({
-                        type: "item",
-                        id: item.id,
-                        name: item.name,
-                        code: item.item_code || null,
-                        unit: item.base_unit || null,
-                        unitType: item.unit_type || null,
-                      })
-                    }
-                    className="w-full rounded-2xl border border-slate-800 bg-slate-950 p-3 text-left transition hover:bg-slate-850"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-2">
-                        <Package className="h-4 w-4 text-cyan-300" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-slate-100">
-                          {item.name}
-                        </div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          {item.item_code || "No Code"}
-                          {item.base_unit ? ` • ${item.base_unit}` : ""}
-                          {item.unit_type ? ` • ${item.unit_type}` : ""}
-                        </div>
-                        {item.description && (
-                          <div className="mt-1 line-clamp-2 text-xs text-slate-500">
-                            {item.description}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {filteredAssemblies.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-slate-700 px-3 py-8 text-center text-xs text-slate-500">
-                    No assemblies found
-                  </div>
-                )}
-                {filteredAssemblies.map((assembly) => (
-                  <button
-                    key={assembly.id}
-                    onClick={() =>
-                      linkLibrarySelection({
-                        type: "assembly",
-                        id: assembly.id,
-                        name: assembly.name,
-                        code: assembly.assembly_code || null,
-                        unit: assembly.output_unit || null,
-                        unitType: assembly.unit_type || null,
-                      })
-                    }
-                    className="w-full rounded-2xl border border-slate-800 bg-slate-950 p-3 text-left transition hover:bg-slate-850"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-2">
-                        <Boxes className="h-4 w-4 text-amber-300" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-slate-100">
-                          {assembly.name}
-                        </div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          {assembly.assembly_code || "No Code"}
-                          {assembly.output_unit ? ` • ${assembly.output_unit}` : ""}
-                          {assembly.unit_type ? ` • ${assembly.unit_type}` : ""}
-                        </div>
-                        {assembly.description && (
-                          <div className="mt-1 line-clamp-2 text-xs text-slate-500">
-                            {assembly.description}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {libraryOpen && pickerMode === "modal" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-          <div className="flex h-[80vh] w-full max-w-5xl flex-col rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
-              <div>
-                <div className="text-lg font-semibold text-slate-100">
-                  Pick Item / Assembly
-                </div>
-                <div className="mt-1 text-sm text-slate-400">{currentCategoryName}</div>
-              </div>
-              <button
-                onClick={() => setLibraryOpen(false)}
-                className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="border-b border-slate-800 p-4">
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto]">
-                <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2">
-                  <Search className="h-4 w-4 text-slate-500" />
-                  <input
-                    value={librarySearch}
-                    onChange={(e) => setLibrarySearch(e.target.value)}
-                    placeholder="Search items or assemblies"
-                    className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
-                  />
-                </div>
-
-                <button
-                  onClick={() => setLibraryTab("items")}
-                  className={cn(
-                    "rounded-xl px-4 py-2 text-sm font-medium",
-                    libraryTab === "items"
-                      ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                      : "border border-slate-800 bg-slate-950 text-slate-300"
-                  )}
-                >
-                  Items
-                </button>
-                <button
-                  onClick={() => setLibraryTab("assemblies")}
-                  className={cn(
-                    "rounded-xl px-4 py-2 text-sm font-medium",
-                    libraryTab === "assemblies"
-                      ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                      : "border border-slate-800 bg-slate-950 text-slate-300"
-                  )}
-                >
-                  Assemblies
-                </button>
-              </div>
-
-              <div className="mt-3 overflow-x-auto">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setLibraryCategoryId("all")}
-                    className={cn(
-                      "whitespace-nowrap rounded-xl px-3 py-2 text-xs font-medium",
-                      libraryCategoryId === "all"
-                        ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                        : "border border-slate-800 bg-slate-950 text-slate-300"
-                    )}
-                  >
-                    All
-                  </button>
-                  {filteredCategories.map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => setLibraryCategoryId(cat.id)}
-                      className={cn(
-                        "whitespace-nowrap rounded-xl px-3 py-2 text-xs font-medium",
-                        libraryCategoryId === cat.id
-                          ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                          : "border border-slate-800 bg-slate-950 text-slate-300"
-                      )}
-                    >
-                      {cat.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-auto p-5">
-              {libraryTab === "items" ? (
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                  {filteredItems.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() =>
-                        linkLibrarySelection({
-                          type: "item",
-                          id: item.id,
-                          name: item.name,
-                          code: item.item_code || null,
-                          unit: item.base_unit || null,
-                          unitType: item.unit_type || null,
-                        })
-                      }
-                      className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-left transition hover:bg-slate-850"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-2">
-                          <Package className="h-4 w-4 text-cyan-300" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-slate-100">
-                            {item.name}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-400">
-                            {item.item_code || "No Code"}
-                            {item.base_unit ? ` • ${item.base_unit}` : ""}
-                            {item.unit_type ? ` • ${item.unit_type}` : ""}
-                          </div>
-                          {item.description && (
-                            <div className="mt-2 line-clamp-3 text-xs text-slate-500">
-                              {item.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                  {filteredAssemblies.map((assembly) => (
-                    <button
-                      key={assembly.id}
-                      onClick={() =>
-                        linkLibrarySelection({
-                          type: "assembly",
-                          id: assembly.id,
-                          name: assembly.name,
-                          code: assembly.assembly_code || null,
-                          unit: assembly.output_unit || null,
-                          unitType: assembly.unit_type || null,
-                        })
-                      }
-                      className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-left transition hover:bg-slate-850"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-2">
-                          <Boxes className="h-4 w-4 text-amber-300" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-slate-100">
-                            {assembly.name}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-400">
-                            {assembly.assembly_code || "No Code"}
-                            {assembly.output_unit ? ` • ${assembly.output_unit}` : ""}
-                            {assembly.unit_type ? ` • ${assembly.unit_type}` : ""}
-                          </div>
-                          {assembly.description && (
-                            <div className="mt-2 line-clamp-3 text-xs text-slate-500">
-                              {assembly.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {libraryTab === "items" && filteredItems.length === 0 && (
-                <div className="rounded-xl border border-dashed border-slate-700 px-3 py-10 text-center text-xs text-slate-500">
-                  No items found
-                </div>
-              )}
-
-              {libraryTab === "assemblies" && filteredAssemblies.length === 0 && (
-                <div className="rounded-xl border border-dashed border-slate-700 px-3 py-10 text-center text-xs text-slate-500">
-                  No assemblies found
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
+
