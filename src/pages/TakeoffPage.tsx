@@ -737,6 +737,7 @@ export default function TakeoffPage() {
 
   return row;
 }, [projectId]);
+  
     setActivePageId(row.id);
     updateSaveState("saved");
     return row;
