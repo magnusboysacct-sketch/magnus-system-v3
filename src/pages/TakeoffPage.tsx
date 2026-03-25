@@ -667,87 +667,76 @@ export default function TakeoffPage() {
   );
 
   const ensureActivePage = useCallback(async () => {
-    const currentPages = pagesRef.current;
-    const currentActiveId = activePageIdRef.current;
+  const currentPages = pagesRef.current;
+  const currentActiveId = activePageIdRef.current;
+
+  // ✅ If ANY page exists, ALWAYS use it
+  if (currentPages.length > 0) {
     const existing =
-      currentPages.find((p) => p.id === currentActiveId) || currentPages[0] || null;
+      currentPages.find((p) => p.id === currentActiveId) || currentPages[0];
 
-    if (existing) {
-      if (currentActiveId !== existing.id) {
-        setActivePageId(existing.id);
-      }
-      return existing;
+    if (existing && currentActiveId !== existing.id) {
+      setActivePageId(existing.id);
     }
 
-    const currentSession = sessionRef.current;
-    if (!projectId || !currentSession?.id) {
-      setErrorText("No active page selected.");
-      return null;
-    }
+    return existing;
+  }
 
-    updateSaveState("saving");
-    const res = await supabase
-      .from("takeoff_pages")
-      .insert({
-        project_id: projectId,
-        session_id: currentSession.id,
-        page_number: 1,
-        page_label: "Page 1",
-        page_data: {},
-        width: 1200,
-        height: 900,
-        calibration_scale: null,
-        calibration_unit: "ft",
-        calibration_distance: null,
-        calibration_point_1: null,
-        calibration_point_2: null,
-      })
-      .select("*")
-      .limit(1);
+  const currentSession = sessionRef.current;
 
-    if (res.error) {
-      const retry = await supabase
-        .from("takeoff_pages")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("session_id", currentSession.id)
-        .order("page_number", { ascending: true })
-        .limit(1);
+  if (!projectId || !currentSession?.id) {
+    setErrorText("No session available.");
+    return null;
+  }
 
-      const existingRow = (retry.data?.[0] || null) as TakeoffPageRow | null;
+  // 🔥 DO NOT blindly insert anymore
+  // First: check DB again (race-condition safe)
+  const retry = await supabase
+    .from("takeoff_pages")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("session_id", currentSession.id)
+    .order("page_number", { ascending: true })
+    .limit(1);
 
-      if (retry.error) {
-        setErrorText(retry.error.message || res.error.message);
-        updateSaveState("error");
-        return null;
-      }
+  if (retry.data && retry.data.length > 0) {
+    const row = retry.data[0] as TakeoffPageRow;
 
-      if (existingRow) {
-        setPages((prev) => {
-          const exists = prev.some((p) => p.id === existingRow.id);
-          return exists ? prev : [...prev, existingRow];
-        });
-        setActivePageId(existingRow.id);
-        updateSaveState("saved");
-        return existingRow;
-      }
+    setPages([row]);
+    setActivePageId(row.id);
 
-      setErrorText(res.error.message);
-      updateSaveState("error");
-      return null;
-    }
+    return row;
+  }
 
-    const row = (res.data?.[0] || null) as TakeoffPageRow | null;
-    if (!row) {
-      setErrorText("No active page selected.");
-      updateSaveState("error");
-      return null;
-    }
+  // ✅ ONLY insert if absolutely nothing exists
+  const insertRes = await supabase
+    .from("takeoff_pages")
+    .insert({
+      project_id: projectId,
+      session_id: currentSession.id,
+      page_number: 1,
+      page_label: "Page 1",
+      page_data: {},
+      width: 1200,
+      height: 900,
+      calibration_unit: "ft",
+    })
+    .select("*")
+    .limit(1);
 
-    setPages((prev) => {
-      const exists = prev.some((p) => p.id === row.id);
-      return exists ? prev : [...prev, row];
-    });
+  if (insertRes.error) {
+    console.error("Insert failed:", insertRes.error);
+    setErrorText(insertRes.error.message);
+    return null;
+  }
+
+  const row = insertRes.data?.[0] as TakeoffPageRow;
+
+  setPages([row]);
+  setActivePageId(row.id);
+
+  return row;
+}, [projectId]);
     setActivePageId(row.id);
     updateSaveState("saved");
     return row;
