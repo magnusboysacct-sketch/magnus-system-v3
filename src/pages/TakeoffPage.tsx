@@ -943,15 +943,27 @@ const createPageRecord = useCallback(
         .order("page_number", { ascending: true });
 
       let pageRows = (pagesRes.data || []) as PageRow[];
-  if (!pageRows.length) {
-  const firstPage = await createPageRecord(
-    sessionRow,
-    1,
-    "Page 1",
-    { asset: null },
-    { width: 1200, height: 900 }
-  );
-  pageRows = [firstPage];
+ if (!pageRows.length) {
+  const existing = await supabase
+    .from("takeoff_pages")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("session_id", sessionRow.id)
+    .eq("page_number", 1)
+    .maybeSingle();
+
+  if (existing.data) {
+    pageRows = [existing.data as PageRow];
+  } else {
+    const firstPage = await createPageRecord(
+      sessionRow,
+      1,
+      "Page 1",
+      { asset: null },
+      { width: 1200, height: 900 }
+    );
+    pageRows = [firstPage];
+  }
 }
 
       setPages(pageRows);
