@@ -1273,68 +1273,60 @@ const createPageRecord = useCallback(
           reader.readAsDataURL(file);
         });
 
-        if (file.type.includes("pdf")) {
-          const loadingTask = pdfjs.getDocument(dataUrl);
-          const pdf = await loadingTask.promise;
-          const createdPages: PageRow[] = [];
-          const existing = await supabase
-  .from("takeoff_pages")
-  .select("*")
-  .eq("project_id", projectId)
-  .eq("session_id", session.id)
-  .eq("page_number", i)
-  .maybeSingle();
+     if (file.type.includes("pdf")) {
+  const loadingTask = pdfjs.getDocument(dataUrl);
+  const pdf = await loadingTask.promise;
+  const createdPages: PageRow[] = [];
 
-if (existing.data) {
-  createdPages.push(existing.data as PageRow);
-  continue;
-}
+  for (let i = 1; i <= pdf.numPages; i += 1) {
+    const existing = await supabase
+      .from("takeoff_pages")
+      .select("*")
+      .eq("project_id", projectId)
+      .eq("session_id", session.id)
+      .eq("page_number", i)
+      .maybeSingle();
 
-         for (let i = 1; i <= pdf.numPages; i += 1) {
-  const existing = await supabase
-    .from("takeoff_pages")
-    .select("*")
-    .eq("project_id", projectId)
-    .eq("session_id", session.id)
-    .eq("page_number", i)
-    .maybeSingle();
+    if (existing.error) {
+      throw existing.error;
+    }
 
-  if (existing.data) {
-    createdPages.push(existing.data as PageRow);
-    continue;
+    if (existing.data) {
+      createdPages.push(existing.data as PageRow);
+      continue;
+    }
+
+    const pdfPage = await pdf.getPage(i);
+    const viewport = pdfPage.getViewport({ scale: 1.5 });
+
+    const pageData: PageData = {
+      asset: {
+        kind: "pdf",
+        name: file.name,
+        dataUrl,
+        numPages: pdf.numPages,
+        pageNumber: i,
+      },
+    };
+
+    const row = await createPageRecord(
+      session,
+      i,
+      `${file.name} - Page ${i}`,
+      pageData,
+      { width: viewport.width, height: viewport.height }
+    );
+
+    createdPages.push(row);
   }
 
-  const pdfPage = await pdf.getPage(i);
-  const viewport = pdfPage.getViewport({ scale: 1.5 });
-
-  const pageData: PageData = {
-    asset: {
-      kind: "pdf",
-      name: file.name,
-      dataUrl,
-      numPages: pdf.numPages,
-      pageNumber: i,
-    },
-  };
-
-  const row = await createPageRecord(
-    session,
-    i,
-    `${file.name} - Page ${i}`,
-    pageData,
-    { width: viewport.width, height: viewport.height }
-  );
-
-  createdPages.push(row);
+  setPages(createdPages.sort((a, b) => a.page_number - b.page_number));
+  setActivePageId(createdPages[0]?.id || "");
+  setZoom(1);
+  setPan({ x: 0, y: 0 });
+  setSaving("saved", "PDF uploaded");
+  return;
 }
-
-          setPages(createdPages.sort((a, b) => a.page_number - b.page_number));
-          setActivePageId(createdPages[0]?.id || "");
-          setZoom(1);
-          setPan({ x: 0, y: 0 });
-          setSaving("saved", "PDF uploaded");
-          return;
-        }
 
         const currentPage =
           activePage ||
