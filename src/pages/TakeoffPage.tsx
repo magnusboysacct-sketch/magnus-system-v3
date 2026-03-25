@@ -40,7 +40,6 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 type ToolMode = "pan" | "line" | "area" | "count";
 type RightTab =
@@ -303,6 +302,7 @@ export default function TakeoffPage() {
 
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const saveTimerRef = useRef<number | null>(null);
   const isMountedRef = useRef(true);
@@ -362,6 +362,7 @@ export default function TakeoffPage() {
     useState(false);
 
   const [pdfNumPages, setPdfNumPages] = useState<number>(0);
+  const [isUploadingDrawing, setIsUploadingDrawing] = useState(false);
 
   const activePageMeasurements = useMemo(
     () => measurements.filter((m) => m.page_id === activePage?.id),
@@ -412,6 +413,14 @@ export default function TakeoffPage() {
   }, [assemblies, librarySearch, libraryCategoryId]);
 
   const activeAsset = useMemo(() => getPageAsset(activePage), [activePage]);
+
+  useEffect(() => {
+    if (activeAsset?.kind === "pdf") {
+      setPdfNumPages(activeAsset.numPages || activePage?.page_data?.asset?.numPages || 0);
+    } else {
+      setPdfNumPages(0);
+    }
+  }, [activeAsset, activePage]);
 
   const updateSaveState = useCallback((state: typeof saveState) => {
     setSaveState(state);
@@ -916,17 +925,6 @@ export default function TakeoffPage() {
     fileInputRef.current?.click();
   }, []);
 
-   const [isUploadingDrawing, setIsUploadingDrawing] = useState(false);
-
-  const finishAreaMeasurement = useCallback(async () => {
-    if (activeTool !== "area" || draftPoints.length < 3) return;
-    await saveMeasurement("area", draftPoints);
-  }, [activeTool, draftPoints, saveMeasurement]);
-
-  const openUpload = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
   const handleUploadFile = useCallback(
     async (file: File) => {
       console.log("UPLOAD START", {
@@ -968,10 +966,48 @@ export default function TakeoffPage() {
                 ? "pdf"
                 : "image";
 
+            let nextWidth = activePage.width || 1200;
+            let nextHeight = activePage.height || 900;
+            let numPages: number | undefined = undefined;
+
+            if (kind === "pdf") {
+              try {
+                const pdf = await pdfjs.getDocument(dataUrl).promise;
+                numPages = pdf.numPages || 1;
+                const firstPage = await pdf.getPage(1);
+                const viewport = firstPage.getViewport({ scale: 1.5 });
+                nextWidth = Math.max(800, Math.round(viewport.width));
+                nextHeight = Math.max(600, Math.round(viewport.height));
+                setPdfNumPages(numPages);
+              } catch (pdfErr) {
+                console.error("PDF metadata read failed", pdfErr);
+              }
+            } else {
+              try {
+                const imageSize = await new Promise<{ width: number; height: number }>(
+                  (resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () =>
+                      resolve({
+                        width: img.naturalWidth || activePage.width || 1200,
+                        height: img.naturalHeight || activePage.height || 900,
+                      });
+                    img.onerror = reject;
+                    img.src = dataUrl;
+                  }
+                );
+                nextWidth = imageSize.width;
+                nextHeight = imageSize.height;
+              } catch (imgErr) {
+                console.error("Image size read failed", imgErr);
+              }
+            }
+
             const asset: DrawingAsset = {
               kind,
               name: file.name,
               dataUrl,
+              ...(numPages ? { numPages } : {}),
             };
 
             const pageData = {
@@ -984,6 +1020,9 @@ export default function TakeoffPage() {
               pageId: activePage.id,
               kind,
               fileName: file.name,
+              numPages,
+              nextWidth,
+              nextHeight,
             });
 
             const { data, error } = await supabase
@@ -992,6 +1031,8 @@ export default function TakeoffPage() {
                 page_label:
                   activePage.page_label || file.name.replace(/\.[^.]+$/, ""),
                 page_data: pageData,
+                width: nextWidth,
+                height: nextHeight,
                 updated_at: new Date().toISOString(),
               })
               .eq("id", activePage.id)
@@ -1047,23 +1088,94 @@ export default function TakeoffPage() {
     [handleUploadFile]
   );
 
-  const handlePdfLoaded = useCallback(
-    async (numPages: number) => {
-      setPdfNumPages(numPages);
-      if (!activePage?.id) return;
+  useEffect(() => {
+    let cancelled = false;
 
-      await upsertPage(activePage.id, {
-        page_data: {
-          ...(activePage.page_data || {}),
-          asset: {
-            ...(activePage.page_data?.asset || activeAsset || {}),
-            numPages,
-          },
-        },
-      });
-    },
-    [activeAsset, activePage, upsertPage]
-  );
+    const renderPdfPreview = async () => {
+      if (!activeAsset || activeAsset.kind !== "pdf") {
+        const canvas = pdfCanvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext("2d");
+          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        return;
+      }
+
+      try {
+        const loadingTask = pdfjs.getDocument(activeAsset.dataUrl);
+        const pdf = await loadingTask.promise;
+        if (cancelled) return;
+
+        const pageCount =
+          pdf.numPages ||
+          activeAsset.numPages ||
+          activePage?.page_data?.asset?.numPages ||
+          0;
+
+        setPdfNumPages(pageCount);
+
+        const page = await pdf.getPage(1);
+        if (cancelled) return;
+
+        const baseViewport = page.getViewport({ scale: 1 });
+        const targetWidth = activePage?.width || Math.max(800, Math.round(baseViewport.width));
+        const renderScale = targetWidth / baseViewport.width;
+        const viewport = page.getViewport({ scale: renderScale });
+
+        const canvas = pdfCanvasRef.current;
+        if (!canvas) return;
+
+        const context = canvas.getContext("2d");
+        if (!context) return;
+
+        canvas.width = Math.max(1, Math.round(viewport.width));
+        canvas.height = Math.max(1, Math.round(viewport.height));
+        canvas.style.width = `${Math.round(viewport.width)}px`;
+        canvas.style.height = `${Math.round(viewport.height)}px`;
+
+        await page.render({
+          canvasContext: context,
+          viewport,
+        }).promise;
+
+        if (cancelled) return;
+
+        const nextWidth = Math.round(viewport.width);
+        const nextHeight = Math.round(viewport.height);
+        const storedPageCount = activePage?.page_data?.asset?.numPages || 0;
+
+        if (
+          activePage?.id &&
+          (activePage.width !== nextWidth ||
+            activePage.height !== nextHeight ||
+            storedPageCount !== pageCount)
+        ) {
+          await upsertPage(activePage.id, {
+            width: nextWidth,
+            height: nextHeight,
+            page_data: {
+              ...(activePage.page_data || {}),
+              asset: {
+                ...(activePage.page_data?.asset || activeAsset),
+                numPages: pageCount,
+              },
+            },
+          });
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          console.error("PDF render error", err);
+          setErrorText(err?.message || "Failed to render PDF preview.");
+        }
+      }
+    };
+
+    renderPdfPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAsset, activePage, upsertPage]);
 
   const linkLibrarySelection = useCallback(
     (entry: LibrarySelection) => {
@@ -1395,18 +1507,13 @@ export default function TakeoffPage() {
                       className="h-full w-full object-contain"
                     />
                   ) : activeAsset?.kind === "pdf" ? (
-                    <iframe
-                      src={activeAsset.dataUrl}
-                      title={activeAsset.name}
-                      className="h-full w-full"
-                      onLoad={() => {
-                        const pagesCount =
-                          activeAsset.numPages ||
-                          activePage?.page_data?.asset?.numPages ||
-                          0;
-                        if (pagesCount) setPdfNumPages(pagesCount);
-                      }}
-                    />
+                    <div className="flex h-full w-full items-center justify-center bg-white">
+                      <canvas
+                        ref={pdfCanvasRef}
+                        aria-label={activeAsset.name}
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    </div>
                   ) : (
                     <div className="flex h-full items-center justify-center bg-slate-100 text-sm text-slate-500">
                       Upload a drawing or PDF to begin takeoff
@@ -2032,7 +2139,7 @@ export default function TakeoffPage() {
                         ? `${formatNumber(calibrationDraft.p1.x)} , ${formatNumber(
                             calibrationDraft.p1.y
                           )}`
-                        : "Not selected"}
+                        : "Not picked"}
                     </div>
                   </div>
                   <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-3">
@@ -2042,7 +2149,7 @@ export default function TakeoffPage() {
                         ? `${formatNumber(calibrationDraft.p2.x)} , ${formatNumber(
                             calibrationDraft.p2.y
                           )}`
-                        : "Not selected"}
+                        : "Not picked"}
                     </div>
                   </div>
                 </div>
@@ -2050,12 +2157,12 @@ export default function TakeoffPage() {
 
               <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
                 <div className="text-sm font-medium text-slate-200">
-                  Enter Real Distance
+                  Real-World Distance
                 </div>
 
-                <div className="mt-4 grid grid-cols-4 gap-3">
-                  <label className="col-span-1">
-                    <div className="mb-1 text-xs text-slate-400">Feet</div>
+                <div className="mt-3 grid grid-cols-4 gap-3">
+                  <label className="space-y-1">
+                    <span className="text-xs text-slate-400">Feet</span>
                     <input
                       value={calibrationForm.feet}
                       onChange={(e) =>
@@ -2064,13 +2171,13 @@ export default function TakeoffPage() {
                           feet: e.target.value,
                         }))
                       }
-                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-cyan-500"
                       placeholder="0"
                     />
                   </label>
 
-                  <label className="col-span-1">
-                    <div className="mb-1 text-xs text-slate-400">Inches</div>
+                  <label className="space-y-1">
+                    <span className="text-xs text-slate-400">Inches</span>
                     <input
                       value={calibrationForm.inches}
                       onChange={(e) =>
@@ -2079,13 +2186,13 @@ export default function TakeoffPage() {
                           inches: e.target.value,
                         }))
                       }
-                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-cyan-500"
                       placeholder="0"
                     />
                   </label>
 
-                  <label className="col-span-1">
-                    <div className="mb-1 text-xs text-slate-400">Fraction</div>
+                  <label className="space-y-1">
+                    <span className="text-xs text-slate-400">Fraction</span>
                     <select
                       value={calibrationForm.fraction}
                       onChange={(e) =>
@@ -2094,7 +2201,7 @@ export default function TakeoffPage() {
                           fraction: e.target.value,
                         }))
                       }
-                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500"
                     >
                       {FRACTIONS.map((f) => (
                         <option key={f} value={f}>
@@ -2104,8 +2211,8 @@ export default function TakeoffPage() {
                     </select>
                   </label>
 
-                  <label className="col-span-1">
-                    <div className="mb-1 text-xs text-slate-400">Unit</div>
+                  <label className="space-y-1">
+                    <span className="text-xs text-slate-400">Unit</span>
                     <select
                       value={calibrationForm.unit}
                       onChange={(e) =>
@@ -2114,31 +2221,34 @@ export default function TakeoffPage() {
                           unit: e.target.value,
                         }))
                       }
-                      className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500"
                     >
                       <option value="ft">ft</option>
                       <option value="m">m</option>
-                      <option value="yd">yd</option>
+                      <option value="mm">mm</option>
                       <option value="in">in</option>
+                      <option value="yd">yd</option>
                     </select>
                   </label>
                 </div>
 
                 <div className="mt-4">
-                  <div className="mb-1 text-xs text-slate-400">
-                    Numeric Distance (optional quick entry)
-                  </div>
-                  <input
-                    value={calibrationDraft.distanceText}
-                    onChange={(e) =>
-                      setCalibrationDraft((prev) => ({
-                        ...prev,
-                        distanceText: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500"
-                    placeholder="1"
-                  />
+                  <label className="space-y-1">
+                    <span className="text-xs text-slate-400">
+                      Manual Distance Override
+                    </span>
+                    <input
+                      value={calibrationDraft.distanceText}
+                      onChange={(e) =>
+                        setCalibrationDraft((prev) => ({
+                          ...prev,
+                          distanceText: e.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none ring-0 placeholder:text-slate-500 focus:border-cyan-500"
+                      placeholder="1"
+                    />
+                  </label>
                 </div>
               </div>
             </div>
@@ -2150,7 +2260,7 @@ export default function TakeoffPage() {
                   setIsPickingCalibration(false);
                   setCalibrationReopenAfterPoint2(false);
                 }}
-                className="rounded-xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
               >
                 Cancel
               </button>
@@ -2158,7 +2268,7 @@ export default function TakeoffPage() {
                 onClick={resetCalibration}
                 className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm font-medium text-rose-200 hover:bg-rose-500/20"
               >
-                Clear Saved
+                Clear Saved Calibration
               </button>
               <button
                 onClick={applyCalibration}
@@ -2166,8 +2276,8 @@ export default function TakeoffPage() {
                 className={cn(
                   "rounded-xl px-4 py-2 text-sm font-medium",
                   calibrationDraft.p1 && calibrationDraft.p2
-                    ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
-                    : "cursor-not-allowed border border-slate-800 bg-slate-850 text-slate-500"
+                    ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20"
+                    : "cursor-not-allowed border border-slate-800 bg-slate-900 text-slate-500"
                 )}
               >
                 Apply Calibration
@@ -2177,358 +2287,363 @@ export default function TakeoffPage() {
         </div>
       )}
 
-      {libraryOpen && pickerMode === "modal" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-          <div className="flex h-[80vh] w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl">
-            <div className="flex w-[260px] flex-col border-r border-slate-800 bg-slate-950">
-              <div className="border-b border-slate-800 p-4">
-                <div className="text-sm font-semibold text-slate-100">
-                  Library Categories
-                </div>
-                <div className="mt-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-slate-400">
-                  {currentCategoryName}
-                </div>
+      {libraryOpen && pickerMode === "drawer" && (
+        <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[420px] flex-col border-l border-slate-800 bg-slate-900 shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-4">
+            <div>
+              <div className="text-base font-semibold text-slate-100">
+                Pick Item / Assembly
               </div>
+              <div className="mt-1 text-xs text-slate-400">{currentCategoryName}</div>
+            </div>
+            <button
+              onClick={() => setLibraryOpen(false)}
+              className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
 
-              <div className="overflow-auto p-3">
+          <div className="border-b border-slate-800 p-4">
+            <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2">
+              <Search className="h-4 w-4 text-slate-500" />
+              <input
+                value={librarySearch}
+                onChange={(e) => setLibrarySearch(e.target.value)}
+                placeholder="Search items or assemblies"
+                className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+              />
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setLibraryTab("items")}
+                className={cn(
+                  "rounded-xl px-3 py-2 text-sm font-medium",
+                  libraryTab === "items"
+                    ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
+                    : "border border-slate-800 bg-slate-950 text-slate-300"
+                )}
+              >
+                Items
+              </button>
+              <button
+                onClick={() => setLibraryTab("assemblies")}
+                className={cn(
+                  "rounded-xl px-3 py-2 text-sm font-medium",
+                  libraryTab === "assemblies"
+                    ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
+                    : "border border-slate-800 bg-slate-950 text-slate-300"
+                )}
+              >
+                Assemblies
+              </button>
+            </div>
+
+            <div className="mt-3 overflow-x-auto">
+              <div className="flex gap-2">
                 <button
                   onClick={() => setLibraryCategoryId("all")}
                   className={cn(
-                    "mb-2 w-full rounded-xl px-3 py-2 text-left text-sm",
+                    "whitespace-nowrap rounded-xl px-3 py-2 text-xs font-medium",
                     libraryCategoryId === "all"
                       ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                      : "border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                      : "border border-slate-800 bg-slate-950 text-slate-300"
                   )}
                 >
-                  All Categories
+                  All
                 </button>
                 {filteredCategories.map((cat) => (
                   <button
                     key={cat.id}
                     onClick={() => setLibraryCategoryId(cat.id)}
                     className={cn(
-                      "mb-2 w-full rounded-xl px-3 py-2 text-left text-sm",
+                      "whitespace-nowrap rounded-xl px-3 py-2 text-xs font-medium",
                       libraryCategoryId === cat.id
                         ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                        : "border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                        : "border border-slate-800 bg-slate-950 text-slate-300"
                     )}
                   >
-                    <div className="font-medium">{cat.name}</div>
-                    {!!cat.code && (
-                      <div className="mt-0.5 text-[11px] text-slate-500">{cat.code}</div>
-                    )}
+                    {cat.name}
                   </button>
                 ))}
               </div>
             </div>
+          </div>
 
-            <div className="flex min-w-0 flex-1 flex-col">
-              <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-4">
-                <div className="grid grid-cols-2 gap-1 rounded-xl border border-slate-800 bg-slate-950 p-1">
-                  <button
-                    onClick={() => setLibraryTab("items")}
-                    className={cn(
-                      "rounded-lg px-3 py-2 text-sm font-medium",
-                      libraryTab === "items"
-                        ? "bg-cyan-500/20 text-cyan-200"
-                        : "text-slate-300 hover:bg-slate-800"
-                    )}
-                  >
-                    Items
-                  </button>
-                  <button
-                    onClick={() => setLibraryTab("assemblies")}
-                    className={cn(
-                      "rounded-lg px-3 py-2 text-sm font-medium",
-                      libraryTab === "assemblies"
-                        ? "bg-cyan-500/20 text-cyan-200"
-                        : "text-slate-300 hover:bg-slate-800"
-                    )}
-                  >
-                    Assemblies
-                  </button>
-                </div>
-
-                <div className="relative min-w-0 flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-                  <input
-                    value={librarySearch}
-                    onChange={(e) => setLibrarySearch(e.target.value)}
-                    placeholder="Search code, name, description..."
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 py-2 pl-10 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
-                  />
-                </div>
-
-                <button
-                  onClick={() => setLibraryOpen(false)}
-                  className="rounded-xl border border-slate-800 bg-slate-950 p-2 text-slate-300 hover:bg-slate-800"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-auto p-4">
-                {libraryTab === "items" ? (
-                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                    {filteredItems.map((row) => (
-                      <button
-                        key={row.id}
-                        onClick={() =>
-                          linkLibrarySelection({
-                            type: "item",
-                            id: row.id,
-                            name: row.name,
-                            code: row.item_code || null,
-                            unit: row.base_unit || null,
-                            unitType: row.unit_type || null,
-                          })
-                        }
-                        className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-left transition hover:border-cyan-500/30 hover:bg-slate-900"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-500/20 bg-cyan-500/10">
-                            <Package className="h-5 w-5 text-cyan-300" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-semibold text-slate-100">
-                              {row.name}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-400">
-                              {row.item_code || "No code"}
-                              {row.base_unit ? ` • ${row.base_unit}` : ""}
-                              {row.unit_type ? ` • ${row.unit_type}` : ""}
-                            </div>
-                            {row.description && (
-                              <div className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
-                                {row.description}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                    {filteredItems.length === 0 && (
-                      <div className="col-span-full rounded-2xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-500">
-                        No items found
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                    {filteredAssemblies.map((row) => (
-                      <button
-                        key={row.id}
-                        onClick={() =>
-                          linkLibrarySelection({
-                            type: "assembly",
-                            id: row.id,
-                            name: row.name,
-                            code: row.assembly_code || null,
-                            unit: row.output_unit || null,
-                            unitType: row.unit_type || null,
-                          })
-                        }
-                        className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-left transition hover:border-amber-500/30 hover:bg-slate-900"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl border border-amber-500/20 bg-amber-500/10">
-                            <Boxes className="h-5 w-5 text-amber-300" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-semibold text-slate-100">
-                              {row.name}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-400">
-                              {row.assembly_code || "No code"}
-                              {row.output_unit ? ` • ${row.output_unit}` : ""}
-                              {row.unit_type ? ` • ${row.unit_type}` : ""}
-                            </div>
-                            {row.description && (
-                              <div className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
-                                {row.description}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                    {filteredAssemblies.length === 0 && (
-                      <div className="col-span-full rounded-2xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-500">
-                        No assemblies found
-                      </div>
-                    )}
+          <div className="min-h-0 flex-1 overflow-auto p-4">
+            {libraryTab === "items" ? (
+              <div className="space-y-2">
+                {filteredItems.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-700 px-3 py-8 text-center text-xs text-slate-500">
+                    No items found
                   </div>
                 )}
+                {filteredItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() =>
+                      linkLibrarySelection({
+                        type: "item",
+                        id: item.id,
+                        name: item.name,
+                        code: item.item_code || null,
+                        unit: item.base_unit || null,
+                        unitType: item.unit_type || null,
+                      })
+                    }
+                    className="w-full rounded-2xl border border-slate-800 bg-slate-950 p-3 text-left transition hover:bg-slate-850"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-2">
+                        <Package className="h-4 w-4 text-cyan-300" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium text-slate-100">
+                          {item.name}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-400">
+                          {item.item_code || "No Code"}
+                          {item.base_unit ? ` • ${item.base_unit}` : ""}
+                          {item.unit_type ? ` • ${item.unit_type}` : ""}
+                        </div>
+                        {item.description && (
+                          <div className="mt-1 line-clamp-2 text-xs text-slate-500">
+                            {item.description}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                {filteredAssemblies.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-700 px-3 py-8 text-center text-xs text-slate-500">
+                    No assemblies found
+                  </div>
+                )}
+                {filteredAssemblies.map((assembly) => (
+                  <button
+                    key={assembly.id}
+                    onClick={() =>
+                      linkLibrarySelection({
+                        type: "assembly",
+                        id: assembly.id,
+                        name: assembly.name,
+                        code: assembly.assembly_code || null,
+                        unit: assembly.output_unit || null,
+                        unitType: assembly.unit_type || null,
+                      })
+                    }
+                    className="w-full rounded-2xl border border-slate-800 bg-slate-950 p-3 text-left transition hover:bg-slate-850"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-2">
+                        <Boxes className="h-4 w-4 text-amber-300" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium text-slate-100">
+                          {assembly.name}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-400">
+                          {assembly.assembly_code || "No Code"}
+                          {assembly.output_unit ? ` • ${assembly.output_unit}` : ""}
+                          {assembly.unit_type ? ` • ${assembly.unit_type}` : ""}
+                        </div>
+                        {assembly.description && (
+                          <div className="mt-1 line-clamp-2 text-xs text-slate-500">
+                            {assembly.description}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {libraryOpen && pickerMode === "drawer" && (
-        <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[980px] border-l border-slate-800 bg-slate-900 shadow-2xl">
-          <div className="flex w-[240px] flex-col border-r border-slate-800 bg-slate-950">
-            <div className="border-b border-slate-800 p-4">
-              <div className="text-sm font-semibold text-slate-100">Folders</div>
-              <div className="mt-1 text-xs text-slate-400">
-                Pick an item or assembly for this takeoff
+      {libraryOpen && pickerMode === "modal" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
+          <div className="flex h-[80vh] w-full max-w-5xl flex-col rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+              <div>
+                <div className="text-lg font-semibold text-slate-100">
+                  Pick Item / Assembly
+                </div>
+                <div className="mt-1 text-sm text-slate-400">{currentCategoryName}</div>
               </div>
-            </div>
-
-            <div className="overflow-auto p-3">
               <button
-                onClick={() => setLibraryCategoryId("all")}
-                className={cn(
-                  "mb-2 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm",
-                  libraryCategoryId === "all"
-                    ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                    : "border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
-                )}
+                onClick={() => setLibraryOpen(false)}
+                className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
               >
-                <FolderTree className="h-4 w-4" />
-                All Categories
+                <X className="h-5 w-5" />
               </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setLibraryCategoryId(cat.id)}
-                  className={cn(
-                    "mb-2 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm",
-                    libraryCategoryId === cat.id
-                      ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
-                      : "border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"
-                  )}
-                >
-                  <FolderOpen className="h-4 w-4" />
-                  <span className="truncate">{cat.name}</span>
-                </button>
-              ))}
             </div>
-          </div>
 
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-4">
-              <div className="grid grid-cols-2 gap-1 rounded-xl border border-slate-800 bg-slate-950 p-1">
+            <div className="border-b border-slate-800 p-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto_auto]">
+                <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2">
+                  <Search className="h-4 w-4 text-slate-500" />
+                  <input
+                    value={librarySearch}
+                    onChange={(e) => setLibrarySearch(e.target.value)}
+                    placeholder="Search items or assemblies"
+                    className="w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
+                  />
+                </div>
+
                 <button
                   onClick={() => setLibraryTab("items")}
                   className={cn(
-                    "rounded-lg px-3 py-2 text-sm font-medium",
+                    "rounded-xl px-4 py-2 text-sm font-medium",
                     libraryTab === "items"
-                      ? "bg-cyan-500/20 text-cyan-200"
-                      : "text-slate-300 hover:bg-slate-800"
+                      ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
+                      : "border border-slate-800 bg-slate-950 text-slate-300"
                   )}
                 >
-                  Rate Items
+                  Items
                 </button>
                 <button
                   onClick={() => setLibraryTab("assemblies")}
                   className={cn(
-                    "rounded-lg px-3 py-2 text-sm font-medium",
+                    "rounded-xl px-4 py-2 text-sm font-medium",
                     libraryTab === "assemblies"
-                      ? "bg-cyan-500/20 text-cyan-200"
-                      : "text-slate-300 hover:bg-slate-800"
+                      ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
+                      : "border border-slate-800 bg-slate-950 text-slate-300"
                   )}
                 >
                   Assemblies
                 </button>
               </div>
 
-              <div className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-                <input
-                  value={librarySearch}
-                  onChange={(e) => setLibrarySearch(e.target.value)}
-                  placeholder="Search name, code, description..."
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 py-2 pl-10 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-500"
-                />
+              <div className="mt-3 overflow-x-auto">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setLibraryCategoryId("all")}
+                    className={cn(
+                      "whitespace-nowrap rounded-xl px-3 py-2 text-xs font-medium",
+                      libraryCategoryId === "all"
+                        ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
+                        : "border border-slate-800 bg-slate-950 text-slate-300"
+                    )}
+                  >
+                    All
+                  </button>
+                  {filteredCategories.map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setLibraryCategoryId(cat.id)}
+                      className={cn(
+                        "whitespace-nowrap rounded-xl px-3 py-2 text-xs font-medium",
+                        libraryCategoryId === cat.id
+                          ? "border border-cyan-500/30 bg-cyan-500/10 text-cyan-200"
+                          : "border border-slate-800 bg-slate-950 text-slate-300"
+                      )}
+                    >
+                      {cat.name}
+                    </button>
+                  ))}
+                </div>
               </div>
-
-              <button
-                onClick={() => setLibraryOpen(false)}
-                className="rounded-xl border border-slate-800 bg-slate-950 p-2 text-slate-300 hover:bg-slate-800"
-              >
-                <ChevronRight className="h-5 w-5" />
-              </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-auto p-4">
+            <div className="min-h-0 flex-1 overflow-auto p-5">
               {libraryTab === "items" ? (
-                <div className="space-y-2">
-                  {filteredItems.map((row) => (
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {filteredItems.map((item) => (
                     <button
-                      key={row.id}
+                      key={item.id}
                       onClick={() =>
                         linkLibrarySelection({
                           type: "item",
-                          id: row.id,
-                          name: row.name,
-                          code: row.item_code || null,
-                          unit: row.base_unit || null,
-                          unitType: row.unit_type || null,
+                          id: item.id,
+                          name: item.name,
+                          code: item.item_code || null,
+                          unit: item.base_unit || null,
+                          unitType: item.unit_type || null,
                         })
                       }
-                      className="flex w-full items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-left hover:border-cyan-500/30 hover:bg-slate-900"
+                      className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-left transition hover:bg-slate-850"
                     >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-500/20 bg-cyan-500/10">
-                        <Package className="h-5 w-5 text-cyan-300" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold text-slate-100">
-                          {row.name}
+                      <div className="flex items-start gap-3">
+                        <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-2">
+                          <Package className="h-4 w-4 text-cyan-300" />
                         </div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          {row.item_code || "No code"}
-                          {row.base_unit ? ` • ${row.base_unit}` : ""}
-                          {row.unit_type ? ` • ${row.unit_type}` : ""}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-slate-100">
+                            {item.name}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-400">
+                            {item.item_code || "No Code"}
+                            {item.base_unit ? ` • ${item.base_unit}` : ""}
+                            {item.unit_type ? ` • ${item.unit_type}` : ""}
+                          </div>
+                          {item.description && (
+                            <div className="mt-2 line-clamp-3 text-xs text-slate-500">
+                              {item.description}
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <ChevronLeft className="h-4 w-4 text-slate-500" />
                     </button>
                   ))}
-                  {filteredItems.length === 0 && (
-                    <div className="rounded-2xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-500">
-                      No items found
-                    </div>
-                  )}
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {filteredAssemblies.map((row) => (
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {filteredAssemblies.map((assembly) => (
                     <button
-                      key={row.id}
+                      key={assembly.id}
                       onClick={() =>
                         linkLibrarySelection({
                           type: "assembly",
-                          id: row.id,
-                          name: row.name,
-                          code: row.assembly_code || null,
-                          unit: row.output_unit || null,
-                          unitType: row.unit_type || null,
+                          id: assembly.id,
+                          name: assembly.name,
+                          code: assembly.assembly_code || null,
+                          unit: assembly.output_unit || null,
+                          unitType: assembly.unit_type || null,
                         })
                       }
-                      className="flex w-full items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-left hover:border-amber-500/30 hover:bg-slate-900"
+                      className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-left transition hover:bg-slate-850"
                     >
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-amber-500/20 bg-amber-500/10">
-                        <Boxes className="h-5 w-5 text-amber-300" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-semibold text-slate-100">
-                          {row.name}
+                      <div className="flex items-start gap-3">
+                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-2">
+                          <Boxes className="h-4 w-4 text-amber-300" />
                         </div>
-                        <div className="mt-1 text-xs text-slate-400">
-                          {row.assembly_code || "No code"}
-                          {row.output_unit ? ` • ${row.output_unit}` : ""}
-                          {row.unit_type ? ` • ${row.unit_type}` : ""}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-slate-100">
+                            {assembly.name}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-400">
+                            {assembly.assembly_code || "No Code"}
+                            {assembly.output_unit ? ` • ${assembly.output_unit}` : ""}
+                            {assembly.unit_type ? ` • ${assembly.unit_type}` : ""}
+                          </div>
+                          {assembly.description && (
+                            <div className="mt-2 line-clamp-3 text-xs text-slate-500">
+                              {assembly.description}
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <ChevronLeft className="h-4 w-4 text-slate-500" />
                     </button>
                   ))}
-                  {filteredAssemblies.length === 0 && (
-                    <div className="rounded-2xl border border-dashed border-slate-700 px-4 py-10 text-center text-sm text-slate-500">
-                      No assemblies found
-                    </div>
-                  )}
+                </div>
+              )}
+
+              {libraryTab === "items" && filteredItems.length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-700 px-3 py-10 text-center text-xs text-slate-500">
+                  No items found
+                </div>
+              )}
+
+              {libraryTab === "assemblies" && filteredAssemblies.length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-700 px-3 py-10 text-center text-xs text-slate-500">
+                  No assemblies found
                 </div>
               )}
             </div>
