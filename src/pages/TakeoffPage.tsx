@@ -306,6 +306,10 @@ export default function TakeoffPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const saveTimerRef = useRef<number | null>(null);
   const isMountedRef = useRef(true);
+  const sessionRef = useRef<TakeoffSessionRow | null>(null);
+  const pagesRef = useRef<TakeoffPageRow[]>([]);
+  const activePageIdRef = useRef<string>("");
+  const activePageRef = useRef<TakeoffPageRow | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(
@@ -413,6 +417,28 @@ export default function TakeoffPage() {
   }, [assemblies, librarySearch, libraryCategoryId]);
 
   const activeAsset = useMemo(() => getPageAsset(activePage), [activePage]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    pagesRef.current = pages;
+  }, [pages]);
+
+  useEffect(() => {
+    activePageIdRef.current = activePageId;
+  }, [activePageId]);
+
+  useEffect(() => {
+    activePageRef.current = activePage;
+  }, [activePage]);
+
+  useEffect(() => {
+    if (!activePageId && pages[0]?.id) {
+      setActivePageId(pages[0].id);
+    }
+  }, [activePageId, pages]);
 
   useEffect(() => {
     if (activeAsset?.kind === "pdf") {
@@ -624,6 +650,67 @@ export default function TakeoffPage() {
     },
     [updateSaveState]
   );
+
+  const ensureActivePage = useCallback(async () => {
+    const currentPages = pagesRef.current;
+    const currentActiveId = activePageIdRef.current;
+    const existing =
+      currentPages.find((p) => p.id === currentActiveId) || currentPages[0] || null;
+
+    if (existing) {
+      if (currentActiveId !== existing.id) {
+        setActivePageId(existing.id);
+      }
+      return existing;
+    }
+
+    const currentSession = sessionRef.current;
+    if (!projectId || !currentSession?.id) {
+      setErrorText("No active page selected.");
+      return null;
+    }
+
+    updateSaveState("saving");
+    const res = await supabase
+      .from("takeoff_pages")
+      .insert({
+        project_id: projectId,
+        session_id: currentSession.id,
+        page_number: 1,
+        page_label: "Page 1",
+        page_data: {},
+        width: 1200,
+        height: 900,
+        calibration_scale: null,
+        calibration_unit: "ft",
+        calibration_distance: null,
+        calibration_point_1: null,
+        calibration_point_2: null,
+      })
+      .select("*")
+      .limit(1);
+
+    if (res.error) {
+      setErrorText(res.error.message);
+      updateSaveState("error");
+      return null;
+    }
+
+    const row = (res.data?.[0] || null) as TakeoffPageRow | null;
+    if (!row) {
+      setErrorText("No active page selected.");
+      updateSaveState("error");
+      return null;
+    }
+
+    setPages((prev) => {
+      const exists = prev.some((p) => p.id === row.id);
+      return exists ? prev : [...prev, row];
+    });
+    setActivePageId(row.id);
+    updateSaveState("saved");
+    return row;
+  }, [projectId, updateSaveState]);
 
   const createNewPage = useCallback(async () => {
     if (!session?.id || !projectId) return;
@@ -921,155 +1008,147 @@ export default function TakeoffPage() {
     await saveMeasurement("area", draftPoints);
   }, [activeTool, draftPoints, saveMeasurement]);
 
-  const openUpload = useCallback(() => {
+  const openUpload = useCallback(async () => {
+    const readyPage = await ensureActivePage();
+    if (!readyPage?.id) return;
     fileInputRef.current?.click();
-  }, []);
+  }, [ensureActivePage]);
 
   const handleUploadFile = useCallback(
     async (file: File) => {
+      const page = (await ensureActivePage()) || activePageRef.current;
+
       console.log("UPLOAD START", {
         fileName: file?.name,
         fileType: file?.type,
         fileSize: file?.size,
-        activePageId: activePage?.id,
+        activePageId: page?.id,
       });
 
-      if (!activePage?.id) {
+      if (!page?.id) {
         console.error("No active page id, upload cancelled");
         setErrorText("No active page selected.");
         return;
       }
 
+      setActivePageId(page.id);
       setIsUploadingDrawing(true);
       setErrorText("");
 
       try {
-        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error("Failed to read selected file."));
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.readAsDataURL(file);
+        });
 
-        reader.onerror = () => {
-          console.error("FileReader failed");
-          setErrorText("Failed to read selected file.");
-          setIsUploadingDrawing(false);
-        };
+        console.log("FILE READER LOADED", {
+          hasDataUrl: !!dataUrl,
+          prefix: dataUrl.slice(0, 60),
+        });
 
-        reader.onload = async () => {
+        const kind: "pdf" | "image" =
+          file.type === "application/pdf" ||
+          file.name.toLowerCase().endsWith(".pdf")
+            ? "pdf"
+            : "image";
+
+        let nextWidth = page.width || 1200;
+        let nextHeight = page.height || 900;
+        let numPages: number | undefined;
+
+        if (kind === "pdf") {
           try {
-            const dataUrl = String(reader.result || "");
-            console.log("FILE READER LOADED", {
-              hasDataUrl: !!dataUrl,
-              prefix: dataUrl.slice(0, 60),
-            });
-
-            const kind: "pdf" | "image" =
-              file.type === "application/pdf" ||
-              file.name.toLowerCase().endsWith(".pdf")
-                ? "pdf"
-                : "image";
-
-            let nextWidth = activePage.width || 1200;
-            let nextHeight = activePage.height || 900;
-            let numPages: number | undefined = undefined;
-
-            if (kind === "pdf") {
-              try {
-                const pdf = await pdfjs.getDocument(dataUrl).promise;
-                numPages = pdf.numPages || 1;
-                const firstPage = await pdf.getPage(1);
-                const viewport = firstPage.getViewport({ scale: 1.5 });
-                nextWidth = Math.max(800, Math.round(viewport.width));
-                nextHeight = Math.max(600, Math.round(viewport.height));
-                setPdfNumPages(numPages);
-              } catch (pdfErr) {
-                console.error("PDF metadata read failed", pdfErr);
-              }
-            } else {
-              try {
-                const imageSize = await new Promise<{ width: number; height: number }>(
-                  (resolve, reject) => {
-                    const img = new Image();
-                    img.onload = () =>
-                      resolve({
-                        width: img.naturalWidth || activePage.width || 1200,
-                        height: img.naturalHeight || activePage.height || 900,
-                      });
-                    img.onerror = reject;
-                    img.src = dataUrl;
-                  }
-                );
-                nextWidth = imageSize.width;
-                nextHeight = imageSize.height;
-              } catch (imgErr) {
-                console.error("Image size read failed", imgErr);
-              }
-            }
-
-            const asset: DrawingAsset = {
-              kind,
-              name: file.name,
-              dataUrl,
-              ...(numPages ? { numPages } : {}),
-            };
-
-            const pageData = {
-              ...(activePage.page_data || {}),
-              asset,
-              uploadedAt: new Date().toISOString(),
-            };
-
-            console.log("SAVING PAGE DATA", {
-              pageId: activePage.id,
-              kind,
-              fileName: file.name,
-              numPages,
-              nextWidth,
-              nextHeight,
-            });
-
-            const { data, error } = await supabase
-              .from("takeoff_pages")
-              .update({
-                page_label:
-                  activePage.page_label || file.name.replace(/\.[^.]+$/, ""),
-                page_data: pageData,
-                width: nextWidth,
-                height: nextHeight,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", activePage.id)
-              .select("*");
-
-            if (error) {
-              console.error("SUPABASE UPDATE ERROR", error);
-              setErrorText(error.message);
-              setIsUploadingDrawing(false);
-              return;
-            }
-
-            const updated = (data?.[0] || null) as TakeoffPageRow | null;
-            console.log("UPLOAD SUCCESS", updated);
-
-            if (updated) {
-              setPages((prev) =>
-                prev.map((p) => (p.id === activePage.id ? { ...p, ...updated } : p))
-              );
-            }
-
-            setIsUploadingDrawing(false);
-          } catch (err: any) {
-            console.error("UPLOAD PROCESS ERROR", err);
-            setErrorText(err?.message || "Upload failed.");
-            setIsUploadingDrawing(false);
+            const pdf = await pdfjs.getDocument(dataUrl).promise;
+            numPages = pdf.numPages || 1;
+            const firstPage = await pdf.getPage(1);
+            const viewport = firstPage.getViewport({ scale: 1.5 });
+            nextWidth = Math.max(800, Math.round(viewport.width));
+            nextHeight = Math.max(600, Math.round(viewport.height));
+            setPdfNumPages(numPages);
+          } catch (pdfErr) {
+            console.error("PDF metadata read failed", pdfErr);
           }
+        } else {
+          try {
+            const imageSize = await new Promise<{ width: number; height: number }>(
+              (resolve, reject) => {
+                const img = new Image();
+                img.onload = () =>
+                  resolve({
+                    width: img.naturalWidth || page.width || 1200,
+                    height: img.naturalHeight || page.height || 900,
+                  });
+                img.onerror = reject;
+                img.src = dataUrl;
+              }
+            );
+            nextWidth = imageSize.width;
+            nextHeight = imageSize.height;
+          } catch (imgErr) {
+            console.error("Image size read failed", imgErr);
+          }
+        }
+
+        const asset: DrawingAsset = {
+          kind,
+          name: file.name,
+          dataUrl,
+          ...(numPages ? { numPages } : {}),
         };
 
-        reader.readAsDataURL(file);
+        const pageData = {
+          ...(page.page_data || {}),
+          asset,
+          uploadedAt: new Date().toISOString(),
+        };
+
+        console.log("SAVING PAGE DATA", {
+          pageId: page.id,
+          kind,
+          fileName: file.name,
+          numPages,
+          nextWidth,
+          nextHeight,
+        });
+
+        const { data, error } = await supabase
+          .from("takeoff_pages")
+          .update({
+            page_label: page.page_label || file.name.replace(/\.[^.]+$/, ""),
+            page_data: pageData,
+            width: nextWidth,
+            height: nextHeight,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", page.id)
+          .select("*")
+          .limit(1);
+
+        if (error) {
+          console.error("SUPABASE UPDATE ERROR", error);
+          setErrorText(error.message);
+          return;
+        }
+
+        const updated = (data?.[0] || null) as TakeoffPageRow | null;
+        console.log("UPLOAD SUCCESS", updated);
+
+        if (updated) {
+          setPages((prev) =>
+            prev.map((p) => (p.id === page.id ? { ...p, ...updated } : p))
+          );
+          setActivePageId(updated.id);
+        }
       } catch (err: any) {
-        console.error("UPLOAD OUTER ERROR", err);
+        console.error("UPLOAD PROCESS ERROR", err);
         setErrorText(err?.message || "Upload failed.");
+      } finally {
         setIsUploadingDrawing(false);
       }
     },
-    [activePage]
+    [ensureActivePage]
   );
 
   const handleFileInput = useCallback(
