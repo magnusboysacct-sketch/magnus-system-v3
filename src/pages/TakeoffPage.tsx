@@ -987,9 +987,11 @@ const createPageRecord = useCallback(
     projectId,
   ]);
 
-  useEffect(() => {
-    bootstrap();
-  }, [bootstrap]);
+ useEffect(() => {
+  if (bootstrappedRef.current) return;
+  bootstrappedRef.current = true;
+  bootstrap();
+}, [bootstrap]);
 
   useEffect(() => {
     isMountedRef.current = true;
