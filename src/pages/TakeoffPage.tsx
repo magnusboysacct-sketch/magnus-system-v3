@@ -448,6 +448,7 @@ export default function TakeoffPage() {
   const navigate = useNavigate();
   const { projectId = "" } = useParams<{ projectId: string }>();
 
+  const bootstrappedRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
