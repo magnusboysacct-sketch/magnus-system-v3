@@ -916,41 +916,131 @@ export default function TakeoffPage() {
     fileInputRef.current?.click();
   }, []);
 
+   const [isUploadingDrawing, setIsUploadingDrawing] = useState(false);
+
+  const finishAreaMeasurement = useCallback(async () => {
+    if (activeTool !== "area" || draftPoints.length < 3) return;
+    await saveMeasurement("area", draftPoints);
+  }, [activeTool, draftPoints, saveMeasurement]);
+
+  const openUpload = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
   const handleUploadFile = useCallback(
     async (file: File) => {
-      if (!activePage?.id) return;
-      const reader = new FileReader();
+      console.log("UPLOAD START", {
+        fileName: file?.name,
+        fileType: file?.type,
+        fileSize: file?.size,
+        activePageId: activePage?.id,
+      });
 
-      reader.onload = async () => {
-        const dataUrl = String(reader.result || "");
-        const kind: "pdf" | "image" = file.type.includes("pdf") ? "pdf" : "image";
-        const asset: DrawingAsset = {
-          kind,
-          name: file.name,
-          dataUrl,
+      if (!activePage?.id) {
+        console.error("No active page id, upload cancelled");
+        setErrorText("No active page selected.");
+        return;
+      }
+
+      setIsUploadingDrawing(true);
+      setErrorText("");
+
+      try {
+        const reader = new FileReader();
+
+        reader.onerror = () => {
+          console.error("FileReader failed");
+          setErrorText("Failed to read selected file.");
+          setIsUploadingDrawing(false);
         };
 
-        const pageData = {
-          ...(activePage.page_data || {}),
-          asset,
-          uploadedAt: new Date().toISOString(),
+        reader.onload = async () => {
+          try {
+            const dataUrl = String(reader.result || "");
+            console.log("FILE READER LOADED", {
+              hasDataUrl: !!dataUrl,
+              prefix: dataUrl.slice(0, 60),
+            });
+
+            const kind: "pdf" | "image" =
+              file.type === "application/pdf" ||
+              file.name.toLowerCase().endsWith(".pdf")
+                ? "pdf"
+                : "image";
+
+            const asset: DrawingAsset = {
+              kind,
+              name: file.name,
+              dataUrl,
+            };
+
+            const pageData = {
+              ...(activePage.page_data || {}),
+              asset,
+              uploadedAt: new Date().toISOString(),
+            };
+
+            console.log("SAVING PAGE DATA", {
+              pageId: activePage.id,
+              kind,
+              fileName: file.name,
+            });
+
+            const { data, error } = await supabase
+              .from("takeoff_pages")
+              .update({
+                page_label:
+                  activePage.page_label || file.name.replace(/\.[^.]+$/, ""),
+                page_data: pageData,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", activePage.id)
+              .select("*");
+
+            if (error) {
+              console.error("SUPABASE UPDATE ERROR", error);
+              setErrorText(error.message);
+              setIsUploadingDrawing(false);
+              return;
+            }
+
+            const updated = (data?.[0] || null) as TakeoffPageRow | null;
+            console.log("UPLOAD SUCCESS", updated);
+
+            if (updated) {
+              setPages((prev) =>
+                prev.map((p) => (p.id === activePage.id ? { ...p, ...updated } : p))
+              );
+            }
+
+            setIsUploadingDrawing(false);
+          } catch (err: any) {
+            console.error("UPLOAD PROCESS ERROR", err);
+            setErrorText(err?.message || "Upload failed.");
+            setIsUploadingDrawing(false);
+          }
         };
 
-        await upsertPage(activePage.id, {
-          page_label: activePage.page_label || file.name.replace(/\.[^.]+$/, ""),
-          page_data: pageData,
-        });
-      };
-
-      reader.readAsDataURL(file);
+        reader.readAsDataURL(file);
+      } catch (err: any) {
+        console.error("UPLOAD OUTER ERROR", err);
+        setErrorText(err?.message || "Upload failed.");
+        setIsUploadingDrawing(false);
+      }
     },
-    [activePage, upsertPage]
+    [activePage]
   );
 
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (!file) return;
+      console.log("FILE INPUT CHANGE", file);
+
+      if (!file) {
+        console.warn("No file selected");
+        return;
+      }
+
       handleUploadFile(file);
       e.target.value = "";
     },
@@ -961,6 +1051,7 @@ export default function TakeoffPage() {
     async (numPages: number) => {
       setPdfNumPages(numPages);
       if (!activePage?.id) return;
+
       await upsertPage(activePage.id, {
         page_data: {
           ...(activePage.page_data || {}),
