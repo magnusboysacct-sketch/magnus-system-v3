@@ -1,4 +1,3 @@
-// src/pages/TakeoffPage.tsx
 import React, {
   useCallback,
   useEffect,
@@ -35,6 +34,11 @@ import {
 } from "lucide-react";
 import * as pdfjs from "pdfjs-dist";
 import { supabase } from "../lib/supabase";
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
