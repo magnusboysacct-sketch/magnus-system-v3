@@ -531,22 +531,7 @@ export default function TakeoffPage() {
           })
           .select("*");
 
-        if (newPageInsert.error) {
-          const retryPages = await supabase
-            .from("takeoff_pages")
-            .select("*")
-            .eq("project_id", projectId)
-            .eq("session_id", currentSession.id)
-            .order("page_number", { ascending: true });
-
-          if (retryPages.error) {
-            throw new Error(retryPages.error.message || newPageInsert.error.message);
-          }
-
-          pageRows = (retryPages.data || []) as TakeoffPageRow[];
-        } else {
-          pageRows = (newPageInsert.data || []) as TakeoffPageRow[];
-        }
+        pageRows = (newPageInsert.data || []) as TakeoffPageRow[];
       }
 
       setPages(pageRows);
@@ -706,32 +691,6 @@ export default function TakeoffPage() {
       .limit(1);
 
     if (res.error) {
-      const retry = await supabase
-        .from("takeoff_pages")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("session_id", currentSession.id)
-        .order("page_number", { ascending: true })
-        .limit(1);
-
-      const existingRow = (retry.data?.[0] || null) as TakeoffPageRow | null;
-
-      if (retry.error) {
-        setErrorText(retry.error.message || res.error.message);
-        updateSaveState("error");
-        return null;
-      }
-
-      if (existingRow) {
-        setPages((prev) => {
-          const exists = prev.some((p) => p.id === existingRow.id);
-          return exists ? prev : [...prev, existingRow];
-        });
-        setActivePageId(existingRow.id);
-        updateSaveState("saved");
-        return existingRow;
-      }
-
       setErrorText(res.error.message);
       updateSaveState("error");
       return null;
