@@ -943,16 +943,16 @@ const createPageRecord = useCallback(
         .order("page_number", { ascending: true });
 
       let pageRows = (pagesRes.data || []) as PageRow[];
-      if (!pageRows.length) {
-        const firstPage = await createPageRecord(
-          sessionRow,
-          1,
-          "Page 1",
-          { asset: null },
-          { width: 1200, height: 900 }
-        );
-        pageRows = [firstPage];
-      }
+  if (!pageRows.length) {
+  const firstPage = await createPageRecord(
+    sessionRow,
+    1,
+    "Page 1",
+    { asset: null },
+    { width: 1200, height: 900 }
+  );
+  pageRows = [firstPage];
+}
 
       setPages(pageRows);
       setActivePageId((prev) => prev || pageRows[0]?.id || "");
