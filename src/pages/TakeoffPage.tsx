@@ -33,7 +33,7 @@ import {
   PencilRuler,
   FolderOpen,
 } from "lucide-react";
-import { pdfjs } from "react-pdf";
+import * as pdfjs from "pdfjs-dist";
 import { supabase } from "../lib/supabase";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
