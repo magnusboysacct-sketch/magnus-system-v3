@@ -1216,12 +1216,12 @@ export default function TakeoffPage() {
             )}
           </button>
 
-          <button
-            onClick={openUpload}
-            className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800"
-          >
-            Upload Drawing
-          </button>
+       <button
+  onClick={openUpload}
+  className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-800"
+>
+  {isUploadingDrawing ? "Uploading..." : "Upload Drawing"}
+</button>
 
           <button
             onClick={createNewPage}
