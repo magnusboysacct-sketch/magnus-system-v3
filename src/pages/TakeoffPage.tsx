@@ -1290,29 +1290,43 @@ if (existing.data) {
   continue;
 }
 
-          for (let i = 1; i <= pdf.numPages; i += 1) {
-            const pdfPage = await pdf.getPage(i);
-            const viewport = pdfPage.getViewport({ scale: 1.5 });
+         for (let i = 1; i <= pdf.numPages; i += 1) {
+  const existing = await supabase
+    .from("takeoff_pages")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("session_id", session.id)
+    .eq("page_number", i)
+    .maybeSingle();
 
-            const pageData: PageData = {
-              asset: {
-                kind: "pdf",
-                name: file.name,
-                dataUrl,
-                numPages: pdf.numPages,
-                pageNumber: i,
-              },
-            };
+  if (existing.data) {
+    createdPages.push(existing.data as PageRow);
+    continue;
+  }
 
-            const row = await createPageRecord(
-              session,
-              i,
-              `${file.name} - Page ${i}`,
-              pageData,
-              { width: viewport.width, height: viewport.height }
-            );
-            createdPages.push(row);
-          }
+  const pdfPage = await pdf.getPage(i);
+  const viewport = pdfPage.getViewport({ scale: 1.5 });
+
+  const pageData: PageData = {
+    asset: {
+      kind: "pdf",
+      name: file.name,
+      dataUrl,
+      numPages: pdf.numPages,
+      pageNumber: i,
+    },
+  };
+
+  const row = await createPageRecord(
+    session,
+    i,
+    `${file.name} - Page ${i}`,
+    pageData,
+    { width: viewport.width, height: viewport.height }
+  );
+
+  createdPages.push(row);
+}
 
           setPages(createdPages.sort((a, b) => a.page_number - b.page_number));
           setActivePageId(createdPages[0]?.id || "");
