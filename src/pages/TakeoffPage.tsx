@@ -1275,6 +1275,18 @@ const createPageRecord = useCallback(
           const loadingTask = pdfjs.getDocument(dataUrl);
           const pdf = await loadingTask.promise;
           const createdPages: PageRow[] = [];
+          const existing = await supabase
+  .from("takeoff_pages")
+  .select("*")
+  .eq("project_id", projectId)
+  .eq("session_id", session.id)
+  .eq("page_number", i)
+  .maybeSingle();
+
+if (existing.data) {
+  createdPages.push(existing.data as PageRow);
+  continue;
+}
 
           for (let i = 1; i <= pdf.numPages; i += 1) {
             const pdfPage = await pdf.getPage(i);
