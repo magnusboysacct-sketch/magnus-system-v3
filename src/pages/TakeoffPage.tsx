@@ -793,29 +793,36 @@ export default function TakeoffPage() {
     []
   );
 
-  const createPageRecord = useCallback(
-    async (
-      sessionRow: SessionRow,
-      pageNumber: number,
-      label: string,
-      pageData: PageData,
-      size?: { width?: number; height?: number }
-    ) => {
-      const insertPayload = {
-        project_id: projectId,
-        session_id: sessionRow.id,
-        page_number: pageNumber,
-        page_label: label,
-        page_data: pageData,
-        width: size?.width || 1200,
-        height: size?.height || 900,
-        calibration_scale: null,
-        calibration_unit: "ft",
-        calibration_distance: null,
-        calibration_point_1: null,
-        calibration_point_2: null,
-      };
+  const pageCreationLockRef = useRef(false);
 
+const createPageRecord = useCallback(
+  async (
+    sessionRow: SessionRow,
+    pageNumber: number,
+    label: string,
+    pageData: PageData,
+    size?: { width?: number; height?: number }
+  ) => {
+    // 🔒 HARD LOCK to prevent race condition
+    if (pageCreationLockRef.current) {
+      // wait a bit then fetch existing instead
+      await new Promise((r) => setTimeout(r, 150));
+
+      const retry = await supabase
+        .from("takeoff_pages")
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("session_id", sessionRow.id)
+        .eq("page_number", pageNumber)
+        .maybeSingle();
+
+      if (retry.data) return retry.data as PageRow;
+    }
+
+    pageCreationLockRef.current = true;
+
+    try {
+      // ALWAYS check first
       const existing = await supabase
         .from("takeoff_pages")
         .select("*")
@@ -824,48 +831,43 @@ export default function TakeoffPage() {
         .eq("page_number", pageNumber)
         .maybeSingle();
 
-      if (existing.data) {
-        const updatePayload = {
-          page_label: label,
-          page_data: pageData,
-          width: size?.width || existing.data.width || 1200,
-          height: size?.height || existing.data.height || 900,
-          updated_at: new Date().toISOString(),
-        };
-        const update = await supabase
-          .from("takeoff_pages")
-          .update(updatePayload)
-          .eq("id", existing.data.id)
-          .select("*")
-          .single();
-        if (update.error) throw update.error;
-        return update.data as PageRow;
-      }
+      if (existing.data) return existing.data as PageRow;
 
       const insert = await supabase
         .from("takeoff_pages")
-        .insert(insertPayload)
+        .insert({
+          project_id: projectId,
+          session_id: sessionRow.id,
+          page_number: pageNumber,
+          page_label: label,
+          page_data: pageData,
+          width: size?.width || 1200,
+          height: size?.height || 900,
+          calibration_unit: "ft",
+        })
         .select("*")
         .single();
 
-      if (insert.error) {
-        const retry = await supabase
-          .from("takeoff_pages")
-          .select("*")
-          .eq("project_id", projectId)
-          .eq("session_id", sessionRow.id)
-          .eq("page_number", pageNumber)
-          .maybeSingle();
+      if (!insert.error && insert.data) return insert.data;
 
-        if (retry.error) throw retry.error;
-        if (retry.data) return retry.data as PageRow;
-        throw insert.error;
-      }
+      // fallback if duplicate happened
+      const retry = await supabase
+        .from("takeoff_pages")
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("session_id", sessionRow.id)
+        .eq("page_number", pageNumber)
+        .maybeSingle();
 
-      return insert.data as PageRow;
-    },
-    [projectId]
-  );
+      if (retry.data) return retry.data as PageRow;
+
+      throw insert.error;
+    } finally {
+      pageCreationLockRef.current = false;
+    }
+  },
+  [projectId]
+);
 
   const bootstrap = useCallback(async () => {
     if (!projectId) {
