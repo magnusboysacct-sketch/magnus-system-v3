@@ -9,9 +9,6 @@ export default function TakeoffPage() {
   return (
     <div className="h-screen bg-slate-950 text-white flex flex-col">
 
-      {/* WORKSPACE */}
-      <div className="flex-1 relative flex items-center justify-center">
-
      {/* WORKSPACE CONTAINER */}
 <div className="flex-1 relative">
 
