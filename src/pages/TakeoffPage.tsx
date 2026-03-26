@@ -804,68 +804,33 @@ const createPageRecord = useCallback(
     pageData: PageData,
     size?: { width?: number; height?: number }
   ) => {
-    // 🔒 HARD LOCK to prevent race condition
-    if (pageCreationLockRef.current) {
-      // wait a bit then fetch existing instead
-      await new Promise((r) => setTimeout(r, 150));
+    const payload = {
+      project_id: projectId,
+      session_id: sessionRow.id,
+      page_number: pageNumber,
+      page_label: label,
+      page_data: pageData,
+      width: size?.width || 1200,
+      height: size?.height || 900,
+      calibration_scale: null,
+      calibration_unit: "ft",
+      calibration_distance: null,
+      calibration_point_1: null,
+      calibration_point_2: null,
+      updated_at: new Date().toISOString(),
+    };
 
-      const retry = await supabase
-        .from("takeoff_pages")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("session_id", sessionRow.id)
-        .eq("page_number", pageNumber)
-        .maybeSingle();
+    const upsert = await supabase
+      .from("takeoff_pages")
+      .upsert(payload, {
+        onConflict: "session_id,page_number",
+      })
+      .select("*")
+      .single();
 
-      if (retry.data) return retry.data as PageRow;
-    }
+    if (upsert.error) throw upsert.error;
 
-    pageCreationLockRef.current = true;
-
-    try {
-      // ALWAYS check first
-      const existing = await supabase
-        .from("takeoff_pages")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("session_id", sessionRow.id)
-        .eq("page_number", pageNumber)
-        .maybeSingle();
-
-      if (existing.data) return existing.data as PageRow;
-
-      const insert = await supabase
-        .from("takeoff_pages")
-        .insert({
-          project_id: projectId,
-          session_id: sessionRow.id,
-          page_number: pageNumber,
-          page_label: label,
-          page_data: pageData,
-          width: size?.width || 1200,
-          height: size?.height || 900,
-          calibration_unit: "ft",
-        })
-        .select("*")
-        .single();
-
-      if (!insert.error && insert.data) return insert.data;
-
-      // fallback if duplicate happened
-      const retry = await supabase
-        .from("takeoff_pages")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("session_id", sessionRow.id)
-        .eq("page_number", pageNumber)
-        .maybeSingle();
-
-      if (retry.data) return retry.data as PageRow;
-
-      throw insert.error;
-    } finally {
-      pageCreationLockRef.current = false;
-    }
+    return upsert.data as PageRow;
   },
   [projectId]
 );
