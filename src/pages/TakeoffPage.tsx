@@ -1,37 +1,57 @@
-import React, { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  AlertCircle,
+  Boxes,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  FolderOpen,
+  FolderTree,
+  Hash,
+  Image as ImageIcon,
+  Layers3,
+  Link2,
+  Loader2,
+  Move,
+  Package,
+  PencilRuler,
+  Plus,
+  RefreshCcw,
+  Ruler,
+  Save,
+  Search,
+  Settings,
+  Square,
+  Upload,
+  X,
+  Trash2,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import * as pdfjs from "pdfjs-dist";
+import { supabase } from "../lib/supabase";
 
-export default function TakeoffPage() {
-  const [projectName, setProjectName] = useState("Takeoff");
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        // ✅ FIX: declare FIRST before using
-        const projectRow = await supabase
-          .from("projects")
-          .select("name")
-          .limit(1)
-          .maybeSingle();
+type ToolMode = "pan" | "line" | "area" | "count";
+type RightTab = "items" | "assemblies" | "linked" | "rules" | "boq";
+type PickerType = "item" | "assembly";
+type Point = { x: number; y: number };
 
-        // ✅ now safe to use
-        setProjectName(projectRow.data?.name || "Takeoff");
-
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    load();
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">
-      <h1 className="text-xl">{projectName}</h1>
-    </div>
-  );
-}
-
+type ProjectRow = {
+  id: string;
+  name: string | null;
+};
 
 type SessionRow = {
   id: string;
@@ -504,12 +524,12 @@ export default function TakeoffPage() {
   const activePageMeasurements = useMemo(() => {
     if (!activePage || !session) return [];
     return measurements
-      .filter(
-        (m) =>
-          m.session_id === session.id &&
-          Number(m.page_number || 0) === Number(activePage.page_number || 0) &&
-          !m.is_deleted
-      )
+      .filter((m) => {
+        if (m.session_id !== session.id || m.is_deleted) return false;
+        const metaPageId = m.meta?.pageId || m.meta?.page_id || null;
+        if (metaPageId) return metaPageId === activePage.id;
+        return Number(m.page_number || 0) === Number(activePage.page_number || 0);
+      })
       .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
   }, [activePage, measurements, session]);
 
@@ -841,7 +861,8 @@ const createPageRecord = useCallback(
       .limit(1);
 
     if (retry.error) throw retry.error;
-    if (retry.data) return retry.data as PageRow;
+    const retryRow = Array.isArray(retry.data) ? retry.data[0] : retry.data;
+    if (retryRow) return retryRow as PageRow;
 
     throw insert.error;
   },
@@ -976,6 +997,16 @@ const createPageRecord = useCallback(
     };
   }, []);
 
+
+  useEffect(() => {
+    if (activeAsset) return;
+    setDraftPoints([]);
+    setHoverPoint(null);
+    if (toolMode !== "pan") {
+      setToolMode("pan");
+    }
+  }, [activeAsset, toolMode]);
+
   useEffect(() => {
     if (!activePage) return;
     const p1 = activePage.calibration_point_1 || activePage.calibration_p1 || null;
@@ -1008,6 +1039,13 @@ const createPageRecord = useCallback(
       });
     }
   }, [activePage]);
+
+
+  useEffect(() => {
+    if (!selectedMeasurementId) return;
+    const exists = activePageMeasurements.some((m) => m.id === selectedMeasurementId);
+    if (!exists) setSelectedMeasurementId("");
+  }, [activePageMeasurements, selectedMeasurementId]);
 
   const updateMeasurementInState = useCallback((id: string, patch: Partial<MeasurementRow>) => {
     setMeasurements((prev) =>
@@ -1352,7 +1390,7 @@ const createPageRecord = useCallback(
         setUploading(false);
       }
     },
-    [activePage, createPageRecord, persistPage, session, setSaving]
+    [activePage, createPageRecord, persistPage, projectId, session, setSaving]
   );
 
   const addGroup = useCallback(async () => {
@@ -1490,7 +1528,7 @@ const createPageRecord = useCallback(
 
   const handleSvgClick = useCallback(
     async (e: React.MouseEvent<SVGSVGElement, MouseEvent>) => {
-      if (!svgRef.current || !activePage) return;
+      if (!svgRef.current || !activePage || !activeAsset) return;
       const point = toSvgPoint(e, svgRef.current, zoom, pan);
 
       if (isPickingCalibration) {
@@ -1536,6 +1574,7 @@ const createPageRecord = useCallback(
       pan,
       toolMode,
       zoom,
+      activeAsset,
     ]
   );
 
@@ -2290,6 +2329,7 @@ const createPageRecord = useCallback(
                   </div>
                 )}
 
+                {activeAsset ? (
                 <svg
                   ref={svgRef}
                   width={activePage?.width || 1200}
@@ -2447,6 +2487,7 @@ const createPageRecord = useCallback(
                     />
                   ) : null}
                 </svg>
+                ) : null}
               </div>
             </div>
           </div>
