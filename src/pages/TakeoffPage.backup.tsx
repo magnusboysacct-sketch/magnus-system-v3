@@ -8,11 +8,13 @@ import { MeasurementLayer } from "../features/takeoff/components/MeasurementLaye
 import {
   getOrCreateSession,
   loadTakeoff,
+  saveTakeoffDebounced,
+  cancelPendingSave,
 } from "../features/takeoff/persistence/takeoffPersistence";
 import { usePlan } from "../hooks/usePlan";
 import PaywallModal from "../components/PaywallModal";
 import { supabase } from "../lib/supabase";
-import type { Measurement, MeasurementGroup, CalibrationState } from "../features/takeoff/types/takeoff.types";
+import { saveMeasurementsToDB } from "../lib/takeoffDB";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -404,8 +406,6 @@ function TakeoffPageInner() {
     color: string;
     visible: boolean;
     sortOrder: number;
-    locked: boolean;
-    trade?: string;
   }>>([]);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -426,6 +426,7 @@ function TakeoffPageInner() {
   const [currentProject, setCurrentProject] = useState<{ id: string; name: string | null } | null>(null);
 
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { hasFeature, features } = usePlan();
   const [showPaywall, setShowPaywall] = useState(false);
@@ -499,10 +500,10 @@ function TakeoffPageInner() {
   useEffect(() => {
     if (groups.length === 0) {
       const defaultGroups = [
-        { id: crypto.randomUUID(), name: "Concrete", color: "#10b981", visible: true, sortOrder: 0, locked: false },
-        { id: crypto.randomUUID(), name: "Masonry", color: "#f59e0b", visible: true, sortOrder: 1, locked: false },
-        { id: crypto.randomUUID(), name: "Electrical", color: "#3b82f6", visible: true, sortOrder: 2, locked: false },
-        { id: crypto.randomUUID(), name: "Plumbing", color: "#06b6d4", visible: true, sortOrder: 3, locked: false },
+        { id: crypto.randomUUID(), name: "Concrete", color: "#10b981", visible: true, sortOrder: 0 },
+        { id: crypto.randomUUID(), name: "Masonry", color: "#f59e0b", visible: true, sortOrder: 1 },
+        { id: crypto.randomUUID(), name: "Electrical", color: "#3b82f6", visible: true, sortOrder: 2 },
+        { id: crypto.randomUUID(), name: "Plumbing", color: "#06b6d4", visible: true, sortOrder: 3 },
       ];
       setGroups(defaultGroups);
       setActiveGroupId(defaultGroups[0].id);
@@ -1365,7 +1366,6 @@ function TakeoffPageInner() {
       color: randomColor,
       visible: true,
       sortOrder: groups.length,
-      locked: false,
     };
 
     setGroups(prev => [...prev, newGroup]);
@@ -1442,13 +1442,65 @@ function TakeoffPageInner() {
     return group?.visible !== false;
   });
 
-  // Track previous state for incremental saves
-  const prevMeasurementsRef = useRef<Measurement[]>([]);
-  const prevGroupsRef = useRef<MeasurementGroup[]>([]);
-  const prevCalibrationRef = useRef<CalibrationState | null>(null);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
 
-  // Incremental persistence
+    setSaveStatus("saving");
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        const groupTotalsMap: Record<string, {
+          line_ft: number;
+          area_ft2: number;
+          volume_yd3: number;
+          count_ea: number;
+        }> = {};
+
+        groups.forEach(group => {
+          const totals = getGroupTotals(group.id);
+          groupTotalsMap[group.id] = {
+            line_ft: totals.line,
+            area_ft2: totals.area,
+            volume_yd3: totals.volume,
+            count_ea: totals.count,
+          };
+        });
+
+        localStorage.setItem("takeoff_group_totals", JSON.stringify(groupTotalsMap));
+
+        const groupsMetadata = groups.map(g => ({
+          id: g.id,
+          name: g.name,
+          color: g.color,
+          visible: g.visible,
+        }));
+        localStorage.setItem("takeoff_groups", JSON.stringify(groupsMetadata));
+
+        if (activeProjectId && measurements.length > 0) {
+          await saveMeasurementsToDB(
+            activeProjectId,
+            sessionId,
+            measurements,
+            groups
+          );
+        }
+
+        setSaveStatus("saved");
+      } catch (err) {
+        console.error("Save failed:", err);
+        setSaveStatus("error");
+      }
+    }, 400);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [measurements, groups, activeProjectId, sessionId]);
+
   useEffect(() => {
     if (!sessionId || !dbLoaded) return;
 
@@ -1461,145 +1513,20 @@ function TakeoffPageInner() {
       pixelsPerUnit: 1 / (feetPerPixel || 1),
     } : null;
 
-    // Only save if something actually changed
-    const measurementsChanged = JSON.stringify(measurements) !== JSON.stringify(prevMeasurementsRef.current);
-    const groupsChanged = JSON.stringify(groups) !== JSON.stringify(prevGroupsRef.current);
-    const calibrationChanged = JSON.stringify(calibrationData) !== JSON.stringify(prevCalibrationRef.current);
-
-    if (!measurementsChanged && !groupsChanged && !calibrationChanged) return;
-
-    const saveTimeout = setTimeout(async () => {
-      try {
-        // Update calibration if changed
-        if (calibrationChanged && calibrationData) {
-          await supabase
-            .from("takeoff_sessions")
-            .update({ calibration: calibrationData, updated_at: new Date().toISOString() })
-            .eq("id", sessionId);
-        }
-
-        // Incremental groups sync
-        if (groupsChanged) {
-          const prevGroups = prevGroupsRef.current;
-          const currentGroups = groups;
-
-          // Find groups to delete (in prev but not current)
-          const groupsToDelete = prevGroups.filter(pg => !currentGroups.find(cg => cg.id === pg.id));
-          if (groupsToDelete.length > 0) {
-            await supabase
-              .from("takeoff_groups")
-              .delete()
-              .in("id", groupsToDelete.map(g => g.id));
-          }
-
-          // Find groups to insert (in current but not prev)
-          const groupsToInsert = currentGroups.filter(cg => !prevGroups.find(pg => pg.id === cg.id));
-          if (groupsToInsert.length > 0) {
-            await supabase
-              .from("takeoff_groups")
-              .insert(groupsToInsert.map((g, idx) => ({
-                id: g.id,
-                session_id: sessionId,
-                name: g.name,
-                color: g.color,
-                trade: g.trade || null,
-                is_hidden: !g.visible,
-                sort_order: g.sortOrder !== undefined ? g.sortOrder : idx,
-              })));
-          }
-
-          // Find groups to update (in both but potentially changed)
-          const groupsToUpdate = currentGroups.filter(cg => {
-            const pg = prevGroups.find(pg => pg.id === cg.id);
-            return pg && (pg.name !== cg.name || pg.color !== cg.color || pg.visible !== cg.visible || pg.sortOrder !== cg.sortOrder);
-          });
-          for (const g of groupsToUpdate) {
-            await supabase
-              .from("takeoff_groups")
-              .update({
-                name: g.name,
-                color: g.color,
-                is_hidden: !g.visible,
-                sort_order: g.sortOrder,
-              })
-              .eq("id", g.id);
-          }
-        }
-
-        // Incremental measurements sync
-        if (measurementsChanged) {
-          const prevMeasurements = prevMeasurementsRef.current;
-          const currentMeasurements = measurements;
-
-          // Find measurements to delete (in prev but not current)
-          const measurementsToDelete = prevMeasurements.filter(pm => !currentMeasurements.find(cm => cm.id === pm.id));
-          if (measurementsToDelete.length > 0) {
-            await supabase
-              .from("takeoff_measurements")
-              .delete()
-              .in("id", measurementsToDelete.map(m => m.id));
-          }
-
-          // Find measurements to insert (in current but not prev)
-          const measurementsToInsert = currentMeasurements.filter(cm => !prevMeasurements.find(pm => pm.id === cm.id));
-          if (measurementsToInsert.length > 0) {
-            await supabase
-              .from("takeoff_measurements")
-              .insert(measurementsToInsert.map((m, idx) => ({
-                id: m.id,
-                session_id: sessionId,
-                page_number: 1,
-                group_id: m.groupId || null,
-                type: m.type,
-                points: m.points,
-                unit: m.unit,
-                result: m.result,
-                meta: m.meta || null,
-                sort_order: idx,
-              })));
-          }
-
-          // Find measurements to update (in both but potentially changed)
-          const measurementsToUpdate = currentMeasurements.filter(cm => {
-            const pm = prevMeasurements.find(pm => pm.id === cm.id);
-            return pm && (
-              pm.type !== cm.type ||
-              JSON.stringify(pm.points) !== JSON.stringify(cm.points) ||
-              pm.unit !== cm.unit ||
-              pm.result !== cm.result ||
-              pm.groupId !== cm.groupId ||
-              JSON.stringify(pm.meta) !== JSON.stringify(cm.meta)
-            );
-          });
-          for (const m of measurementsToUpdate) {
-            await supabase
-              .from("takeoff_measurements")
-              .update({
-                group_id: m.groupId || null,
-                type: m.type,
-                points: m.points,
-                unit: m.unit,
-                result: m.result,
-                meta: m.meta || null,
-              })
-              .eq("id", m.id);
-          }
-        }
-
-        // Update refs for next comparison
-        prevMeasurementsRef.current = [...measurements];
-        prevGroupsRef.current = [...groups];
-        prevCalibrationRef.current = calibrationData;
-
-      } catch (err) {
-        console.error("Incremental save failed:", err);
-      }
+    saveTakeoffDebounced(sessionId, {
+      groups: groups.map(g => ({
+        ...g,
+        locked: false,
+        trade: undefined,
+      })),
+      measurements,
+      calibration: calibrationData,
     }, 800);
 
     return () => {
-      clearTimeout(saveTimeout);
+      cancelPendingSave();
     };
-  }, [sessionId, measurements, groups, feetPerPixel, dbLoaded, calPoints]);
+  }, [sessionId, measurements, groups, feetPerPixel, dbLoaded]);
 
   return (
     <div className="p-6 h-full flex gap-6">
