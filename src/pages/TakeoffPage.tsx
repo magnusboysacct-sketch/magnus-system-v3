@@ -311,6 +311,16 @@ function formatDate(value?: string | null) {
   return d.toLocaleString();
 }
 
+function normalizeSupabaseErrorMessage(message?: string | null) {
+  const raw = String(message || "").trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  if (lower.includes("statement timeout") || lower.includes("canceling statement due to statement timeout")) {
+    return "Request timed out. The page now uses lighter queries, so retry the action once.";
+  }
+  return raw;
+}
+
 function getPageAsset(page: PageRow | null): PageAsset | null {
   const pageData = (page?.page_data || {}) as PageData;
   if (pageData.asset?.dataUrl && pageData.asset.kind) return pageData.asset;
@@ -524,12 +534,12 @@ export default function TakeoffPage() {
   const activePageMeasurements = useMemo(() => {
     if (!activePage || !session) return [];
     return measurements
-      .filter((m) => {
-        if (m.session_id !== session.id || m.is_deleted) return false;
-        const metaPageId = m.meta?.pageId || m.meta?.page_id || null;
-        if (metaPageId) return metaPageId === activePage.id;
-        return Number(m.page_number || 0) === Number(activePage.page_number || 0);
-      })
+      .filter(
+        (m) =>
+          m.session_id === session.id &&
+          Number(m.page_number || 0) === Number(activePage.page_number || 0) &&
+          !m.is_deleted
+      )
       .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
   }, [activePage, measurements, session]);
 
@@ -677,7 +687,7 @@ export default function TakeoffPage() {
 
   const setSaving = useCallback((state: "saving" | "saved" | "error" | "idle", msg = "") => {
     setSaveState(state);
-    setStatusText(msg);
+    setStatusText(state === "error" ? normalizeSupabaseErrorMessage(msg) : msg);
     if (state === "saved") {
       window.setTimeout(() => {
         if (isMountedRef.current) {
@@ -736,17 +746,26 @@ export default function TakeoffPage() {
   );
 
   const loadMeasurements = useCallback(
-    async (sessionId: string) => {
-      const { data, error } = await supabase
+    async (sessionId: string, pageNumber?: number) => {
+      let query = supabase
         .from("takeoff_measurements")
-        .select("*")
-        .eq("project_id", projectId)
+        .select(
+          "id,company_id,project_id,session_id,drawing_id,group_id,boq_id,boq_section_id,boq_item_id,page_number,tool_type,type,name,description,points,closed_shape,raw_length,raw_area,raw_count,raw_volume,display_unit,scale_x,scale_y,multiplier,waste_percent,deduction_value,formula_id,assembly_id,cost_item_id,fill_color,stroke_color,line_width,sort_order,is_deleted,created_by,created_at,updated_at,unit,result,meta,meta_json"
+        )
         .eq("session_id", sessionId)
-        .order("page_number", { ascending: true })
         .order("sort_order", { ascending: true });
 
+      if (typeof pageNumber === "number" && Number.isFinite(pageNumber)) {
+        query = query.eq("page_number", pageNumber);
+      } else {
+        query = query.order("page_number", { ascending: true });
+      }
+
+      const { data, error } = await query;
+
       if (error) {
-        setErrorText(error.message || "Failed to load measurements.");
+        const safeMessage = normalizeSupabaseErrorMessage(error.message || "Failed to load measurements.");
+        setErrorText(safeMessage);
         return;
       }
 
@@ -756,9 +775,17 @@ export default function TakeoffPage() {
         meta: row.meta || row.meta_json || {},
       })) as MeasurementRow[];
 
-      setMeasurements(rows);
+      setMeasurements((prev) => {
+        if (typeof pageNumber !== "number" || !Number.isFinite(pageNumber)) return rows;
+        const others = prev.filter((m) => Number(m.page_number || 0) !== Number(pageNumber));
+        return [...others, ...rows].sort((a, b) => {
+          const pageDelta = Number(a.page_number || 0) - Number(b.page_number || 0);
+          if (pageDelta !== 0) return pageDelta;
+          return Number(a.sort_order || 0) - Number(b.sort_order || 0);
+        });
+      });
     },
-    [projectId]
+    []
   );
 
   const ensureDefaultGroup = useCallback(
@@ -811,11 +838,11 @@ const createPageRecord = useCallback(
       .eq("project_id", projectId)
       .eq("session_id", sessionRow.id)
       .eq("page_number", pageNumber)
-      .limit(1);
+      .maybeSingle();
 
     if (existing.error) throw existing.error;
 
-    const existingRow = Array.isArray(existing.data) ? existing.data[0] : existing.data;
+    const existingRow = existing.data;
 
     if (existingRow) {
       const update = await supabase
@@ -858,11 +885,10 @@ const createPageRecord = useCallback(
       .eq("project_id", projectId)
       .eq("session_id", sessionRow.id)
       .eq("page_number", pageNumber)
-      .limit(1);
+      .maybeSingle();
 
     if (retry.error) throw retry.error;
-    const retryRow = Array.isArray(retry.data) ? retry.data[0] : retry.data;
-    if (retryRow) return retryRow as PageRow;
+    if (retry.data) return retry.data as PageRow;
 
     throw insert.error;
   },
@@ -916,7 +942,6 @@ const createPageRecord = useCallback(
         .select("*")
         .eq("project_id", projectId)
         .order("updated_at", { ascending: false })
-        .limit(1)
         .limit(1);
 
       const existingSessionRow = Array.isArray(existingSession.data) ? existingSession.data[0] : existingSession.data;
@@ -968,11 +993,11 @@ const createPageRecord = useCallback(
 
       await Promise.all([
         ensureDefaultGroup(sessionRow, userCompanyId),
-        loadMeasurements(sessionRow.id),
+        loadMeasurements(sessionRow.id, safePageRows[0]?.page_number),
         loadLibrary(),
       ]);
     } catch (error: any) {
-      setErrorText(error?.message || "Failed to load takeoff page.");
+      setErrorText(normalizeSupabaseErrorMessage(error?.message || "Failed to load takeoff page."));
     } finally {
       setLoading(false);
     }
@@ -997,15 +1022,10 @@ const createPageRecord = useCallback(
     };
   }, []);
 
-
   useEffect(() => {
-    if (activeAsset) return;
-    setDraftPoints([]);
-    setHoverPoint(null);
-    if (toolMode !== "pan") {
-      setToolMode("pan");
-    }
-  }, [activeAsset, toolMode]);
+    if (!session || !activePage) return;
+    void loadMeasurements(session.id, activePage.page_number);
+  }, [activePage?.page_number, loadMeasurements, session]);
 
   useEffect(() => {
     if (!activePage) return;
@@ -1039,13 +1059,6 @@ const createPageRecord = useCallback(
       });
     }
   }, [activePage]);
-
-
-  useEffect(() => {
-    if (!selectedMeasurementId) return;
-    const exists = activePageMeasurements.some((m) => m.id === selectedMeasurementId);
-    if (!exists) setSelectedMeasurementId("");
-  }, [activePageMeasurements, selectedMeasurementId]);
 
   const updateMeasurementInState = useCallback((id: string, patch: Partial<MeasurementRow>) => {
     setMeasurements((prev) =>
@@ -1253,7 +1266,7 @@ const createPageRecord = useCallback(
       await page.render({ canvasContext: ctx, viewport }).promise;
       await persistRenderedSize(viewport.width, viewport.height);
     } catch (error: any) {
-      setErrorText(error?.message || "Failed to render PDF page.");
+      setErrorText(normalizeSupabaseErrorMessage(error?.message || "Failed to render PDF page."));
     } finally {
       setPdfLoading(false);
     }
@@ -1291,40 +1304,23 @@ const createPageRecord = useCallback(
   const loadingTask = pdfjs.getDocument(dataUrl);
   const pdf = await loadingTask.promise;
   const createdPages: PageRow[] = [];
-
   for (let i = 1; i <= pdf.numPages; i += 1) {
-    const existing = await supabase
-      .from("takeoff_pages")
-      .select("*")
-      .eq("project_id", projectId)
-      .eq("session_id", session.id)
-      .eq("page_number", i)
-      .limit(1);
-
-    if (existing.error) {
-      throw existing.error;
-    }
-
-    const existingRow = Array.isArray(existing.data) ? existing.data[0] : existing.data;
     const pdfPage = await pdf.getPage(i);
     const viewport = pdfPage.getViewport({ scale: 1.5 });
-
-    const pageData: PageData = {
-      ...(((existingRow as any)?.page_data || {}) as PageData),
-      asset: {
-        kind: "pdf",
-        name: file.name,
-        dataUrl,
-        numPages: pdf.numPages,
-        pageNumber: i,
-      },
-    };
 
     const row = await createPageRecord(
       session,
       i,
       `${file.name} - Page ${i}`,
-      pageData,
+      {
+        asset: {
+          kind: "pdf",
+          name: file.name,
+          dataUrl,
+          numPages: pdf.numPages,
+          pageNumber: i,
+        },
+      },
       { width: viewport.width, height: viewport.height }
     );
 
@@ -1385,12 +1381,12 @@ const createPageRecord = useCallback(
         setZoom(1);
         setPan({ x: 0, y: 0 });
       } catch (error: any) {
-        setSaving("error", error?.message || "Upload failed.");
+        setSaving("error", normalizeSupabaseErrorMessage(error?.message || "Upload failed."));
       } finally {
         setUploading(false);
       }
     },
-    [activePage, createPageRecord, persistPage, projectId, session, setSaving]
+    [activePage, createPageRecord, persistPage, session, setSaving]
   );
 
   const addGroup = useCallback(async () => {
@@ -1528,7 +1524,7 @@ const createPageRecord = useCallback(
 
   const handleSvgClick = useCallback(
     async (e: React.MouseEvent<SVGSVGElement, MouseEvent>) => {
-      if (!svgRef.current || !activePage || !activeAsset) return;
+      if (!svgRef.current || !activePage) return;
       const point = toSvgPoint(e, svgRef.current, zoom, pan);
 
       if (isPickingCalibration) {
@@ -1574,7 +1570,6 @@ const createPageRecord = useCallback(
       pan,
       toolMode,
       zoom,
-      activeAsset,
     ]
   );
 
@@ -2329,7 +2324,6 @@ const createPageRecord = useCallback(
                   </div>
                 )}
 
-                {activeAsset ? (
                 <svg
                   ref={svgRef}
                   width={activePage?.width || 1200}
@@ -2487,7 +2481,6 @@ const createPageRecord = useCallback(
                     />
                   ) : null}
                 </svg>
-                ) : null}
               </div>
             </div>
           </div>
