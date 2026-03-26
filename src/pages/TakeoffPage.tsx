@@ -52,6 +52,5 @@ export default function TakeoffPage() {
 
   </div>
 
-</div>
   );
 }
