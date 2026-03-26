@@ -7,10 +7,10 @@ import React, {
 } from "react";
 import { useParams } from "react-router-dom";
 import * as pdfjsLib from "pdfjs-dist";
-import { supabase } from "../integrations/supabase/client";
+import { supabase } from "../../supabase/client";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "../node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
+  "../../node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url
 ).toString();
 
