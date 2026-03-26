@@ -898,12 +898,12 @@ const createPageRecord = useCallback(
           .maybeSingle(),
       ]);
 
+      const projectRow = Array.isArray(projectRes.data) ? projectRes.data[0] : projectRes.data;
+      const profileRow = Array.isArray(profileRes.data) ? profileRes.data[0] : profileRes.data;
+
       if (projectRow) {
         setProject(projectRow as ProjectRow);
       }
-
-      const projectRow = Array.isArray(projectRes.data) ? projectRes.data[0] : projectRes.data;
-      const profileRow = Array.isArray(profileRes.data) ? profileRes.data[0] : profileRes.data;
 
       const userCompanyId = String((profileRow as any)?.company_id || "");
       setCompanyId(userCompanyId);
