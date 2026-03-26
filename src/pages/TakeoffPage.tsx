@@ -804,33 +804,63 @@ const createPageRecord = useCallback(
     pageData: PageData,
     size?: { width?: number; height?: number }
   ) => {
-    const payload = {
-      project_id: projectId,
-      session_id: sessionRow.id,
-      page_number: pageNumber,
-      page_label: label,
-      page_data: pageData,
-      width: size?.width || 1200,
-      height: size?.height || 900,
-      calibration_scale: null,
-      calibration_unit: "ft",
-      calibration_distance: null,
-      calibration_point_1: null,
-      calibration_point_2: null,
-      updated_at: new Date().toISOString(),
-    };
-
-    const upsert = await supabase
+    const existing = await supabase
       .from("takeoff_pages")
-      .upsert(payload, {
-        onConflict: "session_id,page_number",
+      .select("*")
+      .eq("project_id", projectId)
+      .eq("session_id", sessionRow.id)
+      .eq("page_number", pageNumber)
+      .maybeSingle();
+
+    if (existing.error) throw existing.error;
+
+    if (existing.data) {
+      const update = await supabase
+        .from("takeoff_pages")
+        .update({
+          page_label: label,
+          page_data: pageData,
+          width: size?.width || existing.data.width || 1200,
+          height: size?.height || existing.data.height || 900,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.data.id)
+        .select("*")
+        .single();
+
+      if (update.error) throw update.error;
+      return update.data as PageRow;
+    }
+
+    const insert = await supabase
+      .from("takeoff_pages")
+      .insert({
+        project_id: projectId,
+        session_id: sessionRow.id,
+        page_number: pageNumber,
+        page_label: label,
+        page_data: pageData,
+        width: size?.width || 1200,
+        height: size?.height || 900,
+        calibration_unit: "ft",
       })
       .select("*")
       .single();
 
-    if (upsert.error) throw upsert.error;
+    if (!insert.error && insert.data) return insert.data as PageRow;
 
-    return upsert.data as PageRow;
+    const retry = await supabase
+      .from("takeoff_pages")
+      .select("*")
+      .eq("project_id", projectId)
+      .eq("session_id", sessionRow.id)
+      .eq("page_number", pageNumber)
+      .maybeSingle();
+
+    if (retry.error) throw retry.error;
+    if (retry.data) return retry.data as PageRow;
+
+    throw insert.error;
   },
   [projectId]
 );
