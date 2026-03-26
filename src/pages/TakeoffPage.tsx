@@ -374,28 +374,31 @@ export default function TakeoffPage() {
     return updated;
   }, []);
 
-  const loadMeasurements = useCallback(async (currentSession: SessionRow, pageList: PageRow[]) => {
-    if (!pageList.length) {
-      setMeasurements([]);
-      return;
-    }
+ const loadMeasurements = useCallback(async (currentSession: SessionRow, pageList: PageRow[]) => {
+  if (!pageList.length || !projectId) {
+    setMeasurements([]);
+    return;
+  }
 
-    const pageIds = pageList.map((p) => p.id);
-    const { data, error } = await supabase
-      .from("takeoff_measurements")
-      .select("*")
-      .eq("project_id", projectId as string)
-      .in("page_id", pageIds)
-      .order("created_at", { ascending: true });
+  const activeIds = pageList.map((p) => p.id).filter(Boolean);
 
-    if (error) {
-      console.error("Failed to load takeoff_measurements", error);
-      setMeasurements([]);
-      return;
-    }
+  const { data, error } = await supabase
+    .from("takeoff_measurements")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("session_id", currentSession.id)
+    .in("page_id", activeIds)
+    .order("created_at", { ascending: true })
+    .limit(2000);
 
-    setMeasurements((data || []) as MeasurementRow[]);
-  }, [projectId]);
+  if (error) {
+    console.error("Failed to load takeoff_measurements", error);
+    setMeasurements([]);
+    return;
+  }
+
+  setMeasurements((data || []) as MeasurementRow[]);
+}, [projectId]);
 
   const bootstrap = useCallback(async () => {
     if (!projectId) {
