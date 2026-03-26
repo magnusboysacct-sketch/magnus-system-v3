@@ -32,7 +32,6 @@ export default function TakeoffPage() {
   );
 }
 
-
 type ProjectRow = {
   id: string;
   name: string | null;
