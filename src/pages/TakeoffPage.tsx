@@ -9,7 +9,7 @@ export default function TakeoffPage() {
   return (
     <div className="h-screen bg-slate-950 text-white flex flex-col">
 
-     {/* WORKSPACE CONTAINER */}
+    {/* WORKSPACE CONTAINER */}
 <div className="flex-1 relative">
 
   {/* CENTERED EMPTY STATE */}
@@ -39,3 +39,5 @@ export default function TakeoffPage() {
   </div>
 
 </div>
+  );
+}
