@@ -31,9 +31,9 @@ import {
   Square,
   Upload,
   X,
+  Trash2,
   ZoomIn,
   ZoomOut,
-  Trash2,
 } from "lucide-react";
 import * as pdfjs from "pdfjs-dist";
 import { supabase } from "../lib/supabase";
@@ -456,8 +456,6 @@ export default function TakeoffPage() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isMountedRef = useRef(true);
   const panStartRef = useRef<Point | null>(null);
-  const pdfDocCacheRef = useRef<Map<string, any>>(new Map());
-  const pdfRenderTaskRef = useRef<any | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(
@@ -539,49 +537,6 @@ export default function TakeoffPage() {
     () => activePageMeasurements.find((m) => m.id === selectedMeasurementId) || null,
     [activePageMeasurements, selectedMeasurementId]
   );
-
-  const selectedGroup = useMemo(
-    () => groups.find((g) => g.id === selectedGroupId) || null,
-    [groups, selectedGroupId]
-  );
-
-  const draftMeasurementPreview = useMemo(() => {
-    if (!activePage || !draftPoints.length) return null;
-    const type = toolMode;
-    const points =
-      hoverPoint && (type === "line" || type === "area")
-        ? [...draftPoints, hoverPoint]
-        : draftPoints;
-
-    if (type === "line" && points.length >= 2) {
-      return {
-        type,
-        quantity: getMeasurementResult("line", points, activePage),
-        unit: getMeasurementUnit("line", activePage),
-        center: getMeasurementCenter(points),
-      };
-    }
-
-    if (type === "area" && points.length >= 2) {
-      return {
-        type,
-        quantity: points.length >= 3 ? getMeasurementResult("area", points, activePage) : 0,
-        unit: getMeasurementUnit("area", activePage),
-        center: getMeasurementCenter(points),
-      };
-    }
-
-    if (type === "count" && points.length >= 1) {
-      return {
-        type,
-        quantity: 1,
-        unit: getMeasurementUnit("count", activePage),
-        center: getMeasurementCenter(points),
-      };
-    }
-
-    return null;
-  }, [activePage, draftPoints, hoverPoint, toolMode]);
 
   const filteredItems = useMemo(() => {
     const q = librarySearch.trim().toLowerCase();
@@ -798,7 +753,7 @@ export default function TakeoffPage() {
       const rows = ((data || []) as any[]).map((row) => ({
         ...row,
         points: Array.isArray(row.points) ? row.points : [],
-        meta: row.meta || {},
+        meta: row.meta || row.meta_json || {},
       })) as MeasurementRow[];
 
       setMeasurements(rows);
@@ -856,21 +811,23 @@ const createPageRecord = useCallback(
       .eq("project_id", projectId)
       .eq("session_id", sessionRow.id)
       .eq("page_number", pageNumber)
-      .maybeSingle();
+      .limit(1);
 
     if (existing.error) throw existing.error;
 
-    if (existing.data) {
+    const existingRow = Array.isArray(existing.data) ? existing.data[0] : existing.data;
+
+    if (existingRow) {
       const update = await supabase
         .from("takeoff_pages")
         .update({
           page_label: label,
           page_data: pageData,
-          width: size?.width || existing.data.width || 1200,
-          height: size?.height || existing.data.height || 900,
+          width: size?.width || existingRow.width || 1200,
+          height: size?.height || existingRow.height || 900,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", existing.data.id)
+        .eq("id", existingRow.id)
         .select("*")
         .single();
 
@@ -901,7 +858,7 @@ const createPageRecord = useCallback(
       .eq("project_id", projectId)
       .eq("session_id", sessionRow.id)
       .eq("page_number", pageNumber)
-      .maybeSingle();
+      .limit(1);
 
     if (retry.error) throw retry.error;
     if (retry.data) return retry.data as PageRow;
@@ -941,11 +898,14 @@ const createPageRecord = useCallback(
           .maybeSingle(),
       ]);
 
-      if (projectRes.data) {
-        setProject(projectRes.data as ProjectRow);
+      if (projectRow) {
+        setProject(projectRow as ProjectRow);
       }
 
-      const userCompanyId = String(profileRes.data?.company_id || "");
+      const projectRow = Array.isArray(projectRes.data) ? projectRes.data[0] : projectRes.data;
+      const profileRow = Array.isArray(profileRes.data) ? profileRes.data[0] : profileRes.data;
+
+      const userCompanyId = String((profileRow as any)?.company_id || "");
       setCompanyId(userCompanyId);
 
       let sessionRow: SessionRow | null = null;
@@ -956,10 +916,12 @@ const createPageRecord = useCallback(
         .eq("project_id", projectId)
         .order("updated_at", { ascending: false })
         .limit(1)
-        .maybeSingle();
+        .limit(1);
 
-      if (existingSession.data) {
-        sessionRow = existingSession.data as SessionRow;
+      const existingSessionRow = Array.isArray(existingSession.data) ? existingSession.data[0] : existingSession.data;
+
+      if (existingSessionRow) {
+        sessionRow = existingSessionRow as SessionRow;
       } else {
         const insert = await supabase
           .from("takeoff_sessions")
@@ -988,8 +950,20 @@ const createPageRecord = useCallback(
   (a, b) => a.page_number - b.page_number
 );
 
-      setPages(pageRows);
-      setActivePageId((prev) => prev || pageRows[0]?.id || "");
+      let safePageRows = pageRows;
+      if (!safePageRows.length && sessionRow) {
+        const firstPage = await createPageRecord(
+          sessionRow,
+          1,
+          "Page 1",
+          { asset: null },
+          { width: 1200, height: 900 }
+        );
+        safePageRows = [firstPage];
+      }
+
+      setPages(safePageRows);
+      setActivePageId((prev) => prev || safePageRows[0]?.id || "");
 
       await Promise.all([
         ensureDefaultGroup(sessionRow, userCompanyId),
@@ -1101,7 +1075,7 @@ const createPageRecord = useCallback(
         created_by: row.created_by || null,
         unit: row.unit || row.display_unit || null,
         result: row.result ?? 0,
-        meta: row.meta || {},
+        meta: row.meta || row.meta_json || {},
         updated_at: new Date().toISOString(),
       };
 
@@ -1130,42 +1104,6 @@ const createPageRecord = useCallback(
       setSaving("saved", "Measurement deleted");
     },
     [selectedMeasurementId, setSaving]
-  );
-
-  const deleteGroup = useCallback(
-    async (groupId: string) => {
-      if (!groupId || groups.length <= 1) {
-        setSaving("error", "Keep at least one takeoff group.");
-        return;
-      }
-
-      const fallbackGroup = groups.find((g) => g.id !== groupId);
-      if (!fallbackGroup) return;
-
-      const affected = measurements.filter((m) => m.group_id === groupId);
-      if (affected.length) {
-        const patched = affected.map((m) => ({
-          ...m,
-          group_id: fallbackGroup.id,
-          stroke_color: getMeasurementColor(fallbackGroup.id, groups),
-        }));
-        setMeasurements((prev) =>
-          prev.map((m) => patched.find((p) => p.id === m.id) || m)
-        );
-        await Promise.all(patched.map((m) => upsertMeasurement(m)));
-      }
-
-      const { error } = await supabase.from("takeoff_groups").delete().eq("id", groupId);
-      if (error) {
-        setSaving("error", error.message || "Failed to delete group.");
-        return;
-      }
-
-      setGroups((prev) => prev.filter((g) => g.id !== groupId));
-      setSelectedGroupId((prev) => (prev === groupId ? fallbackGroup.id : prev));
-      setSaving("saved", "Group deleted");
-    },
-    [groups, measurements, setSaving, upsertMeasurement]
   );
 
   const finalizeMeasurement = useCallback(
@@ -1282,59 +1220,22 @@ const createPageRecord = useCallback(
     if (!activeAsset || activeAsset.kind !== "pdf" || !canvasRef.current || !activePage) {
       return;
     }
-
     setPdfLoading(true);
     try {
-      if (pdfRenderTaskRef.current?.cancel) {
-        try {
-          pdfRenderTaskRef.current.cancel();
-        } catch {
-          //
-        }
-      }
-
-      let pdf = pdfDocCacheRef.current.get(activeAsset.dataUrl);
-      if (!pdf) {
-        const loadingTask = pdfjs.getDocument({
-          data: await fetch(activeAsset.dataUrl).then((r) => r.arrayBuffer()),
-          useWorkerFetch: false,
-          isEvalSupported: false,
-        } as any);
-        pdf = await loadingTask.promise;
-        pdfDocCacheRef.current.set(activeAsset.dataUrl, pdf);
-      }
-
-      const pageNum = clamp(
-        activeAsset.pageNumber || activePage.page_number || 1,
-        1,
-        pdf.numPages
-      );
+      const loadingTask = pdfjs.getDocument(activeAsset.dataUrl);
+      const pdf = await loadingTask.promise;
+      const pageNum = clamp(activeAsset.pageNumber || activePage.page_number || 1, 1, pdf.numPages);
       const page = await pdf.getPage(pageNum);
-
-      const baseViewport = page.getViewport({ scale: 1 });
-      const maxDimension = Math.max(baseViewport.width, baseViewport.height);
-      const renderScale = clamp(1800 / Math.max(maxDimension, 1), 1, 2);
-      const viewport = page.getViewport({ scale: renderScale });
-
+      const viewport = page.getViewport({ scale: 1.5 });
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-
-      canvas.width = Math.round(viewport.width);
-      canvas.height = Math.round(viewport.height);
-      canvas.style.width = `${Math.round(viewport.width)}px`;
-      canvas.style.height = `${Math.round(viewport.height)}px`;
-
-      const renderTask = page.render({ canvasContext: ctx, viewport });
-      pdfRenderTaskRef.current = renderTask;
-      await renderTask.promise;
-      pdfRenderTaskRef.current = null;
-
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: ctx, viewport }).promise;
       await persistRenderedSize(viewport.width, viewport.height);
     } catch (error: any) {
-      if (error?.name !== "RenderingCancelledException") {
-        setErrorText(error?.message || "Failed to render PDF page.");
-      }
+      setErrorText(error?.message || "Failed to render PDF page.");
     } finally {
       setPdfLoading(false);
     }
@@ -1345,18 +1246,6 @@ const createPageRecord = useCallback(
       void renderPdfPage();
     }
   }, [activeAsset, renderPdfPage]);
-
-  useEffect(() => {
-    return () => {
-      if (pdfRenderTaskRef.current?.cancel) {
-        try {
-          pdfRenderTaskRef.current.cancel();
-        } catch {
-          //
-        }
-      }
-    };
-  }, []);
 
   const handleImageLoaded = useCallback(
     async (img: HTMLImageElement) => {
@@ -1380,57 +1269,57 @@ const createPageRecord = useCallback(
           reader.readAsDataURL(file);
         });
 
-        if (file.type.includes("pdf")) {
-          const loadingTask = pdfjs.getDocument({
-            data: await fetch(dataUrl).then((r) => r.arrayBuffer()),
-            useWorkerFetch: false,
-            isEvalSupported: false,
-          } as any);
-          const pdf = await loadingTask.promise;
-          pdfDocCacheRef.current.set(dataUrl, pdf);
-          const createdPages: PageRow[] = [];
+     if (file.type.includes("pdf")) {
+  const loadingTask = pdfjs.getDocument(dataUrl);
+  const pdf = await loadingTask.promise;
+  const createdPages: PageRow[] = [];
 
-          for (let i = 1; i <= pdf.numPages; i += 1) {
-            const pdfPage = await pdf.getPage(i);
-            const viewport = pdfPage.getViewport({ scale: 1.5 });
+  for (let i = 1; i <= pdf.numPages; i += 1) {
+    const existing = await supabase
+      .from("takeoff_pages")
+      .select("*")
+      .eq("project_id", projectId)
+      .eq("session_id", session.id)
+      .eq("page_number", i)
+      .limit(1);
 
-            const pageData: PageData = {
-              asset: {
-                kind: "pdf",
-                name: file.name,
-                dataUrl,
-                numPages: pdf.numPages,
-                pageNumber: i,
-              },
-            };
+    if (existing.error) {
+      throw existing.error;
+    }
 
-            const row = await createPageRecord(
-              session,
-              i,
-              `${file.name} - Page ${i}`,
-              pageData,
-              { width: viewport.width, height: viewport.height }
-            );
+    const existingRow = Array.isArray(existing.data) ? existing.data[0] : existing.data;
+    const pdfPage = await pdf.getPage(i);
+    const viewport = pdfPage.getViewport({ scale: 1.5 });
 
-            createdPages.push({
-              ...row,
-              page_label: `${file.name} - Page ${i}`,
-              page_data: pageData,
-              width: viewport.width,
-              height: viewport.height,
-            } as PageRow);
-          }
+    const pageData: PageData = {
+      ...(((existingRow as any)?.page_data || {}) as PageData),
+      asset: {
+        kind: "pdf",
+        name: file.name,
+        dataUrl,
+        numPages: pdf.numPages,
+        pageNumber: i,
+      },
+    };
 
-          setPages(createdPages.sort((a, b) => a.page_number - b.page_number));
-          setActivePageId((prev) => {
-            const existingActive = createdPages.find((p) => p.id === prev);
-            return existingActive?.id || createdPages[0]?.id || "";
-          });
-          setZoom(1);
-          setPan({ x: 0, y: 0 });
-          setSaving("saved", "PDF uploaded");
-          return;
-        }
+    const row = await createPageRecord(
+      session,
+      i,
+      `${file.name} - Page ${i}`,
+      pageData,
+      { width: viewport.width, height: viewport.height }
+    );
+
+    createdPages.push(row);
+  }
+
+  setPages(createdPages.sort((a, b) => a.page_number - b.page_number));
+  setActivePageId(createdPages[0]?.id || "");
+  setZoom(1);
+  setPan({ x: 0, y: 0 });
+  setSaving("saved", "PDF uploaded");
+  return;
+}
 
         const currentPage =
           activePage ||
@@ -1508,6 +1397,60 @@ const createPageRecord = useCallback(
     setSelectedGroupId((data as GroupRow).id);
     setSaving("saved", "Group created");
   }, [companyId, groups.length, session, setSaving]);
+
+
+  const deleteSelectedGroup = useCallback(async () => {
+    if (!session || !selectedGroupId) return;
+    if (groups.length <= 1) {
+      setSaving("error", "At least one group must remain.");
+      return;
+    }
+
+    const groupToDelete = groups.find((g) => g.id === selectedGroupId);
+    if (!groupToDelete) return;
+
+    const fallbackGroup = groups.find((g) => g.id !== selectedGroupId);
+    if (!fallbackGroup) return;
+
+    const affected = measurements.filter((m) => m.group_id === selectedGroupId);
+
+    try {
+      if (affected.length) {
+        const reassigned = affected.map((m, idx) => ({
+          ...m,
+          group_id: fallbackGroup.id,
+          stroke_color: getMeasurementColor(fallbackGroup.id, groups),
+          sort_order: m.sort_order || idx + 1,
+        }));
+
+        setMeasurements((prev) =>
+          prev.map((m) =>
+            m.group_id === selectedGroupId
+              ? {
+                  ...m,
+                  group_id: fallbackGroup.id,
+                  stroke_color: getMeasurementColor(fallbackGroup.id, groups),
+                }
+              : m
+          )
+        );
+
+        for (const row of reassigned) {
+          await upsertMeasurement(row);
+        }
+      }
+
+      const { error } = await supabase.from("takeoff_groups").delete().eq("id", selectedGroupId);
+      if (error) throw error;
+
+      const nextGroups = groups.filter((g) => g.id !== selectedGroupId);
+      setGroups(nextGroups);
+      setSelectedGroupId(fallbackGroup.id);
+      setSaving("saved", "Group deleted");
+    } catch (error: any) {
+      setSaving("error", error?.message || "Failed to delete group.");
+    }
+  }, [groups, measurements, selectedGroupId, session, setSaving, upsertMeasurement]);
 
   const addBlankPage = useCallback(async () => {
     if (!session) return;
@@ -1625,17 +1568,6 @@ const createPageRecord = useCallback(
     [pan, toolMode, zoom]
   );
 
-  const handleSvgContextMenu = useCallback(
-    async (e: React.MouseEvent<SVGSVGElement, MouseEvent>) => {
-      if (toolMode !== "area") return;
-      e.preventDefault();
-      if (draftPoints.length >= 3) {
-        await finalizeMeasurement("area", draftPoints);
-      }
-    },
-    [draftPoints, finalizeMeasurement, toolMode]
-  );
-
   const finishAreaMeasurement = useCallback(async () => {
     if (toolMode !== "area" || draftPoints.length < 3) return;
     await finalizeMeasurement("area", draftPoints);
@@ -1643,52 +1575,23 @@ const createPageRecord = useCallback(
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tagName = target?.tagName?.toLowerCase();
-      const isTypingTarget =
-        tagName === "input" ||
-        tagName === "textarea" ||
-        tagName === "select" ||
-        !!target?.closest("[contenteditable='true']");
-
       if (e.key === "Escape") {
         setDraftPoints([]);
         setHoverPoint(null);
         setIsPickingCalibration(false);
-        if (showPicker) setShowPicker(false);
+        setShowCalibrationModal((open) => (open ? open : false));
       }
-
-      if (isTypingTarget) return;
-
       if (e.key === "Enter" && toolMode === "area" && draftPoints.length >= 3) {
-        e.preventDefault();
         void finishAreaMeasurement();
       }
-
       if ((e.key === "Delete" || e.key === "Backspace") && selectedMeasurementId) {
         e.preventDefault();
         void deleteMeasurement(selectedMeasurementId);
-        return;
-      }
-
-      if ((e.key === "Delete" || e.key === "Backspace") && !selectedMeasurementId && selectedGroupId) {
-        e.preventDefault();
-        void deleteGroup(selectedGroupId);
       }
     };
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    deleteGroup,
-    deleteMeasurement,
-    draftPoints.length,
-    finishAreaMeasurement,
-    selectedGroupId,
-    selectedMeasurementId,
-    showPicker,
-    toolMode,
-  ]);
+  }, [deleteMeasurement, draftPoints.length, finishAreaMeasurement, selectedMeasurementId, toolMode]);
 
   const startCalibrationPicking = useCallback(() => {
     setCalibrationDraft({ p1: null, p2: null });
@@ -1934,6 +1837,34 @@ const createPageRecord = useCallback(
   const calibrationReady = Boolean(calibrationDraft.p1 && calibrationDraft.p2);
   const pageScale = getPageScale(activePage);
 
+  const liveMeasurementText = useMemo(() => {
+    const activeType = toolMode;
+    const points =
+      activeType === "area" || activeType === "line"
+        ? hoverPoint && draftPoints.length
+          ? [...draftPoints, hoverPoint]
+          : draftPoints
+        : draftPoints;
+
+    if (activeType === "line" && points.length >= 2) {
+      const value = getMeasurementResult("line", points, activePage);
+      const unit = getMeasurementUnit("line", activePage);
+      return `${formatNumber(value, 2)} ${unit}`;
+    }
+
+    if (activeType === "area" && points.length >= 3) {
+      const value = getMeasurementResult("area", points, activePage);
+      const unit = getMeasurementUnit("area", activePage);
+      return `${formatNumber(value, 2)} ${unit}`;
+    }
+
+    if (activeType === "count" && points.length >= 1) {
+      return `${points.length} ea`;
+    }
+
+    return "";
+  }, [activePage, draftPoints, hoverPoint, toolMode]);
+
   if (!projectId) {
     return (
       <div className="p-6">
@@ -2067,41 +1998,31 @@ const createPageRecord = useCallback(
               </button>
             ) : null}
 
-            {(draftPoints.length > 0 || isPickingCalibration || toolMode !== "pan") ? (
+            {(draftPoints.length > 0 || isPickingCalibration) ? (
               <button
                 type="button"
                 onClick={() => {
                   setDraftPoints([]);
                   setHoverPoint(null);
                   setIsPickingCalibration(false);
-                  setToolMode("pan");
+                  setShowCalibrationModal(false);
                 }}
-                className="inline-flex items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-300 hover:bg-amber-500/20"
+                className="inline-flex items-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-500/20"
               >
                 <X className="h-4 w-4" />
-                Cancel Tool
+                Cancel
               </button>
             ) : null}
 
-            {selectedMeasurementId ? (
-              <button
-                type="button"
-                onClick={() => void deleteMeasurement(selectedMeasurementId)}
-                className="inline-flex items-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-500/20"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Measurement
-              </button>
-            ) : selectedGroup ? (
-              <button
-                type="button"
-                onClick={() => void deleteGroup(selectedGroup.id)}
-                className="inline-flex items-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-500/20"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Group
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => void deleteSelectedGroup()}
+              disabled={!selectedGroupId || groups.length <= 1}
+              className="inline-flex items-center gap-2 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-medium text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete Group
+            </button>
 
             <button
               type="button"
@@ -2149,10 +2070,8 @@ const createPageRecord = useCallback(
               : "Not calibrated"}
           </span>
           <span>Group: {groups.find((g) => g.id === selectedGroupId)?.name || "None"}</span>
-          {draftMeasurementPreview ? (
-            <span className="text-amber-300">
-              Live {draftMeasurementPreview.type}: {formatNumber(draftMeasurementPreview.quantity)} {draftMeasurementPreview.unit}
-            </span>
+          {toolMode === "area" && draftPoints.length >= 1 ? (
+            <span className="text-amber-300">Right click or press Finish Area to close the area.</span>
           ) : null}
           {errorText ? (
             <span className="text-rose-300">{errorText}</span>
@@ -2240,28 +2159,16 @@ const createPageRecord = useCallback(
             </div>
 
             <div className="mt-6 border-t border-slate-800 pt-4">
-              <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="mb-2 flex items-center justify-between">
                 <div className="text-sm font-semibold">Takeoff Groups</div>
-                <div className="flex items-center gap-2">
-                  {selectedGroup ? (
-                    <button
-                      type="button"
-                      onClick={() => void deleteGroup(selectedGroup.id)}
-                      className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-medium text-rose-300 hover:bg-rose-500/20"
-                    >
-                      <Trash2 className="mr-1 inline h-3 w-3" />
-                      Delete
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => void addGroup()}
-                    className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
-                  >
-                    <Plus className="mr-1 inline h-3 w-3" />
-                    Group
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => void addGroup()}
+                  className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-800"
+                >
+                  <Plus className="mr-1 inline h-3 w-3" />
+                  Group
+                </button>
               </div>
 
               <div className="space-y-2">
@@ -2322,14 +2229,9 @@ const createPageRecord = useCallback(
                   Draft points: {draftPoints.length}
                 </span>
               ) : null}
-              {toolMode === "area" ? (
-                <span className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-1.5 text-amber-200">
-                  Right-click or Enter to finish area
-                </span>
-              ) : null}
-              {(draftPoints.length > 0 || isPickingCalibration) ? (
-                <span className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-1.5 text-slate-300">
-                  ESC cancels current action
+              {liveMeasurementText ? (
+                <span className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-sky-300">
+                  Live: {liveMeasurementText}
                 </span>
               ) : null}
             </div>
@@ -2418,7 +2320,12 @@ const createPageRecord = useCallback(
                   )}
                   onClick={(e) => void handleSvgClick(e)}
                   onMouseMove={handleSvgMouseMove}
-                  onContextMenu={(e) => void handleSvgContextMenu(e)}
+                  onContextMenu={(e) => {
+                    if (toolMode === "area" && draftPoints.length >= 3) {
+                      e.preventDefault();
+                      void finishAreaMeasurement();
+                    }
+                  }}
                 >
                   {activePageMeasurements.map((row) => {
                     const type = (row.tool_type || row.type || "line") as ToolMode;
@@ -2440,33 +2347,11 @@ const createPageRecord = useCallback(
                             <polyline
                               points={row.points.map((p) => `${p.x},${p.y}`).join(" ")}
                               fill="none"
-                              stroke={selectedMeasurementId === row.id ? "#ffffff" : color}
-                              strokeOpacity={selectedMeasurementId === row.id ? 0.35 : 1}
-                              strokeWidth={selectedMeasurementId === row.id ? 7 : 2}
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                            <polyline
-                              points={row.points.map((p) => `${p.x},${p.y}`).join(" ")}
-                              fill="none"
                               stroke={color}
                               strokeWidth={selectedMeasurementId === row.id ? 3 : 2}
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             />
-                            {selectedMeasurementId === row.id
-                              ? row.points.map((p, idx) => (
-                                  <circle
-                                    key={`${row.id}-pt-${idx}`}
-                                    cx={p.x}
-                                    cy={p.y}
-                                    r={4}
-                                    fill="#ffffff"
-                                    stroke={color}
-                                    strokeWidth={2}
-                                  />
-                                ))
-                              : null}
                             <text
                               x={center.x}
                               y={center.y - 8}
@@ -2484,30 +2369,10 @@ const createPageRecord = useCallback(
                           <>
                             <polygon
                               points={row.points.map((p) => `${p.x},${p.y}`).join(" ")}
-                              fill={selectedMeasurementId === row.id ? "rgba(56,189,248,0.18)" : row.fill_color || "rgba(56,189,248,0.14)"}
-                              stroke={selectedMeasurementId === row.id ? "#ffffff" : color}
-                              strokeOpacity={selectedMeasurementId === row.id ? 0.35 : 1}
-                              strokeWidth={selectedMeasurementId === row.id ? 7 : 2}
-                            />
-                            <polygon
-                              points={row.points.map((p) => `${p.x},${p.y}`).join(" ")}
-                              fill={selectedMeasurementId === row.id ? "rgba(56,189,248,0.18)" : row.fill_color || "rgba(56,189,248,0.14)"}
+                              fill={row.fill_color || "rgba(56,189,248,0.14)"}
                               stroke={color}
                               strokeWidth={selectedMeasurementId === row.id ? 3 : 2}
                             />
-                            {selectedMeasurementId === row.id
-                              ? row.points.map((p, idx) => (
-                                  <circle
-                                    key={`${row.id}-pt-${idx}`}
-                                    cx={p.x}
-                                    cy={p.y}
-                                    r={4}
-                                    fill="#ffffff"
-                                    stroke={color}
-                                    strokeWidth={2}
-                                  />
-                                ))
-                              : null}
                             <text
                               x={center.x}
                               y={center.y}
@@ -2523,13 +2388,6 @@ const createPageRecord = useCallback(
 
                         {type === "count" && row.points.length >= 1 ? (
                           <>
-                            <circle
-                              cx={row.points[0].x}
-                              cy={row.points[0].y}
-                              r={selectedMeasurementId === row.id ? 11 : 6}
-                              fill={selectedMeasurementId === row.id ? "#ffffff" : color}
-                              fillOpacity={selectedMeasurementId === row.id ? 0.35 : 1}
-                            />
                             <circle
                               cx={row.points[0].x}
                               cy={row.points[0].y}
@@ -2554,86 +2412,30 @@ const createPageRecord = useCallback(
                   {draftPoints.length ? (
                     <g>
                       {toolMode === "line" && (
-                        <>
-                          <polyline
-                            points={[...draftPoints, ...(hoverPoint ? [hoverPoint] : [])]
-                              .map((p) => `${p.x},${p.y}`)
-                              .join(" ")}
-                            fill="none"
-                            stroke="#ffffff"
-                            strokeOpacity={0.28}
-                            strokeWidth={6}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                          <polyline
-                            points={[...draftPoints, ...(hoverPoint ? [hoverPoint] : [])]
-                              .map((p) => `${p.x},${p.y}`)
-                              .join(" ")}
-                            fill="none"
-                            stroke="#f59e0b"
-                            strokeWidth={3}
-                            strokeDasharray="8 6"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </>
+                        <polyline
+                          points={[...draftPoints, ...(hoverPoint ? [hoverPoint] : [])]
+                            .map((p) => `${p.x},${p.y}`)
+                            .join(" ")}
+                          fill="none"
+                          stroke="#f59e0b"
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                        />
                       )}
                       {toolMode === "area" && (
-                        <>
-                          <polygon
-                            points={[...draftPoints, ...(hoverPoint ? [hoverPoint] : [])]
-                              .map((p) => `${p.x},${p.y}`)
-                              .join(" ")}
-                            fill="rgba(245,158,11,0.16)"
-                            stroke="#ffffff"
-                            strokeOpacity={0.25}
-                            strokeWidth={6}
-                          />
-                          <polygon
-                            points={[...draftPoints, ...(hoverPoint ? [hoverPoint] : [])]
-                              .map((p) => `${p.x},${p.y}`)
-                              .join(" ")}
-                            fill="rgba(245,158,11,0.16)"
-                            stroke="#f59e0b"
-                            strokeWidth={3}
-                            strokeDasharray="8 6"
-                          />
-                        </>
+                        <polygon
+                          points={[...draftPoints, ...(hoverPoint ? [hoverPoint] : [])]
+                            .map((p) => `${p.x},${p.y}`)
+                            .join(" ")}
+                          fill="rgba(245,158,11,0.10)"
+                          stroke="#f59e0b"
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                        />
                       )}
                       {draftPoints.map((p, i) => (
-                        <circle
-                          key={`${p.x}-${p.y}-${i}`}
-                          cx={p.x}
-                          cy={p.y}
-                          r={5}
-                          fill="#f59e0b"
-                          stroke="#ffffff"
-                          strokeWidth={2}
-                        />
+                        <circle key={`${p.x}-${p.y}-${i}`} cx={p.x} cy={p.y} r={4} fill="#f59e0b" />
                       ))}
-                      {draftMeasurementPreview ? (
-                        <g>
-                          <rect
-                            x={draftMeasurementPreview.center.x - 72}
-                            y={draftMeasurementPreview.center.y - 32}
-                            width={144}
-                            height={24}
-                            rx={12}
-                            fill="rgba(15,23,42,0.88)"
-                            stroke="rgba(245,158,11,0.55)"
-                          />
-                          <text
-                            x={draftMeasurementPreview.center.x}
-                            y={draftMeasurementPreview.center.y - 16}
-                            fill="#fde68a"
-                            fontSize={12}
-                            textAnchor="middle"
-                          >
-                            Live {draftMeasurementPreview.type}: {formatNumber(draftMeasurementPreview.quantity)} {draftMeasurementPreview.unit}
-                          </text>
-                        </g>
-                      ) : null}
                     </g>
                   ) : null}
 
