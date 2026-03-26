@@ -32,6 +32,49 @@ export default function TakeoffPage() {
   );
 }
 
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  AlertCircle,
+  Boxes,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  FolderOpen,
+  FolderTree,
+  Hash,
+  Image as ImageIcon,
+  Layers3,
+  Link2,
+  Loader2,
+  Move,
+  Package,
+  PencilRuler,
+  Plus,
+  RefreshCcw,
+  Ruler,
+  Save,
+  Search,
+  Settings,
+  Square,
+  Upload,
+  X,
+  Trash2,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
+import * as pdfjs from "pdfjs-dist";
+import { supabase } from "../lib/supabase";
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
+
+type ToolMode = "pan" | "line" | "area" | "count";
+type RightTab = "items" | "assemblies" | "linked" | "rules" | "boq";
+type PickerType = "item" | "assembly";
+type Point = { x: number; y: number };
+
 type ProjectRow = {
   id: string;
   name: string | null;
