@@ -28,10 +28,43 @@ export type CreateSupplierInput = {
 
 export type UpdateSupplierInput = Partial<CreateSupplierInput>;
 
+export interface SupplierCostItem {
+  id: string;
+  cost_item_id: string | null;
+  supplier_id: string;
+  supplier_sku?: string | null;
+  supplier_item_name?: string | null;
+  supplier_description?: string | null;
+  unit?: string | null;
+  is_preferred: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CreateSupplierCostItemInput = {
+  supplier_id: string;
+  cost_item_id: string | null;
+  supplier_sku?: string | null;
+  supplier_item_name?: string | null;
+  supplier_description?: string | null;
+  unit?: string | null;
+  is_preferred?: boolean;
+};
+
+export type CreateSupplierRateInput = {
+  cost_item_id: string;
+  rate: number;
+  currency?: string;
+  effective_date?: string;
+  source?: string;
+  supplier_id?: string;
+  is_supplier_specific?: boolean;
+};
+
 /**
  * Get current user's company_id from their profile
  */
-async function getCurrentCompanyId(): Promise<string | null> {
+export async function getCurrentCompanyId(): Promise<string | null> {
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user?.id) {
     return null;

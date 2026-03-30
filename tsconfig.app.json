@@ -24,6 +24,12 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/**/*.recovery.tsx",
+    "src/**/*.stable.tsx", 
+    "src/**/*.recovery.ts",
+    "src/**/*.stable.ts"
+  ]
 }
 

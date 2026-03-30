@@ -12,6 +12,18 @@ export interface ProjectTask {
   status: TaskStatus;
   created_at: string;
   updated_at: string;
+  // Extended fields for actionEngine, decisionEngine, optimizationEngine
+  crew_size?: number;
+  production_rate_per_day?: number;
+  percent_complete?: number;
+  actual_duration_days?: number;
+  planned_duration_days?: number;
+  weather_impact_factor?: number;
+  labor_cost_per_day?: number;
+  equipment_cost_per_day?: number;
+  material_cost_total?: number;
+  boq_item_id?: string | null;
+  quantity?: number;
 }
 
 export interface ProjectProgress {
@@ -176,4 +188,33 @@ export async function getProjectProgress(projectId: string): Promise<ProjectProg
       progress_percent: 0,
     };
   }
+}
+
+// Additional functions for aiForecast.ts and decisionEngine.ts compatibility
+
+export function getEffectivePlannedDuration(task: ProjectTask): number {
+  return task.planned_duration_days ?? 0;
+}
+
+export function getWeatherCalculations(task: ProjectTask): {
+  weatherDelay: number;
+  weatherImpact: number;
+} {
+  return {
+    weatherDelay: 0,
+    weatherImpact: task.weather_impact_factor ?? 1,
+  };
+}
+
+export function getTaskCostCalculations(task: ProjectTask): {
+  plannedTaskCost: number;
+} {
+  const plannedDuration = task.planned_duration_days ?? 0;
+  const laborCost = (task.labor_cost_per_day ?? 0) * plannedDuration;
+  const equipmentCost = (task.equipment_cost_per_day ?? 0) * plannedDuration;
+  const materialCost = task.material_cost_total ?? 0;
+  
+  return {
+    plannedTaskCost: laborCost + equipmentCost + materialCost,
+  };
 }

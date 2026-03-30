@@ -1,0 +1,307 @@
+# MAGNUS SYSTEM v3 — FINANCE SYSTEM BUILD PLAN
+
+## OBJECTIVE
+Build a fully integrated, construction-grade Finance System on top of Magnus System v3 using a modular, non-destructive approach.  
+NO existing systems should be modified or broken.  
+ALL features must integrate cleanly with current Project Context, BOQ, Procurement, and Supabase architecture.
+
+---
+
+# 🧱 CORE BUILD PRINCIPLES
+
+- ADD ONLY (no destructive changes)
+- Modular architecture (each system isolated but connected)
+- Supabase + RLS safe
+- TypeScript strict-safe
+- Magnus UI theme preserved
+- Project Context respected globally
+- All finance logic centralized via posting engine
+
+---
+
+# 🧩 MODULE OVERVIEW
+
+1. Accounting Foundation (Chart of Accounts + Ledger)
+2. Project Financial Control System
+3. Owner Draw Intelligence System
+4. Bank Statement System
+5. Credit Card System
+6. Unified Posting Engine
+7. Automation Engine
+8. File Storage & Document System
+9. Finance Dashboard Integration
+
+---
+
+# 🧭 BUILD PHASES (STRICT ORDER)
+
+---
+
+## 🔹 PHASE 1 — ACCOUNTING FOUNDATION (BASE LAYER)
+
+### GOAL
+Create the core accounting structure required for all financial systems.
+
+### TASKS
+
+#### 1.1 Chart of Accounts (COA)
+- Create `chart_of_accounts` table
+- Fields:
+  - id (uuid)
+  - code
+  - name
+  - type (asset, liability, equity, revenue, expense)
+  - subtype (bank, receivable, payable, payroll, etc.)
+  - is_project_linkable (boolean)
+  - is_owner_private (boolean)
+  - parent_id (for hierarchy)
+  - created_at
+
+#### 1.2 General Ledger
+- Create `gl_transactions` (header)
+- Create `gl_entries` (lines)
+
+Fields:
+- gl_transactions:
+  - id, date, reference, source_type, source_id, company_id
+
+- gl_entries:
+  - id, transaction_id, account_id
+  - debit, credit
+  - project_id (nullable)
+  - description
+
+#### 1.3 Core Rules
+- Enforce double-entry (total debit = total credit)
+- Prevent posting to inactive accounts
+- Respect project-linkable rules
+
+---
+
+## 🔹 PHASE 2 — UNIFIED POSTING ENGINE
+
+### GOAL
+Central engine that ALL systems use to create accounting entries.
+
+### TASKS
+
+#### 2.1 Posting Service (Core)
+- Create service layer:
+  `/src/services/finance/postingEngine.ts`
+
+Responsibilities:
+- Validate transaction
+- Map to debit/credit entries
+- Insert into GL
+- Apply project tagging
+
+#### 2.2 Posting Rules Table
+- `posting_rules`
+  - source_type
+  - debit_account
+  - credit_account
+  - conditions_json
+
+#### 2.3 Transaction Types Supported
+- client payment
+- supplier payment
+- expense
+- payroll
+- owner draw
+- bank transfer
+- credit card spend
+- credit card payment
+
+---
+
+## 🔹 PHASE 3 — PROJECT FINANCIAL CONTROL
+
+### GOAL
+Track project-level financial health.
+
+### TASKS
+
+#### 3.1 Tables
+- `project_budgets`
+- `project_costs`
+- `project_commitments`
+
+#### 3.2 Calculations
+- Budget vs Actual vs Committed
+- Project cash position
+- Margin tracking
+
+#### 3.3 Allocation Engine
+- Split transactions:
+  - project-linked
+  - company reserve
+
+#### 3.4 Alerts
+- Budget exceeded
+- Margin drop threshold
+- Low project cash
+
+---
+
+## 🔹 PHASE 4 — OWNER DRAW INTELLIGENCE
+
+### GOAL
+Protect business while enabling safe owner withdrawals.
+
+### TASKS
+
+#### 4.1 Tables
+- `owner_accounts`
+- `owner_draws`
+- `owner_salary`
+
+#### 4.2 Logic
+- Free cash calculation:
+  - company cash
+  - minus project obligations
+  - minus reserved cash
+
+#### 4.3 Safety Engine
+- SAFE
+- CAUTION
+- BLOCK
+
+#### 4.4 Private Access
+- Owner-only UI + RLS enforcement
+
+---
+
+## 🔹 PHASE 5 — BANK STATEMENT SYSTEM
+
+### GOAL
+Automated ingestion + reconciliation of bank statements.
+
+### TASKS
+
+#### 5.1 File Storage
+- Folder structure:
+  `/finance/banks/{bank}/{year}/{month}`
+
+#### 5.2 Tables
+- `bank_accounts`
+- `bank_statements`
+- `bank_transactions`
+
+#### 5.3 Parsing Engine
+- Extract:
+  - date
+  - description
+  - debit/credit
+  - balance
+
+#### 5.4 Reconciliation
+- match status:
+  - unmatched
+  - matched
+  - reconciled
+
+---
+
+## 🔹 PHASE 6 — CREDIT CARD SYSTEM
+
+### GOAL
+Handle credit correctly as liability (NOT cash).
+
+### TASKS
+
+#### 6.1 Tables
+- `credit_card_accounts`
+- `credit_card_transactions`
+- `credit_card_statements`
+
+#### 6.2 Posting Logic
+- Expense → Liability (NOT cash)
+- Payment → Reduce liability
+
+#### 6.3 Reconciliation
+- Match statement vs system
+
+---
+
+## 🔹 PHASE 7 — AUTOMATION ENGINE
+
+### GOAL
+Reduce manual work using smart classification + learning.
+
+### TASKS
+
+#### 7.1 Rules Engine
+- `classification_rules`
+- `matching_rules`
+
+#### 7.2 Matching Types
+- exact match
+- fuzzy match
+- transfer detection
+
+#### 7.3 Confidence Scoring
+- high → autopost
+- medium → suggest
+- low → manual queue
+
+#### 7.4 Learning System
+- store corrections
+- reuse patterns
+
+---
+
+## 🔹 PHASE 8 — FILE STORAGE SYSTEM
+
+### GOAL
+Central document archive.
+
+### TASKS
+
+#### 8.1 Storage Buckets (Supabase)
+- bank statements
+- credit card statements
+- receipts
+
+#### 8.2 Linking
+- attach files to:
+  - transactions
+  - GL entries
+  - expenses
+
+---
+
+## 🔹 PHASE 9 — FINANCE DASHBOARD INTEGRATION
+
+### GOAL
+Unified financial visibility.
+
+### TASKS
+
+#### 9.1 Dashboard Sections
+- company cash
+- project cash
+- owner safe draw
+- outstanding liabilities
+- alerts
+
+#### 9.2 Activity Feed
+- unified financial timeline
+
+---
+
+# 🔗 DEPENDENCIES
+
+| Phase | Depends On |
+|------|-----------|
+| Phase 2 | Phase 1 |
+| Phase 3 | Phase 2 |
+| Phase 4 | Phase 2 |
+| Phase 5 | Phase 2 |
+| Phase 6 | Phase 2 |
+| Phase 7 | Phase 5, 6 |
+| Phase 8 | None |
+| Phase 9 | All |
+
+---
+
+# 📁 FOLDER STRUCTURE
