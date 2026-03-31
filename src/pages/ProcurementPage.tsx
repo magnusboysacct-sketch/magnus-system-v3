@@ -9,9 +9,13 @@ import {
 } from "../lib/procurement";
 import type {
   ProcurementHeaderWithItems,
-  ProcurementItemWithSource,
   ProcurementItem,
 } from "../lib/procurement";
+import type {
+  ProcurementItemWithSource,
+  SupplierWithPerformance,
+  BestPriceResult,
+} from "../types/procurement";
 import {
   getItemStatusLabel,
   getHeaderStatusLabel,
@@ -42,8 +46,15 @@ import {
   type PurchaseOrderWithItems,
   type PurchaseOrderStatus,
 } from "../lib/purchaseOrders";
+import { getBestSupplierPrices, type SupplierPriceInfo } from "../lib/supplierPriceComparison";
 import { useProjectContext } from "../context/ProjectContext";
 import { theme } from "../lib/theme";
+import { useProcurementFilters } from "../hooks/useProcurementFilters";
+import { useProcurementSummary } from "../hooks/useProcurementSummary";
+import { useProcurementOptimization } from "../hooks/useProcurementOptimization";
+import { useProcurementIntelligence } from "../hooks/useProcurementIntelligence";
+import { useSupplierRowAnalysis } from "../hooks/useSupplierRowAnalysis";
+import { useProcurementApproval } from "../hooks/useProcurementApproval";
 
 export default function ProcurementPage() {
   const { currentProjectId, currentProject } = useProjectContext();
@@ -54,11 +65,11 @@ export default function ProcurementPage() {
 
   const viewMode = searchParams.get("view") || "list";
   const documentId = searchParams.get("doc") || null;
+
   const section = searchParams.get("section") || "procurement";
 
   const [headers, setHeaders] = useState<ProcurementHeaderWithItems[]>([]);
-  const [currentDocument, setCurrentDocument] =
-    useState<ProcurementHeaderWithItems | null>(null);
+  const [currentDocument, setCurrentDocument] = useState<ProcurementHeaderWithItems | null>(null);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderWithItems[]>([]);
   const [currentPO, setCurrentPO] = useState<PurchaseOrderWithItems | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,7 +79,7 @@ export default function ProcurementPage() {
   if (!currentProjectId) {
     return (
       <div className="p-6 text-sm text-slate-500">
-        Please select a project from the top bar before using Procurement.
+        Please select a project from top bar before using Procurement.
       </div>
     );
   }
@@ -335,6 +346,7 @@ export default function ProcurementPage() {
       setCurrentDocument({ ...currentDocument, ...updates });
     }
   }
+
   function handlePrint() {
     if (!currentDocument) return;
 
@@ -682,75 +694,137 @@ function DocumentView({
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterSupplier, setFilterSupplier] = useState<string>("all");
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [suppliers, setSuppliers] = useState<(Supplier & {
+    average_rating?: number;
+    rating_count?: number;
+  })[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [creatingPOs, setCreatingPOs] = useState(false);
+  const [supplierRecommendations, setSupplierRecommendations] = useState<Map<string, BestPriceResult>>(new Map());
+
+  // Approval workflow
+  const [approvalState, setApprovalState] = useState<{
+    status: string;
+    approvedBy: string;
+    approvedAt: string | null;
+    notes: string;
+  }>({
+    status: "pending",
+    approvedBy: "",
+    approvedAt: null,
+    notes: ""
+  });
+
+  function getDocumentApproval() {
+    return approvalState;
+  }
+
+  function updateApproval(status: string, notes: string) {
+    setApprovalState((prev) => ({
+      ...prev,
+      status,
+      notes,
+      approvedBy: status === "approved" ? "Current User" : prev.approvedBy,
+      approvedAt: status === "approved" ? new Date().toISOString() : prev.approvedAt
+    }));
+  }
+
+  function resetApproval() {
+    setApprovalState({
+      status: "pending",
+      approvedBy: "",
+      approvedAt: null,
+      notes: ""
+    });
+  }
+
+  function handleAutoSelectSupplier() {
+    const filteredItems = document.items.filter((item) => selectedItems.has(item.id));
+    if (filteredItems.length === 0) return;
+
+    filteredItems.forEach((item: ProcurementItemWithSource) => {
+      const recommendation = supplierRecommendations.get(item.id);
+      if (recommendation?.best_price) {
+        onUpdateItem(item.id, {
+          supplier: recommendation.best_price.supplier_name,
+          unit_rate: recommendation.best_price.rate
+        });
+      }
+    });
+  }
 
   useEffect(() => {
     loadSuppliers();
+    loadSupplierRecommendations();
   }, []);
+
+  async function loadSupplierRecommendations() {
+    if (!document) return;
+
+    try {
+      const costItemIds = document.items
+        .filter((item) => item.source_boq_item_id)
+        .map((item) => item.source_boq_item_id!);
+
+      if (costItemIds.length === 0) return;
+
+      const recommendations = await Promise.all(costItemIds.map(id => getBestSupplierPrices(id)));
+      const allRecommendations = recommendations.flat();
+      const recommendationMap = new Map(
+        allRecommendations.map((rec) => [rec.cost_item_id, rec])
+      );
+
+      setSupplierRecommendations(recommendationMap);
+    } catch (err) {
+      console.error("Failed to load supplier recommendations:", err);
+    }
+  }
 
   async function loadSuppliers() {
     try {
-      const data = await listSuppliers();
-      setSuppliers(data.filter(s => s.is_active));
+      const [supplierData, performanceRes] = await Promise.all([
+        listSuppliers(),
+        supabase
+          .from("v_supplier_performance")
+          .select("supplier_id, average_rating, rating_count"),
+      ]);
+
+      const performanceMap = new Map(
+        (performanceRes.data || []).map((row) => [
+          row.supplier_id,
+          {
+            average_rating: Number(row.average_rating || 0),
+            rating_count: Number(row.rating_count || 0),
+          },
+        ])
+      );
+
+      setSuppliers(
+        supplierData
+          .filter((s) => s.is_active)
+          .map((s) => ({
+            ...s,
+            average_rating: performanceMap.get(s.id)?.average_rating ?? 0,
+            rating_count: performanceMap.get(s.id)?.rating_count ?? 0,
+          }))
+      );
     } catch (err) {
       console.error("Failed to load suppliers:", err);
     }
   }
 
-  const itemSuppliers = Array.from(
-    new Set(document.items.map((i) => i.supplier).filter((s): s is string => Boolean(s)))
-  ).sort();
+  // Use custom hooks for performance and separation of concerns
+  const {
+    itemSuppliers,
+    filteredItems,
+    groupedItems,
+  } = useProcurementFilters(document.items, searchText, filterStatus, filterPriority, filterSupplier);
 
-  let filteredItems = document.items;
+  const summaryCounts = useProcurementSummary(document.items);
 
-  if (searchText.trim()) {
-    const search = searchText.toLowerCase();
-    filteredItems = filteredItems.filter(
-      (item) =>
-        item.material_name.toLowerCase().includes(search) ||
-        item.description?.toLowerCase().includes(search) ||
-        item.category?.toLowerCase().includes(search)
-    );
-  }
+  const optimizationMetrics = useProcurementOptimization(document.items, supplierRecommendations);
 
-  if (filterStatus !== "all") {
-    filteredItems = filteredItems.filter((item) => item.status === filterStatus);
-  }
-
-  if (filterPriority !== "all") {
-    filteredItems = filteredItems.filter(
-      (item) => (item.priority || "normal") === filterPriority
-    );
-  }
-
-  if (filterSupplier !== "all") {
-    filteredItems = filteredItems.filter((item) => item.supplier === filterSupplier);
-  }
-
-  const groupedItems = filteredItems.reduce((acc, item) => {
-    const category = item.category || "Uncategorized";
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(item);
-    return acc;
-  }, {} as Record<string, ProcurementItemWithSource[]>);
-
-  const totalItems = document.items.length;
-  const pendingCount = document.items.filter((i) => i.status === "pending").length;
-  const orderedCount = document.items.filter((i) => i.status === "ordered").length;
-  const partDeliveredCount = document.items.filter(
-    (i) => i.status === "part_delivered"
-  ).length;
-  const receivedCount = document.items.filter((i) => i.status === "received").length;
-  const urgentCount = document.items.filter((i) => i.priority === "urgent").length;
-  const totalValue = document.items.reduce((sum, item) => {
-    const quantity = item.quantity || 0;
-    const unitRate = item.unit_rate || 0;
-    return sum + calculateItemTotal(quantity, unitRate);
-  }, 0);
+  const intelligenceMetrics = useProcurementIntelligence(document.items, supplierRecommendations, suppliers);
 
   function handleTitleSave() {
     if (titleValue.trim() && titleValue !== document.title) {
@@ -810,13 +884,34 @@ function DocumentView({
     }
 
     const groupedBySupplier = itemsWithSupplier.reduce((acc, item) => {
-      const supplierName = item.supplier!;
-      if (!acc[supplierName]) {
-        acc[supplierName] = [];
+      const itemWithMeta = item as ProcurementItemWithSource;
+      let supplierId: string | null = itemWithMeta.supplier_id || null;
+      let supplierName: string;
+
+      if (supplierId) {
+        // Use supplier_id as primary key
+        const supplier = suppliers.find((s) => s.id === supplierId);
+        supplierName = supplier?.supplier_name || `Supplier ${supplierId}`;
+      } else if (item.supplier) {
+        // Fallback to supplier_name
+        supplierName = item.supplier;
+        supplierId = null;
+      } else {
+        // Skip items with no supplier info
+        return acc;
       }
-      acc[supplierName].push(item);
+
+      const key = supplierId ? `id:${supplierId}` : `name:${supplierName}`;
+      if (!acc[key]) {
+        acc[key] = {
+          supplierId,
+          supplierName,
+          items: [],
+        };
+      }
+      acc[key].items.push(item);
       return acc;
-    }, {} as Record<string, ProcurementItemWithSource[]>);
+    }, {} as Record<string, { supplierId: string | null; supplierName: string; items: ProcurementItemWithSource[] }>);
 
     setCreatingPOs(true);
     const results: { supplier: string; success: boolean; error?: string }[] = [];
@@ -834,15 +929,13 @@ function DocumentView({
         return;
       }
 
-      for (const [supplierName, items] of Object.entries(groupedBySupplier)) {
+      for (const { supplierId, supplierName, items } of Object.values(groupedBySupplier)) {
         try {
           const poNumber = await generatePONumber(userProfile.company_id);
 
-          const supplier = suppliers.find((s) => s.supplier_name === supplierName);
-
           const result = await createPurchaseOrderFromProcurementItems({
             project_id: projectId,
-            supplier_id: supplier?.id || null,
+            supplier_id: supplierId,
             supplier_name: supplierName,
             po_number: poNumber,
             title: `${supplierName} - ${items.length} items`,
@@ -886,6 +979,161 @@ function DocumentView({
       }
     } catch (e: any) {
       alert("Failed to create purchase orders: " + (e?.message || "Unknown error"));
+    } finally {
+      setCreatingPOs(false);
+    }
+  }
+
+  function handleUseOptimizedSuppliers() {
+    if (selectedItems.size === 0) {
+      alert("Please select items to optimize");
+      return;
+    }
+
+    let updatedCount = 0;
+    const selectedItemsList = document.items.filter((item) =>
+      selectedItems.has(item.id)
+    );
+
+    selectedItemsList.forEach((item) => {
+      const recommendation = item.source_boq_item_id
+        ? supplierRecommendations.get(item.source_boq_item_id)
+        : null;
+
+      if (recommendation?.best_price?.supplier_id) {
+        const recommendedSupplierId = recommendation.best_price.supplier_id;
+        const recommendedSupplier = suppliers.find(
+          (s) => s.id === recommendedSupplierId
+        );
+
+        if (recommendedSupplier && recommendation.best_price?.rate) {
+          const updates: Partial<ProcurementItem> = {
+            supplier: recommendedSupplier.supplier_name,
+            unit_rate: recommendation.best_price.rate,
+          };
+
+          onUpdateItem(item.id, updates);
+          updatedCount++;
+        }
+      }
+    });
+
+    alert(`Updated ${updatedCount} items to optimized suppliers`);
+  }
+
+  async function handleCreateOptimizedPurchaseOrders() {
+    if (selectedItems.size === 0) {
+      alert("Please select items to create optimized purchase orders");
+      return;
+    }
+
+    const proceed = window.confirm("Create optimized purchase orders using best supplier recommendations?");
+    if (!proceed) return;
+
+    const selectedItemsData = document.items.filter((item) =>
+      selectedItems.has(item.id)
+    );
+
+    // Group items by optimized supplier
+    const groupedByOptimizedSupplier = selectedItemsData.reduce((acc, item) => {
+      const itemWithMeta = item as ProcurementItemWithSource;
+      const recommendation = item.source_boq_item_id
+        ? supplierRecommendations.get(item.source_boq_item_id)
+        : null;
+
+      let supplierId: string | null = null;
+      let supplierName: string;
+
+      if (recommendation?.best_price?.supplier_id) {
+        // Use recommended supplier
+        supplierId = recommendation.best_price.supplier_id;
+        const recommendedSupplier = suppliers.find((s) => s.id === supplierId);
+        supplierName = recommendedSupplier?.supplier_name || `Supplier ${supplierId}`;
+      } else {
+        // Fallback to current supplier
+        const itemWithMeta = item as ProcurementItemWithSource;
+        supplierId = itemWithMeta.supplier_id ?? null;
+        supplierName = item.supplier || `Unknown Supplier`;
+      }
+
+      const key = supplierId || supplierName;
+      if (!acc[key]) {
+        acc[key] = {
+          supplierId,
+          supplierName,
+          items: [],
+        };
+      }
+      acc[key].items.push(item);
+      return acc;
+    }, {} as Record<string, { supplierId: string | null; supplierName: string; items: ProcurementItemWithSource[] }>);
+
+    setCreatingPOs(true);
+    const results: { supplier: string; success: boolean; error?: string }[] = [];
+
+    try {
+      const { data: userProfile } = await supabase
+        .from("user_profiles")
+        .select("company_id")
+        .eq("id", (await supabase.auth.getUser()).data.user?.id)
+        .single();
+
+      if (!userProfile?.company_id) {
+        alert("Unable to determine company");
+        setCreatingPOs(false);
+        return;
+      }
+
+      for (const { supplierId, supplierName, items } of Object.values(groupedByOptimizedSupplier)) {
+        try {
+          const poNumber = await generatePONumber(userProfile.company_id);
+
+          const result = await createPurchaseOrderFromProcurementItems({
+            project_id: projectId,
+            supplier_id: supplierId,
+            supplier_name: supplierName,
+            po_number: poNumber,
+            title: `${supplierName} - ${items.length} items (Optimized)`,
+            procurement_item_ids: items.map((item) => item.id),
+          });
+
+          if (result.success) {
+            results.push({ supplier: supplierName, success: true });
+          } else {
+            results.push({
+              supplier: supplierName,
+              success: false,
+              error: result.error,
+            });
+          }
+        } catch (e: any) {
+          results.push({
+            supplier: supplierName,
+            success: false,
+            error: e?.message || "Unknown error",
+          });
+        }
+      }
+
+      const successCount = results.filter((r) => r.success).length;
+      const failCount = results.filter((r) => !r.success).length;
+
+      if (failCount === 0) {
+        alert(
+          `Successfully created ${successCount} optimized purchase order${successCount > 1 ? "s" : ""}`
+        );
+        setSelectedItems(new Set());
+      } else {
+        const failedSuppliers = results
+          .filter((r) => !r.success)
+          .map((r) => `${r.supplier}: ${r.error}`)
+          .join("\n");
+        alert(
+          `Created ${successCount} optimized purchase orders.\n${failCount} failed:\n${failedSuppliers}`
+        );
+      }
+    } catch (e: any) {
+      alert("Failed to create optimized purchase orders: " + (e?.message || "Unknown error"));
     } finally {
       setCreatingPOs(false);
     }
@@ -956,6 +1204,38 @@ function DocumentView({
           </div>
 
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleAutoSelectSupplier}
+                disabled={selectedItems.size === 0 || getDocumentApproval()?.status === 'approved'}
+                className="px-3 py-2 rounded-xl text-sm bg-blue-900/30 hover:bg-blue-900/50 border border-blue-900/50 text-blue-300 text-[10px] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Auto Select
+              </button>
+              <button
+                onClick={handleCreateOptimizedPurchaseOrders}
+                disabled={selectedItems.size === 0 || getDocumentApproval()?.status === 'approved'}
+                className="px-3 py-2 rounded-xl text-sm bg-emerald-900/30 hover:bg-emerald-900/50 border-emerald-900/50 text-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Create Optimized POs
+              </button>
+              {getDocumentApproval()?.status === 'approved' && (
+                <button
+                  onClick={() => updateApproval('pending', 'Optimization cancelled - new plan needed')}
+                  className="px-3 py-2 rounded-xl text-sm bg-orange-900/30 hover:bg-orange-900/50 border-orange-900/50 text-orange-300"
+                >
+                  Reject / Reset
+                </button>
+              )}
+              {getDocumentApproval()?.status === 'rejected' && (
+                <button
+                  onClick={resetApproval}
+                  className="px-3 py-2 rounded-xl text-sm bg-slate-700/30 hover:bg-slate-800/50 border border-slate-700/50 text-slate-300"
+                >
+                  Reset Status
+                </button>
+              )}
+            </div>
             <button
               onClick={handleCreatePurchaseOrders}
               disabled={creatingPOs || selectedItems.size === 0}
@@ -992,45 +1272,228 @@ function DocumentView({
           </div>
         </div>
 
+        {/* Procurement Optimization Dashboard */}
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-4">
+          <div className="text-sm font-medium text-slate-300 mb-3">Procurement Optimization Dashboard</div>
+          <div className="grid grid-cols-4 gap-3 mb-3">
+            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-400">Current Cost</div>
+              <div className="text-lg font-semibold mt-1">
+                ${optimizationMetrics.currentSelectedCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-400">Optimized Cost</div>
+              <div className="text-lg font-semibold mt-1 text-emerald-400">
+                ${optimizationMetrics.optimizedCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-400">Potential Savings</div>
+              <div className={`text-lg font-semibold mt-1 ${optimizationMetrics.potentialSavings > 0 ? 'text-green-400' : 'text-slate-400'}`}>
+                ${Math.abs(optimizationMetrics.potentialSavings).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                {optimizationMetrics.potentialSavings > 0 && (
+                  <div className="text-xs mt-1">
+                    ({Math.round((optimizationMetrics.potentialSavings / optimizationMetrics.currentSelectedCost) * 100)}%)
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-400">Improvable Items</div>
+              <div className="text-lg font-semibold mt-1 text-yellow-400">
+                {optimizationMetrics.improvableItemsCount}
+              </div>
+            </div>
+          </div>
+          <div className="text-xs text-slate-400">
+            {optimizationMetrics.potentialSavings > 0 
+              ? `Optimization found savings opportunities across ${optimizationMetrics.improvableItemsCount} items.`
+              : "Current supplier selections are already near optimal."}
+          </div>
+        </div>
+
+        {/* Procurement Intelligence Panel */}
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-medium text-slate-300">Procurement Intelligence</div>
+            {getDocumentApproval()?.status && (
+              <div className="flex items-center gap-2">
+                <div className="px-2 py-1 rounded text-xs font-medium bg-blue-600 text-white">
+                  {getDocumentApproval()?.status}
+                </div>
+                <div className="text-xs text-slate-400">
+                  {getDocumentApproval()?.approvedBy ? `Approved by ${getDocumentApproval()?.approvedBy}` : ''}
+                  {getDocumentApproval()?.approvedAt ? ` on ${new Date(getDocumentApproval()!.approvedAt as string).toLocaleDateString()}` : ""}
+                </div>
+                <button
+                  onClick={() => updateApproval('pending', 'Status reset for re-evaluation')}
+                  className="ml-2 text-xs underline hover:text-blue-300"
+                >
+                  Reset
+                </button>
+              </div>
+            )}
+            <div className="grid grid-cols-5 gap-3 mb-3">
+              <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+                <div className="text-xs text-slate-400">Risky Items</div>
+                <div className="text-lg font-semibold mt-1 text-red-400">
+                  {intelligenceMetrics.riskyItemsCount}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+                <div className="text-xs text-slate-400">Low Confidence</div>
+                <div className="text-lg font-semibold mt-1 text-amber-400">
+                  {intelligenceMetrics.lowConfidenceCount}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+                <div className="text-xs text-slate-400">No Competition</div>
+                <div className="text-lg font-semibold mt-1 text-orange-400">
+                  {intelligenceMetrics.noCompetitionCount}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+                <div className="text-xs text-slate-400">Manual Suppliers</div>
+                <div className="text-lg font-semibold mt-1 text-yellow-400">
+                  {intelligenceMetrics.manualSupplierCount}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+                <div className="text-xs text-slate-400">Price Spread Alerts</div>
+                <div className="text-lg font-semibold mt-1 text-emerald-400">
+                  {intelligenceMetrics.highSpreadCount}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-5 gap-3 mb-3">
+            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-400">Risky Items</div>
+              <div className="text-lg font-semibold mt-1 text-red-400">
+                {intelligenceMetrics.riskyItemsCount}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-400">Low Confidence</div>
+              <div className="text-lg font-semibold mt-1 text-amber-400">
+                {intelligenceMetrics.lowConfidenceCount}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-400">No Competition</div>
+              <div className="text-lg font-semibold mt-1 text-orange-400">
+                {intelligenceMetrics.noCompetitionCount}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-400">Manual Suppliers</div>
+              <div className="text-lg font-semibold mt-1 text-yellow-400">
+                {intelligenceMetrics.manualSupplierCount}
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-400 mb-2">Approval Status</div>
+              <div className="text-lg font-semibold">
+                {getDocumentApproval()?.status || 'Not Started'}
+              </div>
+              {getDocumentApproval()?.approvedBy && (
+                <div className="text-sm text-slate-400 mt-1">
+                  Approved by: {getDocumentApproval()?.approvedBy}
+                </div>
+              )}
+              {getDocumentApproval()?.approvedAt && (
+                <div className="text-sm text-slate-400 mt-1">
+                  Approved on: {getDocumentApproval()?.approvedAt ? new Date(getDocumentApproval()!.approvedAt as string).toLocaleDateString() : "-"}
+                </div>
+              )}
+              <div className="mt-3">
+                <textarea
+                  value={getDocumentApproval()?.notes || ''}
+                  onChange={(e) => updateApproval(getDocumentApproval()?.status || 'pending', e.target.value)}
+                  placeholder="Add approval notes..."
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-slate-200 placeholder-slate-500"
+                  rows={3}
+                />
+                <div className="flex gap-2 mt-3">
+                  {getDocumentApproval()?.status !== 'approved' && (
+                    <button
+                      onClick={() => updateApproval('approved', 'Approved via optimization analysis')}
+                      className="px-3 py-2 rounded-lg bg-green-900/30 hover:bg-green-900/50 border border-green-900/50 text-green-300 text-sm"
+                    >
+                      Approve Optimization
+                    </button>
+                  )}
+                  {getDocumentApproval()?.status !== 'pending' && (
+                    <button
+                      onClick={() => updateApproval('pending', 'Status reset for re-evaluation')}
+                      className="px-3 py-2 rounded-lg bg-orange-900/30 hover:bg-orange-900/50 border border-orange-900/50 text-orange-300 text-sm"
+                    >
+                      Reject / Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-400">Price Spread Alerts</div>
+              <div className="text-lg font-semibold mt-1 text-emerald-400">
+                {intelligenceMetrics.highSpreadCount}
+              </div>
+            </div>
+          </div>
+          <div className="text-xs text-slate-400 space-y-1">
+            {intelligenceMetrics.riskyItemsCount > 0 && (
+              <div>⚠️ Some selected suppliers may need review before ordering.</div>
+            )}
+            {intelligenceMetrics.noCompetitionCount > 0 && (
+              <div>📊 Some items have limited supplier competition.</div>
+            )}
+            {intelligenceMetrics.highSpreadCount > 0 && (
+              <div>💰 Price spread suggests additional savings may be available.</div>
+            )}
+          </div>
+        </div>
+
         <div className="grid grid-cols-7 gap-3 mb-6">
           <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
             <div className="text-xs text-slate-400">Total Items</div>
-            <div className="text-xl font-semibold mt-1">{totalItems}</div>
+            <div className="text-xl font-semibold mt-1">{summaryCounts.totalItems}</div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
             <div className="text-xs text-slate-400">Pending</div>
             <div className="text-xl font-semibold mt-1 text-yellow-400">
-              {pendingCount}
+              {summaryCounts.pendingCount}
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
             <div className="text-xs text-slate-400">Ordered</div>
             <div className="text-xl font-semibold mt-1 text-blue-400">
-              {orderedCount}
+              {summaryCounts.orderedCount}
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
             <div className="text-xs text-slate-400">Part Del.</div>
             <div className="text-xl font-semibold mt-1 text-orange-400">
-              {partDeliveredCount}
+              {summaryCounts.partDeliveredCount}
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
             <div className="text-xs text-slate-400">Received</div>
             <div className="text-xl font-semibold mt-1 text-emerald-400">
-              {receivedCount}
+              {summaryCounts.receivedCount}
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
             <div className="text-xs text-slate-400">Urgent</div>
             <div className="text-xl font-semibold mt-1 text-red-400">
-              {urgentCount}
+              {summaryCounts.urgentCount}
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
             <div className="text-xs text-slate-400">Total Value</div>
             <div className="text-xl font-semibold mt-1">
-              ${totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              ${summaryCounts.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </div>
           </div>
         </div>
@@ -1158,6 +1621,7 @@ function DocumentView({
                           key={item.id}
                           item={item}
                           suppliers={suppliers}
+                          supplierRecommendations={supplierRecommendations}
                           selected={selectedItems.has(item.id)}
                           onToggleSelect={() => toggleItemSelection(item.id)}
                           onUpdate={onUpdateItem}
@@ -1178,21 +1642,44 @@ function DocumentView({
 
 interface ItemRowProps {
   item: ProcurementItemWithSource;
-  suppliers: Supplier[];
+  suppliers: SupplierWithPerformance[];
+  supplierRecommendations: Map<string, BestPriceResult>;
   selected: boolean;
   onToggleSelect: () => void;
   onUpdate: (itemId: string, updates: Partial<ProcurementItem>) => void;
   onDelete: (itemId: string) => void;
 }
 
-function ItemRow({ item, suppliers, selected, onToggleSelect, onUpdate, onDelete }: ItemRowProps) {
+function ItemRow({
+  item,
+  suppliers,
+  supplierRecommendations,
+  selected,
+  onToggleSelect,
+  onUpdate,
+  onDelete,
+}: ItemRowProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [tempValue, setTempValue] = useState<string>("");
+  const [showScoreBreakdown, setShowScoreBreakdown] = useState<string | null>(null);
+  const [showScoreWhy, setShowScoreWhy] = useState(false);
 
   const balanceQty = calculateBalanceQty(item.quantity, item.delivered_qty || 0);
   const totalCost = calculateItemTotal(item.quantity || 0, item.unit_rate || 0);
 
-  const isSupplierInDirectory = item.supplier && suppliers.some(s => s.supplier_name === item.supplier);
+  // Use custom hook for supplier analysis
+  const supplierData = useSupplierRowAnalysis(item, suppliers, supplierRecommendations);
+  const {
+    isSupplierInDirectory,
+    rankedSuppliers,
+    bestRatedSupplier,
+    selectedSupplierRecord,
+    itemRecommendation,
+    recommendedSupplier,
+    cheapestSupplier,
+    isBestRatedSelected,
+    supplierScores,
+  } = supplierData;
 
   function startEdit(field: string, currentValue: any) {
     setEditing(field);
@@ -1203,6 +1690,18 @@ function ItemRow({ item, suppliers, selected, onToggleSelect, onUpdate, onDelete
     if (!editing) return;
 
     let value: any = tempValue.trim();
+
+    if (field === "supplier") {
+      const selectedSupplier = suppliers.find((s) => s.id === value);
+      const supplierScore = selectedSupplier ? supplierScores.get(selectedSupplier.id) : null;
+      
+      onUpdate(item.id, {
+        supplier: selectedSupplier?.supplier_name || null,
+      });
+      setEditing(null);
+      setTempValue("");
+      return;
+    }
 
     if (field === "ordered_qty" || field === "delivered_qty" || field === "unit_rate") {
       const num = parseFloat(value);
@@ -1222,12 +1721,24 @@ function ItemRow({ item, suppliers, selected, onToggleSelect, onUpdate, onDelete
     setTempValue("");
   }
 
-  function handleSupplierChange(supplierName: string) {
-    if (supplierName === "__manual__") {
+  function handleAutoSelectSupplier() {
+    if (!recommendedSupplier) return;
+
+    onUpdate(item.id, {
+      supplier: recommendedSupplier.supplier_name
+    });
+  }
+
+  function handleSupplierChange(value: string) {
+    if (value === "__manual__") {
       setEditing("supplier");
       setTempValue(item.supplier || "");
     } else {
-      onUpdate(item.id, { supplier: supplierName });
+      const selectedSupplier = suppliers.find((s) => s.id === value);
+
+      onUpdate(item.id, {
+        supplier: selectedSupplier?.supplier_name || null,
+      });
     }
   }
 
@@ -1238,242 +1749,32 @@ function ItemRow({ item, suppliers, selected, onToggleSelect, onUpdate, onDelete
           type="checkbox"
           checked={selected}
           onChange={onToggleSelect}
-          className="rounded border-slate-700 bg-slate-800"
+          className="w-4 h-4 text-blue-400 rounded border-slate-700 focus:ring-2 focus:ring-blue-500"
         />
       </td>
-      <td className="px-4 py-3">
-        <div className="font-medium text-sm">{item.material_name}</div>
-        {item.description && (
-          <div className="text-xs text-slate-500 mt-0.5">{item.description}</div>
-        )}
-      </td>
+      <td className="px-4 py-3">{item.material_name || item.description || "Item"}</td>
 
       <td className="px-4 py-3">
-        {editing === "supplier" ? (
-          <input
-            type="text"
-            value={tempValue}
-            onChange={(e) => setTempValue(e.target.value)}
-            onBlur={() => saveEdit("supplier")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") saveEdit("supplier");
-              if (e.key === "Escape") cancelEdit();
-            }}
-            autoFocus
-            className="w-full px-2 py-1 rounded bg-slate-800 border border-slate-700 text-xs focus:outline-none focus:border-slate-600"
-          />
-        ) : (
-          <select
-            value={isSupplierInDirectory ? item.supplier || "" : "__manual__"}
-            onChange={(e) => handleSupplierChange(e.target.value)}
-            className="w-full px-2 py-1 rounded bg-slate-800 border border-slate-700 text-xs focus:outline-none focus:border-slate-600"
-          >
-            <option value="">-- Select Supplier --</option>
-            {suppliers.map((supplier) => (
-              <option key={supplier.id} value={supplier.supplier_name}>
-                {supplier.supplier_name}
-              </option>
-            ))}
-            {item.supplier && !isSupplierInDirectory && (
-              <option value="__manual__">{item.supplier} (custom)</option>
-            )}
-            <option value="__manual__">Other / Manual...</option>
-          </select>
-        )}
-      </td>
-
-      <td className="px-4 py-3">
-        <select
-          value={item.priority || "normal"}
-          onChange={(e) =>
-            onUpdate(item.id, { priority: e.target.value as ProcurementPriority })
-          }
-          className={
-            "px-2 py-1 rounded text-xs border " +
-            (item.priority === "urgent"
-              ? "bg-red-900/20 border-red-900/40 text-red-300"
-              : item.priority === "high"
-              ? "bg-orange-900/20 border-orange-900/40 text-orange-300"
-              : item.priority === "low"
-              ? "bg-slate-700/20 border-slate-700/40 text-slate-400"
-              : "bg-slate-800/20 border-slate-700/40 text-slate-300")
-          }
-        >
-          {PROCUREMENT_PRIORITIES.map((priority) => (
-            <option key={priority} value={priority}>
-              {getPriorityLabel(priority)}
-            </option>
-          ))}
-        </select>
-      </td>
-
-      <td className="px-4 py-3">
-        {editing === "needed_by_date" ? (
-          <input
-            type="date"
-            value={tempValue}
-            onChange={(e) => setTempValue(e.target.value)}
-            onBlur={() => saveEdit("needed_by_date")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") saveEdit("needed_by_date");
-              if (e.key === "Escape") cancelEdit();
-            }}
-            autoFocus
-            className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-xs focus:outline-none focus:border-slate-600"
-          />
-        ) : (
-          <div
-            onClick={() =>
-              startEdit(
-                "needed_by_date",
-                item.needed_by_date
-                  ? new Date(item.needed_by_date).toISOString().split("T")[0]
-                  : ""
-              )
-            }
-            className="text-xs cursor-pointer hover:text-slate-300"
-          >
-            {item.needed_by_date ? (
-              new Date(item.needed_by_date).toLocaleDateString()
-            ) : (
-              <span className="text-slate-600">-</span>
-            )}
-          </div>
-        )}
-      </td>
-
-      <td className="px-4 py-3">
-        <div className="text-sm font-medium">
-          {Number(item.quantity).toFixed(2)}
-        </div>
-        <div className="text-xs text-slate-500">{item.unit || "-"}</div>
-      </td>
-
-      <td className="px-4 py-3">
-        {editing === "ordered_qty" ? (
-          <input
-            type="number"
-            step="0.01"
-            value={tempValue}
-            onChange={(e) => setTempValue(e.target.value)}
-            onBlur={() => saveEdit("ordered_qty")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") saveEdit("ordered_qty");
-              if (e.key === "Escape") cancelEdit();
-            }}
-            autoFocus
-            className="w-20 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-xs focus:outline-none focus:border-slate-600"
-          />
-        ) : (
-          <div
-            onClick={() => startEdit("ordered_qty", item.ordered_qty || 0)}
-            className="text-sm cursor-pointer hover:text-slate-300"
-          >
-            {(item.ordered_qty || 0).toFixed(2)}
-          </div>
-        )}
-      </td>
-
-      <td className="px-4 py-3">
-        {editing === "delivered_qty" ? (
-          <input
-            type="number"
-            step="0.01"
-            value={tempValue}
-            onChange={(e) => setTempValue(e.target.value)}
-            onBlur={() => saveEdit("delivered_qty")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") saveEdit("delivered_qty");
-              if (e.key === "Escape") cancelEdit();
-            }}
-            autoFocus
-            className="w-20 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-xs focus:outline-none focus:border-slate-600"
-          />
-        ) : (
-          <div
-            onClick={() => startEdit("delivered_qty", item.delivered_qty || 0)}
-            className="text-sm cursor-pointer hover:text-slate-300"
-          >
-            {(item.delivered_qty || 0).toFixed(2)}
-          </div>
-        )}
-      </td>
-
-      <td className="px-4 py-3">
-        <div className="text-sm font-medium text-blue-400">{balanceQty.toFixed(2)}</div>
-      </td>
-
-      <td className="px-4 py-3">
-        {editing === "unit_rate" ? (
-          <input
-            type="number"
-            step="0.01"
-            value={tempValue}
-            onChange={(e) => setTempValue(e.target.value)}
-            onBlur={() => saveEdit("unit_rate")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") saveEdit("unit_rate");
-              if (e.key === "Escape") cancelEdit();
-            }}
-            autoFocus
-            className="w-20 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-xs focus:outline-none focus:border-slate-600"
-          />
-        ) : (
-          <div
-            onClick={() => startEdit("unit_rate", item.unit_rate || 0)}
-            className="text-sm cursor-pointer hover:text-slate-300"
-          >
-            ${(item.unit_rate || 0).toFixed(2)}
-          </div>
-        )}
-      </td>
-
-      <td className="px-4 py-3">
-        <div className="text-sm font-medium">
-          ${totalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        <div className="space-y-1 text-xs text-slate-400">
+          {item.supplier || "No supplier"}
+          {recommendedSupplier && (
+            <div className="text-blue-400">
+              💡 {recommendedSupplier.supplier_name}
+            </div>
+          )}
+          {recommendedSupplier && recommendedSupplier.id && supplierScores.has(recommendedSupplier.id) && (
+            <div className="text-slate-300">
+              Score {supplierScores.get(recommendedSupplier.id)!.score} · {supplierScores.get(recommendedSupplier.id)!.scoreLabel}
+            </div>
+          )}
         </div>
       </td>
 
-      <td className="px-4 py-3">
-        <select
-          value={item.status}
-          onChange={(e) =>
-            onUpdate(item.id, { status: e.target.value as ProcurementItemStatus })
-          }
-          className={
-            "px-2 py-1 rounded text-xs border " +
-            (item.status === "pending"
-              ? "bg-yellow-900/20 border-yellow-900/40 text-yellow-300"
-              : item.status === "requested"
-              ? "bg-amber-900/20 border-amber-900/40 text-amber-300"
-              : item.status === "quoted"
-              ? "bg-cyan-900/20 border-cyan-900/40 text-cyan-300"
-              : item.status === "approved"
-              ? "bg-lime-900/20 border-lime-900/40 text-lime-300"
-              : item.status === "ordered"
-              ? "bg-blue-900/20 border-blue-900/40 text-blue-300"
-              : item.status === "part_delivered"
-              ? "bg-orange-900/20 border-orange-900/40 text-orange-300"
-              : item.status === "received"
-              ? "bg-emerald-900/20 border-emerald-900/40 text-emerald-300"
-              : "bg-red-900/20 border-red-900/40 text-red-300")
-          }
-        >
-          {PROCUREMENT_ITEM_STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {getItemStatusLabel(status)}
-            </option>
-          ))}
-        </select>
-      </td>
+      <td className="px-4 py-3">{item.quantity}</td>
+      <td className="px-4 py-3">${item.unit_rate?.toFixed(2) || "0.00"}</td>
 
-      <td className="px-4 py-3">
-        <button
-          onClick={() => onDelete(item.id)}
-          className="px-2 py-1 rounded text-xs bg-red-900/20 hover:bg-red-900/40 border border-red-900/40 text-red-300"
-        >
-          Delete
-        </button>
+      <td className="px-4 py-3 text-right">
+        ${(item.quantity * (item.unit_rate || 0)).toFixed(2)}
       </td>
     </tr>
   );
