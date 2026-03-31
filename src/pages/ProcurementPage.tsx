@@ -1428,27 +1428,85 @@ function DocumentView({
         <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm font-medium text-slate-300">Procurement Intelligence</div>
-            {getDocumentApproval()?.status && (
-              <div className="flex items-center gap-2">
-                <div className="px-2 py-1 rounded text-xs font-medium bg-blue-600 text-white">
-                  {getDocumentApproval()?.status}
+            {documentWorkflow && (
+              <div className="flex items-center gap-3">
+                {/* Workflow Progress */}
+                <div className="flex items-center gap-2">
+                  <div className="text-xs text-slate-400">
+                    Step {documentWorkflow.current_approval_step} of {workflowSteps.length}
+                  </div>
+                  {workflowSteps.map((step, index) => (
+                    <div
+                      key={step.id}
+                      className={`w-2 h-2 rounded-full ${
+                        index < documentWorkflow.current_approval_step - 1
+                          ? 'bg-green-500'
+                          : index === documentWorkflow.current_approval_step - 1
+                          ? 'bg-blue-500'
+                          : 'bg-slate-600'
+                      }`}
+                      title={`${step.name} - ${step.required_role}`}
+                    />
+                  ))}
                 </div>
-                <div className="text-xs text-slate-400">
-                  {getDocumentApproval()?.approvedBy ? `Approved by ${getDocumentApproval()?.approvedBy}` : ''}
-                  {getDocumentApproval()?.approvedAt ? ` on ${new Date(getDocumentApproval()!.approvedAt as string).toLocaleDateString()}` : ""}
+
+                {/* Current Required Role */}
+                {!documentWorkflow.is_fully_approved && workflowSteps[documentWorkflow.current_approval_step - 1] && (
+                  <div className="px-2 py-1 rounded text-xs font-medium bg-amber-900/30 border border-amber-900/50 text-amber-300">
+                    Requires {workflowSteps[documentWorkflow.current_approval_step - 1].required_role} approval
+                  </div>
+                )}
+
+                {/* Approval Status */}
+                {getDocumentApproval()?.status && (
+                  <div className="flex items-center gap-2">
+                    <div className={`px-2 py-1 rounded text-xs font-medium ${
+                      documentWorkflow.is_fully_approved 
+                        ? 'bg-green-600 text-white'
+                        : getDocumentApproval()?.status === 'approved'
+                        ? 'bg-blue-600 text-white'
+                        : getDocumentApproval()?.status === 'rejected'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-slate-600 text-white'
+                    }`}>
+                      {documentWorkflow.is_fully_approved 
+                        ? 'Fully Approved'
+                        : getDocumentApproval()?.status
+                      }
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      {getDocumentApproval()?.approvedBy ? `by ${getDocumentApproval()?.approvedBy}` : ''}
+                      {getDocumentApproval()?.approvedAt ? ` on ${new Date(getDocumentApproval()!.approvedAt as string).toLocaleDateString()}` : ""}
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowHistory(!showHistory)}
+                    className="text-xs underline hover:text-blue-300"
+                  >
+                    {showHistory ? 'Hide' : 'Show'} History
+                  </button>
+                  {currentUser && (currentUser.role === 'director' || currentUser.role === 'admin') && (
+                    <button
+                      onClick={() => updateApproval('pending', 'Emergency override by ' + currentUser.role)}
+                      className="text-xs underline hover:text-orange-300 text-orange-300"
+                      title="Emergency approval override"
+                    >
+                      Emergency
+                    </button>
+                  )}
+                  {!documentWorkflow.is_fully_approved && (
+                    <button
+                      onClick={() => updateApproval('pending', 'Status reset for re-evaluation')}
+                      className="text-xs underline hover:text-blue-300"
+                    >
+                      Reset
+                    </button>
+                  )}
                 </div>
-                <button
-                  onClick={() => setShowHistory(!showHistory)}
-                  className="ml-2 text-xs underline hover:text-blue-300"
-                >
-                  {showHistory ? 'Hide' : 'Show'} History
-                </button>
-                <button
-                  onClick={() => updateApproval('pending', 'Status reset for re-evaluation')}
-                  className="ml-2 text-xs underline hover:text-blue-300"
-                >
-                  Reset
-                </button>
               </div>
             )}
             <div className="grid grid-cols-5 gap-3 mb-3">
@@ -1531,8 +1589,13 @@ function DocumentView({
                     {approvalHistory.map((approval, index) => (
                       <div key={approval.id} className="text-xs text-slate-400 p-2 rounded border border-slate-700/30">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium">
+                          <span className="font-medium flex items-center gap-2">
                             {approval.status} #{approval.sequence_number}
+                            {approval.user_profiles?.role && (
+                              <span className="px-1 py-0.5 rounded bg-slate-700/50 text-slate-300">
+                                {approval.user_profiles.role}
+                              </span>
+                            )}
                           </span>
                           <span>
                             {new Date(approval.created_at).toLocaleDateString()}
@@ -1561,25 +1624,39 @@ function DocumentView({
                   value={getDocumentApproval()?.notes || ''}
                   onChange={(e) => updateApproval(getDocumentApproval()?.status || 'pending', e.target.value)}
                   placeholder="Add approval notes..."
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-slate-200 placeholder-slate-500"
+                  disabled={!canApprove && !documentWorkflow?.is_fully_approved}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-slate-200 placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   rows={3}
                 />
                 <div className="flex gap-2 mt-3">
-                  {getDocumentApproval()?.status !== 'approved' && (
+                  {getDocumentApproval()?.status !== 'approved' && canApprove && (
                     <button
                       onClick={() => updateApproval('approved', 'Approved via optimization analysis')}
                       className="px-3 py-2 rounded-lg bg-green-900/30 hover:bg-green-900/50 border border-green-900/50 text-green-300 text-sm"
                     >
-                      Approve Optimization
+                      Approve
                     </button>
                   )}
-                  {getDocumentApproval()?.status !== 'pending' && (
+                  {getDocumentApproval()?.status !== 'pending' && canApprove && (
                     <button
                       onClick={() => updateApproval('pending', 'Status reset for re-evaluation')}
-                      className="px-3 py-2 rounded-lg bg-orange-900/30 hover:bg-orange-900/50 border border-orange-900/50 text-orange-300 text-sm"
+                      className="px-3 py-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-slate-300 text-sm"
                     >
-                      Reject / Reset
+                      Reset
                     </button>
+                  )}
+                  {getDocumentApproval()?.status !== 'approved' && canApprove && (
+                    <button
+                      onClick={() => updateApproval('rejected', 'Rejected - requires changes')}
+                      className="px-3 py-2 rounded-lg bg-red-900/30 hover:bg-red-900/50 border border-red-900/50 text-red-300 text-sm"
+                    >
+                      Reject
+                    </button>
+                  )}
+                  {!canApprove && !documentWorkflow?.is_fully_approved && (
+                    <div className="px-3 py-2 rounded-lg bg-slate-800/30 border border-slate-700 text-slate-500 text-sm">
+                      {workflowSteps[documentWorkflow.current_approval_step - 1]?.required_role} approval required
+                    </div>
                   )}
                 </div>
               </div>
