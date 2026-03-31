@@ -55,6 +55,8 @@ import { useProcurementOptimization } from "../hooks/useProcurementOptimization"
 import { useProcurementIntelligence } from "../hooks/useProcurementIntelligence";
 import { useSupplierRowAnalysis } from "../hooks/useSupplierRowAnalysis";
 import { useProcurementApproval } from "../hooks/useProcurementApproval";
+import { getProcurementApproval, updateProcurementApproval, getCurrentUserProfile, getProcurementApprovalHistory } from "../lib/procurementApproval";
+import { toast } from "../lib/toast";
 
 export default function ProcurementPage() {
   const { currentProjectId, currentProject } = useProjectContext();
@@ -715,27 +717,61 @@ function DocumentView({
     notes: ""
   });
 
+  const [approvalHistory, setApprovalHistory] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
   function getDocumentApproval() {
     return approvalState;
   }
 
-  function updateApproval(status: string, notes: string) {
-    setApprovalState((prev) => ({
-      ...prev,
-      status,
-      notes,
-      approvedBy: status === "approved" ? "Current User" : prev.approvedBy,
-      approvedAt: status === "approved" ? new Date().toISOString() : prev.approvedAt
-    }));
+  async function updateApproval(status: string, notes: string) {
+    try {
+      // Get current user profile
+      const userProfile = await getCurrentUserProfile();
+      
+      // Update database with user_id instead of approved_by text
+      const result = await updateProcurementApproval(document.id, status as any, userProfile?.id, notes);
+      
+      if (result.success) {
+        // Reload approval state to get updated data
+        await loadApprovalState();
+        // Also reload history
+        await loadApprovalHistory();
+      } else {
+        console.error('Failed to update approval:', result.error);
+        // Optionally show error to user
+      }
+    } catch (err) {
+      console.error('Error updating approval:', err);
+    }
   }
 
-  function resetApproval() {
-    setApprovalState({
-      status: "pending",
-      approvedBy: "",
-      approvedAt: null,
-      notes: ""
-    });
+  async function resetApproval() {
+    try {
+      const result = await updateProcurementApproval(document.id, 'reset');
+      
+      if (result.success) {
+        // Reload approval state to get updated data
+        await loadApprovalState();
+        // Also reload history
+        await loadApprovalHistory();
+      } else {
+        console.error('Failed to reset approval:', result.error);
+      }
+    } catch (err) {
+      console.error('Error resetting approval:', err);
+    }
+  }
+
+  async function loadApprovalHistory() {
+    if (!document) return;
+
+    try {
+      const history = await getProcurementApprovalHistory(document.id);
+      setApprovalHistory(history);
+    } catch (err) {
+      console.error("Failed to load approval history:", err);
+    }
   }
 
   function handleAutoSelectSupplier() {
@@ -756,7 +792,27 @@ function DocumentView({
   useEffect(() => {
     loadSuppliers();
     loadSupplierRecommendations();
+    loadApprovalState();
+    loadApprovalHistory();
   }, []);
+
+  async function loadApprovalState() {
+    if (!document) return;
+
+    try {
+      const approval = await getProcurementApproval(document.id);
+      if (approval) {
+        setApprovalState({
+          status: approval.status,
+          approvedBy: approval.approved_by || "",
+          approvedAt: approval.approved_at,
+          notes: approval.notes || ""
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load approval state:", err);
+    }
+  }
 
   async function loadSupplierRecommendations() {
     if (!document) return;
@@ -860,6 +916,12 @@ function DocumentView({
   async function handleCreatePurchaseOrders() {
     if (selectedItems.size === 0) {
       alert("Please select items to create purchase orders");
+      return;
+    }
+
+    // Check approval status first
+    if (approvalState.status !== 'approved') {
+      toast.warning("Purchase orders can only be created for approved procurement documents. Please get this document approved first.");
       return;
     }
 
@@ -1327,6 +1389,12 @@ function DocumentView({
                   {getDocumentApproval()?.approvedAt ? ` on ${new Date(getDocumentApproval()!.approvedAt as string).toLocaleDateString()}` : ""}
                 </div>
                 <button
+                  onClick={() => setShowHistory(!showHistory)}
+                  className="ml-2 text-xs underline hover:text-blue-300"
+                >
+                  {showHistory ? 'Hide' : 'Show'} History
+                </button>
+                <button
                   onClick={() => updateApproval('pending', 'Status reset for re-evaluation')}
                   className="ml-2 text-xs underline hover:text-blue-300"
                 >
@@ -1405,6 +1473,38 @@ function DocumentView({
               {getDocumentApproval()?.approvedAt && (
                 <div className="text-sm text-slate-400 mt-1">
                   Approved on: {getDocumentApproval()?.approvedAt ? new Date(getDocumentApproval()!.approvedAt as string).toLocaleDateString() : "-"}
+                </div>
+              )}
+              {showHistory && approvalHistory.length > 0 && (
+                <div className="mt-4 p-3 rounded-lg border border-slate-700/50 bg-slate-800/30">
+                  <div className="text-sm font-medium text-slate-300 mb-2">Approval History</div>
+                  <div className="space-y-2">
+                    {approvalHistory.map((approval, index) => (
+                      <div key={approval.id} className="text-xs text-slate-400 p-2 rounded border border-slate-700/30">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">
+                            {approval.status} #{approval.sequence_number}
+                          </span>
+                          <span>
+                            {new Date(approval.created_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <div className="mt-1">
+                          By: {approval.user_profiles?.full_name || approval.user_profiles?.email || 'Unknown User'}
+                        </div>
+                        {approval.notes && (
+                          <div className="mt-1 text-slate-500">
+                            Notes: {approval.notes}
+                          </div>
+                        )}
+                        {approval.approved_at && (
+                          <div className="mt-1 text-green-400">
+                            Approved: {new Date(approval.approved_at).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               <div className="mt-3">

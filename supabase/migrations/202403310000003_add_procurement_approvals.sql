@@ -1,7 +1,7 @@
 -- Create procurement_approvals table
 CREATE TABLE IF NOT EXISTS procurement_approvals (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  document_id UUID NOT NULL REFERENCES procurement_documents(id) ON DELETE CASCADE,
+  document_id UUID NOT NULL REFERENCES procurement_headers(id) ON DELETE CASCADE,
   status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'reset')),
   approved_by TEXT,
   approved_at TIMESTAMPTZ,
