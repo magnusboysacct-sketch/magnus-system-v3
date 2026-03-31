@@ -55,7 +55,7 @@ import { useProcurementOptimization } from "../hooks/useProcurementOptimization"
 import { useProcurementIntelligence } from "../hooks/useProcurementIntelligence";
 import { useSupplierRowAnalysis } from "../hooks/useSupplierRowAnalysis";
 import { useProcurementApproval } from "../hooks/useProcurementApproval";
-import { getProcurementApproval, updateProcurementApproval, getCurrentUserProfile, getProcurementApprovalHistory } from "../lib/procurementApproval";
+import { getProcurementApproval, updateProcurementApproval, getCurrentUserProfile, getProcurementApprovalHistory, getDocumentWorkflow, getWorkflowSteps, canUserApproveDocument, isDocumentFullyApproved } from "../lib/procurementApproval";
 import { toast } from "../lib/toast";
 
 export default function ProcurementPage() {
@@ -719,6 +719,10 @@ function DocumentView({
 
   const [approvalHistory, setApprovalHistory] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [documentWorkflow, setDocumentWorkflow] = useState<any>(null);
+  const [workflowSteps, setWorkflowSteps] = useState<any[]>([]);
+  const [canApprove, setCanApprove] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   function getDocumentApproval() {
     return approvalState;
@@ -726,6 +730,12 @@ function DocumentView({
 
   async function updateApproval(status: string, notes: string) {
     try {
+      // Check if user can approve
+      if (status === 'approved' && !canApprove) {
+        toast.warning("You don't have permission to approve this document at the current workflow step.");
+        return;
+      }
+
       // Get current user profile
       const userProfile = await getCurrentUserProfile();
       
@@ -737,6 +747,8 @@ function DocumentView({
         await loadApprovalState();
         // Also reload history
         await loadApprovalHistory();
+        // Reload workflow info
+        await loadWorkflowInfo();
       } else {
         console.error('Failed to update approval:', result.error);
         // Optionally show error to user
@@ -755,6 +767,8 @@ function DocumentView({
         await loadApprovalState();
         // Also reload history
         await loadApprovalHistory();
+        // Reload workflow info
+        await loadWorkflowInfo();
       } else {
         console.error('Failed to reset approval:', result.error);
       }
@@ -771,6 +785,37 @@ function DocumentView({
       setApprovalHistory(history);
     } catch (err) {
       console.error("Failed to load approval history:", err);
+    }
+  }
+
+  async function loadWorkflowInfo() {
+    if (!document || !currentUser) return;
+
+    try {
+      // Load document workflow
+      const workflow = await getDocumentWorkflow(document.id);
+      setDocumentWorkflow(workflow);
+
+      // Load workflow steps
+      if (workflow?.workflow_id) {
+        const steps = await getWorkflowSteps(workflow.workflow_id);
+        setWorkflowSteps(steps);
+      }
+
+      // Check if current user can approve
+      const canApproveDoc = await canUserApproveDocument(document.id, currentUser.id);
+      setCanApprove(canApproveDoc);
+    } catch (err) {
+      console.error("Failed to load workflow info:", err);
+    }
+  }
+
+  async function loadCurrentUser() {
+    try {
+      const user = await getCurrentUserProfile();
+      setCurrentUser(user);
+    } catch (err) {
+      console.error("Failed to load current user:", err);
     }
   }
 
@@ -792,8 +837,11 @@ function DocumentView({
   useEffect(() => {
     loadSuppliers();
     loadSupplierRecommendations();
-    loadApprovalState();
-    loadApprovalHistory();
+    loadCurrentUser().then(() => {
+      loadApprovalState();
+      loadApprovalHistory();
+      loadWorkflowInfo();
+    });
   }, []);
 
   async function loadApprovalState() {
@@ -919,9 +967,10 @@ function DocumentView({
       return;
     }
 
-    // Check approval status first
-    if (approvalState.status !== 'approved') {
-      toast.warning("Purchase orders can only be created for approved procurement documents. Please get this document approved first.");
+    // Check if document is fully approved (role-based workflow)
+    const fullyApproved = await isDocumentFullyApproved(document.id);
+    if (!fullyApproved) {
+      toast.warning("Purchase orders can only be created for documents that have completed all required approval steps.");
       return;
     }
 
