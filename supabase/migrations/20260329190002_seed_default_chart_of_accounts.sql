@@ -145,8 +145,8 @@ BEGIN
     (p_company_id, '6910', 'Bank Fees', 'expense', 'other_expense', 0, null),
     (p_company_id, '6920', 'Credit Card Fees', 'expense', 'other_expense', 0, null),
     (p_company_id, '6930', 'Software Subscriptions', 'expense', 'other_expense', 0, null),
-    (p_company_id, '6940', 'Dues and Subscriptions', 'expense', 'other_expense', 0, null),
-    
+    (p_company_id, '6940', 'Dues and Subscriptions', 'expense', 'other_expense', 0, null);
+
     -- Set project-linkable accounts
     UPDATE chart_of_accounts 
     SET is_project_linkable = true 
@@ -159,16 +159,7 @@ BEGIN
     -- Set owner private accounts
     UPDATE chart_of_accounts 
     SET is_owner_private = true 
-    WHERE company_id = p_company_id 
-    AND code IN (
-      '3110' -- Owner Draws
-    );
-    
-    -- Set parent relationships
-    UPDATE chart_of_accounts SET parent_id = (
-      SELECT id FROM chart_of_accounts 
-      WHERE company_id = p_company_id AND code = '1000'
-    ) WHERE company_id = p_company_id AND code IN ('1010', '1020', '1030');
+    WHERE company_id = p_company_id AND code IN ('1010', '1020', '1030');
     
     UPDATE chart_of_accounts SET parent_id = (
       SELECT id FROM chart_of_accounts 
@@ -243,11 +234,6 @@ BEGIN
     UPDATE chart_of_accounts SET parent_id = (
       SELECT id FROM chart_of_accounts 
       WHERE company_id = p_company_id AND code = '6700'
-    ) WHERE company_id = p_company_id AND code IN ('6710', '6720', '6730');
-    
-    UPDATE chart_of_accounts SET parent_id = (
-      SELECT id FROM chart_of_accounts 
-      WHERE company_id = p_company_id AND code = '6800'
     ) WHERE company_id = p_company_id AND code IN ('6810', '6820', '6830');
     
     UPDATE chart_of_accounts SET parent_id = (

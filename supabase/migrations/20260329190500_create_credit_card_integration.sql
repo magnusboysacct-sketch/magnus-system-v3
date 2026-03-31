@@ -148,12 +148,12 @@ CREATE TABLE IF NOT EXISTS credit_card_transactions (
   -- Matching and reconciliation
   match_status text DEFAULT 'unmatched' CHECK (match_status IN ('unmatched', 'matched', 'reconciled', 'disputed')),
   match_type text CHECK (match_type IN (
-    'manual',           // Manual match
-    'auto_expense',     // Auto-matched to expense
-    'auto_supplier',    // Auto-matched to supplier invoice
-    'auto_payment',     // Auto-matched to payment
-    'auto_transfer',    // Auto-matched to transfer
-    'rule_based'        // Matched by posting rules
+    'manual',           -- Manual match
+    'auto_expense',     -- Auto-matched to expense
+    'auto_supplier',    -- Auto-matched to supplier invoice
+    'auto_payment',     -- Auto-matched to payment
+    'auto_transfer',    -- Auto-matched to transfer
+    'rule_based'        -- Matched by posting rules
   )),
   
   -- Matched entity reference

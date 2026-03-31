@@ -65,6 +65,7 @@ const navSections: NavSection[] = [
     collapsible: true,
     items: [
       { to: "/finance", label: "Finance Hub", icon: Landmark },
+      { to: "/finance/transactions", label: "Finance Transactions", icon: CreditCard },
       { to: "/expenses", label: "Expenses", icon: Receipt },
       { to: "/cash-flow", label: "Cash Flow", icon: TrendingUp },
       { to: "/accounts-receivable", label: "Receivables", icon: FileText },
@@ -236,6 +237,24 @@ export default function SidebarLayout() {
   }
 
   const visibleSections = navSections
+    .map((section) => {
+      // Update Finance Transactions route based on current project
+      if (section.title === "Finance") {
+        return {
+          ...section,
+          items: section.items.map((item) => {
+            if (item.label === "Finance Transactions") {
+              return {
+                ...item,
+                to: currentProjectId ? `/projects/${currentProjectId}/finance/transactions` : "/finance/transactions"
+              };
+            }
+            return item;
+          })
+        };
+      }
+      return section;
+    })
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => {

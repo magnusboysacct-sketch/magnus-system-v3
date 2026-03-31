@@ -219,6 +219,167 @@ export default function ProjectDashboardPage() {
     }
   }, [progress.progress_percent]);
 
+  // Weather Risk Analysis
+  const weatherRiskAnalysis = useMemo(() => {
+    if (!weatherData?.forecast || !tasks.length) {
+      return {
+        riskLevel: 'low' as 'low' | 'medium' | 'high',
+        riskScore: 0,
+        affectedTasks: [],
+        highRiskDays: [],
+        bestWorkWindow: null,
+        insights: []
+      };
+    }
+
+    const forecast = weatherData.forecast;
+    const riskScore = forecast.reduce((score: number, day: any) => {
+      const weatherRisk = day.workSuitability === 'poor' ? 3 : 
+                          day.workSuitability === 'limited' ? 2 : 
+                          day.workSuitability === 'fair' ? 1 : 0;
+      return score + weatherRisk;
+    }, 0);
+
+    const riskLevel = riskScore >= 15 ? 'high' : riskScore >= 8 ? 'medium' : 'low';
+    
+    // Find affected tasks (outdoor tasks overlapping with poor weather)
+    const affectedTasks = tasks.filter(task => {
+      if (!task.start_date || !task.end_date) return false;
+      const taskStart = new Date(task.start_date);
+      const taskEnd = new Date(task.end_date);
+      
+      return forecast.some((day: any) => {
+        const dayDate = new Date(day.date);
+        return dayDate >= taskStart && dayDate <= taskEnd && 
+               day.workSuitability === 'poor';
+      });
+    });
+
+    // Find high risk days
+    const highRiskDays = forecast.filter((day: any) => 
+      day.workSuitability === 'poor' || day.workSuitability === 'limited'
+    ).map((day: any) => ({
+      date: day.date,
+      condition: day.condition,
+      suitability: day.workSuitability,
+      temperature: day.temperature
+    }));
+
+    // Find best work window (3+ consecutive good days)
+    let bestWorkWindow = null;
+    let currentWindow = { start: null, length: 0 };
+    
+    for (let i = 0; i < forecast.length; i++) {
+      const day = forecast[i] as any;
+      if (day.workSuitability === 'good') {
+        if (!currentWindow.start) {
+          currentWindow.start = day.date;
+        }
+        currentWindow.length++;
+        
+        if (currentWindow.length >= 3 && (!bestWorkWindow || currentWindow.length > bestWorkWindow.length)) {
+          bestWorkWindow = { ...currentWindow };
+        }
+      } else {
+        currentWindow = { start: null, length: 0 };
+      }
+    }
+
+    // Generate insights
+    const insights = [];
+    if (riskLevel === 'high') {
+      insights.push("High weather risk detected - consider rescheduling outdoor work");
+    }
+    if (affectedTasks.length > 0) {
+      insights.push(`${affectedTasks.length} task(s) may be affected by poor weather`);
+    }
+    if (bestWorkWindow && bestWorkWindow.start) {
+      insights.push(`Best work window: ${bestWorkWindow.length} consecutive good days starting ${new Date(bestWorkWindow.start).toLocaleDateString()}`);
+    }
+    if (highRiskDays.length > 0) {
+      insights.push(`${highRiskDays.length} high-risk day(s) identified in forecast`);
+    }
+
+    return {
+      riskLevel,
+      riskScore,
+      affectedTasks,
+      highRiskDays,
+      bestWorkWindow,
+      insights
+    };
+  }, [weatherData, tasks]);
+
+  // Task prioritization based on weather risk
+  const prioritizedTasks = useMemo(() => {
+    if (!weatherData?.forecast) return tasks;
+    
+    return [...tasks].sort((a, b) => {
+      // Get weather risk for each task
+      const getTaskWeatherRisk = (task: ProjectTask) => {
+        if (!task.start_date || !task.end_date) return 0;
+        
+        const taskStart = new Date(task.start_date);
+        const taskEnd = new Date(task.end_date);
+        let risk = 0;
+        
+        weatherData.forecast.forEach((day: any) => {
+          const dayDate = new Date(day.date);
+          if (dayDate >= taskStart && dayDate <= taskEnd) {
+            risk += day.workSuitability === 'poor' ? 3 : 
+                   day.workSuitability === 'limited' ? 2 : 
+                   day.workSuitability === 'fair' ? 1 : 0;
+          }
+        });
+        
+        return risk;
+      };
+      
+      const riskA = getTaskWeatherRisk(a);
+      const riskB = getTaskWeatherRisk(b);
+      
+      // Higher risk tasks come first (urgent)
+      if (riskA !== riskB) return riskB - riskA;
+      
+      // Then by status (active tasks first)
+      const statusPriority = { active: 0, planned: 1, complete: 2 };
+      const priorityA = statusPriority[a.status] || 3;
+      const priorityB = statusPriority[b.status] || 3;
+      
+      return priorityA - priorityB;
+    });
+  }, [tasks, weatherData]);
+
+  // Task weather impact calculation
+  const getTaskWeatherImpact = (task: ProjectTask) => {
+    if (!weatherData?.forecast || !task.start_date || !task.end_date) {
+      return { impact: 'none' as 'none' | 'low' | 'medium' | 'high', riskDays: 0 };
+    }
+    
+    const taskStart = new Date(task.start_date);
+    const taskEnd = new Date(task.end_date);
+    let riskDays = 0;
+    
+    weatherData.forecast.forEach((day: any) => {
+      const dayDate = new Date(day.date);
+      if (dayDate >= taskStart && dayDate <= taskEnd) {
+        if (day.workSuitability === 'poor' || day.workSuitability === 'limited') {
+          riskDays++;
+        }
+      }
+    });
+    
+    const taskDuration = Math.ceil((taskEnd.getTime() - taskStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const riskPercentage = taskDuration > 0 ? (riskDays / taskDuration) * 100 : 0;
+    
+    let impact: 'none' | 'low' | 'medium' | 'high' = 'none';
+    if (riskPercentage >= 50) impact = 'high';
+    else if (riskPercentage >= 30) impact = 'medium';
+    else if (riskPercentage >= 15) impact = 'low';
+    
+    return { impact, riskDays };
+  };
+
   async function loadCosts() {
     if (!projectId) return;
     const result = await fetchProjectCosts(projectId);
@@ -771,9 +932,57 @@ export default function ProjectDashboardPage() {
                 </div>
               </div>
             ) : weatherData ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <WeatherCard weather={weatherData.current} title="Current Weather" />
-                <WeatherForecastCard forecast={weatherData.forecast} title="7-Day Forecast" />
+              <div className="space-y-6">
+                {/* Weather Risk Summary */}
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-slate-200">Weather Risk Analysis</h3>
+                    <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      weatherRiskAnalysis.riskLevel === 'high' ? 'bg-red-900/30 text-red-300 border border-red-900/40' :
+                      weatherRiskAnalysis.riskLevel === 'medium' ? 'bg-amber-900/30 text-amber-300 border border-amber-900/40' :
+                      'bg-emerald-900/30 text-emerald-300 border border-emerald-900/40'
+                    }`}>
+                      {weatherRiskAnalysis.riskLevel.toUpperCase()} RISK
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-slate-200">{weatherRiskAnalysis.affectedTasks.length}</div>
+                      <div className="text-xs text-slate-400">Tasks Affected</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-slate-200">{weatherRiskAnalysis.highRiskDays.length}</div>
+                      <div className="text-xs text-slate-400">High-Risk Days</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-slate-200">
+                        {weatherRiskAnalysis.bestWorkWindow ? weatherRiskAnalysis.bestWorkWindow.length : 0}
+                      </div>
+                      <div className="text-xs text-slate-400">Best Window Days</div>
+                    </div>
+                  </div>
+                  
+                  {weatherRiskAnalysis.insights.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-slate-400 mb-2">Smart Insights:</div>
+                      {weatherRiskAnalysis.insights.map((insight, index) => (
+                        <div key={index} className="flex items-start gap-2 text-xs text-slate-300">
+                          <svg className="w-3 h-3 text-blue-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                          <span>{insight}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Weather Cards */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <WeatherCard weather={weatherData.current} title="Current Weather" />
+                  <WeatherForecastCard forecast={weatherData.forecast} title="7-Day Forecast" />
+                </div>
               </div>
             ) : (
               <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-8 text-center">
@@ -907,7 +1116,7 @@ export default function ProjectDashboardPage() {
 
             {/* Tasks List */}
             <div className="space-y-3">
-              {tasks.length === 0 ? (
+              {prioritizedTasks.length === 0 ? (
                 <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-8 text-center">
                   <div className="w-12 h-12 rounded-full bg-slate-800/50 flex items-center justify-center mx-auto mb-4">
                     <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -918,60 +1127,85 @@ export default function ProjectDashboardPage() {
                   <div className="text-xs text-slate-400">Create your first task to start tracking project progress</div>
                 </div>
               ) : (
-                tasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="rounded-xl border border-slate-800 bg-slate-950/40 p-4 hover:bg-slate-950/60 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="text-sm font-medium text-slate-200">{task.task_name}</h3>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
-                            task.status === "complete"
-                              ? "bg-emerald-900/30 text-emerald-300 border-emerald-900/40"
-                              : task.status === "active"
-                              ? "bg-blue-900/30 text-blue-300 border-blue-900/40"
-                              : "bg-slate-800/50 text-slate-300 border-slate-700"
-                          }`}>
-                            {task.status}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
-                          <div className="flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <span>Start: {task.start_date ? formatDate(task.start_date) : "Not set"}</span>
+                prioritizedTasks.map((task) => {
+                  const weatherImpact = getTaskWeatherImpact(task);
+                  const isWeatherSensitive = weatherImpact.impact !== 'none';
+                  
+                  return (
+                    <div
+                      key={task.id}
+                      className={`rounded-xl border bg-slate-950/40 p-4 hover:bg-slate-950/60 transition-colors ${
+                        isWeatherSensitive ? 'border-amber-800/50' : 'border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h3 className="text-sm font-medium text-slate-200">{task.task_name}</h3>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                              task.status === "complete"
+                                ? "bg-emerald-900/30 text-emerald-300 border-emerald-900/40"
+                                : task.status === "active"
+                                ? "bg-blue-900/30 text-blue-300 border-blue-900/40"
+                                : "bg-slate-800/50 text-slate-300 border-slate-700"
+                            }`}>
+                              {task.status}
+                            </span>
+                            
+                            {/* Weather Risk Indicator */}
+                            {isWeatherSensitive && (
+                              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-amber-900/30 text-amber-300 border-amber-900/40">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                                </svg>
+                                {weatherImpact.impact.toUpperCase()} RISK
+                              </div>
+                            )}
                           </div>
-                          <div className="flex items-center gap-1">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <span>End: {task.end_date ? formatDate(task.end_date) : "Not set"}</span>
+                          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400">
+                            <div className="flex items-center gap-1">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              <span>Start: {task.start_date ? formatDate(task.start_date) : "Not set"}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              <span>End: {task.end_date ? formatDate(task.end_date) : "Not set"}</span>
+                            </div>
+                            {isWeatherSensitive && (
+                              <div className="flex items-center gap-1 text-amber-400">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                </svg>
+                                <span>{weatherImpact.riskDays} risk day(s)</span>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={task.status}
-                          onChange={(e) => handleUpdateTaskStatus(task.id, e.target.value as TaskStatus)}
-                          className={`px-2 py-1 rounded text-xs font-medium border cursor-pointer ${
-                            task.status === "complete"
-                              ? "bg-emerald-900/30 text-emerald-300 border-emerald-900/40"
-                              : task.status === "active"
-                              ? "bg-blue-900/30 text-blue-300 border-blue-900/40"
-                              : "bg-slate-800/50 text-slate-300 border-slate-700"
-                          }`}
-                        >
-                          <option value="planned">Planned</option>
-                          <option value="active">Active</option>
-                          <option value="complete">Complete</option>
-                        </select>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={task.status}
+                            onChange={(e) => handleUpdateTaskStatus(task.id, e.target.value as TaskStatus)}
+                            className={`px-2 py-1 rounded text-xs font-medium border cursor-pointer ${
+                              task.status === "complete"
+                                ? "bg-emerald-900/30 text-emerald-300 border-emerald-900/40"
+                                : task.status === "active"
+                                ? "bg-blue-900/30 text-blue-300 border-blue-900/40"
+                                : "bg-slate-800/50 text-slate-300 border-slate-700"
+                            }`}
+                          >
+                            <option value="planned">Planned</option>
+                            <option value="active">Active</option>
+                            <option value="complete">Complete</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

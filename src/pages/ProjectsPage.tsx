@@ -62,20 +62,28 @@ export default function ProjectsPage() {
   const [clientId, setClientId] = useState<string>("");
   const [name, setName] = useState("");
   const [siteAddress, setSiteAddress] = useState("");
+  const [siteLat, setSiteLat] = useState<string>("");
+  const [siteLng, setSiteLng] = useState<string>("");
   const [status, setStatus] = useState<ProjectRow["status"]>("planning");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [eClientId, setEClientId] = useState<string>("");
   const [eName, setEName] = useState("");
   const [eSiteAddress, setESiteAddress] = useState("");
+  const [eSiteLat, setESiteLat] = useState<string>("");
+  const [eSiteLng, setESiteLng] = useState<string>("");
   const [eStatus, setEStatus] = useState<ProjectRow["status"]>("planning");
   const [eStartDate, setEStartDate] = useState("");
   const [eEndDate, setEEndDate] = useState("");
   const [eNotes, setENotes] = useState("");
+  const [eLocationLoading, setELocationLoading] = useState(false);
+  const [eLocationError, setELocationError] = useState<string | null>(null);
 
   // Team modal state
   const [teamOpen, setTeamOpen] = useState(false);
@@ -152,6 +160,8 @@ export default function ProjectsPage() {
       client_id: clientId || null,
       name: trimmed,
       site_address: siteAddress.trim() || null,
+      site_lat: siteLat || null,
+      site_lng: siteLng || null,
       status,
       start_date: startDate || null,
       end_date: endDate || null,
@@ -167,10 +177,13 @@ export default function ProjectsPage() {
     setClientId("");
     setName("");
     setSiteAddress("");
+    setSiteLat("");
+    setSiteLng("");
     setStatus("planning");
     setStartDate("");
     setEndDate("");
     setNotes("");
+    setLocationError(null);
 
     await loadAll();
     setSaving(false);
@@ -181,11 +194,13 @@ export default function ProjectsPage() {
     setEClientId(p.client_id ?? "");
     setEName(p.name ?? "");
     setESiteAddress(p.site_address ?? "");
+    setESiteLat((p as any).site_lat ?? "");
+    setESiteLng((p as any).site_lng ?? "");
     setEStatus(p.status);
     setEStartDate(p.start_date ?? "");
     setEEndDate(p.end_date ?? "");
     setENotes(p.notes ?? "");
-    setError(null);
+    setELocationError(null);
   }
 
   function cancelEdit() {
@@ -211,6 +226,8 @@ export default function ProjectsPage() {
         client_id: eClientId || null,
         name: trimmed,
         site_address: eSiteAddress.trim() || null,
+        site_lat: eSiteLat || null,
+        site_lng: eSiteLng || null,
         status: eStatus,
         start_date: eStartDate || null,
         end_date: eEndDate || null,
@@ -247,6 +264,72 @@ export default function ProjectsPage() {
     if (editingId === id) setEditingId(null);
     await loadAll();
     setSaving(false);
+  }
+
+  // Geolocation functions
+  async function getCurrentLocation(isEdit: boolean = false) {
+    if (!navigator.geolocation) {
+      const error = "Geolocation is not supported by this browser";
+      if (isEdit) {
+        setELocationError(error);
+      } else {
+        setLocationError(error);
+      }
+      return;
+    }
+
+    if (isEdit) {
+      setELocationLoading(true);
+      setELocationError(null);
+    } else {
+      setLocationLoading(true);
+      setLocationError(null);
+    }
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        });
+      });
+
+      const lat = position.coords.latitude.toFixed(6);
+      const lng = position.coords.longitude.toFixed(6);
+
+      if (isEdit) {
+        setESiteLat(lat);
+        setESiteLng(lng);
+        setELocationError(null);
+      } else {
+        setSiteLat(lat);
+        setSiteLng(lng);
+        setLocationError(null);
+      }
+    } catch (error: any) {
+      let errorMessage = "Unable to get your location";
+      
+      if (error.code === 1) {
+        errorMessage = "Location access denied. Please enable location permissions.";
+      } else if (error.code === 2) {
+        errorMessage = "Location unavailable. Please check your device settings.";
+      } else if (error.code === 3) {
+        errorMessage = "Location request timed out. Please try again.";
+      }
+
+      if (isEdit) {
+        setELocationError(errorMessage);
+      } else {
+        setLocationError(errorMessage);
+      }
+    } finally {
+      if (isEdit) {
+        setELocationLoading(false);
+      } else {
+        setLocationLoading(false);
+      }
+    }
   }
 
   async function loadProjectTeam(projectId: string) {
@@ -426,6 +509,54 @@ export default function ProjectsPage() {
                 />
               </div>
 
+              <div>
+                <label className="text-xs text-slate-400">Location</label>
+                <div className="mt-1 space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={siteLat}
+                      onChange={(e) => setSiteLat(e.target.value)}
+                      placeholder="Latitude"
+                      className="rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                    />
+                    <input
+                      type="text"
+                      value={siteLng}
+                      onChange={(e) => setSiteLng(e.target.value)}
+                      placeholder="Longitude"
+                      className="rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => getCurrentLocation(false)}
+                    disabled={locationLoading}
+                    className="w-full px-3 py-2 rounded-lg bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 text-sm border border-blue-900/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {locationLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin"></div>
+                        Getting Location...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Use Current Location
+                      </>
+                    )}
+                  </button>
+                  {locationError && (
+                    <div className="text-xs text-red-400 bg-red-950/30 border border-red-900/40 rounded-lg px-2 py-1">
+                      {locationError}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-slate-400">Status</label>
@@ -528,6 +659,54 @@ export default function ProjectsPage() {
                                 placeholder="Site address"
                                 className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
                               />
+
+                              <div>
+                                <label className="text-xs text-slate-400">Location</label>
+                                <div className="mt-1 space-y-2">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    <input
+                                      type="text"
+                                      value={eSiteLat}
+                                      onChange={(e) => setESiteLat(e.target.value)}
+                                      placeholder="Latitude"
+                                      className="rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                                    />
+                                    <input
+                                      type="text"
+                                      value={eSiteLng}
+                                      onChange={(e) => setESiteLng(e.target.value)}
+                                      placeholder="Longitude"
+                                      className="rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm outline-none focus:border-slate-600"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => getCurrentLocation(true)}
+                                    disabled={eLocationLoading}
+                                    className="w-full px-3 py-2 rounded-lg bg-blue-900/30 hover:bg-blue-900/50 text-blue-300 text-sm border border-blue-900/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                  >
+                                    {eLocationLoading ? (
+                                      <>
+                                        <div className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin"></div>
+                                        Getting Location...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        </svg>
+                                        Use Current Location
+                                      </>
+                                    )}
+                                  </button>
+                                  {eLocationError && (
+                                    <div className="text-xs text-red-400 bg-red-950/30 border border-red-900/40 rounded-lg px-2 py-1">
+                                      {eLocationError}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
 
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                 <select

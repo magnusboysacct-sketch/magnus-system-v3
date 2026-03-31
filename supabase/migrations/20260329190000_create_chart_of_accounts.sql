@@ -42,12 +42,7 @@ CREATE TABLE IF NOT EXISTS chart_of_accounts (
   
   -- Hierarchy
   parent_id uuid REFERENCES chart_of_accounts(id) ON DELETE SET NULL,
-  level integer GENERATED ALWAYS AS (
-    CASE 
-      WHEN parent_id IS NULL THEN 1
-      ELSE (SELECT level FROM chart_of_accounts WHERE id = parent_id) + 1
-    END
-  ) STORED,
+  level integer,
   
   -- Balance tracking
   opening_balance numeric(15,2) DEFAULT 0,

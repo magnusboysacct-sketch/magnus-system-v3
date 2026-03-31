@@ -89,13 +89,13 @@ CREATE TABLE IF NOT EXISTS project_costs (
   
   -- Source tracking
   source_type text CHECK (source_type IN (
-    'manual',           // Manual entry
-    'expense',          // From expenses table
-    'supplier_invoice', // From supplier_invoices table
-    'payroll',          // From payroll_entries table
-    'time_entry',       // From time_entries table
-    'procurement',      // From procurements table
-    'adjustment'        // Cost adjustments
+    'manual',           -- Manual entry
+    'expense',          -- From expenses table
+    'supplier_invoice', -- From supplier_invoices table
+    'payroll',          -- From payroll_entries table
+    'time_entry',       -- From time_entries table
+    'procurement',      -- From procurements table
+    'adjustment'        -- Cost adjustments
   )),
   source_id uuid, -- Reference to source record
   
@@ -138,13 +138,13 @@ CREATE TABLE IF NOT EXISTS project_commitments (
   
   -- Commitment categorization
   commitment_type text NOT NULL CHECK (commitment_type IN (
-    'purchase_order',   // Committed to supplier
-    'contract',         // Contractual commitment
-    'subcontractor',    // Subcontractor agreement
-    'labor_agreement',  // Labor commitment
-    'material_order',   // Material order commitment
-    'equipment_rental', // Equipment rental commitment
-    'other'             // Other commitments
+    'purchase_order',   -- Committed to supplier
+    'contract',         -- Contractual commitment
+    'subcontractor',    -- Subcontractor agreement
+    'labor_agreement',  -- Labor commitment
+    'material_order',   -- Material order commitment
+    'equipment_rental', -- Equipment rental commitment
+    'other'             -- Other commitments
   )),
   
   -- Commitment amounts
@@ -179,10 +179,10 @@ CREATE TABLE IF NOT EXISTS project_commitments (
   
   -- Status
   status text DEFAULT 'active' CHECK (status IN (
-    'active',      // Commitment is active
-    'completed',   // Fully delivered/invoiced
-    'cancelled',   // Commitment cancelled
-    'disputed'     // Under dispute
+    'active',      -- Commitment is active
+    'completed',   -- Fully delivered/invoiced
+    'cancelled',   -- Commitment cancelled
+    'disputed'     -- Under dispute
   )),
   
   -- Metadata
@@ -214,11 +214,10 @@ CREATE INDEX IF NOT EXISTS idx_project_budgets_active ON project_budgets(is_acti
 
 -- Project costs indexes
 CREATE INDEX IF NOT EXISTS idx_project_costs_project ON project_costs(project_id);
-CREATE INDEX IF NOT EXISTS idx_project_costs_company ON project_costs(company_id);
 CREATE INDEX IF NOT EXISTS idx_project_costs_type ON project_costs(cost_type);
 CREATE INDEX IF NOT EXISTS idx_project_costs_date ON project_costs(cost_date);
 CREATE INDEX IF NOT EXISTS idx_project_costs_source ON project_costs(source_type, source_id);
-CREATE INDEX IF NOT EXISTS idx_project_costs_status ON project_costs(status);
+
 
 -- Project commitments indexes
 CREATE INDEX IF NOT EXISTS idx_project_commitments_project ON project_commitments(project_id);
@@ -253,19 +252,7 @@ CREATE POLICY "Users can manage their company project budgets"
   );
 
 -- Project costs RLS
-CREATE POLICY "Users can view their company project costs"
-  ON project_costs FOR SELECT
-  TO authenticated
-  USING (
-    company_id IN (SELECT company_id FROM user_profiles WHERE id = auth.uid())
-  );
 
-CREATE POLICY "Users can manage their company project costs"
-  ON project_costs FOR ALL
-  TO authenticated
-  USING (
-    company_id IN (SELECT company_id FROM user_profiles WHERE id = auth.uid())
-  );
 
 -- Project commitments RLS
 CREATE POLICY "Users can view their company project commitments"
@@ -417,7 +404,6 @@ LEFT JOIN (
     SUM(CASE WHEN cost_type = 'other' THEN amount ELSE 0 END) as other_cost,
     SUM(amount) as total_cost
   FROM project_costs 
-  WHERE status = 'approved'
   GROUP BY project_id
 ) cost_summary ON p.id = cost_summary.project_id
 LEFT JOIN (

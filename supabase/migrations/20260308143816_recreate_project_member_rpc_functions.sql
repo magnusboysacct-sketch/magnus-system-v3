@@ -198,9 +198,9 @@ begin
     raise exception 'User not found or inactive in your company';
   end if;
 
-  insert into public.project_members (project_id, user_id, role)
-  values (p_project_id, p_user_id, p_role)
-  on conflict (project_id, user_id)
-  do update set role = excluded.role;
-end;
+  INSERT INTO public.project_members (project_id, user_id, role)
+  VALUES (p_project_id, p_user_id, p_role)
+  ON CONFLICT (project_id, user_id)
+  DO UPDATE SET role = excluded.role;
+END;
 $$;

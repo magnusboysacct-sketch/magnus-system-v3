@@ -71,13 +71,13 @@ CREATE TABLE IF NOT EXISTS matching_rules (
   
   -- Rule type
   rule_type text NOT NULL CHECK (rule_type IN (
-    'exact_match',      // Exact field match
-    'pattern_match',    // Pattern-based matching
-    'amount_range',     // Amount range matching
-    'date_range',       // Date range matching
-    'reference_match',  // Reference number matching
-    'combined',         // Multiple conditions combined
-    'custom'            // Custom SQL logic
+    'exact_match',      -- Exact field match
+    'pattern_match',    -- Pattern-based matching
+    'amount_range',     -- Amount range matching
+    'date_range',       -- Date range matching
+    'reference_match',  -- Reference number matching
+    'combined',         -- Multiple conditions combined
+    'custom'            -- Custom SQL logic
   )),
   
   -- Matching conditions (JSON for flexibility)
