@@ -6,8 +6,22 @@ import {
   updateSupplier,
   deleteSupplier,
   toggleSupplierStatus,
-  type Supplier
+  createSupplierRating,
+  getSupplierRatingSummary,
+  getSupplierRatings,
+  type Supplier as SupplierType,
+  type SupplierRating,
+  type SupplierRatingSummary
 } from "../lib/suppliers";
+import {
+  fetchHardwareLumberProduct,
+  saveScrapedProduct,
+  getHardwareLumberSupplier,
+  type HardwareLumberProduct,
+  type ScrapedProductPreview,
+  type SaveResult,
+  type Supplier
+} from "../lib/supplierProductScraping";
 
 type Category = {
   id: string;
@@ -33,7 +47,7 @@ export default function SettingsMasterListsPage() {
   const [activeTab, setActiveTab] = useState<"categories" | "units" | "suppliers">("categories");
   const [categories, setCategories] = useState<Category[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
 
@@ -49,22 +63,41 @@ export default function SettingsMasterListsPage() {
 
   // Supplier form states
   const [showSupplierForm, setShowSupplierForm] = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [editingSupplier, setEditingSupplier] = useState<SupplierType | null>(null);
   const [supplierForm, setSupplierForm] = useState({
     supplier_name: "",
     contact_name: "",
     email: "",
     phone: "",
     address: "",
+    website: "", // ✅ NEW
     payment_terms: "",
     notes: "",
   });
+
+  // ✅ NEW: Rating form states
+  const [supplierRatings, setSupplierRatings] = useState<Record<string, SupplierRating[]>>({});
+  const [ratingSummaries, setRatingSummaries] = useState<Record<string, SupplierRatingSummary>>({});
+  const [ratingForm, setRatingForm] = useState({
+    rating: 5,
+    review_text: "",
+  });
+  const [showRatingForm, setShowRatingForm] = useState(false);
 
   // ✅ NEW: Scope editor states (frontend)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [scopeDraft, setScopeDraft] = useState<string>("");
   const [scopeSaving, setScopeSaving] = useState(false);
   const [scopeSaveMsg, setScopeSaveMsg] = useState<string>("");
+
+  // ✅ NEW: Supplier product scraping states
+  const [hlSupplier, setHlSupplier] = useState<Supplier | null>(null);
+  const [scrapingInput, setScrapingInput] = useState<string>("");
+  const [isScraping, setIsScraping] = useState<boolean>(false);
+  const [scrapedPreview, setScrapedPreview] = useState<HardwareLumberProduct | null>(null);
+  const [scrapingError, setScrapingError] = useState<string>("");
+  const [isSavingProduct, setIsSavingProduct] = useState<boolean>(false);
+  const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
 
   const unitTypes = [
     { value: "length", label: "Length" },
@@ -125,11 +158,42 @@ export default function SettingsMasterListsPage() {
           setScopeDraft("");
         }
       }
+
+      // ✅ NEW: Load ratings for all suppliers
+      await loadSupplierRatings();
+
+      // ✅ NEW: Load Hardware & Lumber supplier for product scraping
+      // Use the first supplier's company_id, or fallback to empty string
+      const companyId = suppliersData.length > 0 ? suppliersData[0].company_id : "";
+      const hlSupplierData = await getHardwareLumberSupplier(companyId);
+      setHlSupplier(hlSupplierData);
     } catch (err) {
       console.error("Failed to load master lists:", err);
       setError("Failed to load data");
     } finally {
       setLoading(false);
+    }
+  }
+
+  // ✅ NEW: Load ratings for all suppliers
+  async function loadSupplierRatings() {
+    try {
+      const summaries: Record<string, SupplierRatingSummary> = {};
+      const allRatings: Record<string, SupplierRating[]> = {};
+      
+      for (const supplier of suppliers) {
+        const [summary, ratings] = await Promise.all([
+          getSupplierRatingSummary(supplier.id),
+          getSupplierRatings(supplier.id),
+        ]);
+        summaries[supplier.id] = summary;
+        allRatings[supplier.id] = ratings;
+      }
+      
+      setRatingSummaries(summaries);
+      setSupplierRatings(allRatings);
+    } catch (err) {
+      console.error("Failed to load supplier ratings:", err);
     }
   }
 
@@ -252,13 +316,16 @@ export default function SettingsMasterListsPage() {
       email: "",
       phone: "",
       address: "",
+      website: "", // ✅ NEW
       payment_terms: "",
       notes: "",
     });
+    setShowRatingForm(false);
+    setRatingForm({ rating: 5, review_text: "" });
     setShowSupplierForm(true);
   }
 
-  function openEditSupplierForm(supplier: Supplier) {
+  function openEditSupplierForm(supplier: SupplierType) {
     setEditingSupplier(supplier);
     setSupplierForm({
       supplier_name: supplier.supplier_name,
@@ -266,9 +333,12 @@ export default function SettingsMasterListsPage() {
       email: supplier.email || "",
       phone: supplier.phone || "",
       address: supplier.address || "",
+      website: supplier.website || "", // ✅ NEW
       payment_terms: supplier.payment_terms || "",
       notes: supplier.notes || "",
     });
+    setShowRatingForm(false);
+    setRatingForm({ rating: 5, review_text: "" });
     setShowSupplierForm(true);
   }
 
@@ -281,9 +351,104 @@ export default function SettingsMasterListsPage() {
       email: "",
       phone: "",
       address: "",
+      website: "", // ✅ NEW
       payment_terms: "",
       notes: "",
     });
+  }
+
+  // ✅ NEW: Rating management functions
+  async function saveSupplierRating() {
+    if (!editingSupplier) return;
+  
+    try {
+      await createSupplierRating({
+        supplier_id: editingSupplier.id,
+        rating: ratingForm.rating,
+        review_text: ratingForm.review_text || null,
+      });
+      
+      // Refresh ratings
+      await loadSupplierRatings();
+      setShowRatingForm(false);
+      setRatingForm({ rating: 5, review_text: "" });
+    } catch (err) {
+      console.error("Failed to save supplier rating:", err);
+      setError(err instanceof Error ? err.message : "Failed to save supplier rating");
+    }
+  }
+
+  // ✅ NEW: Supplier product scraping functions
+  async function handleFetchProduct() {
+  if (!scrapingInput.trim()) {
+    setScrapingError("Please enter a Hardware & Lumber product URL");
+    return;
+  }
+
+  setIsScraping(true);
+  setScrapingError("");
+  setScrapedPreview(null);
+  setSaveResult(null);
+
+  try {
+    const result = await fetchHardwareLumberProduct(scrapingInput.trim());
+
+    if (result.success) {
+      // 🔥 MAP result → UI format
+      setScrapedPreview({
+        ItemNumber: result.itemNumber || "",
+        MaterialName: result.materialName || "",
+        Description: result.description || "",
+        CostEach: result.costEach || 0,
+        Category: result.category || "",
+      });
+    } else {
+      setScrapingError(result.error || "Failed to fetch product");
+    }
+  } catch (err) {
+    console.error("Error fetching product:", err);
+    setScrapingError(err instanceof Error ? err.message : "Failed to fetch product");
+  } finally {
+    setIsScraping(false);
+  }
+}
+
+  async function handleSaveProduct() {
+    if (!scrapedPreview || !hlSupplier) {
+      setScrapingError("Missing product data or supplier");
+      return;
+    }
+
+    setIsSavingProduct(true);
+    setSaveResult(null);
+
+    try {
+      const result = await saveScrapedProduct(scrapedPreview, hlSupplier.id, hlSupplier.company_id);
+      
+      if (result.success) {
+        setSaveResult(result);
+        setScrapedPreview(null);
+        setScrapingInput("");
+        setError("");
+        
+        // Refresh data to show new item
+        await loadData();
+      } else {
+        setScrapingError(result.message || "Failed to save product");
+      }
+    } catch (err) {
+      console.error("Error saving product:", err);
+      setScrapingError(err instanceof Error ? err.message : "Failed to save product");
+    } finally {
+      setIsSavingProduct(false);
+    }
+  }
+
+  function clearProductForm() {
+    setScrapingInput("");
+    setScrapedPreview(null);
+    setScrapingError("");
+    setSaveResult(null);
   }
 
   async function saveSupplier() {
@@ -327,7 +492,7 @@ export default function SettingsMasterListsPage() {
       await loadData();
     } catch (err) {
       console.error("Failed to toggle supplier:", err);
-      setError("Failed to update supplier");
+      setError(err instanceof Error ? err.message : "Failed to update supplier");
     }
   }
 
@@ -340,7 +505,7 @@ export default function SettingsMasterListsPage() {
     unit.name.toLowerCase().includes(unitSearch.toLowerCase())
   );
 
-  const filteredSuppliers = suppliers.filter((supplier) => {
+  const filteredSuppliers = suppliers.filter((supplier: SupplierType) => {
     const searchLower = supplierSearch.toLowerCase();
     return (
       supplier.supplier_name.toLowerCase().includes(searchLower) ||
@@ -358,7 +523,7 @@ export default function SettingsMasterListsPage() {
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Settings - Master Lists</h1>
-        <p className="text-slate-400 mt-1">Manage categories and units used across the system.</p>
+        <p className="text-slate-400 mt-1">Manage categories and units used across system.</p>
       </div>
 
       {/* Tabs */}
@@ -456,13 +621,13 @@ export default function SettingsMasterListsPage() {
                   value={scopeDraft}
                   onChange={(e) => setScopeDraft(e.target.value)}
                   rows={5}
-                  placeholder="Type the default scope of work for this category..."
+                  placeholder="Type in default scope of work for this category..."
                   className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
                 />
 
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-xs text-slate-400">
-                    This scope will auto-fill when you select this category on the BOQ page.
+                    This scope will auto-fill when you select this category on BOQ page.
                     {scopeSaveMsg ? (
                       <span className="ml-2 text-slate-200">{scopeSaveMsg}</span>
                     ) : null}
@@ -685,6 +850,18 @@ export default function SettingsMasterListsPage() {
                   />
                 </div>
                 <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Website</label>
+                  <input
+                    type="url"
+                    value={supplierForm.website}
+                    onChange={(e) =>
+                      setSupplierForm({ ...supplierForm, website: e.target.value })
+                    }
+                    placeholder="https://example.com"
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+                  />
+                </div>
+                <div>
                   <label className="text-xs text-slate-400 mb-1 block">Email</label>
                   <input
                     type="email"
@@ -728,38 +905,137 @@ export default function SettingsMasterListsPage() {
                     onChange={(e) =>
                       setSupplierForm({ ...supplierForm, payment_terms: e.target.value })
                     }
-                    placeholder="e.g., Net 30, COD"
+                    placeholder="Net 30, COD, etc."
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
                   />
                 </div>
-                <div>
+                <div className="col-span-2">
                   <label className="text-xs text-slate-400 mb-1 block">Notes</label>
-                  <input
-                    type="text"
+                  <textarea
                     value={supplierForm.notes}
                     onChange={(e) =>
                       setSupplierForm({ ...supplierForm, notes: e.target.value })
                     }
-                    placeholder="Additional notes"
+                    placeholder="Additional notes about this supplier"
+                    rows={3}
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
                   />
                 </div>
               </div>
-              <div className="flex gap-2 mt-3">
-                <button
-                  onClick={saveSupplier}
-                  disabled={!supplierForm.supplier_name.trim()}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm text-white"
-                >
-                  {editingSupplier ? "Update" : "Add"}
-                </button>
+
+              <div className="flex justify-end gap-2 mt-4">
                 <button
                   onClick={closeSupplierForm}
                   className="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded text-sm text-white"
                 >
                   Cancel
                 </button>
+                <button
+                  onClick={saveSupplier}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm text-white"
+                >
+                  {editingSupplier ? "Update" : "Create"}
+                </button>
               </div>
+            </div>
+          )}
+
+          {/* Rating Management UI */}
+          {showRatingForm && editingSupplier && (
+            <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-slate-200 mb-3">
+                Rate Supplier: {editingSupplier.supplier_name}
+              </h3>
+              
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm text-slate-300">Current Rating:</span>
+                  <span className="text-sm font-medium text-slate-100">
+                    {ratingSummaries[editingSupplier.id]?.average_rating 
+                      ? `${ratingSummaries[editingSupplier.id].average_rating.toFixed(1)}★ (${ratingSummaries[editingSupplier.id].rating_count} ratings)`
+                      : "No ratings yet"
+                    }
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Your Rating</label>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => setRatingForm({ ...ratingForm, rating: star })}
+                        className={`text-2xl transition-colors ${
+                          star <= ratingForm.rating
+                            ? "text-yellow-400"
+                            : "text-slate-600 hover:text-slate-400"
+                        }`}
+                      >
+                        ★
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">Review (Optional)</label>
+                  <textarea
+                    value={ratingForm.review_text}
+                    onChange={(e) => setRatingForm({ ...ratingForm, review_text: e.target.value })}
+                    placeholder="Share your experience with this supplier..."
+                    rows={3}
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  onClick={() => {
+                    setShowRatingForm(false);
+                    setRatingForm({ rating: 5, review_text: "" });
+                  }}
+                  className="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded text-sm text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveSupplierRating}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm text-white"
+                >
+                  Submit Rating
+                </button>
+              </div>
+
+              {/* Recent Ratings */}
+              {supplierRatings[editingSupplier.id] && supplierRatings[editingSupplier.id].length > 0 && (
+                <div className="mt-4 pt-4 border-t border-slate-600">
+                  <h4 className="text-sm font-medium text-slate-200 mb-2">Recent Ratings</h4>
+                  <div className="space-y-2">
+                    {supplierRatings[editingSupplier.id].slice(0, 3).map((rating) => (
+                      <div key={rating.id} className="flex items-start gap-2 text-sm">
+                        <div className="flex">
+                          {[...Array(5)].map((_, i) => (
+                            <span key={i} className={i < rating.rating ? "text-yellow-400" : "text-slate-600"}>
+                              ★
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex-1">
+                          {rating.review_text && (
+                            <p className="text-slate-300">{rating.review_text}</p>
+                          )}
+                          <p className="text-xs text-slate-500">
+                            {new Date(rating.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -770,7 +1046,7 @@ export default function SettingsMasterListsPage() {
                 onClick={openAddSupplierForm}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm text-white"
               >
-                Add Supplier
+                Add New Supplier
               </button>
             </div>
           )}
@@ -781,103 +1057,218 @@ export default function SettingsMasterListsPage() {
               type="text"
               value={supplierSearch}
               onChange={(e) => setSupplierSearch(e.target.value)}
-              placeholder="Search suppliers by name, contact, email, or phone..."
+              placeholder="Search suppliers..."
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
             />
           </div>
 
-          {/* Suppliers Table */}
+          {/* Import Supplier Product */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-slate-200 mb-3">
-              Suppliers ({filteredSuppliers.length})
-            </h3>
+            <h3 className="text-sm font-medium text-slate-200 mb-3">Import Supplier Product</h3>
+            
+            <div className="space-y-4">
+              {/* Input Section */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={scrapingInput}
+                  onChange={(e) => setScrapingInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleFetchProduct()}
+                  placeholder="Paste Hardware & Lumber product URL..."
+                  className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
+                  disabled={isScraping}
+                />
+                <button
+                  onClick={handleFetchProduct}
+                  disabled={isScraping || !scrapingInput.trim()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm text-white"
+                >
+                  {isScraping ? "Fetching..." : "Fetch Product"}
+                </button>
+              </div>
+
+              {/* Error Display */}
+              {scrapingError && (
+                <div className="bg-red-900/20 border border-red-700/50 rounded px-3 py-2">
+                  <p className="text-sm text-red-400">{scrapingError}</p>
+                </div>
+              )}
+
+              {/* Product Preview */}
+              {scrapedPreview && (
+                <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-4">
+                  <h4 className="text-sm font-medium text-slate-200 mb-3">Product Preview</h4>
+                  <div className="grid grid-cols-1 gap-3 text-sm">
+                    <div>
+                      <span className="text-xs text-slate-400">Item Number:</span>
+                      <p className="text-slate-200">{scrapedPreview.ItemNumber}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-400">Material Name:</span>
+                      <p className="text-slate-200">{scrapedPreview.MaterialName}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-400">Cost Each:</span>
+                      <p className="text-slate-200">${scrapedPreview.CostEach.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-400">Category:</span>
+                      <p className="text-slate-200">{scrapedPreview.Category}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-slate-400">Description:</span>
+                      <p className="text-slate-200">{scrapedPreview.Description}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={handleSaveProduct}
+                      disabled={isSavingProduct}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm text-white"
+                    >
+                      {isSavingProduct ? "Saving..." : "Save to Library"}
+                    </button>
+                    <button
+                      onClick={() => setScrapedPreview(null)}
+                      className="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded text-sm text-white"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Success Result */}
+              {saveResult && saveResult.success && (
+                <div className="bg-green-900/20 border border-green-700/50 rounded px-3 py-2">
+                  <p className="text-sm text-green-400">
+                    ✓ Product successfully saved to library!
+                    {saveResult.warnings && saveResult.warnings.length > 0 && (
+                      <span className="block text-xs text-green-300 mt-1">
+                        {saveResult.warnings.join(", ")}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Suppliers List */}
+          <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
+            <h3 className="text-sm font-medium text-slate-200 mb-3">Suppliers</h3>
             {filteredSuppliers.length === 0 ? (
               <p className="text-sm text-slate-400">No suppliers found</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-700">
-                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Status</th>
-                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Supplier</th>
-                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Contact</th>
-                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Phone</th>
-                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Email</th>
-                      <th className="text-left py-2 px-2 text-slate-400 font-medium">Payment Terms</th>
-                      <th className="text-right py-2 px-2 text-slate-400 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSuppliers.map((supplier) => (
-                      <tr
-                        key={supplier.id}
-                        className="border-b border-slate-700/50 hover:bg-slate-700/30"
-                      >
-                        <td className="py-2 px-2">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-600">
+                    <th className="text-left py-2 px-2 text-slate-300">Name</th>
+                    <th className="text-left py-2 px-2 text-slate-300">Contact</th>
+                    <th className="text-left py-2 px-2 text-slate-300">Website</th>
+                    <th className="text-left py-2 px-2 text-slate-300">Email</th>
+                    <th className="text-left py-2 px-2 text-slate-300">Phone</th>
+                    <th className="text-left py-2 px-2 text-slate-300">Rating</th>
+                    <th className="text-right py-2 px-2 text-slate-300">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSuppliers.map((supplier: SupplierType) => (
+                    <tr key={supplier.id} className="border-b border-slate-700">
+                      <td className="py-2 px-2">
+                        <div className="flex items-center gap-2">
                           <span
-                            className={`inline-block w-2 h-2 rounded-full ${
+                            className={`w-2 h-2 rounded-full ${
                               supplier.is_active ? "bg-green-500" : "bg-slate-500"
                             }`}
                           />
-                        </td>
-                        <td className="py-2 px-2">
                           <span
-                            className={`${
-                              supplier.is_active
-                                ? "text-slate-200"
-                                : "text-slate-400 line-through"
+                            className={`text-sm ${
+                              supplier.is_active ? "text-slate-200" : "text-slate-400 line-through"
                             }`}
                           >
                             {supplier.supplier_name}
                           </span>
-                        </td>
-                        <td className="py-2 px-2 text-slate-300">
-                          {supplier.contact_name || "-"}
-                        </td>
-                        <td className="py-2 px-2 text-slate-300">
-                          {supplier.phone || "-"}
-                        </td>
-                        <td className="py-2 px-2 text-slate-300">
-                          {supplier.email || "-"}
-                        </td>
-                        <td className="py-2 px-2 text-slate-300">
-                          {supplier.payment_terms || "-"}
-                        </td>
-                        <td className="py-2 px-2 text-right">
-                          <div className="flex gap-2 justify-end">
-                            <button
-                              onClick={() => openEditSupplierForm(supplier)}
-                              className="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs text-white"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() =>
-                                handleToggleSupplier(supplier.id, supplier.is_active)
-                              }
-                              className={`px-2 py-1 rounded text-xs font-medium ${
-                                supplier.is_active
-                                  ? "bg-red-600 hover:bg-red-500 text-white"
-                                  : "bg-green-600 hover:bg-green-500 text-white"
-                              }`}
-                            >
-                              {supplier.is_active ? "Deactivate" : "Activate"}
-                            </button>
-                            <button
-                              onClick={() =>
-                                handleDeleteSupplier(supplier.id, supplier.supplier_name)
-                              }
-                              className="px-2 py-1 bg-red-600/80 hover:bg-red-500 rounded text-xs text-white"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        </div>
+                      </td>
+                      <td className="py-2 px-2 text-slate-300">
+                        {supplier.contact_name || "-"}
+                      </td>
+                      <td className="py-2 px-2 text-slate-300">
+                        {supplier.website ? (
+                          <a
+                            href={supplier.website}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 underline"
+                          >
+                            {supplier.website}
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="py-2 px-2 text-slate-300">
+                        {supplier.email || "-"}
+                      </td>
+                      <td className="py-2 px-2 text-slate-300">
+                        {supplier.phone || "-"}
+                      </td>
+                      <td className="py-2 px-2 text-slate-300">
+                        <div className="flex items-center gap-2">
+                          <span>
+                            {ratingSummaries[supplier.id]?.average_rating 
+                              ? `${ratingSummaries[supplier.id].average_rating.toFixed(1)}★`
+                              : "-"
+                            }
+                          </span>
+                          <button
+                            onClick={() => {
+                              setEditingSupplier(supplier);
+                              setRatingForm({ rating: 5, review_text: "" });
+                              setShowRatingForm(true);
+                            }}
+                            className="text-xs text-blue-400 hover:text-blue-300 underline"
+                          >
+                            Manage
+                          </button>
+                        </div>
+                      </td>
+                      <td className="py-2 px-2 text-right">
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => openEditSupplierForm(supplier)}
+                            className="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs text-white"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleToggleSupplier(supplier.id, supplier.is_active)
+                            }
+                            className={`px-2 py-1 rounded text-xs font-medium ${
+                              supplier.is_active
+                                ? "bg-red-600 hover:bg-red-500 text-white"
+                                : "bg-green-600 hover:bg-green-500 text-white"
+                            }`}
+                          >
+                            {supplier.is_active ? "Deactivate" : "Activate"}
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleDeleteSupplier(supplier.id, supplier.supplier_name)
+                            }
+                            className="px-2 py-1 bg-red-600/80 hover:bg-red-500 rounded text-xs text-white"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </div>
