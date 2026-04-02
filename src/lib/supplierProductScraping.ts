@@ -164,7 +164,7 @@ export async function saveScrapedProduct(input: SaveScrapedProductInput) {
     description: input.description ?? null,
     cost_each: input.costEach ?? null,
     currency: input.currency ?? "JMD",
-    unit: input.unit ?? null,
+    unit: input.unit ?? "each", // Safe default to "each" instead of null
     category: input.category ?? null,
     image_url: input.imageUrl ?? null,
     source_link: input.sourceLink ?? input.url ?? null,
@@ -174,6 +174,8 @@ export async function saveScrapedProduct(input: SaveScrapedProductInput) {
     updated_at: new Date().toISOString(),
   };
 
+  console.log("saveScrapedProduct: Inserting payload:", payload);
+
   const { data, error } = await supabase
     .from("supplier_products")
     .insert(payload)
@@ -181,8 +183,114 @@ export async function saveScrapedProduct(input: SaveScrapedProductInput) {
     .single();
 
   if (error) {
+    console.error("saveScrapedProduct: Supabase error:", error);
     throw error;
   }
 
-  return data;
+  console.log("DB_SAVE_RESULT", data);
+
+  // Verify the saved row immediately after insert
+  if (data && input.itemNumber) {
+    const { data: checkData, error: checkError } = await supabase
+      .from("supplier_products")
+      .select("*")
+      .eq("item_number", input.itemNumber);
+
+    console.log("DB_VERIFY_RESULT", checkData, checkError);
+  }
+
+  // PROMOTION: Add to cost_items for Rate Library
+  const warnings: string[] = [];
+  let costItem: any = null;
+  let rateRow: any = null;
+
+  try {
+    // Check for existing cost item by cost_code (item_number)
+    let existingCostItem = null;
+    if (input.itemNumber) {
+      const { data: existing } = await supabase
+        .from("cost_items")
+        .select("id")
+        .eq("cost_code", input.itemNumber)
+        .single();
+      
+      existingCostItem = existing;
+    }
+
+    // Insert or reuse cost item
+    const costItemPayload = {
+      item_name: input.materialName || input.itemNumber || "Unknown Item",
+      description: input.description || null,
+      variant: null,
+      cost_code: input.itemNumber || null,
+      category: "Uncategorized",
+      item_type: "Material",
+      unit: input.unit || "each",
+      updated_at: new Date().toISOString(),
+    };
+
+    console.log("PROMOTE_COST_ITEM payload:", costItemPayload);
+
+    if (existingCostItem) {
+      costItem = existingCostItem;
+      console.log("PROMOTE_COST_ITEM: Reusing existing cost item:", costItem);
+    } else {
+      const { data: newCostItem, error: costItemError } = await supabase
+        .from("cost_items")
+        .insert(costItemPayload)
+        .select("id")
+        .single();
+
+      if (costItemError) {
+        console.error("PROMOTE_COST_ITEM error:", costItemError);
+        warnings.push(`Failed to promote to Rate Library: ${costItemError.message}`);
+      } else {
+        costItem = newCostItem;
+        console.log("PROMOTE_COST_ITEM result:", costItem);
+      }
+    }
+
+    // Insert rate if we have a cost item and valid price
+    if (costItem && typeof input.costEach === 'number' && input.costEach > 0) {
+      const ratePayload = {
+        cost_item_id: costItem.id,
+        rate: input.costEach,
+        currency: "JMD",
+        effective_date: new Date().toISOString().slice(0, 10),
+        source: "supplier_import",
+      };
+
+      console.log("PROMOTE_RATE payload:", ratePayload);
+
+      const { data: newRate, error: rateError } = await supabase
+        .from("cost_item_rates")
+        .insert(ratePayload)
+        .select()
+        .single();
+
+      if (rateError) {
+        console.error("PROMOTE_RATE error:", rateError);
+        warnings.push(`Failed to save rate to Rate Library: ${rateError.message}`);
+      } else {
+        rateRow = newRate;
+        console.log("PROMOTE_RATE result:", rateRow);
+      }
+    }
+  } catch (promoteError) {
+    console.error("PROMOTION error:", promoteError);
+    warnings.push(`Rate Library promotion failed: ${promoteError instanceof Error ? promoteError.message : 'Unknown error'}`);
+  }
+
+  console.log("saveScrapedProduct: Inserted data:", data);
+  
+  // Return enhanced result with promotion info
+  const result = {
+    success: true,
+    warnings: warnings.length > 0 ? warnings : undefined,
+    supplierProduct: data,
+    costItem: costItem,
+    rate: rateRow,
+  };
+  
+  return result;
 }

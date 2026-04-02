@@ -6,22 +6,37 @@ import {
   updateSupplier,
   deleteSupplier,
   toggleSupplierStatus,
-  createSupplierRating,
-  getSupplierRatingSummary,
-  getSupplierRatings,
+  getSupplier,
+  getActiveSuppliers,
+  getCurrentCompanyId,
   type Supplier as SupplierType,
-  type SupplierRating,
-  type SupplierRatingSummary
+  type CreateSupplierInput,
+  type UpdateSupplierInput,
+  type SupplierCostItem,
+  type CreateSupplierCostItemInput,
+  type CreateSupplierRateInput
 } from "../lib/suppliers";
 import {
   fetchHardwareLumberProduct,
   saveScrapedProduct,
   getHardwareLumberSupplier,
-  type HardwareLumberProduct,
-  type ScrapedProductPreview,
-  type SaveResult,
-  type Supplier
+  type SupplierScrapeResult,
+  type SaveScrapedProductInput
 } from "../lib/supplierProductScraping";
+
+// Local types for the page
+type ScrapedProductPreview = {
+  ItemNumber: string;
+  MaterialName: string;
+  Description: string;
+  CostEach: number | null;
+  Unit?: string;
+};
+
+type SaveResult = {
+  success: boolean;
+  warnings?: string[];
+};
 
 type Category = {
   id: string;
@@ -75,14 +90,6 @@ export default function SettingsMasterListsPage() {
     notes: "",
   });
 
-  // ✅ NEW: Rating form states
-  const [supplierRatings, setSupplierRatings] = useState<Record<string, SupplierRating[]>>({});
-  const [ratingSummaries, setRatingSummaries] = useState<Record<string, SupplierRatingSummary>>({});
-  const [ratingForm, setRatingForm] = useState({
-    rating: 5,
-    review_text: "",
-  });
-  const [showRatingForm, setShowRatingForm] = useState(false);
 
   // ✅ NEW: Scope editor states (frontend)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -91,10 +98,10 @@ export default function SettingsMasterListsPage() {
   const [scopeSaveMsg, setScopeSaveMsg] = useState<string>("");
 
   // ✅ NEW: Supplier product scraping states
-  const [hlSupplier, setHlSupplier] = useState<Supplier | null>(null);
+  const [hlSupplier, setHlSupplier] = useState<SupplierType | null>(null);
   const [scrapingInput, setScrapingInput] = useState<string>("");
   const [isScraping, setIsScraping] = useState<boolean>(false);
-  const [scrapedPreview, setScrapedPreview] = useState<HardwareLumberProduct | null>(null);
+  const [scrapedPreview, setScrapedPreview] = useState<ScrapedProductPreview | null>(null);
   const [scrapingError, setScrapingError] = useState<string>("");
   const [isSavingProduct, setIsSavingProduct] = useState<boolean>(false);
   const [saveResult, setSaveResult] = useState<SaveResult | null>(null);
@@ -159,14 +166,26 @@ export default function SettingsMasterListsPage() {
         }
       }
 
-      // ✅ NEW: Load ratings for all suppliers
-      await loadSupplierRatings();
 
       // ✅ NEW: Load Hardware & Lumber supplier for product scraping
-      // Use the first supplier's company_id, or fallback to empty string
-      const companyId = suppliersData.length > 0 ? suppliersData[0].company_id : "";
-      const hlSupplierData = await getHardwareLumberSupplier(companyId);
-      setHlSupplier(hlSupplierData);
+      // Find real supplier record by normalized name, no fallbacks
+      const hardwareLumberSupplier = suppliersData.find(s => 
+        s.supplier_name && s.supplier_name.trim().toLowerCase() === "hardware & lumber"
+      );
+      
+      if (!hardwareLumberSupplier) {
+        console.error("Hardware & Lumber supplier not found in database");
+        setHlSupplier(null);
+      } else {
+        console.log("Hardware & Lumber supplier resolved:", {
+          found: !!hardwareLumberSupplier,
+          supplierId: hardwareLumberSupplier?.id,
+          supplierName: hardwareLumberSupplier?.supplier_name
+        });
+        setHlSupplier(hardwareLumberSupplier);
+      }
+      
+      console.log("FINAL_SUPPLIER", hardwareLumberSupplier);
     } catch (err) {
       console.error("Failed to load master lists:", err);
       setError("Failed to load data");
@@ -175,27 +194,6 @@ export default function SettingsMasterListsPage() {
     }
   }
 
-  // ✅ NEW: Load ratings for all suppliers
-  async function loadSupplierRatings() {
-    try {
-      const summaries: Record<string, SupplierRatingSummary> = {};
-      const allRatings: Record<string, SupplierRating[]> = {};
-      
-      for (const supplier of suppliers) {
-        const [summary, ratings] = await Promise.all([
-          getSupplierRatingSummary(supplier.id),
-          getSupplierRatings(supplier.id),
-        ]);
-        summaries[supplier.id] = summary;
-        allRatings[supplier.id] = ratings;
-      }
-      
-      setRatingSummaries(summaries);
-      setSupplierRatings(allRatings);
-    } catch (err) {
-      console.error("Failed to load supplier ratings:", err);
-    }
-  }
 
   async function addCategory() {
     if (!newCategoryName.trim()) return;
@@ -316,12 +314,10 @@ export default function SettingsMasterListsPage() {
       email: "",
       phone: "",
       address: "",
-      website: "", // ✅ NEW
+      website: "",
       payment_terms: "",
       notes: "",
     });
-    setShowRatingForm(false);
-    setRatingForm({ rating: 5, review_text: "" });
     setShowSupplierForm(true);
   }
 
@@ -333,12 +329,10 @@ export default function SettingsMasterListsPage() {
       email: supplier.email || "",
       phone: supplier.phone || "",
       address: supplier.address || "",
-      website: supplier.website || "", // ✅ NEW
+      website: (supplier as any).website || "",
       payment_terms: supplier.payment_terms || "",
       notes: supplier.notes || "",
     });
-    setShowRatingForm(false);
-    setRatingForm({ rating: 5, review_text: "" });
     setShowSupplierForm(true);
   }
 
@@ -351,32 +345,12 @@ export default function SettingsMasterListsPage() {
       email: "",
       phone: "",
       address: "",
-      website: "", // ✅ NEW
+      website: "",
       payment_terms: "",
       notes: "",
     });
   }
 
-  // ✅ NEW: Rating management functions
-  async function saveSupplierRating() {
-    if (!editingSupplier) return;
-  
-    try {
-      await createSupplierRating({
-        supplier_id: editingSupplier.id,
-        rating: ratingForm.rating,
-        review_text: ratingForm.review_text || null,
-      });
-      
-      // Refresh ratings
-      await loadSupplierRatings();
-      setShowRatingForm(false);
-      setRatingForm({ rating: 5, review_text: "" });
-    } catch (err) {
-      console.error("Failed to save supplier rating:", err);
-      setError(err instanceof Error ? err.message : "Failed to save supplier rating");
-    }
-  }
 
   // ✅ NEW: Supplier product scraping functions
   async function handleFetchProduct() {
@@ -394,13 +368,13 @@ export default function SettingsMasterListsPage() {
     const result = await fetchHardwareLumberProduct(scrapingInput.trim());
 
     if (result.success) {
-      // 🔥 MAP result → UI format
+      // 🔥 MAP result → UI format (Category removed, Unit added)
       setScrapedPreview({
         ItemNumber: result.itemNumber || "",
         MaterialName: result.materialName || "",
         Description: result.description || "",
-        CostEach: result.costEach || 0,
-        Category: result.category || "",
+        CostEach: result.costEach,
+        Unit: result.unit || "",
       });
     } else {
       setScrapingError(result.error || "Failed to fetch product");
@@ -414,31 +388,86 @@ export default function SettingsMasterListsPage() {
 }
 
   async function handleSaveProduct() {
-    if (!scrapedPreview || !hlSupplier) {
-      setScrapingError("Missing product data or supplier");
+    if (!scrapedPreview) {
+      setScrapingError("Missing product data");
       return;
+    }
+
+    // Strict validation: supplier must exist and have valid UUID
+    if (!hlSupplier || !hlSupplier.id) {
+      throw new Error("Hardware & Lumber supplier not configured in database");
     }
 
     setIsSavingProduct(true);
     setSaveResult(null);
 
     try {
-      const result = await saveScrapedProduct(scrapedPreview, hlSupplier.id, hlSupplier.company_id);
+      const supplierId = hlSupplier.id;
+      const supplierName = hlSupplier.supplier_name;
       
-      if (result.success) {
-        setSaveResult(result);
+      // Debug log before save
+      console.log("SAVE_DEBUG", {
+        supplierId,
+        supplierName,
+        itemNumber: scrapedPreview.ItemNumber,
+        materialName: scrapedPreview.MaterialName,
+        description: scrapedPreview.Description,
+        costEach: scrapedPreview.CostEach,
+        unit: scrapedPreview.Unit || "each",
+        url: scrapingInput,
+      });
+
+      const result = await saveScrapedProduct({
+        supplierId,
+        supplierName,
+        itemNumber: scrapedPreview.ItemNumber,
+        materialName: scrapedPreview.MaterialName,
+        description: scrapedPreview.Description,
+        costEach: scrapedPreview.CostEach,
+        unit: scrapedPreview.Unit || "each",
+        url: scrapingInput,
+      });
+      
+      // saveScrapedProduct returns data directly, not { success } wrapper
+      if (result) {
+        setSaveResult({ success: true });
         setScrapedPreview(null);
         setScrapingInput("");
-        setError("");
+        setScrapingError("");
         
         // Refresh data to show new item
         await loadData();
       } else {
-        setScrapingError(result.message || "Failed to save product");
+        setScrapingError("Failed to save product - no data returned");
       }
     } catch (err) {
       console.error("Error saving product:", err);
-      setScrapingError(err instanceof Error ? err.message : "Failed to save product");
+      
+      // Build readable error message with priority: err.message -> JSON.stringify(err) -> fallback
+      let errorMessage = "Failed to save product";
+      
+      if (err && typeof err === 'object') {
+        if (err.message) {
+          errorMessage = err.message;
+        } else {
+          // For Supabase errors and other objects, include details
+          const errorObj = err as any;
+          const parts = [];
+          if (errorObj.code) parts.push(`Code: ${errorObj.code}`);
+          if (errorObj.details) parts.push(`Details: ${errorObj.details}`);
+          if (errorObj.hint) parts.push(`Hint: ${errorObj.hint}`);
+          
+          if (parts.length > 0) {
+            errorMessage = `${errorMessage} - ${parts.join(' | ')}`;
+          } else {
+            errorMessage = JSON.stringify(err);
+          }
+        }
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      }
+      
+      setScrapingError(errorMessage);
     } finally {
       setIsSavingProduct(false);
     }
@@ -940,104 +969,6 @@ export default function SettingsMasterListsPage() {
             </div>
           )}
 
-          {/* Rating Management UI */}
-          {showRatingForm && editingSupplier && (
-            <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-slate-200 mb-3">
-                Rate Supplier: {editingSupplier.supplier_name}
-              </h3>
-              
-              <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-sm text-slate-300">Current Rating:</span>
-                  <span className="text-sm font-medium text-slate-100">
-                    {ratingSummaries[editingSupplier.id]?.average_rating 
-                      ? `${ratingSummaries[editingSupplier.id].average_rating.toFixed(1)}★ (${ratingSummaries[editingSupplier.id].rating_count} ratings)`
-                      : "No ratings yet"
-                    }
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-slate-400 mb-1 block">Your Rating</label>
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        onClick={() => setRatingForm({ ...ratingForm, rating: star })}
-                        className={`text-2xl transition-colors ${
-                          star <= ratingForm.rating
-                            ? "text-yellow-400"
-                            : "text-slate-600 hover:text-slate-400"
-                        }`}
-                      >
-                        ★
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="text-xs text-slate-400 mb-1 block">Review (Optional)</label>
-                  <textarea
-                    value={ratingForm.review_text}
-                    onChange={(e) => setRatingForm({ ...ratingForm, review_text: e.target.value })}
-                    placeholder="Share your experience with this supplier..."
-                    rows={3}
-                    className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  onClick={() => {
-                    setShowRatingForm(false);
-                    setRatingForm({ rating: 5, review_text: "" });
-                  }}
-                  className="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded text-sm text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={saveSupplierRating}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm text-white"
-                >
-                  Submit Rating
-                </button>
-              </div>
-
-              {/* Recent Ratings */}
-              {supplierRatings[editingSupplier.id] && supplierRatings[editingSupplier.id].length > 0 && (
-                <div className="mt-4 pt-4 border-t border-slate-600">
-                  <h4 className="text-sm font-medium text-slate-200 mb-2">Recent Ratings</h4>
-                  <div className="space-y-2">
-                    {supplierRatings[editingSupplier.id].slice(0, 3).map((rating) => (
-                      <div key={rating.id} className="flex items-start gap-2 text-sm">
-                        <div className="flex">
-                          {[...Array(5)].map((_, i) => (
-                            <span key={i} className={i < rating.rating ? "text-yellow-400" : "text-slate-600"}>
-                              ★
-                            </span>
-                          ))}
-                        </div>
-                        <div className="flex-1">
-                          {rating.review_text && (
-                            <p className="text-slate-300">{rating.review_text}</p>
-                          )}
-                          <p className="text-xs text-slate-500">
-                            {new Date(rating.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Add Supplier Button */}
           {!showSupplierForm && (
@@ -1109,11 +1040,9 @@ export default function SettingsMasterListsPage() {
                     </div>
                     <div>
                       <span className="text-xs text-slate-400">Cost Each:</span>
-                      <p className="text-slate-200">${scrapedPreview.CostEach.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-slate-400">Category:</span>
-                      <p className="text-slate-200">{scrapedPreview.Category}</p>
+                      <p className="text-slate-200">
+                        {scrapedPreview.CostEach !== null ? scrapedPreview.CostEach.toFixed(2) : "Price not found"}
+                      </p>
                     </div>
                     <div>
                       <span className="text-xs text-slate-400">Description:</span>
@@ -1169,8 +1098,7 @@ export default function SettingsMasterListsPage() {
                     <th className="text-left py-2 px-2 text-slate-300">Website</th>
                     <th className="text-left py-2 px-2 text-slate-300">Email</th>
                     <th className="text-left py-2 px-2 text-slate-300">Phone</th>
-                    <th className="text-left py-2 px-2 text-slate-300">Rating</th>
-                    <th className="text-right py-2 px-2 text-slate-300">Actions</th>
+                    <th className="text-left py-2 px-2 text-slate-300">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1196,14 +1124,14 @@ export default function SettingsMasterListsPage() {
                         {supplier.contact_name || "-"}
                       </td>
                       <td className="py-2 px-2 text-slate-300">
-                        {supplier.website ? (
+                        {(supplier as any).website ? (
                           <a
-                            href={supplier.website}
+                            href={(supplier as any).website}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-400 hover:text-blue-300 underline"
                           >
-                            {supplier.website}
+                            {(supplier as any).website}
                           </a>
                         ) : (
                           "-"
@@ -1216,24 +1144,7 @@ export default function SettingsMasterListsPage() {
                         {supplier.phone || "-"}
                       </td>
                       <td className="py-2 px-2 text-slate-300">
-                        <div className="flex items-center gap-2">
-                          <span>
-                            {ratingSummaries[supplier.id]?.average_rating 
-                              ? `${ratingSummaries[supplier.id].average_rating.toFixed(1)}★`
-                              : "-"
-                            }
-                          </span>
-                          <button
-                            onClick={() => {
-                              setEditingSupplier(supplier);
-                              setRatingForm({ rating: 5, review_text: "" });
-                              setShowRatingForm(true);
-                            }}
-                            className="text-xs text-blue-400 hover:text-blue-300 underline"
-                          >
-                            Manage
-                          </button>
-                        </div>
+                        -
                       </td>
                       <td className="py-2 px-2 text-right">
                         <div className="flex gap-2 justify-end">

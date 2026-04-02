@@ -907,6 +907,9 @@ export default function RatesPage() {
         .select(fullSelect)
         .order("item_name", { ascending: true });
 
+      console.log("RATE_LIBRARY_SOURCE: v_cost_items_current (initial)");
+      console.log("RATE_LIBRARY_DATA", resp.data, resp.error);
+
       if (resp.error) {
         console.error("RatesPage load error (fullSelect):", resp.error);
         alert("Rates load failed: " + (resp.error.message || JSON.stringify(resp.error)));
@@ -970,6 +973,9 @@ export default function RatesPage() {
         .from("v_cost_items_current")
         .select(fullSelect)
         .order("item_name", { ascending: true });
+
+      console.log("RATE_LIBRARY_SOURCE: v_cost_items_current (reload)");
+      console.log("RATE_LIBRARY_DATA", resp.data, resp.error);
 
       if (resp.error) {
         console.error("RatesPage load error (fullSelect):", resp.error);
