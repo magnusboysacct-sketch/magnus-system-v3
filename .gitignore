@@ -52,3 +52,5 @@ Thumbs.db
 .idea/
 
 >>>>>>> Stashed changes
+.vercel
+.env*.local

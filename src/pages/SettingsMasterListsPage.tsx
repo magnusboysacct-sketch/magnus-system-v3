@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import {
   listSuppliers,
@@ -6,25 +6,13 @@ import {
   updateSupplier,
   deleteSupplier,
   toggleSupplierStatus,
-  getSupplier,
-  getActiveSuppliers,
-  getCurrentCompanyId,
   type Supplier as SupplierType,
-  type CreateSupplierInput,
-  type UpdateSupplierInput,
-  type SupplierCostItem,
-  type CreateSupplierCostItemInput,
-  type CreateSupplierRateInput
 } from "../lib/suppliers";
 import {
   fetchHardwareLumberProduct,
   saveScrapedProduct,
-  getHardwareLumberSupplier,
-  type SupplierScrapeResult,
-  type SaveScrapedProductInput
 } from "../lib/supplierProductScraping";
 
-// Local types for the page
 type ScrapedProductPreview = {
   ItemNumber: string;
   MaterialName: string;
@@ -44,8 +32,6 @@ type Category = {
   is_active: boolean;
   sort_order: number;
   created_at: string;
-
-  // ✅ NEW: scope lives here
   scope_of_work?: string | null;
 };
 
@@ -66,17 +52,14 @@ export default function SettingsMasterListsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
 
-  // Form states
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newUnitName, setNewUnitName] = useState("");
   const [newUnitType, setNewUnitType] = useState("other");
 
-  // Search states
   const [categorySearch, setCategorySearch] = useState("");
   const [unitSearch, setUnitSearch] = useState("");
   const [supplierSearch, setSupplierSearch] = useState("");
 
-  // Supplier form states
   const [showSupplierForm, setShowSupplierForm] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<SupplierType | null>(null);
   const [supplierForm, setSupplierForm] = useState({
@@ -85,19 +68,16 @@ export default function SettingsMasterListsPage() {
     email: "",
     phone: "",
     address: "",
-    website: "", // ✅ NEW
+    website: "",
     payment_terms: "",
     notes: "",
   });
 
-
-  // ✅ NEW: Scope editor states (frontend)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [scopeDraft, setScopeDraft] = useState<string>("");
   const [scopeSaving, setScopeSaving] = useState(false);
   const [scopeSaveMsg, setScopeSaveMsg] = useState<string>("");
 
-  // ✅ NEW: Supplier product scraping states
   const [hlSupplier, setHlSupplier] = useState<SupplierType | null>(null);
   const [scrapingInput, setScrapingInput] = useState<string>("");
   const [isScraping, setIsScraping] = useState<boolean>(false);
@@ -118,10 +98,8 @@ export default function SettingsMasterListsPage() {
     { value: "other", label: "Other" },
   ];
 
-  // Load data on mount
   useEffect(() => {
     loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadData() {
@@ -133,7 +111,6 @@ export default function SettingsMasterListsPage() {
       const [categoriesResult, unitsResult, suppliersData] = await Promise.all([
         supabase
           .from("master_categories")
-          // ✅ IMPORTANT: include scope_of_work
           .select("id, name, is_active, sort_order, created_at, scope_of_work")
           .order("is_active", { ascending: false })
           .order("sort_order", { ascending: true })
@@ -155,7 +132,6 @@ export default function SettingsMasterListsPage() {
       setUnits((unitsResult.data || []) as Unit[]);
       setSuppliers(suppliersData);
 
-      // ✅ keep editor in sync if a category is already selected
       if (selectedCategoryId) {
         const selected = cats.find((c) => c.id === selectedCategoryId);
         if (selected) {
@@ -166,13 +142,10 @@ export default function SettingsMasterListsPage() {
         }
       }
 
-
-      // ✅ NEW: Load Hardware & Lumber supplier for product scraping
-      // Find real supplier record by normalized name, no fallbacks
-      const hardwareLumberSupplier = suppliersData.find(s => 
-        s.supplier_name && s.supplier_name.trim().toLowerCase() === "hardware & lumber"
+      const hardwareLumberSupplier = suppliersData.find(
+        (s) => s.supplier_name && s.supplier_name.trim().toLowerCase() === "hardware & lumber"
       );
-      
+
       if (!hardwareLumberSupplier) {
         console.error("Hardware & Lumber supplier not found in database");
         setHlSupplier(null);
@@ -180,11 +153,11 @@ export default function SettingsMasterListsPage() {
         console.log("Hardware & Lumber supplier resolved:", {
           found: !!hardwareLumberSupplier,
           supplierId: hardwareLumberSupplier?.id,
-          supplierName: hardwareLumberSupplier?.supplier_name
+          supplierName: hardwareLumberSupplier?.supplier_name,
         });
         setHlSupplier(hardwareLumberSupplier);
       }
-      
+
       console.log("FINAL_SUPPLIER", hardwareLumberSupplier);
     } catch (err) {
       console.error("Failed to load master lists:", err);
@@ -194,7 +167,6 @@ export default function SettingsMasterListsPage() {
     }
   }
 
-
   async function addCategory() {
     if (!newCategoryName.trim()) return;
 
@@ -203,7 +175,6 @@ export default function SettingsMasterListsPage() {
         name: newCategoryName.trim(),
         is_active: true,
         sort_order: categories.length + 1,
-        // scope_of_work left blank by default
       });
 
       if (error) throw error;
@@ -266,14 +237,12 @@ export default function SettingsMasterListsPage() {
     }
   }
 
-  // ✅ NEW: select a category for scope editing
   function selectCategoryForScope(cat: Category) {
     setSelectedCategoryId(cat.id);
     setScopeDraft((cat.scope_of_work ?? "").toString());
     setScopeSaveMsg("");
   }
 
-  // ✅ NEW: save scope_of_work from frontend
   async function saveSelectedScope() {
     if (!selectedCategoryId) return;
 
@@ -289,23 +258,18 @@ export default function SettingsMasterListsPage() {
       if (error) throw error;
 
       setScopeSaveMsg("Scope saved.");
-      // update local list without full reload
       setCategories((prev) =>
-        prev.map((c) =>
-          c.id === selectedCategoryId ? { ...c, scope_of_work: scopeDraft } : c
-        )
+        prev.map((c) => (c.id === selectedCategoryId ? { ...c, scope_of_work: scopeDraft } : c))
       );
     } catch (err) {
       console.error("Failed to save scope:", err);
       setScopeSaveMsg("Failed to save scope.");
     } finally {
       setScopeSaving(false);
-      // clear message after a moment
       setTimeout(() => setScopeSaveMsg(""), 2000);
     }
   }
 
-  // Supplier functions
   function openAddSupplierForm() {
     setEditingSupplier(null);
     setSupplierForm({
@@ -351,41 +315,38 @@ export default function SettingsMasterListsPage() {
     });
   }
 
-
-  // ✅ NEW: Supplier product scraping functions
   async function handleFetchProduct() {
-  if (!scrapingInput.trim()) {
-    setScrapingError("Please enter a Hardware & Lumber product URL");
-    return;
-  }
-
-  setIsScraping(true);
-  setScrapingError("");
-  setScrapedPreview(null);
-  setSaveResult(null);
-
-  try {
-    const result = await fetchHardwareLumberProduct(scrapingInput.trim());
-
-    if (result.success) {
-      // 🔥 MAP result → UI format (Category removed, Unit added)
-      setScrapedPreview({
-        ItemNumber: result.itemNumber || "",
-        MaterialName: result.materialName || "",
-        Description: result.description || "",
-        CostEach: result.costEach,
-        Unit: result.unit || "",
-      });
-    } else {
-      setScrapingError(result.error || "Failed to fetch product");
+    if (!scrapingInput.trim()) {
+      setScrapingError("Please enter a Hardware & Lumber product URL");
+      return;
     }
-  } catch (err) {
-    console.error("Error fetching product:", err);
-    setScrapingError(err instanceof Error ? err.message : "Failed to fetch product");
-  } finally {
-    setIsScraping(false);
+
+    setIsScraping(true);
+    setScrapingError("");
+    setScrapedPreview(null);
+    setSaveResult(null);
+
+    try {
+      const result = await fetchHardwareLumberProduct(scrapingInput.trim());
+
+      if (result.success) {
+        setScrapedPreview({
+          ItemNumber: result.itemNumber || "",
+          MaterialName: result.materialName || "",
+          Description: result.description || "",
+          CostEach: result.costEach ?? null,
+          Unit: result.unit || "",
+        });
+      } else {
+        setScrapingError(result.error || "Failed to fetch product");
+      }
+    } catch (err) {
+      console.error("Error fetching product:", err);
+      setScrapingError(err instanceof Error ? err.message : "Failed to fetch product");
+    } finally {
+      setIsScraping(false);
+    }
   }
-}
 
   async function handleSaveProduct() {
     if (!scrapedPreview) {
@@ -393,19 +354,18 @@ export default function SettingsMasterListsPage() {
       return;
     }
 
-    // Strict validation: supplier must exist and have valid UUID
-    if (!hlSupplier || !hlSupplier.id) {
-      throw new Error("Hardware & Lumber supplier not configured in database");
-    }
-
     setIsSavingProduct(true);
     setSaveResult(null);
+    setScrapingError("");
 
     try {
+      if (!hlSupplier || !hlSupplier.id) {
+        throw new Error("Hardware & Lumber supplier not configured in database");
+      }
+
       const supplierId = hlSupplier.id;
       const supplierName = hlSupplier.supplier_name;
-      
-      // Debug log before save
+
       console.log("SAVE_DEBUG", {
         supplierId,
         supplierName,
@@ -427,46 +387,46 @@ export default function SettingsMasterListsPage() {
         unit: scrapedPreview.Unit || "each",
         url: scrapingInput,
       });
-      
-      // saveScrapedProduct returns data directly, not { success } wrapper
+
       if (result) {
         setSaveResult({ success: true });
         setScrapedPreview(null);
         setScrapingInput("");
         setScrapingError("");
-        
-        // Refresh data to show new item
         await loadData();
       } else {
         setScrapingError("Failed to save product - no data returned");
       }
     } catch (err) {
       console.error("Error saving product:", err);
-      
-      // Build readable error message with priority: err.message -> JSON.stringify(err) -> fallback
+
       let errorMessage = "Failed to save product";
-      
-      if (err && typeof err === 'object') {
-        if (err.message) {
-          errorMessage = err.message;
-        } else {
-          // For Supabase errors and other objects, include details
-          const errorObj = err as any;
-          const parts = [];
-          if (errorObj.code) parts.push(`Code: ${errorObj.code}`);
-          if (errorObj.details) parts.push(`Details: ${errorObj.details}`);
-          if (errorObj.hint) parts.push(`Hint: ${errorObj.hint}`);
-          
-          if (parts.length > 0) {
-            errorMessage = `${errorMessage} - ${parts.join(' | ')}`;
-          } else {
-            errorMessage = JSON.stringify(err);
-          }
-        }
-      } else if (typeof err === 'string') {
+
+      if (err instanceof Error && err.message) {
+        errorMessage = err.message;
+      } else if (typeof err === "string") {
         errorMessage = err;
+      } else if (err && typeof err === "object") {
+        const errorObj = err as Record<string, unknown>;
+        const parts: string[] = [];
+
+        if (typeof errorObj.code === "string" && errorObj.code) {
+          parts.push(`Code: ${errorObj.code}`);
+        }
+        if (typeof errorObj.details === "string" && errorObj.details) {
+          parts.push(`Details: ${errorObj.details}`);
+        }
+        if (typeof errorObj.hint === "string" && errorObj.hint) {
+          parts.push(`Hint: ${errorObj.hint}`);
+        }
+        if (typeof errorObj.message === "string" && errorObj.message) {
+          parts.unshift(errorObj.message);
+        }
+
+        errorMessage =
+          parts.length > 0 ? parts.join(" | ") : `${errorMessage} - ${JSON.stringify(err)}`;
       }
-      
+
       setScrapingError(errorMessage);
     } finally {
       setIsSavingProduct(false);
@@ -525,7 +485,6 @@ export default function SettingsMasterListsPage() {
     }
   }
 
-  // Filter data based on search
   const filteredCategories = categories.filter((cat) =>
     cat.name.toLowerCase().includes(categorySearch.toLowerCase())
   );
@@ -555,7 +514,6 @@ export default function SettingsMasterListsPage() {
         <p className="text-slate-400 mt-1">Manage categories and units used across system.</p>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-slate-700 mb-6">
         <button
           onClick={() => setActiveTab("categories")}
@@ -589,14 +547,11 @@ export default function SettingsMasterListsPage() {
         </button>
       </div>
 
-      {/* Loading/Error */}
       {loading && <p className="text-sm text-slate-400">Loading...</p>}
       {error && <p className="text-sm text-red-400">{error}</p>}
 
-      {/* Categories Tab */}
       {activeTab === "categories" && !loading && (
         <div className="space-y-4">
-          {/* Add Category */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
             <h3 className="text-sm font-medium text-slate-200 mb-3">Add New Category</h3>
             <div className="flex gap-2">
@@ -618,7 +573,6 @@ export default function SettingsMasterListsPage() {
             </div>
           </div>
 
-          {/* Search */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
             <input
               type="text"
@@ -629,7 +583,6 @@ export default function SettingsMasterListsPage() {
             />
           </div>
 
-          {/* ✅ NEW: Scope Editor Panel */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
             <h3 className="text-sm font-medium text-slate-200 mb-3">Category Scope of Work</h3>
 
@@ -641,9 +594,7 @@ export default function SettingsMasterListsPage() {
               <div className="space-y-3">
                 <div className="text-sm text-slate-300">
                   Editing scope for:{" "}
-                  <span className="font-medium text-slate-100">
-                    {selectedCategory.name}
-                  </span>
+                  <span className="font-medium text-slate-100">{selectedCategory.name}</span>
                 </div>
 
                 <textarea
@@ -674,7 +625,6 @@ export default function SettingsMasterListsPage() {
             )}
           </div>
 
-          {/* Categories List */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
             <h3 className="text-sm font-medium text-slate-200 mb-3">Categories</h3>
             {filteredCategories.length === 0 ? (
@@ -701,23 +651,16 @@ export default function SettingsMasterListsPage() {
                         />
                         <span
                           className={`text-sm ${
-                            category.is_active
-                              ? "text-slate-200"
-                              : "text-slate-400 line-through"
+                            category.is_active ? "text-slate-200" : "text-slate-400 line-through"
                           }`}
                         >
                           {category.name}
                         </span>
 
-                        {/* small indicator if scope exists */}
                         {(category.scope_of_work ?? "").trim().length > 0 ? (
-                          <span className="text-xs text-slate-400">
-                            • scope set
-                          </span>
+                          <span className="text-xs text-slate-400">• scope set</span>
                         ) : (
-                          <span className="text-xs text-slate-500">
-                            • no scope
-                          </span>
+                          <span className="text-xs text-slate-500">• no scope</span>
                         )}
                       </div>
 
@@ -743,10 +686,8 @@ export default function SettingsMasterListsPage() {
         </div>
       )}
 
-      {/* Units Tab */}
       {activeTab === "units" && !loading && (
         <div className="space-y-4">
-          {/* Add Unit */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
             <h3 className="text-sm font-medium text-slate-200 mb-3">Add New Unit</h3>
             <div className="flex gap-2">
@@ -779,7 +720,6 @@ export default function SettingsMasterListsPage() {
             </div>
           </div>
 
-          {/* Search */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
             <input
               type="text"
@@ -790,7 +730,6 @@ export default function SettingsMasterListsPage() {
             />
           </div>
 
-          {/* Units List */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
             <h3 className="text-sm font-medium text-slate-200 mb-3">Units</h3>
             {filteredUnits.length === 0 ? (
@@ -811,9 +750,7 @@ export default function SettingsMasterListsPage() {
                       <div>
                         <span
                           className={`text-sm ${
-                            unit.is_active
-                              ? "text-slate-200"
-                              : "text-slate-400 line-through"
+                            unit.is_active ? "text-slate-200" : "text-slate-400 line-through"
                           }`}
                         >
                           {unit.name}
@@ -844,15 +781,14 @@ export default function SettingsMasterListsPage() {
         </div>
       )}
 
-      {/* Suppliers Tab */}
       {activeTab === "suppliers" && !loading && (
         <div className="space-y-4">
-          {/* Add/Edit Supplier Form */}
           {showSupplierForm && (
             <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
               <h3 className="text-sm font-medium text-slate-200 mb-3">
                 {editingSupplier ? "Edit Supplier" : "Add New Supplier"}
               </h3>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Supplier Name *</label>
@@ -866,6 +802,7 @@ export default function SettingsMasterListsPage() {
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
                   />
                 </div>
+
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Contact Name</label>
                   <input
@@ -878,6 +815,7 @@ export default function SettingsMasterListsPage() {
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
                   />
                 </div>
+
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Website</label>
                   <input
@@ -890,30 +828,29 @@ export default function SettingsMasterListsPage() {
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
                   />
                 </div>
+
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Email</label>
                   <input
                     type="email"
                     value={supplierForm.email}
-                    onChange={(e) =>
-                      setSupplierForm({ ...supplierForm, email: e.target.value })
-                    }
+                    onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })}
                     placeholder="email@example.com"
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
                   />
                 </div>
+
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Phone</label>
                   <input
                     type="text"
                     value={supplierForm.phone}
-                    onChange={(e) =>
-                      setSupplierForm({ ...supplierForm, phone: e.target.value })
-                    }
+                    onChange={(e) => setSupplierForm({ ...supplierForm, phone: e.target.value })}
                     placeholder="Phone number"
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
                   />
                 </div>
+
                 <div className="col-span-2">
                   <label className="text-xs text-slate-400 mb-1 block">Address</label>
                   <input
@@ -926,6 +863,7 @@ export default function SettingsMasterListsPage() {
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
                   />
                 </div>
+
                 <div>
                   <label className="text-xs text-slate-400 mb-1 block">Payment Terms</label>
                   <input
@@ -938,13 +876,12 @@ export default function SettingsMasterListsPage() {
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
                   />
                 </div>
+
                 <div className="col-span-2">
                   <label className="text-xs text-slate-400 mb-1 block">Notes</label>
                   <textarea
                     value={supplierForm.notes}
-                    onChange={(e) =>
-                      setSupplierForm({ ...supplierForm, notes: e.target.value })
-                    }
+                    onChange={(e) => setSupplierForm({ ...supplierForm, notes: e.target.value })}
                     placeholder="Additional notes about this supplier"
                     rows={3}
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-400"
@@ -969,8 +906,6 @@ export default function SettingsMasterListsPage() {
             </div>
           )}
 
-
-          {/* Add Supplier Button */}
           {!showSupplierForm && (
             <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
               <button
@@ -982,7 +917,6 @@ export default function SettingsMasterListsPage() {
             </div>
           )}
 
-          {/* Search */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
             <input
               type="text"
@@ -993,12 +927,10 @@ export default function SettingsMasterListsPage() {
             />
           </div>
 
-          {/* Import Supplier Product */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
             <h3 className="text-sm font-medium text-slate-200 mb-3">Import Supplier Product</h3>
-            
+
             <div className="space-y-4">
-              {/* Input Section */}
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -1018,14 +950,12 @@ export default function SettingsMasterListsPage() {
                 </button>
               </div>
 
-              {/* Error Display */}
               {scrapingError && (
                 <div className="bg-red-900/20 border border-red-700/50 rounded px-3 py-2">
                   <p className="text-sm text-red-400">{scrapingError}</p>
                 </div>
               )}
 
-              {/* Product Preview */}
               {scrapedPreview && (
                 <div className="bg-slate-700/30 border border-slate-600 rounded-lg p-4">
                   <h4 className="text-sm font-medium text-slate-200 mb-3">Product Preview</h4>
@@ -1041,15 +971,23 @@ export default function SettingsMasterListsPage() {
                     <div>
                       <span className="text-xs text-slate-400">Cost Each:</span>
                       <p className="text-slate-200">
-                        {scrapedPreview.CostEach !== null ? scrapedPreview.CostEach.toFixed(2) : "Price not found"}
+                        {scrapedPreview.CostEach !== null
+                          ? scrapedPreview.CostEach.toFixed(2)
+                          : "Price not found"}
                       </p>
                     </div>
                     <div>
                       <span className="text-xs text-slate-400">Description:</span>
                       <p className="text-slate-200">{scrapedPreview.Description}</p>
                     </div>
+                    {scrapedPreview.Unit ? (
+                      <div>
+                        <span className="text-xs text-slate-400">Unit:</span>
+                        <p className="text-slate-200">{scrapedPreview.Unit}</p>
+                      </div>
+                    ) : null}
                   </div>
-                  
+
                   <div className="flex gap-2 mt-4">
                     <button
                       onClick={handleSaveProduct}
@@ -1059,7 +997,7 @@ export default function SettingsMasterListsPage() {
                       {isSavingProduct ? "Saving..." : "Save to Library"}
                     </button>
                     <button
-                      onClick={() => setScrapedPreview(null)}
+                      onClick={clearProductForm}
                       className="px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded text-sm text-white"
                     >
                       Cancel
@@ -1068,7 +1006,6 @@ export default function SettingsMasterListsPage() {
                 </div>
               )}
 
-              {/* Success Result */}
               {saveResult && saveResult.success && (
                 <div className="bg-green-900/20 border border-green-700/50 rounded px-3 py-2">
                   <p className="text-sm text-green-400">
@@ -1084,102 +1021,94 @@ export default function SettingsMasterListsPage() {
             </div>
           </div>
 
-          {/* Suppliers List */}
           <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4">
             <h3 className="text-sm font-medium text-slate-200 mb-3">Suppliers</h3>
             {filteredSuppliers.length === 0 ? (
               <p className="text-sm text-slate-400">No suppliers found</p>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-600">
-                    <th className="text-left py-2 px-2 text-slate-300">Name</th>
-                    <th className="text-left py-2 px-2 text-slate-300">Contact</th>
-                    <th className="text-left py-2 px-2 text-slate-300">Website</th>
-                    <th className="text-left py-2 px-2 text-slate-300">Email</th>
-                    <th className="text-left py-2 px-2 text-slate-300">Phone</th>
-                    <th className="text-left py-2 px-2 text-slate-300">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredSuppliers.map((supplier: SupplierType) => (
-                    <tr key={supplier.id} className="border-b border-slate-700">
-                      <td className="py-2 px-2">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              supplier.is_active ? "bg-green-500" : "bg-slate-500"
-                            }`}
-                          />
-                          <span
-                            className={`text-sm ${
-                              supplier.is_active ? "text-slate-200" : "text-slate-400 line-through"
-                            }`}
-                          >
-                            {supplier.supplier_name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-2 px-2 text-slate-300">
-                        {supplier.contact_name || "-"}
-                      </td>
-                      <td className="py-2 px-2 text-slate-300">
-                        {(supplier as any).website ? (
-                          <a
-                            href={(supplier as any).website}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-300 underline"
-                          >
-                            {(supplier as any).website}
-                          </a>
-                        ) : (
-                          "-"
-                        )}
-                      </td>
-                      <td className="py-2 px-2 text-slate-300">
-                        {supplier.email || "-"}
-                      </td>
-                      <td className="py-2 px-2 text-slate-300">
-                        {supplier.phone || "-"}
-                      </td>
-                      <td className="py-2 px-2 text-slate-300">
-                        -
-                      </td>
-                      <td className="py-2 px-2 text-right">
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            onClick={() => openEditSupplierForm(supplier)}
-                            className="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs text-white"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleToggleSupplier(supplier.id, supplier.is_active)
-                            }
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              supplier.is_active
-                                ? "bg-red-600 hover:bg-red-500 text-white"
-                                : "bg-green-600 hover:bg-green-500 text-white"
-                            }`}
-                          >
-                            {supplier.is_active ? "Deactivate" : "Activate"}
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleDeleteSupplier(supplier.id, supplier.supplier_name)
-                            }
-                            className="px-2 py-1 bg-red-600/80 hover:bg-red-500 rounded text-xs text-white"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-600">
+                      <th className="text-left py-2 px-2 text-slate-300">Name</th>
+                      <th className="text-left py-2 px-2 text-slate-300">Contact</th>
+                      <th className="text-left py-2 px-2 text-slate-300">Website</th>
+                      <th className="text-left py-2 px-2 text-slate-300">Email</th>
+                      <th className="text-left py-2 px-2 text-slate-300">Phone</th>
+                      <th className="text-right py-2 px-2 text-slate-300">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {filteredSuppliers.map((supplier: SupplierType) => (
+                      <tr key={supplier.id} className="border-b border-slate-700">
+                        <td className="py-2 px-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-2 h-2 rounded-full ${
+                                supplier.is_active ? "bg-green-500" : "bg-slate-500"
+                              }`}
+                            />
+                            <span
+                              className={`text-sm ${
+                                supplier.is_active
+                                  ? "text-slate-200"
+                                  : "text-slate-400 line-through"
+                              }`}
+                            >
+                              {supplier.supplier_name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-2 text-slate-300">{supplier.contact_name || "-"}</td>
+                        <td className="py-2 px-2 text-slate-300">
+                          {(supplier as any).website ? (
+                            <a
+                              href={(supplier as any).website}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-400 hover:text-blue-300 underline"
+                            >
+                              {(supplier as any).website}
+                            </a>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                        <td className="py-2 px-2 text-slate-300">{supplier.email || "-"}</td>
+                        <td className="py-2 px-2 text-slate-300">{supplier.phone || "-"}</td>
+                        <td className="py-2 px-2 text-right">
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => openEditSupplierForm(supplier)}
+                              className="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs text-white"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleToggleSupplier(supplier.id, supplier.is_active)}
+                              className={`px-2 py-1 rounded text-xs font-medium ${
+                                supplier.is_active
+                                  ? "bg-red-600 hover:bg-red-500 text-white"
+                                  : "bg-green-600 hover:bg-green-500 text-white"
+                              }`}
+                            >
+                              {supplier.is_active ? "Deactivate" : "Activate"}
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleDeleteSupplier(supplier.id, supplier.supplier_name)
+                              }
+                              className="px-2 py-1 bg-red-600/80 hover:bg-red-500 rounded text-xs text-white"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>

@@ -966,43 +966,127 @@ function TakeoffPageInner() {
     };
   }, [overViewer]);
 
+  function nextPage() {
+    if (pageNumber < numPages) {
+      setPageNumber((p) => p + 1);
+      fitScaleRef.current = null;
+      setLineStart(null);
+      setLineEnd(null);
+      setHoverPt(null);
+      setAreaPoints([]);
+      setAreaHoverPt(null);
+      setCountPoints([]);
+      setVolumePoints([]);
+      setVolumeHoverPt(null);
+      setShowDepthPrompt(false);
+      setCalPoints([]);
+      setCalibrating(false);
+      setIsCalibrating(false);
+      setCalibPoints([]);
+    }
+  }
+
+  function prevPage() {
+    if (pageNumber > 1) {
+      setPageNumber((p) => p - 1);
+      fitScaleRef.current = null;
+      setLineStart(null);
+      setLineEnd(null);
+      setHoverPt(null);
+      setAreaPoints([]);
+      setAreaHoverPt(null);
+      setCountPoints([]);
+      setVolumePoints([]);
+      setVolumeHoverPt(null);
+      setShowDepthPrompt(false);
+      setCalPoints([]);
+      setCalibrating(false);
+      setIsCalibrating(false);
+      setCalibPoints([]);
+    }
+  }
+
+  function startCalibrate() {
+    setError(null);
+    setCalibrating(true);
+    setIsCalibrating(true);
+    setCalibPoints([]);
+    setTool("select");
+    setLineStart(null);
+    setLineEnd(null);
+    setHoverPt(null);
+    setCalPoints([]);
+    setScaleModalOpen(true);
+  }
+
+  function cancelCalibrate() {
+    setCalibrating(false);
+    setIsCalibrating(false);
+    setCalibPoints([]);
+    setCalPoints([]);
+    setScaleModalOpen(false);
+  }
+
   function canvasPointFromEvent(e: React.MouseEvent<HTMLCanvasElement>) {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-
+    const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    const x = (mx - panZoom.panX) / panZoom.zoom;
-    const y = (my - panZoom.panY) / panZoom.zoom;
-
-    return { x, y };
+    return {
+      x: Math.round(e.clientX - rect.left),
+      y: Math.round(e.clientY - rect.top),
+    };
   }
 
-  function startPan(e: React.PointerEvent) {
-    if (isSpaceDownRef.current || e.button === 1) {
-      e.preventDefault();
-      e.stopPropagation();
-      isPanningRef.current = true;
-      panZoom.startPan(e.clientX, e.clientY);
-    }
+  function shouldStartPan(e: React.PointerEvent) {
+    const LEFT = 0;
+    const MIDDLE = 1;
+
+    if (e.button === MIDDLE) return true;
+
+    if (e.button === LEFT && isSpaceDownRef.current) return true;
+
+    return false;
   }
 
-  function updatePan(e: React.PointerEvent) {
-    if (isPanningRef.current) {
-      e.preventDefault();
-      e.stopPropagation();
-      panZoom.updatePan(e.clientX, e.clientY);
-    }
+  function onViewerPointerDown(e: React.PointerEvent) {
+    const el = viewerRef.current;
+    if (!el) return;
+
+    if (!shouldStartPan(e)) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    isPanningRef.current = true;
+    activePointerIdRef.current = e.pointerId;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+
+    panZoom.startPan(e.clientX, e.clientY);
   }
 
-  function endPan(e: React.PointerEvent) {
+  function onViewerPointerMove(e: React.PointerEvent) {
+    if (!isPanningRef.current) return;
+    if (activePointerIdRef.current !== e.pointerId) return;
+
+    e.preventDefault();
+
+    panZoom.updatePan(e.clientX, e.clientY);
+  }
+
+  function endPan(e?: React.PointerEvent) {
+    if (!isPanningRef.current) return;
     isPanningRef.current = false;
+    if (e && activePointerIdRef.current === e.pointerId) {
+      try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+    }
+    activePointerIdRef.current = null;
+    panZoom.endPan();
   }
 
-  function onViewerPointerEnter(e: React.PointerEvent) {
-    setOverViewer(true);
+  function onViewerPointerUp(e: React.PointerEvent) {
+    if (!isPanningRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    endPan(e);
   }
 
   function onViewerPointerLeave(e: React.PointerEvent) {
@@ -1050,6 +1134,15 @@ function TakeoffPageInner() {
         return [...prev, newPoint];
       });
 
+      return;
+    }
+
+    if (calibrating) {
+      const p = canvasPointFromEvent(e);
+      setCalPoints((prev) => {
+        if (prev.length >= 2) return [p];
+        return [...prev, p];
+      });
       return;
     }
 
@@ -1155,39 +1248,78 @@ function TakeoffPageInner() {
   }
 
   function onCanvasMove(e: React.MouseEvent<HTMLCanvasElement>) {
-    const p = canvasPointFromEvent(e);
-
-    if (tool === "line" && lineStart && !lineEnd) {
-      setHoverPt(p);
+    if (tool === "line") {
+      if (!lineStart) return;
+      if (lineEnd) return;
+      setHoverPt(canvasPointFromEvent(e));
+      return;
     }
 
     if (tool === "area" && areaPoints.length > 0) {
-      setAreaHoverPt(p);
+      setAreaHoverPt(canvasPointFromEvent(e));
+      return;
     }
 
     if (tool === "volume" && volumePoints.length > 0) {
-      setVolumeHoverPt(p);
+      setVolumeHoverPt(canvasPointFromEvent(e));
+      return;
     }
   }
 
-  function applyScaleFromModal(feet: number, opts: { applyAllPages: boolean; autoDimLine: boolean }) {
-    if (calibPoints.length !== 2) return;
+  function applyScaleFromModal(realFeet: number, opts: { applyAllPages: boolean; autoDimLine: boolean }) {
+    if (realFeet === 0) {
+      setFeetPerPixel(null);
+      setCalibrating(false);
+      setIsCalibrating(false);
+      setCalPoints([]);
+      setCalibPoints([]);
+      setScaleModalOpen(false);
+      setError(null);
+      return;
+    }
 
-    const p1 = calibPoints[0];
-    const p2 = calibPoints[1];
-    const pixelDist = dist(p1, p2);
-    const feetPerPixel = feet / pixelDist;
+    const pointsToUse = isCalibrating ? calibPoints : calPoints;
+    const pointsLength = isCalibrating ? calibPoints.length : calPoints.length;
 
-    setFeetPerPixel(feetPerPixel);
-    setFeetPerPdfUnit(feetPerPixel);
+    if (pointsLength !== 2) {
+      setError("Click two points on the drawing first.");
+      return;
+    }
+
+    const pixelDist = dist(pointsToUse[0], pointsToUse[1]);
+    if (pixelDist <= 0) {
+      setError("Points too close.");
+      return;
+    }
+
+    const fpp = realFeet / pixelDist;
+    setFeetPerPixel(fpp);
+
+    setCalibrating(false);
+    setIsCalibrating(false);
+    setScaleModalOpen(false);
+    setError(null);
+
+    if (!opts.autoDimLine) {
+      setCalPoints([]);
+      setCalibPoints([]);
+    }
+  }
+
+  function handleCalibrationOk(lengthFeet: number) {
+    if (!lengthFeet) return;
+
+    setPendingCalibLength(lengthFeet);
+    setCalibPoints([]);
+    setIsCalibrating(true);
+    setScaleModalOpen(false);
+  }
+
+  function onCalibrationCancel() {
     setIsCalibrating(false);
     setCalibPoints([]);
     setPendingCalibLength(null);
     setScaleModalOpen(false);
-
-    if (opts.autoDimLine) {
-      // TODO: Add dimension line
-    }
   }
 
   async function finishAreaPolygon() {
@@ -1301,512 +1433,852 @@ function TakeoffPageInner() {
 
   const canConfirmCalibration = calibPoints.length === 2;
 
-  function onCalibrationOk(lengthFeet: number) {
+  useEffect(() => {
+    if (!isCalibrating) return;
     if (calibPoints.length !== 2) return;
+    if (!pendingCalibLength) return;
 
-    const p1 = calibPoints[0];
-    const p2 = calibPoints[1];
-    const pixelDist = dist(p1, p2);
-    const feetPerPixel = lengthFeet / pixelDist;
+    const [a,b] = calibPoints;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const pixelDist = Math.sqrt(dx*dx + dy*dy);
+    if (!pixelDist || pixelDist <= 0) return;
 
-    setFeetPerPixel(feetPerPixel);
-    setFeetPerPdfUnit(feetPerPixel);
+    const newFeetPerPixel = pendingCalibLength / pixelDist;
+    setFeetPerPixel(newFeetPerPixel);
+    setFeetPerPdfUnit(newFeetPerPixel);
+
     setIsCalibrating(false);
-    setCalibPoints([]);
     setPendingCalibLength(null);
-    setScaleModalOpen(false);
-  }
-
-  function onCalibrationCancel() {
-    setIsCalibrating(false);
     setCalibPoints([]);
-    setPendingCalibLength(null);
-    setScaleModalOpen(false);
-  }
+  }, [isCalibrating, calibPoints, pendingCalibLength]);
 
   useEffect(() => {
-    if (canConfirmCalibration && !scaleModalOpen) {
-      setScaleModalOpen(true);
-      setPendingCalibLength(1);
+    if (activeGroupId) {
+      fetchCostItem(activeGroupId).then(setActiveCostItem);
+    } else {
+      setActiveCostItem(null);
     }
-  }, [canConfirmCalibration, scaleModalOpen]);
+  }, [activeGroupId]);
 
   function toggleGroupVisibility(groupId: string) {
-    setGroups((prev) =>
-      prev.map((g) => (g.id === groupId ? { ...g, visible: !g.visible } : g))
-    );
+    setGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, visible: !g.visible } : g
+    ));
   }
 
   function addNewGroup() {
     if (!newGroupName.trim()) return;
+
+    const maxGroups = features.maxTakeoffGroups;
+    if (maxGroups !== null && groups.length >= maxGroups) {
+      setPaywallFeature("Unlimited Takeoff Groups");
+      setShowPaywall(true);
+      return;
+    }
+
+    const colors = ["#ef4444", "#84cc16", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
     const newGroup = {
       id: crypto.randomUUID(),
       name: newGroupName.trim(),
-      color: "#" + Math.floor(Math.random() * 16777215).toString(16).padStart(6, "0"),
+      color: randomColor,
       visible: true,
       sortOrder: groups.length,
       locked: false,
     };
-    setGroups([...groups, newGroup]);
+
+    setGroups(prev => [...prev, newGroup]);
     setNewGroupName("");
     setShowNewGroupForm(false);
-    setActiveGroupId(newGroup.id);
   }
 
   function deleteGroup(groupId: string) {
-    if (!confirm("Delete this group and all its measurements?")) return;
-    setGroups((prev) => prev.filter((g) => g.id !== groupId));
+    setGroups(prev => prev.filter(g => g.id !== groupId));
     if (activeGroupId === groupId) {
-      setActiveGroupId(null);
+      setActiveGroupId(groups.find(g => g.id !== groupId)?.id || null);
     }
-    // Remove measurements in this group
-    const filteredMeasurements = measurements.filter((m) => m.groupId !== groupId);
-    setAllMeasurements(filteredMeasurements);
   }
 
   function exportToCSV() {
-    if (measurements.length === 0) {
-      alert("No measurements to export");
+    if (!hasFeature("takeoffExport")) {
+      setPaywallFeature("Export Takeoff to CSV");
+      setShowPaywall(true);
       return;
     }
 
-    const headers = ["Type", "Result", "Unit", "Label", "Group"];
-    const rows = measurements.map((m) => [
-      m.type,
-      m.result.toString(),
-      m.unit,
-      m.label || "",
-      groups.find((g) => g.id === m.groupId)?.name || "",
-    ]);
+    const rows = [["Group", "Type", "Label", "Result", "Unit"]];
 
-    const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
+    groups.forEach(group => {
+      const groupMeasurements = measurements.filter(m => m.groupId === group.id);
+      groupMeasurements.forEach(m => {
+        const unit = m.type === "line" ? "ft" : m.type === "area" ? "ft²" : m.type === "volume" ? "ft³" : "count";
+        rows.push([
+          group.name,
+          m.type,
+          m.label || "",
+          m.result.toFixed(2),
+          unit
+        ]);
+      });
+    });
+
+    const csv = rows.map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `takeoff-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = "takeoff-export.csv";
     a.click();
     URL.revokeObjectURL(url);
   }
 
+  function changeMeasurementGroup(measurementId: string, newGroupId: string | null) {
+    updateMeasurement(measurementId, { groupId: newGroupId || undefined });
+  }
+
+  function getGroupTotals(groupId: string) {
+    const groupMeasurements = measurements.filter(m => m.groupId === groupId);
+
+    return {
+      line: groupMeasurements
+        .filter(m => m.type === "line")
+        .reduce((sum, m) => sum + m.result, 0),
+      area: groupMeasurements
+        .filter(m => m.type === "area")
+        .reduce((sum, m) => sum + m.result, 0),
+      volume: groupMeasurements
+        .filter(m => m.type === "volume")
+        .reduce((sum, m) => sum + m.result, 0),
+      count: groupMeasurements
+        .filter(m => m.type === "count")
+        .reduce((sum, m) => sum + m.result, 0),
+    };
+  }
+
+  const visibleMeasurements = measurements.filter(m => {
+    if (!m.groupId) return true;
+    const group = groups.find(g => g.id === m.groupId);
+    return group?.visible !== false;
+  });
+
+  // Track previous state for incremental saves
+  const prevMeasurementsRef = useRef<Measurement[]>([]);
+  const prevGroupsRef = useRef<MeasurementGroup[]>([]);
+  const prevCalibrationRef = useRef<CalibrationState | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Incremental persistence
   useEffect(() => {
     if (!sessionId || !dbLoaded) return;
 
-    const debounceTimer = setTimeout(async () => {
-      setSaveStatus("saving");
+    const calibrationData = feetPerPixel ? {
+      isCalibrated: true,
+      point1: calPoints[0] || null,
+      point2: calPoints[1] || null,
+      realDistance: 0,
+      unit: "ft" as const,
+      pixelsPerUnit: 1 / (feetPerPixel || 1),
+    } : null;
+
+    // Only save if something actually changed
+    const measurementsChanged = JSON.stringify(measurements) !== JSON.stringify(prevMeasurementsRef.current);
+    const groupsChanged = JSON.stringify(groups) !== JSON.stringify(prevGroupsRef.current);
+    const calibrationChanged = JSON.stringify(calibrationData) !== JSON.stringify(prevCalibrationRef.current);
+
+    if (!measurementsChanged && !groupsChanged && !calibrationChanged) return;
+
+    const saveTimeout = setTimeout(async () => {
       try {
-        const { error } = await supabase
-          .from("takeoff_sessions")
-          .update({
-            groups,
-            measurements,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", sessionId);
+        // Update calibration if changed
+        if (calibrationChanged && calibrationData) {
+          await supabase
+            .from("takeoff_sessions")
+            .update({ calibration: calibrationData, updated_at: new Date().toISOString() })
+            .eq("id", sessionId);
+        }
 
-        if (error) throw error;
-        setSaveStatus("saved");
+        // Incremental groups sync
+        if (groupsChanged) {
+          const prevGroups = prevGroupsRef.current;
+          const currentGroups = groups;
+
+          // Find groups to delete (in prev but not current)
+          const groupsToDelete = prevGroups.filter(pg => !currentGroups.find(cg => cg.id === pg.id));
+          if (groupsToDelete.length > 0) {
+            await supabase
+              .from("takeoff_groups")
+              .delete()
+              .in("id", groupsToDelete.map(g => g.id));
+          }
+
+          // Find groups to insert (in current but not prev)
+          const groupsToInsert = currentGroups.filter(cg => !prevGroups.find(pg => pg.id === cg.id));
+          if (groupsToInsert.length > 0) {
+            await supabase
+              .from("takeoff_groups")
+              .insert(groupsToInsert.map((g, idx) => ({
+                id: g.id,
+                session_id: sessionId,
+                name: g.name,
+                color: g.color,
+                trade: g.trade || null,
+                is_hidden: !g.visible,
+                sort_order: g.sortOrder !== undefined ? g.sortOrder : idx,
+              })));
+          }
+
+          // Find groups to update (in both but potentially changed)
+          const groupsToUpdate = currentGroups.filter(cg => {
+            const pg = prevGroups.find(pg => pg.id === cg.id);
+            return pg && (pg.name !== cg.name || pg.color !== cg.color || pg.visible !== cg.visible || pg.sortOrder !== cg.sortOrder);
+          });
+          for (const g of groupsToUpdate) {
+            await supabase
+              .from("takeoff_groups")
+              .update({
+                name: g.name,
+                color: g.color,
+                is_hidden: !g.visible,
+                sort_order: g.sortOrder,
+              })
+              .eq("id", g.id);
+          }
+        }
+
+        // Incremental measurements sync
+        if (measurementsChanged) {
+          const prevMeasurements = prevMeasurementsRef.current;
+          const currentMeasurements = measurements;
+
+          // Find measurements to delete (in prev but not current)
+          const measurementsToDelete = prevMeasurements.filter(pm => !currentMeasurements.find(cm => cm.id === pm.id));
+          if (measurementsToDelete.length > 0) {
+            await supabase
+              .from("takeoff_measurements")
+              .delete()
+              .in("id", measurementsToDelete.map(m => m.id));
+          }
+
+          // Find measurements to insert (in current but not prev)
+          const measurementsToInsert = currentMeasurements.filter(cm => !prevMeasurements.find(pm => pm.id === cm.id));
+          if (measurementsToInsert.length > 0) {
+            await supabase
+              .from("takeoff_measurements")
+              .insert(measurementsToInsert.map((m, idx) => ({
+                id: m.id,
+                session_id: sessionId,
+                page_number: 1,
+                group_id: m.groupId || null,
+                type: m.type,
+                points: m.points,
+                unit: m.unit,
+                result: m.result,
+                meta: m.meta || null,
+                sort_order: idx,
+              })));
+          }
+
+          // Find measurements to update (in both but potentially changed)
+          const measurementsToUpdate = currentMeasurements.filter(cm => {
+            const pm = prevMeasurements.find(pm => pm.id === cm.id);
+            return pm && (
+              pm.type !== cm.type ||
+              JSON.stringify(pm.points) !== JSON.stringify(cm.points) ||
+              pm.unit !== cm.unit ||
+              pm.result !== cm.result ||
+              pm.groupId !== cm.groupId ||
+              JSON.stringify(pm.meta) !== JSON.stringify(cm.meta)
+            );
+          });
+          for (const m of measurementsToUpdate) {
+            await supabase
+              .from("takeoff_measurements")
+              .update({
+                group_id: m.groupId || null,
+                type: m.type,
+                points: m.points,
+                unit: m.unit,
+                result: m.result,
+                meta: m.meta || null,
+              })
+              .eq("id", m.id);
+          }
+        }
+
+        // Update refs for next comparison
+        prevMeasurementsRef.current = [...measurements];
+        prevGroupsRef.current = [...groups];
+        prevCalibrationRef.current = calibrationData;
+
       } catch (err) {
-        console.error("Failed to save takeoff:", err);
-        setSaveStatus("error");
+        console.error("Incremental save failed:", err);
       }
-    }, 2000);
+    }, 800);
 
-    return () => clearTimeout(debounceTimer);
-  }, [sessionId, dbLoaded, groups, measurements]);
+    return () => {
+      clearTimeout(saveTimeout);
+    };
+  }, [sessionId, measurements, groups, feetPerPixel, dbLoaded, calPoints]);
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-white">
-      <ScaleModal
-        open={scaleModalOpen}
-        onClose={() => setScaleModalOpen(false)}
-        onApply={applyScaleFromModal}
-        canApply={calPoints.length === 2}
-        isCalibrating={isCalibrating}
-        calibPointsCount={calibPoints.length}
-        canConfirmCalibration={canConfirmCalibration}
-        onCalibrationOk={onCalibrationOk}
-        onCalibrationCancel={onCalibrationCancel}
-      />
-
-      {showPaywall && (
-        <PaywallModal
-          isOpen={showPaywall}
-          onClose={() => setShowPaywall(false)}
-          featureName={paywallFeature}
+    <div className="p-6 h-full flex gap-6">
+      <div className="flex-1 flex flex-col min-w-0">
+        <ScaleModal
+          open={scaleModalOpen}
+          onClose={onCalibrationCancel}
+          onApply={applyScaleFromModal}
+          canApply={calPoints && calPoints.length === 2}
+          isCalibrating={isCalibrating}
+          calibPointsCount={calibPoints.length}
+          canConfirmCalibration={canConfirmCalibration}
+          onCalibrationOk={handleCalibrationOk}
+          onCalibrationCancel={onCalibrationCancel}
         />
+
+      {routeProjectId ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-xs text-slate-500 mb-1">Project Context</div>
+              <div className="text-sm font-semibold">
+                {currentProject?.name || `Project ${routeProjectId}`}
+              </div>
+              <div className="text-xs text-slate-400 mt-1">
+                Project ID: {routeProjectId}
+              </div>
+            </div>
+            <button
+              onClick={() => nav(`/projects/${routeProjectId}`)}
+              className="px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 text-sm"
+            >
+              Back to Project
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 p-4 mb-4">
+          <div className="text-sm font-semibold text-amber-300">Global Takeoff Mode</div>
+          <div className="text-xs text-amber-400/70 mt-1">
+            No project context. Access takeoff from a project dashboard for project-specific measurements.
+          </div>
+        </div>
       )}
 
-      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => nav("/projects")}
-            className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm"
-          >
-            ← Back
-          </button>
-
-          {currentProject && (
-            <div className="text-sm text-slate-300">
-              Project: {currentProject.name || "Untitled"}
-            </div>
-          )}
-
-          {saveStatus === "saved" && (
-            <div className="text-xs text-green-400">✓ All changes saved</div>
-          )}
-          {saveStatus === "saving" && (
-            <div className="text-xs text-yellow-400">Saving...</div>
-          )}
-          {saveStatus === "error" && (
-            <div className="text-xs text-red-400">Failed to save</div>
-          )}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Takeoff</h1>
+          <p className="text-slate-400 text-sm">Fit-to-view on load. Ctrl+wheel zoom-to-cursor. Line tool measures.</p>
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm cursor-pointer">
-            📁 Upload PDF
+          <div
+            className={`px-3 py-1 rounded-lg text-xs font-medium ${
+              saveStatus === "saved"
+                ? "bg-emerald-900/20 text-emerald-300 border border-emerald-900/30"
+                : saveStatus === "saving"
+                ? "bg-slate-800/50 text-slate-400 border border-slate-700"
+                : "bg-red-900/20 text-red-300 border border-red-900/30"
+            }`}
+          >
+            {saveStatus === "saved" ? "Saved ✓" : saveStatus === "saving" ? "Saving…" : "Save failed"}
+          </div>
+
+          <label className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm cursor-pointer">
+            Upload PDF
             <input
               type="file"
-              accept=".pdf"
+              accept="application/pdf,.pdf"
               className="hidden"
-              onChange={(e) => onPickFile(e.target.files?.[0] || null)}
+              onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
             />
           </label>
 
-          <button
-            onClick={() => setScaleModalOpen(true)}
-            className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm"
-          >
-            📏 Calibrate Scale
-          </button>
-
-          <button
-            onClick={exportToCSV}
-            className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm"
-          >
-            📊 Export CSV
-          </button>
+          {pdf && (
+            <>
+              <button
+                onClick={startCalibrate}
+                className="px-3 py-2 rounded-xl bg-emerald-900/25 hover:bg-emerald-900/40 border border-emerald-900/40 text-sm"
+              >
+                Calibrate Scale
+              </button>
+              <button
+                onClick={exportToCSV}
+                className="px-3 py-2 rounded-xl bg-blue-900/25 hover:bg-blue-900/40 border border-blue-900/40 text-sm"
+              >
+                Export CSV
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 relative">
-          <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
-            <div className="flex gap-1">
-              {[
-                ["select", "↖ Select"],
-                ["line", "📏 Line"],
-                ["area", "⬡ Area"],
-                ["count", "🔢 Count"],
-                ["volume", "📦 Volume"],
-              ].map(([k, label]) => (
-                <button
-                  key={k}
-                  onClick={() => setTool(k as ToolMode)}
-                  className={
-                    "px-3 py-2 rounded-lg text-sm " +
-                    (tool === k
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-800 hover:bg-slate-700 text-slate-300")
-                  }
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          onClick={() => {
+            setTool("select");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "select" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Select
+        </button>
 
-            <div className="text-xs text-slate-400 bg-slate-900/80 px-3 py-2 rounded-lg max-w-xs">
-              {tool === "select" && "Click and drag to pan, scroll to zoom"}
-              {tool === "line" && "Click two points to measure a line"}
-              {tool === "area" && "Click points to outline an area, double-click to finish"}
-              {tool === "count" && "Click to place count markers"}
-              {tool === "volume" && "Click points to outline base, double-click to set depth"}
-            </div>
+        <button
+          onClick={() => {
+            setTool("line");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "line" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Line
+        </button>
 
-            <div className="text-xs text-slate-400 bg-slate-900/80 px-3 py-2 rounded-lg">
-              Measurements: {measurements.length}
-            </div>
+        <button
+          onClick={() => {
+            setTool("area");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "area" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Area
+        </button>
+
+        <button
+          onClick={() => {
+            setTool("count");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "count" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Count
+        </button>
+
+        <button
+          onClick={() => {
+            setTool("volume");
+            setLineStart(null);
+            setLineEnd(null);
+            setHoverPt(null);
+            setAreaPoints([]);
+            setAreaHoverPt(null);
+            setCountPoints([]);
+            setVolumePoints([]);
+            setVolumeHoverPt(null);
+            setShowDepthPrompt(false);
+          }}
+          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "volume" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
+        >
+          Volume
+        </button>
+
+        <div className="flex-1" />
+
+        {tool === "line" && <div className="text-xs text-slate-400">Click 2 points to measure. 3rd click starts new line.</div>}
+        {tool === "area" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points). ESC to cancel.</div>}
+        {tool === "count" && <div className="text-xs text-slate-400">Click to place count markers. ESC to cancel.</div>}
+        {tool === "volume" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points), then enter depth. ESC to cancel.</div>}
+        {measurements.length > 0 && (
+          <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
+            {measurements.length} measurement{measurements.length === 1 ? '' : 's'}
           </div>
+        )}
+      </div>
 
-          <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
-            <select
-              value={activeGroupId || ""}
-              onChange={(e) => setActiveGroupId(e.target.value || null)}
-              className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm"
+      {groups.length > 0 && (
+        <div className="mt-4 flex items-center gap-2">
+          <label className="text-sm text-slate-400">Group:</label>
+          <select
+            value={activeGroupId || ""}
+            onChange={(e) => setActiveGroupId(e.target.value || null)}
+            className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm"
+          >
+            <option value="">None</option>
+            {groups.map(group => (
+              <option key={group.id} value={group.id}>
+                {group.name}
+              </option>
+            ))}
+          </select>
+          {activeGroupId && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-slate-800 rounded-lg text-xs">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: groups.find(g => g.id === activeGroupId)?.color }}
+              />
+              <span>{groups.find(g => g.id === activeGroupId)?.name}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showDepthPrompt && (
+        <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/30 p-4">
+          <div className="text-sm font-semibold text-emerald-200 mb-2">Enter Depth</div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={depthInput}
+              onChange={(e) => setDepthInput(e.target.value)}
+              className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm w-24"
+              placeholder="4"
+              autoFocus
+            />
+            <span className="text-sm text-slate-400">inches</span>
+            <button
+              onClick={confirmVolumeWithDepth}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium"
             >
-              <option value="">No Group</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
-
-            {tool === "volume" && showDepthPrompt && (
-              <div className="bg-slate-900 border border-slate-700 rounded-lg p-3">
-                <div className="text-sm mb-2">Depth (inches):</div>
-                <input
-                  type="number"
-                  value={depthInput}
-                  onChange={(e) => setDepthInput(e.target.value)}
-                  className="w-full px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm"
-                  placeholder="4"
-                />
-                <div className="flex gap-2 mt-2">
-                  <button
-                    onClick={() => confirmVolumeWithDepth()}
-                    className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-xs"
-                  >
-                    OK
-                  </button>
-                  <button
-                    onClick={() => setShowDepthPrompt(false)}
-                    className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {error && (
-              <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 max-w-xs">
-                <div className="text-sm text-red-300">{error}</div>
-              </div>
-            )}
-
-            {feetPerPixel && (
-              <div className="bg-slate-900/80 px-3 py-2 rounded-lg text-xs">
-                Scale: 1 px = {feetPerPixel.toFixed(4)} ft
-              </div>
-            )}
+              Confirm
+            </button>
+            <button
+              onClick={() => {
+                setShowDepthPrompt(false);
+                setVolumePoints([]);
+                setVolumeHoverPt(null);
+              }}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
+            >
+              Cancel
+            </button>
           </div>
+        </div>
+      )}
 
-          {loadingPdf && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50">
-              <div className="text-lg">Loading PDF...</div>
+      {error && (
+        <div className="mt-4 rounded-xl border border-red-900/40 bg-red-950/30 p-3 text-sm text-red-200">
+          {error}
+        </div>
+      )}
+
+      {loadingPdf && <div className="mt-4 text-sm text-slate-400">Loading PDF…</div>}
+
+      {pdf && (
+        <div className="mt-4 flex items-center gap-2">
+          <button onClick={prevPage} className="px-3 py-2 bg-slate-800 rounded-lg">
+            Prev
+          </button>
+
+          <span className="text-sm">
+            Page {pageNumber} / {numPages}
+          </span>
+
+          <button onClick={nextPage} className="px-3 py-2 bg-slate-800 rounded-lg">
+            Next
+          </button>
+
+          <div className="flex-1" />
+
+          {feetPerPixel ? (
+            <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
+              Scale set: {feetPerPixel.toFixed(4)} ft / px
             </div>
+          ) : (
+            <div className="text-xs text-slate-400">Scale not set (calibrate before measuring)</div>
           )}
 
-          {!pdf && !loadingPdf && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-2xl mb-4">📄</div>
-                <div className="text-lg mb-2">No PDF loaded</div>
-                <div className="text-sm text-slate-400 mb-4">
-                  Upload a PDF to start measuring
-                </div>
-                <label className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 cursor-pointer">
-                  Upload PDF
-                  <input
-                    type="file"
-                    accept=".pdf"
-                    className="hidden"
-                    onChange={(e) => onPickFile(e.target.files?.[0] || null)}
-                  />
-                </label>
-              </div>
-            </div>
-          )}
+          <div className="w-3" />
+          <span className="text-sm">{Math.round(panZoom.zoom * 100)}%</span>
 
-          {pdf && (
-            <div className="absolute bottom-4 left-4 right-4 z-10 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setPageNumber(Math.max(1, pageNumber - 1))}
-                  disabled={pageNumber <= 1}
-                  className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-sm"
-                >
-                  Prev
-                </button>
-                <span className="text-sm">
-                  Page {pageNumber} of {numPages}
-                </span>
-                <button
-                  onClick={() => setPageNumber(Math.min(numPages, pageNumber + 1))}
-                  disabled={pageNumber >= numPages}
-                  className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-sm"
-                >
-                  Next
-                </button>
-              </div>
+          <button
+            onClick={async () => {
+              fitScaleRef.current = null;
+              const fit = await computeFitScale();
+              if (fit != null) {
+                fitScaleRef.current = fit;
+                const page = await pdf.getPage(pageNumber);
+                const v = page.getViewport({ scale: 1 });
+                const viewer = viewerRef.current;
+                if (viewer) {
+                  panZoom.fitToView(v.width, v.height, viewer.clientWidth, viewer.clientHeight);
+                }
+              }
+            }}
+            className="ml-2 px-3 py-2 bg-slate-800 rounded-lg text-sm"
+          >
+            Fit
+          </button>
+        </div>
+      )}
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => panZoom.zoomIn()}
-                  className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sm"
-                >
-                  +
-                </button>
-                <span className="text-sm">
-                  {Math.round(panZoom.zoom * 100)}%
-                </span>
-                <button
-                  onClick={() => panZoom.zoomOut()}
-                  className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sm"
-                >
-                  -
-                </button>
-                <button
-                  onClick={async () => {
-                    const fit = await computeFitScale();
-                    if (fit != null) {
-                      panZoom.fitToView(
-                        canvasWidth,
-                        canvasHeight,
-                        viewerRef.current?.clientWidth || 800,
-                        viewerRef.current?.clientHeight || 600
-                      );
-                    }
-                  }}
-                  className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sm"
-                >
-                  Fit
-                </button>
-              </div>
-            </div>
-          )}
-
+      <div className="mt-4 flex-1 border border-slate-800 rounded-xl bg-slate-950 overflow-hidden">
+        {pdf ? (
           <div
             ref={viewerRef}
-            className="flex-1 overflow-hidden relative"
-            onPointerEnter={onViewerPointerEnter}
+            onPointerDown={onViewerPointerDown}
+            onPointerMove={onViewerPointerMove}
+            onPointerUp={onViewerPointerUp}
             onPointerLeave={onViewerPointerLeave}
             onWheel={onViewerWheel}
+            onMouseEnter={() => setOverViewer(true)}
+            onMouseLeave={() => setOverViewer(false)}
+            className="p-3 h-full relative"
+            style={{ touchAction: "none", cursor: "default" }}
           >
-            {pdf && (
+            <div style={{ display: "inline-block", transform: `translate(${panZoom.panX}px, ${panZoom.panY}px)` }}>
               <canvas
                 ref={canvasRef}
-                className="absolute top-0 left-0 cursor-crosshair"
-                onPointerDown={startPan}
-                onPointerMove={updatePan}
-                onPointerUp={endPan}
                 onClick={onCanvasClick}
                 onDoubleClick={onCanvasDoubleClick}
                 onMouseMove={onCanvasMove}
-                style={{
-                  cursor: isPanningRef.current ? "grabbing" : tool === "select" ? "grab" : "crosshair",
-                }}
+                className={calibrating || isPanningRef.current ? "cursor-crosshair" : (tool === "line" || tool === "area" || tool === "count" || tool === "volume") ? "cursor-crosshair" : "cursor-default"}
+                style={{ userSelect: "none" }}
               />
-            )}
-            {pdf && (
+
               <MeasurementLayer
-                measurements={measurements}
+                measurements={visibleMeasurements}
                 scale={panZoom.zoom}
-                offsetX={panZoom.panX}
-                offsetY={panZoom.panY}
+                offsetX={0}
+                offsetY={0}
                 width={canvasWidth}
                 height={canvasHeight}
+                onMeasurementClick={(id) => {
+                  console.log("Clicked measurement:", id);
+                }}
               />
-            )}
+            </div>
+
+            <div className="mt-2 text-xs text-slate-400">
+              {isCalibrating
+                ? `Calibration: click 2 points on drawing (${calibPoints.length}/2).`
+                : "Calibrate: open Scale, click 2 points on drawing, then OK."
+              }
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="h-full flex items-center justify-center text-slate-500">Upload a PDF drawing to begin.</div>
+        )}
+      </div>
+    </div>
 
-        <div className="w-80 border-l border-slate-800 bg-slate-900/50 overflow-y-auto">
-          <div className="p-4">
-            <h3 className="text-lg font-semibold mb-4">Measurement Groups</h3>
+    <div className="w-80 flex-shrink-0 border-l border-slate-800 pl-6 flex flex-col overflow-hidden">
+      <div className="mb-4 flex-shrink-0">
+        <h2 className="text-xl font-semibold mb-2">Groups</h2>
+        <p className="text-slate-400 text-xs">Organize measurements by trade or category</p>
+      </div>
 
-            {groups.map((group) => (
-              <div key={group.id} className="mb-4 border border-slate-700 rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleGroupVisibility(group.id)}
-                      className="w-4 h-4 rounded"
-                      style={{
-                        backgroundColor: group.visible ? group.color : "transparent",
-                        border: `2px solid ${group.color}`,
-                      }}
-                    />
-                    <span className="font-medium">{group.name}</span>
-                  </div>
-                  <button
-                    onClick={() => deleteGroup(group.id)}
-                    className="text-red-400 hover:text-red-300 text-sm"
-                  >
-                    Delete
-                  </button>
-                </div>
+      <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+        {groups.map(group => {
+          const totals = getGroupTotals(group.id);
+          const hasData = totals.line > 0 || totals.area > 0 || totals.volume > 0 || totals.count > 0;
+          const groupMeasurements = measurements.filter(m => m.groupId === group.id);
 
-                <div className="text-xs text-slate-400 space-y-1">
-                  <div>
-                    Lines: {measurements.filter((m) => m.groupId === group.id && m.type === "line").length}
+          return (
+            <div
+              key={group.id}
+              className={`rounded-lg border p-3 ${
+                activeGroupId === group.id
+                  ? "bg-slate-800/50 border-slate-700"
+                  : "bg-slate-900/30 border-slate-800 hover:bg-slate-900/50"
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <button
+                  onClick={() => toggleGroupVisibility(group.id)}
+                  className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-slate-700"
+                >
+                  {group.visible ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  )}
+                </button>
+
+                <div
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: group.color }}
+                />
+
+                <button
+                  onClick={() => setActiveGroupId(group.id)}
+                  className="flex-1 text-left text-sm font-medium"
+                >
+                  {group.name}
+                </button>
+
+                {groupMeasurements.length > 0 && (
+                  <div className="px-2 py-0.5 bg-slate-700/50 rounded-full text-xs text-slate-300">
+                    {groupMeasurements.length}
                   </div>
-                  <div>
-                    Areas: {measurements.filter((m) => m.groupId === group.id && m.type === "area").length}
-                  </div>
-                  <div>
-                    Volumes: {measurements.filter((m) => m.groupId === group.id && m.type === "volume").length}
-                  </div>
-                  <div>
-                    Counts: {measurements.filter((m) => m.groupId === group.id && m.type === "count").length}
-                  </div>
-                </div>
+                )}
+
+                <button
+                  onClick={() => deleteGroup(group.id)}
+                  className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-red-900/30 text-slate-400 hover:text-red-400"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-            ))}
 
-            <div className="mb-4">
-              <div className="text-sm text-slate-400 mb-2">Ungrouped Measurements</div>
-              {measurements.filter((m) => !m.groupId).length === 0 ? (
-                <div className="text-xs text-slate-500">None</div>
-              ) : (
-                <div className="space-y-2">
-                  {measurements.filter((m) => !m.groupId).map((m) => (
-                    <div key={m.id} className="text-xs bg-slate-800 rounded p-2">
-                      <div className="flex justify-between">
-                        <span>{m.type}</span>
-                        <span>{m.result.toFixed(2)} {m.unit}</span>
-                      </div>
-                      {m.result !== calculateQuantity(m, activeCostItem) && (
-                        <div className="text-green-400">
-                          Calculated Qty: {calculateQuantity(m, activeCostItem).toFixed(2)}
-                        </div>
-                      )}
-                      <div className="text-slate-400">{m.label}</div>
+              {hasData && (
+                <div className="mt-2 pt-2 border-t border-slate-700/50 space-y-1 text-xs">
+                  {totals.line > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Line:</span>
+                      <span className="font-mono">{totals.line.toFixed(2)} ft</span>
                     </div>
-                  ))}
+                  )}
+                  {totals.area > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Area:</span>
+                      <span className="font-mono">{totals.area.toFixed(2)} ft²</span>
+                    </div>
+                  )}
+                  {totals.volume > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Volume:</span>
+                      <span className="font-mono">{totals.volume.toFixed(2)} yd³</span>
+                    </div>
+                  )}
+                  {totals.count > 0 && (
+                    <div className="flex justify-between text-slate-400">
+                      <span>Count:</span>
+                      <span className="font-mono">{totals.count} ea</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+          );
+        })}
 
-            {showNewGroupForm ? (
-              <div className="border border-slate-700 rounded-lg p-3">
-                <input
-                  type="text"
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  placeholder="Group name"
-                  className="w-full px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm mb-2"
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={addNewGroup}
-                    className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-xs"
+        {measurements.filter(m => !m.groupId).length > 0 && (
+          <div className="mt-4 pt-4 border-t border-slate-700/50">
+            <div className="text-xs font-semibold text-slate-400 mb-2">Ungrouped Measurements</div>
+            <div className="space-y-1">
+              {measurements.filter(m => !m.groupId).map(m => (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-2 p-2 bg-slate-900/30 rounded text-xs"
+                >
+                  <div className="flex-1 truncate">
+                    <div className="font-medium">{m.label || `${m.type} measurement`}</div>
+                    <div className="text-slate-400">
+                      {m.result.toFixed(2)} {m.unit}
+                      {activeCostItem?.calc_engine_json && (
+                        <span className="ml-2 text-xs text-emerald-400">
+                          Calculated Qty: {m.result.toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        changeMeasurementGroup(m.id, e.target.value);
+                      }
+                    }}
+                    className="px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs"
                   >
-                    Add
-                  </button>
-                  <button
-                    onClick={() => setShowNewGroupForm(false)}
-                    className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs"
-                  >
-                    Cancel
-                  </button>
+                    <option value="">Move to...</option>
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
                 </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowNewGroupForm(true)}
-                className="w-full px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm"
-              >
-                + Add Group
-              </button>
-            )}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-slate-800 flex-shrink-0">
+        {showNewGroupForm ? (
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") addNewGroup();
+                if (e.key === "Escape") {
+                  setShowNewGroupForm(false);
+                  setNewGroupName("");
+                }
+              }}
+              placeholder="Group name"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={addNewGroup}
+                className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => {
+                  setShowNewGroupForm(false);
+                  setNewGroupName("");
+                }}
+                className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowNewGroupForm(true)}
+            className="w-full px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm flex items-center justify-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Group
+          </button>
+        )}
       </div>
     </div>
+
+    <PaywallModal
+      isOpen={showPaywall}
+      onClose={() => setShowPaywall(false)}
+      featureName={paywallFeature}
+    />
+  </div>
   );
 }
 

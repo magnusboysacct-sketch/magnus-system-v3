@@ -880,6 +880,9 @@ export default function RatesPage() {
   const [fCalcJson, setFCalcJson] = useState<string>("");
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const [previewMsg, setPreviewMsg] = useState<string>("");
+  const [formulaType, setFormulaType] = useState<string>("");
+  const [formulaInput, setFormulaInput] = useState<string>("");
+  const [formulaPreview, setFormulaPreview] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -1108,6 +1111,39 @@ export default function RatesPage() {
     setFUnit((item.unit || "").trim() || (unitOptions[0] ?? "each"));
     setFRate(item.current_rate == null ? "" : String(item.current_rate));
     setFVariant(item.variant || "");
+    
+    // Parse calc_engine_json if exists
+    const calcJson = (item as any).calc_engine_json;
+    if (calcJson) {
+      try {
+        const parsed = typeof calcJson === 'string' ? JSON.parse(calcJson) : calcJson;
+        if (parsed.vars && parsed.vars.length > 0) {
+          if (parsed.vars.some((v: any) => v.key === 'length')) {
+            setFormulaType('length');
+            setFormulaInput(parsed.formulas?.qty || 'length');
+          } else if (parsed.vars.some((v: any) => v.key === 'area')) {
+            setFormulaType('area');
+            setFormulaInput(parsed.formulas?.qty || 'area');
+          } else if (parsed.vars.some((v: any) => v.key === 'volume') || (parsed.vars.length === 3 && parsed.vars.some((v: any) => v.key === 'length'))) {
+            setFormulaType('volume');
+            setFormulaInput(parsed.formulas?.qty || 'length * width * height');
+          } else if (parsed.vars.some((v: any) => v.key === 'count')) {
+            setFormulaType('count');
+            setFormulaInput(parsed.formulas?.qty || 'count');
+          } else {
+            setFormulaType('');
+            setFormulaInput('');
+          }
+        }
+      } catch {
+        setFormulaType('');
+        setFormulaInput('');
+      }
+    } else {
+      setFormulaType('');
+      setFormulaInput('');
+    }
+    
     setIsModalOpen(true);
   }
 
@@ -1121,6 +1157,9 @@ export default function RatesPage() {
     setFType(ITEM_TYPES[0]);
     setFUnit("each");
     setFRate("");
+    setFormulaType("");
+    setFormulaInput("");
+    setFormulaPreview(null);
     setActiveId(null);
     setMode("add");
   }
@@ -1171,26 +1210,95 @@ export default function RatesPage() {
     return filteredItems.filter((x) => x.current_rate != null).length;
   }, [filteredItems]);
 
+  function buildCalcJson(type: string, formula: string) {
+    if (!type || !formula) return null;
+    
+    const base = { version: 1, qty_expr: "qty" };
+    
+    switch (type) {
+      case 'length':
+        return {
+          ...base,
+          vars: [{ key: "length", label: "Length" }],
+          formulas: { qty: formula }
+        };
+      case 'area':
+        return {
+          ...base,
+          vars: [{ key: "area", label: "Area" }],
+          formulas: { qty: formula }
+        };
+      case 'volume':
+        return {
+          ...base,
+          vars: [
+            { key: "length" },
+            { key: "width" },
+            { key: "height" }
+          ],
+          formulas: { qty: formula }
+        };
+      case 'count':
+        return {
+          ...base,
+          vars: [{ key: "count" }],
+          formulas: { qty: formula }
+        };
+      default:
+        return null;
+    }
+  }
+
+  function previewFormula(type: string, formula: string) {
+    if (!type || !formula) {
+      setFormulaPreview(null);
+      return;
+    }
+    
+    let vars: any = {};
+    switch (type) {
+      case 'length':
+        vars = { length: 10 };
+        break;
+      case 'area':
+        vars = { area: 100 };
+        break;
+      case 'volume':
+        vars = { length: 10, width: 5, height: 2 };
+        break;
+      case 'count':
+        vars = { count: 1 };
+        break;
+    }
+    
+    const result = computeQuantity(formula, vars, { roundTo: 2, clampZero: true });
+    setFormulaPreview(result.ok ? result.value : null);
+  }
+
   async function saveRate(itemId: string, nextRate: number) {
     setBusy(true);
     try {
+      const ratePayload = {
+        cost_item_id: itemId,
+        rate: nextRate,
+        currency: "JMD",
+        effective_date: new Date().toISOString().slice(0, 10),
+        source: "manual_edit",
+      };
+
+      console.log("RATE_INSERTED", ratePayload);
+
       const { error } = await supabase
-        .from("cost_items")
-        .update({ unit_rate: nextRate })
-        .eq("id", itemId);
+        .from("cost_item_rates")
+        .insert(ratePayload);
 
       if (error) {
         console.error("Rate update error:", error);
         return;
       }
 
-      // optimistic UI update
-      const nowIso = new Date().toISOString();
-      setItems((prev) =>
-        prev.map((r) =>
-          r.id === itemId ? { ...r, unit_rate: nextRate, updated_at: nowIso } : r
-        )
-      );
+      // Reload data to get updated current rate
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -1559,37 +1667,37 @@ export default function RatesPage() {
 
               <tbody>
   {filteredItems.map((item) => {
-    const formula = (item as any).formula || "";
-    const waste = (item as any).waste_percent ?? 0;
-
-    const preview = formula
-      ? computeQuantity(
-          formula,
-          buildDefaultVars({ length: 10, width: 10, depth: 1, count: 1 }),
-          { wastePercent: waste, roundTo: 2, clampZero: true }
-        )
-      : null;
+    const calcJson = (item as any).calc_engine_json;
+    let formulaBadge = null;
+    
+    if (calcJson) {
+      try {
+        const parsed = typeof calcJson === 'string' ? JSON.parse(calcJson) : calcJson;
+        if (parsed.vars && parsed.vars.length > 0) {
+          const varKeys = parsed.vars.map((v: any) => v.key);
+          if (varKeys.includes('count')) {
+            formulaBadge = <span className="px-2 py-1 text-[10px] bg-orange-500/20 text-orange-300 rounded">Count</span>;
+          } else if (varKeys.includes('area')) {
+            formulaBadge = <span className="px-2 py-1 text-[10px] bg-green-500/20 text-green-300 rounded">Area</span>;
+          } else if (varKeys.includes('length') && varKeys.includes('width') && varKeys.includes('height')) {
+            formulaBadge = <span className="px-2 py-1 text-[10px] bg-purple-500/20 text-purple-300 rounded">Volume</span>;
+          } else if (varKeys.includes('length')) {
+            formulaBadge = <span className="px-2 py-1 text-[10px] bg-blue-500/20 text-blue-300 rounded">Length</span>;
+          }
+        }
+      } catch {
+        // Invalid JSON, show no badge
+      }
+    }
 
     return (
       <tr key={item.id} className="border-b border-white/5">
         {/* Item */}
         <td className="py-3 px-4">
           <div className="font-medium">{item.item_name}</div>
-
-          {/* Preview line */}
-          {formula ? (
-            <div className="mt-1 text-[11px] opacity-70">
-              Calc preview (10×10×1):{" "}
-              <span className="opacity-100">
-                {preview?.ok ? String(preview.value) : "ERR"}
-              </span>
-              {!preview?.ok && preview?.error ? (
-                <span className="ml-2 opacity-70">({preview.error})</span>
-              ) : null}
-            </div>
-          ) : (
-            <div className="mt-1 text-[11px] opacity-40">No formula</div>
-          )}
+          <div className="mt-1 flex items-center gap-2">
+            {formulaBadge || <span className="px-2 py-1 text-[10px] opacity-30 rounded">No formula</span>}
+          </div>
         </td>
 
         {/* Description */}
@@ -1960,62 +2068,68 @@ export default function RatesPage() {
                 {showAdvanced && (
                   <div className="p-4 bg-[#07101d] space-y-3">
                     <div>
-                      <div className="text-xs opacity-70 mb-1">Calculator JSON (saved on this item)</div>
-                      <textarea
-                        value={fCalcJson}
-                        onChange={(e) => setFCalcJson(e.target.value)}
-                        placeholder='{"version":1,"vars":[{"key":"Area","default":0}],"consts":{},"formulas":{},"qty_expr":"Area","qty_rounding":{"mode":"round","decimals":0}}'
-                        className="w-full h-[220px] bg-white/5 border border-white/10 rounded-md p-3 text-xs font-mono outline-none focus:ring-1 focus:ring-white/20"
-                      />
-                      <div className="text-[11px] opacity-60 mt-2">
-                        Tip: Put your calculator JSON here. Preview will validate the JSON format (next step we’ll add real math preview).
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          try {
-                            if (!fCalcJson.trim()) {
-                              setPreviewMsg("No calculator JSON entered.");
-                              return;
-                            }
-                            JSON.parse(fCalcJson);
-                            setPreviewMsg("✅ JSON is valid. Next step: run actual qty preview using the engine.");
-                          } catch (e:any) {
-                            setPreviewMsg("❌ Invalid JSON: " + (e?.message || String(e)));
+                      <div className="text-xs opacity-70 mb-1">Formula Type</div>
+                      <select
+                        value={formulaType}
+                        onChange={(e) => {
+                          const newType = e.target.value;
+                          setFormulaType(newType);
+                          
+                          // Set default formula based on type
+                          let defaultFormula = '';
+                          switch (newType) {
+                            case 'length':
+                              defaultFormula = 'length';
+                              break;
+                            case 'area':
+                              defaultFormula = 'area';
+                              break;
+                            case 'volume':
+                              defaultFormula = 'length * width * height';
+                              break;
+                            case 'count':
+                              defaultFormula = 'count';
+                              break;
                           }
+                          setFormulaInput(defaultFormula);
+                          previewFormula(newType, defaultFormula);
                         }}
-                        className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-4 py-2 text-sm"
+                        className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
                       >
-                        Preview
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFCalcJson(JSON.stringify({
-                            version: 1,
-                            vars: [{ key: "Area", label: "Wall Area", unit: "ft²", default: 0, min: 0 }],
-                            consts: { WastePct: 0.05, BlockFaceArea: 0.8889 },
-                            formulas: {
-                              BaseQty: "Area / BlockFaceArea",
-                              WithWaste: "BaseQty * (1 + WastePct)"
-                            },
-                            qty_expr: "WithWaste",
-                            qty_rounding: { mode: "ceil" },
-                            outputs: { BaseQty: "BaseQty", WithWaste: "WithWaste" }
-                          }, null, 2));
-                          setPreviewMsg("Example loaded.");
-                        }}
-                        className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-4 py-2 text-sm"
-                      >
-                        Load Example
-                      </button>
-
-                      <div className="text-xs opacity-70 ml-auto truncate">{previewMsg}</div>
+                        <option value="">Select formula type...</option>
+                        <option value="length">Length</option>
+                        <option value="area">Area</option>
+                        <option value="volume">Volume</option>
+                        <option value="count">Count</option>
+                      </select>
                     </div>
+                    
+                    {formulaType && (
+                      <div>
+                        <div className="text-xs opacity-70 mb-1">Formula</div>
+                        <input
+                          value={formulaInput}
+                          onChange={(e) => {
+                            setFormulaInput(e.target.value);
+                            previewFormula(formulaType, e.target.value);
+                          }}
+                          placeholder="Enter formula..."
+                          className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20 font-mono"
+                        />
+                        <div className="text-[11px] opacity-60 mt-1">
+                          Variables: {formulaType === 'volume' ? 'length, width, height' : formulaType}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {formulaPreview !== null && (
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs opacity-70">Preview Quantity:</div>
+                        <div className="text-sm font-semibold text-green-400">
+                          {formulaPreview.toLocaleString()}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2060,8 +2174,8 @@ export default function RatesPage() {
 
                   // Calculator Engine JSON (optional)
                   let calc_engine_json: any = null;
-                  if (fCalcJson && fCalcJson.trim()) {
-                    try { calc_engine_json = JSON.parse(fCalcJson); } catch { calc_engine_json = null; }
+                  if (formulaType && formulaInput) {
+                    calc_engine_json = buildCalcJson(formulaType, formulaInput);
                   }
 
                   (payload as any).calc_engine_json = calc_engine_json;
