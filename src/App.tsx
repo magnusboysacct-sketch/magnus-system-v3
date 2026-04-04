@@ -42,6 +42,7 @@ import AccountsReceivablePage from "./pages/AccountsReceivablePage";
 import ExpensesPage from "./pages/ExpensesPage";
 import FinanceDashboardPage from "./pages/FinanceDashboardPage";
 import FinanceTransactionsPage from "./pages/FinanceTransactionsPage";
+import FinanceReportsPage from "./pages/FinanceReportsPage";
 
 function AuthHashRouter() {
   const nav = useNavigate();
@@ -164,6 +165,7 @@ export default function App() {
             <Route path="/projects/:projectId/finance" element={<FinancePage />} />
             <Route path="/projects/:projectId/finance/dashboard" element={<FinanceDashboardPage />} />
             <Route path="/projects/:projectId/finance/transactions" element={<FinanceTransactionsPage />} />
+            <Route path="/projects/:projectId/finance/reports" element={<FinanceReportsPage />} />
             <Route path="/projects/:projectId/reports" element={<ReportsPage />} />
             <Route path="/estimates" element={<EstimatesPage />} />
             <Route path="/boq" element={<BOQPage />} />
@@ -173,6 +175,7 @@ export default function App() {
             <Route path="/procurement" element={<ProcurementPage />} />
             <Route path="/receiving" element={<ReceivingPage />} />
             <Route path="/finance" element={<FinancePage />} />
+            <Route path="/finance/reports" element={<FinanceReportsPage />} />
             <Route path="/workers" element={<WorkersPage />} />
             <Route path="/cash-flow" element={<CashFlowPage />} />
             <Route path="/accounts-receivable" element={<AccountsReceivablePage />} />

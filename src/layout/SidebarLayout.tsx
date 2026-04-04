@@ -66,6 +66,7 @@ const navSections: NavSection[] = [
     items: [
       { to: "/finance", label: "Finance Hub", icon: Landmark },
       { to: "/finance/transactions", label: "Finance Transactions", icon: CreditCard },
+      { to: "/finance/reports", label: "Finance Reports", icon: BarChart3 },
       { to: "/expenses", label: "Expenses", icon: Receipt },
       { to: "/cash-flow", label: "Cash Flow", icon: TrendingUp },
       { to: "/accounts-receivable", label: "Receivables", icon: FileText },
@@ -147,6 +148,7 @@ export default function SidebarLayout() {
       "/accounts-receivable",
       "/expenses",
       "/finance",
+      "/finance/reports",
     ];
 
     const pathAllowed = allowedWithoutProject.some((p) =>
@@ -249,6 +251,12 @@ export default function SidebarLayout() {
                 to: currentProjectId ? `/projects/${currentProjectId}/finance/transactions` : "/finance/transactions"
               };
             }
+            if (item.label === "Finance Reports") {
+              return {
+                ...item,
+                to: currentProjectId ? `/projects/${currentProjectId}/finance/reports` : "/finance/reports"
+              };
+            }
             return item;
           })
         };
@@ -279,6 +287,9 @@ export default function SidebarLayout() {
           return false;
         }
         if (item.to === "/billing" && !financeAccess.canViewBilling) {
+          return false;
+        }
+        if (item.to === "/finance/reports" && !financeAccess.canViewCompanyReports) {
           return false;
         }
 
