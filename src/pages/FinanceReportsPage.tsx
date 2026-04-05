@@ -8,11 +8,13 @@ import {
   Loader2,
   RefreshCw,
   Wallet,
+  TrendingUp,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
+import { getBudgetVsActual, getCommittedDeliveredSummary } from "../lib/costs";
 
 type RowData = Record<string, string | number | boolean | null>;
 
@@ -298,18 +300,23 @@ function SummaryBlock({
   title,
   icon,
   metrics,
+  actionLink,
 }: {
   title: string;
   icon: React.ReactNode;
   metrics: Array<{ label: string; value: string; subtle?: boolean }>;
+  actionLink?: React.ReactNode;
 }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
-      <div className="mb-4 flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-600/20 text-sky-400">
-          {icon}
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-600/20 text-sky-400">
+            {icon}
+          </div>
+          <div className="text-sm font-semibold text-slate-200">{title}</div>
         </div>
-        <div className="text-sm font-semibold text-slate-200">{title}</div>
+        {actionLink}
       </div>
       <div className="grid gap-3 md:grid-cols-3">
         {metrics.map((metric) => (
@@ -399,6 +406,8 @@ export default function FinanceReportsPage() {
   const [balanceSheetRows, setBalanceSheetRows] = useState<RowData[]>([]);
   const [balanceSheetSummaryRows, setBalanceSheetSummaryRows] = useState<RowData[]>([]);
   const [cashFlowSummaryRows, setCashFlowSummaryRows] = useState<RowData[]>([]);
+  const [budgetVsActual, setBudgetVsActual] = useState<any>(null);
+  const [committedSummary, setCommittedSummary] = useState<any>(null);
 
   const [selectedPeriod, setSelectedPeriod] = useState("all");
   const [selectedCompany, setSelectedCompany] = useState("all");
@@ -424,6 +433,21 @@ export default function FinanceReportsPage() {
         if (project?.company_id) {
           targetCompanyId = project.company_id;
           setCompanyId(targetCompanyId);
+        }
+      }
+
+      // Load cost control data if project is selected
+      let budgetData = null;
+      let committedData = null;
+      if (projectId && selectedProject !== "all") {
+        try {
+          [budgetData, committedData] = await Promise.all([
+            getBudgetVsActual(projectId),
+            getCommittedDeliveredSummary(projectId)
+          ]);
+        } catch (costError) {
+          console.error("Failed to load cost control data:", costError);
+          // Don't fail the entire load if cost control fails
         }
       }
 
@@ -457,13 +481,16 @@ export default function FinanceReportsPage() {
       setBalanceSheetRows(sortRowsByPeriodDesc((balanceSheetResult.data ?? []) as RowData[]));
       setBalanceSheetSummaryRows(sortRowsByPeriodDesc((balanceSheetSummaryResult.data ?? []) as RowData[]));
       setCashFlowSummaryRows(sortRowsByPeriodDesc((cashFlowSummaryResult.data ?? []) as RowData[]));
+      
+      setBudgetVsActual(budgetData);
+      setCommittedSummary(committedData);
     } catch (err: any) {
       setError(err?.message || "Failed to load finance reports.");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [companyId, projectId]);
+  }, [companyId, projectId, selectedProject]);
 
   useEffect(() => {
     loadData();
@@ -613,6 +640,53 @@ export default function FinanceReportsPage() {
     ],
     [cashFlowSummary]
   );
+
+  const costControlMetrics = useMemo(() => {
+    if (!budgetVsActual || !committedSummary) return [];
+
+    const budget = budgetVsActual?.budget?.total_budget || 0;
+    const actual = budgetVsActual?.actual?.total_cost || 0;
+    const committed = committedSummary?.committed_value || 0;
+    const exposure = actual + committed;
+    const remaining = budget - exposure;
+
+    let topRisk = "Healthy";
+    if (budget <= 0) {
+      topRisk = "No budget set";
+    } else if (remaining < 0 || (exposure / budget > 1)) {
+      topRisk = "Overrun";
+    } else if (exposure / budget >= 0.9) {
+      topRisk = "Watch";
+    }
+
+    return [
+      {
+        label: "Budget",
+        value: formatCurrency(budget),
+      },
+      {
+        label: "Actual",
+        value: formatCurrency(actual),
+      },
+      {
+        label: "Committed",
+        value: formatCurrency(committed),
+      },
+      {
+        label: "Exposure",
+        value: formatCurrency(exposure),
+      },
+      {
+        label: "Remaining",
+        value: formatCurrency(remaining),
+      },
+      {
+        label: "Top Risk",
+        value: topRisk,
+        subtle: topRisk !== "Healthy",
+      },
+    ];
+  }, [budgetVsActual, committedSummary]);
 
   const activePeriodLabel =
     periodOptions.find((option) => option.key === selectedPeriod)?.label || "All Periods";
@@ -778,6 +852,25 @@ export default function FinanceReportsPage() {
               metrics={cashFlowMetrics}
             />
           </div>
+
+          {/* Project Cost Control Summary - Only show when project is selected */}
+          {projectId && selectedProject !== "all" && budgetVsActual && committedSummary && (
+            <div className="mt-6">
+              <SummaryBlock
+                title="Project Cost Control Summary"
+                icon={<TrendingUp className="h-5 w-5" />}
+                metrics={costControlMetrics}
+                actionLink={
+                  <button
+                    onClick={() => navigate(`/projects/${projectId}/finance`)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-slate-700 hover:text-slate-200"
+                  >
+                    Open full control view
+                  </button>
+                }
+              />
+            </div>
+          )}
 
           <div className="space-y-6">
             <SectionCard title="Profit & Loss Details" icon={<BarChart3 className="h-5 w-5" />}>

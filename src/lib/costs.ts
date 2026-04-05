@@ -376,6 +376,14 @@ export interface CategoryBreakdown {
   remaining: number;
 }
 
+export interface CommittedDeliveredSummaryByBucket {
+  material_committed: number;
+  labor_committed: number;
+  equipment_committed: number;
+  other_committed: number;
+  total_committed: number;
+}
+
 export async function getCommittedDeliveredSummary(
   projectId: string
 ): Promise<CommittedDeliveredSummary> {
@@ -429,6 +437,167 @@ export async function getCommittedDeliveredSummary(
       delivered_value: 0,
       remaining_budget: 0,
       variance: 0,
+    };
+  }
+}
+
+export async function getCommittedDeliveredSummaryByBucket(
+  projectId: string
+): Promise<CommittedDeliveredSummaryByBucket> {
+  try {
+    const { data: poItems, error: poError } = await supabase
+      .from("purchase_order_items")
+      .select(`
+        total_amount,
+        procurement_item_id,
+        procurement_items(finance_bucket),
+        purchase_orders!inner(project_id)
+      `)
+      .eq("purchase_orders.project_id", projectId);
+
+    if (poError) {
+      console.error("Error fetching PO items for bucket summary:", poError);
+    }
+
+    const result: CommittedDeliveredSummaryByBucket = {
+      material_committed: 0,
+      labor_committed: 0,
+      equipment_committed: 0,
+      other_committed: 0,
+      total_committed: 0,
+    };
+
+    if (poItems) {
+      poItems.forEach((item: any) => {
+        const amount = Number(item.total_amount || 0);
+        const bucket = item.procurement_items?.finance_bucket || 'other';
+        
+        result.total_committed += amount;
+        
+        switch (bucket) {
+          case 'material':
+            result.material_committed += amount;
+            break;
+          case 'labor':
+            result.labor_committed += amount;
+            break;
+          case 'equipment':
+            result.equipment_committed += amount;
+            break;
+          case 'other':
+          default:
+            result.other_committed += amount;
+            break;
+        }
+      });
+    }
+
+    return result;
+  } catch (e) {
+    console.error("Exception getting committed/delivered summary by bucket:", e);
+    return {
+      material_committed: 0,
+      labor_committed: 0,
+      equipment_committed: 0,
+      other_committed: 0,
+      total_committed: 0,
+    };
+  }
+}
+
+export interface CommittedDeliveredSummaryByBucketDetailed {
+  material_committed: number;
+  labor_committed: number;
+  equipment_committed: number;
+  other_committed: number;
+  total_committed: number;
+  material_delivered: number;
+  labor_delivered: number;
+  equipment_delivered: number;
+  other_delivered: number;
+  total_delivered: number;
+}
+
+export async function getCommittedDeliveredSummaryByBucketDetailed(
+  projectId: string
+): Promise<CommittedDeliveredSummaryByBucketDetailed> {
+  try {
+    const { data: poItems, error: poError } = await supabase
+      .from("purchase_order_items")
+      .select(`
+        total_amount,
+        delivered_qty,
+        unit_rate,
+        procurement_item_id,
+        procurement_items(finance_bucket),
+        purchase_orders!inner(project_id)
+      `)
+      .eq("purchase_orders.project_id", projectId);
+
+    if (poError) {
+      console.error("Error fetching PO items for detailed bucket summary:", poError);
+    }
+
+    const result: CommittedDeliveredSummaryByBucketDetailed = {
+      material_committed: 0,
+      labor_committed: 0,
+      equipment_committed: 0,
+      other_committed: 0,
+      total_committed: 0,
+      material_delivered: 0,
+      labor_delivered: 0,
+      equipment_delivered: 0,
+      other_delivered: 0,
+      total_delivered: 0,
+    };
+
+    if (poItems) {
+      poItems.forEach((item: any) => {
+        const amount = Number(item.total_amount || 0);
+        const deliveredQty = Number(item.delivered_qty || 0);
+        const unitRate = Number(item.unit_rate || 0);
+        const deliveredAmount = deliveredQty * unitRate;
+        const bucket = item.procurement_items?.finance_bucket || 'other';
+        
+        result.total_committed += amount;
+        result.total_delivered += deliveredAmount;
+        
+        switch (bucket) {
+          case 'material':
+            result.material_committed += amount;
+            result.material_delivered += deliveredAmount;
+            break;
+          case 'labor':
+            result.labor_committed += amount;
+            result.labor_delivered += deliveredAmount;
+            break;
+          case 'equipment':
+            result.equipment_committed += amount;
+            result.equipment_delivered += deliveredAmount;
+            break;
+          case 'other':
+          default:
+            result.other_committed += amount;
+            result.other_delivered += deliveredAmount;
+            break;
+        }
+      });
+    }
+
+    return result;
+  } catch (e) {
+    console.error("Exception getting committed/delivered summary by bucket detailed:", e);
+    return {
+      material_committed: 0,
+      labor_committed: 0,
+      equipment_committed: 0,
+      other_committed: 0,
+      total_committed: 0,
+      material_delivered: 0,
+      labor_delivered: 0,
+      equipment_delivered: 0,
+      other_delivered: 0,
+      total_delivered: 0,
     };
   }
 }
