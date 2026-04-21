@@ -45,11 +45,11 @@ export function BaseModal({
   if (!isOpen) return null;
 
   const sizeClasses = {
-    sm: 'max-w-md',
-    md: 'max-w-2xl',
-    lg: 'max-w-4xl',
-    xl: 'max-w-6xl',
-    full: 'max-w-[95vw]',
+    sm: 'max-w-sm sm:max-w-md',
+    md: 'max-w-lg sm:max-w-xl md:max-w-2xl',
+    lg: 'max-w-xl sm:max-w-2xl md:max-w-3xl lg:max-w-4xl',
+    xl: 'max-w-2xl sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl',
+    full: 'max-w-[95vw] sm:max-w-[90vw] md:max-w-[85vw]',
   };
 
   function handleBackdropClick(e: React.MouseEvent) {
@@ -60,15 +60,15 @@ export function BaseModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-sm"
       onClick={handleBackdropClick}
     >
       <div
         ref={modalRef}
-        className={`relative w-full ${sizeClasses[size]} bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col`}
+        className={`relative w-full ${sizeClasses[size]} bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[85vh] sm:max-h-[90vh] overflow-hidden flex flex-col`}
       >
         {(title || showCloseButton) && (
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 dark:border-slate-800">
             {title && (
               <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
                 {title}

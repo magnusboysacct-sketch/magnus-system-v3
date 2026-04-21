@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { Camera, User, DollarSign, Calendar, MapPin, Cloud, Check, X } from "lucide-react";
 import SignaturePad from "./SignaturePad";
-import MobilePhotoCapture from "./MobilePhotoCapture";
+import UniversalImageCapture, { type ImageCaptureMode } from "./UniversalImageCapture";
 import { BaseModal } from "./common/BaseModal";
 
 interface QuickEntryData {
@@ -558,13 +558,14 @@ export default function FieldPaymentQuickEntry({
         <BaseModal isOpen={showPhotoModal} onClose={() => setShowPhotoModal(false)}>
           <div className="w-full max-w-lg">
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">
-                Capture {photoType === "id" ? "ID" : "Worker"} Photo
-              </h3>
-              <MobilePhotoCapture
-                projectId=""
-                onSuccess={() => setShowPhotoModal(false)}
+              <UniversalImageCapture
+                title={photoType === "id" ? "Capture ID Photo" : "Capture Worker Photo"}
+                subtitle={photoType === "id" ? "Government ID or driver's license" : "Photo of the worker"}
+                mode={photoType === "id" ? "id_photo" : "worker_photo"}
+                onImageReady={handlePhotoSelect}
                 onCancel={() => setShowPhotoModal(false)}
+                maxSize={1600}
+                quality={0.8}
               />
             </div>
           </div>

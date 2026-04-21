@@ -32,7 +32,7 @@ import {
 } from "../lib/fieldPayments";
 import { useProjectContext } from "../context/ProjectContext";
 import SignaturePad from "../components/SignaturePad";
-import MobilePhotoCapture from "../components/MobilePhotoCapture";
+import UniversalImageCapture, { type ImageCaptureMode } from "../components/UniversalImageCapture";
 import { BaseModal } from "../components/common/BaseModal";
 import { downloadFieldPaymentReceipt, shareViaWhatsApp } from "../lib/fieldPaymentReceipt";
 import { uploadFieldPaymentImage, uploadFieldPaymentPDF } from "../lib/fieldPayments";
@@ -200,6 +200,7 @@ export default function FieldPaymentsPage() {
   const [idPhotoPreview, setIdPhotoPreview] = useState<string | null>(null);
   const [workerPhotoPreview, setWorkerPhotoPreview] = useState<string | null>(null);
   const [signatureType, setSignatureType] = useState<"worker" | "supervisor">("worker");
+  const [photoType, setPhotoType] = useState<"id" | "worker">("id");
 
   useEffect(() => {
     loadUserInfo();
@@ -943,9 +944,8 @@ export default function FieldPaymentsPage() {
 
       {/* Create Payment Modal */}
       {showCreateModal && (
-        <BaseModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)}>
-          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
+        <BaseModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} size="lg">
+          <div className="p-4 sm:p-6">
               <h2 className="text-xl font-bold text-slate-900 mb-6">Create Field Payment</h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1046,8 +1046,8 @@ export default function FieldPaymentsPage() {
                             />
                             <button
                               onClick={() => {
+                                setPhotoType("id");
                                 setShowPhotoModal(true);
-                                // Would track photo type
                               }}
                               className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
                             >
@@ -1057,8 +1057,8 @@ export default function FieldPaymentsPage() {
                         ) : (
                           <button
                             onClick={() => {
+                              setPhotoType("id");
                               setShowPhotoModal(true);
-                              // Would track photo type
                             }}
                             className="p-3 text-center hover:bg-slate-50 transition-colors"
                           >
@@ -1077,7 +1077,10 @@ export default function FieldPaymentsPage() {
                               className="w-full h-24 object-cover"
                             />
                             <button
-                              onClick={() => setShowPhotoModal(true)}
+                              onClick={() => {
+                                setPhotoType("worker");
+                                setShowPhotoModal(true);
+                              }}
                               className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
                             >
                               <Camera className="w-6 h-6 text-white" />
@@ -1085,7 +1088,10 @@ export default function FieldPaymentsPage() {
                           </div>
                         ) : (
                           <button
-                            onClick={() => setShowPhotoModal(true)}
+                            onClick={() => {
+                              setPhotoType("worker");
+                              setShowPhotoModal(true);
+                            }}
                             className="p-3 text-center hover:bg-slate-50 transition-colors"
                           >
                             <Camera className="w-6 h-6 mx-auto mb-1 text-slate-400" />
@@ -1352,7 +1358,6 @@ export default function FieldPaymentsPage() {
                     "Create Payment"
                   )}
                 </button>
-              </div>
             </div>
           </div>
         </BaseModal>
@@ -1371,13 +1376,16 @@ export default function FieldPaymentsPage() {
       {/* Photo Capture Modal */}
       {showPhotoModal && (
         <BaseModal isOpen={showPhotoModal} onClose={() => setShowPhotoModal(false)}>
-          <div className="w-full max-w-2xl">
+          <div className="w-full max-w-lg">
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Capture Photo</h3>
-              <MobilePhotoCapture
-                projectId={currentProject?.id || ""}
-                onSuccess={() => setShowPhotoModal(false)}
+              <UniversalImageCapture
+                title={photoType === "id" ? "Capture ID Photo" : "Capture Worker Photo"}
+                subtitle={photoType === "id" ? "Government ID or driver's license" : "Photo of the worker"}
+                mode={photoType === "id" ? "id_photo" : "worker_photo"}
+                onImageReady={(file) => handlePhotoCapture(file, photoType)}
                 onCancel={() => setShowPhotoModal(false)}
+                maxSize={1600}
+                quality={0.8}
               />
             </div>
           </div>

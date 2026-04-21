@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
 import { Upload, X, FileText, Image, Loader as Loader2, CircleCheck as CheckCircle } from 'lucide-react';
 import { uploadReceipt, type OCRResult } from '../lib/receiptOCR';
+import UniversalImageCapture from './UniversalImageCapture';
+import { BaseModal } from './common/BaseModal';
 
 interface ReceiptUploadProps {
   companyId: string;
@@ -15,6 +17,7 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [showImageCapture, setShowImageCapture] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -33,17 +36,39 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
     }
 
     setError(null);
-    setSelectedFile(file);
 
+    // For images, use the image capture workflow
     if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setPreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      // Create a temporary file input for the image capture
+      const tempInput = document.createElement('input');
+      tempInput.type = 'file';
+      tempInput.files = e.target.files;
+      
+      // Set the file and show image capture
+      setSelectedFile(file);
+      setShowImageCapture(true);
     } else {
+      // For PDFs, handle directly
+      setSelectedFile(file);
       setPreview(null);
     }
+
+    // Clear input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+
+  function handleImageCapture(file: File, metadata?: { width: number; height: number; size: number }) {
+    setSelectedFile(file);
+    setShowImageCapture(false);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setPreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
   }
 
   async function handleUpload() {
@@ -153,6 +178,24 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
         <div className="rounded-lg border border-red-200 bg-red-50 p-3">
           <p className="text-sm text-red-700">{error}</p>
         </div>
+      )}
+
+      {/* Image Capture Modal */}
+      {showImageCapture && (
+        <BaseModal isOpen={showImageCapture} onClose={() => setShowImageCapture(false)} size="md">
+          <div className="p-4 sm:p-6">
+              <UniversalImageCapture
+                title="Capture Receipt Photo"
+                subtitle="Take or upload a clear photo of your receipt"
+                mode="receipt"
+                onImageReady={handleImageCapture}
+                onCancel={() => setShowImageCapture(false)}
+                maxSize={1600}
+                quality={0.8}
+                allowPDF={false}
+              />
+          </div>
+        </BaseModal>
       )}
     </div>
   );
