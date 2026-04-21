@@ -15,7 +15,7 @@ GlobalWorkerOptions.workerSrc = workerSrc;
 type Point = { x: number; y: number };
 type CalibPoint = { x: number; y: number };
 type ToolMode = "select" | "line" | "area" | "count" | "volume";
-type SidebarTab = "draw" | "measurements" | "groups" | "settings";
+type SidebarTab = "draw" | "measurements" | "groups" | "library" | "settings";
 
 interface PdfFile {
   name: string;
@@ -28,7 +28,6 @@ interface PdfFile {
 interface LinkedItem {
   id: string;
   name: string;
-  item_name?: string;
   unit: string;
   calc_engine_json?: any;
   type: 'item' | 'assembly';
@@ -59,17 +58,6 @@ function clamp(n: number, min: number, max: number) {
 
 function classNames(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
-}
-
-function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: ReturnType<typeof setTimeout>;
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
 }
 
 function formatResult(value: number) {
@@ -538,13 +526,12 @@ function TakeoffPageInner() {
   const [showDepthPrompt, setShowDepthPrompt] = useState(false);
   const [depthInput, setDepthInput] = useState("4");
   const [pdfFile, setPdfFile] = useState<PdfFile | null>(null);
-  const [pdfFiles, setPdfFiles] = useState<PdfFile[]>([]);
-  const [activePdfIndex, setActivePdfIndex] = useState(0);
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<Measurement[]>([]);
   const [hoveredPoint, setHoveredPoint] = useState<Point | null>(null);
   const [hoveredLine, setHoveredLine] = useState<{ start: Point; end: Point; measurementId: string } | null>(null);
   const [crosshairPos, setCrosshairPos] = useState<Point | null>(null);
+  const [selectedLinkedItem, setSelectedLinkedItem] = useState<LinkedItem | null>(null);
   const [itemQuantities, setItemQuantities] = useState<Map<string, ItemQuantity>>(new Map());
 
   // NEW Calibration state
@@ -600,12 +587,6 @@ function TakeoffPageInner() {
   const [newTagName, setNewTagName] = useState("");
   const [newTagGroup, setNewTagGroup] = useState("");
 
-  // Phase 2 Linking engine state
-  const [costItems, setCostItems] = useState<any[]>([]);
-  const [assemblies, setAssemblies] = useState<any[]>([]);
-  const [linkedItemId, setLinkedItemId] = useState<string | undefined>(undefined);
-  const [linkedAssemblyId, setLinkedAssemblyId] = useState<string | undefined>(undefined);
-
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(() => {
     return routeProjectId || null;
@@ -619,19 +600,6 @@ function TakeoffPageInner() {
   // Safe project ID getter with global context fallback
   const projectId = routeProjectId || activeProjectId || globalProject?.id;
 
-  // Global derived state for linking engine
-  const linkedItem = linkedItemId ? costItems.find(i => i.id === linkedItemId) : undefined;
-  const linkedAssembly = linkedAssemblyId ? assemblies.find(a => a.id === linkedAssemblyId) : undefined;
-
-  // Phase 3: BOQ Preview aggregation
-  const [boqPreview, setBoqPreview] = useState<Array<{
-    item_id: string;
-    name: string;
-    total_quantity: number;
-    unit: string;
-    type: 'item' | 'assembly';
-  }>>([]);
-
   const hoverCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const hoverSeqRef = useRef(0);
@@ -641,47 +609,6 @@ function TakeoffPageInner() {
   const isSpaceDownRef = useRef(false);
   const isPanningRef = useRef(false);
   const hasPointerDownRef = useRef(false);
-
-  // === COORDINATE SYSTEM HELPERS ===
-  function getCanvasMetrics() {
-    const canvas = canvasRef.current;
-    const viewer = viewerRef.current;
-    if (!canvas || !viewer) return null;
-
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-
-    return { rect, scaleX, scaleY, canvasWidth: canvas.width, canvasHeight: canvas.height };
-  }
-
-  function screenToWorld(clientX: number, clientY: number): Point | null {
-    const metrics = getCanvasMetrics();
-    if (!metrics) return null;
-
-    const { rect, scaleX, scaleY } = metrics;
-
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
-    };
-  }
-
-  function worldToScreen(worldPoint: Point): Point | null {
-    const metrics = getCanvasMetrics();
-    if (!metrics) return null;
-
-    const { scaleX, scaleY } = metrics;
-
-    return {
-      x: worldPoint.x / scaleX,
-      y: worldPoint.y / scaleY,
-    };
-  }
-
-  function canvasPointFromEvent(e: React.PointerEvent): Point | null {
-    return screenToWorld(e.clientX, e.clientY);
-  }
 
   // LAYER 1: PDF-only rendering - completely isolated
   async function renderPdfPage() {
@@ -788,55 +715,53 @@ function TakeoffPageInner() {
         
         if (measurement.type === "line" && measurement.points.length === 2) {
           const [a, b] = measurement.points;
-          const sa = worldToScreen(a);
-          const sb = worldToScreen(b);
-          if (sa && sb) {
-            ctx.beginPath();
-            ctx.moveTo(sa.x, sa.y);
-            ctx.lineTo(sb.x, sb.y);
-            ctx.stroke();
-          }
-        } else if ((measurement.type === "area" || measurement.type === "volume") && measurement.points.length >= 3) {
-          const screenPoints = measurement.points.map((p) => worldToScreen(p)).filter(Boolean);
-          if (screenPoints.length >= 3) {
-            ctx.beginPath();
-            screenPoints.forEach((p, i) => {
-              if (!p) return;
-              if (i === 0) {
-                ctx.moveTo(p.x, p.y);
-              } else {
-                ctx.lineTo(p.x, p.y);
-              }
-            });
-            ctx.closePath();
-            ctx.stroke();
-          }
+          ctx.beginPath();
+          ctx.moveTo(a.x * panZoom.zoom + panZoom.panX, a.y * panZoom.zoom + panZoom.panY);
+          ctx.lineTo(b.x * panZoom.zoom + panZoom.panX, b.y * panZoom.zoom + panZoom.panY);
+          ctx.stroke();
+        } else if (measurement.type === "area" && measurement.points.length >= 3) {
+          ctx.beginPath();
+          measurement.points.forEach((p, i) => {
+            if (i === 0) {
+              ctx.moveTo(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY);
+            } else {
+              ctx.lineTo(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY);
+            }
+          });
+          ctx.closePath();
+          ctx.stroke();
+        } else if (measurement.type === "volume" && measurement.points.length >= 3) {
+          ctx.beginPath();
+          measurement.points.forEach((p, i) => {
+            if (i === 0) {
+              ctx.moveTo(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY);
+            } else {
+              ctx.lineTo(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY);
+            }
+          });
+          ctx.closePath();
+          ctx.stroke();
         } else if (measurement.type === "count") {
           measurement.points.forEach((p) => {
-            const sp = worldToScreen(p);
-            if (!sp) return;
             ctx.beginPath();
-            ctx.arc(sp.x, sp.y, 6, 0, Math.PI * 2);
+            ctx.arc(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY, 6, 0, Math.PI * 2);
             ctx.stroke();
           });
         }
-
+        
         ctx.restore();
       }
     }
 
     // Draw hover highlights
     if (hoveredPoint) {
-      const sp = worldToScreen(hoveredPoint);
-      if (sp) {
-        ctx.save();
-        ctx.strokeStyle = "#fbbf24";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(sp.x, sp.y, 6, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
+      ctx.save();
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hoveredPoint.x * panZoom.zoom + panZoom.panX, hoveredPoint.y * panZoom.zoom + panZoom.panY, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     }
 
     if (hoveredLine) {
@@ -911,7 +836,7 @@ function TakeoffPageInner() {
     // Draw area preview with dashed line to cursor
     if (tool === "area" && areaPoints.length > 0 && areaHoverPt) {
       ctx.save();
-      const color = linkedItem ? "#a78bfa" : linkedAssembly ? "#10b981" : "#a78bfa";
+      const color = selectedLinkedItem?.color || "#a78bfa";
       ctx.strokeStyle = color;
       ctx.fillStyle = color + "20";
       ctx.lineWidth = 1;
@@ -934,7 +859,7 @@ function TakeoffPageInner() {
     // Draw volume preview with dashed line to cursor
     if (tool === "volume" && volumePoints.length > 0 && volumeHoverPt) {
       ctx.save();
-      const color = linkedItem ? "#f59e0b" : linkedAssembly ? "#10b981" : "#f59e0b";
+      const color = selectedLinkedItem?.color || "#f59e0b";
       ctx.strokeStyle = color;
       ctx.fillStyle = color + "20";
       ctx.lineWidth = 1;
@@ -978,34 +903,99 @@ function TakeoffPageInner() {
     const { hoverPt, lineEnd } = hoverStateRef.current;
 
     // Draw crosshair cursor
-    // Draw crosshair cursor
     if (crosshairPos && tool !== "select") {
-      const sp = worldToScreen(crosshairPos);
-      if (sp) {
+      ctx.save();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.6;
+      
+      const x = crosshairPos.x * panZoom.zoom + panZoom.panX;
+      const y = crosshairPos.y * panZoom.zoom + panZoom.panY;
+      const size = 20;
+      
+      // Horizontal line - ALWAYS begin new path
+      ctx.beginPath();
+      ctx.moveTo(x - size, y);
+      ctx.lineTo(x + size, y);
+      ctx.stroke();
+      
+      // Vertical line - ALWAYS begin new path
+      ctx.beginPath();
+      ctx.moveTo(x, y - size);
+      ctx.lineTo(x, y + size);
+      ctx.stroke();
+      
+      // Show selected item name
+      if (selectedLinkedItem) {
+        ctx.fillStyle = "rgba(255,255,255,0.9)";
+        ctx.font = "11px sans-serif";
+        const text = selectedLinkedItem.name;
+        const textWidth = ctx.measureText(text).width;
+        ctx.fillText(text, x + size + 5, y - 5);
+      }
+      
+      ctx.restore();
+    }
+
+    // Draw hover indicator - STATELESS
+    if (hoverPt && tool !== "select") {
+      ctx.save();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1;
+      // ALWAYS begin new path - no accumulation
+      ctx.beginPath();
+      ctx.arc(hoverPt.x * panZoom.zoom + panZoom.panX, hoverPt.y * panZoom.zoom + panZoom.panY, 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Draw live line preview with distance - STATELESS single line
+    if (tool === "line" && lineStart && (hoverPt || lineEnd)) {
+      const a = lineStart;
+      const b = lineEnd || hoverPt;
+      if (a && b) {
+        const color = selectedLinkedItem?.color || "#60a5fa";
         ctx.save();
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.6;
-        const size = 20;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        // ALWAYS begin new path - draw only start point to current cursor
         ctx.beginPath();
-        ctx.moveTo(sp.x - size, sp.y);
-        ctx.lineTo(sp.x + size, sp.y);
+        ctx.moveTo(a.x * panZoom.zoom + panZoom.panX, a.y * panZoom.zoom + panZoom.panY);
+        ctx.lineTo(b.x * panZoom.zoom + panZoom.panX, b.y * panZoom.zoom + panZoom.panY);
         ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(sp.x, sp.y - size);
-        ctx.lineTo(sp.x, sp.y + size);
-        ctx.stroke();
-        if (linkedItem || linkedAssembly) {
-          ctx.fillStyle = "rgba(255,255,255,0.9)";
-          ctx.font = "11px sans-serif";
-          const text = linkedItem ? linkedItem.item_name : linkedAssembly?.name || "";
-          ctx.fillText(text, sp.x + size + 5, sp.y - 5);
+
+        // Draw live distance label
+        const pixelDist = dist(a, b);
+        const totalFeet = distFeet(a, b);
+        const label = totalFeet > 0 
+          ? formatFeetInches(totalFeet)
+          : `${pixelDist.toFixed(0)} px`;
+        
+        // Add item name if linked
+        const fullLabel = selectedLinkedItem 
+          ? `${selectedLinkedItem.name}: ${label}`
+          : label;
+
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        ctx.fillStyle = "rgba(96,165,250,0.9)";
+        ctx.font = "12px sans-serif";
+        const w = ctx.measureText(fullLabel).width;
+        const h = 16;
+        if ((ctx as any).roundRect) {
+          (ctx as any).roundRect(midX * panZoom.zoom + panZoom.panX - w / 2, midY * panZoom.zoom + panZoom.panY - h - 8, w, h, 8);
+        } else {
+          ctx.beginPath();
+          ctx.rect(midX * panZoom.zoom + panZoom.panX - w / 2, midY * panZoom.zoom + panZoom.panY - h - 8, w, h);
         }
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(fullLabel, midX * panZoom.zoom + panZoom.panX - w / 2, midY * panZoom.zoom + panZoom.panY - 2);
         ctx.restore();
       }
     }
-
-    // Calibration draft points
+    
+    // Draw calibration draft points and preview line in hover layer - CLEAN CALIBRATION ONLY
     if (isCalibrating && calibrationDraftPoints.length > 0) {
       ctx.save();
       ctx.strokeStyle = "#ef4444";
@@ -1013,43 +1003,42 @@ function TakeoffPageInner() {
       ctx.lineWidth = 3;
       ctx.shadowColor = "#ef4444";
       ctx.shadowBlur = 6;
-
+      
+      // Draw draft points with labels
       calibrationDraftPoints.forEach((p, i) => {
-        const sp = worldToScreen(p);
-        if (!sp) return;
+        // Draw point
         ctx.beginPath();
-        ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
+        ctx.arc(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY, 8, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = "#ffffff";
         ctx.beginPath();
-        ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+        ctx.arc(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY, 4, 0, Math.PI * 2);
         ctx.fill();
+        
+        // Draw label
         ctx.fillStyle = "#ef4444";
         ctx.font = "bold 12px sans-serif";
         const labelText = `${i + 1}`;
         const textW = ctx.measureText(labelText).width;
-        ctx.fillText(labelText, sp.x - textW / 2, sp.y - 12);
+        ctx.fillText(labelText, p.x * panZoom.zoom + panZoom.panX - textW / 2, p.y * panZoom.zoom + panZoom.panY - 12);
       });
-
+      
+      // Draw preview line from point 1 to hover point
       if (calibrationDraftPoints.length === 1 && calibrationHoverPoint) {
-        const a = worldToScreen(calibrationDraftPoints[0]);
-        const b = worldToScreen(calibrationHoverPoint);
-        if (a && b) {
-          ctx.strokeStyle = "#ef4444";
-          ctx.lineWidth = 2;
-          ctx.setLineDash([8, 4]);
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+        ctx.strokeStyle = "#ef4444";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 4]);
+        ctx.beginPath();
+        ctx.moveTo(calibrationDraftPoints[0].x * panZoom.zoom + panZoom.panX, calibrationDraftPoints[0].y * panZoom.zoom + panZoom.panY);
+        ctx.lineTo(calibrationHoverPoint.x * panZoom.zoom + panZoom.panX, calibrationHoverPoint.y * panZoom.zoom + panZoom.panY);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
-
+      
       ctx.restore();
     }
-
   }
+
   // Throttled hover update using RAF
   function updateHoverState(newHoverPt: Point | null, newLineEnd: Point | null) {
     hoverStateRef.current = { hoverPt: newHoverPt, lineEnd: newLineEnd };
@@ -1080,36 +1069,12 @@ function TakeoffPageInner() {
       ...m,
       id: crypto.randomUUID(),
       timestamp: Date.now(),
-      linked_tag_ids: selectedTagIds.length > 0 ? [...selectedTagIds] : undefined,
     };
     setAllMeasurements((prev) => [...prev, newMeasurement]);
     
     // Calculate quantity if linked item exists
-    if (m.linked_item_id) {
-      const linkedItem = costItems.find(i => i.id === m.linked_item_id);
-      if (linkedItem) {
-        calculateAndUpdateQuantity(newMeasurement, {
-          id: linkedItem.id,
-          name: linkedItem.item_name,
-          unit: linkedItem.unit,
-          type: 'item' as const,
-          calc_engine_json: linkedItem.calc_engine_json,
-        });
-      }
-    }
-    
-    // Calculate quantity if linked assembly exists
-    if (m.linked_assembly_id) {
-      const linkedAssembly = assemblies.find(a => a.id === m.linked_assembly_id);
-      if (linkedAssembly) {
-        calculateAndUpdateQuantity(newMeasurement, {
-          id: linkedAssembly.id,
-          name: linkedAssembly.assembly_name,
-          unit: linkedAssembly.output_unit_type || "ea",
-          type: 'assembly' as const,
-          calc_engine_json: linkedAssembly.calc_engine_json,
-        });
-      }
+    if (selectedLinkedItem) {
+      calculateAndUpdateQuantity(newMeasurement, selectedLinkedItem);
     }
     
     return newMeasurement;
@@ -1120,33 +1085,16 @@ function TakeoffPageInner() {
       prev.map((m) => (m.id === id ? { ...m, ...updates } : m))
     );
     
-    // Recalculate quantity if measurement has linked item or assembly
+    // Recalculate quantity if measurement has linked item
     const measurement = measurements.find(m => m.id === id);
-    if (measurement) {
-      if (measurement.linked_item_id) {
-        const linkedItem = costItems.find(i => i.id === measurement.linked_item_id);
-        if (linkedItem) {
-          calculateAndUpdateQuantity({ ...measurement, ...updates }, {
-            id: linkedItem.id,
-            name: linkedItem.item_name,
-            unit: linkedItem.unit,
-            type: 'item' as const,
-            calc_engine_json: linkedItem.calc_engine_json,
-          });
-        }
-      }
-      if (measurement.linked_assembly_id) {
-        const linkedAssembly = assemblies.find(a => a.id === measurement.linked_assembly_id);
-        if (linkedAssembly) {
-          calculateAndUpdateQuantity({ ...measurement, ...updates }, {
-            id: linkedAssembly.id,
-            name: linkedAssembly.assembly_name,
-            unit: linkedAssembly.output_unit_type || "ea",
-            type: 'assembly' as const,
-            calc_engine_json: linkedAssembly.calc_engine_json,
-          });
-        }
-      }
+    if (measurement && measurement.linked_item_id) {
+      const linkedItem = selectedLinkedItem || {
+        id: measurement.linked_item_id,
+        name: measurement.linked_item_name || '',
+        unit: measurement.unit,
+        type: 'item' as const,
+      };
+      calculateAndUpdateQuantity({ ...measurement, ...updates }, linkedItem);
     }
   }
 
@@ -1237,9 +1185,9 @@ function TakeoffPageInner() {
       // Update measurement with calculated quantity and linked item info
       updateMeasurement(measurement.id, {
         calculated_quantity: calculatedQuantity,
-        linked_item_id: linkedItem?.id,
-        linked_item_name: linkedItem?.item_name || linkedItem?.name,
-        unit: linkedItem?.unit,
+        linked_item_id: linkedItem.id,
+        linked_item_name: linkedItem.name,
+        unit: linkedItem.unit,
       });
       
       // Update item quantities aggregation
@@ -1414,7 +1362,7 @@ function TakeoffPageInner() {
       // Load folders
       const { data: foldersData } = await supabase
         .from("takeoff_folders")
-        .select("id, groups,  scale, pdf_file, pdf_files")
+        .select("*")
         .eq("project_id", projectId)
         .order("sort_order", { ascending: true });
       
@@ -1423,7 +1371,7 @@ function TakeoffPageInner() {
       // Load tags
       const { data: tagsData } = await supabase
         .from("takeoff_tags")
-        .select("id, groups,  scale, pdf_file, pdf_files")
+        .select("*")
         .eq("project_id", projectId)
         .order("tag_name", { ascending: true });
       
@@ -1442,7 +1390,7 @@ function TakeoffPageInner() {
         .from("takeoff_folders")
         .insert({
           project_id: projectId,
-          company_id: null,
+          company_id: globalProject?.company_id || null,
           folder_name: newFolderName.trim(),
           folder_type: 'standard',
           path_text: newFolderName.trim(),
@@ -1452,13 +1400,12 @@ function TakeoffPageInner() {
           is_locked: false,
         })
         .select()
-        .maybeSingle();
+        .single();
       
       if (error) throw error;
       
       if (newFolder) {
         setFolders(prev => [...prev, newFolder]);
-        setActiveFolderId(newFolder.id);
         setNewFolderName("");
         setShowAddFolder(false);
       }
@@ -1477,19 +1424,18 @@ function TakeoffPageInner() {
         .from("takeoff_tags")
         .insert({
           project_id: projectId,
-          company_id: null,
+          company_id: globalProject?.company_id || null,
           tag_name: newTagName.trim(),
           tag_group: newTagGroup.trim() || null,
           is_system_generated: false,
         })
         .select()
-        .maybeSingle();
+        .single();
       
       if (error) throw error;
       
       if (newTag) {
         setTags(prev => [...prev, newTag]);
-        setSelectedTagIds(prev => [...prev, newTag.id]);
         setNewTagName("");
         setNewTagGroup("");
         setShowAddTag(false);
@@ -1497,267 +1443,6 @@ function TakeoffPageInner() {
     } catch (err: any) {
       console.error("Failed to add tag:", err);
       setError("Failed to add tag: " + (err?.message || String(err)));
-    }
-  }
-
-  // Phase 4: Send BOQ preview to actual BOQ tables
-  async function sendToBOQ() {
-    if (!projectId || boqPreview.length === 0) {
-      setError("No BOQ data to send. Create measurements and link items/assemblies first.");
-      return;
-    }
-
-    try {
-      // Get current BOQ for this project
-      const { data: existingBoq, error: boqError } = await supabase
-        .from("boqs")
-        .select("id, project_id")
-        .eq("project_id", projectId)
-        .maybeSingle();
-
-      if (boqError && boqError.code !== 'PGRST116') {
-        throw boqError;
-      }
-
-      let boqId = existingBoq?.id;
-
-      // Create BOQ if it doesn't exist
-      if (!boqId) {
-        const { data: newBoq, error: createBoqError } = await supabase
-          .from("boqs")
-          .insert({
-            project_id: projectId,
-            name: "Takeoff BOQ",
-            description: "Auto-generated from takeoff measurements",
-            status: "draft"
-          })
-          .select("id")
-          .maybeSingle();
-
-        if (createBoqError) throw createBoqError;
-        boqId = newBoq.id;
-      }
-
-      // Get existing BOQ sections or create default
-      const { data: sections, error: sectionsError } = await supabase
-        .from("boq_sections")
-        .select("id, name, boq_id")
-        .eq("boq_id", boqId);
-
-      if (sectionsError) throw sectionsError;
-
-      let takeoffSection: { id: string; name: string; boq_id: string } | undefined = 
-        sections?.find(s => s.name === "Takeoff Items");
-
-      if (!takeoffSection) {
-        const { data: newSection, error: createSectionError } = await supabase
-          .from("boq_sections")
-          .insert({
-            boq_id: boqId,
-            name: "Takeoff Items",
-            description: "Auto-generated from takeoff measurements"
-          })
-          .select("id, name, boq_id")
-          .maybeSingle();
-
-        if (createSectionError) throw createSectionError;
-        takeoffSection = newSection;
-      }
-
-      // Process each BOQ preview item
-      for (const previewItem of boqPreview) {
-        const sourceField = previewItem.type === 'item' ? 'linked_item_id' : 'linked_assembly_id';
-        
-        // Check if BOQ item already exists for this source
-        const { data: existingItems, error: checkError } = await supabase
-          .from("boq_section_items")
-          .select("id, quantity, source, linked_item_id, linked_assembly_id")
-          .eq("boq_section_id", takeoffSection!.id)
-          .eq(sourceField, previewItem.item_id)
-          .eq("source", "takeoff");
-
-        if (checkError) throw checkError;
-
-        if (existingItems && existingItems.length > 0) {
-          // Update existing item quantity
-          const existingItem = existingItems[0];
-          const { error: updateError } = await supabase
-            .from("boq_section_items")
-            .update({
-              quantity: existingItem.quantity + previewItem.total_quantity
-            })
-            .eq("id", existingItem.id);
-
-          if (updateError) throw updateError;
-        } else {
-          // Insert new BOQ item
-          const { error: insertError } = await supabase
-            .from("boq_section_items")
-            .insert({
-              boq_section_id: takeoffSection!.id,
-              item_code: previewItem.name,
-              description: previewItem.name,
-              unit: previewItem.unit,
-              quantity: previewItem.total_quantity,
-              unit_rate: 0, // Will be filled in BOQ builder
-              total_amount: 0, // Will be calculated in BOQ builder
-              source: "takeoff",
-              linked_item_id: previewItem.type === 'item' ? previewItem.item_id : null,
-              linked_assembly_id: previewItem.type === 'assembly' ? previewItem.item_id : null,
-              sort_order: 0
-            });
-
-          if (insertError) throw insertError;
-        }
-      }
-
-      // Success feedback
-      setError("BOQ updated successfully! Check BOQ page for details.");
-      
-    } catch (err: any) {
-      console.error("Failed to send to BOQ:", err);
-      setError("Failed to send to BOQ: " + (err?.message || String(err)));
-    }
-  }
-
-  // Phase 3: Generate BOQ preview from measurements
-  function generateBoqPreview() {
-    const itemAggregations = new Map<string, {
-      name: string;
-      total_quantity: number;
-      unit: string;
-      type: 'item' | 'assembly';
-    }>();
-
-    measurements.forEach(measurement => {
-      // Skip measurements without linking
-      if (!measurement.linked_item_id && !measurement.linked_assembly_id) return;
-
-      let itemId: string | undefined;
-      let itemName: string;
-      let itemUnit: string;
-      let itemType: 'item' | 'assembly';
-      let multiplier = 1;
-      let wastePercent = 0;
-
-      if (measurement.linked_item_id) {
-        // Item linking
-        itemId = measurement.linked_item_id;
-        const item = costItems.find(i => i.id === itemId);
-        itemName = item?.item_name || 'Unknown Item';
-        itemUnit = item?.unit || measurement.unit;
-        itemType = 'item';
-        
-        // Get multiplier and waste from item calc_engine_json
-        if (item?.calc_engine_json) {
-          const calcData = typeof item.calc_engine_json === 'string' 
-            ? JSON.parse(item.calc_engine_json) 
-            : item.calc_engine_json;
-          multiplier = calcData.multiplier || 1;
-          wastePercent = calcData.waste_percent || 0;
-        }
-      } else if (measurement.linked_assembly_id) {
-        // Assembly linking
-        itemId = measurement.linked_assembly_id;
-        const assembly = assemblies.find(a => a.id === itemId);
-        itemName = assembly?.name || 'Unknown Assembly';
-        itemUnit = assembly?.output_unit || measurement.unit;
-        itemType = 'assembly';
-        
-        // Get multiplier and waste from assembly calc_engine_json
-        if (assembly?.calc_engine_json) {
-          const calcData = typeof assembly.calc_engine_json === 'string' 
-            ? JSON.parse(assembly.calc_engine_json) 
-            : assembly.calc_engine_json;
-          multiplier = calcData.multiplier || 1;
-          wastePercent = calcData.waste_percent || 0;
-        }
-      } else {
-        return; // Skip if no valid linking
-      }
-
-      if (!itemId) return;
-
-      // Get base quantity based on measurement type
-      let baseQuantity = 0;
-      switch (measurement.type) {
-        case 'line':
-          baseQuantity = measurement.meta?.raw_length || measurement.result || 0;
-          break;
-        case 'area':
-          baseQuantity = measurement.meta?.raw_area || measurement.result || 0;
-          break;
-        case 'count':
-          baseQuantity = measurement.meta?.raw_count || measurement.result || 0;
-          break;
-        case 'volume':
-          baseQuantity = measurement.meta?.raw_volume || measurement.result || 0;
-          break;
-        default:
-          baseQuantity = measurement.result || 0;
-      }
-
-      // Apply multiplier and waste
-      const adjustedQuantity = baseQuantity * multiplier * (1 + wastePercent / 100);
-
-      // Aggregate by measurement type and item
-      const aggregationKey = `${itemId}_${measurement.type}`;
-      
-      if (itemAggregations.has(aggregationKey)) {
-        // Add to existing aggregation
-        const existing = itemAggregations.get(aggregationKey)!;
-        existing.total_quantity += adjustedQuantity;
-      } else {
-        // Create new aggregation
-        itemAggregations.set(aggregationKey, {
-          name: itemName,
-          total_quantity: adjustedQuantity,
-          unit: itemUnit,
-          type: itemType
-        });
-      }
-    });
-
-    // Convert to array and sort by name
-    const boqData = Array.from(itemAggregations.entries()).map(([key, data]) => {
-      const [itemId, measurementType] = key.split('_');
-      return {
-        item_id: itemId,
-        ...data
-      };
-    }).sort((a, b) => a.name.localeCompare(b.name));
-
-    setBoqPreview(boqData);
-  }
-
-  // Phase 2: Load library data for linking engine
-  async function loadLibraryData() {
-    if (!projectId) return;
-    
-    try {
-      // Load cost items for project (no company_id dependency)
-      const { data: items, error: itemsError } = await supabase
-        .from("cost_items")
-        .select("id, item_name, unit, category, calc_engine_json, is_active")
-        .eq("is_active", true)
-        .order("item_name");
-      
-      if (itemsError) throw itemsError;
-      setCostItems(items || []);
-      
-      // Load assemblies for project (no company_id dependency)
-      const { data: assemblies, error: assembliesError } = await supabase
-        .from("assemblies")
-        .select("id, name, output_unit, category_id, is_active")
-        .eq("is_active", true)
-        .order("name");
-      
-      if (assembliesError) throw assembliesError;
-      setAssemblies(assemblies || []);
-      
-    } catch (err: any) {
-      console.error("Failed to load library data:", err);
-      setError("Failed to load library data: " + (err?.message || String(err)));
     }
   }
 
@@ -1779,7 +1464,7 @@ function TakeoffPageInner() {
         .from("projects")
         .select("id, name")
         .eq("id", projectId)
-        .maybeSingle();
+        .single();
         
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error("Project lookup timeout")), 10000)
@@ -1804,11 +1489,11 @@ function TakeoffPageInner() {
       // Add timeout to session lookup
       const sessionPromise = supabase
         .from("takeoff_sessions")
-        .select("id, scale, pdf_file, pdf_files")
+        .select("*")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
         .limit(1)
-        .maybeSingle();
+        .single();
         
       const sessionTimeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error("Session lookup timeout")), 10000)
@@ -1818,13 +1503,13 @@ function TakeoffPageInner() {
 
       if (session) {
         setSessionId(session.id);
-        setGroups([]); // groups column doesn't exist in DB, use empty array
-        setActiveGroupId(null);
+        setGroups(session.groups || []);
+        setActiveGroupId(session.active_group_id || null);
         
         // Dual-load: Structured first, legacy as fallback
         // Note: Individual measurement loading handled by useEffect above
-        setGroups([]); // groups column doesn't exist in DB, use empty array
-        setActiveGroupId(null);
+        setGroups(session.groups || []);
+        setActiveGroupId(session.active_group_id || null);
         
         // Restore calibration if available
         if (session.scale?.calibration) {
@@ -1833,42 +1518,26 @@ function TakeoffPageInner() {
         
         setPageNumber(session.page_number || 1);
         
-        // Phase 3: Restore PDFs if available (best-effort)
-        const restoredPdfFiles =
-          Array.isArray(session.pdf_files) && session.pdf_files.length > 0
-            ? session.pdf_files.filter((file: any) => file?.storagePath)
-            : session.pdf_file && session.pdf_file.storagePath
-              ? [session.pdf_file]
-              : [];
-
-        setPdfFiles(restoredPdfFiles);
-        setActivePdfIndex(0);
-
-        if (restoredPdfFiles.length > 0) {
-          const firstPdf = restoredPdfFiles[0];
-          setPdfFile(firstPdf);
-          setLoadingPdf(true);
+        // Phase 3: Restore PDF if available (best-effort)
+        if (session.pdf_file && session.pdf_file.storagePath) {
+          setPdfFile(session.pdf_file);
           try {
+            // Create fresh signed URL for private bucket
             const { data: signedData } = await supabase.storage
               .from("project-files")
-              .createSignedUrl(firstPdf.storagePath, 60 * 60 * 24 * 7);
-
+              .createSignedUrl(session.pdf_file.storagePath, 60 * 60 * 24 * 7); // 7 days
+            
             if (signedData?.signedUrl) {
+              // Load PDF from signed URL
               const pdfDoc = await getDocument(signedData.signedUrl).promise;
               setPdf(pdfDoc);
               setNumPages(pdfDoc.numPages);
-              setPdfFile({
-                ...firstPdf,
-                url: signedData.signedUrl,
-              });
             }
           } catch (e) {
-            console.warn("Failed to restore PDFs:", e);
-          } finally {
-            setLoadingPdf(false);
+            console.warn("Failed to restore PDF:", e);
+            // Don't block session loading if PDF fails
           }
         }
-
         
         // Restore pan/zoom
         if (session.pan_zoom) {
@@ -1879,12 +1548,13 @@ function TakeoffPageInner() {
         const newSessionPromise = supabase
           .from("takeoff_sessions")
           .insert({
-            project_id: projectId,
+            project_id: activeProjectId,
             measurements: [],
+            groups: [],
             page_number: 1,
           })
           .select()
-          .maybeSingle();
+          .single();
           
         const newSessionTimeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error("Session creation timeout")), 10000)
@@ -1906,9 +1576,6 @@ function TakeoffPageInner() {
       if (projectId) {
         await loadOrganizationData(projectId);
       }
-
-    // Phase 5: Load library data for linking engine
-    await loadLibraryData();
 
       setDbLoaded(true);
   }
@@ -1945,7 +1612,7 @@ function TakeoffPageInner() {
       try {
         const { data: structuredMeasurements, error } = await supabase
           .from("takeoff_measurements")
-          .select("id, session_id, group_id, folder_id, type, points, unit, result, cost_item_id, assembly_id, linked_item_id, linked_assembly_id, meta, sort_order, created_at")
+          .select("*")
           .eq("session_id", sessionId)
           .order("created_at", { ascending: true });
         
@@ -1961,10 +1628,8 @@ function TakeoffPageInner() {
             groupId: m.group_id,
             color: m.meta?.color,
             timestamp: m.meta?.timestamp || new Date(m.created_at).getTime(),
-            linked_item_id: m.linked_item_id || m.cost_item_id || m.meta?.linked_item_id,
+            linked_item_id: m.meta?.linked_item_id,
             linked_item_name: m.meta?.linked_item_name,
-            linked_assembly_id: m.linked_assembly_id || m.assembly_id || m.meta?.linked_assembly_id,
-            linked_assembly_name: m.meta?.linked_assembly_name,
             calculated_quantity: m.meta?.calculated_quantity,
             meta: {
               depthInches: m.meta?.depthInches,
@@ -1986,7 +1651,7 @@ function TakeoffPageInner() {
           .from("takeoff_sessions")
           .select("measurements")
           .eq("id", sessionId)
-          .maybeSingle();
+          .single();
         
         if (session?.measurements) {
           setAllMeasurements(session.measurements);
@@ -2013,19 +1678,18 @@ function TakeoffPageInner() {
         type: m.type,
         points: m.points,
         unit: m.unit,
-        result: m.result,assembly_id: m.linked_assembly_id || null,linked_assembly_id: m.linked_assembly_id || null,
+        result: m.result,
         meta: {
           label: m.label,
           color: m.color,
           timestamp: m.timestamp,
           linked_item_id: m.linked_item_id,
           linked_item_name: m.linked_item_name,
-          linked_assembly_id: m.linked_assembly_id,
-          linked_assembly_name: m.linked_assembly_name,
           calculated_quantity: m.calculated_quantity,
           pixelsPerUnit: m.pixelsPerUnit,
           depthInches: m.meta?.depthInches,
           // Map to Master Plan fields
+          measurement_name: m.label || `${m.type.charAt(0).toUpperCase() + m.type.slice(1)} ${Math.round(m.result)} ${m.unit}`,
           measurement_type: m.type,
           capture_mode: 'manual',
           status: 'active',
@@ -2033,7 +1697,7 @@ function TakeoffPageInner() {
           calculated_value: m.calculated_quantity || m.result,
           display_value: m.calculated_quantity || m.result,
           unit_type: m.unit,
-          link_mode: m.linked_item_id ? 'item' : m.linked_assembly_id ? 'assembly' : 'unlinked',
+          link_mode: m.linked_item_id ? 'item' : 'unlinked',
         },
         sort_order: m.timestamp, // Use timestamp for consistent ordering
       }));
@@ -2050,20 +1714,17 @@ function TakeoffPageInner() {
           .insert(measurementRecords);
       }
       
-      // Save measurement tags only for measurements with tags (prevent mass overwrite)
-      const measurementsWithTags = measurements.filter(m => m.linked_tag_ids && m.linked_tag_ids.length > 0);
-      
-      if (measurementsWithTags.length > 0) {
-        // Clear existing tags only for measurements that have tags
-        const measurementIdsWithTags = measurementsWithTags.map(m => m.id);
+      // Save measurement tags for selected tags
+      if (selectedTagIds.length > 0) {
+        // Clear existing tags for these measurements
         await supabase
           .from("takeoff_measurement_tags")
           .delete()
-          .in("measurement_id", measurementIdsWithTags);
+          .in("measurement_id", measurements.map(m => m.id));
         
-        // Insert new tag relationships only for measurements that have tags
-        const tagRelations = measurementsWithTags.flatMap(m => 
-          (m.linked_tag_ids || []).map(tagId => ({
+        // Insert new tag relationships
+        const tagRelations = measurements.flatMap(m => 
+          selectedTagIds.map(tagId => ({
             measurement_id: m.id,
             tag_id: tagId,
           }))
@@ -2081,6 +1742,7 @@ function TakeoffPageInner() {
         .from("takeoff_sessions")
         .update({ 
           measurements: measurements,
+          groups: groups,
           active_group_id: activeGroupId,
         })
         .eq("id", sessionId);
@@ -2088,66 +1750,6 @@ function TakeoffPageInner() {
 
     return () => clearTimeout(timeoutId);
   }, [measurements, groups, activeGroupId, sessionId, dbLoaded, pageNumber, activeFolderId, selectedTagIds]);
-
-  // === MEASUREMENT SAVE EFFECT ===
-  useEffect(() => {
-    if (!sessionId || !dbLoaded) return;
-    
-    const timeoutId = setTimeout(async () => {
-      try {
-        // Phase 1: Save structured measurements (primary storage)
-        const measurementRecords = measurements.map(m => ({
-          session_id: sessionId,
-          group_id: m.groupId || null,
-          folder_id: activeFolderId || null,
-          type: m.type,
-          points: m.points,
-          unit: m.unit,
-          result: m.result,assembly_id: m.linked_assembly_id || null,linked_assembly_id: m.linked_assembly_id || null,
-          meta: {
-            label: m.label,
-            color: m.color,
-            timestamp: m.timestamp,
-            linked_item_id: m.linked_item_id,
-            linked_item_name: m.linked_item_name,
-            linked_assembly_id: m.linked_assembly_id,
-            linked_assembly_name: m.linked_assembly_name,
-            calculated_quantity: m.calculated_quantity,
-            pixelsPerUnit: m.pixelsPerUnit,
-            depthInches: m.meta?.depthInches,
-            // Map to Master Plan fields
-            measurement_type: m.type,
-            capture_mode: 'manual',
-            status: 'active',
-            raw_value: m.result,
-            calculated_value: m.calculated_quantity || m.result,
-            display_value: m.calculated_quantity || m.result,
-            unit_type: m.unit,
-            link_mode: m.linked_item_id ? 'item' : m.linked_assembly_id ? 'assembly' : 'unlinked',
-          },
-          sort_order: m.timestamp, // Use timestamp for consistent ordering
-        }));
-        
-        // Atomic upsert: delete all, then insert all
-        await supabase
-          .from("takeoff_measurements")
-          .delete()
-          .eq("session_id", sessionId);
-          
-        if (measurementRecords.length > 0) {
-          await supabase
-            .from("takeoff_measurements")
-            .insert(measurementRecords);
-        }
-        
-      } catch (err: any) {
-        console.error("Failed to save measurements:", err);
-        setError("Failed to save measurements: " + (err?.message || String(err)));
-      }
-    }, 1000); // 1 second debounce
-    
-    return () => clearTimeout(timeoutId);
-  }, [measurements, sessionId, dbLoaded, pageNumber, activeFolderId]);
 
   async function onPickFile(file: File | null) {
     setError(null);
@@ -2214,47 +1816,17 @@ function TakeoffPageInner() {
         storagePath: fileName, // Store storage path permanently
       };
       setPdfFile(pdfFileInfo);
-      setPdfFiles((prev) => [...prev, pdfFileInfo]);
-      setActivePdfIndex((prev) => prev + 1);
       
       // Update session with PDF info
-      let effectiveSessionId = sessionId;
-
-      if (!effectiveSessionId && projectId) {
-        const { data: createdSession, error: createdSessionError } = await supabase
-          .from("takeoff_sessions")
-          .insert({
-            project_id: projectId,
-            measurements: [],
-            pdf_file: pdfFileInfo,
-            pdf_files: [pdfFileInfo],
-          })
-          .select()
-          .maybeSingle();
-
-        if (createdSessionError) throw createdSessionError;
-        effectiveSessionId = createdSession.id;
-        setSessionId(createdSession.id);
-      } else if (effectiveSessionId) {
-        const { data: existingSession, error: existingSessionError } = await supabase
-          .from("takeoff_sessions")
-          .select("pdf_files")
-          .eq("id", effectiveSessionId)
-          .maybeSingle();
-
-        if (existingSessionError) throw existingSessionError;
-
-        const existingPdfFiles = Array.isArray(existingSession?.pdf_files) ? existingSession.pdf_files : [];
-
-        const { error: updateSessionError } = await supabase
+      if (sessionId) {
+        await supabase
           .from("takeoff_sessions")
           .update({
             pdf_file: pdfFileInfo,
-            pdf_files: [...existingPdfFiles, pdfFileInfo],
+            page_number: 1,
+            pan_zoom: { zoom: 1, panX: 0, panY: 0 },
           })
-          .eq("id", effectiveSessionId);
-
-        if (updateSessionError) throw updateSessionError;
+          .eq("id", sessionId);
       }
     } catch (e: any) {
       console.error("PDF upload/session sync failed:", e);
@@ -2262,66 +1834,6 @@ function TakeoffPageInner() {
       setError("PDF loaded, but session sync failed: " + (e?.message || String(e)));
     } finally {
       setLoadingPdf(false);
-    }
-  }
-
-  async function deletePdf() {
-    setError(null);
-
-    try {
-      if (pdfFile?.storagePath) {
-        const { error: storageError } = await supabase.storage
-          .from("project-files")
-          .remove([pdfFile.storagePath]);
-
-        if (storageError) {
-          console.warn("Failed to delete PDF from storage:", storageError);
-        }
-      }
-
-      const remainingPdfFiles = pdfFiles.filter((_, i) => i !== activePdfIndex);
-      const nextIndex = remainingPdfFiles.length === 0 ? 0 : Math.min(activePdfIndex, remainingPdfFiles.length - 1);
-
-      if (sessionId) {
-        const { error: sessionError } = await supabase
-          .from("takeoff_sessions")
-          .update({
-            pdf_file: remainingPdfFiles.length > 0 ? remainingPdfFiles[nextIndex] : null,
-            pdf_files: remainingPdfFiles,
-          })
-          .eq("id", sessionId);
-
-        if (sessionError) throw sessionError;
-      }
-
-      setPdfFiles(remainingPdfFiles);
-
-      if (remainingPdfFiles.length > 0) {
-        const nextPdf = remainingPdfFiles[nextIndex];
-        setActivePdfIndex(nextIndex);
-        if (nextPdf?.storagePath) {
-          setLoadingPdf(true);
-          try {
-            await restorePdfFromStorage(nextPdf.storagePath);
-          } finally {
-            setLoadingPdf(false);
-          }
-        }
-      } else {
-        setPdf(null);
-        setPdfFile(null);
-        setActivePdfIndex(0);
-        setNumPages(0);
-        setPageNumber(1);
-        setPanZoom({ zoom: 1, panX: 0, panY: 0 });
-        setCalibrationDraftPoints([]);
-        setCalibrationHoverPoint(null);
-        setCurrentCalibration(null);
-      }
-
-    } catch (e: any) {
-      console.error("Failed to delete PDF:", e);
-      setError("Failed to delete PDF: " + (e?.message || String(e)));
     }
   }
 
@@ -2373,7 +1885,27 @@ function TakeoffPageInner() {
     setOverViewer(false);
   }
 
-  function distFeet(a: Point, b: Point) {
+  function canvasPointFromEvent(e: React.PointerEvent): Point | null {
+    const canvas = canvasRef.current;
+    const viewer = viewerRef.current;
+    if (!canvas || !viewer) return null;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    // Convert screen coordinates to canvas logical coordinates
+    // This matches the PDF viewport coordinate system used in renderPdfPage
+    const canvasX = (e.clientX - rect.left) * scaleX;
+    const canvasY = (e.clientY - rect.top) * scaleY;
+
+    return {
+      x: canvasX,
+      y: canvasY,
+    };
+  }
+
+  function distFeet(a: { x: number; y: number }, b: { x: number; y: number }) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const d = Math.sqrt(dx * dx + dy * dy);
@@ -2384,14 +1916,13 @@ function TakeoffPageInner() {
     return d * currentCalibration.scaleFeetPerPixel;
   }
 
-
   async function fetchCostItem(groupId: string) {
     try {
       const { data, error } = await supabase
         .from("calc_engine_json")
         .select("calc_engine_json")
         .eq("id", groupId)
-        .maybeSingle();
+        .single();
 
       if (error) throw error;
       return data;
@@ -2475,28 +2006,7 @@ function TakeoffPageInner() {
     }
   }
 
-  // === DEBOUNCED PERSISTENCE ===
-  const saveTakeoffState = useCallback(async () => {
-    if (!sessionId || !dbLoaded) return;
-    
-    try {
-      // Save pan/zoom state
-      await supabase
-        .from("takeoff_sessions")
-        .update({
-        })
-        .eq("id", sessionId);
-    } catch (err) {
-      console.warn('Failed to save takeoff state:', err);
-    }
-  }, [sessionId, dbLoaded, pageNumber, panZoom, activeGroupId]);
-
-  const debouncedSave = useMemo(
-    () => debounce(saveTakeoffState, 1000),
-    [saveTakeoffState]
-  );
-
-  // === CALIBRATION FLOW FIX ===
+  // Calibration functions - CLEAN CALIBRATION ONLY
   function confirmCalibration(realDistanceFeet: number) {
     if (calibrationDraftPoints.length !== 2) return;
     
@@ -2515,10 +2025,6 @@ function TakeoffPageInner() {
     
     setCurrentCalibration(newCalibration);
     resetInteractionState();
-    setIsCalibrating(false);
-    setCalibrationDraftPoints([]);
-    setCalibrationHoverPoint(null);
-    setScaleModalOpen(false);
     
     // Save calibration to session
     if (sessionId) {
@@ -2552,50 +2058,6 @@ function TakeoffPageInner() {
     }
   }
 
-  // === PDF PERSISTENCE FIX ===
-  async function restorePdfFromStorage(storagePath: string) {
-    try {
-      // Generate fresh signed URL
-      const { data, error } = await supabase.storage
-        .from('project-files')
-        .createSignedUrl(storagePath, 3600);
-      
-      if (error) throw error;
-      
-      // Load PDF with fresh URL
-      const signedUrl = data?.signedUrl;
-      if (!signedUrl) throw new Error("Failed to create signed URL");
-
-      const pdfDoc = await getDocument(signedUrl).promise;
-      setPdf(pdfDoc);
-      setPdfFile({
-        name: pdfFile?.name || 'Restored PDF',
-        url: signedUrl,
-        size: pdfFile?.size || 0,
-        lastModified: Date.now(),
-        storagePath
-      });
-    } catch (err) {
-      console.error('Failed to restore PDF:', err);
-      setError('Failed to restore PDF from storage');
-    }
-  }
-
-  async function openPdfAtIndex(index: number) {
-    const target = pdfFiles[index];
-    if (!target?.storagePath) return;
-
-    setActivePdfIndex(index);
-    setLoadingPdf(true);
-    setError(null);
-
-    try {
-      await restorePdfFromStorage(target.storagePath);
-    } finally {
-      setLoadingPdf(false);
-    }
-  }
-
   function confirmVolumeWithDepth() {
     const depth = toNumber(depthInput);
     if (volumePoints.length < 3 || !depth) return;
@@ -2607,14 +2069,12 @@ function TakeoffPageInner() {
       type: "volume",
       points: [...volumePoints],
       result: volume,
-      unit: linkedItem?.unit || "ft³",
-      color: linkedItem ? "#f59e0b" : linkedAssembly ? "#10b981" : activeGroup?.color || "#f59e0b",
+      unit: selectedLinkedItem?.unit || "ft³",
+      color: selectedLinkedItem?.color || activeGroup?.color || "#f59e0b",
       groupId: activeGroupId || undefined,
       timestamp: Date.now(),
-      linked_item_id: linkedItemId ?? undefined,
-      linked_assembly_id: linkedAssemblyId ?? undefined,
-      linked_item_name: linkedItem?.item_name || linkedItem?.name,
-      linked_assembly_name: linkedAssembly?.assembly_name,
+      linked_item_id: selectedLinkedItem?.id,
+      linked_item_name: selectedLinkedItem?.name,
       label: `Volume (${depth}" depth)`,
     });
 
@@ -2748,7 +2208,7 @@ function TakeoffPageInner() {
       };
       supabase
         .from("takeoff_sessions")
-        .update({})
+        .update({ pan_zoom: newPanZoom })
         .eq("id", sessionId);
     }
   }
@@ -2766,7 +2226,7 @@ function TakeoffPageInner() {
     if (sessionId) {
       supabase
         .from("takeoff_sessions")
-        .update({})
+        .update({ pan_zoom: { ...panZoom, zoom: newZoom } })
         .eq("id", sessionId);
     }
   }
@@ -2786,7 +2246,7 @@ function TakeoffPageInner() {
     if (sessionId) {
       supabase
         .from("takeoff_sessions")
-        .update({})
+        .update({ page_number: pageNumber + 1 })
         .eq("id", sessionId);
     }
   }
@@ -2806,7 +2266,7 @@ function TakeoffPageInner() {
     if (sessionId) {
       supabase
         .from("takeoff_sessions")
-        .update({})
+        .update({ page_number: pageNumber - 1 })
         .eq("id", sessionId);
     }
   }
@@ -2819,7 +2279,7 @@ function TakeoffPageInner() {
     if (sessionId) {
       supabase
         .from("takeoff_sessions")
-        .update({})
+        .update({ pan_zoom: { ...panZoom, zoom: newZoom } })
         .eq("id", sessionId);
     }
   }
@@ -2829,10 +2289,7 @@ function TakeoffPageInner() {
     hasPointerDownRef.current = true;
     
     const p = canvasPointFromEvent(e);
-    if (!p) {
-      hasPointerDownRef.current = false;
-      return;
-    }
+    if (!p) return;
     
     // Handle calibration point picking - ISOLATED BRANCH
     if (isCalibrating) {
@@ -2881,19 +2338,16 @@ function TakeoffPageInner() {
         setLineEnd(null);
       } else {
         // Complete line on second click
-        
         const newMeasurement = addMeasurement({
           type: "line",
           points: [lineStart!, snappedPoint],
           result: distFeet(lineStart!, snappedPoint),
-          unit: linkedItem?.unit || "ft",
-          color: linkedItem ? "#60a5fa" : linkedAssembly ? "#10b981" : activeGroup?.color || "#60a5fa",
+          unit: selectedLinkedItem?.unit || "ft",
+          color: selectedLinkedItem?.color || activeGroup?.color || "#60a5fa",
           groupId: activeGroupId || undefined,
           timestamp: Date.now(),
-          linked_item_id: linkedItemId ?? undefined,
-          linked_assembly_id: linkedAssemblyId ?? undefined,
-          linked_item_name: linkedItem?.item_name || linkedItem?.name,
-          linked_assembly_name: linkedAssembly?.name,
+          linked_item_id: selectedLinkedItem?.id,
+          linked_item_name: selectedLinkedItem?.name,
         });
         
         // Reset for next line
@@ -2903,19 +2357,16 @@ function TakeoffPageInner() {
     } else if (tool === "area") {
       setAreaPoints((prev) => [...prev, snappedPoint]);
     } else if (tool === "count") {
-      
       const newMeasurement = addMeasurement({
         type: "count",
         points: [snappedPoint],
         result: 1,
-        unit: linkedItem?.unit || "ea",
-        color: linkedItem ? "#f59e0b" : linkedAssembly ? "#10b981" : activeGroup?.color || "#f59e0b",
+        unit: selectedLinkedItem?.unit || "ea",
+        color: selectedLinkedItem?.color || activeGroup?.color || "#f59e0b",
         groupId: activeGroupId || undefined,
         timestamp: Date.now(),
-        linked_item_id: linkedItemId ?? undefined,
-        linked_assembly_id: linkedAssemblyId ?? undefined,
-        linked_item_name: linkedItem?.item_name || linkedItem?.name,
-        linked_assembly_name: linkedAssembly?.assembly_name,
+        linked_item_id: selectedLinkedItem?.id,
+        linked_item_name: selectedLinkedItem?.name,
       });
     } else if (tool === "volume") {
       setVolumePoints((prev) => [...prev, snappedPoint]);
@@ -2924,8 +2375,6 @@ function TakeoffPageInner() {
 
   async function onCanvasPointerMove(e: React.PointerEvent) {
     const p = canvasPointFromEvent(e);
-    if (!p) return;
-    
     setHoverPt(p);
     setCrosshairPos(p);
     
@@ -2935,7 +2384,7 @@ function TakeoffPageInner() {
     }
 
     // Update hover highlights
-    if (tool !== "select") {
+    if (tool !== "select" && p) {
       const nearestPoint = findNearestPoint(p, 15);
       setHoveredPoint(nearestPoint);
       
@@ -2946,16 +2395,18 @@ function TakeoffPageInner() {
       setHoveredLine(null);
     }
 
-    // Update tool-specific hover states
     if (tool === "area") {
       setAreaHoverPt(p);
-    } else if (tool === "volume") {
+    }
+    if (tool === "volume") {
       setVolumeHoverPt(p);
-    } else if (tool === "line" && lineStart) {
-      // Update line end for preview - FIXED
+    }
+
+    if (tool === "line" && lineStart) {
       setLineEnd(p);
     }
   }
+
   function onCanvasPointerUp(_: React.PointerEvent) {
     hasPointerDownRef.current = false;
   }
@@ -2977,32 +2428,66 @@ function TakeoffPageInner() {
       type: "area",
       points: [...areaPoints],
       result: areaFt2,
-      unit: linkedItem?.unit || "ft²",
-      color: linkedItem ? "#a78bfa" : linkedAssembly ? "#10b981" : activeGroup?.color || "#a78bfa",
+      unit: selectedLinkedItem?.unit || "ft²",
+      color: selectedLinkedItem?.color || activeGroup?.color || "#a78bfa",
       groupId: activeGroupId || undefined,
       timestamp: Date.now(),
-      linked_item_id: linkedItemId ?? undefined,
-      linked_assembly_id: linkedAssemblyId ?? undefined,
-      linked_item_name: linkedItem?.item_name || linkedItem?.name,
-      linked_assembly_name: linkedAssembly?.assembly_name,
+      linked_item_id: selectedLinkedItem?.id,
+      linked_item_name: selectedLinkedItem?.name,
     });
     
     setAreaPoints([]);
   }
 
-  // Phase 3: Auto-update BOQ preview when measurements or linking data changes
+  // Keyboard shortcuts
   useEffect(() => {
-    generateBoqPreview();
-  }, [measurements, costItems, assemblies]);
-
-  // === CALIBRATION BUTTON FIX ===
-  function startCalibration() {
-    setIsCalibrating(true);
-    setCalibrationDraftPoints([]);
-    setCalibrationHoverPoint(null);
-    setScaleModalOpen(false);
-    resetInteractionState();
-  }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.code === "Space") {
+        e.preventDefault();
+        isSpaceDownRef.current = true;
+      } else if (e.code === "Escape") {
+        e.preventDefault();
+        // Cancel current draft
+        if (tool === "area") {
+          setAreaPoints([]);
+          setAreaHoverPt(null);
+        } else if (tool === "volume") {
+          setVolumePoints([]);
+          setVolumeHoverPt(null);
+        } else if (tool === "line") {
+          setLineStart(null);
+          setLineEnd(null);
+        } else if (isCalibrating) {
+          setCalibrationDraftPoints([]);
+          setCalibrationHoverPoint(null);
+          setIsCalibrating(false);
+        }
+      } else if (e.code === "Enter") {
+        e.preventDefault();
+        // Finish polygon tools
+        if (tool === "area" && areaPoints.length >= 3) {
+          completeArea();
+        } else if (tool === "volume" && volumePoints.length >= 3) {
+          completeVolume();
+        }
+      }
+    }
+    
+    function handleKeyUp(e: KeyboardEvent) {
+      if (e.code === "Space") {
+        e.preventDefault();
+        isSpaceDownRef.current = false;
+      }
+    }
+    
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [tool, isCalibrating, areaPoints, volumePoints, lineStart]);
 
   // PDF-only render effect - NO hover dependencies
   useEffect(() => {
@@ -3154,39 +2639,6 @@ function TakeoffPageInner() {
                 onChange={(e) => onPickFile(e.target.files?.[0] || null)}
               />
             </label>
-
-            <label className="cursor-pointer rounded-lg border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-xs font-medium text-emerald-200 transition hover:bg-emerald-900/50">
-              Add Page
-              <input
-                type="file"
-                accept=".pdf"
-                className="hidden"
-                onChange={(e) => onPickFile(e.target.files?.[0] || null)}
-              />
-            </label>
-
-            {pdfFiles.length > 1 && (
-              <select
-                value={activePdfIndex}
-                onChange={(e) => openPdfAtIndex(Number(e.target.value))}
-                className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800"
-              >
-                {pdfFiles.map((file, index) => (
-                  <option key={`${file.storagePath || file.name}-${index}`} value={index}>
-                    {`Drawing ${index + 1}: ${file.name || "PDF"}`}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {pdfFile && (
-              <button
-                onClick={deletePdf}
-                className="rounded-lg border border-rose-800 bg-rose-950/40 px-2 py-1 text-xs font-medium text-rose-200 transition hover:bg-rose-900/50"
-              >
-                Delete PDF
-              </button>
-            )}
 
             <button
               onClick={clearCalibration}
@@ -3346,7 +2798,7 @@ function TakeoffPageInner() {
           {loadingPdf && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
               <div className="rounded-xl border border-slate-800 bg-slate-950 px-5 py-4 text-sm text-slate-200 shadow-xl">
-                Loading drawing...
+                Loading PDF...
               </div>
             </div>
           )}
@@ -3423,6 +2875,7 @@ function TakeoffPageInner() {
                 ["draw", "Draw"],
                 ["measurements", "Measurements"],
                 ["groups", "Groups"],
+                ["library", "Library"],
                 ["settings", "Settings"],
               ].map(([key, label]) => (
                 <button
@@ -3623,64 +3076,6 @@ function TakeoffPageInner() {
                   </div>
                 )}
 
-                {/* Phase 2: Compact Linking Engine */}
-                {(costItems.length > 0 || assemblies.length > 0) && (
-                  <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
-                    <div className="mb-2 text-sm font-semibold text-white">Linking</div>
-                    
-                    {/* Cost Items */}
-                    {costItems.length > 0 && (
-                      <div className="mb-3">
-                        <div className="mb-1 text-xs text-slate-400">Cost Item</div>
-                        <select
-                          value={linkedItemId || ""}
-                          onChange={(e) => {
-                            setLinkedItemId(e.target.value || undefined);
-                            setLinkedAssemblyId(undefined); // Clear assembly when item selected
-                          }}
-                          className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-slate-600"
-                        >
-                          <option value="">No item</option>
-                          {costItems.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.item_name} ({item.unit})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                    
-                    {/* Assemblies */}
-                    {assemblies.length > 0 && (
-                      <div>
-                        <div className="mb-1 text-xs text-slate-400">Assembly</div>
-                        <select
-                          value={linkedAssemblyId || ""}
-                          onChange={(e) => {
-                            setLinkedAssemblyId(e.target.value || undefined);
-                            setLinkedItemId(undefined); // Clear item when assembly selected
-                          }}
-                          className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-slate-600"
-                        >
-                          <option value="">No assembly</option>
-                          {assemblies.map((assembly) => (
-                            <option key={assembly.id} value={assembly.id}>
-                              {assembly.assembly_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                    
-                    {/* Link Status */}
-                    {(linkedItemId || linkedAssemblyId) && (
-                      <div className="mt-2 rounded-lg border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 text-xs text-emerald-300">
-                        Linked to: {linkedItemId ? costItems.find(i => i.id === linkedItemId)?.item_name : assemblies.find(a => a.id === linkedAssemblyId)?.assembly_name}
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
                   <div className="mb-2 text-sm font-semibold text-white">Quick Stats</div>
                   <div className="grid grid-cols-3 gap-2 text-[11px]">
@@ -3709,82 +3104,33 @@ function TakeoffPageInner() {
                       <div className="mt-1 text-lg font-semibold text-white">{measurementCounts.volumes}</div>
                     </div>
                   </div>
-                </div>
 
-                {/* Phase 3: BOQ Preview */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <div className="text-sm font-semibold text-white">BOQ Preview</div>
-                    <button
-                      onClick={sendToBOQ}
-                      disabled={boqPreview.length === 0}
-                      className="rounded-lg border border-emerald-800 bg-emerald-950/50 px-2 py-1 text-xs text-emerald-200 hover:bg-emerald-800/70 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Send to BOQ
-                    </button>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto">
-                    {boqPreview.length === 0 ? (
-                      <div className="text-xs text-slate-400 italic">
-                        No linked measurements yet. Link items or assemblies to see BOQ aggregation.
+                  <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div className="text-sm font-semibold text-white">All Measurements</div>
+                      <button
+                        onClick={exportToCSV}
+                        className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
+                      >
+                        Export CSV
+                      </button>
+                    </div>
+
+                    {measurements.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-800 px-3 py-6 text-center text-sm text-slate-500">
+                        No measurements yet.
                       </div>
                     ) : (
-                      <div className="space-y-1">
-                        {boqPreview.map((item, index) => (
-                          <div
-                            key={`${item.item_id}_${index}`}
-                            className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/30 px-2 py-1.5 text-xs"
-                          >
-                            <div className="flex items-center gap-2">
-                              <div className={`w-2 h-2 rounded-full ${
-                                item.type === 'item' ? 'bg-blue-500' : 'bg-green-500'
-                              }`} />
-                              <span className="text-slate-200 truncate max-w-[120px]">
-                                {item.name}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-white font-medium">
-                                {formatResult(item.total_quantity)}
-                              </span>
-                              <span className="text-slate-400">
-                                {item.unit}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* All Measurements */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <div className="text-sm font-semibold text-white">All Measurements</div>
-                    <button
-                      onClick={exportToCSV}
-                      className="rounded-lg border border-slate-800 bg-slate-950/50 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800/70"
-                    >
-                      Export CSV
-                    </button>
-                  </div>
-
-                  {measurements.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-slate-800 px-3 py-6 text-center text-sm text-slate-500">
-                      No measurements yet.
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {measurements.map((m) => {
-                        const group = groups.find((g) => g.id === m.groupId);
-                        
-                        return (
-                          <div
-                            key={m.id}
-                            className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"
-                          >
-                            <div className="flex items-start justify-between">
+                      <div className="space-y-2">
+                        {measurements.map((m) => {
+                          const group = groups.find((g) => g.id === m.groupId);
+                          
+                          return (
+                            <div
+                              key={m.id}
+                              className="rounded-lg border border-slate-800 bg-slate-950/70 p-3"
+                            >
+                              <div className="flex items-start justify-between">
                                 <div className="flex items-center gap-2">
                                   <div className="text-lg">{measurementIcon(m.type)}</div>
                                   <div>
@@ -3820,6 +3166,7 @@ function TakeoffPageInner() {
                     )}
                   </div>
                 </div>
+              </div>
             )}
 
             {sidebarTab === "measurements" && (
@@ -3958,7 +3305,104 @@ function TakeoffPageInner() {
               </div>
             )}
 
-            
+            {sidebarTab === "library" && (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+                  <div className="mb-3 text-sm font-semibold text-white">Cost Items Library</div>
+                  <div className="space-y-2">
+                    <div className="text-xs text-slate-400">Select an item to link measurements:</div>
+                    <div className="space-y-1">
+                      {/* Mock items - replace with real library data */}
+                      {[
+                        { id: 'item-1', name: '2x4 Lumber', unit: 'ft', type: 'item' as const, color: '#60a5fa' },
+                        { id: 'item-2', name: 'Drywall', unit: 'ft²', type: 'item' as const, color: '#a78bfa' },
+                        { id: 'item-3', name: 'Concrete', unit: 'ft³', type: 'item' as const, color: '#f59e0b' },
+                        { id: 'assembly-1', name: 'Wall Assembly', unit: 'ft²', type: 'assembly' as const, color: '#10b981' },
+                      ].map(item => (
+                        <button
+                          key={item.id}
+                          onClick={() => setSelectedLinkedItem(item)}
+                          className={classNames(
+                            "w-full rounded-lg px-3 py-2 text-left text-xs transition",
+                            selectedLinkedItem?.id === item.id
+                              ? "bg-blue-600 text-white"
+                              : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-3 h-3 rounded-full" 
+                              style={{ backgroundColor: item.color }}
+                            />
+                            <div>
+                              <div className="font-medium">{item.name}</div>
+                              <div className="text-xs opacity-75">{item.unit} • {item.type}</div>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                
+                {selectedLinkedItem && (
+                  <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+                    <div className="mb-2 text-sm font-semibold text-white">Selected Item</div>
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-4 h-4 rounded-full" 
+                        style={{ backgroundColor: selectedLinkedItem.color }}
+                      />
+                      <div className="text-sm text-slate-300">
+                        {selectedLinkedItem.name} ({selectedLinkedItem.unit})
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-400">
+                      New measurements will be linked to this item
+                    </div>
+                  </div>
+                )}
+                
+                {itemQuantities.size > 0 && (
+                  <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+                    <div className="mb-3 text-sm font-semibold text-white">BOQ Summary</div>
+                    <div className="space-y-2">
+                      {Array.from(itemQuantities.values()).map(qty => (
+                        <div key={qty.item_id} className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-3 h-3 rounded-full" 
+                              style={{ backgroundColor: qty.item.color }}
+                            />
+                            <div className="text-slate-300">{qty.item.name}</div>
+                          </div>
+                          <div className="text-slate-400">
+                            {formatResult(qty.total_quantity)} {qty.unit}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => {
+                        const boqData = getBOQData();
+                        const json = JSON.stringify(boqData, null, 2);
+                        const blob = new Blob([json], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `boq_${Date.now()}.json`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      className="mt-3 w-full rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700"
+                    >
+                      Export BOQ Data
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {sidebarTab === "settings" && (
               <div className="space-y-3">
                 <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
@@ -3996,24 +3440,5 @@ export default function TakeoffPage() {
     </TakeoffErrorBoundary>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

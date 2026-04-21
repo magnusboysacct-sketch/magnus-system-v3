@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle, ChevronDown, ChevronUp, Wallet, ChartBar as BarChart, Package, Library, ClipboardList, Truck, Calculator, Building2, ShieldCheck, Smartphone } from "lucide-react";
+import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle, ChevronDown, ChevronUp, Wallet, ChartBar, Package, Library, ClipboardList, Truck, Calculator, Building2, ShieldCheck, Smartphone, HandCoins } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
 import ProjectSelector from "../components/ProjectSelector";
@@ -72,11 +72,12 @@ const navSections: NavSection[] = [
       { to: "/accounts-receivable", label: "Receivables", icon: FileText },
       { to: "/billing", label: "Billing", icon: CreditCard },
       { to: "/workers", label: "Payroll", icon: UserCircle },
+      { to: "/field-payments", label: "Field Payments", icon: HandCoins },
     ],
   },
   {
     title: "Reports",
-    icon: BarChart,
+    icon: BarChart3,
     collapsible: true,
     items: [
       { to: "/reports", label: "Analytics", icon: BarChart3 }
@@ -144,6 +145,7 @@ export default function SidebarLayout() {
       "/settings/master-lists",
       "/billing",
       "/workers",
+      "/field-payments",
       "/cash-flow",
       "/accounts-receivable",
       "/expenses",

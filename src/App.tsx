@@ -43,6 +43,7 @@ import ExpensesPage from "./pages/ExpensesPage";
 import FinanceDashboardPage from "./pages/FinanceDashboardPage";
 import FinanceTransactionsPage from "./pages/FinanceTransactionsPage";
 import FinanceReportsPage from "./pages/FinanceReportsPage";
+import FieldPaymentsPage from "./pages/FieldPaymentsPage";
 
 function AuthHashRouter() {
   const nav = useNavigate();
@@ -180,6 +181,7 @@ export default function App() {
             <Route path="/cash-flow" element={<CashFlowPage />} />
             <Route path="/accounts-receivable" element={<AccountsReceivablePage />} />
             <Route path="/expenses" element={<ExpensesPage />} />
+            <Route path="/field-payments" element={<FieldPaymentsPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/settings" element={<SettingsPage />} />

@@ -65,7 +65,7 @@ function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: ReturnType<typeof setTimeout>;
+  let timeout: NodeJS.Timeout;
   return (...args: Parameters<T>) => {
     clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), wait);
@@ -538,8 +538,6 @@ function TakeoffPageInner() {
   const [showDepthPrompt, setShowDepthPrompt] = useState(false);
   const [depthInput, setDepthInput] = useState("4");
   const [pdfFile, setPdfFile] = useState<PdfFile | null>(null);
-  const [pdfFiles, setPdfFiles] = useState<PdfFile[]>([]);
-  const [activePdfIndex, setActivePdfIndex] = useState(0);
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<Measurement[]>([]);
   const [hoveredPoint, setHoveredPoint] = useState<Point | null>(null);
@@ -641,47 +639,6 @@ function TakeoffPageInner() {
   const isSpaceDownRef = useRef(false);
   const isPanningRef = useRef(false);
   const hasPointerDownRef = useRef(false);
-
-  // === COORDINATE SYSTEM HELPERS ===
-  function getCanvasMetrics() {
-    const canvas = canvasRef.current;
-    const viewer = viewerRef.current;
-    if (!canvas || !viewer) return null;
-
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-
-    return { rect, scaleX, scaleY, canvasWidth: canvas.width, canvasHeight: canvas.height };
-  }
-
-  function screenToWorld(clientX: number, clientY: number): Point | null {
-    const metrics = getCanvasMetrics();
-    if (!metrics) return null;
-
-    const { rect, scaleX, scaleY } = metrics;
-
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
-    };
-  }
-
-  function worldToScreen(worldPoint: Point): Point | null {
-    const metrics = getCanvasMetrics();
-    if (!metrics) return null;
-
-    const { scaleX, scaleY } = metrics;
-
-    return {
-      x: worldPoint.x / scaleX,
-      y: worldPoint.y / scaleY,
-    };
-  }
-
-  function canvasPointFromEvent(e: React.PointerEvent): Point | null {
-    return screenToWorld(e.clientX, e.clientY);
-  }
 
   // LAYER 1: PDF-only rendering - completely isolated
   async function renderPdfPage() {
@@ -788,55 +745,53 @@ function TakeoffPageInner() {
         
         if (measurement.type === "line" && measurement.points.length === 2) {
           const [a, b] = measurement.points;
-          const sa = worldToScreen(a);
-          const sb = worldToScreen(b);
-          if (sa && sb) {
-            ctx.beginPath();
-            ctx.moveTo(sa.x, sa.y);
-            ctx.lineTo(sb.x, sb.y);
-            ctx.stroke();
-          }
-        } else if ((measurement.type === "area" || measurement.type === "volume") && measurement.points.length >= 3) {
-          const screenPoints = measurement.points.map((p) => worldToScreen(p)).filter(Boolean);
-          if (screenPoints.length >= 3) {
-            ctx.beginPath();
-            screenPoints.forEach((p, i) => {
-              if (!p) return;
-              if (i === 0) {
-                ctx.moveTo(p.x, p.y);
-              } else {
-                ctx.lineTo(p.x, p.y);
-              }
-            });
-            ctx.closePath();
-            ctx.stroke();
-          }
+          ctx.beginPath();
+          ctx.moveTo(a.x * panZoom.zoom + panZoom.panX, a.y * panZoom.zoom + panZoom.panY);
+          ctx.lineTo(b.x * panZoom.zoom + panZoom.panX, b.y * panZoom.zoom + panZoom.panY);
+          ctx.stroke();
+        } else if (measurement.type === "area" && measurement.points.length >= 3) {
+          ctx.beginPath();
+          measurement.points.forEach((p, i) => {
+            if (i === 0) {
+              ctx.moveTo(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY);
+            } else {
+              ctx.lineTo(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY);
+            }
+          });
+          ctx.closePath();
+          ctx.stroke();
+        } else if (measurement.type === "volume" && measurement.points.length >= 3) {
+          ctx.beginPath();
+          measurement.points.forEach((p, i) => {
+            if (i === 0) {
+              ctx.moveTo(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY);
+            } else {
+              ctx.lineTo(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY);
+            }
+          });
+          ctx.closePath();
+          ctx.stroke();
         } else if (measurement.type === "count") {
           measurement.points.forEach((p) => {
-            const sp = worldToScreen(p);
-            if (!sp) return;
             ctx.beginPath();
-            ctx.arc(sp.x, sp.y, 6, 0, Math.PI * 2);
+            ctx.arc(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY, 6, 0, Math.PI * 2);
             ctx.stroke();
           });
         }
-
+        
         ctx.restore();
       }
     }
 
     // Draw hover highlights
     if (hoveredPoint) {
-      const sp = worldToScreen(hoveredPoint);
-      if (sp) {
-        ctx.save();
-        ctx.strokeStyle = "#fbbf24";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(sp.x, sp.y, 6, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
+      ctx.save();
+      ctx.strokeStyle = "#fbbf24";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(hoveredPoint.x * panZoom.zoom + panZoom.panX, hoveredPoint.y * panZoom.zoom + panZoom.panY, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     }
 
     if (hoveredLine) {
@@ -978,34 +933,99 @@ function TakeoffPageInner() {
     const { hoverPt, lineEnd } = hoverStateRef.current;
 
     // Draw crosshair cursor
-    // Draw crosshair cursor
     if (crosshairPos && tool !== "select") {
-      const sp = worldToScreen(crosshairPos);
-      if (sp) {
+      ctx.save();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.6;
+      
+      const x = crosshairPos.x * panZoom.zoom + panZoom.panX;
+      const y = crosshairPos.y * panZoom.zoom + panZoom.panY;
+      const size = 20;
+      
+      // Horizontal line - ALWAYS begin new path
+      ctx.beginPath();
+      ctx.moveTo(x - size, y);
+      ctx.lineTo(x + size, y);
+      ctx.stroke();
+      
+      // Vertical line - ALWAYS begin new path
+      ctx.beginPath();
+      ctx.moveTo(x, y - size);
+      ctx.lineTo(x, y + size);
+      ctx.stroke();
+      
+      // Show selected linked item/assembly name
+      if (linkedItem || linkedAssembly) {
+        ctx.fillStyle = "rgba(255,255,255,0.9)";
+        ctx.font = "11px sans-serif";
+        const text = linkedItem ? linkedItem.item_name : linkedAssembly?.name || '';
+        const textWidth = ctx.measureText(text).width;
+        ctx.fillText(text, x + size + 5, y - 5);
+      }
+      
+      ctx.restore();
+    }
+
+    // Draw hover indicator - STATELESS
+    if (hoverPt && tool !== "select") {
+      ctx.save();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1;
+      // ALWAYS begin new path - no accumulation
+      ctx.beginPath();
+      ctx.arc(hoverPt.x * panZoom.zoom + panZoom.panX, hoverPt.y * panZoom.zoom + panZoom.panY, 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Draw live line preview with distance - STATELESS single line
+    if (tool === "line" && lineStart && (hoverPt || lineEnd)) {
+      const a = lineStart;
+      const b = lineEnd || hoverPt;
+      if (a && b) {
+        const color = linkedItem ? "#60a5fa" : linkedAssembly ? "#10b981" : "#60a5fa";
         ctx.save();
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.6;
-        const size = 20;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        // ALWAYS begin new path - draw only start point to current cursor
         ctx.beginPath();
-        ctx.moveTo(sp.x - size, sp.y);
-        ctx.lineTo(sp.x + size, sp.y);
+        ctx.moveTo(a.x * panZoom.zoom + panZoom.panX, a.y * panZoom.zoom + panZoom.panY);
+        ctx.lineTo(b.x * panZoom.zoom + panZoom.panX, b.y * panZoom.zoom + panZoom.panY);
         ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(sp.x, sp.y - size);
-        ctx.lineTo(sp.x, sp.y + size);
-        ctx.stroke();
-        if (linkedItem || linkedAssembly) {
-          ctx.fillStyle = "rgba(255,255,255,0.9)";
-          ctx.font = "11px sans-serif";
-          const text = linkedItem ? linkedItem.item_name : linkedAssembly?.name || "";
-          ctx.fillText(text, sp.x + size + 5, sp.y - 5);
+
+        // Draw live distance label
+        const pixelDist = dist(a, b);
+        const totalFeet = distFeet(a, b);
+        const label = totalFeet > 0 
+          ? formatFeetInches(totalFeet)
+          : `${pixelDist.toFixed(0)} px`;
+        
+        // Add linked item/assembly name if linked
+        const fullLabel = (linkedItem || linkedAssembly) 
+          ? `${linkedItem?.item_name || linkedAssembly?.name}: ${label}`
+          : label;
+
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        ctx.fillStyle = "rgba(96,165,250,0.9)";
+        ctx.font = "12px sans-serif";
+        const w = ctx.measureText(fullLabel).width;
+        const h = 16;
+        if ((ctx as any).roundRect) {
+          (ctx as any).roundRect(midX * panZoom.zoom + panZoom.panX - w / 2, midY * panZoom.zoom + panZoom.panY - h - 8, w, h, 8);
+        } else {
+          ctx.beginPath();
+          ctx.rect(midX * panZoom.zoom + panZoom.panX - w / 2, midY * panZoom.zoom + panZoom.panY - h - 8, w, h);
         }
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(fullLabel, midX * panZoom.zoom + panZoom.panX - w / 2, midY * panZoom.zoom + panZoom.panY - 2);
         ctx.restore();
       }
     }
-
-    // Calibration draft points
+    
+    // Draw calibration draft points and preview line in hover layer - CLEAN CALIBRATION ONLY
     if (isCalibrating && calibrationDraftPoints.length > 0) {
       ctx.save();
       ctx.strokeStyle = "#ef4444";
@@ -1013,43 +1033,42 @@ function TakeoffPageInner() {
       ctx.lineWidth = 3;
       ctx.shadowColor = "#ef4444";
       ctx.shadowBlur = 6;
-
+      
+      // Draw draft points with labels
       calibrationDraftPoints.forEach((p, i) => {
-        const sp = worldToScreen(p);
-        if (!sp) return;
+        // Draw point
         ctx.beginPath();
-        ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
+        ctx.arc(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY, 8, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = "#ffffff";
         ctx.beginPath();
-        ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+        ctx.arc(p.x * panZoom.zoom + panZoom.panX, p.y * panZoom.zoom + panZoom.panY, 4, 0, Math.PI * 2);
         ctx.fill();
+        
+        // Draw label
         ctx.fillStyle = "#ef4444";
         ctx.font = "bold 12px sans-serif";
         const labelText = `${i + 1}`;
         const textW = ctx.measureText(labelText).width;
-        ctx.fillText(labelText, sp.x - textW / 2, sp.y - 12);
+        ctx.fillText(labelText, p.x * panZoom.zoom + panZoom.panX - textW / 2, p.y * panZoom.zoom + panZoom.panY - 12);
       });
-
+      
+      // Draw preview line from point 1 to hover point
       if (calibrationDraftPoints.length === 1 && calibrationHoverPoint) {
-        const a = worldToScreen(calibrationDraftPoints[0]);
-        const b = worldToScreen(calibrationHoverPoint);
-        if (a && b) {
-          ctx.strokeStyle = "#ef4444";
-          ctx.lineWidth = 2;
-          ctx.setLineDash([8, 4]);
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+        ctx.strokeStyle = "#ef4444";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 4]);
+        ctx.beginPath();
+        ctx.moveTo(calibrationDraftPoints[0].x * panZoom.zoom + panZoom.panX, calibrationDraftPoints[0].y * panZoom.zoom + panZoom.panY);
+        ctx.lineTo(calibrationHoverPoint.x * panZoom.zoom + panZoom.panX, calibrationHoverPoint.y * panZoom.zoom + panZoom.panY);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
-
+      
       ctx.restore();
     }
-
   }
+
   // Throttled hover update using RAF
   function updateHoverState(newHoverPt: Point | null, newLineEnd: Point | null) {
     hoverStateRef.current = { hoverPt: newHoverPt, lineEnd: newLineEnd };
@@ -1414,7 +1433,7 @@ function TakeoffPageInner() {
       // Load folders
       const { data: foldersData } = await supabase
         .from("takeoff_folders")
-        .select("id, groups,  scale, pdf_file, pdf_files")
+        .select("*")
         .eq("project_id", projectId)
         .order("sort_order", { ascending: true });
       
@@ -1423,7 +1442,7 @@ function TakeoffPageInner() {
       // Load tags
       const { data: tagsData } = await supabase
         .from("takeoff_tags")
-        .select("id, groups,  scale, pdf_file, pdf_files")
+        .select("*")
         .eq("project_id", projectId)
         .order("tag_name", { ascending: true });
       
@@ -1452,7 +1471,7 @@ function TakeoffPageInner() {
           is_locked: false,
         })
         .select()
-        .maybeSingle();
+        .single();
       
       if (error) throw error;
       
@@ -1483,7 +1502,7 @@ function TakeoffPageInner() {
           is_system_generated: false,
         })
         .select()
-        .maybeSingle();
+        .single();
       
       if (error) throw error;
       
@@ -1513,7 +1532,7 @@ function TakeoffPageInner() {
         .from("boqs")
         .select("id, project_id")
         .eq("project_id", projectId)
-        .maybeSingle();
+        .single();
 
       if (boqError && boqError.code !== 'PGRST116') {
         throw boqError;
@@ -1532,7 +1551,7 @@ function TakeoffPageInner() {
             status: "draft"
           })
           .select("id")
-          .maybeSingle();
+          .single();
 
         if (createBoqError) throw createBoqError;
         boqId = newBoq.id;
@@ -1558,7 +1577,7 @@ function TakeoffPageInner() {
             description: "Auto-generated from takeoff measurements"
           })
           .select("id, name, boq_id")
-          .maybeSingle();
+          .single();
 
         if (createSectionError) throw createSectionError;
         takeoffSection = newSection;
@@ -1779,7 +1798,7 @@ function TakeoffPageInner() {
         .from("projects")
         .select("id, name")
         .eq("id", projectId)
-        .maybeSingle();
+        .single();
         
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error("Project lookup timeout")), 10000)
@@ -1804,11 +1823,11 @@ function TakeoffPageInner() {
       // Add timeout to session lookup
       const sessionPromise = supabase
         .from("takeoff_sessions")
-        .select("id, scale, pdf_file, pdf_files")
+        .select("*")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false })
         .limit(1)
-        .maybeSingle();
+        .single();
         
       const sessionTimeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error("Session lookup timeout")), 10000)
@@ -1818,13 +1837,13 @@ function TakeoffPageInner() {
 
       if (session) {
         setSessionId(session.id);
-        setGroups([]); // groups column doesn't exist in DB, use empty array
-        setActiveGroupId(null);
+        setGroups(session.groups || []);
+        setActiveGroupId(session.active_group_id || null);
         
         // Dual-load: Structured first, legacy as fallback
         // Note: Individual measurement loading handled by useEffect above
-        setGroups([]); // groups column doesn't exist in DB, use empty array
-        setActiveGroupId(null);
+        setGroups(session.groups || []);
+        setActiveGroupId(session.active_group_id || null);
         
         // Restore calibration if available
         if (session.scale?.calibration) {
@@ -1833,42 +1852,26 @@ function TakeoffPageInner() {
         
         setPageNumber(session.page_number || 1);
         
-        // Phase 3: Restore PDFs if available (best-effort)
-        const restoredPdfFiles =
-          Array.isArray(session.pdf_files) && session.pdf_files.length > 0
-            ? session.pdf_files.filter((file: any) => file?.storagePath)
-            : session.pdf_file && session.pdf_file.storagePath
-              ? [session.pdf_file]
-              : [];
-
-        setPdfFiles(restoredPdfFiles);
-        setActivePdfIndex(0);
-
-        if (restoredPdfFiles.length > 0) {
-          const firstPdf = restoredPdfFiles[0];
-          setPdfFile(firstPdf);
-          setLoadingPdf(true);
+        // Phase 3: Restore PDF if available (best-effort)
+        if (session.pdf_file && session.pdf_file.storagePath) {
+          setPdfFile(session.pdf_file);
           try {
+            // Create fresh signed URL for private bucket
             const { data: signedData } = await supabase.storage
               .from("project-files")
-              .createSignedUrl(firstPdf.storagePath, 60 * 60 * 24 * 7);
-
+              .createSignedUrl(session.pdf_file.storagePath, 60 * 60 * 24 * 7); // 7 days
+            
             if (signedData?.signedUrl) {
+              // Load PDF from signed URL
               const pdfDoc = await getDocument(signedData.signedUrl).promise;
               setPdf(pdfDoc);
               setNumPages(pdfDoc.numPages);
-              setPdfFile({
-                ...firstPdf,
-                url: signedData.signedUrl,
-              });
             }
           } catch (e) {
-            console.warn("Failed to restore PDFs:", e);
-          } finally {
-            setLoadingPdf(false);
+            console.warn("Failed to restore PDF:", e);
+            // Don't block session loading if PDF fails
           }
         }
-
         
         // Restore pan/zoom
         if (session.pan_zoom) {
@@ -1879,12 +1882,13 @@ function TakeoffPageInner() {
         const newSessionPromise = supabase
           .from("takeoff_sessions")
           .insert({
-            project_id: projectId,
+            project_id: activeProjectId,
             measurements: [],
+            groups: [],
             page_number: 1,
           })
           .select()
-          .maybeSingle();
+          .single();
           
         const newSessionTimeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error("Session creation timeout")), 10000)
@@ -1945,7 +1949,7 @@ function TakeoffPageInner() {
       try {
         const { data: structuredMeasurements, error } = await supabase
           .from("takeoff_measurements")
-          .select("id, session_id, group_id, folder_id, type, points, unit, result, cost_item_id, assembly_id, linked_item_id, linked_assembly_id, meta, sort_order, created_at")
+          .select("*")
           .eq("session_id", sessionId)
           .order("created_at", { ascending: true });
         
@@ -1986,7 +1990,7 @@ function TakeoffPageInner() {
           .from("takeoff_sessions")
           .select("measurements")
           .eq("id", sessionId)
-          .maybeSingle();
+          .single();
         
         if (session?.measurements) {
           setAllMeasurements(session.measurements);
@@ -2013,7 +2017,11 @@ function TakeoffPageInner() {
         type: m.type,
         points: m.points,
         unit: m.unit,
-        result: m.result,assembly_id: m.linked_assembly_id || null,linked_assembly_id: m.linked_assembly_id || null,
+        result: m.result,
+        cost_item_id: m.linked_item_id || null,
+        assembly_id: m.linked_assembly_id || null,
+        linked_item_id: m.linked_item_id || null,
+        linked_assembly_id: m.linked_assembly_id || null,
         meta: {
           label: m.label,
           color: m.color,
@@ -2081,6 +2089,7 @@ function TakeoffPageInner() {
         .from("takeoff_sessions")
         .update({ 
           measurements: measurements,
+          groups: groups,
           active_group_id: activeGroupId,
         })
         .eq("id", sessionId);
@@ -2098,12 +2107,17 @@ function TakeoffPageInner() {
         // Phase 1: Save structured measurements (primary storage)
         const measurementRecords = measurements.map(m => ({
           session_id: sessionId,
+          page_number: pageNumber,
           group_id: m.groupId || null,
           folder_id: activeFolderId || null,
           type: m.type,
           points: m.points,
           unit: m.unit,
-          result: m.result,assembly_id: m.linked_assembly_id || null,linked_assembly_id: m.linked_assembly_id || null,
+          result: m.result,
+          cost_item_id: m.linked_item_id || null,
+          assembly_id: m.linked_assembly_id || null,
+          linked_item_id: m.linked_item_id || null,
+          linked_assembly_id: m.linked_assembly_id || null,
           meta: {
             label: m.label,
             color: m.color,
@@ -2214,47 +2228,17 @@ function TakeoffPageInner() {
         storagePath: fileName, // Store storage path permanently
       };
       setPdfFile(pdfFileInfo);
-      setPdfFiles((prev) => [...prev, pdfFileInfo]);
-      setActivePdfIndex((prev) => prev + 1);
       
       // Update session with PDF info
-      let effectiveSessionId = sessionId;
-
-      if (!effectiveSessionId && projectId) {
-        const { data: createdSession, error: createdSessionError } = await supabase
-          .from("takeoff_sessions")
-          .insert({
-            project_id: projectId,
-            measurements: [],
-            pdf_file: pdfFileInfo,
-            pdf_files: [pdfFileInfo],
-          })
-          .select()
-          .maybeSingle();
-
-        if (createdSessionError) throw createdSessionError;
-        effectiveSessionId = createdSession.id;
-        setSessionId(createdSession.id);
-      } else if (effectiveSessionId) {
-        const { data: existingSession, error: existingSessionError } = await supabase
-          .from("takeoff_sessions")
-          .select("pdf_files")
-          .eq("id", effectiveSessionId)
-          .maybeSingle();
-
-        if (existingSessionError) throw existingSessionError;
-
-        const existingPdfFiles = Array.isArray(existingSession?.pdf_files) ? existingSession.pdf_files : [];
-
-        const { error: updateSessionError } = await supabase
+      if (sessionId) {
+        await supabase
           .from("takeoff_sessions")
           .update({
             pdf_file: pdfFileInfo,
-            pdf_files: [...existingPdfFiles, pdfFileInfo],
+            page_number: 1,
+            pan_zoom: { zoom: 1, panX: 0, panY: 0 },
           })
-          .eq("id", effectiveSessionId);
-
-        if (updateSessionError) throw updateSessionError;
+          .eq("id", sessionId);
       }
     } catch (e: any) {
       console.error("PDF upload/session sync failed:", e);
@@ -2262,66 +2246,6 @@ function TakeoffPageInner() {
       setError("PDF loaded, but session sync failed: " + (e?.message || String(e)));
     } finally {
       setLoadingPdf(false);
-    }
-  }
-
-  async function deletePdf() {
-    setError(null);
-
-    try {
-      if (pdfFile?.storagePath) {
-        const { error: storageError } = await supabase.storage
-          .from("project-files")
-          .remove([pdfFile.storagePath]);
-
-        if (storageError) {
-          console.warn("Failed to delete PDF from storage:", storageError);
-        }
-      }
-
-      const remainingPdfFiles = pdfFiles.filter((_, i) => i !== activePdfIndex);
-      const nextIndex = remainingPdfFiles.length === 0 ? 0 : Math.min(activePdfIndex, remainingPdfFiles.length - 1);
-
-      if (sessionId) {
-        const { error: sessionError } = await supabase
-          .from("takeoff_sessions")
-          .update({
-            pdf_file: remainingPdfFiles.length > 0 ? remainingPdfFiles[nextIndex] : null,
-            pdf_files: remainingPdfFiles,
-          })
-          .eq("id", sessionId);
-
-        if (sessionError) throw sessionError;
-      }
-
-      setPdfFiles(remainingPdfFiles);
-
-      if (remainingPdfFiles.length > 0) {
-        const nextPdf = remainingPdfFiles[nextIndex];
-        setActivePdfIndex(nextIndex);
-        if (nextPdf?.storagePath) {
-          setLoadingPdf(true);
-          try {
-            await restorePdfFromStorage(nextPdf.storagePath);
-          } finally {
-            setLoadingPdf(false);
-          }
-        }
-      } else {
-        setPdf(null);
-        setPdfFile(null);
-        setActivePdfIndex(0);
-        setNumPages(0);
-        setPageNumber(1);
-        setPanZoom({ zoom: 1, panX: 0, panY: 0 });
-        setCalibrationDraftPoints([]);
-        setCalibrationHoverPoint(null);
-        setCurrentCalibration(null);
-      }
-
-    } catch (e: any) {
-      console.error("Failed to delete PDF:", e);
-      setError("Failed to delete PDF: " + (e?.message || String(e)));
     }
   }
 
@@ -2368,14 +2292,6 @@ function TakeoffPageInner() {
   function onViewerPointerEnter(_: React.PointerEvent) {
     setOverViewer(true);
   }
-
-  function onViewerPointerLeave(_: React.PointerEvent) {
-    setOverViewer(false);
-  }
-
-  function distFeet(a: Point, b: Point) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
     const d = Math.sqrt(dx * dx + dy * dy);
     if (!d) return 0;
 
@@ -2384,14 +2300,13 @@ function TakeoffPageInner() {
     return d * currentCalibration.scaleFeetPerPixel;
   }
 
-
   async function fetchCostItem(groupId: string) {
     try {
       const { data, error } = await supabase
         .from("calc_engine_json")
         .select("calc_engine_json")
         .eq("id", groupId)
-        .maybeSingle();
+        .single();
 
       if (error) throw error;
       return data;
@@ -2483,7 +2398,10 @@ function TakeoffPageInner() {
       // Save pan/zoom state
       await supabase
         .from("takeoff_sessions")
-        .update({
+        .update({ 
+          page_number: pageNumber,
+          pan_zoom: panZoom,
+          active_group_id: activeGroupId
         })
         .eq("id", sessionId);
     } catch (err) {
@@ -2556,16 +2474,13 @@ function TakeoffPageInner() {
   async function restorePdfFromStorage(storagePath: string) {
     try {
       // Generate fresh signed URL
-      const { data, error } = await supabase.storage
+      const { data: { signedUrl }, error } = await supabase.storage
         .from('project-files')
-        .createSignedUrl(storagePath, 3600);
+        .createSignedUrl(storagePath, { expiresIn: 3600 });
       
       if (error) throw error;
       
       // Load PDF with fresh URL
-      const signedUrl = data?.signedUrl;
-      if (!signedUrl) throw new Error("Failed to create signed URL");
-
       const pdfDoc = await getDocument(signedUrl).promise;
       setPdf(pdfDoc);
       setPdfFile({
@@ -2578,21 +2493,6 @@ function TakeoffPageInner() {
     } catch (err) {
       console.error('Failed to restore PDF:', err);
       setError('Failed to restore PDF from storage');
-    }
-  }
-
-  async function openPdfAtIndex(index: number) {
-    const target = pdfFiles[index];
-    if (!target?.storagePath) return;
-
-    setActivePdfIndex(index);
-    setLoadingPdf(true);
-    setError(null);
-
-    try {
-      await restorePdfFromStorage(target.storagePath);
-    } finally {
-      setLoadingPdf(false);
     }
   }
 
@@ -2748,7 +2648,7 @@ function TakeoffPageInner() {
       };
       supabase
         .from("takeoff_sessions")
-        .update({})
+        .update({ pan_zoom: newPanZoom })
         .eq("id", sessionId);
     }
   }
@@ -2766,7 +2666,7 @@ function TakeoffPageInner() {
     if (sessionId) {
       supabase
         .from("takeoff_sessions")
-        .update({})
+        .update({ pan_zoom: { ...panZoom, zoom: newZoom } })
         .eq("id", sessionId);
     }
   }
@@ -2786,7 +2686,7 @@ function TakeoffPageInner() {
     if (sessionId) {
       supabase
         .from("takeoff_sessions")
-        .update({})
+        .update({ page_number: pageNumber + 1 })
         .eq("id", sessionId);
     }
   }
@@ -2806,7 +2706,7 @@ function TakeoffPageInner() {
     if (sessionId) {
       supabase
         .from("takeoff_sessions")
-        .update({})
+        .update({ page_number: pageNumber - 1 })
         .eq("id", sessionId);
     }
   }
@@ -2819,7 +2719,7 @@ function TakeoffPageInner() {
     if (sessionId) {
       supabase
         .from("takeoff_sessions")
-        .update({})
+        .update({ pan_zoom: { ...panZoom, zoom: newZoom } })
         .eq("id", sessionId);
     }
   }
@@ -2956,6 +2856,15 @@ function TakeoffPageInner() {
       setLineEnd(p);
     }
   }
+    if (tool === "volume") {
+      setVolumeHoverPt(p);
+    }
+
+    if (tool === "line" && lineStart) {
+      setLineEnd(p);
+    }
+  }
+
   function onCanvasPointerUp(_: React.PointerEvent) {
     hasPointerDownRef.current = false;
   }
@@ -3155,39 +3064,6 @@ function TakeoffPageInner() {
               />
             </label>
 
-            <label className="cursor-pointer rounded-lg border border-emerald-800 bg-emerald-950/40 px-2 py-1 text-xs font-medium text-emerald-200 transition hover:bg-emerald-900/50">
-              Add Page
-              <input
-                type="file"
-                accept=".pdf"
-                className="hidden"
-                onChange={(e) => onPickFile(e.target.files?.[0] || null)}
-              />
-            </label>
-
-            {pdfFiles.length > 1 && (
-              <select
-                value={activePdfIndex}
-                onChange={(e) => openPdfAtIndex(Number(e.target.value))}
-                className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800"
-              >
-                {pdfFiles.map((file, index) => (
-                  <option key={`${file.storagePath || file.name}-${index}`} value={index}>
-                    {`Drawing ${index + 1}: ${file.name || "PDF"}`}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {pdfFile && (
-              <button
-                onClick={deletePdf}
-                className="rounded-lg border border-rose-800 bg-rose-950/40 px-2 py-1 text-xs font-medium text-rose-200 transition hover:bg-rose-900/50"
-              >
-                Delete PDF
-              </button>
-            )}
-
             <button
               onClick={clearCalibration}
               className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-1 text-xs font-medium text-slate-200 transition hover:bg-slate-800"
@@ -3346,7 +3222,7 @@ function TakeoffPageInner() {
           {loadingPdf && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
               <div className="rounded-xl border border-slate-800 bg-slate-950 px-5 py-4 text-sm text-slate-200 shadow-xl">
-                Loading drawing...
+                Loading PDF...
               </div>
             </div>
           )}
@@ -3996,24 +3872,4 @@ export default function TakeoffPage() {
     </TakeoffErrorBoundary>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
