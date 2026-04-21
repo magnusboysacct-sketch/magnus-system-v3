@@ -63,10 +63,12 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
     setSelectedFile(file);
     setShowImageCapture(false);
     
-    // Create preview
+    // Create preview from the cropped file
     const reader = new FileReader();
     reader.onload = (e) => {
-      setPreview(e.target?.result as string);
+      if (e.target?.result) {
+        setPreview(e.target.result as string);
+      }
     };
     reader.readAsDataURL(file);
   }

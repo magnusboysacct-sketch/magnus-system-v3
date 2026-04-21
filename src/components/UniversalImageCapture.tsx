@@ -1,5 +1,12 @@
-import React, { useState, useRef, useCallback } from "react";
-import { Camera, Upload, X, Check, Crop, FileText } from "lucide-react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
+import { Camera, Upload, X, Check, Crop, FileText, Move } from "lucide-react";
+
+interface CropArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export type ImageCaptureMode = "id_photo" | "worker_photo" | "receipt" | "general";
 
@@ -38,11 +45,16 @@ export default function UniversalImageCapture({
   const [croppedImage, setCroppedImage] = useState<CroppedImage | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cropArea, setCropArea] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Get aspect ratio based on mode
   const getAspectRatio = useCallback(() => {
@@ -64,15 +76,15 @@ export default function UniversalImageCapture({
   const getCropInstructions = useCallback(() => {
     switch (mode) {
       case "id_photo":
-        return "Crop to show the ID card clearly";
+        return "Drag to crop the ID card";
       case "worker_photo":
-        return "Crop to show the worker's face clearly";
+        return "Drag to crop the worker's face";
       case "receipt":
-        return "Crop to show the receipt details";
+        return "Drag to crop the receipt details";
       case "general":
-        return "Adjust the crop as needed";
+        return "Drag to adjust the crop area";
       default:
-        return "Adjust the crop as needed";
+        return "Drag to adjust the crop area";
     }
   }, [mode]);
 
@@ -133,6 +145,71 @@ export default function UniversalImageCapture({
     }
   }, [allowPDF]);
 
+  // Initialize crop area when image loads
+  useEffect(() => {
+    if (imageRef.current && containerRef.current && step === 'crop') {
+      const img = imageRef.current;
+      const container = containerRef.current;
+      const rect = container.getBoundingClientRect();
+      const aspectRatio = getAspectRatio();
+      
+      let cropWidth = rect.width;
+      let cropHeight = rect.width / aspectRatio;
+      
+      if (cropHeight > rect.height) {
+        cropHeight = rect.height;
+        cropWidth = rect.height * aspectRatio;
+      }
+      
+      const x = (rect.width - cropWidth) / 2;
+      const y = (rect.height - cropHeight) / 2;
+      
+      setCropArea({ x, y, width: cropWidth, height: cropHeight });
+      setImageSize({ width: rect.width, height: rect.height });
+    }
+  }, [selectedImage, step, getAspectRatio]);
+
+  // Mouse handlers for crop area
+  const handleMouseDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    
+    if (x >= cropArea.x && x <= cropArea.x + cropArea.width &&
+        y >= cropArea.y && y <= cropArea.y + cropArea.height) {
+      setIsDragging(true);
+      setDragStart({ x: x - cropArea.x, y: y - cropArea.y });
+    }
+  }, [cropArea]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDragging) return;
+    
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    const x = clientX - rect.left - dragStart.x;
+    const y = clientY - rect.top - dragStart.y;
+    
+    const newX = Math.max(0, Math.min(x, imageSize.width - cropArea.width));
+    const newY = Math.max(0, Math.min(y, imageSize.height - cropArea.height));
+    
+    setCropArea(prev => ({ ...prev, x: newX, y: newY }));
+  }, [isDragging, dragStart, cropArea.width, cropArea.height, imageSize]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
   // Crop and compress the image
   const handleCrop = useCallback(async () => {
     if (!imageRef.current || !canvasRef.current || !selectedFile) return;
@@ -147,48 +224,31 @@ export default function UniversalImageCapture({
       
       if (!ctx) throw new Error('Canvas context not available');
 
-      const aspectRatio = getAspectRatio();
-      const imgWidth = image.naturalWidth;
-      const imgHeight = image.naturalHeight;
-      let cropWidth = imgWidth;
-      let cropHeight = imgHeight;
-
-      // Calculate crop dimensions based on aspect ratio
-      if (aspectRatio > 1) {
-        // Landscape orientation
-        cropHeight = imgWidth / aspectRatio;
-        if (cropHeight > imgHeight) {
-          cropHeight = imgHeight;
-          cropWidth = imgHeight * aspectRatio;
-        }
-      } else {
-        // Portrait orientation
-        cropWidth = imgHeight * aspectRatio;
-        if (cropWidth > imgWidth) {
-          cropWidth = imgWidth;
-          cropHeight = imgWidth / aspectRatio;
-        }
-      }
-
-      // Center the crop
-      const x = (imgWidth - cropWidth) / 2;
-      const y = (imgHeight - cropHeight) / 2;
+      // Calculate actual crop coordinates relative to the original image
+      const imgRect = image.getBoundingClientRect();
+      const scaleX = image.naturalWidth / imgRect.width;
+      const scaleY = image.naturalHeight / imgRect.height;
+      
+      const actualX = cropArea.x * scaleX;
+      const actualY = cropArea.y * scaleY;
+      const actualWidth = cropArea.width * scaleX;
+      const actualHeight = cropArea.height * scaleY;
 
       // Set canvas size to crop dimensions
-      canvas.width = cropWidth;
-      canvas.height = cropHeight;
+      canvas.width = actualWidth;
+      canvas.height = actualHeight;
 
       // Draw cropped image
-      ctx.drawImage(image, x, y, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+      ctx.drawImage(image, actualX, actualY, actualWidth, actualHeight, 0, 0, actualWidth, actualHeight);
 
       // Resize if necessary to max size
-      let finalWidth = cropWidth;
-      let finalHeight = cropHeight;
+      let finalWidth = actualWidth;
+      let finalHeight = actualHeight;
 
-      if (cropWidth > maxSize || cropHeight > maxSize) {
-        const scale = Math.min(maxSize / cropWidth, maxSize / cropHeight);
-        finalWidth = Math.floor(cropWidth * scale);
-        finalHeight = Math.floor(cropHeight * scale);
+      if (actualWidth > maxSize || actualHeight > maxSize) {
+        const scale = Math.min(maxSize / actualWidth, maxSize / actualHeight);
+        finalWidth = Math.floor(actualWidth * scale);
+        finalHeight = Math.floor(actualHeight * scale);
 
         const resizedCanvas = document.createElement('canvas');
         const resizedCtx = resizedCanvas.getContext('2d');
@@ -248,8 +308,8 @@ export default function UniversalImageCapture({
         setCroppedImage({
           file,
           preview: URL.createObjectURL(blob),
-          width: cropWidth,
-          height: cropHeight,
+          width: finalWidth,
+          height: finalHeight,
           size: blob.size
         });
       }
@@ -418,19 +478,46 @@ export default function UniversalImageCapture({
             <>
               <div className="text-center">
                 <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
-                  <Crop className="w-4 h-4" />
+                  <Move className="w-4 h-4" />
                   {getCropInstructions()}
                 </div>
               </div>
 
-              <div className="relative bg-slate-100 rounded-lg overflow-hidden">
+              <div 
+                ref={containerRef}
+                className="relative bg-slate-100 rounded-lg overflow-hidden cursor-move"
+                onMouseDown={handleMouseDown}
+                onTouchStart={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onTouchMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onTouchEnd={handleMouseUp}
+              >
                 <img
                   ref={imageRef}
                   src={selectedImage}
                   alt="Crop preview"
                   className="w-full h-auto max-h-48 sm:max-h-64 md:max-h-80 lg:max-h-96 object-contain"
-                  style={{ aspectRatio: getAspectRatio() }}
+                  draggable={false}
                 />
+                
+                {/* Crop overlay */}
+                <div
+                  className="absolute border-2 border-blue-500 bg-blue-500/10 pointer-events-none"
+                  style={{
+                    left: `${cropArea.x}px`,
+                    top: `${cropArea.y}px`,
+                    width: `${cropArea.width}px`,
+                    height: `${cropArea.height}px`,
+                  }}
+                >
+                  {/* Corner handles */}
+                  <div className="absolute -top-1 -left-1 w-3 h-3 bg-blue-500 border border-white rounded-full"></div>
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 border border-white rounded-full"></div>
+                  <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-blue-500 border border-white rounded-full"></div>
+                  <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 border border-white rounded-full"></div>
+                </div>
+                
                 <canvas
                   ref={canvasRef}
                   className="hidden"
