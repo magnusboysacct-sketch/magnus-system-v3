@@ -1535,8 +1535,8 @@ function TakeoffPageInner() {
           .maybeSingle();
 
         if (createBoqError) throw createBoqError;
+        if (!newBoq?.id) throw new Error("Failed to create BOQ record.");
         boqId = newBoq.id;
-      }
 
       // Get existing BOQ sections or create default
       const { data: sections, error: sectionsError } = await supabase
@@ -1561,10 +1561,12 @@ function TakeoffPageInner() {
           .maybeSingle();
 
         if (createSectionError) throw createSectionError;
+        if (!newSection?.id || !newSection?.name || !newSection?.boq_id) {
+          throw new Error("Failed to create Takeoff Items section.");
+        }
         takeoffSection = newSection;
       }
 
-      // Process each BOQ preview item
       for (const previewItem of boqPreview) {
         const sourceField = previewItem.type === 'item' ? 'linked_item_id' : 'linked_assembly_id';
         
@@ -1613,6 +1615,7 @@ function TakeoffPageInner() {
 
       // Success feedback
       setError("BOQ updated successfully! Check BOQ page for details.");
+    }
       
     } catch (err: any) {
       console.error("Failed to send to BOQ:", err);
@@ -3996,6 +3999,7 @@ export default function TakeoffPage() {
     </TakeoffErrorBoundary>
   );
 }
+
 
 
 
