@@ -34,8 +34,10 @@ import { useProjectContext } from "../context/ProjectContext";
 import SignaturePad from "../components/SignaturePad";
 import UniversalImageCapture, { type ImageCaptureMode } from "../components/UniversalImageCapture";
 import { BaseModal } from "../components/common/BaseModal";
+import { IDOCRReview } from "../components/IDOCRReview";
 import { downloadFieldPaymentReceipt, shareViaWhatsApp } from "../lib/fieldPaymentReceipt";
 import { uploadFieldPaymentImage, uploadFieldPaymentPDF } from "../lib/fieldPayments";
+import { performIDOCR, type IDOCRResult } from "../lib/idOCR";
 
 export default function FieldPaymentsPage() {
   const navigate = useNavigate();
@@ -53,10 +55,16 @@ export default function FieldPaymentsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [showIDScanModal, setShowIDScanModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<FieldPayment | null>(null);
   const [companyId, setCompanyId] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
   const [submitAttempts, setSubmitAttempts] = useState(0);
+  
+  // ID OCR state
+  const [idOCRResult, setIdOCRResult] = useState<IDOCRResult | null>(null);
+  const [showIDOCRReview, setShowIDOCRReview] = useState(false);
+  const [idScanFile, setIdScanFile] = useState<File | null>(null);
   
   // Field user speed improvements
   const [workers, setWorkers] = useState<any[]>([]);
@@ -491,7 +499,9 @@ export default function FieldPaymentsPage() {
       // Create preview
       const reader = new FileReader();
       reader.onload = (e) => {
-        setIdPhotoPreview(e.target?.result as string);
+        if (e.target?.result) {
+          setIdPhotoPreview(e.target.result as string);
+        }
       };
       reader.readAsDataURL(file);
     } else {
@@ -499,11 +509,88 @@ export default function FieldPaymentsPage() {
       // Create preview
       const reader = new FileReader();
       reader.onload = (e) => {
-        setWorkerPhotoPreview(e.target?.result as string);
+        if (e.target?.result) {
+          setWorkerPhotoPreview(e.target.result as string);
+        }
       };
       reader.readAsDataURL(file);
     }
     setShowPhotoModal(false);
+  }
+
+  // ID Scan handlers
+  function openIDScanModal() {
+    console.log('FieldPayments: Opening ID scan modal');
+    setShowIDScanModal(true);
+  }
+
+  function closeIDScanModal() {
+    console.log('FieldPayments: Closing ID scan modal');
+    setShowIDScanModal(false);
+    setIdScanFile(null);
+    setIdOCRResult(null);
+    setShowIDOCRReview(false);
+  }
+
+  async function handleIDScanCapture(file: File) {
+    console.log('FieldPayments: ID scan captured, processing OCR for file:', file.name);
+    
+    try {
+      setIdScanFile(file);
+      
+      // Perform OCR on the ID
+      const ocrResult = await performIDOCR(file);
+      console.log('FieldPayments: OCR result:', ocrResult);
+      
+      setIdOCRResult(ocrResult);
+      setShowIDScanModal(false);
+      setShowIDOCRReview(true);
+      
+    } catch (error) {
+      console.error('FieldPayments: ID OCR failed:', error);
+      setError('Failed to process ID. Please try again or enter details manually.');
+      setShowIDScanModal(false);
+    }
+  }
+
+  function handleIDOCRReviewAccept(editedData: Partial<IDOCRResult>) {
+    console.log('FieldPayments: ID OCR review accepted:', editedData);
+    
+    // Update form with OCR data
+    setFormData(prev => ({
+      ...prev,
+      worker_name: editedData.fullName || prev.worker_name,
+      worker_nickname: editedData.firstName || prev.worker_nickname,
+      worker_id_number: editedData.documentNumber || editedData.idNumber || prev.worker_id_number,
+      worker_address: editedData.address || prev.worker_address,
+    }));
+    
+    // Set ID photo if available
+    if (idScanFile) {
+      setIdPhoto(idScanFile);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (e.target?.result) {
+          setIdPhotoPreview(e.target.result as string);
+        }
+      };
+      reader.readAsDataURL(idScanFile);
+    }
+    
+    // Close review modal
+    setShowIDOCRReview(false);
+    setIdOCRResult(null);
+    setIdScanFile(null);
+    
+    // Show success message
+    setSuccess('ID information successfully added to form');
+    setTimeout(() => setSuccess(null), 3000);
+  }
+
+  function handleIDOCRReviewEdit() {
+    console.log('FieldPayments: User wants to edit OCR data manually');
+    setShowIDOCRReview(false);
+    // Keep the OCR data for manual editing in the main form
   }
 
   async function handleDownloadReceipt(payment: FieldPayment) {
@@ -1068,6 +1155,17 @@ export default function FieldPaymentsPage() {
                         )}
                       </div>
                       
+                      {/* Scan ID Button */}
+                      <div className="mt-3">
+                        <button
+                          onClick={openIDScanModal}
+                          className="w-full p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg text-blue-700 font-medium transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Camera className="w-5 h-5" />
+                          Scan ID for Auto-Fill
+                        </button>
+                      </div>
+                      
                       <div className="border-2 border-dashed border-slate-300 rounded-lg overflow-hidden">
                         {workerPhotoPreview ? (
                           <div className="relative">
@@ -1389,6 +1487,37 @@ export default function FieldPaymentsPage() {
               />
             </div>
           </div>
+        </BaseModal>
+      )}
+
+      {/* ID Scan Modal */}
+      {showIDScanModal && (
+        <BaseModal isOpen={showIDScanModal} onClose={closeIDScanModal} size="md">
+          <div className="w-full max-w-lg">
+            <div className="p-6">
+              <UniversalImageCapture
+                title="Scan ID for Auto-Fill"
+                subtitle="Take a clear photo of Jamaican national ID or driver's license"
+                mode="id_photo"
+                onImageReady={handleIDScanCapture}
+                onCancel={closeIDScanModal}
+                maxSize={1600}
+                quality={0.8}
+              />
+            </div>
+          </div>
+        </BaseModal>
+      )}
+
+      {/* ID OCR Review Modal */}
+      {showIDOCRReview && idOCRResult && (
+        <BaseModal isOpen={showIDOCRReview} onClose={() => setShowIDOCRReview(false)} size="lg">
+          <IDOCRReview
+            ocrResult={idOCRResult}
+            onAccept={handleIDOCRReviewAccept}
+            onEdit={handleIDOCRReviewEdit}
+            onCancel={() => setShowIDOCRReview(false)}
+          />
         </BaseModal>
       )}
     </div>

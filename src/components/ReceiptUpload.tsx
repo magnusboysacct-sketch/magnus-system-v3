@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { Upload, X, FileText, Image, Loader as Loader2, CircleCheck as CheckCircle } from 'lucide-react';
 import { uploadReceipt, type OCRResult } from '../lib/receiptOCR';
-import UniversalImageCapture from './UniversalImageCapture';
+import SmartImageCapture from './SmartImageCapture';
 import { BaseModal } from './common/BaseModal';
 
 interface ReceiptUploadProps {
@@ -18,11 +18,14 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [showImageCapture, setShowImageCapture] = useState(false);
+  const [initialFile, setInitialFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    console.log('ReceiptUpload: handleFileSelect called with file:', file.name, file.type);
 
     if (file.size > 10 * 1024 * 1024) {
       setError('File size must be less than 10MB');
@@ -39,16 +42,19 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
 
     // For images, use the image capture workflow
     if (file.type.startsWith('image/')) {
-      // Create a temporary file input for the image capture
-      const tempInput = document.createElement('input');
-      tempInput.type = 'file';
-      tempInput.files = e.target.files;
-      
-      // Set the file and show image capture
-      setSelectedFile(file);
+      console.log('ReceiptUpload: Opening image capture for file:', file.name);
+      // Store the file as initial file for the image capture component
+      // This prevents the UI from showing preview before crop is complete
+      setInitialFile(file);
       setShowImageCapture(true);
+      
+      // Store the original file in a ref for the image capture component
+      if (fileInputRef.current) {
+        fileInputRef.current.files = e.target.files;
+      }
     } else {
       // For PDFs, handle directly
+      console.log('ReceiptUpload: Handling PDF directly:', file.name);
       setSelectedFile(file);
       setPreview(null);
     }
@@ -59,31 +65,145 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
     }
   }
 
-  function handleImageCapture(file: File, metadata?: { width: number; height: number; size: number }) {
-    setSelectedFile(file);
-    setShowImageCapture(false);
+  function handleImageCapture(result: { file: File; preview: string; width: number; height: number; size: number; ocrFile?: File }) {
+    console.log('=== SmartImageCapture: RECEIPT UPLOAD IMAGE CAPTURE START ===');
+    console.log('ReceiptUpload: handleImageCapture called with file:', result.file.name);
+    console.log('ReceiptUpload: File size:', result.file.size);
+    console.log('ReceiptUpload: File type:', result.file.type);
+    console.log('ReceiptUpload: File dimensions:', result.width, 'x', result.height);
     
-    // Create preview from the cropped file
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      if (e.target?.result) {
-        setPreview(e.target.result as string);
-      }
-    };
-    reader.readAsDataURL(file);
+    // Use OCR file if available, otherwise use main file
+    const fileForUpload = result.ocrFile || result.file;
+    
+    console.log('=== SmartImageCapture: FINAL SELECTION ===');
+    console.log('OCR_SOURCE_TYPE:', fileForUpload === result.file ? 'MAIN_FILE' : 'OCR_FILE');
+    console.log('OCR_INPUT_WIDTH:', result.width);
+    console.log('OCR_INPUT_HEIGHT:', result.height);
+    console.log('OCR_FILE_SIZE:', fileForUpload.size);
+    console.log('ReceiptUpload: Final file selected for OCR:', fileForUpload.name);
+    
+    // Set the file for upload
+    setSelectedFile(fileForUpload);
+    setShowImageCapture(false);
+    setInitialFile(null); // Reset initial file
+    setPreview(result.preview);
+    
+    console.log('ReceiptUpload: File and preview set successfully');
+  }
+
+  function handleImageCaptureCancel() {
+    console.log('ReceiptUpload: handleImageCaptureCancel called');
+    setShowImageCapture(false);
+    setInitialFile(null); // Reset initial file
   }
 
   async function handleUpload() {
-    if (!selectedFile) return;
+    if (!selectedFile) {
+      console.log('=== DEEP DEBUG: NO SELECTED FILE ===');
+      console.log('ReceiptUpload: handleUpload called but no selectedFile');
+      return;
+    }
+
+    console.log('=== DEEP DEBUG: RECEIPT UPLOAD START ===');
+    console.log('ReceiptUpload: handleUpload called with selectedFile');
+    console.log('ReceiptUpload: File name:', selectedFile.name);
+    console.log('ReceiptUpload: File size:', selectedFile.size);
+    console.log('ReceiptUpload: File type:', selectedFile.type);
+    console.log('ReceiptUpload: File object type:', selectedFile.constructor.name);
+    console.log('ReceiptUpload: File is File object:', selectedFile instanceof File);
+    console.log('ReceiptUpload: File is Blob object:', selectedFile instanceof Blob);
+    console.log('ReceiptUpload: File lastModified:', selectedFile.lastModified);
+    console.log('ReceiptUpload: Company ID:', companyId, 'User ID:', userId);
+
+    // Verify file is valid before proceeding
+    if (selectedFile.size === 0) {
+      console.error('ReceiptUpload: ERROR - File size is 0');
+      setError('File is empty');
+      return;
+    }
+
+    if (!selectedFile.type.startsWith('image/')) {
+      console.error('ReceiptUpload: ERROR - File is not an image:', selectedFile.type);
+      setError('File is not an image');
+      return;
+    }
 
     setUploading(true);
     setProcessing(true);
     setError(null);
 
     try {
+      console.log('=== DEEP DEBUG: CALLING UPLOAD RECEIPT ===');
+      console.log('ReceiptUpload: About to call uploadReceipt with file:', selectedFile.name);
+      console.log('ReceiptUpload: File being sent to OCR:', selectedFile.name, 'size:', selectedFile.size);
+      console.log('ReceiptUpload: File type being sent to OCR:', selectedFile.type);
+      console.log('ReceiptUpload: File object type being sent to OCR:', selectedFile.constructor.name);
+      
       const result = await uploadReceipt(selectedFile, companyId, userId);
+      
+      console.log('OCR_FLOW_STEP_2 ReceiptUpload received:', {
+        receiptId: result.receiptId,
+        storagePath: result.storagePath,
+        ocrResult: result.ocrResult ? {
+          hasData: !!(result.ocrResult.vendor || result.ocrResult.date || result.ocrResult.amount),
+          vendor: result.ocrResult.vendor,
+          date: result.ocrResult.date,
+          amount: result.ocrResult.amount,
+          tax: result.ocrResult.tax,
+          receiptNumber: result.ocrResult.receiptNumber,
+          confidence: result.ocrResult.confidence
+        } : null
+      });
+      
+      console.log('=== DEBUG: RECEIPT UPLOAD COMPLETE ===');
+      console.log('ReceiptUpload: Upload complete, receipt ID:', result.receiptId);
+      console.log('ReceiptUpload: Storage path:', result.storagePath);
+      console.log('ReceiptUpload: OCR result received:', result.ocrResult);
+      
+      if (result.ocrResult) {
+        console.log('ReceiptUpload: OCR result details:');
+        console.log('  - Vendor:', result.ocrResult.vendor);
+        console.log('  - Date:', result.ocrResult.date);
+        console.log('  - Amount:', result.ocrResult.amount);
+        console.log('  - Tax:', result.ocrResult.tax);
+        console.log('  - Receipt Number:', result.ocrResult.receiptNumber);
+        console.log('  - Confidence:', result.ocrResult.confidence);
+        console.log('  - Raw text length:', result.ocrResult.rawText?.length || 0);
+        console.log('  - Has any data:', !!(result.ocrResult.vendor || result.ocrResult.date || result.ocrResult.amount || result.ocrResult.tax || result.ocrResult.receiptNumber));
+        console.log('  - Raw text preview:', result.ocrResult.rawText?.substring(0, 100) + (result.ocrResult.rawText?.length > 100 ? '...' : ''));
+      } else {
+        console.log('ReceiptUpload: No OCR result received');
+      }
+
+      // Reset states before calling onUploadComplete
+      setUploading(false);
+      setProcessing(false);
+      
+      console.log('=== DEBUG: CALLING onUploadComplete ===');
+      console.log('ReceiptUpload: Calling onUploadComplete with:');
+      console.log('  - receiptId:', result.receiptId);
+      console.log('  - ocrResult:', result.ocrResult);
+      
+      // Call the completion handler
+      console.log('OCR_FLOW_STEP_4 callback to parent:', {
+        receiptId: result.receiptId,
+        ocrResult: result.ocrResult ? {
+          hasData: !!(result.ocrResult.vendor || result.ocrResult.date || result.ocrResult.amount),
+          vendor: result.ocrResult.vendor,
+          date: result.ocrResult.date,
+          amount: result.ocrResult.amount,
+          tax: result.ocrResult.tax,
+          receiptNumber: result.ocrResult.receiptNumber,
+          confidence: result.ocrResult.confidence
+        } : null
+      });
+      
       onUploadComplete(result.receiptId, result.ocrResult);
+      
+      console.log('ReceiptUpload: onUploadComplete called successfully');
     } catch (err) {
+      console.error('=== DEBUG: RECEIPT UPLOAD FAILED ===');
+      console.error('ReceiptUpload: Upload failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to upload receipt');
       setUploading(false);
       setProcessing(false);
@@ -184,17 +304,18 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
 
       {/* Image Capture Modal */}
       {showImageCapture && (
-        <BaseModal isOpen={showImageCapture} onClose={() => setShowImageCapture(false)} size="md">
+        <BaseModal isOpen={showImageCapture} onClose={handleImageCaptureCancel} size="md">
           <div className="p-4 sm:p-6">
-              <UniversalImageCapture
-                title="Capture Receipt Photo"
-                subtitle="Take or upload a clear photo of your receipt"
+              <SmartImageCapture
+                title="Crop Receipt Photo"
+                subtitle="Adjust the crop area to capture the receipt details"
                 mode="receipt"
                 onImageReady={handleImageCapture}
-                onCancel={() => setShowImageCapture(false)}
-                maxSize={1600}
-                quality={0.8}
+                onCancel={handleImageCaptureCancel}
+                maxSize={2000}
+                quality={0.95}
                 allowPDF={false}
+                initialFile={initialFile}
               />
           </div>
         </BaseModal>

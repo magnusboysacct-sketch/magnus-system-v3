@@ -1,12 +1,12 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
-import { Camera, Upload, X, Check, Crop, FileText, Move } from "lucide-react";
-
-interface CropArea {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+﻿import React, { useState, useRef, useCallback, useEffect } from "react";
+import { Camera, Upload, X, Check, FileText, Move } from "lucide-react";
+import ReactCrop, {
+  type Crop,
+  type PercentCrop,
+  centerCrop,
+  makeAspectCrop,
+} from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
 
 export type ImageCaptureMode = "id_photo" | "worker_photo" | "receipt" | "general";
 
@@ -14,11 +14,15 @@ interface UniversalImageCaptureProps {
   title: string;
   subtitle?: string;
   mode: ImageCaptureMode;
-  onImageReady: (file: File, metadata?: { width: number; height: number; size: number }) => void;
+  onImageReady: (
+    file: File,
+    metadata?: { width: number; height: number; size: number; ocrFile?: File }
+  ) => void;
   onCancel: () => void;
-  maxSize?: number; // Max dimension in pixels
-  quality?: number; // 0-1 for JPEG quality
-  allowPDF?: boolean; // For receipts
+  maxSize?: number;
+  quality?: number;
+  allowPDF?: boolean;
+  initialFile?: File | null;
 }
 
 interface CroppedImage {
@@ -27,6 +31,98 @@ interface CroppedImage {
   width: number;
   height: number;
   size: number;
+  ocrFile?: File;
+}
+
+function clampCrop(crop: PercentCrop): PercentCrop {
+  const x = Math.max(0, Math.min(crop.x ?? 0, 100));
+  const y = Math.max(0, Math.min(crop.y ?? 0, 100));
+  const width = Math.max(1, Math.min(crop.width ?? 1, 100 - x));
+  const height = Math.max(1, Math.min(crop.height ?? 1, 100 - y));
+
+  return {
+    unit: "%",
+    x,
+    y,
+    width,
+    height,
+  };
+}
+
+function makeDefaultCrop(
+  mode: ImageCaptureMode,
+  mediaWidth: number,
+  mediaHeight: number
+): PercentCrop {
+  if (mode === "id_photo") {
+    return centerCrop(
+      makeAspectCrop(
+        {
+          unit: "%",
+          width: 80,
+        },
+        1.6,
+        mediaWidth,
+        mediaHeight
+      ),
+      mediaWidth,
+      mediaHeight
+    );
+  }
+
+  if (mode === "worker_photo") {
+    return centerCrop(
+      makeAspectCrop(
+        {
+          unit: "%",
+          width: 70,
+        },
+        1,
+        mediaWidth,
+        mediaHeight
+      ),
+      mediaWidth,
+      mediaHeight
+    );
+  }
+
+  if (mode === "receipt") {
+    return clampCrop({
+      unit: "%",
+      x: 9,
+      y: 11,
+      width: 82,
+      height: 82,
+    });
+  }
+
+  return {
+    unit: "%",
+    x: 10,
+    y: 10,
+    width: 80,
+    height: 80,
+  };
+}
+
+function getInitialCropForMode(mode: ImageCaptureMode): PercentCrop {
+  if (mode === "receipt") {
+    return {
+      unit: "%",
+      x: 9,
+      y: 11,
+      width: 82,
+      height: 82,
+    };
+  }
+
+  return {
+    unit: "%",
+    x: 10,
+    y: 10,
+    width: 80,
+    height: 80,
+  };
 }
 
 export default function UniversalImageCapture({
@@ -35,360 +131,372 @@ export default function UniversalImageCapture({
   mode,
   onImageReady,
   onCancel,
-  maxSize = 1600,
-  quality = 0.8,
+  maxSize,
+  quality,
   allowPDF = false,
+  initialFile,
 }: UniversalImageCaptureProps) {
-  const [step, setStep] = useState<'capture' | 'crop' | 'pdf_preview'>('capture');
+  const resolvedSubtitle =
+    subtitle ||
+    (mode === "receipt"
+      ? "Adjust the crop area to capture the receipt details. Fill the frame with the receipt and avoid background."
+      : "Adjust the crop area to capture the important details.");
+
+  const finalMaxSize = maxSize || (mode === "receipt" ? 2000 : 1600);
+  const finalQuality = quality || (mode === "receipt" ? 0.98 : 0.8);
+
+  const [step, setStep] = useState<"capture" | "crop" | "crop_result" | "pdf_preview">("capture");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [croppedImage, setCroppedImage] = useState<CroppedImage | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cropArea, setCropArea] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
-  
+  const [crop, setCrop] = useState<PercentCrop>(getInitialCropForMode(mode));
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
 
-  // Get aspect ratio based on mode
-  const getAspectRatio = useCallback(() => {
-    switch (mode) {
-      case "id_photo":
-        return 1.6; // Standard ID card ratio
-      case "worker_photo":
-        return 1.0; // Square for worker photos
-      case "receipt":
-        return 1.4; // Receipt-like aspect ratio
-      case "general":
-        return 1.0; // Default square
-      default:
-        return 1.0;
-    }
+  useEffect(() => {
+    return () => {
+      if (croppedImage?.preview) {
+        URL.revokeObjectURL(croppedImage.preview);
+      }
+    };
+  }, [croppedImage]);
+
+  useEffect(() => {
+    setCrop(getInitialCropForMode(mode));
   }, [mode]);
 
-  // Get crop instructions based on mode
-  const getCropInstructions = useCallback(() => {
-    switch (mode) {
-      case "id_photo":
-        return "Drag to crop the ID card";
-      case "worker_photo":
-        return "Drag to crop the worker's face";
-      case "receipt":
-        return "Drag to crop the receipt details";
-      case "general":
-        return "Drag to adjust the crop area";
-      default:
-        return "Drag to adjust the crop area";
-    }
-  }, [mode]);
+  useEffect(() => {
+    if (!initialFile || selectedImage) return;
 
-  // Handle file selection from camera or gallery
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
-    
-    // Handle PDF files for receipts
-    if (file.type === 'application/pdf') {
+    if (initialFile.type === "application/pdf") {
       if (!allowPDF) {
-        setError('PDF files are not allowed for this type of image');
-        return;
-      }
-      
-      // Validate file size (max 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        setError('File is too large. Please select a file under 10MB.');
+        setError("PDF files are not allowed for this type of image");
         return;
       }
 
-      setSelectedFile(file);
-      setStep('pdf_preview');
+      if (initialFile.size > 10 * 1024 * 1024) {
+        setError("File is too large. Please select a file under 10MB.");
+        return;
+      }
+
+      setSelectedFile(initialFile);
+      setStep("pdf_preview");
       setError(null);
       return;
     }
 
-    if (!file.type.startsWith('image/')) {
-      setError('Please select an image file');
-      return;
-    }
+    if (!initialFile.type.startsWith("image/")) return;
 
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Image is too large. Please select an image under 10MB.');
+    if (initialFile.size > 10 * 1024 * 1024) {
+      setError("Image is too large. Please select an image under 10MB.");
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      if (event.target?.result) {
-        setSelectedImage(event.target.result as string);
-        setSelectedFile(file);
-        setStep('crop');
-        setError(null);
-      }
+      const result = event.target?.result;
+      if (!result) return;
+
+      setSelectedImage(result as string);
+      setSelectedFile(initialFile);
+      setStep("crop");
+      setError(null);
+      setCroppedImage(null);
+      setCrop(getInitialCropForMode(mode));
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(initialFile);
+  }, [allowPDF, initialFile, mode, selectedImage]);
 
-    // Clear input
-    if (e.target === fileInputRef.current && fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const getAspectRatio = useCallback((): number | undefined => {
+    switch (mode) {
+      case "id_photo":
+        return 1.6;
+      case "worker_photo":
+        return 1;
+      case "receipt":
+      case "general":
+      default:
+        return undefined;
     }
-    if (e.target === cameraInputRef.current && cameraInputRef.current) {
-      cameraInputRef.current.value = '';
-    }
-  }, [allowPDF]);
+  }, [mode]);
 
-  // Initialize crop area when image loads
-  useEffect(() => {
-    if (imageRef.current && containerRef.current && step === 'crop') {
-      const img = imageRef.current;
-      const container = containerRef.current;
-      const rect = container.getBoundingClientRect();
-      const aspectRatio = getAspectRatio();
-      
-      let cropWidth = rect.width;
-      let cropHeight = rect.width / aspectRatio;
-      
-      if (cropHeight > rect.height) {
-        cropHeight = rect.height;
-        cropWidth = rect.height * aspectRatio;
+  const getCropInstructions = useCallback(() => {
+    switch (mode) {
+      case "id_photo":
+        return "Drag to crop ID card";
+      case "worker_photo":
+        return "Drag to crop worker's face";
+      case "receipt":
+        return "Drag to crop receipt details";
+      case "general":
+      default:
+        return "Drag to adjust crop area";
+    }
+  }, [mode]);
+
+  const clearInputs = () => {
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
+  };
+
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files?.length) return;
+
+      const file = files[0];
+
+      if (file.size > 10 * 1024 * 1024) {
+        setError("File is too large. Please select a file under 10MB.");
+        clearInputs();
+        return;
       }
-      
-      const x = (rect.width - cropWidth) / 2;
-      const y = (rect.height - cropHeight) / 2;
-      
-      setCropArea({ x, y, width: cropWidth, height: cropHeight });
-      setImageSize({ width: rect.width, height: rect.height });
-    }
-  }, [selectedImage, step, getAspectRatio]);
 
-  // Mouse handlers for crop area
-  const handleMouseDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
+      setError(null);
 
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    
-    if (x >= cropArea.x && x <= cropArea.x + cropArea.width &&
-        y >= cropArea.y && y <= cropArea.y + cropArea.height) {
-      setIsDragging(true);
-      setDragStart({ x: x - cropArea.x, y: y - cropArea.y });
-    }
-  }, [cropArea]);
+      if (file.type === "application/pdf") {
+        if (!allowPDF) {
+          setError("PDF files are not allowed for this type of image");
+          clearInputs();
+          return;
+        }
 
-  const handleMouseMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDragging) return;
-    
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
+        setSelectedFile(file);
+        setSelectedImage(null);
+        setCroppedImage(null);
+        setStep("pdf_preview");
+        clearInputs();
+        return;
+      }
 
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
-    const x = clientX - rect.left - dragStart.x;
-    const y = clientY - rect.top - dragStart.y;
-    
-    const newX = Math.max(0, Math.min(x, imageSize.width - cropArea.width));
-    const newY = Math.max(0, Math.min(y, imageSize.height - cropArea.height));
-    
-    setCropArea(prev => ({ ...prev, x: newX, y: newY }));
-  }, [isDragging, dragStart, cropArea.width, cropArea.height, imageSize]);
+      if (!file.type.startsWith("image/")) {
+        clearInputs();
+        return;
+      }
 
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
-  }, []);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result;
+        if (!result) return;
 
-  // Crop and compress the image
+        if (croppedImage?.preview) {
+          URL.revokeObjectURL(croppedImage.preview);
+        }
+
+        setSelectedImage(result as string);
+        setSelectedFile(file);
+        setCroppedImage(null);
+        setCrop(getInitialCropForMode(mode));
+        setStep("crop");
+      };
+      reader.readAsDataURL(file);
+      clearInputs();
+    },
+    [allowPDF, croppedImage, mode]
+  );
+
+  const handleImageLoad = useCallback(
+    (e: React.SyntheticEvent<HTMLImageElement>) => {
+      const { naturalWidth, naturalHeight } = e.currentTarget;
+      imageRef.current = e.currentTarget;
+      setCrop(clampCrop(makeDefaultCrop(mode, naturalWidth, naturalHeight)));
+    },
+    [mode]
+  );
+
   const handleCrop = useCallback(async () => {
-    if (!imageRef.current || !canvasRef.current || !selectedFile) return;
+    if (!selectedImage || !canvasRef.current || !imageRef.current) return;
+
+    const safeCrop = clampCrop(crop);
+    if (safeCrop.width <= 0 || safeCrop.height <= 0) {
+      setError("Please select a crop area first.");
+      return;
+    }
 
     setProcessing(true);
     setError(null);
 
     try {
-      const image = imageRef.current;
+      const img = imageRef.current;
       const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) throw new Error('Canvas context not available');
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas context not available");
 
-      // Calculate actual crop coordinates relative to the original image
-      const imgRect = image.getBoundingClientRect();
-      const scaleX = image.naturalWidth / imgRect.width;
-      const scaleY = image.naturalHeight / imgRect.height;
-      
-      const actualX = cropArea.x * scaleX;
-      const actualY = cropArea.y * scaleY;
-      const actualWidth = cropArea.width * scaleX;
-      const actualHeight = cropArea.height * scaleY;
+      const sourceX = Math.round((safeCrop.x / 100) * img.naturalWidth);
+      const sourceY = Math.round((safeCrop.y / 100) * img.naturalHeight);
+      const sourceWidth = Math.round((safeCrop.width / 100) * img.naturalWidth);
+      const sourceHeight = Math.round((safeCrop.height / 100) * img.naturalHeight);
 
-      // Set canvas size to crop dimensions
-      canvas.width = actualWidth;
-      canvas.height = actualHeight;
+      const fittedMax = Math.max(sourceWidth, sourceHeight);
+      const scale = fittedMax > finalMaxSize ? finalMaxSize / fittedMax : 1;
 
-      // Draw cropped image
-      ctx.drawImage(image, actualX, actualY, actualWidth, actualHeight, 0, 0, actualWidth, actualHeight);
+      const outputWidth = Math.max(1, Math.round(sourceWidth * scale));
+      const outputHeight = Math.max(1, Math.round(sourceHeight * scale));
 
-      // Resize if necessary to max size
-      let finalWidth = actualWidth;
-      let finalHeight = actualHeight;
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
 
-      if (actualWidth > maxSize || actualHeight > maxSize) {
-        const scale = Math.min(maxSize / actualWidth, maxSize / actualHeight);
-        finalWidth = Math.floor(actualWidth * scale);
-        finalHeight = Math.floor(actualHeight * scale);
+      ctx.clearRect(0, 0, outputWidth, outputHeight);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
 
-        const resizedCanvas = document.createElement('canvas');
-        const resizedCtx = resizedCanvas.getContext('2d');
-        
-        if (!resizedCtx) throw new Error('Resized canvas context not available');
+      ctx.drawImage(
+        img,
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight,
+        0,
+        0,
+        outputWidth,
+        outputHeight
+      );
 
-        resizedCanvas.width = finalWidth;
-        resizedCanvas.height = finalHeight;
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            setError("Failed to create cropped image. Please try again.");
+            setProcessing(false);
+            return;
+          }
 
-        resizedCtx.drawImage(canvas, 0, 0, finalWidth, finalHeight);
-        
-        // Convert to blob
-        const blob = await new Promise<Blob>((resolve, reject) => {
-          resizedCanvas.toBlob(
-            (blob) => {
-              if (blob) {
-                resolve(blob);
-              } else {
-                reject(new Error('Failed to create blob'));
-              }
-            },
-            'image/jpeg',
-            quality
-          );
-        });
+          if (croppedImage?.preview) {
+            URL.revokeObjectURL(croppedImage.preview);
+          }
 
-        const fileName = `cropped_${mode}_${Date.now()}.jpg`;
-        const file = new File([blob], fileName, { type: 'image/jpeg' });
-        
-        setCroppedImage({
-          file,
-          preview: URL.createObjectURL(blob),
-          width: finalWidth,
-          height: finalHeight,
-          size: blob.size
-        });
+          const fileName = `cropped_${Date.now()}.jpg`;
+          const file = new File([blob], fileName, { type: "image/jpeg" });
+          const preview = URL.createObjectURL(blob);
 
-      } else {
-        // Convert to blob without resizing
-        const blob = await new Promise<Blob>((resolve, reject) => {
-          canvas.toBlob(
-            (blob) => {
-              if (blob) {
-                resolve(blob);
-              } else {
-                reject(new Error('Failed to create blob'));
-              }
-            },
-            'image/jpeg',
-            quality
-          );
-        });
+          setCroppedImage({
+            file,
+            preview,
+            width: outputWidth,
+            height: outputHeight,
+            size: blob.size,
+            ocrFile: file,
+          });
 
-        const fileName = `cropped_${mode}_${Date.now()}.jpg`;
-        const file = new File([blob], fileName, { type: 'image/jpeg' });
-        
-        setCroppedImage({
-          file,
-          preview: URL.createObjectURL(blob),
-          width: finalWidth,
-          height: finalHeight,
-          size: blob.size
-        });
-      }
-
-      setStep('crop');
+          setStep("crop_result");
+          setProcessing(false);
+        },
+        "image/jpeg",
+        finalQuality
+      );
     } catch (err) {
-      console.error('Crop error:', err);
-      setError('Failed to process image. Please try again.');
-    } finally {
+      console.error("Crop error:", err);
+      setError("Failed to crop image. Please try again.");
       setProcessing(false);
     }
-  }, [mode, getAspectRatio, maxSize, quality, selectedFile]);
+  }, [crop, croppedImage, finalMaxSize, finalQuality, selectedImage]);
 
-  // Handle PDF upload directly
   const handlePDFUpload = useCallback(() => {
     if (!selectedFile) return;
-    
-    onImageReady(selectedFile, {
-      width: 0, // PDFs don't have dimensions
-      height: 0,
-      size: selectedFile.size
-    });
-  }, [selectedFile, onImageReady]);
 
-  // Handle final save
+    onImageReady(selectedFile, {
+      width: 0,
+      height: 0,
+      size: selectedFile.size,
+    });
+  }, [onImageReady, selectedFile]);
+
   const handleSave = useCallback(() => {
-    if (croppedImage) {
-      onImageReady(croppedImage.file, {
-        width: croppedImage.width,
-        height: croppedImage.height,
-        size: croppedImage.size
-      });
-    }
+    if (!croppedImage) return;
+
+    onImageReady(croppedImage.file, {
+      width: croppedImage.width,
+      height: croppedImage.height,
+      size: croppedImage.size,
+      ocrFile: croppedImage.ocrFile ?? croppedImage.file,
+    });
   }, [croppedImage, onImageReady]);
 
-  // Reset to capture step
+  const handleRetake = useCallback(() => {
+    if (croppedImage?.preview) {
+      URL.revokeObjectURL(croppedImage.preview);
+    }
+    setCroppedImage(null);
+    setStep(selectedImage ? "crop" : "capture");
+    setError(null);
+  }, [croppedImage, selectedImage]);
+
   const handleReset = useCallback(() => {
+    if (croppedImage?.preview) {
+      URL.revokeObjectURL(croppedImage.preview);
+    }
+
     setSelectedImage(null);
     setSelectedFile(null);
     setCroppedImage(null);
-    setStep('capture');
+    setCrop(getInitialCropForMode(mode));
     setError(null);
-  }, []);
+    setProcessing(false);
+    setStep("capture");
+    imageRef.current = null;
+    clearInputs();
+    onCancel();
+  }, [croppedImage, mode, onCancel]);
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
+    <div className="space-y-3">
+      <style>{`
+        .receipt-cropper {
+          display: inline-block;
+          max-width: 100%;
+        }
+
+        .receipt-cropper .ReactCrop__crop-selection {
+          border: 2px dashed #ffffff;
+          box-shadow: 0 0 0 9999em rgba(15, 23, 42, 0.45);
+        }
+
+        .receipt-cropper .ReactCrop__drag-handle {
+          width: 14px;
+          height: 14px;
+          background: #2563eb;
+          border: 2px solid #ffffff;
+          opacity: 1;
+        }
+
+        .receipt-cropper .ReactCrop__drag-bar {
+          opacity: 1;
+          background: rgba(37, 99, 235, 0.95);
+        }
+      `}</style>
+
       <div className="text-center">
         <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-        {subtitle && (
-          <p className="text-sm text-slate-600 mt-1">{subtitle}</p>
-        )}
+        {resolvedSubtitle && <p className="mt-1 text-sm text-slate-600">{resolvedSubtitle}</p>}
       </div>
 
-      {/* Error Display */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
           <div className="flex items-center gap-2">
-            <X className="w-4 h-4 text-red-600" />
+            <X className="h-4 w-4 text-red-600" />
             <span className="text-sm text-red-700">{error}</span>
           </div>
         </div>
       )}
 
-      {/* Step 1: Capture */}
-      {step === 'capture' && (
+      {step === "capture" && (
         <div className="space-y-3">
           <button
             type="button"
             onClick={() => cameraInputRef.current?.click()}
-            className="w-full p-6 rounded-xl border-2 border-dashed border-slate-300 bg-white hover:border-blue-500 hover:bg-blue-50 transition-all group"
+            className="group w-full rounded-xl border-2 border-dashed border-slate-300 bg-white p-6 transition-all hover:border-blue-500 hover:bg-blue-50"
           >
             <div className="flex flex-col items-center gap-3">
-              <div className="w-14 h-14 rounded-full bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition">
-                <Camera className="w-7 h-7 text-blue-600" />
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-500/20 transition group-hover:bg-blue-500/30">
+                <Camera className="h-7 w-7 text-blue-600" />
               </div>
               <div className="text-center">
                 <div className="text-base font-medium text-slate-900">Take Photo</div>
-                <div className="text-sm text-slate-600 mt-1">Use camera to capture</div>
+                <div className="mt-1 text-sm text-slate-600">Use camera to capture</div>
               </div>
             </div>
           </button>
@@ -396,17 +504,17 @@ export default function UniversalImageCapture({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="w-full p-6 rounded-xl border-2 border-dashed border-slate-300 bg-white hover:border-green-500 hover:bg-green-50 transition-all group"
+            className="group w-full rounded-xl border-2 border-dashed border-slate-300 bg-white p-6 transition-all hover:border-green-500 hover:bg-green-50"
           >
             <div className="flex flex-col items-center gap-3">
-              <div className="w-14 h-14 rounded-full bg-green-500/20 flex items-center justify-center group-hover:bg-green-500/30 transition">
-                <Upload className="w-7 h-7 text-green-600" />
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500/20 transition group-hover:bg-green-500/30">
+                <Upload className="h-7 w-7 text-green-600" />
               </div>
               <div className="text-center">
                 <div className="text-base font-medium text-slate-900">
                   {allowPDF ? "Choose Photo or PDF" : "Choose Photo"}
                 </div>
-                <div className="text-sm text-slate-600 mt-1">
+                <div className="mt-1 text-sm text-slate-600">
                   {allowPDF ? "Select from gallery or device" : "Select from gallery"}
                 </div>
               </div>
@@ -432,21 +540,20 @@ export default function UniversalImageCapture({
         </div>
       )}
 
-      {/* Step 2: PDF Preview */}
-      {step === 'pdf_preview' && (
+      {step === "pdf_preview" && (
         <div className="space-y-4">
           <div className="text-center">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm">
-              <FileText className="w-4 h-4" />
+            <div className="inline-flex items-center gap-2 rounded-full bg-orange-100 px-3 py-1 text-sm text-orange-700">
+              <FileText className="h-4 w-4" />
               PDF Document Ready
             </div>
           </div>
 
-          <div className="bg-slate-100 rounded-lg p-4 text-center">
-            <FileText className="w-16 h-16 text-slate-400 mx-auto mb-2" />
+          <div className="rounded-lg bg-slate-100 p-4 text-center">
+            <FileText className="mx-auto mb-2 h-16 w-16 text-slate-400" />
             <div className="text-sm font-medium text-slate-900">{selectedFile?.name}</div>
-            <div className="text-xs text-slate-600 mt-1">
-              {selectedFile && `${(selectedFile.size / 1024).toFixed(1)} KB`}
+            <div className="mt-1 text-xs text-slate-600">
+              {selectedFile ? `${(selectedFile.size / 1024).toFixed(1)} KB` : ""}
             </div>
           </div>
 
@@ -454,162 +561,151 @@ export default function UniversalImageCapture({
             <button
               type="button"
               onClick={handleReset}
-              className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
+              className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-slate-700 transition-colors hover:bg-slate-50"
             >
-              <X className="w-4 h-4 inline mr-2" />
+              <X className="mr-2 inline h-4 w-4" />
               Cancel
             </button>
             <button
               type="button"
               onClick={handlePDFUpload}
-              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-white transition-colors hover:bg-green-700"
             >
-              <Check className="w-4 h-4 inline mr-2" />
+              <Check className="mr-2 inline h-4 w-4" />
               Use This PDF
             </button>
           </div>
         </div>
       )}
 
-      {/* Step 3: Crop */}
-      {step === 'crop' && (
-        <div className="space-y-4">
-          {selectedImage && !croppedImage && (
-            <>
-              <div className="text-center">
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
-                  <Move className="w-4 h-4" />
-                  {getCropInstructions()}
-                </div>
-              </div>
+      {step === "crop" && !croppedImage && (
+        <div className="space-y-3">
+          <div className="flex justify-center pt-3">
+            <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1.5 text-sm text-blue-700 shadow-sm">
+              <Move className="h-4 w-4" />
+              {getCropInstructions()}
+            </div>
+          </div>
 
-              <div 
-                ref={containerRef}
-                className="relative bg-slate-100 rounded-lg overflow-hidden cursor-move"
-                onMouseDown={handleMouseDown}
-                onTouchStart={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onTouchMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onTouchEnd={handleMouseUp}
-              >
-                <img
-                  ref={imageRef}
-                  src={selectedImage}
-                  alt="Crop preview"
-                  className="w-full h-auto max-h-48 sm:max-h-64 md:max-h-80 lg:max-h-96 object-contain"
-                  draggable={false}
-                />
-                
-                {/* Crop overlay */}
-                <div
-                  className="absolute border-2 border-blue-500 bg-blue-500/10 pointer-events-none"
-                  style={{
-                    left: `${cropArea.x}px`,
-                    top: `${cropArea.y}px`,
-                    width: `${cropArea.width}px`,
-                    height: `${cropArea.height}px`,
+          <div
+            className="flex w-full items-center justify-center overflow-hidden rounded-lg bg-slate-100 px-3 pb-3 pt-5"
+            style={{
+              height: "66vh",
+              minHeight: 540,
+            }}
+          >
+            {!selectedImage ? (
+              <div className="flex h-full w-full items-center justify-center text-slate-500">
+                Loading image...
+              </div>
+            ) : (
+              <div className="flex h-full w-full items-center justify-center overflow-auto pt-2">
+                <ReactCrop
+                  className="receipt-cropper"
+                  crop={crop}
+                  onChange={(nextCrop: Crop) => {
+                    setCrop(clampCrop(nextCrop as PercentCrop));
                   }}
+                  keepSelection
+                  ruleOfThirds
+                  minWidth={120}
+                  minHeight={220}
+                  aspect={getAspectRatio()}
                 >
-                  {/* Corner handles */}
-                  <div className="absolute -top-1 -left-1 w-3 h-3 bg-blue-500 border border-white rounded-full"></div>
-                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-blue-500 border border-white rounded-full"></div>
-                  <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-blue-500 border border-white rounded-full"></div>
-                  <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-blue-500 border border-white rounded-full"></div>
-                </div>
-                
-                <canvas
-                  ref={canvasRef}
-                  className="hidden"
-                />
+                  <img
+                    ref={imageRef}
+                    src={selectedImage}
+                    alt="Crop preview"
+                    onLoad={handleImageLoad}
+                    style={{
+                      display: "block",
+                      maxWidth: "100%",
+                      width: "auto",
+                      maxHeight: "58vh",
+                      objectFit: "contain",
+                    }}
+                  />
+                </ReactCrop>
               </div>
+            )}
 
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  disabled={processing}
-                  className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
-                >
-                  <X className="w-4 h-4 inline mr-2" />
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCrop}
-                  disabled={processing}
-                  className="flex-1 px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
-                >
-                  {processing ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline mr-2" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <Crop className="w-4 h-4 inline mr-2" />
-                      Crop & Save
-                    </>
-                  )}
-                </button>
-              </div>
-            </>
-          )}
+            <canvas ref={canvasRef} className="hidden" />
+          </div>
 
-          {croppedImage && (
-            <>
-              <div className="text-center">
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
-                  <Check className="w-4 h-4" />
-                  Image Ready
-                </div>
-              </div>
-
-              <div className="bg-slate-100 rounded-lg overflow-hidden">
-                <img
-                  src={croppedImage.preview}
-                  alt="Cropped preview"
-                  className="w-full h-auto max-h-32 sm:max-h-48 md:max-h-64 object-contain"
-                />
-              </div>
-
-              <div className="text-center text-xs text-slate-600">
-                {croppedImage.width} × {croppedImage.height}px ({(croppedImage.size / 1024).toFixed(1)} KB)
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors text-sm sm:text-base"
-                >
-                  <X className="w-4 h-4 inline mr-2" />
-                  Retake
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  className="flex-1 px-3 py-2 sm:px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm sm:text-base"
-                >
-                  <Check className="w-4 h-4 inline mr-2" />
-                  Use This Photo
-                </button>
-              </div>
-            </>
-          )}
+          <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={processing}
+              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-base"
+            >
+              <X className="mr-2 inline h-4 w-4" />
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleCrop}
+              disabled={processing || !crop}
+              className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-base"
+            >
+              {processing ? (
+                <>
+                  <div className="mr-2 inline h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Check className="mr-2 inline h-4 w-4" />
+                  Crop & Save
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Cancel Button */}
-      <div className="pt-4 border-t border-slate-200">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="w-full px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
+      {step === "crop_result" && croppedImage && (
+        <div className="space-y-4">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1 text-sm text-green-700">
+              <Check className="h-4 w-4" />
+              Crop Complete
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg bg-slate-100">
+            <img
+              src={croppedImage.preview}
+              alt="Cropped preview"
+              className="h-auto max-h-32 w-full object-contain sm:max-h-48 md:max-h-64"
+            />
+          </div>
+
+          <div className="text-center text-xs text-slate-600">
+            {croppedImage.width} × {croppedImage.height}px ({(croppedImage.size / 1024).toFixed(1)}{" "}
+            KB)
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
+            <button
+              type="button"
+              onClick={handleRetake}
+              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 sm:px-4 sm:text-base"
+            >
+              <X className="mr-2 inline h-4 w-4" />
+              Retake
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="flex-1 rounded-lg bg-green-600 px-3 py-2 text-sm text-white transition-colors hover:bg-green-700 sm:px-4 sm:text-base"
+            >
+              <Check className="mr-2 inline h-4 w-4" />
+              Use This Photo
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

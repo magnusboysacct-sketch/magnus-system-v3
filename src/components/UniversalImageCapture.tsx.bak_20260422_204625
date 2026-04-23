@@ -1,0 +1,578 @@
+import React, { useState, useRef, useCallback, useEffect } from "react";
+import { Camera, Upload, X, Check, Crop as CropIcon, FileText, Move } from "lucide-react";
+import ReactCrop, { type Crop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
+
+export type ImageCaptureMode = "id_photo" | "worker_photo" | "receipt" | "general";
+
+interface UniversalImageCaptureProps {
+  title: string;
+  subtitle?: string;
+  mode: ImageCaptureMode;
+  onImageReady: (file: File, metadata?: { width: number; height: number; size: number; ocrFile?: File }) => void;
+  onCancel: () => void;
+  maxSize?: number; // Max dimension in pixels
+  quality?: number; // 0-1 for JPEG quality
+  allowPDF?: boolean; // For receipts
+  initialFile?: File | null; // Initial file to process
+}
+
+interface CroppedImage {
+  file: File;
+  preview: string;
+  width: number;
+  height: number;
+  size: number;
+  ocrFile?: File;
+}
+
+export default function UniversalImageCapture({
+  title,
+  mode,
+  onImageReady,
+  onCancel,
+  maxSize,
+  quality,
+  allowPDF = false,
+  initialFile,
+}: UniversalImageCaptureProps) {
+  
+  // Set defaults based on mode
+  const subtitle = mode === 'receipt' ? 
+    'Adjust the crop area to capture the receipt details. Fill the frame with the receipt and avoid background.' :
+    'Adjust the crop area to capture the important details.';
+  
+  const finalMaxSize = maxSize || (mode === 'receipt' ? 2000 : 1600);
+  const finalQuality = quality || (mode === 'receipt' ? 0.98 : 0.8);
+  const [step, setStep] = useState<'capture' | 'crop' | 'crop_result' | 'pdf_preview'>('capture');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [croppedImage, setCroppedImage] = useState<CroppedImage | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [crop, setCrop] = useState<Crop>({
+    unit: '%', // Use percentage for better responsive behavior
+    x: 25,
+    y: 25,
+    width: 50,
+    height: 50
+  });
+  const [zoom, setZoom] = useState(1);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Handle initial file when provided
+  useEffect(() => {
+    if (initialFile && !selectedImage) {
+      console.log('UniversalImageCapture: Processing initial file:', initialFile.name);
+      
+      if (initialFile.type === 'application/pdf') {
+        if (!allowPDF) {
+          setError('PDF files are not allowed for this type of image');
+          return;
+        }
+        
+        if (initialFile.size > 10 * 1024 * 1024) {
+          setError('File is too large. Please select a file under 10MB.');
+          return;
+        }
+
+        setSelectedFile(initialFile);
+        setStep('pdf_preview');
+        setError(null);
+      } else if (initialFile.type.startsWith('image/')) {
+        if (initialFile.size > 10 * 1024 * 1024) {
+          setError('Image is too large. Please select an image under 10MB.');
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            console.log('UniversalImageCapture: Initial file loaded, setting up crop');
+            setSelectedImage(event.target.result as string);
+            setSelectedFile(initialFile);
+            setStep('crop');
+            setError(null);
+          }
+        };
+        reader.readAsDataURL(initialFile);
+      }
+    }
+  }, [initialFile, selectedImage, allowPDF]);
+
+  // Get aspect ratio based on mode
+  const getAspectRatio = useCallback(() => {
+    switch (mode) {
+      case "id_photo":
+        return 1.6; // Standard ID card ratio
+      case "worker_photo":
+        return 1.0; // Square for worker photos
+      case "receipt":
+        return 0.7; // Tall receipts (height/width = 1/0.7 = 1.428)
+      case "general":
+        return 1.0; // Default square
+      default:
+        return 1.0;
+    }
+  }, [mode]);
+
+  // Get crop instructions based on mode
+  const getCropInstructions = useCallback(() => {
+    switch (mode) {
+      case "id_photo":
+        return "Drag to crop ID card";
+      case "worker_photo":
+        return "Drag to crop worker's face";
+      case "receipt":
+        return "Drag to crop receipt details";
+      case "general":
+        return "Drag to adjust crop area";
+      default:
+        return "Drag to adjust crop area";
+    }
+  }, [mode]);
+
+  // Handle file selection from camera or gallery
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+
+    // File size validation
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File is too large. Please select a file under 10MB.');
+      return;
+    }
+
+    setError(null);
+
+    if (file.type === 'application/pdf') {
+      if (!allowPDF) {
+        setError('PDF files are not allowed for this type of image');
+        return;
+      }
+      
+      setSelectedFile(file);
+      setStep('pdf_preview');
+    } else if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          console.log('UniversalImageCapture: Image loaded, setting up crop');
+          console.log('Image data URL length:', (event.target.result as string).length);
+          console.log('File type:', file.type);
+          console.log('File size:', file.size);
+          setSelectedImage(event.target.result as string);
+          setSelectedFile(file);
+          setStep('crop');
+        }
+      };
+      reader.readAsDataURL(file);
+
+      // Clear input
+      if (e.target === fileInputRef.current && fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      if (e.target === cameraInputRef.current && cameraInputRef.current) {
+        cameraInputRef.current.value = '';
+      }
+    }
+  }, [allowPDF]);
+
+  // Handle crop using react-image-crop output
+  const handleCrop = useCallback(async () => {
+    if (!selectedImage || !crop || !canvasRef.current) return;
+
+    setProcessing(true);
+    setError(null);
+
+    try {
+      console.log('=== REACT-IMAGE-CROP ENGINE ===');
+      console.log('crop:', crop);
+
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas context not available');
+
+      // Create image element for cropping
+      const image = new Image();
+      image.src = selectedImage;
+
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = reject;
+      });
+
+      // Calculate pixel dimensions from percentage crop
+      const img = new Image();
+      img.src = selectedImage;
+      
+      await new Promise((resolve) => {
+        img.onload = () => resolve(img);
+      });
+
+      const scaleX = img.naturalWidth / 100;
+      const scaleY = img.naturalHeight / 100;
+      
+      const pixelCrop = {
+        x: crop.x * scaleX,
+        y: crop.y * scaleY,
+        width: crop.width * scaleX,
+        height: crop.height * scaleY
+      };
+
+      console.log('pixelCrop:', pixelCrop);
+
+      // Set canvas size to crop dimensions
+      canvas.width = Math.round(pixelCrop.width);
+      canvas.height = Math.round(pixelCrop.height);
+
+      console.log('canvas export size:', { width: canvas.width, height: canvas.height });
+
+      // Draw cropped image
+      ctx.drawImage(
+        img,
+        pixelCrop.x,
+        pixelCrop.y,
+        pixelCrop.width,
+        pixelCrop.height,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+      );
+
+      // Create final file
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const fileName = `cropped_${Date.now()}.jpg`;
+            const file = new File([blob], fileName, { type: 'image/jpeg' });
+            
+            // Create preview
+            const preview = URL.createObjectURL(blob);
+            
+            setCroppedImage({
+              file,
+              preview,
+              width: canvas.width,
+              height: canvas.height,
+              size: blob.size
+            });
+            
+            // Transition to crop result state
+            setStep('crop_result');
+          }
+        },
+        'image/jpeg',
+        finalQuality
+      );
+
+    } catch (err) {
+      console.error('Crop error:', err);
+      setError('Failed to crop image. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  }, [selectedImage, crop, finalQuality]);
+
+  // Handle PDF upload
+  const handlePDFUpload = useCallback(() => {
+    if (selectedFile) {
+      onImageReady(selectedFile, { 
+        width: 0, 
+        height: 0, 
+        size: selectedFile.size 
+      });
+    }
+  }, [selectedFile, onImageReady]);
+
+  // Handle final save
+  const handleSave = useCallback(() => {
+    if (croppedImage) {
+      onImageReady(croppedImage.file, {
+        width: croppedImage.width,
+        height: croppedImage.height,
+        size: croppedImage.size
+      });
+    }
+  }, [croppedImage, onImageReady]);
+
+  // Reset everything
+  const handleReset = useCallback(() => {
+    setSelectedImage(null);
+    setSelectedFile(null);
+    setCroppedImage(null);
+    setCrop({ unit: '%', x: 25, y: 25, width: 50, height: 50 });
+    setZoom(1);
+    setError(null);
+    setStep('capture');
+    
+    // Clear file inputs
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="text-center">
+        <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+        {subtitle && (
+          <p className="text-sm text-slate-600 mt-1">{subtitle}</p>
+        )}
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <X className="w-4 h-4 text-red-600" />
+            <span className="text-sm text-red-700">{error}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Step 1: Capture */}
+      {step === 'capture' && (
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            className="w-full p-6 rounded-xl border-2 border-dashed border-slate-300 bg-white hover:border-blue-500 hover:bg-blue-50 transition-all group"
+          >
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-14 h-14 rounded-full bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition">
+                <Camera className="w-7 h-7 text-blue-600" />
+              </div>
+              <div className="text-center">
+                <div className="text-base font-medium text-slate-900">Take Photo</div>
+                <div className="text-sm text-slate-600 mt-1">Use camera to capture</div>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full p-6 rounded-xl border-2 border-dashed border-slate-300 bg-white hover:border-green-500 hover:bg-green-50 transition-all group"
+          >
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-14 h-14 rounded-full bg-green-500/20 flex items-center justify-center group-hover:bg-green-500/30 transition">
+                <Upload className="w-7 h-7 text-green-600" />
+              </div>
+              <div className="text-center">
+                <div className="text-base font-medium text-slate-900">
+                  {allowPDF ? "Choose Photo or PDF" : "Choose Photo"}
+                </div>
+                <div className="text-sm text-slate-600 mt-1">
+                  {allowPDF ? "Select from gallery or device" : "Select from gallery"}
+                </div>
+              </div>
+            </div>
+          </button>
+
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={allowPDF ? "image/*,application/pdf" : "image/*"}
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+        </div>
+      )}
+
+      {/* Step 2: PDF Preview */}
+      {step === 'pdf_preview' && (
+        <div className="space-y-4">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm">
+              <FileText className="w-4 h-4" />
+              PDF Document Ready
+            </div>
+          </div>
+
+          <div className="bg-slate-100 rounded-lg p-4 text-center">
+            <FileText className="w-16 h-16 text-slate-400 mx-auto mb-2" />
+            <div className="text-sm font-medium text-slate-900">{selectedFile?.name}</div>
+            <div className="text-xs text-slate-600 mt-1">
+              {selectedFile && `${(selectedFile.size / 1024).toFixed(1)} KB`}
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleReset}
+              className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <X className="w-4 h-4 inline mr-2" />
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handlePDFUpload}
+              className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Check className="w-4 h-4 inline mr-2" />
+              Use This PDF
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Crop with react-image-crop */}
+      {step === 'crop' && !croppedImage && (
+        <div className="space-y-2">
+          {/* Instruction Block - Compact */}
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
+              <Move className="w-4 h-4" />
+              {getCropInstructions()}
+            </div>
+          </div>
+
+          {/* Crop Container - Fixed Workspace */}
+          <div 
+            className="relative bg-slate-100 rounded-lg overflow-hidden"
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: '420px',
+              minHeight: '380px',
+              zIndex: 1
+            }}
+          >
+            {(() => {
+              console.log('=== CROP RENDER DEBUG ===');
+              console.log('selectedImage:', selectedImage ? 'EXISTS' : 'NULL');
+              console.log('selectedImage length:', selectedImage ? selectedImage.length : 'N/A');
+              console.log('step:', step);
+              
+              if (!selectedImage) {
+                return (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-slate-500">Loading image...</div>
+                  </div>
+                );
+              }
+              
+              return (
+                <ReactCrop
+                  crop={crop}
+                  onChange={(newCrop) => setCrop(newCrop)}
+                  onComplete={(cropComplete) => {
+                    console.log('Crop completed:', cropComplete);
+                  }}
+                  aspect={getAspectRatio()}
+                  keepSelection={true}
+                >
+                  <img 
+                    src={selectedImage} 
+                    alt="Crop preview"
+                    style={{ 
+                      maxWidth: '100%', 
+                      maxHeight: '380px',
+                      objectFit: 'contain'
+                    }}
+                  />
+                </ReactCrop>
+              );
+            })()}
+            
+            <canvas
+              ref={canvasRef}
+              className="hidden"
+            />
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={handleReset}
+              disabled={processing}
+              className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
+            >
+              <X className="w-4 h-4 inline mr-2" />
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleCrop}
+              disabled={processing || !crop}
+              className="flex-1 px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
+            >
+              {processing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline mr-2"></div>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4 inline mr-2" />
+                  Crop & Save
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: Crop Result Preview */}
+      {step === 'crop_result' && croppedImage && (
+        <div className="space-y-4">
+          <div className="text-center">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
+              <Check className="w-4 h-4" />
+              Crop Complete
+            </div>
+          </div>
+
+          <div className="bg-slate-100 rounded-lg overflow-hidden">
+            <img
+              src={croppedImage.preview}
+              alt="Cropped preview"
+              className="w-full h-auto max-h-32 sm:max-h-48 md:max-h-64 object-contain"
+            />
+          </div>
+
+          <div className="text-center text-xs text-slate-600">
+            {croppedImage.width} × {croppedImage.height}px ({(croppedImage.size / 1024).toFixed(1)} KB)
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={handleReset}
+              className="flex-1 px-3 py-2 sm:px-4 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors text-sm sm:text-base"
+            >
+              <X className="w-4 h-4 inline mr-2" />
+              Retake
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="flex-1 px-3 py-2 sm:px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm sm:text-base"
+            >
+              <Check className="w-4 h-4 inline mr-2" />
+              Use This Photo
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -187,33 +187,98 @@ export default function ExpensesPage() {
   }
 
   function handleReceiptUploadComplete(receiptId: string, result: OCRResult | null) {
-    setUploadedReceiptId(receiptId);
-    setOcrResult(result);
+  console.log('OCR_FLOW_STEP_5 parent received:', {
+    receiptId,
+    ocrResult: result ? {
+      hasData: !!(result.vendor || result.date || result.amount),
+      vendor: result.vendor,
+      date: result.date,
+      amount: result.amount,
+      tax: result.tax,
+      receiptNumber: result.receiptNumber,
+      confidence: result.confidence
+    } : null
+  });
+  
+  console.log('=== DEBUG: EXPENSES PAGE RECEIPT UPLOAD COMPLETE ===');
+  console.log('ExpensesPage: Receipt upload complete callback received');
+  console.log('ExpensesPage: Receipt ID:', receiptId);
+  console.log('ExpensesPage: OCR result received:', result);
+  
+  setUploadedReceiptId(receiptId);
+  setOcrResult(result);
+  console.log('OCR_FLOW_STEP_3 ReceiptUpload state set:', {
+    uploadedReceiptId: receiptId,
+    ocrResult: result ? {
+      hasData: !!(result.vendor || result.date || result.amount)
+    } : null
+  });
 
-    if (result) {
-      setShowOcrPreview(true);
-    }
+  if (result) {
+    console.log('ExpensesPage: OCR result has data, showing preview');
+    console.log('ExpensesPage: OCR result details for preview:');
+    console.log('  - Vendor:', result.vendor);
+    console.log('  - Date:', result.date);
+    console.log('  - Amount:', result.amount);
+    console.log('  - Tax:', result.tax);
+    console.log('  - Receipt Number:', result.receiptNumber);
+    console.log('  - Confidence:', result.confidence);
+    console.log('  - Raw text length:', result.rawText?.length || 0);
+    setShowOcrPreview(true);
+  } else {
+    console.log('ExpensesPage: No OCR result received');
   }
+}
 
   function handleAcceptOCR() {
-    if (!ocrResult) return;
-
-    setFormData({
-      ...formData,
-      vendor: ocrResult.vendor || formData.vendor,
-      expense_date: ocrResult.date || formData.expense_date,
-      amount: ocrResult.amount ? ocrResult.amount.toString() : formData.amount,
-      description: formData.description || `Receipt from ${ocrResult.vendor || 'vendor'}`,
-      notes: ocrResult.receiptNumber
-        ? `Receipt #: ${ocrResult.receiptNumber}${formData.notes ? '\n' + formData.notes : ''}`
-        : formData.notes,
-    });
-
-    setPendingOCRData(ocrResult);
-    setShowOcrPreview(false);
-    setShowAICategorizer(true);
+  console.log('=== DEBUG: EXPENSES PAGE ACCEPT OCR START ===');
+  console.log('ExpensesPage: User accepted OCR results');
+  
+  if (!ocrResult) {
+    console.log('ExpensesPage: No OCR result available, cannot accept');
+    return;
   }
 
+  // Prevent any field updates when OCR requires manual entry
+  if (ocrResult.requiresManualEntry) {
+    console.log('ExpensesPage: OCR requires manual entry - not auto-filling any fields');
+    handleEditManually();
+    return;
+  }
+
+  console.log('ExpensesPage: OCR result details:');
+  console.log('  - Vendor:', ocrResult.vendor);
+  console.log('  - Date:', ocrResult.date);
+  console.log('  - Amount:', ocrResult.amount);
+  console.log('  - Tax:', ocrResult.tax);
+  console.log('  - Receipt Number:', ocrResult.receiptNumber);
+  console.log('  - Confidence:', ocrResult.confidence);
+  console.log('  - Requires Manual Entry:', ocrResult.requiresManualEntry);
+
+  console.log('ExpensesPage: Current form data before update:', formData);
+
+  const updatedFormData = {
+    ...formData,
+    vendor: ocrResult.vendor || formData.vendor,
+    expense_date: ocrResult.date || formData.expense_date,
+    amount: ocrResult.amount ? ocrResult.amount.toString() : formData.amount,
+    description: formData.description || `Receipt from ${ocrResult.vendor || 'vendor'}`,
+    notes: ocrResult.receiptNumber
+      ? `Receipt #: ${ocrResult.receiptNumber}${formData.notes ? '\n' + formData.notes : ''}`
+      : formData.notes,
+  };
+
+  console.log('ExpensesPage: Updated form data:', updatedFormData);
+  setFormData(updatedFormData);
+
+  setPendingOCRData(ocrResult);
+  setShowOcrPreview(false);
+  setShowAICategorizer(true);
+  
+  console.log('ExpensesPage: OCR preview closed, AI categorizer opened');
+}
+
+  
   function handleAICategorization(categorization: { category: string; description: string; vendorType?: string }) {
     const matchedCategory = categories.find(c => c.name === categorization.category);
 
