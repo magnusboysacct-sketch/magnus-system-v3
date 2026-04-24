@@ -13,6 +13,7 @@ interface ReceiptUploadProps {
 
 export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }: ReceiptUploadProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [displayFile, setDisplayFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,10 +87,11 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
         size: result.ocrFile.size,
         type: result.ocrFile.type,
         isFile: result.ocrFile instanceof File,
-        isBlob: result.ocrFile instanceof Blob
+        isBlob: result.ocrFile instanceof Blob,
+        sizeDifference: ((result.ocrFile.size / result.file.size - 1) * 100).toFixed(1) + '%'
       });
     } else {
-      console.log('OCR_FILE_INFO: No OCR file provided');
+      console.warn('OCR_FILE_INFO: No OCR file provided');
     }
     
     // Use OCR file if available, otherwise use main file
@@ -250,6 +252,7 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
 
   function handleRemove() {
     setSelectedFile(null);
+    setDisplayFile(null);
     setPreview(null);
     setError(null);
     if (fileInputRef.current) {

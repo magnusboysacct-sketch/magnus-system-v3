@@ -14,7 +14,9 @@ import {
   getInitialCropForMode, 
   getInstructionsForMode,
   cleanupObjectUrl,
-  createOCREnhancedImage
+  createOptimizedImage,
+  type ProcessingOptions,
+  type ProcessingResult
 } from '../utils/imageUtils';
 
 interface UseImageCaptureOptions {
@@ -36,6 +38,10 @@ export function useImageCapture({
   onImageReady,
   onCancel
 }: UseImageCaptureOptions) {
+  // Add progress state for UI
+  const [processingStage, setProcessingStage] = useState<string>('');
+  const [processingMode, setProcessingMode] = useState<'fast' | 'deep'>('fast');
+
   const [state, setState] = useState<ImageCaptureState>({
     step: 'capture',
     selectedImage: null,
@@ -167,28 +173,94 @@ export function useImageCapture({
       // Create preview
       const preview = await createImagePreview(croppedFile);
 
-      // Create OCR-enhanced copy
-      const ocrFile = await createOCREnhancedImage(croppedFile);
-
-      const result: ImageCaptureResult = {
-        file: croppedFile,
-        preview,
-        width,
-        height,
-        size: croppedFile.size,
-        ocrFile // Use OCR-enhanced copy for OCR processing
+      // Create optimized OCR copy with progress tracking
+      setProcessingStage('Preparing image...');
+      setProcessingMode('fast');
+      
+      const options: ProcessingOptions = {
+        mode: 'fast',
+        maxDimension: 2200,
+        onProgress: (stage: string) => setProcessingStage(stage),
+        timeoutMs: 12000
       };
 
-      setState(prev => ({
-        ...prev,
-        croppedImage: result,
-        step: 'result',
-        processing: false
-      }));
-
-      // Call completion handler
-      if (onImageReady) {
-        onImageReady(result);
+      const processingResult: ProcessingResult = await createOptimizedImage(croppedFile, options);
+      
+      // If fast mode failed confidence, try deep mode
+      if (processingResult.aborted || (processingResult.timings?.resize || 0) > 3000) {
+        console.log('FAST_MODE_POOR_QUALITY: Switching to deep mode');
+        setProcessingStage('Improving difficult receipt...');
+        setProcessingMode('deep');
+        
+        const deepOptions: ProcessingOptions = {
+          mode: 'deep',
+          maxDimension: 2800,
+          onProgress: (stage: string) => setProcessingStage(stage),
+          timeoutMs: 12000
+        };
+        
+        const deepResult = await createOptimizedImage(croppedFile, deepOptions);
+        
+        // Use deep result if it completed, otherwise fall back to fast result
+        const finalResult = deepResult.aborted ? processingResult : deepResult;
+        
+        console.log('PROCESSING_COMPLETE:', {
+          mode: finalResult.mode,
+          timings: finalResult.timings,
+          dimensions: finalResult.dimensions,
+          aborted: finalResult.aborted
+        });
+        
+        const result: ImageCaptureResult = {
+          file: croppedFile,
+          preview,
+          width,
+          height,
+          size: croppedFile.size,
+          ocrFile: finalResult.file
+        };
+        
+        setProcessingStage('');
+        
+        setState(prev => ({
+          ...prev,
+          croppedImage: result,
+          step: 'result',
+          processing: false
+        }));
+        
+        if (onImageReady) {
+          onImageReady(result);
+        }
+      } else {
+        // Fast mode succeeded
+        console.log('FAST_MODE_SUCCESS:', {
+          mode: processingResult.mode,
+          timings: processingResult.timings,
+          dimensions: processingResult.dimensions
+        });
+        
+        const result: ImageCaptureResult = {
+          file: croppedFile,
+          preview,
+          width,
+          height,
+          size: croppedFile.size,
+          ocrFile: processingResult.file
+        };
+        
+        setProcessingStage('');
+        
+        setState(prev => ({
+          ...prev,
+          croppedImage: result,
+          step: 'result',
+          processing: false
+        }));
+        
+        if (onImageReady) {
+          onImageReady(result);
+        }
       }
     } catch (error) {
       setState(prev => ({
@@ -257,6 +329,8 @@ export function useImageCapture({
     // State
     state,
     cropSettings,
+    processingStage,
+    processingMode,
     
     // Refs
     fileInputRef,
