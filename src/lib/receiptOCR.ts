@@ -443,25 +443,45 @@ function extractAmountCandidates(text: string): FieldCandidate[] {
   console.log('=== AMOUNT EXTRACTION START ===');
   console.log('TOTAL_LINES:', lines.length);
   
-  // Enhanced patterns with currency and total indicators
-  const strongPatterns = [
-    { regex: /(?:grand\s*total|total|amount|cash|due|balance|fare|paid)[:\s]*\$?(\d+[,.]?\d*\.?\d{2})/gi, priority: 10, label: 'TOTAL_LABEL' },
-    { regex: /(?:jmd|\$)\s*(\d+[,.]?\d*\.?\d{2})/gi, priority: 9, label: 'CURRENCY_PREFIX' },
-    { regex: /(?:cash\s*jmd|jmd\s*cash)\s*[:\s]*\$?(\d+[,.]?\d*\.?\d{2})/gi, priority: 8, label: 'CASH_JMD' },
-    { regex: /\$(\d+[,.]?\d*\.?\d{2})\s*(?:total|due|balance|fare)/gi, priority: 7, label: 'MONEY_WITH_TOTAL' }
+  // FESCO fuel receipt detection
+  const hasFescoVendor = text.toUpperCase().includes('FESCO');
+  const fuelWords = ['LTR', 'LITRE', 'PUMP', 'DIESEL', 'GAS', 'FUEL'];
+  const hasFuelWords = fuelWords.some(word => text.toUpperCase().includes(word));
+  const isFescoFuel = hasFescoVendor || hasFuelWords;
+  
+  if (isFescoFuel) {
+    console.log('FESCO_FUEL_DETECTION:', { hasFescoVendor, hasFuelWords });
+  }
+  
+  // Label-first patterns - prioritize amounts closest to money labels
+  const labelPatterns = [
+    // Labels BEFORE amount: TOTAL 4000.00, CASH 4000.00, FARE 270.00, etc.
+    { regex: /^(?:total|amount|fare|fee|cash|paid|balance|due|jmd|\$)\s*[:\s]*(\$?)(\d+[,.]?\d*\.?\d{2})/gim, priority: 15, label: 'LABEL_BEFORE_AMOUNT' },
+    // Labels AFTER amount: 4000.00 TOTAL, 270.00 FARE, etc.
+    { regex: /(\$?)(\d+[,.]?\d*\.?\d{2})\s+(?:total|amount|fare|fee|cash|paid|balance|due|jmd)$/gim, priority: 14, label: 'AMOUNT_LABEL_AFTER' },
+    // Labels with colon: TOTAL: 4000.00, CASH: 270.00, etc.
+    { regex: /(?:total|amount|fare|fee|cash|paid|balance|due|jmd|\$)\s*[:\=]\s*(\$?)(\d+[,.]?\d*\.?\d{2})/gim, priority: 13, label: 'LABEL_COLON_AMOUNT' },
+    // Currency prefixes: $270.00, JMD 270.00
+    { regex: /(?:jmd|\$)\s*(\$?)(\d+[,.]?\d*\.?\d{2})/gim, priority: 12, label: 'CURRENCY_PREFIX' },
+    // Currency suffixes: 270.00 JMD, 270.00 $
+    { regex: /(\$?)(\d+[,.]?\d*\.?\d{2})\s+(?:jmd|\$)$/gim, priority: 11, label: 'AMOUNT_CURRENCY_SUFFIX' }
   ];
   
-  const mediumPatterns = [
+  // Fallback patterns for unlabeled amounts
+  const fallbackPatterns = [
     { regex: /\$(\d+[,.]?\d*\.?\d{2})/g, priority: 5, label: 'STANDALONE_MONEY' },
     { regex: /\b(\d+[,.]?\d*\.?\d{2})\b/g, priority: 4, label: 'STANDALONE_NUMBER' }
   ];
+  
+  // Track if we found any labeled matches across all lines
+  let hasAnyLabeledMatch = false;
   
   // Process all lines and collect candidates
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     
-    // Skip lines that look like phone numbers, dates, times, or IDs
-    if (line.match(/^(\+?1[-\s]?\(?\d{3}\)?[-\s]?\d{3}[-\s]?\d{4}|\d{10,}|tax\s*#|tax\s*id|invoice\s*#|receipt\s*#)/i)) {
+    // Skip lines that look like phone numbers, dates, times, IDs, or GCT numbers
+    if (line.match(/^(\+?1[-\s]?\(?\d{3}\)?[-\s]?\d{3}[-\s]?\d{4}|\d{10,}|tax\s*#|tax\s*id|invoice\s*#|receipt\s*#|gct\s*\d+)/i)) {
       continue;
     }
     
@@ -470,33 +490,84 @@ function extractAmountCandidates(text: string): FieldCandidate[] {
       continue;
     }
     
+    // FESCO fuel: reject amounts 100-400 if same line contains litre/unit-rate clues
+    if (isFescoFuel) {
+      const amountMatch = line.match(/(\d+[,.]?\d*\.?\d{2})/);
+      if (amountMatch) {
+        const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+        const hasLitreClues = line.match(/\/\s*ltr|litre|per\s*litre|unit\s*rate|\/\s*l|l\/|ltr/i);
+        
+        if (amount >= 100 && amount <= 400 && hasLitreClues) {
+          console.log('FESCO_FUEL_UNIT_PRICE_REJECTED:', { line, amount, reason: 'Unit price range with litre clues' });
+          continue;
+        }
+      }
+    }
+    
     // Calculate position ratio (0 = top, 1 = bottom)
     const positionRatio = i / lines.length;
     const isBottomHalf = positionRatio > 0.5;
     const bottomBonus = isBottomHalf ? 0.2 : 0;
     
-    // Test strong patterns first
-    for (const pattern of strongPatterns) {
+    // Enhanced bottom bonus for FESCO fuel receipts (prefer largest amounts in lower half)
+    const fescoFuelBonus = (isFescoFuel && isBottomHalf) ? 0.15 : 0;
+    
+    // Test label patterns first (highest priority)
+    for (const pattern of labelPatterns) {
       const matches = [...line.matchAll(pattern.regex)];
       
       for (const match of matches) {
-        const amountStr = match[1];
+        const amountStr = match[2] || match[1]; // Handle both capture groups
         const amount = parseFloat(amountStr.replace(/,/g, ''));
         
         if (amount > 0 && amount < 100000) {
           candidates.push({
             value: amount,
-            confidence: (pattern.priority * 0.1) + bottomBonus,
-            reason: `${pattern.label}${isBottomHalf ? ' (bottom)' : ''}`,
+            confidence: (pattern.priority * 0.1) + bottomBonus + fescoFuelBonus,
+            reason: `${pattern.label}${isBottomHalf ? ' (bottom)' : ''}${fescoFuelBonus > 0 ? ' + FESCO_FUEL_BONUS' : ''}`,
             sourceText: match[0]
           });
+          hasAnyLabeledMatch = true;
         }
       }
     }
-    
-    // Test medium patterns if no strong matches found
-    if (candidates.length === 0) {
-      for (const pattern of mediumPatterns) {
+  }
+  
+  // Second pass: only test fallback patterns if no labeled matches found anywhere
+  if (!hasAnyLabeledMatch) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Skip lines that look like phone numbers, dates, times, IDs, or GCT numbers
+      if (line.match(/^(\+?1[-\s]?\(?\d{3}\)?[-\s]?\d{3}[-\s]?\d{4}|\d{10,}|tax\s*#|tax\s*id|invoice\s*#|receipt\s*#|gct\s*\d+)/i)) {
+        continue;
+      }
+      
+      // Skip lines that look like times (HH:MM format)
+      if (line.match(/\b\d{1,2}:\d{2}\b/)) {
+        continue;
+      }
+      
+      // FESCO fuel: reject amounts 100-400 if same line contains litre/unit-rate clues
+      if (isFescoFuel) {
+        const amountMatch = line.match(/(\d+[,.]?\d*\.?\d{2})/);
+        if (amountMatch) {
+          const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+          const hasLitreClues = line.match(/\/\s*ltr|litre|per\s*litre|unit\s*rate|\/\s*l|l\/|ltr/i);
+          
+          if (amount >= 100 && amount <= 400 && hasLitreClues) {
+            continue;
+          }
+        }
+      }
+      
+      // Calculate position ratio (0 = top, 1 = bottom)
+      const positionRatio = i / lines.length;
+      const isBottomHalf = positionRatio > 0.5;
+      const bottomBonus = isBottomHalf ? 0.2 : 0;
+      const fescoFuelBonus = (isFescoFuel && isBottomHalf) ? 0.15 : 0;
+      
+      for (const pattern of fallbackPatterns) {
         const matches = [...line.matchAll(pattern.regex)];
         
         for (const match of matches) {
@@ -508,8 +579,8 @@ function extractAmountCandidates(text: string): FieldCandidate[] {
               (pattern.label === 'STANDALONE_NUMBER' ? amount > 1.99 : true)) {
             candidates.push({
               value: amount,
-              confidence: (pattern.priority * 0.1) + bottomBonus,
-              reason: `${pattern.label}${isBottomHalf ? ' (bottom)' : ''}`,
+              confidence: (pattern.priority * 0.1) + bottomBonus + fescoFuelBonus,
+              reason: `${pattern.label}${isBottomHalf ? ' (bottom)' : ''}${fescoFuelBonus > 0 ? ' + FESCO_FUEL_BONUS' : ''}`,
               sourceText: match[0]
             });
           }
@@ -518,7 +589,7 @@ function extractAmountCandidates(text: string): FieldCandidate[] {
     }
   }
   
-  console.log('AMOUNT_CANDIDATES:', candidates.map(c => ({
+  console.log('AMOUNT_CANDIDATES:', candidates.map((c: FieldCandidate) => ({
     value: c.value,
     confidence: c.confidence,
     reason: c.reason,
@@ -536,20 +607,14 @@ function detectDocumentType(text: string): 'receipt' | 'invoice' {
   const invoiceKeywords = [
     'INVOICE',
     'TAX INVOICE',
-    'QTY',
-    'ITEM',
-    'DESCRIPTION',
-    'UNIT PRICE',
-    'UNIT PRICE',
+    'BILL TO',
+    'TOTAL DUE',
+    'BALANCE DUE',
+    'SUBTOTAL',
+    'VAT',
     'TOTAL',
     'BALANCE',
-    'BILL TO',
-    'SHIP TO',
-    'PO#',
-    'PURCHASE ORDER',
-    'ACCOUNT#',
-    'TERMS',
-    'DUE DATE'
+    'DUE'
   ];
   
   // Count invoice keywords found
@@ -778,12 +843,13 @@ function extractInvoiceTotal(lines: string[]): FieldCandidate[] {
   const candidates: FieldCandidate[] = [];
   const text = lines.join('\n');
   
-  // Strong patterns for grand total
+  // Strong patterns for invoice totals - prioritize bottom labels
   const totalPatterns = [
-    { regex: /(?:GRAND\s*TOTAL|TOTAL\s*DUE|BALANCE\s*DUE|AMOUNT\s*DUE)\s*[:\s]*\$?([\d,]+\.?\d{2})/gi, priority: 10, label: 'GRAND_TOTAL' },
-    { regex: /(?:TOTAL|SUBTOTAL|NET\s*TOTAL)\s*[:\s]*\$?([\d,]+\.?\d{2})/gi, priority: 8, label: 'TOTAL_LABEL' },
-    { regex: /\$([\d,]+\.\d{2})\s*(?:TOTAL|DUE|BALANCE)/gi, priority: 7, label: 'MONEY_WITH_TOTAL' },
-    { regex: /\b([\d,]+\.\d{2})\s*$/gm, priority: 3, label: 'BOTTOM_AMOUNT' } // Amount at end of line
+    { regex: /(?:TOTAL\s*DUE|BALANCE\s*DUE|GRAND\s*TOTAL)\s*[:\s]*\$?([\d,]+\.?\d{2})/gi, priority: 15, label: 'INVOICE_TOTAL_DUE' },
+    { regex: /(?:TOTAL|NET\s*TOTAL)\s*[:\s]*\$?([\d,]+\.?\d{2})/gi, priority: 12, label: 'INVOICE_TOTAL' },
+    { regex: /\$([\d,]+\.\d{2})\s*(?:TOTAL\s*DUE|BALANCE\s*DUE|GRAND\s*TOTAL)/gi, priority: 11, label: 'INVOICE_MONEY_WITH_TOTAL_DUE' },
+    { regex: /\$([\d,]+\.\d{2})\s*(?:TOTAL|DUE|BALANCE)/gi, priority: 10, label: 'INVOICE_MONEY_WITH_TOTAL' },
+    { regex: /\b([\d,]+\.\d{2})\s*$/gm, priority: 5, label: 'INVOICE_BOTTOM_AMOUNT' } // Amount at end of line
   ];
   
   // First pass: look for grand total patterns
@@ -795,40 +861,29 @@ function extractInvoiceTotal(lines: string[]): FieldCandidate[] {
       const numericAmount = parseFloat(amount.replace(/,/g, ''));
       
       if (numericAmount > 0 && numericAmount < 100000) {
-        // Calculate line position for bottom preference
+        // Calculate line position for bottom preference (stronger for invoices)
         const lineIndex = lines.findIndex(line => line.includes(match[0]));
         const positionRatio = lineIndex / lines.length;
-        const bottomBonus = positionRatio > 0.7 ? 0.2 : 0;
+        const bottomBonus = positionRatio > 0.6 ? 0.3 : 0; // Stronger bottom preference for invoices
         
-        candidates.push({
-          value: amount,
-          confidence: (pattern.priority * 0.1) + bottomBonus,
-          sourceText: match[0],
-          reason: pattern.label + (positionRatio > 0.7 ? ' (bottom)' : '')
-        });
+        // Skip obvious line items (lines with qty, unit price, or item descriptions)
+        const lineText = lines[lineIndex] || '';
+        const isLineItem = lineText.match(/(?:QTY|ITEM|DESCRIPTION|UNIT\s*PRICE|RATE|HOURS|DAYS|AMOUNT\s*\/|PER\s*(HOUR|DAY|ITEM))/i);
+        
+        if (!isLineItem) {
+          candidates.push({
+            value: amount,
+            confidence: (pattern.priority * 0.1) + bottomBonus,
+            sourceText: match[0],
+            reason: pattern.label + (positionRatio > 0.6 ? ' (bottom)' : '')
+          });
+        }
       }
     }
   }
   
-  // If no grand total found, look for line items (but with lower confidence)
-  if (candidates.length === 0) {
-    const lineItemPattern = /\$([\d,]+\.\d{2})/g;
-    const lineItemMatches = [...text.matchAll(lineItemPattern)];
-    
-    for (const match of lineItemMatches) {
-      const amount = match[1];
-      const numericAmount = parseFloat(amount.replace(/,/g, ''));
-      
-      if (numericAmount > 0 && numericAmount < 100000) {
-        candidates.push({
-          value: amount,
-          confidence: 0.3,
-          sourceText: match[0],
-          reason: 'LINE_ITEM_FALLBACK'
-        });
-      }
-    }
-  }
+  // Line items and quantities are ignored for invoice mode as requested
+  // Only use labeled total amounts for invoice extraction
   
   return candidates.sort((a, b) => b.confidence - a.confidence);
 }
