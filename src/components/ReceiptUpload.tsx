@@ -19,6 +19,7 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
   const [preview, setPreview] = useState<string | null>(null);
   const [showImageCapture, setShowImageCapture] = useState(false);
   const [initialFile, setInitialFile] = useState<File | null>(null);
+  const [ocrDebug, setOcrDebug] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -67,20 +68,43 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
 
   function handleImageCapture(result: { file: File; preview: string; width: number; height: number; size: number; ocrFile?: File }) {
     console.log('=== SmartImageCapture: RECEIPT UPLOAD IMAGE CAPTURE START ===');
-    console.log('ReceiptUpload: handleImageCapture called with file:', result.file.name);
-    console.log('ReceiptUpload: File size:', result.file.size);
-    console.log('ReceiptUpload: File type:', result.file.type);
-    console.log('ReceiptUpload: File dimensions:', result.width, 'x', result.height);
+    console.log('ReceiptUpload: handleImageCapture called');
+    console.log('MAIN_FILE_INFO:', {
+      name: result.file.name,
+      size: result.file.size,
+      type: result.file.type,
+      width: result.width,
+      height: result.height,
+      isFile: result.file instanceof File,
+      isBlob: result.file instanceof Blob
+    });
+    
+    // Log OCR file info if available
+    if (result.ocrFile) {
+      console.log('OCR_FILE_INFO:', {
+        name: result.ocrFile.name,
+        size: result.ocrFile.size,
+        type: result.ocrFile.type,
+        isFile: result.ocrFile instanceof File,
+        isBlob: result.ocrFile instanceof Blob
+      });
+    } else {
+      console.log('OCR_FILE_INFO: No OCR file provided');
+    }
     
     // Use OCR file if available, otherwise use main file
     const fileForUpload = result.ocrFile || result.file;
     
     console.log('=== SmartImageCapture: FINAL SELECTION ===');
     console.log('OCR_SOURCE_TYPE:', fileForUpload === result.file ? 'MAIN_FILE' : 'OCR_FILE');
-    console.log('OCR_INPUT_WIDTH:', result.width);
-    console.log('OCR_INPUT_HEIGHT:', result.height);
-    console.log('OCR_FILE_SIZE:', fileForUpload.size);
-    console.log('ReceiptUpload: Final file selected for OCR:', fileForUpload.name);
+    console.log('FINAL_FILE_INFO:', {
+      name: fileForUpload.name,
+      size: fileForUpload.size,
+      type: fileForUpload.type,
+      isFile: fileForUpload instanceof File,
+      isBlob: fileForUpload instanceof Blob
+    });
+    console.log('IMAGE_DIMENSIONS:', result.width, 'x', result.height);
     
     // Set the file for upload
     setSelectedFile(fileForUpload);
@@ -88,7 +112,9 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
     setInitialFile(null); // Reset initial file
     setPreview(result.preview);
     
+    console.log('=== SmartImageCapture: IMAGE CAPTURE COMPLETE ===');
     console.log('ReceiptUpload: File and preview set successfully');
+    console.log('Ready for OCR processing');
   }
 
   function handleImageCaptureCancel() {
@@ -133,28 +159,40 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
     setError(null);
 
     try {
-      console.log('=== DEEP DEBUG: CALLING UPLOAD RECEIPT ===');
-      console.log('ReceiptUpload: About to call uploadReceipt with file:', selectedFile.name);
-      console.log('ReceiptUpload: File being sent to OCR:', selectedFile.name, 'size:', selectedFile.size);
-      console.log('ReceiptUpload: File type being sent to OCR:', selectedFile.type);
-      console.log('ReceiptUpload: File object type being sent to OCR:', selectedFile.constructor.name);
+      console.log('=== OCR PIPELINE: UPLOAD RECEIPT START ===');
+      console.log('ReceiptUpload: About to call uploadReceipt');
+      console.log('OCR_INPUT_FILE:', {
+        name: selectedFile.name,
+        size: selectedFile.size,
+        type: selectedFile.type,
+        constructor: selectedFile.constructor.name,
+        isFile: selectedFile instanceof File,
+        isBlob: selectedFile instanceof Blob,
+        lastModified: selectedFile.lastModified
+      });
+      console.log('OCR_CONTEXT:', { companyId, userId });
       
       const result = await uploadReceipt(selectedFile, companyId, userId);
       
-      console.log('OCR_FLOW_STEP_2 ReceiptUpload received:', {
+      console.log('=== OCR PIPELINE: UPLOAD RECEIPT RESULT ===');
+      const debugInfo = {
         receiptId: result.receiptId,
         storagePath: result.storagePath,
+        hasOcrResult: !!result.ocrResult,
         ocrResult: result.ocrResult ? {
-          hasData: !!(result.ocrResult.vendor || result.ocrResult.date || result.ocrResult.amount),
           vendor: result.ocrResult.vendor,
           date: result.ocrResult.date,
           amount: result.ocrResult.amount,
           tax: result.ocrResult.tax,
           receiptNumber: result.ocrResult.receiptNumber,
-          confidence: result.ocrResult.confidence
-        } : null
-      });
-      
+          confidence: result.ocrResult.confidence,
+          requiresManualEntry: result.ocrResult.requiresManualEntry,
+          rawTextLength: result.ocrResult.rawText?.length || 0,
+          rawTextPreview: result.ocrResult.rawText?.substring(0, 200) || 'NO RAW TEXT'
+        } : 'NO OCR RESULT'
+      };
+      console.log('OCR_RESULT:', debugInfo);
+      setOcrDebug(debugInfo);
       console.log('=== DEBUG: RECEIPT UPLOAD COMPLETE ===');
       console.log('ReceiptUpload: Upload complete, receipt ID:', result.receiptId);
       console.log('ReceiptUpload: Storage path:', result.storagePath);
@@ -299,6 +337,27 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3">
           <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
+
+      {/* OCR Debug Information */}
+      {ocrDebug && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <p className="text-xs font-medium text-blue-800 mb-2">OCR Debug Info:</p>
+          <div className="text-xs text-blue-700 space-y-1">
+            <p><strong>Receipt ID:</strong> {ocrDebug.receiptId}</p>
+            <p><strong>Has OCR Result:</strong> {ocrDebug.hasOcrResult ? 'Yes' : 'No'}</p>
+            {ocrDebug.hasOcrResult && ocrDebug.ocrResult !== 'NO OCR RESULT' && (
+              <>
+                <p><strong>Confidence:</strong> {(ocrDebug.ocrResult.confidence * 100).toFixed(1)}%</p>
+                <p><strong>Raw Text Length:</strong> {ocrDebug.ocrResult.rawTextLength}</p>
+                <p><strong>Vendor:</strong> {ocrDebug.ocrResult.vendor || 'Not detected'}</p>
+                <p><strong>Date:</strong> {ocrDebug.ocrResult.date || 'Not detected'}</p>
+                <p><strong>Amount:</strong> {ocrDebug.ocrResult.amount || 'Not detected'}</p>
+                <p><strong>Raw Text Preview:</strong> {ocrDebug.ocrResult.rawTextPreview}</p>
+              </>
+            )}
+          </div>
         </div>
       )}
 

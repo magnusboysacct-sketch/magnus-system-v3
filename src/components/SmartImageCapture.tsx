@@ -177,21 +177,21 @@ export default function SmartImageCapture({
   // Crop Step
   if (state.step === 'crop' && state.selectedImage) {
     return (
-      <div className="space-y-4">
-        {/* Header */}
-        <div className="text-center">
+      <div className="space-y-3">
+        {/* Header - Compact */}
+        <div className="text-center pt-1">
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-          <div className="mt-2 flex justify-center">
-            <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1.5 text-sm text-blue-700 shadow-sm">
+          <div className="mt-1 flex justify-center">
+            <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-sm text-blue-700 shadow-sm">
               <Move className="h-4 w-4" />
               {instructions}
             </div>
           </div>
         </div>
 
-        {/* Error Display */}
+        {/* Error Display - Compact */}
         {state.error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-2">
             <div className="flex items-center gap-2">
               <X className="h-4 w-4 text-red-600" />
               <span className="text-sm text-red-700">{state.error}</span>
@@ -199,14 +199,14 @@ export default function SmartImageCapture({
           </div>
         )}
 
-        {/* Crop Container - Responsive design */}
+        {/* Crop Container - Increased height */}
         <div 
           ref={containerRef}
           className="relative overflow-hidden rounded-lg bg-slate-900"
           style={{ 
-            minHeight: mode === 'receipt' ? '400px' : '350px',
-            maxHeight: '70vh',
-            height: 'clamp(350px, 60vh, 500px)'
+            minHeight: mode === 'receipt' ? '450px' : '400px',
+            maxHeight: '75vh',
+            height: 'clamp(400px, 65vh, 550px)'
           }}
         >
           <div className="absolute inset-0 flex items-center justify-center p-2">

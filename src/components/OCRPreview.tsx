@@ -2,6 +2,20 @@ import React from 'react';
 import { CircleCheck as CheckCircle, CircleAlert as AlertCircle, CreditCard as Edit, Eye } from 'lucide-react';
 import type { OCRResult } from '../lib/receiptOCR';
 
+// Format local date without timezone conversion
+function formatLocalDate(isoDateString: string): string {
+  // Parse YYYY-MM-DD format directly without timezone conversion
+  const match = isoDateString.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, year, month, day] = match;
+    // Create local date string in M/D/YYYY format
+    return `${parseInt(month)}/${parseInt(day)}/${year}`;
+  }
+  
+  // Fallback for any other format
+  return isoDateString;
+}
+
 interface OCRPreviewProps {
   ocrResult: OCRResult;
   onAccept: () => void;
@@ -224,7 +238,7 @@ export function OCRPreview({ ocrResult, onAccept, onEdit }: OCRPreviewProps) {
           <div>
             <div className="text-xs font-medium text-slate-500 mb-1">Date</div>
             <div className="text-sm text-slate-900">
-              {new Date(ocrResult.date).toLocaleDateString()}
+              {formatLocalDate(ocrResult.date)}
             </div>
           </div>
         )}

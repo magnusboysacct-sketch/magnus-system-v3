@@ -13,7 +13,8 @@ import {
   getAspectRatioForMode, 
   getInitialCropForMode, 
   getInstructionsForMode,
-  cleanupObjectUrl 
+  cleanupObjectUrl,
+  createOCREnhancedImage
 } from '../utils/imageUtils';
 
 interface UseImageCaptureOptions {
@@ -166,13 +167,16 @@ export function useImageCapture({
       // Create preview
       const preview = await createImagePreview(croppedFile);
 
+      // Create OCR-enhanced copy
+      const ocrFile = await createOCREnhancedImage(croppedFile);
+
       const result: ImageCaptureResult = {
         file: croppedFile,
         preview,
         width,
         height,
         size: croppedFile.size,
-        ocrFile: croppedFile // Use cropped file for OCR
+        ocrFile // Use OCR-enhanced copy for OCR processing
       };
 
       setState(prev => ({
