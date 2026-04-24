@@ -7,8 +7,12 @@ export interface OCRResult {
   amount: number | null;
   tax: number | null;
   receiptNumber: string | null;
+  invoiceNumber?: string | null;
+  customerName?: string | null;
+  documentType?: string;
   rawText: string;
   confidence: number;
+  mode?: string;
   requiresManualEntry: boolean;
   debugInfo?: {
     selectedPass: string;
@@ -38,6 +42,7 @@ export interface OCRResult {
       }>;
     };
     rejectionReasons?: string[];
+    documentType?: string;
   };
 }
 
@@ -108,6 +113,9 @@ interface ExtractedFields {
   amount: FieldCandidate[];
   tax: FieldCandidate[];
   receiptNumber: FieldCandidate[];
+  invoiceNumber?: FieldCandidate[];
+  customerName?: FieldCandidate[];
+  documentType?: string;
 }
 
 // Create image processing variants for multi-pass OCR
@@ -500,15 +508,297 @@ function extractAmountCandidates(text: string): FieldCandidate[] {
   return candidates.sort((a, b) => b.confidence - a.confidence);
 }
 
-// Extract all fields from OCR text
-function extractAllFields(text: string): ExtractedFields {
-  return {
-    vendor: extractVendorCandidates(text),
-    date: extractDateCandidates(text),
-    amount: extractAmountCandidates(text),
-    tax: [], // TODO: Implement tax extraction
-    receiptNumber: [] // TODO: Implement receipt number extraction
-  };
+// Document type detection
+function detectDocumentType(text: string): 'receipt' | 'invoice' {
+  const upperText = text.toUpperCase();
+  
+  // Invoice indicators
+  const invoiceKeywords = [
+    'INVOICE',
+    'TAX INVOICE',
+    'QTY',
+    'ITEM',
+    'DESCRIPTION',
+    'UNIT PRICE',
+    'UNIT PRICE',
+    'TOTAL',
+    'BALANCE',
+    'BILL TO',
+    'SHIP TO',
+    'PO#',
+    'PURCHASE ORDER',
+    'ACCOUNT#',
+    'TERMS',
+    'DUE DATE'
+  ];
+  
+  // Count invoice keywords found
+  const invoiceKeywordCount = invoiceKeywords.filter(keyword => 
+    upperText.includes(keyword)
+  ).length;
+  
+  console.log('DOCUMENT_TYPE_DETECTION:', {
+    invoiceKeywordCount,
+    foundKeywords: invoiceKeywords.filter(keyword => upperText.includes(keyword))
+  });
+  
+  // If 3+ invoice keywords found, classify as invoice
+  if (invoiceKeywordCount >= 3) {
+    console.log('DOCUMENT_TYPE: INVOICE');
+    return 'invoice';
+  }
+  
+  console.log('DOCUMENT_TYPE: RECEIPT');
+  return 'receipt';
+}
+// Invoice-specific field extraction
+function extractInvoiceFields(text: string): {
+  vendor: FieldCandidate[];
+  date: FieldCandidate[];
+  amount: FieldCandidate[];
+  invoiceNumber: FieldCandidate[];
+  customerName: FieldCandidate[];
+} {
+  const lines = text.split('\n').filter(line => line.trim().length > 0);
+  
+  console.log('=== INVOICE MODE EXTRACTION ===');
+  console.log('TOTAL_LINES:', lines.length);
+  console.log('TEXT_PREVIEW:', text.substring(0, 300) + '...');
+  
+  // Extract vendor/company name (top lines, business keywords)
+  const vendor = extractInvoiceVendor(lines);
+  
+  // Extract invoice number
+  const invoiceNumber = extractInvoiceNumber(lines);
+  
+  // Extract invoice date
+  const date = extractInvoiceDate(lines);
+  
+  // Extract grand total (prefer bottom of document)
+  const amount = extractInvoiceTotal(lines);
+  
+  // Extract customer name
+  const customerName = extractCustomerName(lines);
+  
+  console.log('INVOICE_EXTRACTION_RESULTS:', {
+    vendorCount: vendor.length,
+    invoiceNumberCount: invoiceNumber.length,
+    dateCount: date.length,
+    amountCount: amount.length,
+    customerCount: customerName.length
+  });
+  
+  return { vendor, date, amount, invoiceNumber, customerName };
+}
+
+// Extract vendor from invoice (company name at top)
+function extractInvoiceVendor(lines: string[]): FieldCandidate[] {
+  const candidates: FieldCandidate[] = [];
+  
+  // Focus on top 5 lines for company name
+  const topLines = lines.slice(0, 5);
+  
+  for (let i = 0; i < topLines.length; i++) {
+    const line = topLines[i].trim();
+    
+    // Skip common header lines
+    if (line.match(/^(INVOICE|TAX INVOICE|BILL|RECEIPT)$/i)) continue;
+    
+    // Look for business indicators
+    const businessIndicators = [
+      /LLC|INC|CORP|LTD|CO\.|COMPANY|ENTERPRISES|GROUP|ASSOCIATES/i,
+      /\b(EDGEChem|EdgeChem)\b/i,  // Specific company
+      /^[A-Z][A-Z\s&]+[A-Z]$/,  // All caps business name
+      /\b(PUTTY|CHEMICAL|SUPPLIES|MATERIALS)\b/i  // Industry keywords
+    ];
+    
+    let confidence = 0;
+    let reason = '';
+    
+    if (businessIndicators[0].test(line)) {
+      confidence = 0.9;
+      reason = 'Business entity suffix';
+    } else if (businessIndicators[1].test(line)) {
+      confidence = 0.95;
+      reason = 'Known company name';
+    } else if (businessIndicators[2].test(line) && line.length > 5) {
+      confidence = 0.7;
+      reason = 'All caps business name';
+    } else if (businessIndicators[3].test(line)) {
+      confidence = 0.6;
+      reason = 'Industry keyword';
+    } else if (line.length > 3 && /^[A-Z]/.test(line) && !line.match(/\d{2,}/)) {
+      confidence = 0.4;
+      reason = 'Capitalized first line';
+    }
+    
+    if (confidence > 0) {
+      candidates.push({
+        value: line,
+        confidence,
+        sourceText: line,
+        reason
+      });
+    }
+  }
+  
+  return candidates.sort((a, b) => b.confidence - a.confidence);
+}
+
+// Extract invoice number
+function extractInvoiceNumber(lines: string[]): FieldCandidate[] {
+  const candidates: FieldCandidate[] = [];
+  const text = lines.join('\n');
+  
+  const invoicePatterns = [
+    { regex: /(?:INVOICE#?|INV#?|INVOICE\s*NO\.?|BILL#?)(?:\s*:)?\s*([A-Z0-9-]+)/gi, priority: 10, label: 'INVOICE_LABEL' },
+    { regex: /(?:INVOICE\s*(?:NUMBER|NO)\.?\s*)([A-Z0-9-]+)/gi, priority: 9, label: 'INVOICE_NUMBER' },
+    { regex: /(?:BILL\s*(?:NUMBER|NO)\.?\s*)([A-Z0-9-]+)/gi, priority: 8, label: 'BILL_NUMBER' },
+    { regex: /#([A-Z0-9-]{3,})/gi, priority: 5, label: 'HASH_NUMBER' },
+    { regex: /\b([A-Z]{2,4}[-\d]{3,})\b/gi, priority: 4, label: 'ALPHA_NUMERIC_CODE' }
+  ];
+  
+  for (const pattern of invoicePatterns) {
+    const matches = [...text.matchAll(pattern.regex)];
+    
+    for (const match of matches) {
+      const invoiceNum = match[1] || match[0];
+      
+      if (invoiceNum.length >= 3 && invoiceNum.length <= 20) {
+        candidates.push({
+          value: invoiceNum,
+          confidence: pattern.priority * 0.1,
+          sourceText: match[0],
+          reason: pattern.label
+        });
+      }
+    }
+  }
+  
+  return candidates.sort((a, b) => b.confidence - a.confidence);
+}
+
+// Extract invoice date
+function extractInvoiceDate(lines: string[]): FieldCandidate[] {
+  const candidates: FieldCandidate[] = [];
+  const text = lines.join('\n');
+  
+  // Look for dates with invoice context
+  const invoiceDatePatterns = [
+    { regex: /(?:INVOICE\s*DATE|DATE|BILL\s*DATE)\s*[:\s]*\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/gi, priority: 10, label: 'INVOICE_DATE_LABEL' },
+    { regex: /(?:DUE\s*DATE|DUE)\s*[:\s]*\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/gi, priority: 8, label: 'DUE_DATE' },
+    { regex: /\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/g, priority: 5, label: 'STANDALONE_DATE' },
+    { regex: /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(0?[1-9]|[12]\d|3[01])[\s,]+(20\d{2})\b/gi, priority: 7, label: 'MONTH_DATE_YEAR' }
+  ];
+  
+  for (const pattern of invoiceDatePatterns) {
+    const matches = [...text.matchAll(pattern.regex)];
+    
+    for (const match of matches) {
+      const dateStr = match[1] || match[0];
+      
+      candidates.push({
+        value: dateStr,
+        confidence: pattern.priority * 0.1,
+        sourceText: match[0],
+        reason: pattern.label
+      });
+    }
+  }
+  
+  return candidates.sort((a, b) => b.confidence - a.confidence);
+}
+
+// Extract invoice total (prefer grand total at bottom)
+function extractInvoiceTotal(lines: string[]): FieldCandidate[] {
+  const candidates: FieldCandidate[] = [];
+  const text = lines.join('\n');
+  
+  // Strong patterns for grand total
+  const totalPatterns = [
+    { regex: /(?:GRAND\s*TOTAL|TOTAL\s*DUE|BALANCE\s*DUE|AMOUNT\s*DUE)\s*[:\s]*\$?([\d,]+\.?\d{2})/gi, priority: 10, label: 'GRAND_TOTAL' },
+    { regex: /(?:TOTAL|SUBTOTAL|NET\s*TOTAL)\s*[:\s]*\$?([\d,]+\.?\d{2})/gi, priority: 8, label: 'TOTAL_LABEL' },
+    { regex: /\$([\d,]+\.\d{2})\s*(?:TOTAL|DUE|BALANCE)/gi, priority: 7, label: 'MONEY_WITH_TOTAL' },
+    { regex: /\b([\d,]+\.\d{2})\s*$/gm, priority: 3, label: 'BOTTOM_AMOUNT' } // Amount at end of line
+  ];
+  
+  // First pass: look for grand total patterns
+  for (const pattern of totalPatterns) {
+    const matches = [...text.matchAll(pattern.regex)];
+    
+    for (const match of matches) {
+      const amount = match[1];
+      const numericAmount = parseFloat(amount.replace(/,/g, ''));
+      
+      if (numericAmount > 0 && numericAmount < 100000) {
+        // Calculate line position for bottom preference
+        const lineIndex = lines.findIndex(line => line.includes(match[0]));
+        const positionRatio = lineIndex / lines.length;
+        const bottomBonus = positionRatio > 0.7 ? 0.2 : 0;
+        
+        candidates.push({
+          value: amount,
+          confidence: (pattern.priority * 0.1) + bottomBonus,
+          sourceText: match[0],
+          reason: pattern.label + (positionRatio > 0.7 ? ' (bottom)' : '')
+        });
+      }
+    }
+  }
+  
+  // If no grand total found, look for line items (but with lower confidence)
+  if (candidates.length === 0) {
+    const lineItemPattern = /\$([\d,]+\.\d{2})/g;
+    const lineItemMatches = [...text.matchAll(lineItemPattern)];
+    
+    for (const match of lineItemMatches) {
+      const amount = match[1];
+      const numericAmount = parseFloat(amount.replace(/,/g, ''));
+      
+      if (numericAmount > 0 && numericAmount < 100000) {
+        candidates.push({
+          value: amount,
+          confidence: 0.3,
+          sourceText: match[0],
+          reason: 'LINE_ITEM_FALLBACK'
+        });
+      }
+    }
+  }
+  
+  return candidates.sort((a, b) => b.confidence - a.confidence);
+}
+
+// Extract customer name
+function extractCustomerName(lines: string[]): FieldCandidate[] {
+  const candidates: FieldCandidate[] = [];
+  
+  // Look for "Bill To" section
+  const billToIndex = lines.findIndex(line => 
+    line.match(/BILL\s*TO|CUSTOMER|CLIENT/i)
+  );
+  
+  if (billToIndex !== -1) {
+    // Check next few lines for customer name
+    for (let i = 1; i <= 3; i++) {
+      const nextLine = lines[billToIndex + i];
+      if (nextLine && nextLine.trim().length > 2) {
+        const line = nextLine.trim();
+        
+        // Skip if it looks like an address or phone
+        if (!line.match(/\d{3,}|Street|St|Avenue|Ave|Road|Rd|Phone|Tel/i)) {
+          candidates.push({
+            value: line,
+            confidence: 0.8,
+            sourceText: line,
+            reason: 'BILL_TO_SECTION'
+          });
+        }
+      }
+    }
+  }
+  
+  return candidates.sort((a, b) => b.confidence - a.confidence);
 }
 
 // Create OCR variants based on processing mode
@@ -1302,6 +1592,42 @@ function calculateReadabilityBasedScore(readabilityScore: number, confidence: nu
   return readabilityComponent + confidenceComponent + traditionalComponent;
 }
 
+// Extract all fields from OCR text with document type detection
+function extractAllFields(text: string): ExtractedFields {
+  // Detect document type first
+  const documentType = detectDocumentType(text);
+  
+  console.log('=== FIELD EXTRACTION START ===');
+  console.log('DOCUMENT_TYPE:', documentType);
+  
+  if (documentType === 'invoice') {
+    // Use invoice-specific extraction
+    const invoiceFields = extractInvoiceFields(text);
+    
+    // Convert invoice fields to standard format
+    return {
+      vendor: invoiceFields.vendor,
+      date: invoiceFields.date,
+      amount: invoiceFields.amount,
+      tax: [], // TODO: Implement tax extraction for invoices
+      receiptNumber: invoiceFields.invoiceNumber, // Map invoiceNumber to receiptNumber
+      invoiceNumber: invoiceFields.invoiceNumber, // Keep invoice-specific field
+      customerName: invoiceFields.customerName, // Add customer field
+      documentType // Add document type for debug panel
+    };
+  } else {
+    // Use receipt extraction (existing logic)
+    return {
+      vendor: extractVendorCandidates(text),
+      date: extractDateCandidates(text),
+      amount: extractAmountCandidates(text),
+      tax: [], // TODO: Implement tax extraction
+      receiptNumber: [], // TODO: Implement receipt number extraction
+      documentType // Add document type for debug panel
+    };
+  }
+}
+
 // Select best OCR result and extract fields with mode awareness
 async function processReceiptOCR(file: File, mode: 'fast' | 'deep' = 'fast'): Promise<{
   fields: ExtractedFields;
@@ -1464,6 +1790,7 @@ export async function performOCR(file: File, mode: 'fast' | 'deep' = 'fast'): Pr
               reason: a.reason
             }))
           },
+          documentType: fields.documentType,
           rejectionReasons: ['Insufficient data extracted']
         }
       };
@@ -1473,20 +1800,31 @@ export async function performOCR(file: File, mode: 'fast' | 'deep' = 'fast'): Pr
     const bestVendor = fields.vendor[0]?.value as string || null;
     const bestDate = fields.date[0]?.value as string || null;
     const bestAmount = fields.amount[0]?.value as number || null;
+    const bestInvoiceNumber = fields.invoiceNumber?.[0]?.value as string || null;
+    const bestCustomerName = fields.customerName?.[0]?.value as string || null;
+    const bestReceiptNumber = fields.receiptNumber[0]?.value as string || null;
     
     console.log('=== FINAL SELECTED FIELDS ===');
+    console.log('DOCUMENT_TYPE:', fields.documentType);
     console.log('VENDOR:', bestVendor);
     console.log('DATE:', bestDate);
     console.log('AMOUNT:', bestAmount);
+    console.log('INVOICE_NUMBER:', bestInvoiceNumber);
+    console.log('CUSTOMER_NAME:', bestCustomerName);
+    console.log('RECEIPT_NUMBER:', bestReceiptNumber);
     
     return {
       vendor: bestVendor,
       date: bestDate,
       amount: bestAmount,
       tax: null,
-      receiptNumber: null,
+      receiptNumber: bestReceiptNumber,
+      invoiceNumber: bestInvoiceNumber,
+      customerName: bestCustomerName,
+      documentType: fields.documentType,
       rawText: selectedPass.text,
       confidence: acceptance.confidence,
+      mode: mode,
       requiresManualEntry: acceptance.requiresManualEntry,
       debugInfo: {
         selectedPass: selectedPass.passName,
@@ -1514,7 +1852,8 @@ export async function performOCR(file: File, mode: 'fast' | 'deep' = 'fast'): Pr
             confidence: a.confidence,
             reason: a.reason
           }))
-        }
+        },
+        documentType: fields.documentType
       }
     };
     
