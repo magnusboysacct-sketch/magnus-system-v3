@@ -435,75 +435,95 @@ function repairNoisyDate(dateStr: string): string | null {
   return match ? repaired : null;
 }
 
-// Extract amount candidates
+// Extract amount candidates with enhanced patterns and filtering
 function extractAmountCandidates(text: string): FieldCandidate[] {
   const candidates: FieldCandidate[] = [];
+  const lines = text.split('\n').filter(line => line.trim().length > 0);
   
-  // Strong patterns with labels
-  for (const label of MONEY_LABELS) {
-    const pattern = new RegExp(`${label}\\s*[:\\=]?\\s*\\$?(\\d+[,.]?\\d*\\.?\\d{0,2})`, 'gi');
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      const amount = parseFloat(match[1].replace(/[,\s]/g, ''));
-      if (amount > 0 && amount < 10000) {
-        candidates.push({
-          value: amount,
-          sourceText: match[0],
-          confidence: 0.9,
-          reason: `Labeled amount: ${label}`
-        });
+  console.log('=== AMOUNT EXTRACTION START ===');
+  console.log('TOTAL_LINES:', lines.length);
+  
+  // Enhanced patterns with currency and total indicators
+  const strongPatterns = [
+    { regex: /(?:grand\s*total|total|amount|cash|due|balance|fare|paid)[:\s]*\$?(\d+[,.]?\d*\.?\d{2})/gi, priority: 10, label: 'TOTAL_LABEL' },
+    { regex: /(?:jmd|\$)\s*(\d+[,.]?\d*\.?\d{2})/gi, priority: 9, label: 'CURRENCY_PREFIX' },
+    { regex: /(?:cash\s*jmd|jmd\s*cash)\s*[:\s]*\$?(\d+[,.]?\d*\.?\d{2})/gi, priority: 8, label: 'CASH_JMD' },
+    { regex: /\$(\d+[,.]?\d*\.?\d{2})\s*(?:total|due|balance|fare)/gi, priority: 7, label: 'MONEY_WITH_TOTAL' }
+  ];
+  
+  const mediumPatterns = [
+    { regex: /\$(\d+[,.]?\d*\.?\d{2})/g, priority: 5, label: 'STANDALONE_MONEY' },
+    { regex: /\b(\d+[,.]?\d*\.?\d{2})\b/g, priority: 4, label: 'STANDALONE_NUMBER' }
+  ];
+  
+  // Process all lines and collect candidates
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    // Skip lines that look like phone numbers, dates, times, or IDs
+    if (line.match(/^(\+?1[-\s]?\(?\d{3}\)?[-\s]?\d{3}[-\s]?\d{4}|\d{10,}|tax\s*#|tax\s*id|invoice\s*#|receipt\s*#)/i)) {
+      continue;
+    }
+    
+    // Skip lines that look like times (HH:MM format)
+    if (line.match(/\b\d{1,2}:\d{2}\b/)) {
+      continue;
+    }
+    
+    // Calculate position ratio (0 = top, 1 = bottom)
+    const positionRatio = i / lines.length;
+    const isBottomHalf = positionRatio > 0.5;
+    const bottomBonus = isBottomHalf ? 0.2 : 0;
+    
+    // Test strong patterns first
+    for (const pattern of strongPatterns) {
+      const matches = [...line.matchAll(pattern.regex)];
+      
+      for (const match of matches) {
+        const amountStr = match[1];
+        const amount = parseFloat(amountStr.replace(/,/g, ''));
+        
+        if (amount > 0 && amount < 100000) {
+          candidates.push({
+            value: amount,
+            confidence: (pattern.priority * 0.1) + bottomBonus,
+            reason: `${pattern.label}${isBottomHalf ? ' (bottom)' : ''}`,
+            sourceText: match[0]
+          });
+        }
+      }
+    }
+    
+    // Test medium patterns if no strong matches found
+    if (candidates.length === 0) {
+      for (const pattern of mediumPatterns) {
+        const matches = [...line.matchAll(pattern.regex)];
+        
+        for (const match of matches) {
+          const amountStr = match[1] || match[0];
+          const amount = parseFloat(amountStr.replace(/,/g, ''));
+          
+          // Additional validation for standalone numbers
+          if (amount > 0 && amount < 100000 && 
+              (pattern.label === 'STANDALONE_NUMBER' ? amount > 1.99 : true)) {
+            candidates.push({
+              value: amount,
+              confidence: (pattern.priority * 0.1) + bottomBonus,
+              reason: `${pattern.label}${isBottomHalf ? ' (bottom)' : ''}`,
+              sourceText: match[0]
+            });
+          }
+        }
       }
     }
   }
   
-  // JMD patterns
-  const jmdPattern = /JMD\s*\$?(\\d+[,.]?\\d*\\.?\\d{0,2})/gi;
-  let jmdMatch;
-  while ((jmdMatch = jmdPattern.exec(text)) !== null) {
-    const amount = parseFloat(jmdMatch[1].replace(/[,\s]/g, ''));
-    if (amount > 0 && amount < 10000) {
-      candidates.push({
-        value: amount,
-        sourceText: jmdMatch[0],
-        confidence: 0.85,
-        reason: 'JMD amount'
-      });
-    }
-  }
-  
-  // Standalone money patterns
-  const moneyPattern = /\$?(\\d{1,3}[,\s]?\\d{3}[.\s]?\\d{2})/g;
-  let moneyMatch;
-  while ((moneyMatch = moneyPattern.exec(text)) !== null) {
-    const amount = parseFloat(moneyMatch[1].replace(/[,\s]/g, ''));
-    if (amount > 0 && amount < 10000) {
-      candidates.push({
-        value: amount,
-        sourceText: moneyMatch[0],
-        confidence: 0.7,
-        reason: 'Standalone money amount'
-      });
-    }
-  }
-  
-  // Bottom half bonus
-  const lines = text.split('\n');
-  const bottomHalf = lines.slice(Math.floor(lines.length / 2));
-  const bottomText = bottomHalf.join('\n');
-  
-  const bottomPattern = /\$?(\\d{1,3}[,\s]?\\d{3}[.\s]?\\d{2})/g;
-  let bottomMatch;
-  while ((bottomMatch = bottomPattern.exec(bottomText)) !== null) {
-    const amount = parseFloat(bottomMatch[1].replace(/[,\s]/g, ''));
-    if (amount > 0 && amount < 10000) {
-      candidates.push({
-        value: amount,
-        sourceText: bottomMatch[0],
-        confidence: 0.75,
-        reason: 'Bottom half amount'
-      });
-    }
-  }
+  console.log('AMOUNT_CANDIDATES:', candidates.map(c => ({
+    value: c.value,
+    confidence: c.confidence,
+    reason: c.reason,
+    source: c.sourceText
+  })));
   
   return candidates.sort((a, b) => b.confidence - a.confidence);
 }
@@ -587,16 +607,60 @@ function extractInvoiceFields(text: string): {
     amountCount: amount.length,
     customerCount: customerName.length
   });
-  
+
   return { vendor, date, amount, invoiceNumber, customerName };
+}
+
+// Vendor alias mapping for OCR variants
+function normalizeVendorName(vendor: string | null): string | null {
+  if (!vendor) return null;
+
+  const vendorAliases: { [key: string]: string } = {
+    // TransJam variants
+    'TRANSJAM': 'MAY PEN WEST',
+    'TRANSAM': 'MAY PEN WEST', 
+    'RANSIAM': 'MAY PEN WEST',
+    'TRANS JAM': 'MAY PEN WEST',
+    'TRANS AM': 'MAY PEN WEST',
+    'RANS IAM': 'MAY PEN WEST',
+    
+    // FESCO variants
+    'FESCO': 'FESCO',
+    'F E S C O': 'FESCO',
+    'F.E.S.C.O': 'FESCO',
+    'FES CO': 'FESCO',
+    
+    // EdgeChem variants
+    'EDGECHEM': 'EdgeChem',
+    'EDGE CHEM': 'EdgeChem',
+    'EDGE CHEMICALS': 'EdgeChem',
+    'EDGE-CHEM': 'EdgeChem',
+    
+    // Common variations
+    'MAYPENWEST': 'MAY PEN WEST',
+    'MAY PEN': 'MAY PEN WEST',
+    'MAYPEN': 'MAY PEN WEST'
+  };
+
+  const normalized = vendorAliases[vendor.toUpperCase().trim()];
+  if (normalized) {
+    console.log('VENDOR_NORMALIZATION:', {
+      original: vendor,
+      normalized: normalized
+    });
+    return normalized;
+  }
+
+  return vendor;
 }
 
 // Extract vendor from invoice (company name at top)
 function extractInvoiceVendor(lines: string[]): FieldCandidate[] {
   const candidates: FieldCandidate[] = [];
-  
+
   // Focus on top 5 lines for company name
   const topLines = lines.slice(0, 5);
+
   
   for (let i = 0; i < topLines.length; i++) {
     const line = topLines[i].trim();
