@@ -603,32 +603,30 @@ function extractAmountCandidates(text: string): FieldCandidate[] {
 function detectDocumentType(text: string): 'receipt' | 'invoice' {
   const upperText = text.toUpperCase();
   
-  // Invoice indicators
+  // Invoice indicators - ANY of these immediately classifies as invoice
   const invoiceKeywords = [
     'INVOICE',
     'TAX INVOICE',
-    'BILL TO',
     'TOTAL DUE',
     'BALANCE DUE',
+    'GRAND TOTAL',
     'SUBTOTAL',
     'VAT',
-    'TOTAL',
-    'BALANCE',
-    'DUE'
+    'BILL TO'
   ];
   
-  // Count invoice keywords found
-  const invoiceKeywordCount = invoiceKeywords.filter(keyword => 
+  // Check if ANY invoice keyword is found
+  const hasInvoiceKeyword = invoiceKeywords.some(keyword => 
     upperText.includes(keyword)
-  ).length;
+  );
   
   console.log('DOCUMENT_TYPE_DETECTION:', {
-    invoiceKeywordCount,
+    hasInvoiceKeyword,
     foundKeywords: invoiceKeywords.filter(keyword => upperText.includes(keyword))
   });
   
-  // If 3+ invoice keywords found, classify as invoice
-  if (invoiceKeywordCount >= 3) {
+  // Immediately classify as invoice if ANY keyword found
+  if (hasInvoiceKeyword) {
     console.log('DOCUMENT_TYPE: INVOICE');
     return 'invoice';
   }
@@ -722,48 +720,74 @@ function normalizeVendorName(vendor: string | null): string | null {
 // Extract vendor from invoice (company name at top)
 function extractInvoiceVendor(lines: string[]): FieldCandidate[] {
   const candidates: FieldCandidate[] = [];
+  const fullText = lines.join('\n').toUpperCase();
 
-  // Focus on top 5 lines for company name
-  const topLines = lines.slice(0, 5);
+  // Rule 4: If text contains EdgeChem anywhere, vendor = EdgeChem immediately
+  if (fullText.includes('EDGECHEM')) {
+    candidates.push({
+      value: 'EdgeChem',
+      confidence: 1.0,
+      sourceText: 'EdgeChem',
+      reason: 'EdgeChem found anywhere in document'
+    });
+    return candidates;
+  }
 
+  // Rule 5: If header contains FESCO, vendor = FESCO
+  if (lines.slice(0, 3).some(line => line.toUpperCase().includes('FESCO'))) {
+    candidates.push({
+      value: 'FESCO',
+      confidence: 1.0,
+      sourceText: 'FESCO',
+      reason: 'FESCO found in header'
+    });
+    return candidates;
+  }
+
+  // Rule 2: Use only top 25% of OCR lines
+  const topQuarterIndex = Math.max(1, Math.floor(lines.length * 0.25));
+  const topLines = lines.slice(0, topQuarterIndex);
+
+  // Rule 3: Product/item words to reject
+  const productWords = [
+    'PUTTY', 'PAINT', 'LTR', 'LITRE', 'QTY', 'PCS', 'ITEM', 
+    'UNIT', 'PRICE', 'DESCRIPTION', 'DRNITURE', 'FURNITURE'
+  ];
   
-  for (let i = 0; i < topLines.length; i++) {
-    const line = topLines[i].trim();
+  for (const line of topLines) {
+    let cleanLine = line.trim();
     
-    // Skip common header lines
-    if (line.match(/^(INVOICE|TAX INVOICE|BILL|RECEIPT)$/i)) continue;
+    // Remove leading noise words
+    cleanLine = cleanLine.replace(/^(INVOICE|TAX INVOICE|AR|A\/R|BILL|RECEIPT)\s+/i, '');
     
-    // Look for business indicators
-    const businessIndicators = [
-      /LLC|INC|CORP|LTD|CO\.|COMPANY|ENTERPRISES|GROUP|ASSOCIATES/i,
-      /\b(EDGEChem|EdgeChem)\b/i,  // Specific company
-      /^[A-Z][A-Z\s&]+[A-Z]$/,  // All caps business name
-      /\b(PUTTY|CHEMICAL|SUPPLIES|MATERIALS)\b/i  // Industry keywords
-    ];
+    // Rule 7: Never use long noisy lines > 40 chars
+    if (cleanLine.length > 40) continue;
     
-    let confidence = 0;
-    let reason = '';
+    // Skip empty lines or lines that become empty after cleaning
+    if (!cleanLine) continue;
     
-    if (businessIndicators[0].test(line)) {
-      confidence = 0.9;
-      reason = 'Business entity suffix';
-    } else if (businessIndicators[1].test(line)) {
-      confidence = 0.95;
-      reason = 'Known company name';
-    } else if (businessIndicators[2].test(line) && line.length > 5) {
-      confidence = 0.7;
-      reason = 'All caps business name';
-    } else if (businessIndicators[3].test(line)) {
-      confidence = 0.6;
-      reason = 'Industry keyword';
-    } else if (line.length > 3 && /^[A-Z]/.test(line) && !line.match(/\d{2,}/)) {
-      confidence = 0.4;
-      reason = 'Capitalized first line';
-    }
+    // Rule 3: Reject lines containing product/item words
+    const hasProductWord = productWords.some(word => 
+      cleanLine.toUpperCase().includes(word)
+    );
+    if (hasProductWord) continue;
     
-    if (confidence > 0) {
+    // Rule 6: Only accept clean header vendor candidates
+    if (cleanLine.length > 2 && /^[A-Z]/i.test(cleanLine)) {
+      let confidence = 0.5;
+      let reason = 'Clean header line';
+      
+      // Boost confidence for business-like names
+      if (cleanLine.match(/^(LLC|INC|CORP|LTD|CO\.|COMPANY|ENTERPRISES|GROUP|ASSOCIATES)$/i)) {
+        confidence = 0.8;
+        reason = 'Business entity suffix';
+      } else if (/^[A-Z][A-Z\s&]+[A-Z]$/i.test(cleanLine) && cleanLine.length > 5) {
+        confidence = 0.7;
+        reason = 'All caps business name';
+      }
+      
       candidates.push({
-        value: line,
+        value: cleanLine,
         confidence,
         sourceText: line,
         reason
@@ -771,6 +795,7 @@ function extractInvoiceVendor(lines: string[]): FieldCandidate[] {
     }
   }
   
+  // Rule 6: If no clean header vendor found, return empty candidates
   return candidates.sort((a, b) => b.confidence - a.confidence);
 }
 
@@ -843,13 +868,12 @@ function extractInvoiceTotal(lines: string[]): FieldCandidate[] {
   const candidates: FieldCandidate[] = [];
   const text = lines.join('\n');
   
-  // Strong patterns for invoice totals - prioritize bottom labels
+  // Strong patterns for invoice totals - only use labeled totals, no guessing
   const totalPatterns = [
-    { regex: /(?:TOTAL\s*DUE|BALANCE\s*DUE|GRAND\s*TOTAL)\s*[:\s]*\$?([\d,]+\.?\d{2})/gi, priority: 15, label: 'INVOICE_TOTAL_DUE' },
+    { regex: /(?:TOTAL\s*DUE|BALANCE\s*DUE|AMOUNT\s*DUE|GRAND\s*TOTAL)\s*[:\s]*\$?([\d,]+\.?\d{2})/gi, priority: 15, label: 'INVOICE_TOTAL_DUE' },
     { regex: /(?:TOTAL|NET\s*TOTAL)\s*[:\s]*\$?([\d,]+\.?\d{2})/gi, priority: 12, label: 'INVOICE_TOTAL' },
-    { regex: /\$([\d,]+\.\d{2})\s*(?:TOTAL\s*DUE|BALANCE\s*DUE|GRAND\s*TOTAL)/gi, priority: 11, label: 'INVOICE_MONEY_WITH_TOTAL_DUE' },
-    { regex: /\$([\d,]+\.\d{2})\s*(?:TOTAL|DUE|BALANCE)/gi, priority: 10, label: 'INVOICE_MONEY_WITH_TOTAL' },
-    { regex: /\b([\d,]+\.\d{2})\s*$/gm, priority: 5, label: 'INVOICE_BOTTOM_AMOUNT' } // Amount at end of line
+    { regex: /\$([\d,]+\.\d{2})\s*(?:TOTAL\s*DUE|BALANCE\s*DUE|AMOUNT\s*DUE|GRAND\s*TOTAL)/gi, priority: 11, label: 'INVOICE_MONEY_WITH_TOTAL_DUE' },
+    { regex: /\$([\d,]+\.\d{2})\s*(?:TOTAL|DUE|BALANCE)/gi, priority: 10, label: 'INVOICE_MONEY_WITH_TOTAL' }
   ];
   
   // First pass: look for grand total patterns
