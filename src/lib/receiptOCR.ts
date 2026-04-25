@@ -705,6 +705,9 @@ function normalizeVendorName(vendor: string | null): string | null {
     'MAYPEN': 'MAY PEN WEST'
   };
 
+  // Auto-learned vendor aliases (persistent storage would be ideal)
+  const learnedAliases: { [key: string]: string } = {};
+
   const normalized = vendorAliases[vendor.toUpperCase().trim()];
   if (normalized) {
     console.log('VENDOR_NORMALIZATION:', {
@@ -837,12 +840,14 @@ function extractInvoiceDate(lines: string[]): FieldCandidate[] {
   const candidates: FieldCandidate[] = [];
   const text = lines.join('\n');
   
-  // Look for dates with invoice context
+  // Look for dates with invoice context - prioritize labeled dates
   const invoiceDatePatterns = [
-    { regex: /(?:INVOICE\s*DATE|DATE|BILL\s*DATE)\s*[:\s]*\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/gi, priority: 10, label: 'INVOICE_DATE_LABEL' },
-    { regex: /(?:DUE\s*DATE|DUE)\s*[:\s]*\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/gi, priority: 8, label: 'DUE_DATE' },
-    { regex: /\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/g, priority: 5, label: 'STANDALONE_DATE' },
-    { regex: /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(0?[1-9]|[12]\d|3[01])[\s,]+(20\d{2})\b/gi, priority: 7, label: 'MONTH_DATE_YEAR' }
+    { regex: /(?:INVOICE\s*DATE)\s*[:\s]*\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/gi, priority: 15, label: 'INVOICE_DATE_EXACT' },
+    { regex: /(?:DATE)\s*[:\s]*\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/gi, priority: 12, label: 'DATE_LABEL' },
+    { regex: /(?:BILL\s*DATE)\s*[:\s]*\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/gi, priority: 11, label: 'BILL_DATE_LABEL' },
+    { regex: /(?:DUE\s*DATE)\s*[:\s]*\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/gi, priority: 9, label: 'DUE_DATE' },
+    { regex: /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(0?[1-9]|[12]\d|3[01])[\s,]+(20\d{2})\b/gi, priority: 7, label: 'MONTH_DATE_YEAR' },
+    { regex: /\b(0?[1-9]|[12]\d|3[01])[\/\-](0?[1-9]|1[0-2])[\/\-](20\d{2})\b/g, priority: 3, label: 'STANDALONE_DATE' }
   ];
   
   for (const pattern of invoiceDatePatterns) {
@@ -885,21 +890,42 @@ function extractInvoiceTotal(lines: string[]): FieldCandidate[] {
       const numericAmount = parseFloat(amount.replace(/,/g, ''));
       
       if (numericAmount > 0 && numericAmount < 100000) {
-        // Calculate line position for bottom preference (stronger for invoices)
+        // Calculate line position for bottom-right preference
         const lineIndex = lines.findIndex(line => line.includes(match[0]));
         const positionRatio = lineIndex / lines.length;
-        const bottomBonus = positionRatio > 0.6 ? 0.3 : 0; // Stronger bottom preference for invoices
+        const lineText = lines[lineIndex] || '';
+        
+        // Bottom zone bonus (stronger for invoices)
+        let bottomBonus = 0;
+        if (positionRatio > 0.7) {
+          bottomBonus = 0.4; // Strong bottom bonus
+        } else if (positionRatio > 0.5) {
+          bottomBonus = 0.2; // Moderate bottom bonus
+        }
+        
+        // Right-alignment bonus (amounts at end of lines are more likely totals)
+        let rightBonus = 0;
+        const trimmedLine = lineText.trim();
+        const amountPosition = trimmedLine.indexOf(match[0]);
+        const lineLength = trimmedLine.length;
+        if (amountPosition > lineLength * 0.7) {
+          rightBonus = 0.3; // Amount in right 30% of line
+        } else if (amountPosition > lineLength * 0.5) {
+          rightBonus = 0.15; // Amount in right half of line
+        }
         
         // Skip obvious line items (lines with qty, unit price, or item descriptions)
-        const lineText = lines[lineIndex] || '';
         const isLineItem = lineText.match(/(?:QTY|ITEM|DESCRIPTION|UNIT\s*PRICE|RATE|HOURS|DAYS|AMOUNT\s*\/|PER\s*(HOUR|DAY|ITEM))/i);
         
         if (!isLineItem) {
+          const totalBonus = bottomBonus + rightBonus;
           candidates.push({
             value: amount,
-            confidence: (pattern.priority * 0.1) + bottomBonus,
+            confidence: (pattern.priority * 0.1) + totalBonus,
             sourceText: match[0],
-            reason: pattern.label + (positionRatio > 0.6 ? ' (bottom)' : '')
+            reason: pattern.label + 
+              (bottomBonus > 0 ? ' (bottom)' : '') + 
+              (rightBonus > 0 ? ' (right)' : '')
           });
         }
       }
