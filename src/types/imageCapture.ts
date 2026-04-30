@@ -39,6 +39,7 @@ export interface SmartImageCaptureProps {
   title: string;
   subtitle?: string;
   mode: ImageCaptureMode;
+  scanType?: 'auto' | 'receipt' | 'invoice';
   onImageReady: (result: ImageCaptureResult) => void;
   onCancel: () => void;
   maxSize?: number;

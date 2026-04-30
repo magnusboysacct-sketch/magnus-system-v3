@@ -1,13 +1,17 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Cropper from 'react-easy-crop';
-import { Camera, Upload, X, Check, FileText, Move, Loader2 } from 'lucide-react';
+import { Camera, Upload, X, Check, FileText, Move, Loader2, AlertTriangle, Lightbulb, RotateCw, RotateCcw, Crop, Monitor, Square, Scan } from 'lucide-react';
 import type { SmartImageCaptureProps, CropArea, ImageCaptureResult } from '../types/imageCapture';
 import { useImageCapture } from '../hooks/useImageCapture';
+import { analyzeImageQuality, type ImageQualityAnalysis } from '../utils/imageUtils';
+import { PaperEdgeDetector, type PaperBounds } from '../services/documentDetection/PaperEdgeDetector';
+import { CropOptimizer, type CropSettings } from '../services/documentDetection/CropOptimizer';
 
 export default function SmartImageCapture({
   title,
   subtitle,
   mode,
+  scanType = 'auto',
   onImageReady,
   onCancel,
   maxSize,
@@ -39,47 +43,264 @@ export default function SmartImageCapture({
   });
 
   const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(0.8); // Start slightly zoomed out for larger crop area
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CropArea | null>(null);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+  const [qualityAnalysis, setQualityAnalysis] = useState<ImageQualityAnalysis | null>(null);
+  const [analyzingQuality, setAnalyzingQuality] = useState(false);
+  const [rotation, setRotation] = useState(0);
+  const [cropFrameType, setCropFrameType] = useState<'portrait' | 'landscape' | 'square'>('portrait');
+  const [cropAspectRatio, setCropAspectRatio] = useState<number>(0.7); // Default portrait
+  const [maxZoom, setMaxZoom] = useState(3);
+  const [documentBounds, setDocumentBounds] = useState<PaperBounds | null>(null);
+  const [autoFitEnabled, setAutoFitEnabled] = useState(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [ocrFillRatio, setOcrFillRatio] = useState(0);
+  const [ocrSuggestion, setOcrSuggestion] = useState<string>('');
+  const [cropOptimization, setCropOptimization] = useState<any>(null);
+  const analysisTimeoutRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Intelligent initial crop setup based on image dimensions
+  // Smart crop frame detection and setup
   useEffect(() => {
     if (state.selectedImage) {
       const img = new Image();
       img.onload = () => {
         setImageDimensions({ width: img.width, height: img.height });
         
-        if (mode === 'receipt') {
-          // For receipts: analyze aspect ratio and set intelligent crop
+        // If document bounds exist, use CropOptimizer for frame selection
+        if (documentBounds) {
+          const optimization = CropOptimizer.optimizeCrop(documentBounds, imageDimensions);
+          
+          setCropFrameType(optimization.cropSettings.frameType);
+          setCropAspectRatio(optimization.cropSettings.aspectRatio);
+          setMaxZoom(optimization.cropSettings.maxZoom);
+          setZoom(optimization.cropSettings.zoom);
+          setCrop({ x: optimization.cropSettings.x, y: optimization.cropSettings.y });
+          
+          console.log('INITIAL_FRAME_FROM_DOCUMENT_BOUNDS:', {
+            documentBounds,
+            optimization: {
+              frameType: optimization.cropSettings.frameType,
+              aspectRatio: optimization.cropSettings.aspectRatio,
+              confidence: optimization.confidence.toFixed(2),
+              reasoning: optimization.reasoning
+            }
+          });
+        } else {
+          // Fallback: use image aspect ratio when no document bounds yet
           const imageRatio = img.width / img.height;
           
-          if (imageRatio < 0.8) {
-            // Tall receipt - zoom out to show more content
-            setZoom(0.9);
-            setCrop({ x: 0, y: 5 });
-          } else if (imageRatio > 1.2) {
-            // Wide receipt - zoom in and center
-            setZoom(1.3);
-            setCrop({ x: 15, y: 10 });
+          // Default to landscape for wide documents/invoices (more aggressive)
+          if (imageRatio > 1.2) {
+            // Wide document - landscape frame
+            setCropFrameType('landscape');
+            setCropAspectRatio(1.5);
+            setMaxZoom(6);
+            setZoom(0.8); // Start zoomed out for larger crop area
+          } else if (imageRatio >= 0.8 && imageRatio <= 1.2) {
+            // Square-ish document - square frame
+            setCropFrameType('square');
+            setCropAspectRatio(1.0);
+            setMaxZoom(4);
+            setZoom(0.8);
           } else {
-            // Square-ish receipt - moderate zoom
-            setZoom(1.1);
-            setCrop({ x: 5, y: 5 });
+            // Tall document - portrait frame
+            setCropFrameType('portrait');
+            setCropAspectRatio(0.7);
+            setMaxZoom(3.5);
+            setZoom(0.8);
           }
-        } else {
-          // For other modes: use default centered crop
-          setZoom(1);
-          setCrop({ x: 0, y: 0 });
+          
+          console.log('INITIAL_FRAME_FROM_IMAGE_RATIO:', {
+            imageRatio: imageRatio.toFixed(2),
+            frameType: imageRatio > 1.2 ? 'landscape' : imageRatio >= 0.8 && imageRatio <= 1.2 ? 'square' : 'portrait',
+            aspectRatio: imageRatio > 1.2 ? 1.5 : imageRatio >= 0.8 && imageRatio <= 1.2 ? 1.0 : 0.7
+          });
         }
+        
+        setCrop({ x: 0, y: 0 });
       };
       img.src = state.selectedImage;
     }
-  }, [state.selectedImage, mode]);
+  }, [state.selectedImage, mode, documentBounds]);
+
+  // Enhanced document edge detection using professional service
+  const detectDocumentBounds = useCallback((imageSrc: string): Promise<PaperBounds | null> => {
+    console.log('DETECTING_DOCUMENT_BOUNDARIES: Using PaperEdgeDetector service');
+    return PaperEdgeDetector.detectPaperBoundaries(imageSrc, {
+      brightnessThreshold: 140,
+      contrastThreshold: 30,
+      minPaperSize: 0.15,
+      padding: 8,
+      maxProcessingTime: 500
+    });
+  }, []);
+
+  // Professional auto-fit crop using CropOptimizer service
+  const applyAutoFitCrop = useCallback(async () => {
+    if (!state.selectedImage || !autoFitEnabled || isAnalyzing) return;
+
+    setIsAnalyzing(true);
+
+    try {
+      const timeoutId = setTimeout(() => {
+        console.log('AUTO_FIT_TIMEOUT: Using default crop');
+        setIsAnalyzing(false);
+      }, 300);
+
+      console.log('APPLYING_AUTO_FIT: Using CropOptimizer service');
+      
+      const bounds = await detectDocumentBounds(state.selectedImage);
+      
+      if (!bounds) {
+        console.log('NO_DOCUMENT_BOUNDS_DETECTED: Skipping auto-fit');
+        clearTimeout(timeoutId);
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // Use CropOptimizer for professional crop optimization
+      const optimization = CropOptimizer.optimizeCrop(bounds, imageDimensions, cropFrameType);
+      
+      console.log('CROP_OPTIMIZATION_RESULT:', optimization);
+
+      // Apply optimized crop settings
+      setCropFrameType(optimization.cropSettings.frameType);
+      setCropAspectRatio(optimization.cropSettings.aspectRatio);
+      setMaxZoom(optimization.cropSettings.maxZoom);
+      setZoom(optimization.cropSettings.zoom);
+      setCrop({ 
+        x: optimization.cropSettings.x, 
+        y: optimization.cropSettings.y 
+      });
+      
+      // Store optimization for OCR fill meter
+      setCropOptimization(optimization);
+
+      clearTimeout(timeoutId);
+      setIsAnalyzing(false);
+
+      console.log('AUTO_FIT_APPLIED:', {
+        confidence: optimization.confidence.toFixed(2),
+        reasoning: optimization.reasoning,
+        fillRatio: (optimization.fillRatio * 100).toFixed(0) + '%',
+        frameType: optimization.cropSettings.frameType,
+        zoom: optimization.cropSettings.zoom.toFixed(2)
+      });
+
+    } catch (error) {
+      setIsAnalyzing(false);
+      console.error('AUTO_FIT_ERROR:', error);
+    }
+  }, [state.selectedImage, autoFitEnabled, isAnalyzing, detectDocumentBounds, imageDimensions, cropFrameType]);
+
+  // OCR Fill Meter calculation using CropOptimizer service
+  const calculateOcrFillRatio = useCallback(() => {
+    if (!documentBounds || !imageDimensions.width || !imageDimensions.height) {
+      return 0;
+    }
+
+    // Use CropOptimizer for consistent fill ratio calculation
+    return CropOptimizer.calculateFillRatio(documentBounds, imageDimensions, zoom);
+  }, [documentBounds, imageDimensions, zoom]);
+
+  // OCR Suggestion using CropOptimizer service
+  const calculateOcrSuggestion = useCallback((fillRatio: number) => {
+    return CropOptimizer.getOCRFillSuggestion(fillRatio, cropFrameType);
+  }, [cropFrameType]);
+
+  // Update OCR Fill Meter when crop changes
+  useEffect(() => {
+    const fillRatio = calculateOcrFillRatio();
+    setOcrFillRatio(fillRatio);
+    setOcrSuggestion(calculateOcrSuggestion(fillRatio));
+  }, [zoom, crop, cropFrameType, calculateOcrFillRatio, calculateOcrSuggestion]);
+
+  // Apply auto-fit when image is loaded (run once per image)
+  useEffect(() => {
+    if (state.selectedImage && autoFitEnabled && !isAnalyzing) {
+      // Clear any existing timeout
+      if (analysisTimeoutRef.current) {
+        clearTimeout(analysisTimeoutRef.current);
+      }
+      
+      // Run auto-fit with delay to prevent blocking
+      analysisTimeoutRef.current = setTimeout(() => {
+        applyAutoFitCrop();
+      }, 100);
+    }
+    
+    return () => {
+      if (analysisTimeoutRef.current) {
+        clearTimeout(analysisTimeoutRef.current);
+      }
+    };
+  }, [state.selectedImage]); // Only depend on selectedImage to prevent loops
+
+  // Analyze image quality when image is selected
+  useEffect(() => {
+    if (state.selectedImage) {
+      setAnalyzingQuality(true);
+      setQualityAnalysis(null);
+      
+      analyzeImageQuality(state.selectedImage)
+        .then(analysis => {
+          setQualityAnalysis(analysis);
+          console.log('QUALITY_ANALYSIS_COMPLETE:', analysis);
+        })
+        .catch(error => {
+          console.error('QUALITY_ANALYSIS_FAILED:', error);
+        })
+        .finally(() => {
+          setAnalyzingQuality(false);
+        });
+    }
+  }, [state.selectedImage]);
 
   const onCropComplete = useCallback((croppedArea: CropArea, croppedAreaPixels: CropArea) => {
     setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  const handleRotateLeft = useCallback(() => {
+    setRotation(prev => (prev - 90) % 360);
+  }, []);
+
+  const handleRotateRight = useCallback(() => {
+    setRotation(prev => (prev + 90) % 360);
+  }, []);
+
+  const handleCropFrameChange = useCallback((frameType: 'portrait' | 'landscape' | 'square') => {
+    let newAspectRatio: number;
+    let newMaxZoom: number;
+    
+    switch (frameType) {
+      case 'portrait':
+        newAspectRatio = 0.7;
+        newMaxZoom = 2.5;
+        break;
+      case 'square':
+        newAspectRatio = 1.0;
+        newMaxZoom = 3;
+        break;
+      case 'landscape':
+        newAspectRatio = 1.5;
+        newMaxZoom = 4;
+        break;
+    }
+    
+    setCropFrameType(frameType);
+    setCropAspectRatio(newAspectRatio);
+    setMaxZoom(newMaxZoom);
+    
+    // Adjust zoom if it exceeds new max
+    setZoom(currentZoom => Math.min(currentZoom, newMaxZoom));
+    
+    console.log('CROP_FRAME_CHANGED:', {
+      frameType,
+      aspectRatio: newAspectRatio,
+      maxZoom: newMaxZoom
+    });
   }, []);
 
   const onCrop = useCallback(async () => {
@@ -177,11 +398,11 @@ export default function SmartImageCapture({
   // Crop Step
   if (state.step === 'crop' && state.selectedImage) {
     return (
-      <div className="space-y-3">
-        {/* Header - Compact */}
-        <div className="text-center pt-1">
+      <div className="space-y-2 pt-0">
+        {/* Header - Ultra Compact */}
+        <div className="text-center pt-0 -mt-2">
           <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-          <div className="mt-1 flex justify-center">
+          <div className="mt-0.5 flex justify-center">
             <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-sm text-blue-700 shadow-sm">
               <Move className="h-4 w-4" />
               {instructions}
@@ -199,26 +420,121 @@ export default function SmartImageCapture({
           </div>
         )}
 
-        {/* Crop Container - Increased height */}
+        {/* Quality Analysis Display */}
+        {analyzingQuality && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+              <span className="text-sm text-blue-700">Analyzing image quality...</span>
+            </div>
+          </div>
+        )}
+
+        {qualityAnalysis && qualityAnalysis.overall.needsImprovement && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-800">Image Quality Tips</span>
+              </div>
+              
+              {qualityAnalysis.overall.warnings.length > 0 && (
+                <div className="space-y-1">
+                  {qualityAnalysis.overall.warnings.map((warning, index) => (
+                    <div key={index} className="flex items-center gap-2 text-sm text-amber-700">
+                      <Lightbulb className="h-3 w-3" />
+                      <span>{warning}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              <div className="text-xs text-amber-600 italic">
+                You can still proceed, but these improvements may help OCR accuracy.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Crop Container - Enlarged for better crop box size */}
         <div 
           ref={containerRef}
           className="relative overflow-hidden rounded-lg bg-slate-900"
           style={{ 
-            minHeight: mode === 'receipt' ? '450px' : '400px',
-            maxHeight: '75vh',
-            height: 'clamp(400px, 65vh, 550px)'
+            minHeight: mode === 'receipt' ? '400px' : '380px',
+            maxHeight: '65vh',
+            height: 'clamp(380px, 55vh, 500px)'
           }}
         >
-          <div className="absolute inset-0 flex items-center justify-center p-2">
+          {/* Crop Frame Controls */}
+          <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => setAutoFitEnabled(!autoFitEnabled)}
+              className={`rounded p-2 text-white transition ${
+                autoFitEnabled 
+                  ? 'bg-green-600/80 hover:bg-green-700/80' 
+                  : 'bg-slate-800/80 hover:bg-slate-700/80'
+              }`}
+              title="Auto-fit crop to document"
+            >
+              <Scan className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => handleCropFrameChange('portrait')}
+              className={`rounded p-2 text-white transition ${
+                cropFrameType === 'portrait' 
+                  ? 'bg-blue-600/80 hover:bg-blue-700/80' 
+                  : 'bg-slate-800/80 hover:bg-slate-700/80'
+              }`}
+              title="Portrait crop"
+            >
+              <Crop className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCropFrameChange('square')}
+              className={`rounded p-2 text-white transition ${
+                cropFrameType === 'square' 
+                  ? 'bg-blue-600/80 hover:bg-blue-700/80' 
+                  : 'bg-slate-800/80 hover:bg-slate-700/80'
+              }`}
+              title="Square crop"
+            >
+              <Square className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCropFrameChange('landscape')}
+              className={`rounded p-2 text-white transition ${
+                cropFrameType === 'landscape' 
+                  ? 'bg-blue-600/80 hover:bg-blue-700/80' 
+                  : 'bg-slate-800/80 hover:bg-slate-700/80'
+              }`}
+              title="Landscape crop"
+            >
+              <Monitor className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="absolute inset-0 flex items-center justify-center p-1">
             <div className="relative w-full h-full">
               <Cropper
                 image={state.selectedImage}
                 crop={crop}
                 zoom={zoom}
-                aspect={aspectRatio}
+                aspect={cropAspectRatio}
                 onCropChange={setCrop}
                 onCropComplete={onCropComplete}
                 onZoomChange={setZoom}
+                rotation={rotation}
+                minZoom={0.3}
+                maxZoom={maxZoom}
+                zoomSpeed={0.1}
                 objectFit="contain"
                 style={{
                   containerStyle: {
@@ -230,11 +546,114 @@ export default function SmartImageCapture({
                   cropAreaStyle: {
                     border: '2px solid rgba(59, 130, 246, 0.5)',
                     boxShadow: '0 0 0 9999px rgba(30, 41, 59, 0.8)'
+                  },
+                  mediaStyle: {
+                    transform: `rotate(${rotation}deg)`
                   }
                 }}
               />
             </div>
           </div>
+        </div>
+
+        {/* Zoom and Frame Indicator */}
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center gap-2">
+            <span>Zoom: {(zoom * 100).toFixed(0)}% / {(maxZoom * 100).toFixed(0)}%</span>
+            {autoFitEnabled && (
+              <span className="text-green-600 flex items-center gap-1">
+                <Scan className="h-3 w-3" />
+                Auto-fit
+              </span>
+            )}
+          </div>
+          <span className="text-blue-600 capitalize">
+            {cropFrameType} frame
+          </span>
+        </div>
+
+        {/* Analysis Status */}
+        {isAnalyzing && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-2">
+            <div className="flex items-center gap-2 text-xs text-blue-700">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Analyzing document...</span>
+            </div>
+          </div>
+        )}
+
+        {/* OCR Fill Meter */}
+        {documentBounds && (
+          <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <div className="mb-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-gray-700">OCR Fill Meter</span>
+                <span className="text-xs text-gray-500">{Math.round(ocrFillRatio * 100)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className={`h-2 rounded-full transition-all duration-200 ${
+                    ocrFillRatio < 0.3 
+                      ? 'bg-red-500' 
+                      : ocrFillRatio < 0.7 
+                        ? 'bg-yellow-500' 
+                        : 'bg-green-500'
+                  }`}
+                  style={{ width: `${ocrFillRatio * 100}%` }}
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${
+                ocrFillRatio < 0.3 
+                  ? 'bg-red-500' 
+                  : ocrFillRatio < 0.7 
+                    ? 'bg-yellow-500' 
+                    : 'bg-green-500'
+              }`} />
+              <span className={`text-xs font-medium ${
+                ocrFillRatio < 0.3 
+                  ? 'text-red-700' 
+                  : ocrFillRatio < 0.7 
+                    ? 'text-yellow-700' 
+                    : 'text-green-700'
+              }`}>
+                {ocrSuggestion}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Document Detection Status */}
+        {documentBounds && autoFitEnabled && !isAnalyzing && (
+          <div className="rounded-lg border border-orange-200 bg-orange-50 p-2">
+            <div className="flex items-center gap-2 text-xs text-orange-700">
+              <Scan className="h-3 w-3" />
+              <span>Aggressive document crop: Paper tightly fitted</span>
+            </div>
+          </div>
+        )}
+
+        {/* Manual Rotation Controls */}
+        <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={handleRotateLeft}
+            className="rounded bg-slate-100 px-3 py-1 text-slate-600 transition hover:bg-slate-200"
+            title="Rotate left"
+          >
+            <RotateCcw className="h-3 w-3 inline mr-1" />
+            Rotate Left
+          </button>
+          <button
+            type="button"
+            onClick={handleRotateRight}
+            className="rounded bg-slate-100 px-3 py-1 text-slate-600 transition hover:bg-slate-200"
+            title="Rotate right"
+          >
+            <RotateCw className="h-3 w-3 inline mr-1" />
+            Rotate Right
+          </button>
         </div>
 
         {/* Action Buttons - Enhanced and balanced */}
@@ -393,3 +812,4 @@ export default function SmartImageCapture({
     </div>
   );
 }
+

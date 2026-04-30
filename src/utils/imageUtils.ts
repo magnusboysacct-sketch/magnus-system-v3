@@ -11,6 +11,455 @@ export function createImagePreview(file: File): Promise<string> {
   });
 }
 
+// Image quality analysis results
+export interface ImageQualityAnalysis {
+  blur: {
+    detected: boolean;
+    score: number; // 0-1, higher is better
+    recommendation: string;
+  };
+  contrast: {
+    detected: boolean;
+    score: number; // 0-1, higher is better
+    recommendation: string;
+  };
+  size: {
+    detected: boolean;
+    score: number; // 0-1, higher is better
+    recommendation: string;
+  };
+  background: {
+    detected: boolean;
+    score: number; // 0-1, higher is better
+    recommendation: string;
+  };
+  overall: {
+    score: number; // 0-1, higher is better
+    needsImprovement: boolean;
+    warnings: string[];
+  };
+}
+
+// Analyze image quality before OCR
+export function analyzeImageQuality(imageSrc: string): Promise<ImageQualityAnalysis> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        // Set canvas size to a reasonable analysis size
+        const analysisSize = Math.min(img.width, img.height, 800);
+        canvas.width = analysisSize;
+        canvas.height = analysisSize;
+
+        // Draw and analyze image
+        ctx.drawImage(img, 0, 0, analysisSize, analysisSize);
+        const imageData = ctx.getImageData(0, 0, analysisSize, analysisSize);
+        const data = imageData.data;
+
+        // Perform quality analysis
+        const blurAnalysis = analyzeBlur(data, analysisSize, analysisSize);
+        const contrastAnalysis = analyzeContrast(data, analysisSize, analysisSize);
+        const sizeAnalysis = analyzeDocumentSize(img, analysisSize);
+        const backgroundAnalysis = analyzeBackground(data, analysisSize, analysisSize);
+
+        // Calculate overall score and warnings
+        const overallScore = (blurAnalysis.score + contrastAnalysis.score + sizeAnalysis.score + backgroundAnalysis.score) / 4;
+        const needsImprovement = overallScore < 0.6 || blurAnalysis.detected || contrastAnalysis.detected || sizeAnalysis.detected || backgroundAnalysis.detected;
+        
+        const warnings: string[] = [];
+        if (blurAnalysis.detected) warnings.push(blurAnalysis.recommendation);
+        if (contrastAnalysis.detected) warnings.push(contrastAnalysis.recommendation);
+        if (sizeAnalysis.detected) warnings.push(sizeAnalysis.recommendation);
+        if (backgroundAnalysis.detected) warnings.push(backgroundAnalysis.recommendation);
+
+        const analysis: ImageQualityAnalysis = {
+          blur: blurAnalysis,
+          contrast: contrastAnalysis,
+          size: sizeAnalysis,
+          background: backgroundAnalysis,
+          overall: {
+            score: overallScore,
+            needsImprovement,
+            warnings
+          }
+        };
+
+        console.log('IMAGE_QUALITY_ANALYSIS:', analysis);
+        resolve(analysis);
+      } catch (error) {
+        console.error('IMAGE_QUALITY_ANALYSIS_ERROR:', error);
+        reject(error);
+      }
+    };
+
+    img.onerror = () => reject(new Error('Failed to load image for analysis'));
+    img.src = imageSrc;
+  });
+}
+
+// Analyze image blur using Laplacian variance
+function analyzeBlur(data: Uint8ClampedArray, width: number, height: number): { detected: boolean; score: number; recommendation: string } {
+  let laplacianSum = 0;
+  const pixelCount = width * height;
+
+  // Simple Laplacian kernel for edge detection
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const idx = (y * width + x) * 4;
+      
+      // Get surrounding pixels (grayscale)
+      const center = data[idx];
+      const top = data[((y - 1) * width + x) * 4];
+      const bottom = data[((y + 1) * width + x) * 4];
+      const left = data[(y * width + (x - 1)) * 4];
+      const right = data[(y * width + (x + 1)) * 4];
+      
+      // Laplacian operator
+      const laplacian = -4 * center + top + bottom + left + right;
+      laplacianSum += Math.abs(laplacian);
+    }
+  }
+
+  const variance = laplacianSum / pixelCount;
+  const score = Math.min(1, variance / 100); // Normalize to 0-1
+  const detected = score < 0.3; // Threshold for blur detection
+
+  return {
+    detected,
+    score,
+    recommendation: detected ? "Move closer to document" : ""
+  };
+}
+
+// Analyze image contrast
+function analyzeContrast(data: Uint8ClampedArray, width: number, height: number): { detected: boolean; score: number; recommendation: string } {
+  let minBrightness = 255;
+  let maxBrightness = 0;
+  const pixelCount = width * height;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    minBrightness = Math.min(minBrightness, brightness);
+    maxBrightness = Math.max(maxBrightness, brightness);
+  }
+
+  const contrast = maxBrightness - minBrightness;
+  const score = Math.min(1, contrast / 200); // Normalize to 0-1
+  const detected = score < 0.4; // Threshold for low contrast
+
+  return {
+    detected,
+    score,
+    recommendation: detected ? "Use brighter light" : ""
+  };
+}
+
+// Analyze document size in frame
+function analyzeDocumentSize(img: HTMLImageElement, analysisSize: number): { detected: boolean; score: number; recommendation: string } {
+  // Simple heuristic: if the original image is much larger than analysis size, document might be too small
+  const sizeRatio = Math.min(img.width, img.height) / analysisSize;
+  const score = Math.min(1, sizeRatio / 2); // Normalize to 0-1
+  const detected = score < 0.5; // Threshold for small document
+
+  return {
+    detected,
+    score,
+    recommendation: detected ? "Crop tighter" : ""
+  };
+}
+
+// Analyze background darkness
+function analyzeBackground(data: Uint8ClampedArray, width: number, height: number): { detected: boolean; score: number; recommendation: string } {
+  let totalBrightness = 0;
+  const pixelCount = width * height;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    totalBrightness += brightness;
+  }
+
+  const avgBrightness = totalBrightness / pixelCount;
+  const score = avgBrightness / 255; // Normalize to 0-1
+  const detected = score < 0.3; // Threshold for dark background
+
+  return {
+    detected,
+    score,
+    recommendation: detected ? "Place on plain background" : ""
+  };
+}
+
+// Invoice-specific preprocessing for small faint dates
+export function createInvoiceProcessedImage(file: File, options: ProcessingOptions = { mode: 'fast' }): Promise<ProcessingResult> {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    const timings: { [stage: string]: number } = {};
+    
+    options.onProgress?.('Preparing invoice image...');
+    
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      reject(new Error('Could not get canvas context'));
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      try {
+        console.log('=== INVOICE PREPROCESSING START ===');
+        console.log('INPUT_INVOICE_IMAGE:', {
+          width: img.width,
+          height: img.height,
+          size: file.size,
+          name: file.name,
+          aspectRatio: (img.width / img.height).toFixed(2)
+        });
+
+        // Step 1: Enlarge 2x for better date clarity
+        const enlargeStart = Date.now();
+        const enlargedCanvas = document.createElement('canvas');
+        const enlargedCtx = enlargedCanvas.getContext('2d');
+        if (!enlargedCtx) {
+          reject(new Error('Could not get enlarged canvas context'));
+          return;
+        }
+        
+        // Double the dimensions for better OCR
+        enlargedCanvas.width = img.width * 2;
+        enlargedCanvas.height = img.height * 2;
+        
+        // Use high-quality scaling
+        enlargedCtx.imageSmoothingEnabled = true;
+        enlargedCtx.imageSmoothingQuality = 'high';
+        enlargedCtx.drawImage(img, 0, 0, enlargedCanvas.width, enlargedCanvas.height);
+        
+        timings.enlarge = Date.now() - enlargeStart;
+        console.log('ENLARGE_COMPLETE:', {
+          originalSize: { width: img.width, height: img.height },
+          enlargedSize: { width: enlargedCanvas.width, height: enlargedCanvas.height },
+          timing: timings.enlarge + 'ms'
+        });
+
+        // Step 2: Apply strong grayscale conversion
+        const grayscaleStart = Date.now();
+        const grayscaleCanvas = applyInvoiceGrayscale(enlargedCanvas);
+        timings.grayscale = Date.now() - grayscaleStart;
+        console.log('INVOICE_GRAYSCALE_COMPLETE:', { timing: timings.grayscale + 'ms' });
+
+        // Step 3: Apply stronger contrast boost
+        const contrastStart = Date.now();
+        const contrastCanvas = applyInvoiceContrastBoost(grayscaleCanvas);
+        timings.contrast = Date.now() - contrastStart;
+        console.log('INVOICE_CONTRAST_COMPLETE:', { timing: timings.contrast + 'ms' });
+
+        // Step 4: Apply text sharpening
+        const sharpenStart = Date.now();
+        const sharpenCanvas = applyInvoiceTextSharpening(contrastCanvas);
+        timings.sharpen = Date.now() - sharpenStart;
+        console.log('INVOICE_SHARPEN_COMPLETE:', { timing: timings.sharpen + 'ms' });
+
+        // Step 5: Apply light brightening
+        const brightenStart = Date.now();
+        const brightenedCanvas = applyInvoiceLightBrightening(sharpenCanvas);
+        timings.brighten = Date.now() - brightenStart;
+        console.log('INVOICE_BRIGHTEN_COMPLETE:', { timing: timings.brighten + 'ms' });
+
+        // Step 6: Prioritize top 35% area clarity (where dates usually are)
+        const topAreaStart = Date.now();
+        const finalCanvas = applyInvoiceTopAreaEnhancement(brightenedCanvas);
+        timings.topArea = Date.now() - topAreaStart;
+        console.log('INVOICE_TOP_AREA_COMPLETE:', { timing: timings.topArea + 'ms' });
+
+        // Step 7: Convert to file
+        const fileStart = Date.now();
+        finalCanvas.toBlob((blob) => {
+          timings.file = Date.now() - fileStart;
+          
+          if (blob) {
+            const processedFile = new File([blob], `invoice_${file.name}`, {
+              type: 'image/jpeg',
+              lastModified: Date.now()
+            });
+            
+            const totalTime = Date.now() - startTime;
+            console.log('INVOICE_PREPROCESSING_COMPLETE:', {
+              mode: 'invoice',
+              totalTime: totalTime + 'ms',
+              timings,
+              finalDimensions: { width: finalCanvas.width, height: finalCanvas.height },
+              fileSize: processedFile.size
+            });
+            
+            resolve({
+              file: processedFile,
+              mode: 'invoice',
+              timings,
+              dimensions: { width: finalCanvas.width, height: finalCanvas.height }
+            });
+          } else {
+            reject(new Error('Failed to create invoice processed image'));
+          }
+        }, 'image/jpeg', 0.90); // Higher quality for invoice text
+
+      } catch (error) {
+        console.error('INVOICE_PREPROCESSING_ERROR:', error);
+        reject(error);
+      }
+    };
+
+    img.onerror = () => reject(new Error('Failed to load invoice image'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// Invoice-specific grayscale conversion
+function applyInvoiceGrayscale(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  for (let i = 0; i < data.length; i += 4) {
+    // Enhanced grayscale formula for better text contrast
+    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    data[i] = gray;     // Red
+    data[i + 1] = gray; // Green
+    data[i + 2] = gray; // Blue
+    // Alpha remains unchanged
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+// Invoice-specific stronger contrast boost
+function applyInvoiceContrastBoost(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  // Stronger contrast factor for invoice text
+  const contrast = 1.8; // Increased from 1.5
+  const factor = (259 * (contrast * 100 + 255)) / (255 * (259 - contrast * 100));
+
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = factor * (data[i] - 128) + 128;
+    data[i + 1] = factor * (data[i + 1] - 128) + 128;
+    data[i + 2] = factor * (data[i + 2] - 128) + 128;
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+// Invoice-specific text sharpening
+function applyInvoiceTextSharpening(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const tempData = new Uint8ClampedArray(data);
+  
+  // Enhanced sharpening kernel for text
+  const sharpenKernel = [
+    0, -1, 0,
+    -1, 6, -1,
+    0, -1, 0
+  ];
+  
+  for (let i = 0; i < data.length; i += 4) {
+    const pixelIndex = i / 4;
+    const x = pixelIndex % canvas.width;
+    const y = Math.floor(pixelIndex / canvas.width);
+    
+    let sharpened = data[i]; // Default to original
+    
+    if (x > 0 && x < canvas.width - 1 && y > 0 && y < canvas.height - 1) {
+      let sharpenSum = 0;
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const neighborIndex = ((y + ky) * canvas.width + (x + kx)) * 4;
+          const kernelIndex = (ky + 1) * 3 + (kx + 1);
+          sharpenSum += tempData[neighborIndex] * sharpenKernel[kernelIndex];
+        }
+      }
+      sharpened = Math.min(255, Math.max(0, sharpenSum));
+    }
+    
+    data[i] = sharpened;
+    data[i + 1] = sharpened;
+    data[i + 2] = sharpened;
+  }
+  
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+// Invoice-specific light brightening
+function applyInvoiceLightBrightening(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  // Light brightening factor
+  const brightness = 15; // Slight brightening
+
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = Math.min(255, data[i] + brightness);
+    data[i + 1] = Math.min(255, data[i + 1] + brightness);
+    data[i + 2] = Math.min(255, data[i + 2] + brightness);
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+// Invoice-specific top 35% area enhancement (where dates usually are)
+function applyInvoiceTopAreaEnhancement(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+
+  // Top 35% area where dates are usually located
+  const topAreaHeight = Math.floor(canvas.height * 0.35);
+  const topAreaPixels = canvas.width * topAreaHeight * 4;
+
+  // Apply additional enhancement to top area
+  for (let i = 0; i < topAreaPixels && i < data.length; i += 4) {
+    // Extra contrast for date area
+    const contrast = 1.2;
+    const factor = (259 * (contrast * 100 + 255)) / (255 * (259 - contrast * 100));
+    
+    data[i] = factor * (data[i] - 128) + 128;
+    data[i + 1] = factor * (data[i + 1] - 128) + 128;
+    data[i + 2] = factor * (data[i + 2] - 128) + 128;
+    
+    // Clamp values
+    data[i] = Math.min(255, Math.max(0, data[i]));
+    data[i + 1] = Math.min(255, Math.max(0, data[i + 1]));
+    data[i + 2] = Math.min(255, Math.max(0, data[i + 2]));
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
 // Performance-optimized preprocessing with FAST/DEEP modes
 export interface ProcessingOptions {
   mode: 'fast' | 'deep';
@@ -1299,6 +1748,214 @@ export function validateImageFile(file: File): { valid: boolean; error?: string 
   }
 
   return { valid: true };
+}
+
+// Enhanced image processing utilities for document detection
+
+export interface ImageProcessingOptions {
+  brightness?: number;
+  contrast?: number;
+  sharpen?: boolean;
+  removeShadows?: boolean;
+}
+
+/**
+ * Enhanced image preprocessing for document detection
+ */
+export function preprocessImageForDetection(
+  imageSrc: string, 
+  options: ImageProcessingOptions = {}
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        canvas.width = img.width;
+        canvas.height = img.height;
+        
+        // Apply preprocessing
+        ctx.filter = buildCanvasFilter(options);
+        ctx.drawImage(img, 0, 0);
+        
+        // Convert to data URL
+        const processedImage = canvas.toDataURL('image/jpeg', 0.9);
+        resolve(processedImage);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = imageSrc;
+  });
+}
+
+/**
+ * Build canvas filter string from processing options
+ */
+function buildCanvasFilter(options: ImageProcessingOptions): string {
+  const filters: string[] = [];
+  
+  if (options.brightness) {
+    filters.push(`brightness(${options.brightness})`);
+  }
+  
+  if (options.contrast) {
+    filters.push(`contrast(${options.contrast})`);
+  }
+  
+  if (options.sharpen) {
+    filters.push('contrast(1.1) brightness(1.05)');
+  }
+  
+  if (options.removeShadows) {
+    filters.push('brightness(1.2) contrast(1.1)');
+  }
+  
+  return filters.join(' ') || 'none';
+}
+
+/**
+ * Calculate image quality metrics for document detection
+ */
+export function calculateImageQualityMetrics(imageSrc: string): Promise<{
+  sharpness: number;
+  contrast: number;
+  brightness: number;
+  noise: number;
+  overall: number;
+}> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        // Use smaller size for analysis
+        const analysisSize = Math.min(img.width, img.height, 400);
+        canvas.width = analysisSize;
+        canvas.height = analysisSize;
+        
+        ctx.drawImage(img, 0, 0, analysisSize, analysisSize);
+        const imageData = ctx.getImageData(0, 0, analysisSize, analysisSize);
+        const data = imageData.data;
+        
+        // Calculate metrics
+        const brightness = calculateAverageBrightness(data);
+        const contrast = calculateContrast(data);
+        const sharpness = calculateSharpness(data, analysisSize, analysisSize);
+        const noise = calculateNoise(data);
+        
+        const overall = (brightness + contrast + sharpness + (1 - noise)) / 4;
+        
+        resolve({
+          sharpness,
+          contrast,
+          brightness,
+          noise,
+          overall
+        });
+      } catch (error) {
+        reject(error);
+      }
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = imageSrc;
+  });
+}
+
+/**
+ * Calculate average brightness
+ */
+function calculateAverageBrightness(data: Uint8ClampedArray): number {
+  let totalBrightness = 0;
+  const pixelCount = data.length / 4;
+  
+  for (let i = 0; i < data.length; i += 4) {
+    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    totalBrightness += brightness;
+  }
+  
+  return totalBrightness / pixelCount / 255; // Normalize to 0-1
+}
+
+/**
+ * Calculate contrast using standard deviation
+ */
+function calculateContrast(data: Uint8ClampedArray): number {
+  const brightnesses: number[] = [];
+  
+  for (let i = 0; i < data.length; i += 4) {
+    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    brightnesses.push(brightness);
+  }
+  
+  const mean = brightnesses.reduce((a, b) => a + b, 0) / brightnesses.length;
+  const variance = brightnesses.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / brightnesses.length;
+  const standardDeviation = Math.sqrt(variance);
+  
+  return Math.min(standardDeviation / 128, 1); // Normalize to 0-1
+}
+
+/**
+ * Calculate sharpness using Laplacian operator
+ */
+function calculateSharpness(data: Uint8ClampedArray, width: number, height: number): number {
+  let sharpnessSum = 0;
+  let pixelCount = 0;
+  
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const idx = (y * width + x) * 4;
+      
+      // Simple Laplacian kernel
+      const center = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+      const top = ((data[((y - 1) * width + x) * 4] + data[((y - 1) * width + x) * 4 + 1] + data[((y - 1) * width + x) * 4 + 2]) / 3);
+      const bottom = ((data[((y + 1) * width + x) * 4] + data[((y + 1) * width + x) * 4 + 1] + data[((y + 1) * width + x) * 4 + 2]) / 3);
+      const left = ((data[(y * width + (x - 1)) * 4] + data[(y * width + (x - 1)) * 4 + 1] + data[(y * width + (x - 1)) * 4 + 2]) / 3);
+      const right = ((data[(y * width + (x + 1)) * 4] + data[(y * width + (x + 1)) * 4 + 1] + data[(y * width + (x + 1)) * 4 + 2]) / 3);
+      
+      const laplacian = Math.abs(4 * center - top - bottom - left - right);
+      sharpnessSum += laplacian;
+      pixelCount++;
+    }
+  }
+  
+  const averageSharpness = pixelCount > 0 ? sharpnessSum / pixelCount : 0;
+  return Math.min(averageSharpness / 255, 1); // Normalize to 0-1
+}
+
+/**
+ * Calculate noise level
+ */
+function calculateNoise(data: Uint8ClampedArray): number {
+  let noiseSum = 0;
+  let pixelCount = 0;
+  
+  for (let i = 0; i < data.length - 8; i += 4) {
+    const current = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    const next = (data[i + 4] + data[i + 5] + data[i + 6]) / 3;
+    
+    const difference = Math.abs(current - next);
+    noiseSum += difference;
+    pixelCount++;
+  }
+  
+  const averageNoise = pixelCount > 0 ? noiseSum / pixelCount : 0;
+  return Math.min(averageNoise / 50, 1); // Normalize to 0-1
 }
 
 export function getAspectRatioForMode(mode: import('../types/imageCapture').ImageCaptureMode): number | undefined {

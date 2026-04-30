@@ -45,8 +45,10 @@ export function IDOCRReview({ ocrResult, onAccept, onEdit, onCancel }: IDOCRRevi
   };
 
   const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 80) return 'text-green-600';
-    if (confidence >= 60) return 'text-yellow-600';
+    // Convert to percentage if in decimal format
+    const confidencePercent = confidence < 1 ? confidence * 100 : confidence;
+    if (confidencePercent >= 80) return 'text-green-600';
+    if (confidencePercent >= 60) return 'text-yellow-600';
     return 'text-red-600';
   };
 
@@ -79,7 +81,7 @@ export function IDOCRReview({ ocrResult, onAccept, onEdit, onCancel }: IDOCRRevi
           </div>
           <div className="flex items-center gap-2">
             <span className={`text-sm font-medium ${getConfidenceColor(ocrResult.confidence)}`}>
-              {Math.round(ocrResult.confidence)}% confidence
+              {ocrResult.confidence >= 1 ? ocrResult.confidence.toFixed(1) : Math.round(ocrResult.confidence * 100)}% confidence
             </span>
           </div>
         </div>
@@ -88,7 +90,7 @@ export function IDOCRReview({ ocrResult, onAccept, onEdit, onCancel }: IDOCRRevi
       {/* Content */}
       <div className="p-6">
         {/* Confidence Warning */}
-        {ocrResult.confidence < 70 && (
+        {(ocrResult.confidence < 1 ? ocrResult.confidence < 0.7 : ocrResult.confidence < 70) && (
           <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />

@@ -169,7 +169,7 @@ export function OCRPreview({ ocrResult, onAccept, onEdit }: OCRPreviewProps) {
               Limited data detected
             </h4>
             <p className="text-xs text-yellow-700 mb-3">
-              The receipt was scanned with {Math.round(confidenceLevel * 100)}% confidence, but we couldn't extract structured information.
+              The receipt was scanned with {confidenceLevel >= 1 ? confidenceLevel.toFixed(1) : Math.round(confidenceLevel * 100)}% confidence, but we couldn't extract structured information.
               Raw OCR text is available below for manual entry.
             </p>
             
@@ -218,7 +218,7 @@ export function OCRPreview({ ocrResult, onAccept, onEdit }: OCRPreviewProps) {
           </div>
         </div>
         <span className={`text-xs font-medium ${confidenceColor}`}>
-          {Math.round(confidenceLevel * 100)}% confidence
+          {confidenceLevel >= 1 ? confidenceLevel.toFixed(1) : Math.round(confidenceLevel * 100)}% confidence
         </span>
       </div>
 
@@ -247,7 +247,13 @@ export function OCRPreview({ ocrResult, onAccept, onEdit }: OCRPreviewProps) {
           <div>
             <div className="text-xs font-medium text-slate-500 mb-1">Amount</div>
             <div className="text-sm font-medium text-slate-900">
-              ${ocrResult.amount.toFixed(2)}
+              ${(() => {
+                const amountNumber = 
+                  typeof ocrResult.amount === "number"
+                    ? ocrResult.amount
+                    : Number(String(ocrResult.amount).replace(/[^0-9.-]/g, ""));
+                return Number.isFinite(amountNumber) ? amountNumber.toFixed(2) : "Not detected";
+              })()}
             </div>
           </div>
         )}
@@ -255,8 +261,14 @@ export function OCRPreview({ ocrResult, onAccept, onEdit }: OCRPreviewProps) {
         {ocrResult.tax && (
           <div>
             <div className="text-xs font-medium text-slate-500 mb-1">Tax</div>
-            <div className="text-sm text-slate-900">
-              ${ocrResult.tax.toFixed(2)}
+            <div className="text-sm font-medium text-slate-900">
+              ${(() => {
+                const taxNumber = 
+                  typeof ocrResult.tax === "number"
+                    ? ocrResult.tax
+                    : Number(String(ocrResult.tax).replace(/[^0-9.-]/g, ""));
+                return Number.isFinite(taxNumber) ? taxNumber.toFixed(2) : "Not detected";
+              })()}
             </div>
           </div>
         )}

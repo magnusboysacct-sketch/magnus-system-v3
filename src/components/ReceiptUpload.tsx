@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
-import { Upload, X, FileText, Image, Loader as Loader2, CircleCheck as CheckCircle } from 'lucide-react';
-import { uploadReceipt, type OCRResult } from '../lib/receiptOCR';
+import { Upload, X, FileText, Image, Loader as Loader2, CircleCheck as CheckCircle, ChevronDown } from 'lucide-react';
+import { uploadReceipt, type OCRResult, type ScanType } from '../lib/receiptOCR';
 import SmartImageCapture from './SmartImageCapture';
 import { BaseModal } from './common/BaseModal';
 
@@ -21,6 +21,7 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
   const [showImageCapture, setShowImageCapture] = useState(false);
   const [initialFile, setInitialFile] = useState<File | null>(null);
   const [ocrDebug, setOcrDebug] = useState<any>(null);
+  const [scanType, setScanType] = useState<ScanType>('auto');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -174,7 +175,7 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
       });
       console.log('OCR_CONTEXT:', { companyId, userId });
       
-      const result = await uploadReceipt(selectedFile, companyId, userId);
+      const result = await uploadReceipt(selectedFile, companyId, userId, scanType);
       
       console.log('=== OCR PIPELINE: UPLOAD RECEIPT RESULT ===');
       const debugInfo = {
@@ -262,6 +263,27 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
 
   return (
     <div className="space-y-4">
+      {/* Scan Type Dropdown */}
+      <div className="bg-white rounded-lg border border-slate-200 p-3">
+        <label className="block text-sm font-medium text-slate-700 mb-2">
+          Scan Type
+        </label>
+        <div className="relative">
+          <select
+            value={scanType}
+            onChange={(e) => setScanType(e.target.value as ScanType)}
+            className="w-full appearance-none bg-white border border-slate-300 rounded-lg px-3 py-2 pr-8 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="auto">Auto Detect</option>
+            <option value="receipt">Expense Receipt</option>
+            <option value="invoice">Billing / Invoice</option>
+          </select>
+          <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+            <ChevronDown className="w-4 h-4 text-slate-400" />
+          </div>
+        </div>
+      </div>
+
       {!selectedFile ? (
         <div
           onClick={() => fileInputRef.current?.click()}
@@ -352,7 +374,15 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
             <p><strong>Has OCR Result:</strong> {ocrDebug.hasOcrResult ? 'Yes' : 'No'}</p>
             {ocrDebug.hasOcrResult && ocrDebug.ocrResult !== 'NO OCR RESULT' && (
               <>
-                <p><strong>Confidence:</strong> {(ocrDebug.ocrResult.confidence * 100).toFixed(1)}%</p>
+                <p><strong>Confidence:</strong> {(() => {
+                  const confidenceNumber = 
+                    typeof ocrDebug.ocrResult.confidence === "number"
+                      ? ocrDebug.ocrResult.confidence
+                      : Number(String(ocrDebug.ocrResult.confidence).replace(/[^0-9.-]/g, ""));
+                  return Number.isFinite(confidenceNumber) ? 
+                    (confidenceNumber >= 1 ? confidenceNumber.toFixed(1) : (confidenceNumber * 100).toFixed(1)) + '%' 
+                    : 'Not detected';
+                })()}</p>
                 <p><strong>Raw Text Length:</strong> {ocrDebug.ocrResult.rawTextLength}</p>
                 <p><strong>Vendor:</strong> {ocrDebug.ocrResult.vendor || 'Not detected'}</p>
                 <p><strong>Date:</strong> {ocrDebug.ocrResult.date || 'Not detected'}</p>
@@ -369,9 +399,10 @@ export function ReceiptUpload({ companyId, userId, onUploadComplete, onCancel }:
         <BaseModal isOpen={showImageCapture} onClose={handleImageCaptureCancel} size="md">
           <div className="p-4 sm:p-6">
               <SmartImageCapture
-                title="Crop Receipt Photo"
-                subtitle="Adjust the crop area to capture the receipt details"
+                title={`Crop ${scanType === 'invoice' ? 'Invoice' : 'Receipt'} Photo`}
+                subtitle={`Adjust the crop area to capture the ${scanType === 'invoice' ? 'invoice' : 'receipt'} details`}
                 mode="receipt"
+                scanType={scanType}
                 onImageReady={handleImageCapture}
                 onCancel={handleImageCaptureCancel}
                 maxSize={2000}
