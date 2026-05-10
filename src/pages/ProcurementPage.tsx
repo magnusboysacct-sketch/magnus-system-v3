@@ -1433,15 +1433,15 @@ function DocumentView({
                 {/* Workflow Progress */}
                 <div className="flex items-center gap-2">
                   <div className="text-xs text-slate-400">
-                    Step {documentWorkflow.current_approval_step} of {workflowSteps.length}
+                    Step {documentWorkflow?.current_approval_step || 0} of {workflowSteps.length}
                   </div>
                   {workflowSteps.map((step, index) => (
                     <div
                       key={step.id}
                       className={`w-2 h-2 rounded-full ${
-                        index < documentWorkflow.current_approval_step - 1
+                        index < (documentWorkflow?.current_approval_step || 0) - 1
                           ? 'bg-green-500'
-                          : index === documentWorkflow.current_approval_step - 1
+                          : index === (documentWorkflow?.current_approval_step || 0) - 1
                           ? 'bg-blue-500'
                           : 'bg-slate-600'
                       }`}
@@ -1451,9 +1451,9 @@ function DocumentView({
                 </div>
 
                 {/* Current Required Role */}
-                {!documentWorkflow.is_fully_approved && workflowSteps[documentWorkflow.current_approval_step - 1] && (
+                {!documentWorkflow?.is_fully_approved && workflowSteps[(documentWorkflow?.current_approval_step || 0) - 1] && (
                   <div className="px-2 py-1 rounded text-xs font-medium bg-amber-900/30 border border-amber-900/50 text-amber-300">
-                    Requires {workflowSteps[documentWorkflow.current_approval_step - 1].required_role} approval
+                    Requires {workflowSteps[(documentWorkflow?.current_approval_step || 0) - 1]?.required_role} approval
                   </div>
                 )}
 
@@ -1655,7 +1655,7 @@ function DocumentView({
                   )}
                   {!canApprove && !documentWorkflow?.is_fully_approved && (
                     <div className="px-3 py-2 rounded-lg bg-slate-800/30 border border-slate-700 text-slate-500 text-sm">
-                      {workflowSteps[documentWorkflow.current_approval_step - 1]?.required_role} approval required
+                      {workflowSteps[(documentWorkflow?.current_approval_step || 0) - 1]?.required_role} approval required
                     </div>
                   )}
                 </div>
