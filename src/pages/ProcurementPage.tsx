@@ -1439,9 +1439,9 @@ function DocumentView({
                     <div
                       key={step.id}
                       className={`w-2 h-2 rounded-full ${
-                        index < (documentWorkflow?.current_approval_step || 0) - 1
+                        index < Math.max(0, (documentWorkflow?.current_approval_step || 1) - 1)
                           ? 'bg-green-500'
-                          : index === (documentWorkflow?.current_approval_step || 0) - 1
+                          : index === Math.max(0, (documentWorkflow?.current_approval_step || 1) - 1)
                           ? 'bg-blue-500'
                           : 'bg-slate-600'
                       }`}
@@ -1451,9 +1451,9 @@ function DocumentView({
                 </div>
 
                 {/* Current Required Role */}
-                {!documentWorkflow?.is_fully_approved && workflowSteps[(documentWorkflow?.current_approval_step || 0) - 1] && (
+                {!documentWorkflow?.is_fully_approved && workflowSteps[Math.max(0, (documentWorkflow?.current_approval_step || 1) - 1)] && (
                   <div className="px-2 py-1 rounded text-xs font-medium bg-amber-900/30 border border-amber-900/50 text-amber-300">
-                    Requires {workflowSteps[(documentWorkflow?.current_approval_step || 0) - 1]?.required_role} approval
+                    Requires {workflowSteps[Math.max(0, (documentWorkflow?.current_approval_step || 1) - 1)]?.required_role} approval
                   </div>
                 )}
 
@@ -1655,7 +1655,7 @@ function DocumentView({
                   )}
                   {!canApprove && !documentWorkflow?.is_fully_approved && (
                     <div className="px-3 py-2 rounded-lg bg-slate-800/30 border border-slate-700 text-slate-500 text-sm">
-                      {workflowSteps[(documentWorkflow?.current_approval_step || 0) - 1]?.required_role} approval required
+                      {workflowSteps[Math.max(0, (documentWorkflow?.current_approval_step || 1) - 1)]?.required_role} approval required
                     </div>
                   )}
                 </div>
