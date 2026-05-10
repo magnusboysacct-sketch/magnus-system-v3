@@ -153,19 +153,6 @@ SELECT
 FROM conflict_projects
 WHERE conflict_type IN ('multiple_companies', 'no_company');
 
--- =====================================================
--- HANDLE ORPHANED PROJECTS
--- =====================================================
-
-UPDATE projects 
-SET company_id = NULL,
-  updated_at = now()
-WHERE id IN (
-  SELECT p.id 
-  FROM projects p
-  LEFT JOIN project_members pm ON p.id = pm.project_id
-  WHERE pm.project_id IS NULL
-);
 
 -- =====================================================
 -- RLS: Update project policies to use company_id
