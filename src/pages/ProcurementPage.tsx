@@ -1461,7 +1461,7 @@ function DocumentView({
                 {getDocumentApproval()?.status && (
                   <div className="flex items-center gap-2">
                     <div className={`px-2 py-1 rounded text-xs font-medium ${
-                      documentWorkflow.is_fully_approved 
+                      documentWorkflow?.is_fully_approved 
                         ? 'bg-green-600 text-white'
                         : getDocumentApproval()?.status === 'approved'
                         ? 'bg-blue-600 text-white'
@@ -1469,7 +1469,7 @@ function DocumentView({
                         ? 'bg-red-600 text-white'
                         : 'bg-slate-600 text-white'
                     }`}>
-                      {documentWorkflow.is_fully_approved 
+                      {documentWorkflow?.is_fully_approved 
                         ? 'Fully Approved'
                         : getDocumentApproval()?.status
                       }
@@ -1498,7 +1498,7 @@ function DocumentView({
                       Emergency
                     </button>
                   )}
-                  {!documentWorkflow.is_fully_approved && (
+                  {!documentWorkflow?.is_fully_approved && (
                     <button
                       onClick={() => updateApproval('pending', 'Status reset for re-evaluation')}
                       className="text-xs underline hover:text-blue-300"
