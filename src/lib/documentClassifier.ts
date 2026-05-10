@@ -167,17 +167,34 @@ const DOCUMENT_KEYWORDS: Record<DocumentType, KeywordDefinition[]> = {
     { keyword: 'NET PAY', weight: 5, variants: ['NET PAY', 'NET PAY'] }
   ],
 
-  // ID cards
+  // ID cards - Enhanced Jamaican ID detection
   id_card: [
-    { keyword: 'DRIVER', weight: 10, variants: ['DRIVER', 'DRIVR'] },
-    { keyword: 'LICENCE', weight: 10, variants: ['LICENCE', 'LICENSE', 'LICENC'] },
-    { keyword: 'NATIONAL ID', weight: 10, variants: ['NATIONAL ID', 'NATIONAL ID'] },
-    { keyword: 'IDENTIFICATION', weight: 9, variants: ['IDENTIFICATION', 'IDNTFCTN'] },
-    { keyword: 'DATE OF BIRTH', weight: 8, variants: ['DATE OF BIRTH', 'DOB', 'D.O.B.'] },
-    { keyword: 'EXPIRY', weight: 7, variants: ['EXPIRY', 'EXPIRY', 'EXP'] },
-    { keyword: 'ISSUED', weight: 6, variants: ['ISSUED', 'ISSUD'] },
-    { keyword: 'JAMAICA', weight: 6, variants: ['JAMAICA', 'JAMAIC'] },
-    { keyword: 'CLASS', weight: 5, variants: ['CLASS', 'CLASS'] }
+    // Primary ID indicators
+    { keyword: 'NATIONAL IDENTITY CARD', weight: 10, variants: ['NATIONAL IDENTITY CARD', 'NATL IDENTITY CARD', 'NATIONAL ID CARD'] },
+    { keyword: 'NATIONAL ID', weight: 10, variants: ['NATIONAL ID', 'NATL ID', 'NATIONALIDENTITY'] },
+    { keyword: 'DRIVER', weight: 10, variants: ['DRIVER', 'DRIVR', 'DRIVFR'] },
+    { keyword: 'LICENCE', weight: 10, variants: ['LICENCE', 'LICENSE', 'LICENC', 'LICFNCE', 'LICNSE'] },
+    { keyword: 'DRIVER LICENCE', weight: 10, variants: ['DRIVER LICENCE', 'DRIVERS LICENSE', 'DRIVERLICENCE'] },
+    { keyword: 'IDENTIFICATION', weight: 9, variants: ['IDENTIFICATION', 'IDNTFCTN', 'IDENTIFICATON'] },
+    
+    // Tax and registration
+    { keyword: 'TRN', weight: 9, variants: ['TRN', 'T.R.N.', 'TAX RELIEF NUMBER', 'TAX REGISTRATION NUMBER'] },
+    { keyword: 'TAX REGISTRATION NUMBER', weight: 9, variants: ['TAX REGISTRATION NUMBER', 'TAXREGN'] },
+    
+    // Personal information
+    { keyword: 'DATE OF BIRTH', weight: 8, variants: ['DATE OF BIRTH', 'DOB', 'D.O.B.', 'B1RTH', 'BIRTH'] },
+    { keyword: 'SEX', weight: 8, variants: ['SEX', 'GENDER', 'SX'] },
+    { keyword: 'NATIONALITY', weight: 7, variants: ['NATIONALITY', 'NATONALITY', 'NATIONALTY'] },
+    
+    // Document details
+    { keyword: 'EXPIRY', weight: 7, variants: ['EXPIRY', 'EXPIRY', 'EXP', 'EXPIRYDATE'] },
+    { keyword: 'LICENCE NO', weight: 7, variants: ['LICENCE NO', 'LICENSE NO', 'LICENCE NUMBER', 'LICNCE'] },
+    { keyword: 'ISSUED', weight: 6, variants: ['ISSUED', 'ISSUD', 'ISSUEDATE'] },
+    { keyword: 'CLASS', weight: 5, variants: ['CLASS', 'CLASS', 'CLSS'] },
+    
+    // Jamaican indicators
+    { keyword: 'JAMAICA', weight: 8, variants: ['JAMAICA', 'JAMAIC', 'JAMAlCA', 'JAMACA'] },
+    { keyword: 'JAMAICAN', weight: 7, variants: ['JAMAICAN', 'JAMAICN', 'JAMAIAN'] }
   ],
 
   // Unknown - no keywords
@@ -210,7 +227,7 @@ function normalizeOCRText(text: string): string {
 }
 
 /**
- * Fuzzy string matching for OCR variants
+ * Fuzzy string matching for OCR variants - Enhanced for ID documents
  */
 function fuzzyMatch(text: string, keyword: string, variants: string[] = []): boolean {
   const searchTerms = [keyword, ...variants];
@@ -233,9 +250,91 @@ function fuzzyMatch(text: string, keyword: string, variants: string[] = []): boo
     if (term.length > 4 && fuzzyText.includes(fuzzyTerm.substring(0, term.length - 1))) {
       return true;
     }
+    
+    // Enhanced ID-specific fuzzy matching
+    if (isIDRelatedTerm(term)) {
+      // Allow more aggressive fuzzy matching for ID terms
+      if (fuzzyMatchID(text, term)) {
+        return true;
+      }
+    }
   }
   
   return false;
+}
+
+/**
+ * Check if term is ID-related for enhanced fuzzy matching
+ */
+function isIDRelatedTerm(term: string): boolean {
+  const idTerms = ['JAMAICA', 'JAMAICAN', 'NATIONAL', 'LICENCE', 'IDENTIFICATION', 'BIRTH', 'TRN'];
+  return idTerms.some(idTerm => term.toUpperCase().includes(idTerm));
+}
+
+/**
+ * Enhanced fuzzy matching specifically for ID document terms
+ */
+function fuzzyMatchID(text: string, term: string): boolean {
+  const fuzzyText = text.replace(/\s+/g, '');
+  const fuzzyTerm = term.replace(/\s+/g, '');
+  
+  // Handle common ID OCR mistakes
+  const textVariants = [
+    fuzzyText,
+    fuzzyText.replace(/1/g, 'I'), // 1 -> I
+    fuzzyText.replace(/0/g, 'O'), // 0 -> O
+    fuzzyText.replace(/8/g, 'B'), // 8 -> B
+    fuzzyText.replace(/5/g, 'S'), // 5 -> S
+    fuzzyText.replace(/2/g, 'Z'), // 2 -> Z
+    fuzzyText.replace(/I1/g, 'II'), // I1 -> II
+    fuzzyText.replace(/l1/g, 'll'), // l1 -> ll
+  ];
+  
+  for (const textVariant of textVariants) {
+    // Check for close matches (allow up to 2 character differences)
+    if (levenshteinDistance(textVariant, fuzzyTerm) <= 2) {
+      return true;
+    }
+    
+    // Check for substring matches
+    if (textVariant.length >= fuzzyTerm.length - 2 && 
+        textVariant.includes(fuzzyTerm.substring(0, fuzzyTerm.length - 2))) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Simple Levenshtein distance calculation for fuzzy matching
+ */
+function levenshteinDistance(str1: string, str2: string): number {
+  const matrix = [];
+  
+  for (let i = 0; i <= str2.length; i++) {
+    matrix[i] = [i];
+  }
+  
+  for (let j = 0; j <= str1.length; j++) {
+    matrix[0][j] = j;
+  }
+  
+  for (let i = 1; i <= str2.length; i++) {
+    for (let j = 1; j <= str1.length; j++) {
+      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        );
+      }
+    }
+  }
+  
+  return matrix[str2.length][str1.length];
 }
 
 /**
@@ -337,11 +436,59 @@ export function classifyDocument(text: string): ClassificationResult {
   
   // Calculate confidence based on score distribution
   const totalScore = Object.values(scores).reduce((sum, score) => sum + score, 0);
-  const confidence = totalScore > 0 ? bestScore / totalScore : 0;
+  let confidence = totalScore > 0 ? bestScore / totalScore : 0;
+  
+  // Add local reasoning variable
+  let reasoning = '';
+  
+  // Safe id_card score handling
+  const idCardScore = scores.id_card ?? 0;
+  
+  // Enhanced Jamaican ID detection - weighted scoring
+  if (bestType !== 'id_card' && idCardScore > 0) {
+    // Check for Jamaican ID indicators
+    const hasJamaica = fuzzyMatch(normalizedText, 'JAMAICA', ['JAMAIC', 'JAMAlCA', 'JAMACA']);
+    const hasDOB = fuzzyMatch(normalizedText, 'DATE OF BIRTH', ['DOB', 'D.O.B.', 'B1RTH', 'BIRTH']);
+    const hasSex = fuzzyMatch(normalizedText, 'SEX', ['GENDER', 'SX']);
+    
+    // Force minimum confidence if JAMAICA + DOB + SEX exist together
+    if (hasJamaica && hasDOB && hasSex) {
+      confidence = Math.max(confidence, 0.45);
+      bestType = 'id_card';
+      bestScore = idCardScore;
+      reasoning = `Jamaican ID detected (JAMAICA + DOB + SEX) - forced confidence 45%`;
+    }
+  }
+  
+  // Fallback: if at least 2 Jamaican ID indicators exist, classify as id_card
+  if (bestType !== 'id_card' && confidence < 0.3) {
+    const idIndicators = [
+      fuzzyMatch(normalizedText, 'JAMAICA', ['JAMAIC', 'JAMAlCA', 'JAMACA']),
+      fuzzyMatch(normalizedText, 'NATIONAL ID', ['NATIONAL ID', 'NATL ID', 'NATIONALIDENTITY']),
+      fuzzyMatch(normalizedText, 'LICENCE', ['LICENSE', 'LICENC', 'LICFNCE', 'LICNSE']),
+      fuzzyMatch(normalizedText, 'TRN', ['T.R.N.', 'TAX RELIEF NUMBER', 'TAX REGISTRATION NUMBER']),
+      fuzzyMatch(normalizedText, 'DATE OF BIRTH', ['DOB', 'D.O.B.', 'B1RTH', 'BIRTH']),
+      fuzzyMatch(normalizedText, 'SEX', ['GENDER', 'SX']),
+      fuzzyMatch(normalizedText, 'IDENTIFICATION', ['IDNTFCTN', 'IDENTIFICATON'])
+    ];
+    
+    const idIndicatorCount = idIndicators.filter(Boolean).length;
+    
+    if (idIndicatorCount >= 2) {
+      bestType = 'id_card';
+      bestScore = idCardScore || 10; // Minimum score for fallback
+      confidence = Math.max(confidence, 0.35); // Minimum confidence for fallback
+      reasoning = `Jamaican ID fallback - ${idIndicatorCount} ID indicators detected`;
+    }
+  }
+  
+  // Prevent Jamaican IDs from returning confidence: 0
+  if (bestType === 'id_card' && confidence === 0) {
+    confidence = 0.25; // Minimum confidence for any ID detection
+    reasoning = 'Jamaican ID detected - minimum confidence applied';
+  }
   
   // Special handling for edge cases
-  let reasoning = `Best match: ${bestType} with score ${bestScore}`;
-  
   if (bestScore === 0) {
     reasoning = 'No matching keywords found - classified as unknown';
   } else if (confidence < 0.3) {

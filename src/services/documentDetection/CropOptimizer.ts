@@ -30,8 +30,8 @@ export interface CropOptimizationResult {
 
 export class CropOptimizer {
   private static readonly FRAME_CONFIGS = {
-    portrait: { aspectRatio: 0.7, maxZoom: 3.5, fillTarget: 0.85 },
-    landscape: { aspectRatio: 1.5, maxZoom: 6, fillTarget: 0.9 },
+    portrait: { aspectRatio: 0.75, maxZoom: 3.5, fillTarget: 0.88 }, // Slightly wider for ID cards
+    landscape: { aspectRatio: 1.6, maxZoom: 6, fillTarget: 0.92 }, // Wider for licences
     square: { aspectRatio: 1.0, maxZoom: 4, fillTarget: 0.85 }
   };
 

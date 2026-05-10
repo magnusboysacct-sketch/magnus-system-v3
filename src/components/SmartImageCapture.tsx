@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import Cropper from 'react-easy-crop';
+import Cropper, { type Point } from 'react-easy-crop';
 import { Camera, Upload, X, Check, FileText, Move, Loader2, AlertTriangle, Lightbulb, RotateCw, RotateCcw, Crop, Monitor, Square, Scan } from 'lucide-react';
 import type { SmartImageCaptureProps, CropArea, ImageCaptureResult } from '../types/imageCapture';
 import { useImageCapture } from '../hooks/useImageCapture';
@@ -42,7 +42,7 @@ export default function SmartImageCapture({
     onCancel
   });
 
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(0.8); // Start slightly zoomed out for larger crop area
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CropArea | null>(null);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
@@ -58,6 +58,7 @@ export default function SmartImageCapture({
   const [ocrFillRatio, setOcrFillRatio] = useState(0);
   const [ocrSuggestion, setOcrSuggestion] = useState<string>('');
   const [cropOptimization, setCropOptimization] = useState<any>(null);
+  const [userHasAdjustedCrop, setUserHasAdjustedCrop] = useState(false);
   const analysisTimeoutRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -146,7 +147,41 @@ export default function SmartImageCapture({
     try {
       const timeoutId = setTimeout(() => {
         console.log('AUTO_FIT_TIMEOUT: Using default crop');
+        // Use stable default crop when edge detection fails
+        const imageRatio = imageDimensions.width / imageDimensions.height;
+        let defaultFrameType: 'portrait' | 'landscape' | 'square';
+        let defaultAspectRatio: number;
+        let defaultMaxZoom: number;
+        
+        if (imageRatio > 1.2) {
+          // Landscape ID - wide rectangle
+          defaultFrameType = 'landscape';
+          defaultAspectRatio = 1.6;
+          defaultMaxZoom = 6;
+        } else if (imageRatio >= 0.8 && imageRatio <= 1.2) {
+          // Square ID - card-sized rectangle
+          defaultFrameType = 'square';
+          defaultAspectRatio = 1.0;
+          defaultMaxZoom = 4;
+        } else {
+          // Portrait ID - card-sized rectangle
+          defaultFrameType = 'portrait';
+          defaultAspectRatio = 0.75;
+          defaultMaxZoom = 3.5;
+        }
+        
+        setCropFrameType(defaultFrameType);
+        setCropAspectRatio(defaultAspectRatio);
+        setMaxZoom(defaultMaxZoom);
+        setZoom(0.8);
+        setCrop({ x: 0, y: 0 });
+        
         setIsAnalyzing(false);
+        console.log('AUTO_FIT_DEFAULT_APPLIED:', {
+          frameType: defaultFrameType,
+          aspectRatio: defaultAspectRatio,
+          imageRatio: imageRatio.toFixed(2)
+        });
       }, 300);
 
       console.log('APPLYING_AUTO_FIT: Using CropOptimizer service');
@@ -154,10 +189,8 @@ export default function SmartImageCapture({
       const bounds = await detectDocumentBounds(state.selectedImage);
       
       if (!bounds) {
-        console.log('NO_DOCUMENT_BOUNDS_DETECTED: Skipping auto-fit');
-        clearTimeout(timeoutId);
-        setIsAnalyzing(false);
-        return;
+        console.log('NO_DOCUMENT_BOUNDS_DETECTED: Using stable default crop');
+        return; // Let timeout handle the default crop
       }
 
       // Use CropOptimizer for professional crop optimization
@@ -217,9 +250,9 @@ export default function SmartImageCapture({
     setOcrSuggestion(calculateOcrSuggestion(fillRatio));
   }, [zoom, crop, cropFrameType, calculateOcrFillRatio, calculateOcrSuggestion]);
 
-  // Apply auto-fit when image is loaded (run once per image)
+  // Apply auto-fit when image is loaded (run once per image, only if user hasn't adjusted)
   useEffect(() => {
-    if (state.selectedImage && autoFitEnabled && !isAnalyzing) {
+    if (state.selectedImage && autoFitEnabled && !isAnalyzing && !userHasAdjustedCrop) {
       // Clear any existing timeout
       if (analysisTimeoutRef.current) {
         clearTimeout(analysisTimeoutRef.current);
@@ -260,6 +293,14 @@ export default function SmartImageCapture({
 
   const onCropComplete = useCallback((croppedArea: CropArea, croppedAreaPixels: CropArea) => {
     setCroppedAreaPixels(croppedAreaPixels);
+    // User has manually adjusted the crop - prevent auto-optimization
+    setUserHasAdjustedCrop(true);
+  }, []);
+
+  const onCropChange = useCallback((nextCrop: Point) => {
+    // User is manually adjusting crop - prevent auto-optimization
+    setUserHasAdjustedCrop(true);
+    setCrop(nextCrop);
   }, []);
 
   const handleRotateLeft = useCallback(() => {
@@ -268,6 +309,12 @@ export default function SmartImageCapture({
 
   const handleRotateRight = useCallback(() => {
     setRotation(prev => (prev + 90) % 360);
+  }, []);
+
+  const onZoomChange = useCallback((nextZoom: number) => {
+    // User is manually adjusting zoom - prevent auto-optimization
+    setUserHasAdjustedCrop(true);
+    setZoom(nextZoom);
   }, []);
 
   const handleCropFrameChange = useCallback((frameType: 'portrait' | 'landscape' | 'square') => {
@@ -405,7 +452,7 @@ export default function SmartImageCapture({
           <div className="mt-0.5 flex justify-center">
             <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-sm text-blue-700 shadow-sm">
               <Move className="h-4 w-4" />
-              {instructions}
+              {mode === 'id' ? 'Drag image and zoom to fit ID in frame' : instructions}
             </div>
           </div>
         </div>
@@ -482,6 +529,7 @@ export default function SmartImageCapture({
             </button>
           </div>
 
+          {mode !== 'id' && (
           <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
             <button
               type="button"
@@ -520,17 +568,18 @@ export default function SmartImageCapture({
               <Monitor className="h-4 w-4" />
             </button>
           </div>
+        )}
 
           <div className="absolute inset-0 flex items-center justify-center p-1">
             <div className="relative w-full h-full">
               <Cropper
                 image={state.selectedImage}
-                crop={crop}
+                crop={mode === 'id' ? { x: 0, y: 0 } : crop}
                 zoom={zoom}
-                aspect={cropAspectRatio}
-                onCropChange={setCrop}
+                aspect={mode === 'id' ? 1.6 : (cropAspectRatio || 1.6)}
+                onCropChange={mode === 'id' ? () => {} : onCropChange}
                 onCropComplete={onCropComplete}
-                onZoomChange={setZoom}
+                onZoomChange={onZoomChange}
                 rotation={rotation}
                 minZoom={0.3}
                 maxZoom={maxZoom}
@@ -544,8 +593,11 @@ export default function SmartImageCapture({
                     height: '100%'
                   },
                   cropAreaStyle: {
-                    border: '2px solid rgba(59, 130, 246, 0.5)',
-                    boxShadow: '0 0 0 9999px rgba(30, 41, 59, 0.8)'
+                    border: '2px solid rgba(59, 130, 246, 0.6)',
+                    boxShadow: '0 0 0 9999px rgba(30, 41, 59, 0.6)',
+                    ...(mode === 'id' && {
+                      cursor: 'move' // Show move cursor for ID mode
+                    })
                   },
                   mediaStyle: {
                     transform: `rotate(${rotation}deg)`

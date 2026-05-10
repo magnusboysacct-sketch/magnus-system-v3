@@ -22,6 +22,294 @@ export interface IDUploadResult {
 }
 
 /**
+ * Preprocess image for better Jamaican ID OCR
+ */
+async function preprocessIDImage(file: File, imageAnalysis: { width: number; height: number }): Promise<{
+  processedFile: File;
+  preprocessingApplied: boolean;
+  isLandscape: boolean;
+  usedUpscale: boolean;
+}> {
+  console.log('ID OCR: Starting image preprocessing...');
+  
+  // Check if image is landscape (width > height)
+  const isLandscape = imageAnalysis.width > imageAnalysis.height;
+  console.log('ID OCR: Image orientation detected:', isLandscape ? 'landscape (licence layout)' : 'portrait (ID layout)');
+  
+  // Check if image needs upscaling
+  const minDimension = Math.min(imageAnalysis.width, imageAnalysis.height);
+  const needsUpscale = minDimension < 800;
+  const targetScale = needsUpscale ? 800 / minDimension : 1;
+  
+  console.log('ID OCR: Upscale analysis:', {
+    minDimension,
+    needsUpscale,
+    targetScale: targetScale.toFixed(2)
+  });
+  
+  // Create canvas for preprocessing
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+  
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not get canvas context');
+  
+  // Set canvas size with upscale if needed
+  const newWidth = Math.round(imageAnalysis.width * targetScale);
+  const newHeight = Math.round(imageAnalysis.height * targetScale);
+  canvas.width = newWidth;
+  canvas.height = newHeight;
+  
+  // Draw image
+  ctx.drawImage(img, 0, 0, newWidth, newHeight);
+  
+  // Get image data for preprocessing
+  let imageData = ctx.getImageData(0, 0, newWidth, newHeight);
+  let data = imageData.data;
+  
+  console.log('ID OCR: Applying preprocessing filters...');
+  
+  // 1. Grayscale conversion
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    data[i] = gray;     // Red
+    data[i + 1] = gray; // Green
+    data[i + 2] = gray; // Blue
+    // Alpha (data[i + 3]) remains unchanged
+  }
+  
+  // 2. Contrast boost and brightness normalization
+  let min = 255, max = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    min = Math.min(min, data[i]);
+    max = Math.max(max, data[i]);
+  }
+  
+  const contrastFactor = 255 / (max - min || 1);
+  const brightnessAdjustment = -min * contrastFactor;
+  
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = Math.min(255, Math.max(0, data[i] * contrastFactor + brightnessAdjustment));
+    data[i + 1] = data[i]; // Copy to green
+    data[i + 2] = data[i]; // Copy to blue
+  }
+  
+  // 3. Sharpen filter
+  const sharpenKernel = [
+    0, -1, 0,
+    -1, 5, -1,
+    0, -1, 0
+  ];
+  
+  const sharpenedData = new Uint8ClampedArray(data);
+  const width = newWidth;
+  const height = newHeight;
+  
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      let r = 0, g = 0, b = 0;
+      
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const pixelIndex = ((y + ky) * width + (x + kx)) * 4;
+          const kernelValue = sharpenKernel[(ky + 1) * 3 + (kx + 1)];
+          
+          r += data[pixelIndex] * kernelValue;
+          g += data[pixelIndex + 1] * kernelValue;
+          b += data[pixelIndex + 2] * kernelValue;
+        }
+      }
+      
+      const currentIndex = (y * width + x) * 4;
+      sharpenedData[currentIndex] = Math.min(255, Math.max(0, r));
+      sharpenedData[currentIndex + 1] = Math.min(255, Math.max(0, g));
+      sharpenedData[currentIndex + 2] = Math.min(255, Math.max(0, b));
+      sharpenedData[currentIndex + 3] = data[currentIndex + 3]; // Alpha
+    }
+  }
+  
+  // 4. Edge enhancement
+  const edgeData = new Uint8ClampedArray(sharpenedData);
+  
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const currentIndex = (y * width + x) * 4;
+      
+      // Simple edge detection
+      const topLeft = ((y - 1) * width + (x - 1)) * 4;
+      const top = ((y - 1) * width + x) * 4;
+      const left = (y * width + (x - 1)) * 4;
+      const current = currentIndex;
+      
+      const edgeStrength = Math.abs(sharpenedData[current] - sharpenedData[topLeft]) +
+                          Math.abs(sharpenedData[current] - sharpenedData[top]) +
+                          Math.abs(sharpenedData[current] - sharpenedData[left]);
+      
+      const edgeFactor = Math.min(1.5, 1 + edgeStrength / 255);
+      
+      edgeData[currentIndex] = Math.min(255, sharpenedData[currentIndex] * edgeFactor);
+      edgeData[currentIndex + 1] = Math.min(255, sharpenedData[currentIndex + 1] * edgeFactor);
+      edgeData[currentIndex + 2] = Math.min(255, sharpenedData[currentIndex + 2] * edgeFactor);
+      edgeData[currentIndex + 3] = sharpenedData[currentIndex + 3]; // Alpha
+    }
+  }
+  
+  // Put processed data back
+  imageData.data.set(edgeData);
+  ctx.putImageData(imageData, 0, 0);
+  
+  // Convert canvas to blob
+  const processedBlob = await new Promise<Blob>((resolve) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+    }, 'image/jpeg', 0.95);
+  });
+  
+  const processedFile = new File([processedBlob], file.name, {
+    type: 'image/jpeg',
+    lastModified: Date.now()
+  });
+  
+  console.log('ID OCR: Preprocessing complete:', {
+    originalSize: file.size,
+    processedSize: processedFile.size,
+    originalDimensions: `${imageAnalysis.width}x${imageAnalysis.height}`,
+    processedDimensions: `${newWidth}x${newHeight}`,
+    isLandscape,
+    usedUpscale: needsUpscale,
+    preprocessingApplied: true
+  });
+  
+  return {
+    processedFile,
+    preprocessingApplied: true,
+    isLandscape,
+    usedUpscale: needsUpscale
+  };
+}
+
+/**
+ * Rotate image using canvas and return rotated file
+ */
+async function rotateImage(file: File, rotation: number): Promise<File> {
+  console.log(`ID OCR: Creating ${rotation}° rotated version...`);
+  
+  const img = new Image();
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+  
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not get canvas context');
+  
+  // Calculate rotated dimensions
+  let newWidth = img.width;
+  let newHeight = img.height;
+  
+  if (rotation === 90 || rotation === 270) {
+    newWidth = img.height;
+    newHeight = img.width;
+  }
+  
+  canvas.width = newWidth;
+  canvas.height = newHeight;
+  
+  // Apply rotation
+  ctx.save();
+  
+  if (rotation === 90) {
+    ctx.translate(newWidth / 2, newHeight / 2);
+    ctx.rotate((90 * Math.PI) / 180);
+    ctx.drawImage(img, -img.width / 2, -img.height / 2);
+  } else {
+    // 0° - no rotation needed
+    ctx.drawImage(img, 0, 0, newWidth, newHeight);
+  }
+  
+  ctx.restore();
+  
+  // Convert to blob
+  const rotatedBlob = await new Promise<Blob>((resolve) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+    }, 'image/jpeg', 0.95);
+  });
+  
+  const rotatedFile = new File([rotatedBlob], file.name, {
+    type: 'image/jpeg',
+    lastModified: Date.now()
+  });
+  
+  console.log(`ID OCR: ${rotation}° rotation complete:`, {
+    originalDimensions: `${img.width}x${img.height}`,
+    rotatedDimensions: `${newWidth}x${newHeight}`,
+    rotation,
+    fileSize: rotatedFile.size
+  });
+  
+  return rotatedFile;
+}
+
+/**
+ * Try OCR with different rotations and return best result
+ */
+async function tryOCRWithRotations(worker: any, file: File, isLandscape: boolean): Promise<{
+  text: string;
+  confidence: number;
+  rotation: number;
+}> {
+  const rotations = isLandscape ? [0, 90] : [0, 90];
+  const results = [];
+  
+  for (const rotation of rotations) {
+    console.log(`ID OCR: Trying rotation ${rotation}°...`);
+    
+    try {
+      // Create rotated version of the image
+      const rotatedFile = await rotateImage(file, rotation);
+      
+      console.log(`ID OCR: Running OCR on ${rotation}° rotated image...`);
+      const { data: { text, confidence } } = await worker.recognize(rotatedFile);
+      
+      results.push({ text, confidence, rotation });
+      
+      console.log(`ID OCR: Rotation ${rotation}° result:`, {
+        rotation,
+        textLength: text.length,
+        confidence,
+        preview: text.substring(0, 100),
+        rotatedFileSize: rotatedFile.size
+      });
+    } catch (error) {
+      console.warn(`ID OCR: Rotation ${rotation}° failed:`, error);
+      results.push({ text: '', confidence: 0, rotation });
+    }
+  }
+  
+  // Select result with highest confidence
+  const bestResult = results.reduce((best, current) => 
+    current.confidence > best.confidence ? current : best
+  );
+  
+  console.log('ID OCR: Best rotation selected:', {
+    rotation: bestResult.rotation,
+    confidence: bestResult.confidence,
+    textLength: bestResult.text.length,
+    allRotations: results.map(r => ({ rotation: r.rotation, confidence: r.confidence }))
+  });
+  
+  return bestResult;
+}
+
+/**
  * Perform OCR on Jamaican ID or Driver's License
  */
 export async function performIDOCR(file: File): Promise<IDOCRResult> {
@@ -53,6 +341,10 @@ export async function performIDOCR(file: File): Promise<IDOCRResult> {
     throw new Error('Invalid image - cannot perform OCR');
   }
 
+  // Preprocess image for better OCR
+  const preprocessingResult = await preprocessIDImage(file, imageAnalysis);
+  const { processedFile, preprocessingApplied, isLandscape, usedUpscale } = preprocessingResult;
+
   // Create worker with ID-optimized settings
   console.log('ID OCR: Creating Tesseract worker with ID-optimized settings...');
   const worker = await createWorker('eng');
@@ -75,8 +367,8 @@ export async function performIDOCR(file: File): Promise<IDOCRResult> {
     });
     console.log('ID OCR: Worker configured successfully');
 
-    // Perform OCR with timing
-    console.log('ID OCR: Starting text recognition...');
+    // Perform OCR with timing and auto-rotation
+    console.log('ID OCR: Starting text recognition with auto-rotation...');
     
     // STRUCTURED DEBUG LOG IMMEDIATELY BEFORE TESSERACT RECOGNIZE
     const preRecognitionDebug = {
@@ -87,20 +379,23 @@ export async function performIDOCR(file: File): Promise<IDOCRResult> {
       inputFileLastModified: file.lastModified,
       imageDimensions: {
         original: { width: imageAnalysis.width, height: imageAnalysis.height },
-        processed: { width: imageAnalysis.width, height: imageAnalysis.height }
+        processed: { width: processedFile.size > file.size ? Math.round(imageAnalysis.width * (processedFile.size / file.size)) : imageAnalysis.width, 
+                     height: processedFile.size > file.size ? Math.round(imageAnalysis.height * (processedFile.size / file.size)) : imageAnalysis.height }
       },
       workerState: 'READY',
-      ocrMode: 'standard', // ID OCR uses standard mode
-      usedUpscale: false, // ID OCR doesn't use upscaling
-      usedPreprocess: false // ID OCR doesn't use preprocessing
+      ocrMode: 'enhanced', // ID OCR uses enhanced mode with preprocessing
+      usedUpscale,
+      usedPreprocess: preprocessingApplied,
+      isLandscape
     };
     
     console.log('=== ID_OCR_DEBUG: BEFORE_RECOGNITION ===');
     console.log(JSON.stringify(preRecognitionDebug, null, 2));
     
     const startTime = Date.now();
-    const { data: { text, confidence } } = await worker.recognize(file);
+    const ocrResult = await tryOCRWithRotations(worker, processedFile, isLandscape);
     const endTime = Date.now();
+    const { text, confidence, rotation } = ocrResult;
     
     console.log('=== DEEP DEBUG: ID OCR RECOGNITION COMPLETE ===');
     console.log('ID OCR: Recognition time:', (endTime - startTime), 'ms');
@@ -169,11 +464,14 @@ export async function performIDOCR(file: File): Promise<IDOCRResult> {
       inputFileSize: file.size,
       originalWidth: imageAnalysis.width,
       originalHeight: imageAnalysis.height,
-      processedWidth: imageAnalysis.width,
-      processedHeight: imageAnalysis.height,
+      processedWidth: processedFile.size > file.size ? Math.round(imageAnalysis.width * (processedFile.size / file.size)) : imageAnalysis.width,
+      processedHeight: processedFile.size > file.size ? Math.round(imageAnalysis.height * (processedFile.size / file.size)) : imageAnalysis.height,
       hasPixelData: true, // OCR succeeded, so pixel data exists
-      usedUpscale: false, // ID OCR doesn't use upscaling
-      usedPreprocess: false, // ID OCR doesn't use preprocessing
+      usedUpscale,
+      usedPreprocess: preprocessingApplied,
+      isLandscape,
+      bestRotation: rotation,
+      ocrMode: 'enhanced',
       ocrConfidence: result.confidence,
       rawTextLength: result.rawText?.length || 0,
       rawTextPreview: result.rawText?.substring(0, 100) + (result.rawText?.length > 100 ? '...' : ''),
