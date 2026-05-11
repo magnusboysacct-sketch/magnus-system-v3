@@ -44,6 +44,7 @@ import FinanceDashboardPage from "./pages/FinanceDashboardPage";
 import FinanceTransactionsPage from "./pages/FinanceTransactionsPage";
 import FinanceReportsPage from "./pages/FinanceReportsPage";
 import FieldPaymentsPage from "./pages/FieldPaymentsPage";
+import JamaicanPayrollMonitoringPage from "./pages/JamaicanPayrollMonitoringPage";
 
 function AuthHashRouter() {
   const nav = useNavigate();
@@ -190,6 +191,7 @@ export default function App() {
             <Route path="/settings/cost-codes" element={<SettingsCostCodesPage />} />
             <Route path="/settings/users" element={<CompanyUsersPage />} />
             <Route path="/settings/company" element={<Navigate to="/settings" replace />} />
+            <Route path="/admin/jamaican-payroll-monitoring" element={<JamaicanPayrollMonitoringPage />} />
             <Route path="/receiving/:id" element={<ReceivingPage />} />
           </Route>
 
