@@ -1,8 +1,10 @@
 import { supabase } from "./supabase";
 import { jamaicanPayrollCalculator } from "./jamaicanPayroll";
 import { payrollValidator } from "./payrollValidation";
+import { payrollAuditor } from "./payrollAudit";
 import type { JamaicanPayrollInput, JamaicanWorkerTaxInfo } from "./jamaicanPayroll";
 import type { PayrollValidationInput } from "./payrollValidation";
+import type { PayrollAuditInput } from "./payrollAudit";
 
 export interface PayrollPeriod {
   id: string;
@@ -299,6 +301,40 @@ export async function generatePayrollEntries(periodId: string, companyId: string
       // If validation fails, log warning but don't break payroll
       console.warn('Jamaican validation failed:', validationError);
       // Keep validation fields as defaults to indicate failure
+    }
+
+    // PHASE 1E AUDIT PERSISTENCE ONLY — NOT ACTIVE PAYROLL
+    // Create audit record for Jamaican shadow calculation and validation
+    try {
+      const auditInput: PayrollAuditInput = {
+        companyId: companyId,
+        employeeId: wh.worker_id,
+        payrollPeriodId: periodId,
+        grossPay: grossPay,
+        existingNetPay: netPay,
+        existingTotalDeductions: deductions.total_deductions,
+        jamaicanShadowNetPay,
+        jamaicanShadowDeductions,
+        jamaicanShadowCalculation,
+        jamaicanShadowVersion: jamaicanShadowVersion || undefined,
+        validationStatus: jamaicanValidationStatus,
+        validationWarnings: jamaicanValidationWarnings,
+        validationDifferences: jamaicanValidationDifferences,
+        validationVersion: jamaicanValidationVersion || undefined,
+      };
+
+      // Get current user for audit
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Create audit record (best effort - never blocks payroll)
+      await payrollAuditor.createPayrollAuditRecord(auditInput, user?.id);
+      
+      console.log(payrollAuditor.generateAuditSummary(auditInput));
+    } catch (auditError) {
+      // PHASE 1E AUDIT PERSISTENCE ONLY — NOT ACTIVE PAYROLL
+      // If audit fails, log warning but don't break payroll
+      console.warn('Jamaican payroll audit failed:', auditError);
+      // Continue with payroll processing
     }
 
     entries.push({
