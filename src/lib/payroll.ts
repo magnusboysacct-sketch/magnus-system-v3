@@ -1,6 +1,8 @@
 import { supabase } from "./supabase";
 import { jamaicanPayrollCalculator } from "./jamaicanPayroll";
+import { payrollValidator } from "./payrollValidation";
 import type { JamaicanPayrollInput, JamaicanWorkerTaxInfo } from "./jamaicanPayroll";
+import type { PayrollValidationInput } from "./payrollValidation";
 
 export interface PayrollPeriod {
   id: string;
@@ -45,6 +47,11 @@ export interface PayrollEntry {
   jamaicanShadowNetPay?: number;
   jamaicanShadowDeductions?: any;
   jamaicanShadowVersion?: string;
+  // PHASE 1D VALIDATION ONLY — NOT ACTIVE PAYROLL
+  jamaicanValidationStatus?: 'valid' | 'warning' | 'error' | 'not_available';
+  jamaicanValidationWarnings?: string[];
+  jamaicanValidationDifferences?: any;
+  jamaicanValidationVersion?: string;
 }
 
 export interface WorkerTaxInfo {
@@ -257,6 +264,43 @@ export async function generatePayrollEntries(periodId: string, companyId: string
       // Keep shadow fields as null/0 to indicate failure
     }
 
+    // PHASE 1D VALIDATION ONLY — NOT ACTIVE PAYROLL
+    let jamaicanValidationStatus: 'valid' | 'warning' | 'error' | 'not_available' = 'not_available';
+    let jamaicanValidationWarnings: string[] = [];
+    let jamaicanValidationDifferences = null;
+    let jamaicanValidationVersion = null;
+
+    try {
+      // Create validation input
+      const validationInput: PayrollValidationInput = {
+        existingNetPay: netPay,
+        existingTotalDeductions: deductions.total_deductions,
+        existingGrossPay: grossPay,
+        jamaicanShadowNetPay,
+        jamaicanShadowDeductions,
+        jamaicanShadowVersion: jamaicanShadowVersion || undefined,
+        employeeId: wh.worker_id,
+        companyId: companyId,
+        payrollPeriodId: periodId,
+      };
+
+      // Perform validation
+      const validationResult = payrollValidator.validatePayrollComparison(validationInput);
+      
+      jamaicanValidationStatus = validationResult.validationStatus;
+      jamaicanValidationWarnings = validationResult.warnings;
+      jamaicanValidationDifferences = validationResult.differences;
+      jamaicanValidationVersion = validationResult.validationVersion;
+
+      // Log validation summary for monitoring
+      console.log(payrollValidator.generateValidationSummary(validationResult, wh.worker_id));
+    } catch (validationError) {
+      // PHASE 1D VALIDATION ONLY — NOT ACTIVE PAYROLL
+      // If validation fails, log warning but don't break payroll
+      console.warn('Jamaican validation failed:', validationError);
+      // Keep validation fields as defaults to indicate failure
+    }
+
     entries.push({
       company_id: companyId,
       payroll_period_id: periodId,
@@ -274,6 +318,11 @@ export async function generatePayrollEntries(periodId: string, companyId: string
       jamaicanShadowNetPay,
       jamaicanShadowDeductions,
       jamaicanShadowVersion,
+      // PHASE 1D VALIDATION ONLY — NOT ACTIVE PAYROLL
+      jamaicanValidationStatus,
+      jamaicanValidationWarnings,
+      jamaicanValidationDifferences,
+      jamaicanValidationVersion,
     });
   }
 
