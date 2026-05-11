@@ -1,4 +1,6 @@
 import { supabase } from "./supabase";
+import { jamaicanPayrollCalculator } from "./jamaicanPayroll";
+import type { JamaicanPayrollInput, JamaicanWorkerTaxInfo } from "./jamaicanPayroll";
 
 export interface PayrollPeriod {
   id: string;
@@ -38,6 +40,11 @@ export interface PayrollEntry {
   status: "pending" | "paid" | "cancelled";
   created_at?: string;
   updated_at?: string;
+  // PHASE 1C SHADOW CALCULATION ONLY — NOT ACTIVE PAYROLL
+  jamaicanShadowCalculation?: any;
+  jamaicanShadowNetPay?: number;
+  jamaicanShadowDeductions?: any;
+  jamaicanShadowVersion?: string;
 }
 
 export interface WorkerTaxInfo {
@@ -198,6 +205,58 @@ export async function generatePayrollEntries(periodId: string, companyId: string
 
     const netPay = grossPay - deductions.total_deductions;
 
+    // PHASE 1C SHADOW CALCULATION ONLY — NOT ACTIVE PAYROLL
+    let jamaicanShadowCalculation = null;
+    let jamaicanShadowNetPay = 0;
+    let jamaicanShadowDeductions = null;
+    let jamaicanShadowVersion = null;
+
+    try {
+      // Convert US tax info to Jamaican tax info format
+      const jamaicanTaxInfo: JamaicanWorkerTaxInfo = {
+        nisNumber: undefined,
+        taxFileNumber: undefined,
+        isExemptNIS: false, // Default to not exempt
+        isExemptNHT: false, // Default to not exempt
+        isExemptEducationTax: false, // Default to not exempt
+        isExemptPAYE: false, // Default to not exempt
+        // Preserve US fields for compatibility
+        isExemptFederal: taxInfo?.is_exempt_federal || false,
+        isExemptState: taxInfo?.is_exempt_state || false,
+        isExemptFICA: taxInfo?.is_exempt_fica || false,
+        additionalFederalWithholding: taxInfo?.additional_federal_withholding || 0,
+        additionalStateWithholding: taxInfo?.additional_state_withholding || 0,
+      };
+
+      const jamaicanInput: JamaicanPayrollInput = {
+        grossPay: grossPay,
+        employeeId: wh.worker_id,
+        companyId: companyId,
+        payrollFrequency: 'monthly', // Default to monthly for now
+        taxInfo: jamaicanTaxInfo,
+      };
+
+      jamaicanShadowCalculation = jamaicanPayrollCalculator.calculateJamaicanPayroll(jamaicanInput);
+      jamaicanShadowNetPay = jamaicanShadowCalculation.netPay;
+      jamaicanShadowDeductions = {
+        nis_deduction: jamaicanShadowCalculation.nisDeduction,
+        nht_deduction: jamaicanShadowCalculation.nhtDeduction,
+        paye_deduction: jamaicanShadowCalculation.payeDeduction,
+        education_tax_deduction: jamaicanShadowCalculation.educationTaxDeduction,
+        total_employee_deductions: jamaicanShadowCalculation.totalEmployeeDeductions,
+        employer_nis_contribution: jamaicanShadowCalculation.employerNISContribution,
+        employer_nht_contribution: jamaicanShadowCalculation.employerNHTContribution,
+        employer_education_tax_contribution: jamaicanShadowCalculation.employerEducationTaxContribution,
+        total_employer_contributions: jamaicanShadowCalculation.totalEmployerContributions,
+      };
+      jamaicanShadowVersion = jamaicanShadowCalculation.calculationVersion;
+    } catch (error) {
+      // PHASE 1C SHADOW CALCULATION ONLY — NOT ACTIVE PAYROLL
+      // If Jamaican calculation fails, log warning but don't break payroll
+      console.warn('Jamaican shadow calculation failed:', error);
+      // Keep shadow fields as null/0 to indicate failure
+    }
+
     entries.push({
       company_id: companyId,
       payroll_period_id: periodId,
@@ -210,6 +269,11 @@ export async function generatePayrollEntries(periodId: string, companyId: string
       ...deductions,
       net_pay: netPay,
       status: "pending",
+      // PHASE 1C SHADOW CALCULATION ONLY — NOT ACTIVE PAYROLL
+      jamaicanShadowCalculation,
+      jamaicanShadowNetPay,
+      jamaicanShadowDeductions,
+      jamaicanShadowVersion,
     });
   }
 
