@@ -56,10 +56,12 @@ export interface PayrollEntry {
   jamaicanValidationVersion?: string;
 }
 
+// PHASE 2B STEP 2 BACKEND EXTENSION ONLY — NOT ACTIVE PAYROLL
 export interface WorkerTaxInfo {
   id: string;
   worker_id: string;
   company_id: string;
+  // Existing US tax fields (preserved)
   filing_status?: "single" | "married" | "head_of_household" | null;
   federal_allowances: number;
   additional_federal_withholding: number;
@@ -71,6 +73,17 @@ export interface WorkerTaxInfo {
   is_exempt_federal: boolean;
   is_exempt_state: boolean;
   is_exempt_fica: boolean;
+  // New Jamaican statutory fields (optional for backward compatibility)
+  nis_number?: string | null;
+  tax_file_number?: string | null;
+  trn?: string | null;
+  is_exempt_nis?: boolean;
+  is_exempt_nht?: boolean;
+  is_exempt_education_tax?: boolean;
+  is_exempt_paye?: boolean;
+  payroll_country?: string;
+  jamaican_payroll_enabled?: boolean;
+  statutory_notes?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -447,6 +460,7 @@ export async function processPayroll(periodId: string) {
   return data;
 }
 
+// PHASE 2B STEP 2 BACKEND EXTENSION ONLY — NOT ACTIVE PAYROLL
 export async function fetchWorkerTaxInfo(workerId: string) {
   const { data, error } = await supabase
     .from("worker_tax_info")
@@ -458,6 +472,7 @@ export async function fetchWorkerTaxInfo(workerId: string) {
   return data as WorkerTaxInfo | null;
 }
 
+// PHASE 2B STEP 2 BACKEND EXTENSION ONLY — NOT ACTIVE PAYROLL
 export async function upsertWorkerTaxInfo(workerId: string, companyId: string, taxInfo: Partial<WorkerTaxInfo>) {
   const { data, error } = await supabase
     .from("worker_tax_info")
@@ -473,4 +488,64 @@ export async function upsertWorkerTaxInfo(workerId: string, companyId: string, t
 
   if (error) throw error;
   return data as WorkerTaxInfo;
+}
+
+// PHASE 2B STEP 2 BACKEND EXTENSION ONLY — NOT ACTIVE PAYROLL
+// Jamaican Tax Validation Helpers (non-blocking for backward compatibility)
+export function validateNISNumber(nisNumber?: string | null): { valid: boolean; error?: string } {
+  if (!nisNumber || nisNumber.trim() === '') {
+    return { valid: true }; // Optional field
+  }
+
+  const cleaned = nisNumber.replace(/[^0-9]/g, '');
+  
+  if (cleaned.length !== 7) {
+    return { valid: false, error: 'NIS number must be 7 digits' };
+  }
+
+  // Basic format validation: NNNNNNN
+  if (!/^\d{7}$/.test(cleaned)) {
+    return { valid: false, error: 'NIS number must contain only digits' };
+  }
+
+  return { valid: true };
+}
+
+export function validateTRN(trn?: string | null): { valid: boolean; error?: string } {
+  if (!trn || trn.trim() === '') {
+    return { valid: true }; // Optional field
+  }
+
+  const cleaned = trn.replace(/[^0-9]/g, '');
+  
+  if (cleaned.length !== 9) {
+    return { valid: false, error: 'TRN must be 9 digits' };
+  }
+
+  // Basic format validation: NNN-NNN-NNN
+  if (!/^\d{3}-?\d{3}-?\d{3}$/.test(trn.replace(/\s/g, ''))) {
+    return { valid: false, error: 'TRN must be in format NNN-NNN-NNN' };
+  }
+
+  return { valid: true };
+}
+
+export function sanitizePayrollCountry(country?: string | null): string {
+  if (!country || country.trim() === '') {
+    return 'US'; // Default for backward compatibility
+  }
+
+  const normalized = country.trim().toUpperCase();
+  
+  // Accept common variations
+  if (normalized === 'JM' || normalized === 'JAMAICA' || normalized === 'JAM') {
+    return 'JM';
+  }
+  
+  if (normalized === 'US' || normalized === 'USA' || normalized === 'UNITED STATES' || normalized === 'AMERICA') {
+    return 'US';
+  }
+  
+  // Return original if not recognized (let UI handle)
+  return normalized;
 }
