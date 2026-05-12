@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { User, UserPlus, Users, Clock, DollarSign, Phone, Mail, MapPin, X, Briefcase, Calendar, CircleAlert as AlertCircle } from "lucide-react";
+import { User, UserPlus, Users, Clock, DollarSign, Phone, Mail, MapPin, X, Briefcase, Calendar, CircleAlert as AlertCircle, Settings } from "lucide-react";
 import { fetchWorkers, createWorker, updateWorker, deleteWorker } from "../lib/workers";
 import type { Worker, WorkerType, PayType } from "../lib/workers";
+import WorkerTaxConfigurationSection from "../components/WorkerTaxConfigurationSection";
 
 export default function WorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -12,6 +13,8 @@ export default function WorkersPage() {
   const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
   const [filterType, setFilterType] = useState<WorkerType | "all">("all");
   const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive">("active");
+  const [showTaxConfigTab, setShowTaxConfigTab] = useState(false);
+  const [currentCompanyId, setCurrentCompanyId] = useState<string>("");
 
   const [formData, setFormData] = useState({
     worker_type: "employee" as WorkerType,
@@ -53,6 +56,7 @@ export default function WorkersPage() {
         .single();
 
       if (profile?.company_id) {
+        setCurrentCompanyId(profile.company_id);
         const data = await fetchWorkers(profile.company_id);
         setWorkers(data);
       }
@@ -88,6 +92,7 @@ export default function WorkersPage() {
       ssn_last_4: "",
       notes: "",
     });
+    setShowTaxConfigTab(false);
     setShowModal(true);
   }
 
@@ -116,6 +121,7 @@ export default function WorkersPage() {
       ssn_last_4: worker.ssn_last_4 || "",
       notes: worker.notes || "",
     });
+    setShowTaxConfigTab(false);
     setShowModal(true);
   }
 
@@ -569,22 +575,66 @@ export default function WorkersPage() {
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                >
-                  {editingWorker ? "Update" : "Create"} Worker
-                </button>
+              <div className="flex justify-between items-center pt-4 border-t border-slate-200">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowTaxConfigTab(!showTaxConfigTab)}
+                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                      showTaxConfigTab
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <Settings className="w-4 h-4 inline mr-2" />
+                    Tax Configuration
+                  </button>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                  >
+                    {editingWorker ? "Update" : "Create"} Worker
+                  </button>
+                </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tax Configuration Modal Overlay */}
+      {showModal && showTaxConfigTab && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-4xl rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-slate-900">
+                Tax Configuration - {editingWorker ? `${editingWorker.first_name} ${editingWorker.last_name}` : 'New Worker'}
+              </h2>
+              <button
+                onClick={() => setShowTaxConfigTab(false)}
+                className="rounded-lg p-2 hover:bg-slate-100"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            {/* PHASE 2B STEP 4 INTEGRATION TESTING ONLY — NOT ACTIVE PAYROLL */}
+            {editingWorker && currentCompanyId && (
+              <WorkerTaxConfigurationSection
+                workerId={editingWorker.id}
+                companyId={currentCompanyId}
+                isVisible={true}
+              />
+            )}
           </div>
         </div>
       )}
