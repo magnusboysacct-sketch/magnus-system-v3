@@ -571,7 +571,7 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
             </div>
 
             {/* Audit Panel */}
-            <PayrollSimulationAuditPanel />
+            <PayrollSimulationAuditPanel totalSimulations={statistics.total} runningSimulations={statistics.running} completedSimulations={statistics.completed} averageSafetyScore={statistics.avgSafetyScore} />
 
             {/* Recent Simulations */}
             <div className="bg-white rounded-lg shadow">
@@ -1141,6 +1141,7 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
     </div>
   );
 }
+
 
 
 

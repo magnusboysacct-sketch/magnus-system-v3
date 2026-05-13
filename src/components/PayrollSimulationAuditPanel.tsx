@@ -55,9 +55,43 @@ const statusIcon: Record<AuditStatus, React.ReactNode> = {
   pending: <Clock className="h-4 w-4" />,
 };
 
-export default function PayrollSimulationAuditPanel() {
-  const passedCount = auditItems.filter((item) => item.status === 'passed').length;
-  const pendingCount = auditItems.filter((item) => item.status === 'pending').length;
+type PayrollSimulationAuditPanelProps = {
+  totalSimulations?: number;
+  runningSimulations?: number;
+  completedSimulations?: number;
+  averageSafetyScore?: number;
+};
+
+export default function PayrollSimulationAuditPanel({
+  totalSimulations = 0,
+  runningSimulations = 0,
+  completedSimulations = 0,
+  averageSafetyScore = 0,
+}: PayrollSimulationAuditPanelProps) {
+    const liveAuditItems: AuditItem[] = [
+    ...auditItems,
+    {
+      id: 'live-simulations',
+      title: 'Live simulation records',
+      description: `${totalSimulations} simulation record(s) loaded for audit review.`,
+      status: totalSimulations > 0 ? 'passed' : 'pending',
+    },
+    {
+      id: 'completed-simulations',
+      title: 'Completed simulations available',
+      description: `${completedSimulations} completed simulation(s) available for review.`,
+      status: completedSimulations > 0 ? 'passed' : 'pending',
+    },
+    {
+      id: 'safety-score',
+      title: 'Average safety score',
+      description: `Current average safety score is ${averageSafetyScore.toFixed(1)}%.`,
+      status: averageSafetyScore >= 90 ? 'passed' : averageSafetyScore > 0 ? 'warning' : 'pending',
+    },
+  ];
+
+  const passedCount = liveAuditItems.filter((item) => item.status === 'passed').length;
+    const pendingCount = liveAuditItems.filter((item) => item.status === 'pending').length;
 
   return (
     <div className="space-y-4">
@@ -107,7 +141,7 @@ export default function PayrollSimulationAuditPanel() {
         </div>
 
         <div className="divide-y divide-slate-100">
-          {auditItems.map((item) => (
+          {liveAuditItems.map((item) => (
             <div key={item.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="font-medium text-slate-900">{item.title}</div>
@@ -124,3 +158,5 @@ export default function PayrollSimulationAuditPanel() {
     </div>
   );
 }
+
+
