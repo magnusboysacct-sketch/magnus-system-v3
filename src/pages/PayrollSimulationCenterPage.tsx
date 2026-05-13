@@ -66,6 +66,7 @@ import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 import { payrollSimulationEngine, executePayrollSimulation, executeScenarioSimulation } from "../lib/payrollSimulationExecution";
 import PayrollSimulationAuditPanel from "../components/PayrollSimulationAuditPanel";
+import PayrollSimulationHistoryPanel from "../components/PayrollSimulationHistoryPanel";
 import { jamaicanPayrollScenarioTester } from "../lib/jamaicanPayrollScenarioTesting";
 import type {
   PayrollSimulationRun,
@@ -1141,6 +1142,8 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
     </div>
   );
 }
+
+
 
 
 
