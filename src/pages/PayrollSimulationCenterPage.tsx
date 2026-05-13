@@ -1,6 +1,6 @@
-// Payroll Simulation Center Page - Phase 3E
+﻿// Payroll Simulation Center Page - Phase 3E
 // Comprehensive payroll simulation execution and management dashboard
-// PHASE 3E PAYROLL SIMULATION ONLY — SHADOW SAFE
+// PHASE 3E PAYROLL SIMULATION ONLY â€” SHADOW SAFE
 
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -65,6 +65,7 @@ import { useProjectContext } from "../context/ProjectContext";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 import { payrollSimulationEngine, executePayrollSimulation, executeScenarioSimulation } from "../lib/payrollSimulationExecution";
+import PayrollSimulationAuditPanel from "../components/PayrollSimulationAuditPanel";
 import { jamaicanPayrollScenarioTester } from "../lib/jamaicanPayrollScenarioTesting";
 import type {
   PayrollSimulationRun,
@@ -569,6 +570,9 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
               </div>
             </div>
 
+            {/* Audit Panel */}
+            <PayrollSimulationAuditPanel />
+
             {/* Recent Simulations */}
             <div className="bg-white rounded-lg shadow">
               <div className="px-6 py-4 border-b border-gray-200">
@@ -699,7 +703,7 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                                 <div className="font-medium text-yellow-900">Safety Warnings</div>
                                 <ul className="mt-1 space-y-1">
                                   {simulation.safety.warnings.map((warning, index) => (
-                                    <li key={index}>• {warning}</li>
+                                    <li key={index}>â€¢ {warning}</li>
                                   ))}
                                 </ul>
                               </div>
@@ -1137,3 +1141,6 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
     </div>
   );
 }
+
+
+
