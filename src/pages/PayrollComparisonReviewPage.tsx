@@ -1,6 +1,6 @@
-// Payroll Comparison Review Dashboard - Phase 2C-1
+﻿// Payroll Comparison Review Dashboard - Phase 2C-1
 // Read-only dashboard for reviewing shadow Jamaican payroll comparisons
-// PHASE 2C-1 READ-ONLY REVIEW DASHBOARD — NOT ACTIVE PAYROLL
+// PHASE 2C-1 READ-ONLY REVIEW DASHBOARD â€” NOT ACTIVE PAYROLL
 
 import React, { useState, useEffect } from 'react';
 import { Eye, Users, DollarSign, AlertTriangle, TrendingUp, TrendingDown, Calendar, Filter, Download, RefreshCw } from 'lucide-react';
@@ -95,13 +95,9 @@ export default function PayrollComparisonReviewPage() {
           id,
           period_start,
           period_end,
-          status,
-          total_workers,
-          total_net,
-          payroll_entries!inner(
+          status,          payroll_entries!inner(
             id,
-            jamaicanValidationStatus,
-            jamaicanValidationWarnings
+            net_pay
           )
         `)
         .eq('company_id', profile.company_id)
@@ -114,6 +110,8 @@ export default function PayrollComparisonReviewPage() {
       // Transform data to include shadow calculation info
       const transformedPeriods = periods?.map(period => ({
         ...period,
+        total_workers: period.payroll_entries?.length ?? 0,
+        total_net: period.payroll_entries?.reduce((sum: number, entry: any) => sum + (entry.net_pay ?? 0), 0) ?? 0,
         hasShadowCalculations: period.payroll_entries?.some((entry: any) => 
           (entry.jamaicanShadowNetPay ?? entry.net_pay ?? 0) != null
         ) || false
@@ -175,11 +173,7 @@ export default function PayrollComparisonReviewPage() {
           regular_pay,
           overtime_pay,
           gross_pay,
-          net_pay,
-          jamaicanValidationStatus,
-          jamaicanValidationWarnings,
-          jamaicanShadowVersion
-        `)
+          net_pay,        `)
         .eq('company_id', profile.company_id)
         .eq('payroll_period_id', selectedPeriod)
                 .order('workers.last_name', { ascending: true });
@@ -430,3 +424,8 @@ export default function PayrollComparisonReviewPage() {
     </div>
   );
 }
+
+
+
+
+
