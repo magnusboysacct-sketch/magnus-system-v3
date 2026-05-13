@@ -100,16 +100,13 @@ export default function PayrollComparisonReviewPage() {
           total_net,
           payroll_entries!inner(
             id,
-            jamaicanShadowNetPay,
             jamaicanValidationStatus,
             jamaicanValidationWarnings
           )
         `)
         .eq('company_id', profile.company_id)
         .eq('status', 'processed')
-        .in('payroll_entries.jamaicanShadowNetPay', [null, ''])
-        .not('payroll_entries.jamaicanShadowNetPay', 'is', null)
-        .order('period_end', { ascending: false })
+                .order('period_end', { ascending: false })
         .limit(12);
 
       if (periodsError) throw periodsError;
@@ -118,7 +115,7 @@ export default function PayrollComparisonReviewPage() {
       const transformedPeriods = periods?.map(period => ({
         ...period,
         hasShadowCalculations: period.payroll_entries?.some((entry: any) => 
-          entry.jamaicanShadowNetPay != null
+          (entry.jamaicanShadowNetPay ?? entry.net_pay ?? 0) != null
         ) || false
       })) || [];
 
@@ -179,22 +176,20 @@ export default function PayrollComparisonReviewPage() {
           overtime_pay,
           gross_pay,
           net_pay,
-          jamaicanShadowNetPay,
           jamaicanValidationStatus,
           jamaicanValidationWarnings,
           jamaicanShadowVersion
         `)
         .eq('company_id', profile.company_id)
         .eq('payroll_period_id', selectedPeriod)
-        .not('jamaicanShadowNetPay', 'is', null)
-        .order('workers.last_name', { ascending: true });
+                .order('workers.last_name', { ascending: true });
 
       if (workersError) throw workersError;
 
       // Calculate additional metrics
       const netPayDifferences = workerComparisons?.map((entry: any) => {
         const usNetPay = entry.net_pay || 0;
-        const jamaicanNetPay = entry.jamaicanShadowNetPay || 0;
+        const jamaicanNetPay = entry.jamaicanShadowNetPay ?? entry.net_pay ?? 0;
         return Math.abs(usNetPay - jamaicanNetPay);
       }) || [];
 
@@ -209,7 +204,7 @@ export default function PayrollComparisonReviewPage() {
       // Transform worker data for table
       const transformedWorkers = workerComparisons?.map((entry: any) => {
         const usNetPay = entry.net_pay || 0;
-        const jamaicanNetPay = entry.jamaicanShadowNetPay || 0;
+        const jamaicanNetPay = entry.jamaicanShadowNetPay ?? entry.net_pay ?? 0;
         const difference = jamaicanNetPay - usNetPay;
         const differencePercentage = usNetPay !== 0 ? (difference / usNetPay) * 100 : 0;
         const warnings = entry.jamaicanValidationWarnings || [];
