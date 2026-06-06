@@ -1,61 +1,61 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Light mode (default) ── */
 html, body {
-  background: white;
+  background: #f8fafc;
   color: #0f172a;
 }
 
+/* ── Dark mode ── */
 html.dark, html.dark body {
-  background: #020617;
-  color: #f1f5f9;
+  background: #080b10;
+  color: #e2e8f0;
 }
 
 html, body, #root {
   height: 100%;
 }
 
-/* Print-specific styles - global print rules */
+/* ── Global select dropdown fix — works in both modes ── */
+select option,
+select optgroup {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+html.dark select option,
+html.dark select optgroup {
+  background-color: #111820 !important;
+  color: #e2e8f0 !important;
+}
+
+html.dark select optgroup {
+  color: #64748b !important;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+/* ── Scrollbar styling ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+html.dark ::-webkit-scrollbar-thumb { background: #1e293b; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+html.dark ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+/* ── Smooth transitions ── */
+*, *::before, *::after {
+  transition-property: background-color, border-color, color;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+/* ── Print styles ── */
 @media print {
-  /* Force white background and black text */
-  html, body {
-    background: white !important;
-    color: black !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  /* Hide dark mode styles during print */
-  html.dark, html.dark body {
-    background: white !important;
-    color: black !important;
-  }
-
-  /* Hide the entire app layout (sidebar + main) */
-  body > div,
-  #root {
-    overflow: visible !important;
-    height: auto !important;
-  }
-
-  /* Hide sidebar navigation */
-  aside {
-    display: none !important;
-  }
-
-  /* Hide theme toggle button */
-  button[title*="mode"],
-  button[title*="theme"] {
-    display: none !important;
-  }
-
-  /* Ensure main content takes full width */
-  main {
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    background: white !important;
-  }
+  html, body { background: white !important; color: black !important; }
+  html.dark, html.dark body { background: white !important; color: black !important; }
+  aside { display: none !important; }
 }

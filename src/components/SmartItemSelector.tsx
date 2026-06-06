@@ -1,6 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, Search, ChevronRight, Check } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+// src/components/SmartItemSelector.tsx — Full Rebuild
+// Matches the new BOQ dark aesthetic. All props/callbacks identical — drop-in replacement.
+
+import React, { useState, useEffect, useMemo } from "react";
+import { X, Search, ChevronRight, Check, ArrowLeft, Wand2, Loader2 } from "lucide-react";
+import { supabase } from "../lib/supabase";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface SmartItemSelection {
   type: string;
@@ -36,370 +41,314 @@ interface SmartItemSelectorProps {
   title?: string;
 }
 
-type SelectionStep = 'type' | 'category' | 'item' | 'variant' | 'confirm';
+type Step = "type" | "category" | "item" | "variant" | "confirm";
+
+// ─── Type color map ───────────────────────────────────────────────────────────
+
+const TYPE_META: Record<string, { dot: string; badge: string }> = {
+  material:    { dot: "bg-blue-400",    badge: "bg-blue-500/15 text-blue-300 border-blue-500/25" },
+  labor:       { dot: "bg-amber-400",   badge: "bg-amber-500/15 text-amber-300 border-amber-500/25" },
+  labour:      { dot: "bg-amber-400",   badge: "bg-amber-500/15 text-amber-300 border-amber-500/25" },
+  equipment:   { dot: "bg-purple-400",  badge: "bg-purple-500/15 text-purple-300 border-purple-500/25" },
+  subcontract: { dot: "bg-emerald-400", badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25" },
+  other:       { dot: "bg-slate-500",   badge: "bg-slate-500/15 text-slate-400 border-slate-500/25" },
+};
+
+function typeDot(type: string) {
+  const key = type.toLowerCase();
+  const m = TYPE_META[key] ?? TYPE_META.other;
+  return <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${m.dot}`} />;
+}
+
+function typeBadge(type: string) {
+  const key = type.toLowerCase();
+  const m = TYPE_META[key] ?? TYPE_META.other;
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider border ${m.badge}`}>
+      {type}
+    </span>
+  );
+}
+
+function fmt(n: number | null) {
+  if (n === null || !Number.isFinite(n)) return "—";
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function SmartItemSelector({
   companyId,
   onSelect,
   onCancel,
-  initialSelection,
-  title = 'Select Item',
+  title = "Smart Item Selector",
 }: SmartItemSelectorProps) {
-  const [step, setStep] = useState<SelectionStep>('type');
+  const [step, setStep] = useState<Step>("type");
   const [items, setItems] = useState<CostItemRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
 
-  const [selection, setSelection] = useState({
-    type: '',
-    category: '',
-    item: '',
-    variant: '',
-  });
+  const [sel, setSel] = useState({ type: "", category: "", item: "", variant: "" });
 
-  useEffect(() => {
-    loadItems();
-  }, [companyId]);
+  useEffect(() => { loadItems(); }, [companyId]);
 
   async function loadItems() {
     try {
       const { data, error } = await supabase
-        .from('v_cost_items_current')
-        .select(
-          'id, item_name, category, item_group, material_type, use_type, item_size, variant_code, variant, unit, current_rate, item_type'
-        )
-        .eq('company_id', companyId)
-        .eq('is_active', true)
-        .order('item_name');
-
+        .from("v_cost_items_current")
+        .select("id, item_name, category, item_group, material_type, use_type, item_size, variant_code, variant, unit, current_rate, item_type")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("item_name");
       if (error) throw error;
       setItems((data as CostItemRow[]) || []);
     } catch (err) {
-      console.error('Error loading items:', err);
+      console.error("Error loading items:", err);
     } finally {
       setLoading(false);
     }
   }
 
-  // Helper functions to get unique values
-  function uniqSorted(arr: string[]): string[] {
-    return Array.from(new Set(arr)).sort();
+  function uniq(arr: string[]): string[] { return Array.from(new Set(arr)).sort(); }
+
+  function forType(type: string) {
+    return !type ? items : items.filter(r => (r.item_type ?? "").toLowerCase() === type.toLowerCase());
   }
 
-  // Type options (Material, Labor, Equipment, etc.)
   const typeOptions = useMemo(() => {
-    const discovered = items
-      .map((r) => (r.item_type ?? '').trim())
-      .filter(Boolean);
-    const common = ['Material', 'Labor', 'Equipment', 'Subcontract', 'Other'];
-    return uniqSorted([...common, ...discovered]);
+    const disc = items.map(r => (r.item_type ?? "").trim()).filter(Boolean);
+    return uniq([...["Material", "Labor", "Equipment", "Subcontract", "Other"], ...disc]);
   }, [items]);
 
-  // Items filtered by type
-  function itemsForType(type: string) {
-    if (!type) return items;
-    return items.filter(
-      (r) => (r.item_type ?? '').toLowerCase() === type.toLowerCase()
-    );
-  }
-
-  // Category options for selected type
   const categoryOptions = useMemo(() => {
-    if (!selection.type) return [];
-    return uniqSorted(
-      itemsForType(selection.type)
-        .map((r) => (r.category ?? '').trim())
-        .filter(Boolean)
-    );
-  }, [items, selection.type]);
+    if (!sel.type) return [];
+    return uniq(forType(sel.type).map(r => (r.category ?? "").trim()).filter(Boolean));
+  }, [items, sel.type]);
 
-  // Item name options for selected type + category
   const itemOptions = useMemo(() => {
-    if (!selection.type || !selection.category) return [];
-    const list = itemsForType(selection.type).filter(
-      (r) => (r.category ?? '').trim() === selection.category
-    );
-    return uniqSorted(list.map((r) => r.item_name.trim()).filter(Boolean));
-  }, [items, selection.type, selection.category]);
+    if (!sel.type || !sel.category) return [];
+    return uniq(forType(sel.type).filter(r => (r.category ?? "").trim() === sel.category).map(r => r.item_name.trim()).filter(Boolean));
+  }, [items, sel.type, sel.category]);
 
-  // Variant options for selected type + category + item
   const variantOptions = useMemo(() => {
-    if (!selection.type || !selection.category || !selection.item) return [];
-    const list = itemsForType(selection.type).filter(
-      (r) =>
-        (r.category ?? '').trim() === selection.category &&
-        r.item_name.trim() === selection.item
-    );
-    return list
-      .map((r) => (r.variant ?? '').trim())
-      .filter(Boolean)
-      .sort();
-  }, [items, selection.type, selection.category, selection.item]);
+    if (!sel.type || !sel.category || !sel.item) return [];
+    return forType(sel.type)
+      .filter(r => (r.category ?? "").trim() === sel.category && r.item_name.trim() === sel.item)
+      .map(r => (r.variant ?? "").trim()).filter(Boolean).sort();
+  }, [items, sel.type, sel.category, sel.item]);
 
-  // Get current options for the current step with search filter
-  const currentOptions = useMemo(() => {
+  // Match the confirmed selection to a cost item row
+  const matchedItem = useMemo(() => {
+    if (step !== "confirm") return null;
+    return items.find(r =>
+      (r.item_type ?? "").toLowerCase() === sel.type.toLowerCase() &&
+      (r.category ?? "").trim() === sel.category &&
+      r.item_name.trim() === sel.item &&
+      (!sel.variant || (r.variant ?? "").trim() === sel.variant)
+    ) ?? null;
+  }, [items, sel, step]);
+
+  const currentOpts = useMemo(() => {
     const q = search.toLowerCase().trim();
-    const filter = (arr: string[]) =>
-      !q ? arr : arr.filter((x) => x.toLowerCase().includes(q));
-
-    if (step === 'type') return { list: filter(typeOptions), hasNone: false };
-    if (step === 'category')
-      return { list: filter(categoryOptions), hasNone: false };
-    if (step === 'item') return { list: filter(itemOptions), hasNone: false };
-    if (step === 'variant')
-      return { list: filter(variantOptions), hasNone: variantOptions.length === 0 };
-
+    const f = (arr: string[]) => !q ? arr : arr.filter(x => x.toLowerCase().includes(q));
+    if (step === "type") return { list: f(typeOptions), hasNone: false };
+    if (step === "category") return { list: f(categoryOptions), hasNone: false };
+    if (step === "item") return { list: f(itemOptions), hasNone: false };
+    if (step === "variant") return { list: f(variantOptions), hasNone: variantOptions.length === 0 };
     return { list: [], hasNone: false };
-  }, [
-    step,
-    search,
-    typeOptions,
-    categoryOptions,
-    itemOptions,
-    variantOptions,
-  ]);
+  }, [step, search, typeOptions, categoryOptions, itemOptions, variantOptions]);
 
-  function handleTypeSelect(type: string) {
-    setSelection({
-      type,
-      category: '',
-      item: '',
-      variant: '',
-    });
-    setSearch('');
-    setStep('category');
-  }
+  function pickType(v: string) { setSel({ type: v, category: "", item: "", variant: "" }); setSearch(""); setStep("category"); }
+  function pickCategory(v: string) { setSel(s => ({ ...s, category: v, item: "", variant: "" })); setSearch(""); setStep("item"); }
+  function pickItem(v: string) { setSel(s => ({ ...s, item: v, variant: "" })); setSearch(""); setStep("variant"); }
+  function pickVariant(v: string) { setSel(s => ({ ...s, variant: v })); setStep("confirm"); }
 
-  function handleCategorySelect(category: string) {
-    setSelection({
-      ...selection,
-      category,
-      item: '',
-      variant: '',
-    });
-    setSearch('');
-    setStep('item');
-  }
-
-  function handleItemSelect(item: string) {
-    setSelection({
-      ...selection,
-      item,
-      variant: '',
-    });
-    setSearch('');
-    setStep('variant');
-  }
-
-  function handleVariantSelect(variant: string) {
-    setSelection({
-      ...selection,
-      variant,
-    });
-    setStep('confirm');
+  function handleBack() {
+    setSearch("");
+    if (step === "category") { setStep("type"); setSel(s => ({ ...s, category: "", item: "", variant: "" })); }
+    else if (step === "item") { setStep("category"); setSel(s => ({ ...s, item: "", variant: "" })); }
+    else if (step === "variant") { setStep("item"); setSel(s => ({ ...s, variant: "" })); }
+    else if (step === "confirm") setStep("variant");
   }
 
   function handleConfirm() {
-    // Find the matching item
-    const finalType = selection.type.trim();
-    const finalCategory = selection.category.trim();
-    const finalItem = selection.item.trim();
-    const finalVariant = selection.variant.trim();
-
-    const matchedItem = items.find(
-      (r) =>
-        (r.item_type ?? '').toLowerCase() === finalType.toLowerCase() &&
-        (r.category ?? '').trim() === finalCategory &&
-        r.item_name.trim() === finalItem &&
-        (!finalVariant || (r.variant ?? '').trim() === finalVariant)
-    );
-
-    if (!matchedItem) {
-      console.error('No matching item found');
-      return;
-    }
-
-    const result: SmartItemSelection = {
-      type: finalType,
-      category: finalCategory,
-      item: finalItem,
-      variant: finalVariant,
-      costItemId: matchedItem.id,
-      itemName: matchedItem.item_name,
-      unit: matchedItem.unit || '',
-      currentRate: matchedItem.current_rate,
-    };
-
-    onSelect(result);
+    if (!matchedItem) { console.error("No matching item found"); return; }
+    onSelect({
+      type: sel.type, category: sel.category, item: sel.item, variant: sel.variant,
+      costItemId: matchedItem.id, itemName: matchedItem.item_name,
+      unit: matchedItem.unit || "", currentRate: matchedItem.current_rate,
+    });
   }
 
-  function handleBack() {
-    setSearch('');
-    if (step === 'category') {
-      setStep('type');
-      setSelection({ ...selection, category: '', item: '', variant: '' });
-    } else if (step === 'item') {
-      setStep('category');
-      setSelection({ ...selection, item: '', variant: '' });
-    } else if (step === 'variant') {
-      setStep('item');
-      setSelection({ ...selection, variant: '' });
-    } else if (step === 'confirm') {
-      setStep('variant');
-    }
-  }
+  const breadcrumb = [sel.type, sel.category, sel.item, sel.variant].filter(Boolean).join(" › ");
 
-  function stepTitle(s: SelectionStep): string {
-    if (s === 'type') return 'Type';
-    if (s === 'category') return 'Category';
-    if (s === 'item') return 'Item';
-    if (s === 'variant') return 'Variant';
-    return 'Confirm';
-  }
+  const STEPS: Step[] = ["type", "category", "item", "variant"];
+  const stepIdx = STEPS.indexOf(step as any);
 
-  function breadcrumb(): string {
-    const parts: string[] = [];
-    if (selection.type) parts.push(selection.type);
-    if (selection.category) parts.push(selection.category);
-    if (selection.item) parts.push(selection.item);
-    if (selection.variant) parts.push(selection.variant);
-    return parts.join(' → ');
-  }
+  // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className="bg-slate-900 rounded-2xl border border-slate-800 p-8 max-w-md w-full">
-          <div className="text-center text-slate-400">Loading items...</div>
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+          <span className="text-sm text-slate-400">Loading items…</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-[#0f1218] rounded-2xl border border-white/[0.09] shadow-2xl max-w-lg w-full max-h-[88vh] flex flex-col"
+        style={{ boxShadow: "0 0 0 1px rgba(6,182,212,0.08), 0 25px 60px rgba(0,0,0,0.6)" }}>
+
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-800">
-          <div className="flex-1 mr-4">
-            <h2 className="text-xl font-bold text-slate-100">{title}</h2>
-            <div className="text-sm text-slate-400 mt-1">
-              {step !== 'confirm' ? stepTitle(step) : 'Review Selection'}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500/30 to-violet-500/30 border border-cyan-500/20 flex items-center justify-center flex-shrink-0">
+              <Wand2 className="w-3.5 h-3.5 text-cyan-300" />
             </div>
-            {breadcrumb() && (
-              <div className="text-xs text-cyan-400 mt-1">{breadcrumb()}</div>
-            )}
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-100">{title}</h2>
+              {breadcrumb ? (
+                <div className="text-[10px] text-cyan-400/70 mt-0.5 truncate">{breadcrumb}</div>
+              ) : (
+                <div className="text-[10px] text-slate-600 mt-0.5">Type → Category → Item → Variant</div>
+              )}
+            </div>
           </div>
-          <button
-            onClick={onCancel}
-            className="p-2 hover:bg-slate-800 rounded-lg transition text-slate-400 hover:text-slate-200"
-          >
-            <X size={20} />
+          <button onClick={onCancel} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors flex-shrink-0">
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Search bar (not shown on confirm step) */}
-        {step !== 'confirm' && (
-          <div className="p-4 border-b border-slate-800">
+        {/* Step progress bar */}
+        {step !== "confirm" && (
+          <div className="px-5 pt-3 pb-0">
+            <div className="flex gap-1">
+              {STEPS.map((s, i) => {
+                const done = (s === "type" && !!sel.type) || (s === "category" && !!sel.category) || (s === "item" && !!sel.item) || (s === "variant" && !!sel.variant);
+                const active = step === s;
+                const accessible = i <= stepIdx || done;
+                return (
+                  <button key={s}
+                    onClick={() => accessible && i < stepIdx && (() => { setSearch(""); setStep(s); })()}
+                    className={`flex-1 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                      active ? "bg-cyan-500/20 text-cyan-300" :
+                      done  ? "bg-white/[0.07] text-slate-400" :
+                              "bg-white/[0.02] text-slate-700"
+                    }`}>
+                    {i + 1}. {s.charAt(0).toUpperCase() + s.slice(1)}
+                    {done && !active ? " ✓" : ""}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Search */}
+        {step !== "confirm" && (
+          <div className="px-5 pt-3 pb-0">
             <div className="relative">
-              <Search
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                size={18}
-              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={`Search ${stepTitle(step).toLowerCase()}...`}
-                className="w-full pl-10 pr-4 py-2 border border-slate-700 rounded-xl bg-slate-950 text-slate-100 placeholder-slate-500 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none"
+                placeholder={`Search ${step}…`}
+                autoFocus
+                className="w-full pl-8 pr-4 py-2 bg-white/[0.05] border border-white/[0.08] rounded-lg text-xs text-slate-200 placeholder-slate-700 focus:outline-none focus:border-cyan-500/50 transition-colors"
               />
             </div>
           </div>
         )}
 
-        {/* Content area */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {step === 'confirm' ? (
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+
+          {/* Confirm screen */}
+          {step === "confirm" ? (
             <div className="space-y-4">
-              <div className="p-4 bg-slate-950/50 border border-slate-800 rounded-xl">
-                <h3 className="font-semibold text-slate-100 mb-3">
-                  Selected Item
-                </h3>
-                <div className="space-y-2 text-sm">
-                  {selection.type && (
-                    <div>
-                      <span className="text-slate-500">Type:</span>{' '}
-                      <span className="font-medium text-slate-200">
-                        {selection.type}
-                      </span>
-                    </div>
-                  )}
-                  {selection.category && (
-                    <div>
-                      <span className="text-slate-500">Category:</span>{' '}
-                      <span className="font-medium text-slate-200">
-                        {selection.category}
-                      </span>
-                    </div>
-                  )}
-                  {selection.item && (
-                    <div>
-                      <span className="text-slate-500">Item:</span>{' '}
-                      <span className="font-medium text-slate-200">
-                        {selection.item}
-                      </span>
-                    </div>
-                  )}
-                  {selection.variant && (
-                    <div>
-                      <span className="text-slate-500">Variant:</span>{' '}
-                      <span className="font-medium text-slate-200">
-                        {selection.variant}
-                      </span>
-                    </div>
-                  )}
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 space-y-3">
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Selected Item</div>
+
+                <ConfirmRow label="Type">
+                  {sel.type ? typeBadge(sel.type) : <span className="text-slate-600">—</span>}
+                </ConfirmRow>
+
+                <ConfirmRow label="Category">
+                  <span className="text-xs font-medium text-slate-200">{sel.category || "—"}</span>
+                </ConfirmRow>
+
+                <ConfirmRow label="Item">
+                  <span className="text-xs font-semibold text-slate-100">{sel.item || "—"}</span>
+                </ConfirmRow>
+
+                {sel.variant && (
+                  <ConfirmRow label="Variant">
+                    <span className="text-xs text-slate-200">{sel.variant}</span>
+                  </ConfirmRow>
+                )}
+
+                {matchedItem && (
+                  <>
+                    <div className="w-full h-px bg-white/[0.06] my-1" />
+                    <ConfirmRow label="Unit">
+                      <span className="text-xs text-slate-300">{matchedItem.unit || "—"}</span>
+                    </ConfirmRow>
+                    <ConfirmRow label="Rate">
+                      <span className="text-xs font-semibold text-cyan-300">${fmt(matchedItem.current_rate)}</span>
+                    </ConfirmRow>
+                  </>
+                )}
+              </div>
+
+              {!matchedItem && (
+                <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                  No exact match found — check your selections.
                 </div>
-              </div>
+              )}
             </div>
-          ) : step === 'variant' && currentOptions.hasNone ? (
-            <div className="p-4">
-              <div className="text-sm text-slate-200 mb-2">
-                No variants found for this item.
-              </div>
-              <div className="text-xs text-slate-400 mb-4">
-                Continue with no variant.
-              </div>
+
+          ) : step === "variant" && currentOpts.hasNone ? (
+            // No variants
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400 mb-3">No variants found for this item. You can continue without one.</p>
               <button
-                onClick={() => handleVariantSelect('')}
-                className="w-full px-4 py-3 rounded-xl border border-slate-700 bg-slate-950/50 hover:bg-slate-800/50 hover:border-slate-600 transition text-left"
+                onClick={() => pickVariant("")}
+                className="w-full text-left px-4 py-3 rounded-xl border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] hover:border-cyan-500/20 transition-colors flex items-center justify-between group"
               >
-                <div className="font-medium text-slate-100">No variant</div>
+                <span className="text-xs font-medium text-slate-300">No variant — continue</span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-300 transition-colors" />
               </button>
             </div>
-          ) : currentOptions.list.length === 0 ? (
-            <div className="text-center py-12 text-slate-400">
-              {search
-                ? `No ${stepTitle(step).toLowerCase()} matches your search`
-                : `No ${stepTitle(step).toLowerCase()} found`}
+
+          ) : currentOpts.list.length === 0 ? (
+            <div className="text-center py-10 text-xs text-slate-600">
+              {search ? `No ${step} matches "${search}"` : `No ${step} options found`}
             </div>
+
           ) : (
-            <div className="space-y-2">
-              {currentOptions.list.map((opt) => (
+            // Options list
+            <div className="space-y-0.5">
+              {currentOpts.list.map((opt) => (
                 <button
                   key={opt}
                   onClick={() => {
-                    if (step === 'type') handleTypeSelect(opt);
-                    else if (step === 'category') handleCategorySelect(opt);
-                    else if (step === 'item') handleItemSelect(opt);
-                    else if (step === 'variant') handleVariantSelect(opt);
+                    if (step === "type") pickType(opt);
+                    else if (step === "category") pickCategory(opt);
+                    else if (step === "item") pickItem(opt);
+                    else if (step === "variant") pickVariant(opt);
                   }}
-                  className="w-full text-left px-4 py-3 rounded-xl border border-slate-800 bg-slate-950/50 hover:bg-slate-800/50 hover:border-slate-700 transition flex items-center justify-between group"
+                  className="w-full text-left px-3.5 py-2.5 rounded-lg hover:bg-white/[0.05] hover:border-white/[0.09] border border-transparent transition-colors flex items-center justify-between group"
                 >
-                  <span className="font-medium text-slate-100">{opt}</span>
-                  <ChevronRight
-                    size={18}
-                    className="text-slate-500 group-hover:text-slate-300"
-                  />
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {step === "type" && typeDot(opt)}
+                    <span className="text-xs text-slate-300 group-hover:text-slate-100 transition-colors truncate">{opt}</span>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-700 group-hover:text-slate-400 flex-shrink-0 transition-colors" />
                 </button>
               ))}
             </div>
@@ -407,24 +356,38 @@ export function SmartItemSelector({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-800 flex items-center justify-between">
+        <div className="px-5 py-3.5 border-t border-white/[0.07] flex items-center justify-between">
           <button
-            onClick={step === 'type' ? onCancel : handleBack}
-            className="px-4 py-2 text-slate-400 hover:text-slate-200 transition"
+            onClick={step === "type" ? onCancel : handleBack}
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors"
           >
-            {step === 'type' ? 'Cancel' : 'Back'}
+            <ArrowLeft className="w-3.5 h-3.5" />
+            {step === "type" ? "Cancel" : "Back"}
           </button>
-          {step === 'confirm' && (
+
+          {step === "confirm" && (
             <button
               onClick={handleConfirm}
-              className="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-medium transition flex items-center gap-2"
+              disabled={!matchedItem}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-semibold transition-colors"
             >
-              <Check size={18} />
+              <Check className="w-3.5 h-3.5" />
               Confirm Selection
             </button>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Tiny helpers ─────────────────────────────────────────────────────────────
+
+function ConfirmRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-[10px] text-slate-600 uppercase tracking-wider flex-shrink-0">{label}</span>
+      <div className="text-right">{children}</div>
     </div>
   );
 }

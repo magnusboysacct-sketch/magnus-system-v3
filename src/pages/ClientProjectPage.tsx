@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
@@ -209,7 +209,7 @@ export default function ClientProjectPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
         <div className="p-6 text-sm text-slate-400">Loading project...</div>
       </div>
     );
@@ -217,7 +217,7 @@ export default function ClientProjectPage() {
 
   if (error || !hasAccess || !project) {
     return (
-      <div className="min-h-screen bg-slate-950">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
         <div className="p-6 space-y-4">
           <div>
             <h1 className="text-2xl font-semibold text-slate-200">Access Denied</h1>
@@ -245,7 +245,7 @@ export default function ClientProjectPage() {
   const statusLabel = project.status.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <div className="border-b border-slate-800 bg-slate-900/50 px-6 py-4">
         <div className="flex items-center justify-between">
           <div>

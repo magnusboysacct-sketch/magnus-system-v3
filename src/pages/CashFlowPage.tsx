@@ -1,301 +1,217 @@
+﻿// src/pages/CashFlowPage.tsx
 import React, { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, DollarSign, Calendar, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { supabase } from "../lib/supabase";
 import {
-  fetchBankAccounts,
-  fetchCashTransactions,
-  getCashFlowSummary,
-  getARSummary,
-  getAPSummary,
-} from "../lib/finance";
-import { useFinanceAccess } from "../hooks/useFinanceAccess";
-import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
+  PageHeader, StatCard, Card, CardHeader, Badge, Btn,
+  Table, Th, Tr, Td, Empty, Tabs, cn
+} from "../components/ui";
+import {
+  TrendingUp, TrendingDown, DollarSign,
+  ArrowUpRight, ArrowDownRight, RefreshCw,
+  Wallet, Building2
+} from "lucide-react";
+
+type Transaction = {
+  id: string;
+  transaction_type: string;
+  amount: number;
+  description: string | null;
+  transaction_date: string | null;
+  reference_number: string | null;
+  bank_account_id: string | null;
+  created_at: string;
+  bank_accounts?: { account_name: string } | null;
+};
+
+type BankAccount = {
+  id: string;
+  account_name: string;
+  account_type: string;
+  current_balance: number;
+  currency: string;
+};
+
+function fmt(n: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", maximumFractionDigits: 2
+  }).format(n);
+}
+
+function fmtDate(d: string | null) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+const TYPE_COLOR: Record<string, any> = {
+  income: "green", receipt: "green", payment: "red",
+  expense: "red", transfer: "blue", adjustment: "slate",
+};
 
 export default function CashFlowPage() {
-  const financeAccess = useFinanceAccess();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
-  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [summary, setSummary] = useState({
-    income: 0,
-    expenses: 0,
-    netCashFlow: 0,
-  });
-  const [arSummary, setArSummary] = useState({ totalOutstanding: 0, overdueCount: 0 });
-  const [apSummary, setApSummary] = useState({ totalDue: 0, pendingApprovalCount: 0 });
-  const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0],
-    end: new Date().toISOString().split("T")[0],
-  });
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [period, setPeriod] = useState<"30" | "90" | "365">("30");
+
+  const totalIn = transactions
+    .filter(t => ["income", "receipt"].includes(t.transaction_type))
+    .reduce((s, t) => s + (t.amount || 0), 0);
+
+  const totalOut = transactions
+    .filter(t => ["expense", "payment"].includes(t.transaction_type))
+    .reduce((s, t) => s + (t.amount || 0), 0);
+
+  const netFlow = totalIn - totalOut;
+
+  const totalBalance = accounts.reduce((s, a) => s + (a.current_balance || 0), 0);
 
   useEffect(() => {
-    loadData();
-  }, [dateRange]);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle()
+        .then(({ data }) => { if (data?.company_id) setCompanyId(data.company_id); });
+    });
+  }, []);
 
-  if (financeAccess.loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-slate-600">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!financeAccess.canViewCashFlow) {
-    return <FinanceAccessDenied />;
-  }
+  useEffect(() => { if (companyId) loadData(); }, [companyId, period]);
 
   async function loadData() {
+    setLoading(true);
     try {
-      const { supabase } = await import("../lib/supabase");
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const since = new Date();
+      since.setDate(since.getDate() - parseInt(period));
 
-      const { data: profile } = await supabase
-        .from("user_profiles")
-        .select("company_id")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile?.company_id) return;
-
-      const [accounts, trans, cashSummary, ar, ap] = await Promise.all([
-        fetchBankAccounts(profile.company_id),
-        fetchCashTransactions(profile.company_id, dateRange.start, dateRange.end),
-        getCashFlowSummary(profile.company_id, dateRange.start, dateRange.end),
-        getARSummary(profile.company_id),
-        getAPSummary(profile.company_id),
+      const [txRes, accRes] = await Promise.all([
+        supabase.from("cash_transactions")
+          .select("*, bank_accounts(account_name)")
+          .eq("company_id", companyId!)
+          .gte("created_at", since.toISOString())
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase.from("bank_accounts")
+          .select("*")
+          .eq("company_id", companyId!),
       ]);
 
-      setBankAccounts(accounts);
-      setTransactions(trans);
-      setSummary(cashSummary);
-      setArSummary(ar);
-      setApSummary(ap);
-    } catch (error) {
-      console.error("Error loading cash flow data:", error);
-    } finally {
-      setLoading(false);
-    }
+      setTransactions(txRes.data || []);
+      setAccounts(accRes.data || []);
+    } catch (e: any) { console.error(e); }
+    finally { setLoading(false); }
   }
 
-  const totalBankBalance = bankAccounts.reduce((sum, acc) => sum + Number(acc.current_balance || 0), 0);
-
   return (
-    <>
-      <div className="border-b border-slate-200 bg-white px-8 py-5">
-        <h1 className="text-2xl font-bold text-slate-900">Cash Flow</h1>
-        <p className="text-sm text-slate-600">Monitor cash position and financial health</p>
-      </div>
-
-      <div className="p-8">
-        <div className="mb-6 flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Calendar size={18} className="text-slate-500" />
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-            />
-            <span className="text-slate-500">to</span>
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-            />
-          </div>
-        </div>
-
-        <div className="mb-6 grid grid-cols-4 gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-medium text-slate-600">Total Cash</div>
-              <div className="rounded-lg bg-blue-50 p-2">
-                <DollarSign size={18} className="text-blue-600" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-slate-900">${totalBankBalance.toLocaleString()}</div>
-            <div className="mt-1 text-xs text-slate-500">Across all accounts</div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-medium text-slate-600">Cash Inflow</div>
-              <div className="rounded-lg bg-green-50 p-2">
-                <ArrowUpRight size={18} className="text-green-600" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-green-600">${summary.income.toLocaleString()}</div>
-            <div className="mt-1 text-xs text-slate-500">This period</div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-medium text-slate-600">Cash Outflow</div>
-              <div className="rounded-lg bg-red-50 p-2">
-                <ArrowDownRight size={18} className="text-red-600" />
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-red-600">${summary.expenses.toLocaleString()}</div>
-            <div className="mt-1 text-xs text-slate-500">This period</div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="text-sm font-medium text-slate-600">Net Cash Flow</div>
-              <div className={`rounded-lg p-2 ${summary.netCashFlow >= 0 ? "bg-green-50" : "bg-red-50"}`}>
-                {summary.netCashFlow >= 0 ? (
-                  <TrendingUp size={18} className="text-green-600" />
-                ) : (
-                  <TrendingDown size={18} className="text-red-600" />
-                )}
-              </div>
-            </div>
-            <div className={`text-2xl font-bold ${summary.netCashFlow >= 0 ? "text-green-600" : "text-red-600"}`}>
-              ${Math.abs(summary.netCashFlow).toLocaleString()}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">This period</div>
-          </div>
-        </div>
-
-        <div className="mb-6 grid grid-cols-2 gap-6">
-          <div className="rounded-xl border border-slate-200 bg-white p-6">
-            <h3 className="mb-4 text-lg font-semibold text-slate-900">Bank Accounts</h3>
-            <div className="space-y-3">
-              {bankAccounts.map((account) => (
-                <div
-                  key={account.id}
-                  className="flex items-center justify-between rounded-lg border border-slate-200 p-4"
-                >
-                  <div>
-                    <div className="font-medium text-slate-900">{account.account_name}</div>
-                    <div className="text-sm text-slate-500 capitalize">
-                      {account.account_type.replace("_", " ")}
-                      {account.bank_name && ` • ${account.bank_name}`}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-bold text-slate-900">
-                      ${Number(account.current_balance).toLocaleString()}
-                    </div>
-                    {account.is_primary && (
-                      <span className="text-xs font-medium text-blue-600">Primary</span>
-                    )}
-                  </div>
-                </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+      <PageHeader
+        title="Cash Flow"
+        subtitle="Bank accounts and transaction history"
+        actions={
+          <>
+            <Btn variant="ghost" size="sm" icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>} onClick={loadData}/>
+            <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
+              {(["30","90","365"] as const).map(p => (
+                <button key={p} onClick={() => setPeriod(p)}
+                  className={cn("px-2.5 py-1 rounded-md text-[10px] font-bold transition-colors",
+                    period === p ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+                  {p === "365" ? "1Y" : `${p}D`}
+                </button>
               ))}
-              {bankAccounts.length === 0 && (
-                <div className="py-8 text-center text-sm text-slate-500">No bank accounts configured</div>
-              )}
             </div>
-          </div>
+          </>
+        }
+      />
 
-          <div className="space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-6">
-              <h3 className="mb-4 text-lg font-semibold text-slate-900">Accounts Receivable</h3>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-slate-600">Outstanding</div>
-                  <div className="mt-1 text-2xl font-bold text-slate-900">
-                    ${arSummary.totalOutstanding.toLocaleString()}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-slate-600">Overdue</div>
-                  <div className="mt-1 text-2xl font-bold text-red-600">{arSummary.overdueCount}</div>
-                </div>
-              </div>
-            </div>
+      <div className="p-6 space-y-5">
 
-            <div className="rounded-xl border border-slate-200 bg-white p-6">
-              <h3 className="mb-4 text-lg font-semibold text-slate-900">Accounts Payable</h3>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-slate-600">Total Due</div>
-                  <div className="mt-1 text-2xl font-bold text-slate-900">
-                    ${apSummary.totalDue.toLocaleString()}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-slate-600">Pending Approval</div>
-                  <div className="mt-1 text-2xl font-bold text-orange-600">{apSummary.pendingApprovalCount}</div>
-                </div>
-              </div>
-            </div>
-          </div>
+        {/* KPIs */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard label="Total Balance" value={fmt(totalBalance)}
+            icon={<Wallet size={15}/>} color="text-cyan-300" sub={`${accounts.length} account${accounts.length !== 1 ? "s" : ""}`}/>
+          <StatCard label={`Cash In (${period}d)`} value={fmt(totalIn)}
+            icon={<ArrowUpRight size={15}/>} color="text-emerald-300"/>
+          <StatCard label={`Cash Out (${period}d)`} value={fmt(totalOut)}
+            icon={<ArrowDownRight size={15}/>} color="text-red-300"/>
+          <StatCard label="Net Flow" value={fmt(netFlow)}
+            icon={netFlow >= 0 ? <TrendingUp size={15}/> : <TrendingDown size={15}/>}
+            color={netFlow >= 0 ? "text-emerald-300" : "text-red-300"}/>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-6 py-4">
-            <h3 className="text-lg font-semibold text-slate-900">Recent Transactions</h3>
+        {/* Bank accounts */}
+        {accounts.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {accounts.map(a => (
+              <Card key={a.id}>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                    <Building2 size={14} className="text-cyan-400"/>
+                  </div>
+                  <Badge color="slate">{a.account_type}</Badge>
+                </div>
+                <div className="text-sm font-semibold text-slate-200 mb-1">{a.account_name}</div>
+                <div className={cn("text-xl font-bold", a.current_balance >= 0 ? "text-emerald-400" : "text-red-400")}>
+                  {fmt(a.current_balance)}
+                </div>
+                <div className="text-[10px] text-slate-700 mt-1">{a.currency || "USD"}</div>
+              </Card>
+            ))}
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-b border-slate-200 bg-slate-50">
+        )}
+
+        {/* Transactions table */}
+        <Card padding={false}>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+            <span className="text-sm font-semibold text-slate-200">
+              Transactions <span className="text-slate-600 font-normal text-xs ml-2">last {period} days</span>
+            </span>
+            <span className="text-xs text-slate-600">{transactions.length} records</span>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-xs text-slate-600">
+              <RefreshCw size={14} className="animate-spin mr-2"/> Loading...
+            </div>
+          ) : transactions.length === 0 ? (
+            <Empty icon={<DollarSign size={18}/>} title="No transactions found"
+              body="Cash transactions will appear here as you record income and expenses."/>
+          ) : (
+            <Table>
+              <thead>
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Description
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Account
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Amount
-                  </th>
+                  <Th>Date</Th>
+                  <Th>Description</Th>
+                  <Th>Account</Th>
+                  <Th>Type</Th>
+                  <Th>Reference</Th>
+                  <Th right>Amount</Th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
-                {transactions.slice(0, 20).map((txn) => (
-                  <tr key={txn.id} className="hover:bg-slate-50">
-                    <td className="px-6 py-4 text-sm text-slate-900">{txn.transaction_date}</td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-slate-900">{txn.description}</div>
-                      {txn.reference_number && (
-                        <div className="text-xs text-slate-500">Ref: {txn.reference_number}</div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
-                          txn.transaction_type === "income"
-                            ? "bg-green-50 text-green-700"
-                            : txn.transaction_type === "expense"
-                            ? "bg-red-50 text-red-700"
-                            : "bg-blue-50 text-blue-700"
-                        }`}
-                      >
-                        {txn.transaction_type}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {txn.bank_accounts?.account_name || "-"}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <span
-                        className={`text-sm font-medium ${
-                          txn.transaction_type === "income" ? "text-green-600" : "text-red-600"
-                        }`}
-                      >
-                        {txn.transaction_type === "income" ? "+" : "-"}$
-                        {Number(txn.amount).toLocaleString()}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+              <tbody>
+                {transactions.map(t => {
+                  const isIn = ["income", "receipt"].includes(t.transaction_type);
+                  return (
+                    <Tr key={t.id}>
+                      <Td muted>{fmtDate(t.transaction_date || t.created_at)}</Td>
+                      <Td><span className="font-medium text-slate-200">{t.description || "—"}</span></Td>
+                      <Td muted>{t.bank_accounts?.account_name || "—"}</Td>
+                      <Td>
+                        <Badge color={TYPE_COLOR[t.transaction_type] || "slate"} dot>
+                          {t.transaction_type}
+                        </Badge>
+                      </Td>
+                      <Td muted className="font-mono text-[10px]">{t.reference_number || "—"}</Td>
+                      <Td right>
+                        <span className={cn("font-semibold", isIn ? "text-emerald-400" : "text-red-400")}>
+                          {isIn ? "+" : "-"}{fmt(Math.abs(t.amount))}
+                        </span>
+                      </Td>
+                    </Tr>
+                  );
+                })}
               </tbody>
-            </table>
-            {transactions.length === 0 && (
-              <div className="py-12 text-center text-sm text-slate-500">No transactions in this period</div>
-            )}
-          </div>
-        </div>
+            </Table>
+          )}
+        </Card>
       </div>
-    </>
+    </div>
   );
 }

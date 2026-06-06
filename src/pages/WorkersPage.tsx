@@ -1,827 +1,580 @@
+﻿// src/pages/WorkersPage.tsx
 import React, { useEffect, useState } from "react";
-import { User, UserPlus, Users, Clock, DollarSign, Phone, Mail, MapPin, X, Briefcase, Calendar, CircleAlert as AlertCircle, Settings } from "lucide-react";
-import { fetchWorkers, createWorker, updateWorker, deleteWorker } from "../lib/workers";
-import type { Worker, WorkerType, PayType } from "../lib/workers";
-import WorkerTaxConfigurationSection from "../components/WorkerTaxConfigurationSection";
+import { supabase } from "../lib/supabase";
+import {
+  PageHeader, Card, Badge, Btn, Input, Select, Field,
+  Table, Th, Tr, Td, Empty, Modal, Alert, Textarea,
+  Tabs, Divider, cn
+} from "../components/ui";
+import {
+  Plus, Search, HardHat, Phone, Mail, MapPin,
+  RefreshCw, Edit2, Trash2, LayoutGrid, List,
+  DollarSign, Clock, User, Calendar, Briefcase
+} from "lucide-react";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type WorkerType = "employee" | "subcontractor" | "crew_lead";
+type WorkerStatus = "active" | "inactive" | "terminated";
+type PayType = "hourly" | "salary" | "contract";
+
+type Worker = {
+  id: string;
+  company_id: string;
+  worker_type: WorkerType;
+  first_name: string;
+  last_name: string;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  hire_date?: string | null;
+  status: WorkerStatus;
+  pay_type?: PayType | null;
+  pay_rate?: number | null;
+  overtime_rate?: number | null;
+  employee_id?: string | null;
+  notes?: string | null;
+  created_at?: string;
+};
+
+type Tab = "all" | "active" | "inactive" | "terminated";
+type ViewMode = "grid" | "list";
+
+const STATUS_COLOR: Record<WorkerStatus, any> = {
+  active: "green", inactive: "amber", terminated: "red"
+};
+
+const TYPE_COLOR: Record<WorkerType, string> = {
+  employee: "text-blue-400", subcontractor: "text-violet-400", crew_lead: "text-cyan-400"
+};
+
+const TYPE_BG: Record<WorkerType, string> = {
+  employee: "bg-blue-500/10 border-blue-500/20",
+  subcontractor: "bg-violet-500/10 border-violet-500/20",
+  crew_lead: "bg-cyan-500/10 border-cyan-500/20",
+};
+
+const EMPTY_FORM = {
+  first_name: "", last_name: "", email: "", phone: "",
+  address: "", city: "", hire_date: "",
+  worker_type: "employee" as WorkerType,
+  status: "active" as WorkerStatus,
+  pay_type: "hourly" as PayType,
+  pay_rate: "", overtime_rate: "", employee_id: "", notes: "",
+};
+
+function fmt(n: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
+}
+
+function fullName(w: Worker) { return `${w.first_name} ${w.last_name}`; }
+
+function initials(w: Worker) {
+  return `${w.first_name?.[0] || ""}${w.last_name?.[0] || ""}`.toUpperCase();
+}
+
+function fmtDate(d: string | null | undefined) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// ─── Worker Card ──────────────────────────────────────────────────────────────
+
+function WorkerCard({ worker, onEdit, onDelete }: {
+  worker: Worker;
+  onEdit: (w: Worker) => void;
+  onDelete: (id: string) => void;
+}) {
+  const avatarBg = worker.worker_type === "employee" ? "bg-blue-500/20 text-blue-300" :
+    worker.worker_type === "crew_lead" ? "bg-cyan-500/20 text-cyan-300" :
+    "bg-violet-500/20 text-violet-300";
+
+  return (
+    <Card className="group hover:border-white/[0.13] transition-all">
+      <div className="flex items-start justify-between mb-4">
+        <div className={cn("w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold border", TYPE_BG[worker.worker_type], TYPE_COLOR[worker.worker_type])}>
+          {initials(worker)}
+        </div>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => onEdit(worker)}
+            className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
+            <Edit2 size={12}/>
+          </button>
+          <button onClick={() => onDelete(worker.id)}
+            className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
+            <Trash2 size={12}/>
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <div className="text-sm font-semibold text-slate-100 mb-0.5">{fullName(worker)}</div>
+        <div className={cn("text-[10px] font-semibold capitalize", TYPE_COLOR[worker.worker_type])}>
+          {worker.worker_type.replace("_", " ")}
+        </div>
+        {worker.employee_id && (
+          <div className="text-[9px] text-slate-700 mt-0.5">ID: {worker.employee_id}</div>
+        )}
+      </div>
+
+      <div className="space-y-1.5 mb-4">
+        {worker.phone && (
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-600">
+            <Phone size={9}/> {worker.phone}
+          </div>
+        )}
+        {worker.email && (
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-600 truncate">
+            <Mail size={9}/> {worker.email}
+          </div>
+        )}
+        {worker.hire_date && (
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-600">
+            <Calendar size={9}/> Hired {fmtDate(worker.hire_date)}
+          </div>
+        )}
+      </div>
+
+      {/* Pay info */}
+      {worker.pay_rate && (
+        <div className="flex items-center gap-1.5 mb-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5">
+          <DollarSign size={10} className="text-emerald-400"/>
+          <span className="text-[11px] font-semibold text-emerald-300">
+            {fmt(worker.pay_rate)} / {worker.pay_type === "hourly" ? "hr" : worker.pay_type === "salary" ? "yr" : "contract"}
+          </span>
+          {worker.overtime_rate && (
+            <span className="text-[9px] text-emerald-600 ml-1">OT: {fmt(worker.overtime_rate)}/hr</span>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between pt-3 border-t border-white/[0.05]">
+        <Badge color={STATUS_COLOR[worker.status]} dot>{worker.status}</Badge>
+        {worker.city && <span className="text-[9px] text-slate-700">{worker.city}</span>}
+      </div>
+    </Card>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WorkersPage() {
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [showDetailDrawer, setShowDetailDrawer] = useState(false);
-  const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
-  const [editingWorker, setEditingWorker] = useState<Worker | null>(null);
-  const [filterType, setFilterType] = useState<WorkerType | "all">("all");
-  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive">("active");
-  const [showTaxConfigTab, setShowTaxConfigTab] = useState(false);
-  const [currentCompanyId, setCurrentCompanyId] = useState<string>("");
-
-  const [formData, setFormData] = useState({
-    worker_type: "employee" as WorkerType,
-    first_name: "",
-    last_name: "",
-    email: "",
-    phone: "",
-    address: "",
-    city: "",
-    state: "",
-    zip: "",
-    pay_type: "hourly" as PayType,
-    pay_rate: "",
-    overtime_rate: "",
-    employee_id: "",
-    hire_date: "",
-    termination_date: "",
-    trade: "",
-    crew_name: "",
-    emergency_contact_name: "",
-    emergency_contact_phone: "",
-    ssn_last_4: "",
-    notes: "",
-  });
+  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<Tab>("all");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [showNew, setShowNew] = useState(false);
+  const [editWorker, setEditWorker] = useState<Worker | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadWorkers();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle()
+        .then(({ data }) => { if (data?.company_id) setCompanyId(data.company_id); });
+    });
   }, []);
 
+  useEffect(() => { if (companyId) loadWorkers(); }, [companyId]);
+
   async function loadWorkers() {
+    setLoading(true);
     try {
-      const { data: { user } } = await (await import("../lib/supabase")).supabase.auth.getUser();
-      if (!user) return;
+      const { data, error: e } = await supabase
+        .from("workers")
+        .select("*")
+        .eq("company_id", companyId!)
+        .order("first_name", { ascending: true });
+      if (e) throw e;
+      setWorkers(data || []);
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
+  }
 
-      const { data: profile } = await (await import("../lib/supabase")).supabase
-        .from("user_profiles")
-        .select("company_id")
-        .eq("id", user.id)
-        .single();
+  async function saveWorker() {
+    setSaving(true); setError(null);
+    try {
+      const payload = {
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        email: form.email.trim() || null,
+        phone: form.phone.trim() || null,
+        address: form.address.trim() || null,
+        city: form.city.trim() || null,
+        hire_date: form.hire_date || null,
+        worker_type: form.worker_type,
+        status: form.status,
+        pay_type: form.pay_type || null,
+        pay_rate: form.pay_rate ? parseFloat(form.pay_rate) : null,
+        overtime_rate: form.overtime_rate ? parseFloat(form.overtime_rate) : null,
+        employee_id: form.employee_id.trim() || null,
+        notes: form.notes.trim() || null,
+      };
 
-      if (profile?.company_id) {
-        setCurrentCompanyId(profile.company_id);
-        const data = await fetchWorkers(profile.company_id);
-        setWorkers(data);
+      if (editWorker) {
+        const { error: e } = await supabase.from("workers").update(payload).eq("id", editWorker.id);
+        if (e) throw e;
+      } else {
+        const { error: e } = await supabase.from("workers").insert({ ...payload, company_id: companyId });
+        if (e) throw e;
       }
-    } catch (error) {
-      console.error("Error loading workers:", error);
-    } finally {
-      setLoading(false);
-    }
+      await loadWorkers();
+      closeModal();
+    } catch (e: any) { setError(e.message); }
+    finally { setSaving(false); }
   }
 
-  function openCreateModal() {
-    setEditingWorker(null);
-    setFormData({
-      worker_type: "employee",
-      first_name: "",
-      last_name: "",
-      email: "",
-      phone: "",
-      address: "",
-      city: "",
-      state: "",
-      zip: "",
-      pay_type: "hourly",
-      pay_rate: "",
-      overtime_rate: "",
-      employee_id: "",
-      hire_date: "",
-      termination_date: "",
-      trade: "",
-      crew_name: "",
-      emergency_contact_name: "",
-      emergency_contact_phone: "",
-      ssn_last_4: "",
-      notes: "",
-    });
-    setShowTaxConfigTab(false);
-    setShowModal(true);
+  async function deleteWorker(id: string) {
+    try {
+      const { error: e } = await supabase.from("workers").delete().eq("id", id);
+      if (e) throw e;
+      setWorkers(prev => prev.filter(w => w.id !== id));
+      setDeleteConfirm(null);
+    } catch (e: any) { setError(e.message); }
   }
 
-  function openEditModal(worker: Worker) {
-    setEditingWorker(worker);
-    setFormData({
-      worker_type: worker.worker_type,
+  function openEdit(worker: Worker) {
+    setEditWorker(worker);
+    setForm({
       first_name: worker.first_name,
       last_name: worker.last_name,
       email: worker.email || "",
       phone: worker.phone || "",
       address: worker.address || "",
       city: worker.city || "",
-      state: worker.state || "",
-      zip: worker.zip || "",
+      hire_date: worker.hire_date || "",
+      worker_type: worker.worker_type,
+      status: worker.status,
       pay_type: worker.pay_type || "hourly",
       pay_rate: worker.pay_rate?.toString() || "",
       overtime_rate: worker.overtime_rate?.toString() || "",
       employee_id: worker.employee_id || "",
-      hire_date: worker.hire_date || "",
-      termination_date: worker.termination_date || "",
-      trade: "",
-      crew_name: "",
-      emergency_contact_name: "",
-      emergency_contact_phone: "",
-      ssn_last_4: worker.ssn_last_4 || "",
       notes: worker.notes || "",
     });
-    setShowTaxConfigTab(false);
-    setShowModal(true);
+    setShowNew(true);
   }
 
-  function openDetailDrawer(worker: Worker) {
-    setSelectedWorker(worker);
-    setShowDetailDrawer(true);
+  function closeModal() {
+    setShowNew(false); setEditWorker(null);
+    setForm(EMPTY_FORM); setError(null);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-
-    try {
-      const { data: { user } } = await (await import("../lib/supabase")).supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: profile } = await (await import("../lib/supabase")).supabase
-        .from("user_profiles")
-        .select("company_id")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile?.company_id) return;
-
-      const payload = {
-        ...formData,
-        company_id: profile.company_id,
-        pay_rate: formData.pay_rate ? parseFloat(formData.pay_rate) : null,
-        overtime_rate: formData.overtime_rate ? parseFloat(formData.overtime_rate) : null,
-        status: "active" as const,
-      };
-
-      if (editingWorker) {
-        await updateWorker(editingWorker.id, payload);
-      } else {
-        await createWorker(payload);
-      }
-
-      setShowModal(false);
-      loadWorkers();
-    } catch (error) {
-      console.error("Error saving worker:", error);
-      alert("Failed to save worker");
-    }
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this worker?")) return;
-
-    try {
-      await deleteWorker(id);
-      loadWorkers();
-    } catch (error) {
-      console.error("Error deleting worker:", error);
-      alert("Failed to delete worker");
-    }
-  }
-
-  const filteredWorkers = workers.filter((w) => {
-    if (filterType !== "all" && w.worker_type !== filterType) return false;
-    if (filterStatus !== "all" && w.status !== filterStatus) return false;
-    return true;
+  // Filter
+  const filtered = workers.filter(w => {
+    const matchSearch = fullName(w).toLowerCase().includes(search.toLowerCase()) ||
+      (w.email || "").toLowerCase().includes(search.toLowerCase()) ||
+      (w.phone || "").includes(search) ||
+      (w.employee_id || "").toLowerCase().includes(search.toLowerCase());
+    const matchTab = tab === "all" || w.status === tab;
+    const matchType = !typeFilter || w.worker_type === typeFilter;
+    return matchSearch && matchTab && matchType;
   });
 
-  const activeCount = workers.filter((w) => w.status === "active").length;
-  const employeeCount = workers.filter((w) => w.worker_type === "employee" && w.status === "active").length;
-  const subcontractorCount = workers.filter((w) => w.worker_type === "subcontractor" && w.status === "active").length;
+  const stats = {
+    total: workers.length,
+    active: workers.filter(w => w.status === "active").length,
+    inactive: workers.filter(w => w.status === "inactive").length,
+    terminated: workers.filter(w => w.status === "terminated").length,
+    employees: workers.filter(w => w.worker_type === "employee").length,
+    subs: workers.filter(w => w.worker_type === "subcontractor").length,
+    avgRate: workers.filter(w => w.pay_rate).length > 0
+      ? workers.filter(w => w.pay_rate).reduce((s, w) => s + (w.pay_rate || 0), 0) / workers.filter(w => w.pay_rate).length
+      : 0,
+  };
 
   return (
-    <>
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-5">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Workers</h1>
-          <p className="text-sm text-slate-600">Manage employees, subcontractors, and crews</p>
-        </div>
-        <button
-          onClick={openCreateModal}
-          className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
-        >
-          <UserPlus size={18} />
-          Add Worker
-        </button>
-      </div>
-
-      <div className="p-8">
-        <div className="mb-6 grid grid-cols-3 gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-blue-50 p-2.5">
-                <Users size={20} className="text-blue-600" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-slate-600">Total Active</div>
-                <div className="text-2xl font-bold text-slate-900">{activeCount}</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-green-50 p-2.5">
-                <User size={20} className="text-green-600" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-slate-600">Employees</div>
-                <div className="text-2xl font-bold text-slate-900">{employeeCount}</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-purple-50 p-2.5">
-                <Clock size={20} className="text-purple-600" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-slate-600">Subcontractors</div>
-                <div className="text-2xl font-bold text-slate-900">{subcontractorCount}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mb-4 flex items-center gap-3">
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value as any)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-          >
-            <option value="all">All Types</option>
-            <option value="employee">Employees</option>
-            <option value="subcontractor">Subcontractors</option>
-            <option value="crew_lead">Crew Leads</option>
-          </select>
-
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as any)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-          >
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </div>
-
-        {loading ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-12 text-center">
-            <div className="text-slate-600">Loading workers...</div>
-          </div>
-        ) : filteredWorkers.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-12 text-center">
-            <Users size={48} className="mx-auto mb-4 text-slate-300" />
-            <div className="text-lg font-medium text-slate-900">No workers found</div>
-            <div className="mt-1 text-sm text-slate-600">Get started by adding your first worker</div>
-            <button
-              onClick={openCreateModal}
-              className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-            >
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+      <PageHeader
+        title="Workers"
+        subtitle={`${stats.total} total · ${stats.active} active`}
+        actions={
+          <>
+            <Btn variant="ghost" size="sm"
+              icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>}
+              onClick={loadWorkers}/>
+            <Btn variant="primary" size="sm" icon={<Plus size={13}/>}
+              onClick={() => { setEditWorker(null); setForm(EMPTY_FORM); setShowNew(true); }}>
               Add Worker
+            </Btn>
+          </>
+        }
+      />
+
+      <div className="p-6 space-y-5">
+        {/* Stats strip */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: "Total",      value: stats.total,      color: "text-slate-200",   key: "all" as Tab },
+            { label: "Active",     value: stats.active,     color: "text-emerald-400", key: "active" as Tab },
+            { label: "Inactive",   value: stats.inactive,   color: "text-amber-400",   key: "inactive" as Tab },
+            { label: "Terminated", value: stats.terminated, color: "text-red-400",     key: "terminated" as Tab },
+          ].map(s => (
+            <button key={s.key} onClick={() => setTab(s.key)}
+              className={cn("rounded-xl border p-3 text-left transition-all",
+                tab === s.key ? "border-cyan-500/30 bg-cyan-500/10" : "border-white/[0.07] bg-[#0c1018] hover:border-white/[0.12]")}>
+              <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">{s.label}</div>
+              <div className={cn("text-2xl font-bold", s.color)}>{s.value}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* Secondary stats */}
+        <div className="grid grid-cols-3 gap-3">
+          <Card>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">Employees</div>
+            <div className="text-xl font-bold text-blue-400">{stats.employees}</div>
+          </Card>
+          <Card>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">Subcontractors</div>
+            <div className="text-xl font-bold text-violet-400">{stats.subs}</div>
+          </Card>
+          <Card>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">Avg Pay Rate</div>
+            <div className="text-xl font-bold text-emerald-400">{stats.avgRate ? fmt(stats.avgRate) : "—"}</div>
+          </Card>
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700"/>
+            <Input className="pl-8" placeholder="Search name, email, ID..."
+              value={search} onChange={e => setSearch(e.target.value)}/>
+          </div>
+          <Select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="w-40">
+            <option value="">All types</option>
+            <option value="employee">Employee</option>
+            <option value="subcontractor">Subcontractor</option>
+            <option value="crew_lead">Crew Lead</option>
+          </Select>
+          <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
+            <button onClick={() => setViewMode("grid")}
+              className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+              <LayoutGrid size={13}/>
+            </button>
+            <button onClick={() => setViewMode("list")}
+              className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+              <List size={13}/>
             </button>
           </div>
+        </div>
+
+        {/* Content */}
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-xs text-slate-600">
+            <RefreshCw size={14} className="animate-spin mr-2"/> Loading workers...
+          </div>
+        ) : filtered.length === 0 ? (
+          <Empty
+            icon={<HardHat size={20}/>}
+            title={search ? "No workers match your search" : "No workers yet"}
+            body={search ? "Try a different search." : "Add your first worker to get started."}
+            action={!search ? <Btn variant="primary" icon={<Plus size={13}/>}
+              onClick={() => { setEditWorker(null); setForm(EMPTY_FORM); setShowNew(true); }}>
+              Add Worker</Btn> : undefined}
+          />
+        ) : viewMode === "grid" ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filtered.map(w => (
+              <WorkerCard key={w.id} worker={w}
+                onEdit={openEdit}
+                onDelete={id => setDeleteConfirm(id)}
+              />
+            ))}
+          </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <table className="w-full">
-              <thead className="border-b border-slate-200 bg-slate-50">
+          <Card padding={false}>
+            <Table>
+              <thead>
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Contact
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Pay Rate
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Actions
-                  </th>
+                  <Th>Worker</Th>
+                  <Th>Type</Th>
+                  <Th>Phone</Th>
+                  <Th>Pay Rate</Th>
+                  <Th>Hire Date</Th>
+                  <Th>Status</Th>
+                  <Th>Actions</Th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
-                {filteredWorkers.map((worker) => (
-                  <tr key={worker.id} className="hover:bg-slate-50">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-slate-900">
-                        {worker.first_name} {worker.last_name}
-                      </div>
-                      {worker.employee_id && (
-                        <div className="text-xs text-slate-500">ID: {worker.employee_id}</div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 capitalize">
-                        {worker.worker_type.replace("_", " ")}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="space-y-1">
-                        {worker.email && (
-                          <div className="flex items-center gap-1.5 text-sm text-slate-600">
-                            <Mail size={14} />
-                            {worker.email}
-                          </div>
-                        )}
-                        {worker.phone && (
-                          <div className="flex items-center gap-1.5 text-sm text-slate-600">
-                            <Phone size={14} />
-                            {worker.phone}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      {worker.pay_rate && (
-                        <div className="flex items-center gap-1 text-sm font-medium text-slate-900">
-                          <DollarSign size={14} />
-                          {worker.pay_rate.toFixed(2)}/{worker.pay_type === "hourly" ? "hr" : "yr"}
+              <tbody>
+                {filtered.map(w => (
+                  <Tr key={w.id}>
+                    <Td>
+                      <div className="flex items-center gap-2.5">
+                        <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold border flex-shrink-0", TYPE_BG[w.worker_type], TYPE_COLOR[w.worker_type])}>
+                          {initials(w)}
                         </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                          worker.status === "active"
-                            ? "bg-green-50 text-green-700"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {worker.status}
+                        <div>
+                          <div className="font-semibold text-slate-200 text-xs">{fullName(w)}</div>
+                          {w.employee_id && <div className="text-[9px] text-slate-700">#{w.employee_id}</div>}
+                        </div>
+                      </div>
+                    </Td>
+                    <Td>
+                      <span className={cn("text-[10px] font-semibold capitalize", TYPE_COLOR[w.worker_type])}>
+                        {w.worker_type.replace("_", " ")}
                       </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={() => openDetailDrawer(worker)}
-                        className="mr-3 text-sm font-medium text-slate-600 hover:text-slate-900"
-                      >
-                        View
-                      </button>
-                      <button
-                        onClick={() => openEditModal(worker)}
-                        className="mr-3 text-sm font-medium text-blue-600 hover:text-blue-700"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(worker.id)}
-                        className="text-sm font-medium text-red-600 hover:text-red-700"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
+                    </Td>
+                    <Td muted>{w.phone || "—"}</Td>
+                    <Td>
+                      {w.pay_rate ? (
+                        <span className="text-xs font-semibold text-emerald-400">
+                          {fmt(w.pay_rate)}/{w.pay_type === "hourly" ? "hr" : w.pay_type === "salary" ? "yr" : "ct"}
+                        </span>
+                      ) : <span className="text-slate-700">—</span>}
+                    </Td>
+                    <Td muted>{fmtDate(w.hire_date)}</Td>
+                    <Td><Badge color={STATUS_COLOR[w.status]} dot>{w.status}</Badge></Td>
+                    <Td>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => openEdit(w)}
+                          className="p-1.5 rounded hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
+                          <Edit2 size={12}/>
+                        </button>
+                        <button onClick={() => setDeleteConfirm(w.id)}
+                          className="p-1.5 rounded hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
+                          <Trash2 size={12}/>
+                        </button>
+                      </div>
+                    </Td>
+                  </Tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+            </Table>
+          </Card>
         )}
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="mb-6 text-xl font-bold text-slate-900">
-              {editingWorker ? "Edit Worker" : "Add New Worker"}
-            </h2>
+      {/* New / Edit Modal */}
+      <Modal open={showNew} onClose={closeModal}
+        title={editWorker ? "Edit Worker" : "Add Worker"}
+        subtitle={editWorker ? fullName(editWorker) : "Add a new worker to your team"}
+        width="max-w-2xl">
+        <div className="space-y-4">
+          {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">First Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.first_name}
-                    onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Last Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.last_name}
-                    onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="First Name">
+              <Input placeholder="John" value={form.first_name}
+                onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} autoFocus/>
+            </Field>
+            <Field label="Last Name">
+              <Input placeholder="Smith" value={form.last_name}
+                onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}/>
+            </Field>
+          </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Worker Type *</label>
-                  <select
-                    value={formData.worker_type}
-                    onChange={(e) => setFormData({ ...formData, worker_type: e.target.value as WorkerType })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  >
-                    <option value="employee">Employee</option>
-                    <option value="subcontractor">Subcontractor</option>
-                    <option value="crew_lead">Crew Lead</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Employee ID</label>
-                  <input
-                    type="text"
-                    value={formData.employee_id}
-                    onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Worker Type">
+              <Select value={form.worker_type}
+                onChange={e => setForm(f => ({ ...f, worker_type: e.target.value as WorkerType }))}>
+                <option value="employee">Employee</option>
+                <option value="subcontractor">Subcontractor</option>
+                <option value="crew_lead">Crew Lead</option>
+              </Select>
+            </Field>
+            <Field label="Status">
+              <Select value={form.status}
+                onChange={e => setForm(f => ({ ...f, status: e.target.value as WorkerStatus }))}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="terminated">Terminated</option>
+              </Select>
+            </Field>
+          </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Email</label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Phone</label>
-                  <input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Phone">
+              <Input placeholder="876-555-0100" value={form.phone}
+                onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}/>
+            </Field>
+            <Field label="Email">
+              <Input type="email" placeholder="john@example.com" value={form.email}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}/>
+            </Field>
+          </div>
 
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Pay Type</label>
-                  <select
-                    value={formData.pay_type}
-                    onChange={(e) => setFormData({ ...formData, pay_type: e.target.value as PayType })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  >
-                    <option value="hourly">Hourly</option>
-                    <option value="salary">Salary</option>
-                    <option value="contract">Contract</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Pay Rate</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.pay_rate}
-                    onChange={(e) => setFormData({ ...formData, pay_rate: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Overtime Rate</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.overtime_rate}
-                    onChange={(e) => setFormData({ ...formData, overtime_rate: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="City">
+              <Input placeholder="Kingston" value={form.city}
+                onChange={e => setForm(f => ({ ...f, city: e.target.value }))}/>
+            </Field>
+            <Field label="Hire Date">
+              <Input type="date" value={form.hire_date}
+                onChange={e => setForm(f => ({ ...f, hire_date: e.target.value }))}/>
+            </Field>
+          </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Hire Date</label>
-                  <input
-                    type="date"
-                    value={formData.hire_date}
-                    onChange={(e) => setFormData({ ...formData, hire_date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">SSN (Last 4)</label>
-                  <input
-                    type="text"
-                    maxLength={4}
-                    value={formData.ssn_last_4}
-                    onChange={(e) => setFormData({ ...formData, ssn_last_4: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                    placeholder="1234"
-                  />
-                </div>
-              </div>
+          <Divider label="Pay Information"/>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Trade/Specialty</label>
-                  <input
-                    type="text"
-                    value={formData.trade}
-                    onChange={(e) => setFormData({ ...formData, trade: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                    placeholder="Electrician, Carpenter, etc."
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Crew Assignment</label>
-                  <input
-                    type="text"
-                    value={formData.crew_name}
-                    onChange={(e) => setFormData({ ...formData, crew_name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                    placeholder="Crew A, Framing Team, etc."
-                  />
-                </div>
-              </div>
+          <div className="grid grid-cols-3 gap-4">
+            <Field label="Pay Type">
+              <Select value={form.pay_type}
+                onChange={e => setForm(f => ({ ...f, pay_type: e.target.value as PayType }))}>
+                <option value="hourly">Hourly</option>
+                <option value="salary">Salary</option>
+                <option value="contract">Contract</option>
+              </Select>
+            </Field>
+            <Field label="Pay Rate ($)">
+              <Input type="number" placeholder="0.00" value={form.pay_rate}
+                onChange={e => setForm(f => ({ ...f, pay_rate: e.target.value }))}/>
+            </Field>
+            <Field label="Overtime Rate ($)">
+              <Input type="number" placeholder="0.00" value={form.overtime_rate}
+                onChange={e => setForm(f => ({ ...f, overtime_rate: e.target.value }))}/>
+            </Field>
+          </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Emergency Contact Name</label>
-                  <input
-                    type="text"
-                    value={formData.emergency_contact_name}
-                    onChange={(e) => setFormData({ ...formData, emergency_contact_name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Emergency Contact Phone</label>
-                  <input
-                    type="tel"
-                    value={formData.emergency_contact_phone}
-                    onChange={(e) => setFormData({ ...formData, emergency_contact_phone: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Employee ID (optional)">
+              <Input placeholder="EMP-001" value={form.employee_id}
+                onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))}/>
+            </Field>
+            <Field label="Address">
+              <Input placeholder="123 Main St" value={form.address}
+                onChange={e => setForm(f => ({ ...f, address: e.target.value }))}/>
+            </Field>
+          </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
-                <textarea
-                  rows={3}
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                />
-              </div>
+          <Field label="Notes (optional)">
+            <Textarea rows={2} placeholder="Any additional notes..." value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}/>
+          </Field>
 
-              <div className="flex justify-between items-center pt-4 border-t border-slate-200">
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowTaxConfigTab(!showTaxConfigTab)}
-                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                      showTaxConfigTab
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    <Settings className="w-4 h-4 inline mr-2" />
-                    Tax Configuration
-                  </button>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                  >
-                    {editingWorker ? "Update" : "Create"} Worker
-                  </button>
-                </div>
-              </div>
-            </form>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+            <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
+            <Btn variant="primary" onClick={saveWorker}
+              disabled={!form.first_name.trim() || !form.last_name.trim() || saving}>
+              {saving ? "Saving..." : editWorker ? "Save Changes" : "Add Worker"}
+            </Btn>
           </div>
         </div>
-      )}
+      </Modal>
 
-      {/* Tax Configuration Modal Overlay */}
-      {showModal && showTaxConfigTab && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-4xl rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-slate-900">
-                Tax Configuration - {editingWorker ? `${editingWorker.first_name} ${editingWorker.last_name}` : 'New Worker'}
-              </h2>
-              <button
-                onClick={() => setShowTaxConfigTab(false)}
-                className="rounded-lg p-2 hover:bg-slate-100"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            {/* PHASE 2B STEP 4 INTEGRATION TESTING ONLY — NOT ACTIVE PAYROLL */}
-            {editingWorker && currentCompanyId && (
-              <WorkerTaxConfigurationSection
-                workerId={editingWorker.id}
-                companyId={currentCompanyId}
-                isVisible={true}
-              />
-            )}
+      {/* Delete Confirm */}
+      <Modal open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)}
+        title="Remove Worker" width="max-w-sm">
+        <div className="space-y-4">
+          <Alert type="warning">
+            This will permanently remove the worker record. Time entries and payment history will be preserved.
+          </Alert>
+          <div className="flex justify-end gap-2">
+            <Btn variant="ghost" onClick={() => setDeleteConfirm(null)}>Cancel</Btn>
+            <Btn variant="danger" onClick={() => deleteConfirm && deleteWorker(deleteConfirm)}>
+              Remove Worker
+            </Btn>
           </div>
         </div>
-      )}
-
-      {showDetailDrawer && selectedWorker && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowDetailDrawer(false)} />
-          <div className="relative w-full max-w-2xl bg-white shadow-2xl overflow-y-auto">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  {selectedWorker.first_name} {selectedWorker.last_name}
-                </h2>
-                <p className="text-sm text-slate-600 capitalize">{selectedWorker.worker_type.replace("_", " ")}</p>
-              </div>
-              <button
-                onClick={() => setShowDetailDrawer(false)}
-                className="rounded-lg p-2 hover:bg-slate-100"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-              <div>
-                <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-700">
-                  Contact Information
-                </h3>
-                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  {selectedWorker.email && (
-                    <div className="flex items-start gap-3">
-                      <Mail size={18} className="mt-0.5 text-slate-400" />
-                      <div>
-                        <div className="text-xs text-slate-500">Email</div>
-                        <div className="text-sm font-medium text-slate-900">{selectedWorker.email}</div>
-                      </div>
-                    </div>
-                  )}
-                  {selectedWorker.phone && (
-                    <div className="flex items-start gap-3">
-                      <Phone size={18} className="mt-0.5 text-slate-400" />
-                      <div>
-                        <div className="text-xs text-slate-500">Phone</div>
-                        <div className="text-sm font-medium text-slate-900">{selectedWorker.phone}</div>
-                      </div>
-                    </div>
-                  )}
-                  {(selectedWorker.address || selectedWorker.city || selectedWorker.state) && (
-                    <div className="flex items-start gap-3">
-                      <MapPin size={18} className="mt-0.5 text-slate-400" />
-                      <div>
-                        <div className="text-xs text-slate-500">Address</div>
-                        <div className="text-sm font-medium text-slate-900">
-                          {selectedWorker.address && <div>{selectedWorker.address}</div>}
-                          {(selectedWorker.city || selectedWorker.state) && (
-                            <div>
-                              {selectedWorker.city}, {selectedWorker.state} {selectedWorker.zip}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-700">
-                  Employment Details
-                </h3>
-                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-xs text-slate-500">Worker Type</div>
-                      <div className="text-sm font-medium text-slate-900 capitalize">
-                        {selectedWorker.worker_type.replace("_", " ")}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-slate-500">Status</div>
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                          selectedWorker.status === "active"
-                            ? "bg-green-50 text-green-700"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {selectedWorker.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  {selectedWorker.employee_id && (
-                    <div>
-                      <div className="text-xs text-slate-500">Employee ID</div>
-                      <div className="text-sm font-medium text-slate-900">{selectedWorker.employee_id}</div>
-                    </div>
-                  )}
-
-                  {selectedWorker.hire_date && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <div className="text-xs text-slate-500">Hire Date</div>
-                        <div className="text-sm font-medium text-slate-900">{selectedWorker.hire_date}</div>
-                      </div>
-                      {selectedWorker.termination_date && (
-                        <div>
-                          <div className="text-xs text-slate-500">Termination Date</div>
-                          <div className="text-sm font-medium text-slate-900">{selectedWorker.termination_date}</div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {selectedWorker.ssn_last_4 && (
-                    <div>
-                      <div className="text-xs text-slate-500">SSN (Last 4)</div>
-                      <div className="font-mono text-sm font-medium text-slate-900">***-**-{selectedWorker.ssn_last_4}</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-700">
-                  Compensation
-                </h3>
-                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    {selectedWorker.pay_type && (
-                      <div>
-                        <div className="text-xs text-slate-500">Pay Type</div>
-                        <div className="text-sm font-medium text-slate-900 capitalize">{selectedWorker.pay_type}</div>
-                      </div>
-                    )}
-                    {selectedWorker.pay_rate && (
-                      <div>
-                        <div className="text-xs text-slate-500">Pay Rate</div>
-                        <div className="flex items-center gap-1 text-sm font-medium text-slate-900">
-                          <DollarSign size={14} />
-                          {selectedWorker.pay_rate.toFixed(2)}/{selectedWorker.pay_type === "hourly" ? "hr" : "yr"}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  {selectedWorker.overtime_rate && (
-                    <div>
-                      <div className="text-xs text-slate-500">Overtime Rate</div>
-                      <div className="flex items-center gap-1 text-sm font-medium text-slate-900">
-                        <DollarSign size={14} />
-                        {selectedWorker.overtime_rate.toFixed(2)}/hr
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {selectedWorker.notes && (
-                <div>
-                  <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-700">Notes</h3>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <div className="whitespace-pre-wrap text-sm text-slate-700">{selectedWorker.notes}</div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => {
-                    setShowDetailDrawer(false);
-                    openEditModal(selectedWorker);
-                  }}
-                  className="flex-1 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                >
-                  Edit Worker
-                </button>
-                <button
-                  onClick={() => setShowDetailDrawer(false)}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+      </Modal>
+    </div>
   );
 }

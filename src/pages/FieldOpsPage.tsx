@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Calendar, Camera, FileText, ChevronRight, Plus } from "lucide-react";
 import { useProjectContext } from "../context/ProjectContext";
@@ -102,7 +102,7 @@ export default function FieldOpsPage() {
 
   if (!currentProject) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] flex items-center justify-center p-6">
         <div className="text-center">
           <div className="text-slate-400 mb-4">No project selected</div>
           <button
@@ -118,7 +118,7 @@ export default function FieldOpsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
         <div className="p-6 text-sm text-slate-400">Loading field operations...</div>
       </div>
     );
@@ -127,7 +127,7 @@ export default function FieldOpsPage() {
   const todayLog = recentLogs.find(log => log.log_date === today);
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <div className="border-b border-slate-800 bg-slate-900/50 px-4 py-4 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto">
           <h1 className="text-lg font-semibold text-slate-200">Field Operations</h1>

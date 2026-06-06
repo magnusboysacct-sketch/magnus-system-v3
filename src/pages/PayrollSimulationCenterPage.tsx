@@ -68,6 +68,7 @@ import { payrollSimulationEngine, executePayrollSimulation, executeScenarioSimul
 import PayrollSimulationAuditPanel from "../components/PayrollSimulationAuditPanel";
 import PayrollSimulationHistoryPanel from "../components/PayrollSimulationHistoryPanel";
 import PayrollSimulationComparisonPanel from "../components/PayrollSimulationComparisonPanel";
+import PayrollSimulationVariancePanel from "../components/PayrollSimulationVariancePanel";
 import { jamaicanPayrollScenarioTester } from "../lib/jamaicanPayrollScenarioTesting";
 import type {
   PayrollSimulationRun,
@@ -460,7 +461,7 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -860,6 +861,18 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
         {/* Comparison Tab */}
         {activeTab === 'comparison' && (
           <div className="space-y-6">
+            <PayrollSimulationComparisonPanel
+              companyId={currentProject?.company_id || "demo-company"}
+              payrollPeriodId={"all"}
+              readOnly={true}
+            />
+
+            <PayrollSimulationVariancePanel
+              companyId={currentProject?.company_id || "demo-company"}
+              payrollPeriodId={"all"}
+              readOnly={true}
+            />
+
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Simulation Comparison</h3>
               <p className="text-sm text-gray-600 mb-6">Compare simulation results to identify variances and trends</p>
@@ -1143,6 +1156,11 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
     </div>
   );
 }
+
+
+
+
+
 
 
 

@@ -1,5 +1,12 @@
+﻿// src/pages/SettingsCompanyPage.tsx
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import {
+  PageHeader, Card, CardHeader, Btn, Input, Field,
+  Alert, Divider, Spinner, cn
+} from "../components/ui";
+import { Building2, Save, RefreshCw, Globe, Phone, Mail, MapPin } from "lucide-react";
 
 type CompanySettings = {
   id: number;
@@ -17,348 +24,229 @@ type CompanySettings = {
 };
 
 export default function SettingsCompanyPage() {
+  const nav = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [companyId, setCompanyId] = useState<string | null>(null);
-  const [companyName, setCompanyName] = useState("");
+  const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [form, setForm] = useState({
+    company_name: "", tagline: "", address_line1: "",
+    address_line2: "", parish: "", country: "",
+    phone: "", email: "", website: "",
+  });
+
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
 
-  // New fields
-  const [tagline, setTagline] = useState("");
-  const [addressLine1, setAddressLine1] = useState("");
-  const [addressLine2, setAddressLine2] = useState("");
-  const [parish, setParish] = useState("");
-  const [country, setCountry] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [website, setWebsite] = useState("");
+  useEffect(() => { loadSettings(); }, []);
 
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      setMsg(null);
-
-      try {
-        // Get the current user's company_id
-        const { data: userData } = await supabase.auth.getUser();
-        if (!userData.user) {
-          if (alive) setMsg("Not authenticated");
-          return;
-        }
-
-        const { data: profile } = await supabase
-          .from("user_profiles")
-          .select("company_id")
-          .eq("id", userData.user.id)
-          .maybeSingle();
-
-        if (!alive) return;
-
-        if (!profile?.company_id) {
-          setMsg("No company associated with your account");
-          setLoading(false);
-          return;
-        }
-
-        setCompanyId(profile.company_id);
-
-        // Get or create company settings using the helper function
-        const { data: settingsData, error: settingsError } = await supabase
-          .rpc("get_or_create_company_settings", { p_company_id: profile.company_id });
-
-        if (!alive) return;
-
-        if (settingsError) {
-          console.error(settingsError);
-          setMsg(settingsError.message);
-        } else if (settingsData && settingsData.length > 0) {
-          const settings = settingsData[0] as CompanySettings;
-          setCompanyName(settings.company_name || "");
-          setLogoUrl(settings.logo_url || null);
-          setTagline(settings.tagline || "");
-          setAddressLine1(settings.address_line1 || "");
-          setAddressLine2(settings.address_line2 || "");
-          setParish(settings.parish || "");
-          setCountry(settings.country || "");
-          setPhone(settings.phone || "");
-          setEmail(settings.email || "");
-          setWebsite(settings.website || "");
-        }
-      } catch (err) {
-        console.error(err);
-        if (alive) setMsg("Error loading settings");
-      } finally {
-        if (alive) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  async function saveAll() {
-    if (!companyId) {
-      setMsg("No company ID available");
-      return;
-    }
-
-    setBusy(true);
-    setMsg(null);
+  async function loadSettings() {
+    setLoading(true); setMsg(null);
     try {
-      const { error } = await supabase
-        .from("company_settings")
-        .upsert({
-          company_id: companyId,
-          company_name: companyName.trim() || null,
-          tagline: tagline.trim() || null,
-          address_line1: addressLine1.trim() || null,
-          address_line2: addressLine2.trim() || null,
-          parish: parish.trim() || null,
-          country: country.trim() || null,
-          phone: phone.trim() || null,
-          email: email.trim() || null,
-          website: website.trim() || null,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: "company_id"
-        });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
 
-      if (error) {
-        console.error(error);
-        setMsg(error.message);
+      const { data: profile } = await supabase
+        .from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
+      if (!profile?.company_id) throw new Error("No company associated with your account");
+      setCompanyId(profile.company_id);
+
+      // Try RPC first, fallback to direct query
+      let settings: CompanySettings | null = null;
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc("get_or_create_company_settings", { p_company_id: profile.company_id });
+
+      if (!rpcError && rpcData && rpcData.length > 0) {
+        settings = rpcData[0] as CompanySettings;
       } else {
-        setMsg("Saved successfully.");
-      }
-    } catch (err) {
-      console.error(err);
-      setMsg("Error saving settings");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function uploadLogo(file: File) {
-    if (!companyId) {
-      setMsg("No company ID available");
-      return;
-    }
-
-    setBusy(true);
-    setMsg(null);
-    try {
-      const ext = file.name.split(".").pop() || "png";
-      const timestamp = Date.now();
-      const path = `${companyId}/logo-${timestamp}.${ext}`;
-
-      // Upload to company-logos bucket
-      const { error: upErr } = await supabase.storage
-        .from("company-logos")
-        .upload(path, file, { upsert: true });
-
-      if (upErr) {
-        console.error(upErr);
-        setMsg(upErr.message);
-        return;
+        // Fallback: direct select
+        const { data: direct } = await supabase
+          .from("company_settings")
+          .select("*")
+          .eq("company_id", profile.company_id)
+          .maybeSingle();
+        settings = direct;
       }
 
-      // Get public URL
-      const { data } = supabase.storage.from("company-logos").getPublicUrl(path);
-      const publicUrl = data.publicUrl;
-
-      // Update database
-      const { error: dbErr } = await supabase
-        .from("company_settings")
-        .upsert({
-          company_id: companyId,
-          logo_url: publicUrl,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: "company_id"
+      if (settings) {
+        setLogoUrl(settings.logo_url || null);
+        setForm({
+          company_name:  settings.company_name  || "",
+          tagline:       settings.tagline        || "",
+          address_line1: settings.address_line1  || "",
+          address_line2: settings.address_line2  || "",
+          parish:        settings.parish         || "",
+          country:       settings.country        || "",
+          phone:         settings.phone          || "",
+          email:         settings.email          || "",
+          website:       settings.website        || "",
         });
-
-      if (dbErr) {
-        console.error(dbErr);
-        setMsg(dbErr.message);
-        return;
       }
-
-      setLogoUrl(publicUrl);
-      setMsg("Logo uploaded successfully.");
-    } catch (err) {
-      console.error(err);
-      setMsg("Error uploading logo");
+    } catch (e: any) {
+      setMsg({ type: "error", text: e.message });
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   }
 
-  if (loading) return <div className="p-6 text-sm opacity-70">Loading company settings...</div>;
+  async function saveSettings() {
+    if (!companyId) return;
+    setSaving(true); setMsg(null);
+    try {
+      const { error } = await supabase.from("company_settings").upsert({
+        company_id:    companyId,
+        company_name:  form.company_name.trim()  || null,
+        tagline:       form.tagline.trim()        || null,
+        address_line1: form.address_line1.trim()  || null,
+        address_line2: form.address_line2.trim()  || null,
+        parish:        form.parish.trim()          || null,
+        country:       form.country.trim()         || null,
+        phone:         form.phone.trim()           || null,
+        email:         form.email.trim()           || null,
+        website:       form.website.trim()         || null,
+        updated_at:    new Date().toISOString(),
+      }, { onConflict: "company_id" });
+      if (error) throw error;
+      setMsg({ type: "success", text: "Company settings saved successfully." });
+    } catch (e: any) {
+      setMsg({ type: "error", text: e.message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function set(key: keyof typeof form) {
+    return (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm(f => ({ ...f, [key]: e.target.value }));
+  }
+
+  if (loading) return (
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] flex items-center justify-center">
+      <div className="flex items-center gap-2.5 text-xs text-slate-600">
+        <Spinner size={16}/> Loading company settings...
+      </div>
+    </div>
+  );
 
   return (
-    <div className="p-6">
-      <div className="flex items-start justify-between gap-4 mb-5">
-        <div>
-          <h1 className="text-xl font-semibold">Company Settings</h1>
-          <div className="text-sm opacity-70">Branding and contact information used throughout the system.</div>
-        </div>
-      </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+      <PageHeader
+        title="Company Settings"
+        subtitle="Your company profile and contact information"
+        back={() => nav("/settings")}
+        actions={
+          <Btn variant="primary" size="sm" icon={<Save size={13}/>}
+            onClick={saveSettings} disabled={saving}>
+            {saving ? "Saving..." : "Save Changes"}
+          </Btn>
+        }
+      />
 
-      <div className="border border-white/10 rounded-xl bg-white/5 p-5 max-w-4xl">
-        {/* Logo Upload Section */}
-        <div className="flex items-center gap-4 mb-6">
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt="Company logo"
-              className="w-16 h-16 rounded-xl object-cover border border-white/10 bg-white/10"
-            />
-          ) : (
-            <div className="w-16 h-16 rounded-xl border border-white/10 bg-white/10 flex items-center justify-center text-xs opacity-70">
-              LOGO
+      <div className="p-6 max-w-2xl space-y-5">
+        {msg && (
+          <Alert type={msg.type} onClose={() => setMsg(null)}>{msg.text}</Alert>
+        )}
+
+        {/* Logo preview */}
+        <Card>
+          <CardHeader title="Company Logo"/>
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 rounded-xl border border-white/[0.08] bg-white/[0.04] flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="w-full h-full object-contain"/>
+              ) : (
+                <Building2 size={24} className="text-slate-700"/>
+              )}
             </div>
-          )}
-
-          <div>
-            <div className="text-xs opacity-70 mb-1">Upload Logo</div>
-            <input
-              type="file"
-              accept="image/*"
-              disabled={busy}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                uploadLogo(f);
-                e.currentTarget.value = "";
-              }}
-              className="text-sm"
-            />
-            <div className="text-xs opacity-60 mt-1">Recommended: square PNG, ~512×512.</div>
+            <div>
+              <div className="text-xs text-slate-400 mb-1">
+                {logoUrl ? "Logo loaded" : "No logo uploaded"}
+              </div>
+              <div className="text-[10px] text-slate-700">
+                Logo upload available in the full company settings panel.
+              </div>
+            </div>
           </div>
-        </div>
+        </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          {/* Company Name */}
-          <div>
-            <div className="text-xs opacity-70 mb-1">Company Name</div>
-            <input
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              disabled={busy}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="e.g. Magnus Boys Construction"
-            />
+        {/* Basic info */}
+        <Card>
+          <CardHeader title="Company Information"/>
+          <div className="space-y-4">
+            <Field label="Company Name">
+              <Input
+                placeholder="e.g. Magnus Construction Ltd"
+                value={form.company_name}
+                onChange={set("company_name")}
+              />
+            </Field>
+            <Field label="Tagline (optional)">
+              <Input
+                placeholder="e.g. Building Jamaica's Future"
+                value={form.tagline}
+                onChange={set("tagline")}
+              />
+            </Field>
           </div>
+        </Card>
 
-          {/* Tagline */}
-          <div>
-            <div className="text-xs opacity-70 mb-1">Tagline</div>
-            <input
-              value={tagline}
-              onChange={(e) => setTagline(e.target.value)}
-              disabled={busy}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="e.g. Building Excellence Since 1990"
-            />
+        {/* Contact */}
+        <Card>
+          <CardHeader title="Contact Details" subtitle="How clients and partners can reach you"/>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Phone">
+                <div className="relative">
+                  <Phone size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700"/>
+                  <Input className="pl-8" placeholder="876-555-0100" value={form.phone} onChange={set("phone")}/>
+                </div>
+              </Field>
+              <Field label="Email">
+                <div className="relative">
+                  <Mail size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700"/>
+                  <Input className="pl-8" type="email" placeholder="info@company.com" value={form.email} onChange={set("email")}/>
+                </div>
+              </Field>
+            </div>
+            <Field label="Website">
+              <div className="relative">
+                <Globe size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700"/>
+                <Input className="pl-8" placeholder="https://www.company.com" value={form.website} onChange={set("website")}/>
+              </div>
+            </Field>
           </div>
+        </Card>
 
-          {/* Address Line 1 */}
-          <div>
-            <div className="text-xs opacity-70 mb-1">Address Line 1</div>
-            <input
-              value={addressLine1}
-              onChange={(e) => setAddressLine1(e.target.value)}
-              disabled={busy}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="123 Main Street"
-            />
+        {/* Address */}
+        <Card>
+          <CardHeader title="Address" subtitle="Your registered business address"/>
+          <div className="space-y-4">
+            <Field label="Address Line 1">
+              <div className="relative">
+                <MapPin size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700"/>
+                <Input className="pl-8" placeholder="12 Main Street" value={form.address_line1} onChange={set("address_line1")}/>
+              </div>
+            </Field>
+            <Field label="Address Line 2 (optional)">
+              <Input placeholder="Suite 4, Kingston Mall" value={form.address_line2} onChange={set("address_line2")}/>
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Parish / State">
+                <Input placeholder="Kingston" value={form.parish} onChange={set("parish")}/>
+              </Field>
+              <Field label="Country">
+                <Input placeholder="Jamaica" value={form.country} onChange={set("country")}/>
+              </Field>
+            </div>
           </div>
+        </Card>
 
-          {/* Address Line 2 */}
-          <div>
-            <div className="text-xs opacity-70 mb-1">Address Line 2</div>
-            <input
-              value={addressLine2}
-              onChange={(e) => setAddressLine2(e.target.value)}
-              disabled={busy}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="Suite 456"
-            />
-          </div>
-
-          {/* Parish */}
-          <div>
-            <div className="text-xs opacity-70 mb-1">Parish</div>
-            <input
-              value={parish}
-              onChange={(e) => setParish(e.target.value)}
-              disabled={busy}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="e.g. St. Andrew"
-            />
-          </div>
-
-          {/* Country */}
-          <div>
-            <div className="text-xs opacity-70 mb-1">Country</div>
-            <input
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              disabled={busy}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="e.g. Jamaica"
-            />
-          </div>
-
-          {/* Phone */}
-          <div>
-            <div className="text-xs opacity-70 mb-1">Phone</div>
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              disabled={busy}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="e.g. +1 876-123-4567"
-            />
-          </div>
-
-          {/* Email */}
-          <div>
-            <div className="text-xs opacity-70 mb-1">Email</div>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={busy}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="e.g. info@company.com"
-            />
-          </div>
-
-          {/* Website */}
-          <div className="md:col-span-2">
-            <div className="text-xs opacity-70 mb-1">Website</div>
-            <input
-              value={website}
-              onChange={(e) => setWebsite(e.target.value)}
-              disabled={busy}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="e.g. https://www.company.com"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={saveAll}
-            disabled={busy}
-            className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-4 py-2 text-sm transition disabled:opacity-50"
-          >
-            {busy ? "Saving..." : "Save All"}
-          </button>
-          {msg && <div className="text-sm opacity-80">{msg}</div>}
+        {/* Save button at bottom */}
+        <div className="flex justify-end pb-6">
+          <Btn variant="primary" size="md" icon={<Save size={14}/>}
+            onClick={saveSettings} disabled={saving}>
+            {saving ? "Saving..." : "Save All Changes"}
+          </Btn>
         </div>
       </div>
     </div>

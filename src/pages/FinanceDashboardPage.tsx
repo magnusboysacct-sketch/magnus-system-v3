@@ -1,545 +1,459 @@
-import React, { useEffect, useState, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import {
-  AlertTriangle,
-  Bot,
-  CreditCard,
-  Landmark,
-  Plus,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Eye,
-  CheckCircle,
-  Clock,
-} from "lucide-react";
+﻿// src/pages/FinanceDashboardPage.tsx — Full Finance Department Hub
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { useProjectContext } from "../context/ProjectContext";
-import { useFinanceAccess } from "../hooks/useFinanceAccess";
-import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
-import { fetchBankTransactions } from "../services/finance/bankParser";
-import { fetchCreditCardTransactions } from "../services/finance/creditCard";
-import { fetchBankAccounts } from "../lib/finance";
-import type { BankTransaction } from "../services/finance/bankParser";
-import type { CreditCardTransaction } from "../services/finance/creditCard";
-import type { BankAccount } from "../lib/finance";
+import {
+  PageHeader, StatCard, Card, CardHeader, Badge, Btn,
+  Table, Th, Tr, Td, Empty, Tabs, Progress, Alert, cn
+} from "../components/ui";
+import {
+  DollarSign, TrendingUp, TrendingDown, BookOpen,
+  ArrowRight, Receipt, FileText, CreditCard, Wallet,
+  PieChart, BarChart3, RefreshCw, Building2, Package,
+  CheckCircle2, AlertCircle, Clock, Plus, ArrowUpRight,
+  ArrowDownRight, Layers, Settings
+} from "lucide-react";
 
-function formatCurrency(value: number) {
-  return value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+type Tab = "overview" | "accounts" | "ledger" | "reports";
+
+function fmt(n: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
+}
+function fmtDate(d: string) {
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function formatDateTime(dateString: string) {
-  return new Date(dateString).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+const ACCOUNT_TYPE_COLOR: Record<string, any> = {
+  asset: "cyan", liability: "red", equity: "violet",
+  revenue: "green", expense: "amber"
+};
+
+const ACCOUNT_TYPE_BG: Record<string, string> = {
+  asset: "bg-cyan-500/10 border-cyan-500/20 text-cyan-400",
+  liability: "bg-red-500/10 border-red-500/20 text-red-400",
+  equity: "bg-violet-500/10 border-violet-500/20 text-violet-400",
+  revenue: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
+  expense: "bg-amber-500/10 border-amber-500/20 text-amber-400",
+};
 
 export default function FinanceDashboardPage() {
-  const navigate = useNavigate();
-  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
-  const { currentProjectId, currentProject } = useProjectContext();
-  const financeAccess = useFinanceAccess();
-
+  const nav = useNavigate();
+  const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
-  const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>([]);
-  const [creditCardTransactions, setCreditCardTransactions] = useState<CreditCardTransaction[]>([]);
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [balances, setBalances] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const projectId = currentProjectId || routeProjectId;
+  // Summary stats
+  const [stats, setStats] = useState({
+    totalAssets: 0, totalLiabilities: 0, totalEquity: 0,
+    totalRevenue: 0, totalExpenses: 0, netIncome: 0,
+  });
 
-  // Load data
   useEffect(() => {
-    async function loadDashboardData() {
-      if (!projectId || !financeAccess.canAccessProjectFinance) return;
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle()
+        .then(({ data }) => { if (data?.company_id) setCompanyId(data.company_id); });
+    });
+  }, []);
 
-      try {
-        setLoading(true);
-        setError(null);
+  useEffect(() => { if (companyId) loadAll(); }, [companyId]);
 
-        // Get company ID from project
-        const { data: project } = await supabase
-          .from("projects")
-          .select("company_id")
-          .eq("id", projectId)
-          .single();
+  async function loadAll() {
+    setLoading(true); setError(null);
+    try {
+      const [accRes, txRes, balRes] = await Promise.all([
+        // Chart of accounts
+        supabase.from("chart_of_accounts")
+          .select("id, code, name, type, subtype, is_active, current_balance, level, parent_id, is_project_linkable")
+          .eq("company_id", companyId!)
+          .eq("is_active", true)
+          .order("code", { ascending: true }),
+        // Recent GL transactions
+        supabase.from("gl_transactions")
+          .select("id, transaction_number, transaction_date, description, total_amount, status, source_type, currency")
+          .eq("company_id", companyId!)
+          .order("transaction_date", { ascending: false })
+          .limit(20),
+        // Account balances
+        supabase.from("v_account_balances")
+          .select("*")
+          .eq("company_id", companyId!)
+          .order("code", { ascending: true }),
+      ]);
 
-        if (!project?.company_id) {
-          throw new Error("Project not found or no company associated");
-        }
+      const accs = accRes.data || [];
+      const txs = txRes.data || [];
+      const bals = balRes.data || [];
 
-        setCompanyId(project.company_id);
+      setAccounts(accs);
+      setTransactions(txs);
+      setBalances(bals);
 
-        // Load all data in parallel
-        const [bankAccountsData, bankTxnsData, creditTxnsData] = await Promise.all([
-          fetchBankAccounts(project.company_id),
-          fetchBankTransactions(project.company_id),
-          fetchCreditCardTransactions(project.company_id),
-        ]);
+      // Calculate summary from account balances
+      const totalAssets = accs.filter(a => a.type === "asset").reduce((s: number, a: any) => s + (a.current_balance || 0), 0);
+      const totalLiabilities = accs.filter(a => a.type === "liability").reduce((s: number, a: any) => s + (a.current_balance || 0), 0);
+      const totalEquity = accs.filter(a => a.type === "equity").reduce((s: number, a: any) => s + (a.current_balance || 0), 0);
+      const totalRevenue = accs.filter(a => a.type === "revenue").reduce((s: number, a: any) => s + (a.current_balance || 0), 0);
+      const totalExpenses = accs.filter(a => a.type === "expense").reduce((s: number, a: any) => s + (a.current_balance || 0), 0);
 
-        setBankAccounts(bankAccountsData);
-        setBankTransactions(bankTxnsData);
-        setCreditCardTransactions(creditTxnsData);
-
-      } catch (err) {
-        console.error("Error loading dashboard data:", err);
-        setError(err instanceof Error ? err.message : "Failed to load dashboard data");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadDashboardData();
-  }, [projectId, financeAccess.canAccessProjectFinance]);
-
-  // Calculate summary metrics
-  const summaryMetrics = useMemo(() => {
-    if (!bankTransactions.length && !creditCardTransactions.length) {
-      return {
-        companyCash: 0,
-        projectCommitted: 0,
-        projectActual: 0,
-        safeOwnerDraw: 0,
-        outstandingCreditLiability: 0,
-        unmatchedCount: 0,
-      };
-    }
-
-    // Company cash - sum of all bank account balances
-    const companyCash = bankAccounts.reduce((sum, account) => sum + (account.current_balance || 0), 0);
-
-    // Project committed - sum of unmatched bank and credit transactions (negative amounts are expenses)
-    const projectCommitted = [
-      ...bankTransactions.filter(t => !t.gl_transaction_id),
-      ...creditCardTransactions.filter(t => !t.gl_transaction_id)
-    ].reduce((sum, txn) => sum + (txn.amount < 0 ? Math.abs(txn.amount) : 0), 0);
-
-    // Project actual - sum of posted transactions (negative amounts are expenses)
-    const projectActual = [
-      ...bankTransactions.filter(t => t.gl_transaction_id),
-      ...creditCardTransactions.filter(t => t.gl_transaction_id)
-    ].reduce((sum, txn) => sum + (txn.amount < 0 ? Math.abs(txn.amount) : 0), 0);
-
-    // Safe owner draw - company cash minus committed expenses
-    const safeOwnerDraw = Math.max(0, companyCash - projectCommitted);
-
-    // Outstanding credit liability - sum of credit card balances (positive amounts are charges)
-    const outstandingCreditLiability = creditCardTransactions
-      .filter(t => t.amount > 0 && !t.gl_transaction_id)
-      .reduce((sum, txn) => sum + txn.amount, 0);
-
-    // Unmatched transactions count
-    const unmatchedCount = [
-      ...bankTransactions,
-      ...creditCardTransactions
-    ].filter(t => t.match_status === 'unmatched').length;
-
-    return {
-      companyCash,
-      projectCommitted,
-      projectActual,
-      safeOwnerDraw,
-      outstandingCreditLiability,
-      unmatchedCount,
-    };
-  }, [bankTransactions, creditCardTransactions, bankAccounts]);
-
-  // Recent transactions
-  const recentBankTransactions = useMemo(() => 
-    bankTransactions
-      .sort((a, b) => new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime())
-      .slice(0, 5),
-  [bankTransactions]);
-
-  const recentCreditTransactions = useMemo(() =>
-    creditCardTransactions
-      .sort((a, b) => new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime())
-      .slice(0, 5),
-  [creditCardTransactions]);
-
-  // Finance alerts
-  const financeAlerts = useMemo(() => {
-    const alerts = [];
-    
-    // Low cash alert
-    if (summaryMetrics.companyCash < 5000) {
-      alerts.push({
-        type: "warning",
-        title: "Low Cash Balance",
-        message: `Company cash balance is ${formatCurrency(summaryMetrics.companyCash)}`,
-        icon: AlertTriangle,
+      setStats({
+        totalAssets, totalLiabilities, totalEquity,
+        totalRevenue, totalExpenses,
+        netIncome: totalRevenue - totalExpenses,
       });
-    }
-
-    // High credit liability alert
-    if (summaryMetrics.outstandingCreditLiability > 10000) {
-      alerts.push({
-        type: "warning",
-        title: "High Credit Card Liability",
-        message: `Outstanding credit balance is ${formatCurrency(summaryMetrics.outstandingCreditLiability)}`,
-        icon: CreditCard,
-      });
-    }
-
-    // Many unmatched transactions alert
-    if (summaryMetrics.unmatchedCount > 10) {
-      alerts.push({
-        type: "info",
-        title: "Transactions Need Review",
-        message: `${summaryMetrics.unmatchedCount} transactions need classification and matching`,
-        icon: Clock,
-      });
-    }
-
-    return alerts;
-  }, [summaryMetrics]);
-
-  // Automation queue
-  const automationQueue = useMemo(() => {
-    const allTransactions = [...bankTransactions, ...creditCardTransactions];
-    
-    const needsReview = allTransactions.filter(t => 
-      t.match_status === 'unmatched' || (t.confidence_score ?? 0) < 0.7
-    ).length;
-
-    const highConfidence = allTransactions.filter(t => 
-      !t.gl_transaction_id && (t.confidence_score ?? 0) >= 0.7
-    ).length;
-
-    return { needsReview, highConfidence };
-  }, [bankTransactions, creditCardTransactions]);
-
-  if (!financeAccess.canAccessProjectFinance) {
-    return <FinanceAccessDenied />;
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950">
-        <div className="flex items-center justify-center p-8">
-          <div className="text-center">
-            <div className="mb-4 text-2xl text-slate-400">Loading Finance Dashboard...</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-slate-950">
-        <div className="flex items-center justify-center p-8">
-          <div className="rounded-xl border border-rose-800/60 bg-rose-900/20 p-6">
-            <div className="text-rose-300">Error: {error}</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Group accounts by type
+  const byType = accounts.reduce((acc: Record<string, any[]>, a) => {
+    if (!acc[a.type]) acc[a.type] = [];
+    acc[a.type].push(a);
+    return acc;
+  }, {});
 
   return (
-    <div className="min-h-screen bg-slate-950">
-      <div className="border-b border-slate-800 bg-slate-900/30">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-white">Finance Dashboard</h1>
-              <p className="text-slate-400">
-                {currentProject?.name || "Project"} Financial Overview
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => navigate(`/projects/${projectId}/finance/transactions`)}
-                className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700"
-              >
-                <Eye className="h-4 w-4" />
-                View Transactions
-              </button>
-              <button
-                onClick={() => navigate(`/projects/${projectId}/finance`)}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/70 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800"
-              >
-                <Plus className="h-4 w-4" />
-                Finance Hub
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+      <PageHeader
+        title="Finance Department"
+        subtitle="General ledger, accounts, and financial reports"
+        actions={
+          <>
+            <Btn variant="ghost" size="sm"
+              icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>}
+              onClick={loadAll}/>
+            <Btn variant="secondary" size="sm" icon={<BookOpen size={13}/>}
+              onClick={() => setTab("accounts")}>
+              Chart of Accounts
+            </Btn>
+            <Btn variant="primary" size="sm" icon={<Plus size={13}/>}
+              onClick={() => nav("/finance/journal-entry")}>New Entry
+            </Btn>
+          </>
+        }
+      />
 
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        {/* Summary Cards */}
-        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-400">Company Cash</p>
-                <p className="mt-2 text-3xl font-bold text-white">
-                  {formatCurrency(summaryMetrics.companyCash)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-emerald-900/20 p-3">
-                <DollarSign className="h-6 w-6 text-emerald-400" />
-              </div>
-            </div>
-          </div>
+      <Tabs
+        tabs={[
+          { key: "overview" as Tab,  label: "Overview" },
+          { key: "accounts" as Tab,  label: "Chart of Accounts", count: accounts.length },
+          { key: "ledger" as Tab,    label: "General Ledger",    count: transactions.length },
+          { key: "reports" as Tab,   label: "Reports" },
+        ]}
+        active={tab}
+        onChange={setTab}
+      />
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-400">Project Committed</p>
-                <p className="mt-2 text-3xl font-bold text-white">
-                  {formatCurrency(summaryMetrics.projectCommitted)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-amber-900/20 p-3">
-                <TrendingUp className="h-6 w-6 text-amber-400" />
-              </div>
-            </div>
-          </div>
+      <div className="p-6 space-y-5">
+        {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-400">Project Actual</p>
-                <p className="mt-2 text-3xl font-bold text-white">
-                  {formatCurrency(summaryMetrics.projectActual)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-sky-900/20 p-3">
-                <TrendingDown className="h-6 w-6 text-sky-400" />
-              </div>
+        {/* ── Overview Tab ── */}
+        {tab === "overview" && (
+          <>
+            {/* Trial Balance Summary */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <StatCard label="Total Assets"      value={fmt(stats.totalAssets)}      color="text-cyan-300"    icon={<TrendingUp size={15}/>}/>
+              <StatCard label="Total Liabilities" value={fmt(stats.totalLiabilities)} color="text-red-300"     icon={<TrendingDown size={15}/>}/>
+              <StatCard label="Total Equity"      value={fmt(stats.totalEquity)}      color="text-violet-300"  icon={<Wallet size={15}/>}/>
+              <StatCard label="Total Revenue"     value={fmt(stats.totalRevenue)}      color="text-emerald-300" icon={<ArrowUpRight size={15}/>}/>
+              <StatCard label="Total Expenses"    value={fmt(stats.totalExpenses)}     color="text-amber-300"   icon={<ArrowDownRight size={15}/>}/>
+              <StatCard
+                label="Net Income"
+                value={fmt(stats.netIncome)}
+                color={stats.netIncome >= 0 ? "text-emerald-300" : "text-red-300"}
+                icon={<PieChart size={15}/>}
+                sub={stats.netIncome >= 0 ? "Profit" : "Loss"}
+              />
             </div>
-          </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-400">Safe Owner Draw</p>
-                <p className="mt-2 text-3xl font-bold text-white">
-                  {formatCurrency(summaryMetrics.safeOwnerDraw)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-emerald-900/20 p-3">
-                <CheckCircle className="h-6 w-6 text-emerald-400" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-400">Credit Liability</p>
-                <p className="mt-2 text-3xl font-bold text-white">
-                  {formatCurrency(summaryMetrics.outstandingCreditLiability)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-rose-900/20 p-3">
-                <CreditCard className="h-6 w-6 text-rose-400" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-400">Unmatched</p>
-                <p className="mt-2 text-3xl font-bold text-white">
-                  {summaryMetrics.unmatchedCount}
-                </p>
-              </div>
-              <div className="rounded-lg bg-violet-900/20 p-3">
-                <Clock className="h-6 w-6 text-violet-400" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Recent Bank Transactions */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/30">
-            <div className="border-b border-slate-800 px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Landmark className="h-5 w-5 text-sky-400" />
-                  <h2 className="text-lg font-semibold text-white">Recent Bank Transactions</h2>
+            {/* Accounting Equation */}
+            <Card>
+              <CardHeader title="Accounting Equation" subtitle="Assets = Liabilities + Equity"/>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1 text-center p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-cyan-600 mb-1">Assets</div>
+                  <div className="text-2xl font-bold text-cyan-300">{fmt(stats.totalAssets)}</div>
                 </div>
-                <button
-                  onClick={() => navigate(`/projects/${projectId}/finance/transactions?tab=bank`)}
-                  className="text-sm text-sky-400 hover:text-sky-300"
-                >
-                  View All
+                <div className="text-xl font-bold text-slate-600">=</div>
+                <div className="flex-1 text-center p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-red-600 mb-1">Liabilities</div>
+                  <div className="text-2xl font-bold text-red-300">{fmt(stats.totalLiabilities)}</div>
+                </div>
+                <div className="text-xl font-bold text-slate-600">+</div>
+                <div className="flex-1 text-center p-4 rounded-xl bg-violet-500/10 border border-violet-500/20">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-violet-600 mb-1">Equity</div>
+                  <div className="text-2xl font-bold text-violet-300">{fmt(stats.totalEquity)}</div>
+                </div>
+              </div>
+              <div className={cn("mt-3 text-center text-[10px] font-semibold", Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "text-emerald-400" : "text-amber-400")}>
+                {Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "✓ Balanced" : "⚠ Out of balance — check your journal entries"}
+              </div>
+            </Card>
+
+            {/* Quick Finance Links */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: "Expenses",         icon: <Receipt size={15}/>,    to: "/expenses",            color: "bg-amber-500/10 border-amber-500/20 text-amber-400" },
+                { label: "Transactions",     icon: <DollarSign size={15}/>, to: "/finance/transactions", color: "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" },
+                { label: "Cash Flow",        icon: <TrendingUp size={15}/>, to: "/cash-flow",            color: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" },
+                { label: "Accounts Recv.",   icon: <FileText size={15}/>,   to: "/accounts-receivable",  color: "bg-blue-500/10 border-blue-500/20 text-blue-400" },
+              ].map(l => (
+                <button key={l.to} onClick={() => nav(l.to)}
+                  className="flex items-center gap-3 p-4 rounded-xl border border-white/[0.07] bg-[#0c1018] hover:border-white/[0.13] hover:bg-[#111820] transition-colors text-left group">
+                  <div className={cn("w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0", l.color)}>{l.icon}</div>
+                  <span className="text-xs font-semibold text-slate-400 group-hover:text-slate-200 transition-colors">{l.label}</span>
+                  <ArrowRight size={11} className="ml-auto text-slate-700 group-hover:text-slate-400"/>
                 </button>
-              </div>
+              ))}
             </div>
-            <div className="p-6">
-              {recentBankTransactions.length > 0 ? (
-                <div className="space-y-3">
-                  {recentBankTransactions.map((transaction) => (
-                    <div key={transaction.id} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-800/30 p-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-white">
-                          {transaction.description}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          {formatDateTime(transaction.transaction_date)}
-                        </p>
-                      </div>
-                      <div className={`text-sm font-semibold ${
-                        transaction.amount >= 0 ? "text-emerald-400" : "text-rose-400"
-                      }`}>
-                        {transaction.amount >= 0 ? "+" : ""}
-                        {formatCurrency(transaction.amount)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Landmark className="mx-auto h-12 w-12 text-slate-600" />
-                  <p className="mt-2 text-sm text-slate-400">No bank transactions yet</p>
-                </div>
-              )}
-            </div>
-          </div>
 
-          {/* Recent Credit Card Transactions */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/30">
-            <div className="border-b border-slate-800 px-6 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5 text-violet-400" />
-                  <h2 className="text-lg font-semibold text-white">Recent Credit Card Transactions</h2>
-                </div>
-                <button
-                  onClick={() => navigate(`/projects/${projectId}/finance/transactions?tab=credit`)}
-                  className="text-sm text-violet-400 hover:text-violet-300"
-                >
-                  View All
-                </button>
+            {/* Recent GL Transactions */}
+            <Card padding={false}>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                <span className="text-sm font-semibold text-slate-200">Recent Journal Entries</span>
+                <Btn size="xs" variant="ghost" onClick={() => setTab("ledger")}>View all <ArrowRight size={11}/></Btn>
               </div>
-            </div>
-            <div className="p-6">
-              {recentCreditTransactions.length > 0 ? (
-                <div className="space-y-3">
-                  {recentCreditTransactions.map((transaction) => (
-                    <div key={transaction.id} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-800/30 p-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-white">
-                          {transaction.description}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          {formatDateTime(transaction.transaction_date)}
-                        </p>
-                      </div>
-                      <div className={`text-sm font-semibold ${
-                        transaction.amount >= 0 ? "text-emerald-400" : "text-rose-400"
-                      }`}>
-                        {transaction.amount >= 0 ? "+" : ""}
-                        {formatCurrency(transaction.amount)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              {transactions.length === 0 ? (
+                <Empty icon={<BookOpen size={18}/>} title="No journal entries yet"
+                  body="Post transactions to see them here."
+                  action={<Btn variant="primary" size="sm" onClick={() => nav("/finance/journal-entry")}>New Entry</Btn>}/>
               ) : (
-                <div className="text-center py-8">
-                  <CreditCard className="mx-auto h-12 w-12 text-slate-600" />
-                  <p className="mt-2 text-sm text-slate-400">No credit card transactions yet</p>
-                </div>
+                <Table>
+                  <thead><tr><Th>Date</Th><Th>Reference</Th><Th>Description</Th><Th>Source</Th><Th>Status</Th><Th right>Amount</Th></tr></thead>
+                  <tbody>
+                    {transactions.slice(0,8).map((tx: any) => (
+                      <Tr key={tx.id}>
+                        <Td muted>{fmtDate(tx.transaction_date)}</Td>
+                        <Td><span className="font-mono text-[10px] text-slate-300">{tx.transaction_number}</span></Td>
+                        <Td><span className="font-medium text-slate-200 text-xs truncate max-w-[200px] block">{tx.description}</span></Td>
+                        <Td><Badge color="slate">{tx.source_type?.replace("_"," ")}</Badge></Td>
+                        <Td>
+                          <Badge color={tx.status === "posted" ? "green" : tx.status === "draft" ? "amber" : "red"} dot>
+                            {tx.status}
+                          </Badge>
+                        </Td>
+                        <Td right><span className="font-semibold text-slate-200">{fmt(tx.total_amount)}</span></Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
               )}
-            </div>
-          </div>
+            </Card>
+          </>
+        )}
 
-          {/* Finance Alerts */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/30">
-            <div className="border-b border-slate-800 px-6 py-4">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-400" />
-                <h2 className="text-lg font-semibold text-white">Finance Alerts</h2>
-              </div>
+        {/* ── Chart of Accounts Tab ── */}
+        {tab === "accounts" && (
+          <>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-slate-600">{accounts.length} active accounts across {Object.keys(byType).length} types</div>
+              <Btn variant="primary" size="sm" icon={<Plus size={13}/>}
+                onClick={() => nav("/settings")}>
+                Add Account
+              </Btn>
             </div>
-            <div className="p-6">
-              {financeAlerts.length > 0 ? (
-                <div className="space-y-3">
-                  {financeAlerts.map((alert, index) => (
-                    <div key={index} className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-800/30 p-3">
-                      <alert.icon className={`h-5 w-5 mt-0.5 ${
-                        alert.type === "warning" ? "text-amber-400" : "text-sky-400"
-                      }`} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-white">{alert.title}</p>
-                        <p className="text-xs text-slate-400">{alert.message}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <CheckCircle className="mx-auto h-12 w-12 text-emerald-600" />
-                  <p className="mt-2 text-sm text-slate-400">All systems normal</p>
-                </div>
-              )}
-            </div>
-          </div>
 
-          {/* Automation Queue */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/30">
-            <div className="border-b border-slate-800 px-6 py-4">
-              <div className="flex items-center gap-2">
-                <Bot className="h-5 w-5 text-violet-400" />
-                <h2 className="text-lg font-semibold text-white">Automation Queue</h2>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="rounded-lg border border-slate-800 bg-slate-800/30 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-400">Needs Review</p>
-                      <p className="mt-2 text-2xl font-bold text-amber-400">
-                        {automationQueue.needsReview}
-                      </p>
+            {/* By type */}
+            {(["asset","liability","equity","revenue","expense"] as const).map(type => {
+              const typeAccounts = byType[type] || [];
+              if (typeAccounts.length === 0) return null;
+              const typeTotal = typeAccounts.reduce((s: number, a: any) => s + (a.current_balance || 0), 0);
+              return (
+                <Card key={type} padding={false}>
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                    <div className="flex items-center gap-2">
+                      <Badge color={ACCOUNT_TYPE_COLOR[type]}>{type}</Badge>
+                      <span className="text-xs text-slate-600">{typeAccounts.length} accounts</span>
                     </div>
-                    <Clock className="h-8 w-8 text-amber-400" />
+                    <span className="text-sm font-bold text-slate-200">{fmt(typeTotal)}</span>
                   </div>
-                  <button
-                    onClick={() => navigate(`/projects/${projectId}/finance/transactions?status=needs_review`)}
-                    className="mt-3 w-full rounded-lg border border-amber-700 bg-amber-900/20 px-3 py-2 text-xs font-medium text-amber-300 transition hover:bg-amber-800"
-                  >
-                    Review Now
-                  </button>
-                </div>
+                  <Table>
+                    <thead><tr><Th>Code</Th><Th>Account Name</Th><Th>Subtype</Th><Th>Project Linkable</Th><Th right>Balance</Th></tr></thead>
+                    <tbody>
+                      {typeAccounts.map((a: any) => (
+                        <Tr key={a.id}>
+                          <Td><span className="font-mono text-[10px] text-slate-400">{a.code}</span></Td>
+                          <Td>
+                            <span className="font-medium text-slate-200" style={{ paddingLeft: `${(a.level - 1) * 16}px` }}>
+                              {a.level > 1 ? "↳ " : ""}{a.name}
+                            </span>
+                          </Td>
+                          <Td muted className="capitalize">{a.subtype?.replace(/_/g," ") || "—"}</Td>
+                          <Td>{a.is_project_linkable ? <span className="text-emerald-400 text-[10px] font-semibold">✓ Yes</span> : <span className="text-slate-700 text-[10px]">—</span>}</Td>
+                          <Td right>
+                            <span className={cn("font-semibold text-sm", (a.current_balance || 0) >= 0 ? "text-slate-200" : "text-red-400")}>
+                              {fmt(a.current_balance || 0)}
+                            </span>
+                          </Td>
+                        </Tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </Card>
+              );
+            })}
+          </>
+        )}
 
-                <div className="rounded-lg border border-slate-800 bg-slate-800/30 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-400">High Confidence</p>
-                      <p className="mt-2 text-2xl font-bold text-emerald-400">
-                        {automationQueue.highConfidence}
-                      </p>
-                    </div>
-                    <CheckCircle className="h-8 w-8 text-emerald-400" />
-                  </div>
-                  <button
-                    onClick={() => navigate(`/projects/${projectId}/finance/transactions?status=ready_to_post`)}
-                    className="mt-3 w-full rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-emerald-700"
-                  >
-                    Auto Post Ready
-                  </button>
-                </div>
+        {/* ── General Ledger Tab ── */}
+        {tab === "ledger" && (
+          <>
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-slate-600">{transactions.length} entries</div>
+              <div className="flex gap-2">
+                <Btn variant="secondary" size="sm" icon={<FileText size={13}/>}
+                  onClick={() => nav("/finance/transactions")}>
+                  Bank Transactions
+                </Btn>
+                <Btn variant="primary" size="sm" icon={<Plus size={13}/>}
+                  onClick={() => nav("/expenses")}>
+                  Log Expense
+                </Btn>
               </div>
             </div>
+
+            <Card padding={false}>
+              {transactions.length === 0 ? (
+                <Empty icon={<BookOpen size={18}/>} title="No journal entries"
+                  body="Journal entries are created automatically when you post expenses, invoices, and payments."
+                  action={<Btn variant="primary" size="sm" onClick={() => nav("/finance/journal-entry")}>New Journal Entry</Btn>}/>
+              ) : (
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Date</Th>
+                      <Th>Ref #</Th>
+                      <Th>Description</Th>
+                      <Th>Source</Th>
+                      <Th>Currency</Th>
+                      <Th>Status</Th>
+                      <Th right>Amount</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transactions.map((tx: any) => (
+                      <Tr key={tx.id}>
+                        <Td muted>{fmtDate(tx.transaction_date)}</Td>
+                        <Td><span className="font-mono text-[10px] text-cyan-400">{tx.transaction_number}</span></Td>
+                        <Td><span className="text-slate-200 text-xs">{tx.description}</span></Td>
+                        <Td><Badge color="slate">{tx.source_type?.replace(/_/g," ")}</Badge></Td>
+                        <Td muted>{tx.currency || "USD"}</Td>
+                        <Td>
+                          <Badge
+                            color={tx.status === "posted" ? "green" : tx.status === "draft" ? "amber" : "red"}
+                            dot>
+                            {tx.status}
+                          </Badge>
+                        </Td>
+                        <Td right>
+                          <span className="font-semibold text-slate-200">{fmt(tx.total_amount)}</span>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </Card>
+          </>
+        )}
+
+        {/* ── Reports Tab ── */}
+        {tab === "reports" && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* P&L Summary */}
+              <div className="md:col-span-2">
+                <Card>
+                  <CardHeader title="Profit & Loss Summary" subtitle="Revenue vs Expenses"/>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between py-2 border-b border-white/[0.05]">
+                      <span className="text-sm font-semibold text-slate-200">Total Revenue</span>
+                      <span className="text-sm font-bold text-emerald-400">{fmt(stats.totalRevenue)}</span>
+                    </div>
+                    {(byType["revenue"] || []).map((a: any) => (
+                      <div key={a.id} className="flex items-center justify-between pl-4">
+                        <span className="text-xs text-slate-500">{a.name}</span>
+                        <span className="text-xs text-slate-300">{fmt(a.current_balance || 0)}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between py-2 border-b border-white/[0.05]">
+                      <span className="text-sm font-semibold text-slate-200">Total Expenses</span>
+                      <span className="text-sm font-bold text-amber-400">{fmt(stats.totalExpenses)}</span>
+                    </div>
+                    {(byType["expense"] || []).map((a: any) => (
+                      <div key={a.id} className="flex items-center justify-between pl-4">
+                        <span className="text-xs text-slate-500">{a.name}</span>
+                        <span className="text-xs text-slate-300">{fmt(a.current_balance || 0)}</span>
+                      </div>
+                    ))}
+                    <div className={cn("flex items-center justify-between py-3 px-4 rounded-xl border",
+                      stats.netIncome >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20")}>
+                      <span className="text-sm font-bold text-slate-200">Net {stats.netIncome >= 0 ? "Income" : "Loss"}</span>
+                      <span className={cn("text-lg font-bold", stats.netIncome >= 0 ? "text-emerald-400" : "text-red-400")}>
+                        {fmt(Math.abs(stats.netIncome))}
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Balance Sheet Summary */}
+              <Card>
+                <CardHeader title="Balance Sheet" subtitle="Financial position"/>
+                <div className="space-y-3">
+                  {[
+                    { label: "Assets",      value: stats.totalAssets,      color: "text-cyan-400" },
+                    { label: "Liabilities", value: stats.totalLiabilities, color: "text-red-400" },
+                    { label: "Equity",      value: stats.totalEquity,      color: "text-violet-400" },
+                  ].map(r => (
+                    <div key={r.label} className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">{r.label}</span>
+                      <span className={cn("text-sm font-bold", r.color)}>{fmt(r.value)}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-white/[0.06] pt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-400">L + E</span>
+                      <span className="text-sm font-bold text-slate-200">{fmt(stats.totalLiabilities + stats.totalEquity)}</span>
+                    </div>
+                  </div>
+                  <Progress
+                    value={stats.totalAssets}
+                    max={Math.max(stats.totalAssets, stats.totalLiabilities + stats.totalEquity, 1)}
+                    color={Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "cyan" : "amber"}
+                  />
+                  <div className={cn("text-center text-[10px] font-semibold", Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "text-emerald-400" : "text-amber-400")}>
+                    {Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "✓ Balanced" : "⚠ Check entries"}
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Export options */}
+            <Card>
+              <CardHeader title="Export Reports" subtitle="Download for audit and review"/>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: "Trial Balance",  icon: <BarChart3 size={14}/> },
+                  { label: "P&L Statement",  icon: <TrendingUp size={14}/> },
+                  { label: "Balance Sheet",  icon: <Layers size={14}/> },
+                  { label: "Cash Flow",      icon: <DollarSign size={14}/> },
+                ].map(r => (
+                  <button key={r.label}
+                    className="flex items-center gap-2.5 p-3 rounded-xl border border-white/[0.07] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04] transition-colors text-left">
+                    <span className="text-slate-600">{r.icon}</span>
+                    <span className="text-xs text-slate-400">{r.label}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-700 mt-3">Full export with date range filters coming in the next update.</p>
+            </Card>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

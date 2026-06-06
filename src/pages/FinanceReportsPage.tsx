@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   BarChart3,
@@ -693,7 +693,7 @@ export default function FinanceReportsPage() {
 
   if (financeAccess.loading) {
     return (
-      <div className="min-h-screen bg-slate-950">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
         <div className="flex items-center justify-center p-8">
           <div className="text-center">
             <div className="mb-4 text-2xl text-slate-400">Loading Finance Reports...</div>
@@ -708,7 +708,7 @@ export default function FinanceReportsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <div className="border-b border-slate-800 bg-slate-900/30">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">

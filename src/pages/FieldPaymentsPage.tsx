@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   HandCoins, 
@@ -695,7 +695,7 @@ export default function FieldPaymentsPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       {/* Header */}
       <div className="border-b border-slate-200 bg-white px-8 py-6">
         <div className="flex items-center justify-between">
