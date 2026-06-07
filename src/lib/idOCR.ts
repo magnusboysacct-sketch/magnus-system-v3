@@ -1,4 +1,4 @@
-import { createWorker } from 'tesseract.js';
+﻿import { createWorker } from 'tesseract.js';
 
 export interface IDOCRResult {
   fullName: string | null;
@@ -607,21 +607,8 @@ function extractFullName(text: string): string | null {
  * Extract first name from full name or text
  */
 function extractFirstName(text: string): string | null {
-  const fullName = extractFullName(text);
-  if (fullName) {
-    const words = fullName.trim().split(/\s+/);
-    return words[0] || null;
-  }
-  
-  // Fallback: look for single capitalized word
-  const lines = text.split('\n');
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (/^[A-Z][a-z]+$/.test(trimmed) && trimmed.length > 2) {
-      return trimmed;
-    }
-  }
-  
+  const full = extractFullName(text);
+  if (full) return full.split(/\s+/)[0];
   return null;
 }
 
@@ -629,13 +616,10 @@ function extractFirstName(text: string): string | null {
  * Extract last name from full name
  */
 function extractLastName(text: string): string | null {
-  const fullName = extractFullName(text);
-  if (fullName) {
-    const words = fullName.trim().split(/\s+/);
-    return words.length > 1 ? words[words.length - 1] : null;
-  }
-  
-  return null;
+  const full = extractFullName(text);
+  if (!full) return null;
+  const words = full.split(/\s+/);
+  return words.length > 1 ? words[words.length - 1] : null;
 }
 
 /**
@@ -650,6 +634,8 @@ function extractAddress(text: string): string | null {
     
     // Skip obvious non-address lines
     if (isNonAddressLine(trimmed)) continue;
+    // Skip lines containing surname/name labels or ID card fields
+    if (/SURNAME|SUMAMES|FIRST\s*NAME|MIDDLE\s*NAME|MIDI\s*NAME|MADE\s*NAME|IDENTIFICATION|ELECTOR|REGISTRATION|DATE\s*OF\s*BIRTH|EXPIRY|HEIGHT|SEX|DUP\s*NO|DISTINGUISHING|CARD\s*ISSUE|REGION/i.test(trimmed)) continue;
     
     // Check for address indicators
     if (/\d+/.test(trimmed) && // Contains numbers
@@ -676,7 +662,9 @@ function extractAddress(text: string): string | null {
 function extractDateOfBirth(text: string): string | null {
   const patterns = [
     // Various date formats
-    /\b(?:dob|date\s+of\s+birth|born|birth\s+date)[:\s]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/i,
+    /\b(?:dob|date\s+of\s+birth|born|birth\s+date|dae|birt)[:\s]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/i,
+    /\b(?:dob|date\s+of\s+birth|born|birth\s+date|dae|birt)[:\s]*(\w+\s+\d{1,2}\s+\d{4})\b/i,
+    /\b((?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+\d{1,2}\s*[,\s]\s*\d{4})\b/i,
     /\b(?:dob|date\s+of\s+birth|born|birth\s+date)[:\s]*(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})\b/i,
     /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/,
     /\b(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})\b/,
@@ -725,6 +713,18 @@ function extractDateOfBirth(text: string): string | null {
  * Extract document number from text
  */
 function extractDocumentNumber(text: string): string | null {
+  // Jamaican National ID — 8 digit number (e.g. 40347280)
+  const eightDigit = text.match(/\b(\d{8})\b/);
+  if (eightDigit) return eightDigit[1];
+
+  // Dup No or ID number patterns
+  const dupMatch = text.match(/(?:dup\s*no|id\s*no|no\.?)[:\s]*(\d{6,})/i);
+  if (dupMatch) return dupMatch[1];
+
+  // Region number
+  const regionMatch = text.match(/Region\s+\w+\s+(\d{6,})/i);
+  if (regionMatch) return regionMatch[1];
+
   const patterns = [
     // Jamaican TRN pattern
     /\b(?:trn|tax\s+registration|tax\s+reg\.?|identification\s+no\.?|id\s+no\.?)[:\s]*([A-Z]{3}\d{6})\b/i,
@@ -765,6 +765,12 @@ function extractLicenceNumber(text: string): string | null {
  * Extract expiry date from text
  */
 function extractExpiryDate(text: string): string | null {
+  // Jamaican ID: "Card Expiry Date DEC 31 2031"
+  const jamMatch = text.match(/(?:card\s+expiry|expiry\s+date|expiry)[:\s]*([A-Z]{3}\s+\d{1,2}\s+\d{4})/i);
+  if (jamMatch) return jamMatch[1];
+  const jamMatch2 = text.match(/(?:card\s+expiry|expiry\s+date|expiry)[:\s]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
+  if (jamMatch2) return jamMatch2[1];
+
   const patterns = [
     // Expiry date patterns
     /\b(?:exp(?:iry)?|expires?|valid\s+until|exp\s*date)[:\s]*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/i,

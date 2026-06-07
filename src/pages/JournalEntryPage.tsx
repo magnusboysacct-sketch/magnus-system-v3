@@ -14,8 +14,8 @@ import {
   AlertCircle, ArrowLeft, Info, ToggleLeft, ToggleRight,
   FolderOpen, Zap, Camera, ScanLine, X as XIcon, ChevronDown, ChevronUp
 } from "lucide-react";
-import { ReceiptUpload } from "../components/ReceiptUpload";
-import type { OCRResult } from "../lib/receiptOCR";
+import { ReceiptScanner } from "../components/ReceiptScanner";
+import type { ReceiptScanResult as OCRResult } from "../lib/magnusAI";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -207,7 +207,7 @@ export default function JournalEntryPage() {
 
   // ─── OCR Receipt Handler ─────────────────────────────────────────────────────
 
-  function handleOCRResult(receiptId: string, ocr: OCRResult | null) {
+  function handleOCRResult(ocr: OCRResult | null) {
     setShowScanner(false);
     if (!ocr) return;
     setScanResult(ocr);
@@ -651,19 +651,10 @@ export default function JournalEntryPage() {
                 <ScanLine size={12} className="flex-shrink-0 mt-0.5"/>
                 <span>Upload a receipt photo or PDF. The scanner will extract vendor, date, amount and auto-fill this journal entry.</span>
               </div>
-              {companyId && userId ? (
-                <ReceiptUpload
-                  companyId={companyId}
-                  userId={userId}
-                  onUploadComplete={handleOCRResult}
-                  onCancel={() => setShowScanner(false)}
-                />
-              ) : (
-                <div className="flex items-center gap-2 py-4 text-xs text-slate-600">
-                  <div className="w-3 h-3 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin"/>
-                  Loading scanner... (select a project first if this persists)
-                </div>
-              )}
+              <ReceiptScanner
+                onResult={handleOCRResult}
+                onCancel={() => setShowScanner(false)}
+              />
             </div>
           )}
 
@@ -686,7 +677,7 @@ export default function JournalEntryPage() {
               </div>
               <div className="mt-2 flex items-center gap-1.5 text-[10px] text-slate-600">
                 Confidence: <span className={scanResult.confidence > 0.7 ? "text-emerald-400" : "text-amber-400"}>{Math.round(scanResult.confidence * 100)}%</span>
-                {scanResult.requiresManualEntry && <span className="text-amber-400 ml-2">⚠ Low confidence — please verify amounts</span>}
+                {scanResult.confidence < 0.5 && <span className="text-amber-400 ml-2">⚠ Low confidence — please verify amounts</span>}
               </div>
             </div>
           )}

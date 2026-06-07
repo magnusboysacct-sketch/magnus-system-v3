@@ -1,5 +1,6 @@
 ﻿// src/pages/ExpensesPage.tsx
 import React, { useEffect, useState } from "react";
+import { ReceiptScanner } from "../components/ReceiptScanner";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import {
@@ -62,8 +63,19 @@ export default function ExpensesPage() {
   const [tab, setTab] = useState<Tab>("all");
   const [projectFilter, setProjectFilter] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [showExpenseScanner, setShowExpenseScanner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function handleExpenseScan(result: any) {
+    setShowExpenseScanner(false);
+    setForm(f => ({
+      ...f,
+      description: result.vendor ? `${result.vendor} - Receipt` : f.description,
+      amount:      result.amount ? result.amount.toString() : f.amount,
+      expense_date: result.date || f.expense_date,
+    }));
+  }
   const [companyId, setCompanyId] = useState<string | null>(null);
 
   const [form, setForm] = useState({
@@ -257,7 +269,7 @@ export default function ExpensesPage() {
                         </button>
                       )}
                       {e.status === "approved" && (
-                        <button onClick={() => updateStatus(e.id, "paid")}
+                        <button onClick={() => updateStatus(e.id, "approved")}
                           className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors">
                           Mark Paid
                         </button>
@@ -276,6 +288,27 @@ export default function ExpensesPage() {
         title="Log Expense" subtitle="Record a new project expense">
         <div className="space-y-4">
           {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
+
+          {/* Receipt Scanner */}
+          {showExpenseScanner ? (
+            <ReceiptScanner
+              onResult={handleExpenseScan}
+              onCancel={() => setShowExpenseScanner(false)}
+            />
+          ) : (
+            <button onClick={() => setShowExpenseScanner(true)}
+              className="w-full flex items-center gap-2.5 rounded-xl border border-dashed border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-4 py-3 transition-all group">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center group-hover:bg-emerald-500/20 transition">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </div>
+              <div className="text-left">
+                <div className="text-xs font-semibold text-emerald-300">Scan Receipt with AI</div>
+                <div className="text-[10px] text-slate-600">Auto-fill from photo</div>
+              </div>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-700 ml-auto"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          )}
+
           <Field label="Description">
             <Input placeholder="e.g. Cement bags from Hardware Plus" value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))} autoFocus/>
@@ -308,7 +341,8 @@ export default function ExpensesPage() {
             <Select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
-              <option value="paid">Paid</option>
+              <option value="approved">Approved / Paid</option>
+              <option value="rejected">Rejected</option>
             </Select>
           </Field>
           <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">

@@ -59,3 +59,10 @@ html.dark ::-webkit-scrollbar-thumb:hover { background: #334155; }
   html.dark, html.dark body { background: white !important; color: black !important; }
   aside { display: none !important; }
 }
+
+/* Print styles — only show worker detail when printing */
+@media print {
+  body > * { display: none !important; }
+  .print-worker-card { display: block !important; }
+  #root { display: block !important; }
+}

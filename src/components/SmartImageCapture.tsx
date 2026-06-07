@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+﻿import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Cropper, { type Point } from 'react-easy-crop';
 import { Camera, Upload, X, Check, FileText, Move, Loader2, AlertTriangle, Lightbulb, RotateCw, RotateCcw, Crop, Monitor, Square, Scan } from 'lucide-react';
 import type { SmartImageCaptureProps, CropArea, ImageCaptureResult } from '../types/imageCapture';
@@ -43,14 +43,14 @@ export default function SmartImageCapture({
   });
 
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(0.8); // Start slightly zoomed out for larger crop area
+  const [zoom, setZoom] = useState(1.0); // Start slightly zoomed out for larger crop area
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<CropArea | null>(null);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [qualityAnalysis, setQualityAnalysis] = useState<ImageQualityAnalysis | null>(null);
   const [analyzingQuality, setAnalyzingQuality] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [cropFrameType, setCropFrameType] = useState<'portrait' | 'landscape' | 'square'>('portrait');
-  const [cropAspectRatio, setCropAspectRatio] = useState<number>(0.7); // Default portrait
+  const [cropAspectRatio, setCropAspectRatio] = useState<number>(1.586); // Default portrait
   const [maxZoom, setMaxZoom] = useState(3);
   const [documentBounds, setDocumentBounds] = useState<PaperBounds | null>(null);
   const [autoFitEnabled, setAutoFitEnabled] = useState(true);
@@ -107,8 +107,8 @@ export default function SmartImageCapture({
             setZoom(0.8);
           } else {
             // Tall document - portrait frame
-            setCropFrameType('portrait');
-            setCropAspectRatio(0.7);
+            setCropFrameType('landscape');
+            setCropAspectRatio(1.586);
             setMaxZoom(3.5);
             setZoom(0.8);
           }
@@ -506,7 +506,7 @@ export default function SmartImageCapture({
         {/* Crop Container - Enlarged for better crop box size */}
         <div 
           ref={containerRef}
-          className="relative overflow-hidden rounded-lg bg-slate-900"
+          className="relative rounded-lg bg-slate-900"
           style={{ 
             minHeight: mode === 'receipt' ? '400px' : '380px',
             maxHeight: '65vh',

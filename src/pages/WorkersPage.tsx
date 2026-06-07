@@ -1,6 +1,7 @@
 ﻿// src/pages/WorkersPage.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { SimpleIDScanner } from "../components/SimpleIDScanner";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
   Table, Th, Tr, Td, Empty, Modal, Alert, Textarea,
@@ -82,19 +83,19 @@ function fmtDate(d: string | null | undefined) {
 
 // ─── Worker Card ──────────────────────────────────────────────────────────────
 
-function WorkerCard({ worker, onEdit, onDelete }: {
+function WorkerCard({ worker, onEdit, onDelete, onView }: {
   worker: Worker;
   onEdit: (w: Worker) => void;
   onDelete: (id: string) => void;
+  onView: (w: Worker) => void;
 }) {
-  const avatarBg = worker.worker_type === "employee" ? "bg-blue-500/20 text-blue-300" :
     worker.worker_type === "crew_lead" ? "bg-cyan-500/20 text-cyan-300" :
     "bg-violet-500/20 text-violet-300";
 
   return (
     <Card className="group hover:border-white/[0.13] transition-all">
       <div className="flex items-start justify-between mb-4">
-        <div className={cn("w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold border", TYPE_BG[worker.worker_type], TYPE_COLOR[worker.worker_type])}>
+        <div className={cn("w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold border", TYPE_BG[worker.worker_type || "employee"], TYPE_COLOR[worker.worker_type || "employee"])}>
           {initials(worker)}
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -110,8 +111,8 @@ function WorkerCard({ worker, onEdit, onDelete }: {
       </div>
 
       <div className="mb-3">
-        <div className="text-sm font-semibold text-slate-100 mb-0.5">{fullName(worker)}</div>
-        <div className={cn("text-[10px] font-semibold capitalize", TYPE_COLOR[worker.worker_type])}>
+        <button onClick={() => onView(worker)} className="text-sm font-semibold text-slate-100 mb-0.5 hover:text-cyan-400 transition-colors text-left">{fullName(worker)}</button>
+        <div className={cn("text-[10px] font-semibold capitalize", TYPE_COLOR[worker.worker_type || "employee"])}>
           {worker.worker_type.replace("_", " ")}
         </div>
         {worker.employee_id && (
@@ -171,6 +172,9 @@ export default function WorkersPage() {
   const [editWorker, setEditWorker] = useState<Worker | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [showIDScanner, setShowIDScanner] = useState(false);
+  const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
+  const idPhotoFileRef = useRef<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -199,6 +203,18 @@ export default function WorkersPage() {
     finally { setLoading(false); }
   }
 
+  async function handleIDScan(result: any, croppedFile?: File) {
+    setShowIDScanner(false);
+    if (croppedFile) { idPhotoFileRef.current = croppedFile; console.log("ID photo file received:", croppedFile.name, croppedFile.size); }
+    setForm(f => ({
+      ...f,
+      first_name:       result.firstName || f.first_name,
+      last_name:        result.lastName  || f.last_name,
+      address:          result.address   || f.address,
+      id_number:        result.idNumber  || result.documentNumber || f.id_number,
+      national_id_type: result.documentType || f.national_id_type,
+    }));
+  }
   async function saveWorker() {
     setSaving(true); setError(null);
     try {
@@ -219,6 +235,25 @@ export default function WorkersPage() {
         notes: form.notes.trim() || null,
       };
 
+      // Upload ID photo to Supabase storage
+      console.log("Checking ID photo ref:", idPhotoFileRef.current, companyId);
+      if (idPhotoFileRef.current && companyId) {
+        try {
+          const path = `workers/ids/${companyId}/${Date.now()}_${form.id_number || "id"}.jpg`;
+          const { error: upErr } = await supabase.storage
+            .from("project-files")
+            .upload(path, idPhotoFileRef.current!, { upsert: true });
+          if (upErr) {
+            console.error("ID photo upload error:", upErr);
+          } else {
+            const { data: urlData } = supabase.storage.from("project-files").getPublicUrl(path);
+            payload.id_photo_url = urlData.publicUrl;
+            console.log("ID photo uploaded:", urlData.publicUrl);
+          }
+        } catch (upEx) {
+          console.error("ID photo upload exception:", upEx);
+        }
+      }
       if (editWorker) {
         const { error: e } = await supabase.from("workers").update(payload).eq("id", editWorker.id);
         if (e) throw e;
@@ -263,6 +298,8 @@ export default function WorkersPage() {
   }
 
   function closeModal() {
+    idPhotoFileRef.current = null;
+    setShowIDScanner(false);
     setShowNew(false); setEditWorker(null);
     setForm(EMPTY_FORM); setError(null);
   }
@@ -386,6 +423,7 @@ export default function WorkersPage() {
             {filtered.map(w => (
               <WorkerCard key={w.id} worker={w}
                 onEdit={openEdit}
+                onView={w => setSelectedWorker(w)}
                 onDelete={id => setDeleteConfirm(id)}
               />
             ))}
@@ -413,7 +451,7 @@ export default function WorkersPage() {
                           {initials(w)}
                         </div>
                         <div>
-                          <div className="font-semibold text-slate-200 text-xs">{fullName(w)}</div>
+                          <button onClick={() => setSelectedWorker(w)} className="font-semibold text-slate-200 text-xs hover:text-cyan-400 transition-colors text-left">{fullName(w)}</button>
                           {w.employee_id && <div className="text-[9px] text-slate-700">#{w.employee_id}</div>}
                         </div>
                       </div>
@@ -460,6 +498,28 @@ export default function WorkersPage() {
         width="max-w-2xl">
         <div className="space-y-4">
           {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
+
+          {/* ID Scanner */}
+          {showIDScanner ? (
+            <SimpleIDScanner
+              onResult={handleIDScan}
+              onCancel={() => setShowIDScanner(false)}
+            />
+          ) : (
+            <button onClick={() => setShowIDScanner(true)}
+              className="w-full flex items-center gap-2.5 rounded-xl border border-dashed border-cyan-500/30 bg-cyan-500/5 hover:bg-cyan-500/10 px-4 py-3 transition-all group">
+              <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-cyan-400"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+              </div>
+              <div className="text-left flex-1">
+                <div className="text-xs font-semibold text-cyan-300">Scan Worker ID with AI</div>
+                <div className="text-[10px] text-slate-600">
+                  {form.id_number ? `ID: ${form.id_number} — ${form.first_name} ${form.last_name}` : "Auto-fill name, address and ID number"}
+                </div>
+              </div>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-700"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="First Name">
@@ -559,6 +619,68 @@ export default function WorkersPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Worker Detail Modal — shows ID photo */}
+      {selectedWorker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => setSelectedWorker(null)}>
+          <div className="w-full max-w-sm rounded-2xl border border-white/[0.08] bg-[#0f1520] shadow-2xl"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+              <div>
+                <div className="text-sm font-bold text-slate-100">{fullName(selectedWorker)}</div>
+                <div className="text-[10px] text-slate-600 capitalize">{selectedWorker.worker_type.replace("_"," ")}</div>
+              </div>
+              <button onClick={() => setSelectedWorker(null)} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* ID Photo */}
+              {selectedWorker.id_photo_url ? (
+                <div>
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">Government ID</div>
+                  <img src={selectedWorker.id_photo_url} alt="Worker ID"
+                    className="w-full rounded-xl border border-white/[0.08] object-contain max-h-48 bg-black"/>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-white/[0.08] p-6 text-center">
+                  <div className="text-[10px] text-slate-600">No ID photo stored</div>
+                </div>
+              )}
+              {/* Details */}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label:"ID Number",   value: selectedWorker.id_number },
+                  { label:"ID Type",     value: selectedWorker.national_id_type?.replace("_"," ") },
+                  { label:"Phone",       value: selectedWorker.phone },
+                  { label:"Email",       value: selectedWorker.email },
+                  { label:"Address",     value: selectedWorker.address },
+                  { label:"City",        value: selectedWorker.city },
+                  { label:"Pay Rate",    value: selectedWorker.pay_rate ? `${selectedWorker.pay_rate}/hr` : null },
+                  { label:"Hire Date",   value: selectedWorker.hire_date ? fmtDate(selectedWorker.hire_date) : null },
+                ].filter(f => f.value).map(f => (
+                  <div key={f.label} className="rounded-lg bg-white/[0.03] border border-white/[0.05] p-2.5">
+                    <div className="text-[9px] text-slate-600 mb-0.5">{f.label}</div>
+                    <div className="text-xs font-semibold text-slate-300 capitalize truncate">{f.value}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Print + Delete */}
+              <div className="flex gap-2 pt-3 border-t border-white/[0.06] mt-2">
+                <button onClick={() => window.print()}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-white/[0.08] text-xs text-slate-400 hover:text-slate-300 transition-colors">
+                  🖨 Print
+                </button>
+                <button onClick={() => { setDeleteConfirm(selectedWorker!.id); setSelectedWorker(null); }}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-red-500/20 bg-red-500/10 text-xs text-red-400 hover:bg-red-500/20 transition-colors">
+                  🗑 Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirm */}
       <Modal open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)}
