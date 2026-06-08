@@ -2,6 +2,7 @@
 // Same auth logic, same routes, new AppLayout replaces SidebarLayout
 
 import React, { useEffect, useState } from "react";
+import VerifyWorkerPage from './pages/VerifyWorkerPage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -183,7 +184,8 @@ export default function App() {
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+            <Route path="/verify/:workerId" element={<VerifyWorkerPage />} />
+        </Routes>
         </BrowserRouter>
       </ProjectProvider>
     </ErrorBoundary>
