@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle, ChevronDown, ChevronUp, Wallet, ChartBar, Package, Library, ClipboardList, Truck, Calculator, Building2, ShieldCheck, Smartphone, HandCoins, Activity, Eye } from "lucide-react";
+import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle, Shield, ChevronDown, ChevronUp, Wallet, ChartBar, Package, Library, ClipboardList, Truck, Calculator, Building2, ShieldCheck, Smartphone, HandCoins, Activity, Eye } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
 import ProjectSelector from "../components/ProjectSelector";
@@ -27,6 +27,7 @@ const navSections: NavSection[] = [
     items: [
       { to: "/", label: "Dashboard", icon: LayoutDashboard },
       { to: "/field-ops", label: "Field Ops", icon: Smartphone },
+      { to: "/access-log", label: "Access Log", icon: Shield },
     ],
   },
   {
