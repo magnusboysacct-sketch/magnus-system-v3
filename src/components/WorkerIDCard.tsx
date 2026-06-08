@@ -1,5 +1,6 @@
-﻿// src/components/WorkerIDCard.tsx — Clean rebuild, navy blue design
+﻿// src/components/WorkerIDCard.tsx — Navy blue design with QR code
 import React, { useState, useEffect } from "react";
+import QRCode from "qrcode";
 import { supabase } from "../lib/supabase";
 
 interface Worker {
@@ -36,11 +37,13 @@ function roleLabel(t?: string | null) {
   return (t || "worker").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
+const BASE_URL = window.location.origin;
+
 export function WorkerIDCard({ workerId, companyName = "Magnus Boys Construction", onClose }: Props) {
   const [worker, setWorker] = useState<Worker | null>(null);
   const [loading, setLoading] = useState(true);
+  const [qrDataUrl, setQrDataUrl] = useState<string>("");
 
-  // Always fetch fresh from DB when card opens
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -50,112 +53,103 @@ export function WorkerIDCard({ workerId, companyName = "Magnus Boys Construction
         .eq("id", workerId)
         .single();
       setWorker(data);
+
+      // Generate QR code pointing to worker verify page
+      const scanUrl = `${BASE_URL}/verify/${workerId}`;
+      const qr = await QRCode.toDataURL(scanUrl, {
+        width: 80,
+        margin: 1,
+        color: { dark: "#0A2342", light: "#ffffff" },
+      });
+      setQrDataUrl(qr);
       setLoading(false);
     }
     load();
   }, [workerId]);
 
-  function handlePrint() {
+  async function handlePrint() {
     if (!worker) return;
     const photoUrl = worker.passport_photo_url || worker.id_photo_url || "";
+    const scanUrl = `${BASE_URL}/verify/${workerId}`;
 
-    const canvas = document.createElement("canvas");
+    // Generate high-res QR for canvas
+    const qrCanvas = document.createElement("canvas");
+    await QRCode.toCanvas(qrCanvas, scanUrl, {
+      width: 72 * 3,
+      margin: 1,
+      color: { dark: "#0A2342", light: "#ffffff" },
+    });
+
     const S = 3;
-    canvas.width = 338 * S;
-    canvas.height = 213 * S;
+    const W = 338 * S, H = 213 * S;
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
     const ctx = canvas.getContext("2d")!;
 
-    const drawCard = (photo?: HTMLImageElement) => {
-      const W = canvas.width, H = canvas.height;
-
+    const draw = (photo?: HTMLImageElement) => {
       // Background
       ctx.fillStyle = "#0A2342";
       ctx.beginPath();
       ctx.roundRect(0, 0, W, H, 12 * S);
       ctx.fill();
 
-      // Header bar
+      // Header
       ctx.fillStyle = "#0d2d54";
       ctx.fillRect(0, 0, W, 46 * S);
       ctx.strokeStyle = "rgba(255,255,255,0.08)";
       ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(0, 46 * S);
-      ctx.lineTo(W, 46 * S);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, 46 * S); ctx.lineTo(W, 46 * S); ctx.stroke();
 
       // MB circle
       ctx.fillStyle = "#ffffff";
-      ctx.beginPath();
-      ctx.arc(22 * S, 23 * S, 13 * S, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(22 * S, 23 * S, 13 * S, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#0A2342";
       ctx.font = `bold ${8 * S}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText("MB", 22 * S, 23 * S);
 
       // Company name
-      ctx.textAlign = "left";
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
       ctx.fillStyle = "#ffffff";
       ctx.font = `bold ${10 * S}px sans-serif`;
-      ctx.fillText(companyName.toUpperCase(), 40 * S, 19 * S);
+      ctx.fillText(companyName.toUpperCase(), 40 * S, 20 * S);
       ctx.fillStyle = "rgba(255,255,255,0.45)";
       ctx.font = `${6 * S}px sans-serif`;
-      ctx.fillText("EMPLOYEE IDENTIFICATION", 40 * S, 30 * S);
+      ctx.fillText("EMPLOYEE IDENTIFICATION", 40 * S, 31 * S);
 
       // OFFICIAL badge
       ctx.fillStyle = "rgba(255,255,255,0.1)";
-      ctx.strokeStyle = "rgba(255,255,255,0.2)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(285 * S, 12 * S, 44 * S, 22 * S, 3 * S);
-      ctx.fill();
-      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(283 * S, 11 * S, 46 * S, 24 * S, 3 * S); ctx.fill(); ctx.stroke();
       ctx.fillStyle = "#ffffff";
       ctx.font = `bold ${5.5 * S}px sans-serif`;
       ctx.textAlign = "center";
-      ctx.fillText("OFFICIAL", 307 * S, 20 * S);
-      ctx.fillText("ID", 307 * S, 28 * S);
+      ctx.fillText("OFFICIAL", 306 * S, 21 * S);
+      ctx.fillText("ID", 306 * S, 29 * S);
 
       // Photo frame
-      const px = 12 * S, py = 56 * S, pw = 70 * S, ph = 88 * S;
+      const px = 12 * S, py = 55 * S, pw = 68 * S, ph = 86 * S;
       ctx.fillStyle = "#1a3a5c";
-      ctx.beginPath();
-      ctx.roundRect(px, py, pw, ph, 5 * S);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.25)";
-      ctx.lineWidth = 2 * S;
-      ctx.beginPath();
-      ctx.roundRect(px, py, pw, ph, 5 * S);
-      ctx.stroke();
-
+      ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 5 * S); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 2 * S;
+      ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 5 * S); ctx.stroke();
       if (photo) {
         ctx.save();
-        ctx.beginPath();
-        ctx.roundRect(px + S, py + S, pw - 2 * S, ph - 2 * S, 4 * S);
-        ctx.clip();
-        ctx.drawImage(photo, px + S, py + S, pw - 2 * S, ph - 2 * S);
+        ctx.beginPath(); ctx.roundRect(px + S, py + S, pw - 2*S, ph - 2*S, 4*S); ctx.clip();
+        ctx.drawImage(photo, px + S, py + S, pw - 2*S, ph - 2*S);
         ctx.restore();
-      } else {
-        ctx.fillStyle = "rgba(255,255,255,0.2)";
-        ctx.font = `${24 * S}px sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("👤", px + pw / 2, py + ph / 2);
       }
 
       // Worker info
-      const ix = 92 * S;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
+      const ix = 90 * S;
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
       ctx.fillStyle = "#ffffff";
-      ctx.font = `bold ${14 * S}px sans-serif`;
-      ctx.fillText(`${worker!.first_name} ${worker!.last_name}`.toUpperCase(), ix, 72 * S);
-
+      ctx.font = `bold ${13 * S}px sans-serif`;
+      ctx.fillText(`${worker!.first_name} ${worker!.last_name}`.toUpperCase(), ix, 68 * S);
       ctx.fillStyle = "#64B5F6";
-      ctx.font = `${7.5 * S}px sans-serif`;
-      ctx.fillText(roleLabel(worker!.worker_type).toUpperCase(), ix, 84 * S);
+      ctx.font = `${7 * S}px sans-serif`;
+      ctx.fillText(roleLabel(worker!.worker_type).toUpperCase(), ix, 79 * S);
 
       const rows = [
         worker!.id_number ? [`${worker!.national_id_type || "ID"}`, worker!.id_number] : null,
@@ -164,58 +158,65 @@ export function WorkerIDCard({ workerId, companyName = "Magnus Boys Construction
       ].filter(Boolean) as [string, string][];
 
       rows.forEach(([label, value], i) => {
-        const y = (95 + i * 13) * S;
+        const y = (90 + i * 12) * S;
         ctx.fillStyle = "rgba(255,255,255,0.4)";
-        ctx.font = `${6 * S}px sans-serif`;
+        ctx.font = `${5.5 * S}px sans-serif`;
         ctx.fillText(label.toUpperCase(), ix, y);
         ctx.fillStyle = "rgba(255,255,255,0.85)";
-        ctx.font = `${7.5 * S}px sans-serif`;
-        ctx.fillText(String(value).slice(0, 28), ix + 44 * S, y);
+        ctx.font = `${7 * S}px sans-serif`;
+        ctx.fillText(String(value).slice(0, 26), ix + 42 * S, y);
       });
+
+      // QR Code — bottom right of body area
+      const qrSize = 52 * S;
+      const qrX = W - qrSize - 10 * S;
+      const qrY = 50 * S;
+      // White background for QR
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath(); ctx.roundRect(qrX - 2*S, qrY - 2*S, qrSize + 4*S, qrSize + 4*S, 3*S); ctx.fill();
+      ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
+      // "SCAN" label
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.font = `${5 * S}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.fillText("SCAN TO VERIFY", qrX + qrSize/2, qrY + qrSize + 8*S);
 
       // Footer
       ctx.fillStyle = "rgba(0,0,0,0.25)";
-      ctx.beginPath();
-      ctx.roundRect(0, 170 * S, W, 43 * S, [0, 0, 12 * S, 12 * S]);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.05)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(0, 170 * S);
-      ctx.lineTo(W, 170 * S);
-      ctx.stroke();
+      ctx.beginPath(); ctx.roundRect(0, 170*S, W, 43*S, [0,0,12*S,12*S]); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, 170*S); ctx.lineTo(W, 170*S); ctx.stroke();
 
       ctx.fillStyle = "rgba(255,255,255,0.35)";
       ctx.font = `${5.5 * S}px sans-serif`;
       ctx.textAlign = "left";
-      ctx.fillText("ISSUED", 12 * S, 180 * S);
+      ctx.fillText("ISSUED", 12*S, 181*S);
       ctx.fillStyle = "#64B5F6";
       ctx.font = `bold ${7.5 * S}px sans-serif`;
-      ctx.fillText(fmtDate(worker!.hire_date), 12 * S, 192 * S);
+      ctx.fillText(fmtDate(worker!.hire_date), 12*S, 193*S);
 
       ctx.fillStyle = "rgba(255,255,255,0.35)";
       ctx.font = `${5.5 * S}px sans-serif`;
       ctx.textAlign = "right";
-      ctx.fillText("EXPIRES", (338 - 12) * S, 180 * S);
+      ctx.fillText("EXPIRES", (338-12)*S, 181*S);
       ctx.fillStyle = "#64B5F6";
       ctx.font = `bold ${7.5 * S}px sans-serif`;
-      ctx.fillText(expiry(worker!.hire_date), (338 - 12) * S, 192 * S);
+      ctx.fillText(expiry(worker!.hire_date), (338-12)*S, 193*S);
 
-      // Employee ID center
-      ctx.fillStyle = "rgba(255,255,255,0.3)";
-      ctx.font = `${6 * S}px monospace`;
+      ctx.fillStyle = "rgba(255,255,255,0.2)";
+      ctx.font = `${5.5 * S}px monospace`;
       ctx.textAlign = "center";
-      ctx.fillText((worker!.employee_id || worker!.id_number || "").toUpperCase(), W / 2, 190 * S);
+      ctx.fillText((worker!.employee_id || worker!.id_number || "").toUpperCase(), W/2, 190*S);
 
       // Print
-      const img = canvas.toDataURL("image/png");
+      const dataUrl = canvas.toDataURL("image/png");
       const win = window.open("", "_blank", "width=500,height=400");
       if (!win) return;
-      win.document.write(`<!DOCTYPE html><html><head><title>ID Card</title>
-<style>*{margin:0;padding:0}body{background:#f5f5f5;display:flex;align-items:center;justify-content:center;min-height:100vh}
+      win.document.write(`<!DOCTYPE html><html><head><title>ID Card — ${worker!.first_name} ${worker!.last_name}</title>
+<style>*{margin:0;padding:0}body{background:#f0f0f0;display:flex;align-items:center;justify-content:center;min-height:100vh}
 img{width:338px;height:213px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3)}
-@media print{body{margin:0;background:#f5f5f5}}</style>
-</head><body><img src="${img}"/></body></html>`);
+@media print{body{background:#f0f0f0;margin:0}}</style>
+</head><body><img src="${dataUrl}"/></body></html>`);
       win.document.close();
       setTimeout(() => win.print(), 600);
     };
@@ -223,11 +224,11 @@ img{width:338px;height:213px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0
     if (photoUrl) {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.onload = () => drawCard(img);
-      img.onerror = () => drawCard();
+      img.onload = () => draw(img);
+      img.onerror = () => draw();
       img.src = photoUrl;
     } else {
-      drawCard();
+      draw();
     }
   }
 
@@ -240,7 +241,6 @@ img{width:338px;height:213px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0
   );
 
   if (!worker) return null;
-
   const photoUrl = worker.passport_photo_url || worker.id_photo_url || "";
 
   return (
@@ -252,43 +252,51 @@ img{width:338px;height:213px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0
         </div>
 
         {/* Card Preview */}
-        <div style={{
-          width: 338, height: 213, borderRadius: 12, overflow: "hidden",
-          background: "#0A2342", color: "#fff", display: "flex", flexDirection: "column",
-          boxShadow: "0 4px 20px rgba(0,0,0,0.4)", margin: "0 auto",
-        }}>
+        <div style={{ width:338, height:213, borderRadius:12, overflow:"hidden", background:"#0A2342", color:"#fff", display:"flex", flexDirection:"column", boxShadow:"0 4px 20px rgba(0,0,0,0.4)", margin:"0 auto" }}>
           {/* Header */}
-          <div style={{ background: "#0d2d54", borderBottom: "1px solid rgba(255,255,255,0.08)", padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 26, height: 26, background: "#fff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 800, color: "#0A2342", flexShrink: 0 }}>MB</div>
+          <div style={{ background:"#0d2d54", borderBottom:"1px solid rgba(255,255,255,0.08)", padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ width:26, height:26, background:"#fff", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:800, color:"#0A2342", flexShrink:0 }}>MB</div>
             <div>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#fff", textTransform: "uppercase", letterSpacing: 0.5 }}>{companyName}</div>
-              <div style={{ fontSize: 7, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: 1 }}>Employee Identification</div>
+              <div style={{ fontSize:10, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:0.5 }}>{companyName}</div>
+              <div style={{ fontSize:7, color:"rgba(255,255,255,0.45)", textTransform:"uppercase", letterSpacing:1 }}>Employee Identification</div>
             </div>
-            <div style={{ marginLeft: "auto", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", fontSize: 7, fontWeight: 700, padding: "2px 5px", borderRadius: 3, textAlign: "center", lineHeight: 1.4 }}>OFFICIAL<br/>ID</div>
+            <div style={{ marginLeft:"auto", background:"rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.2)", color:"#fff", fontSize:7, fontWeight:700, padding:"2px 5px", borderRadius:3, textAlign:"center", lineHeight:1.4 }}>OFFICIAL<br/>ID</div>
           </div>
 
           {/* Body */}
-          <div style={{ display: "flex", flex: 1, padding: "8px 12px", gap: 10, alignItems: "flex-start" }}>
-            <div style={{ width: 70, height: 88, borderRadius: 5, background: "#1a3a5c", border: "2px solid rgba(255,255,255,0.25)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {photoUrl
-                ? <img src={photoUrl} alt="passport" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : <span style={{ fontSize: 28, opacity: 0.3 }}>👤</span>
-              }
+          <div style={{ display:"flex", flex:1, padding:"8px 12px", gap:8, alignItems:"flex-start" }}>
+            {/* Photo */}
+            <div style={{ width:66, height:84, borderRadius:5, background:"#1a3a5c", border:"2px solid rgba(255,255,255,0.25)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              {photoUrl ? <img src={photoUrl} alt="passport" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:24, opacity:0.3 }}>👤</span>}
             </div>
-            <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", lineHeight: 1.1, marginBottom: 2 }}>{worker.first_name} {worker.last_name}</div>
-              <div style={{ fontSize: 8, color: "#64B5F6", fontWeight: 600, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>{roleLabel(worker.worker_type)}</div>
+
+            {/* Info */}
+            <div style={{ flex:1, minWidth:0, paddingTop:2 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"#fff", lineHeight:1.1, marginBottom:2 }}>{worker.first_name} {worker.last_name}</div>
+              <div style={{ fontSize:8, color:"#64B5F6", fontWeight:600, letterSpacing:1.5, textTransform:"uppercase", marginBottom:5 }}>{roleLabel(worker.worker_type)}</div>
               {worker.id_number && <InfoRow label={worker.national_id_type || "ID"} value={worker.id_number} />}
               {(worker.address || worker.city) && <InfoRow label="Address" value={[worker.address, worker.city].filter(Boolean).join(", ")} />}
               {worker.phone && <InfoRow label="Phone" value={worker.phone} />}
             </div>
+
+            {/* QR Code */}
+            <div style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+              {qrDataUrl ? (
+                <div style={{ background:"#fff", borderRadius:4, padding:2 }}>
+                  <img src={qrDataUrl} alt="QR" style={{ width:54, height:54, display:"block" }} />
+                </div>
+              ) : (
+                <div style={{ width:58, height:58, background:"rgba(255,255,255,0.05)", borderRadius:4, border:"1px solid rgba(255,255,255,0.1)" }} />
+              )}
+              <div style={{ fontSize:6, color:"rgba(255,255,255,0.4)", letterSpacing:0.5, textTransform:"uppercase" }}>Scan to verify</div>
+            </div>
           </div>
 
           {/* Footer */}
-          <div style={{ background: "rgba(0,0,0,0.25)", borderTop: "1px solid rgba(255,255,255,0.05)", padding: "5px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div><div style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: 1 }}>Issued</div><div style={{ fontSize: 8, color: "#64B5F6", fontWeight: 600 }}>{fmtDate(worker.hire_date)}</div></div>
-            <div style={{ fontSize: 6, color: "rgba(255,255,255,0.25)", letterSpacing: 1 }}>{(worker.employee_id || worker.id_number || "").toUpperCase()}</div>
-            <div><div style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: 1 }}>Expires</div><div style={{ fontSize: 8, color: "#64B5F6", fontWeight: 600 }}>{expiry(worker.hire_date)}</div></div>
+          <div style={{ background:"rgba(0,0,0,0.25)", borderTop:"1px solid rgba(255,255,255,0.05)", padding:"5px 12px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div><div style={{ fontSize:6, color:"rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>Issued</div><div style={{ fontSize:8, color:"#64B5F6", fontWeight:600 }}>{fmtDate(worker.hire_date)}</div></div>
+            <div style={{ fontSize:6, color:"rgba(255,255,255,0.2)", letterSpacing:1 }}>{(worker.employee_id || worker.id_number || "").toUpperCase()}</div>
+            <div><div style={{ fontSize:6, color:"rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>Expires</div><div style={{ fontSize:8, color:"#64B5F6", fontWeight:600 }}>{expiry(worker.hire_date)}</div></div>
           </div>
         </div>
 
@@ -300,6 +308,7 @@ img{width:338px;height:213px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0
             Close
           </button>
         </div>
+        <p className="text-center text-xs text-gray-400 mt-2">Scan QR code to verify worker identity</p>
       </div>
     </div>
   );
@@ -307,9 +316,9 @@ img{width:338px;height:213px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display: "flex", gap: 4, marginBottom: 3 }}>
-      <span style={{ fontSize: 7, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: 1, minWidth: 44 }}>{label}</span>
-      <span style={{ fontSize: 7.5, color: "rgba(255,255,255,0.8)", wordBreak: "break-word" }}>{value}</span>
+    <div style={{ display:"flex", gap:4, marginBottom:3 }}>
+      <span style={{ fontSize:6.5, color:"rgba(255,255,255,0.4)", textTransform:"uppercase", letterSpacing:1, minWidth:40 }}>{label}</span>
+      <span style={{ fontSize:7, color:"rgba(255,255,255,0.8)", wordBreak:"break-word" }}>{value}</span>
     </div>
   );
 }
