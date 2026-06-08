@@ -1,6 +1,7 @@
 ﻿// src/pages/WorkersPage.tsx
 import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { WorkerIDCard } from "../components/WorkerIDCard";
 import { SimpleIDScanner } from "../components/SimpleIDScanner";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
@@ -37,6 +38,10 @@ type Worker = {
   overtime_rate?: number | null;
   employee_id?: string | null;
   notes?: string | null;
+  id_number?: string | null;
+  id_photo_url?: string | null;
+  national_id_type?: string | null;
+  passport_photo_url?: string | null;
   created_at?: string;
 };
 
@@ -64,6 +69,7 @@ const EMPTY_FORM = {
   status: "active" as WorkerStatus,
   pay_type: "hourly" as PayType,
   pay_rate: "", overtime_rate: "", employee_id: "", notes: "",
+  id_number: "", id_photo_url: "", national_id_type: "", passport_photo_url: "",
 };
 
 function fmt(n: number) {
@@ -83,11 +89,12 @@ function fmtDate(d: string | null | undefined) {
 
 // ─── Worker Card ──────────────────────────────────────────────────────────────
 
-function WorkerCard({ worker, onEdit, onDelete, onView }: {
+function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
   worker: Worker;
   onEdit: (w: Worker) => void;
   onDelete: (id: string) => void;
   onView: (w: Worker) => void;
+  onIdCard: (w: Worker) => void;
 }) {
     worker.worker_type === "crew_lead" ? "bg-cyan-500/20 text-cyan-300" :
     "bg-violet-500/20 text-violet-300";
@@ -99,6 +106,10 @@ function WorkerCard({ worker, onEdit, onDelete, onView }: {
           {initials(worker)}
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => onIdCard(worker)}
+            className="p-1.5 rounded-lg hover:bg-yellow-500/15 text-slate-600 hover:text-yellow-400 transition-colors" title="Print ID Card">
+            <span style={{fontSize:11}}>🪪</span>
+          </button>
           <button onClick={() => onEdit(worker)}
             className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
             <Edit2 size={12}/>
@@ -175,8 +186,11 @@ export default function WorkersPage() {
   const [showIDScanner, setShowIDScanner] = useState(false);
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
   const idPhotoFileRef = useRef<File | null>(null);
+  const passportPhotoFileRef = useRef<File | null>(null);
+  const [passportPhotoPreview, setPassportPhotoPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [idCardWorker, setIdCardWorker] = useState<Worker | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -199,6 +213,8 @@ export default function WorkersPage() {
         .order("first_name", { ascending: true });
       if (e) throw e;
       setWorkers(data || []);
+      console.log("FELICA PASSPORT:", data?.find((w:any)=>w.first_name==="FELICA")?.passport_photo_url);
+      return data || [];
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   }
@@ -218,7 +234,7 @@ export default function WorkersPage() {
   async function saveWorker() {
     setSaving(true); setError(null);
     try {
-      const payload = {
+      const payload: Record<string, any> = {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         email: form.email.trim() || null,
@@ -233,8 +249,28 @@ export default function WorkersPage() {
         overtime_rate: form.overtime_rate ? parseFloat(form.overtime_rate) : null,
         employee_id: form.employee_id.trim() || null,
         notes: form.notes.trim() || null,
+        id_number: form.id_number?.trim() || null,
+        id_photo_url: form.id_photo_url || null,
+        national_id_type: form.national_id_type?.trim() || null,
+        passport_photo_url: form.passport_photo_url || null,
       };
 
+      // Upload passport photo to Supabase storage
+      console.log("PASSPORT REF:", passportPhotoFileRef.current, "COMPANY:", companyId);
+      if (passportPhotoFileRef.current && companyId) {
+        try {
+          const ppPath = `workers/passport/${companyId}/${Date.now()}_passport.jpg`;
+          const { error: ppErr } = await supabase.storage
+            .from("project-files")
+            .upload(ppPath, passportPhotoFileRef.current!, { upsert: true });
+          if (!ppErr) {
+          console.log("PASSPORT UPLOAD RESULT - ppErr:", ppErr);
+            const { data: ppUrl } = supabase.storage.from("project-files").getPublicUrl(ppPath);
+            payload.passport_photo_url = ppUrl.publicUrl;
+            console.log("PASSPORT SAVED TO PAYLOAD:", payload.passport_photo_url);
+          }
+        } catch (e) { console.error("PASSPORT CATCH ERROR:", e); }
+      }
       // Upload ID photo to Supabase storage
       console.log("Checking ID photo ref:", idPhotoFileRef.current, companyId);
       if (idPhotoFileRef.current && companyId) {
@@ -261,7 +297,12 @@ export default function WorkersPage() {
         const { error: e } = await supabase.from("workers").insert({ ...payload, company_id: companyId });
         if (e) throw e;
       }
-      await loadWorkers();
+      const freshWorkers = await loadWorkers();
+      console.log('FRESH WORKERS:', JSON.stringify(freshWorkers?.map((w:any) => ({id:w.id,name:w.first_name,passport:w.passport_photo_url}))))
+      if (freshWorkers && editWorker) {
+        const refreshed = freshWorkers.find((w: any) => w.id === editWorker.id);
+        if (refreshed) setIdCardWorker(refreshed);
+      }
       closeModal();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
@@ -293,6 +334,10 @@ export default function WorkersPage() {
       overtime_rate: worker.overtime_rate?.toString() || "",
       employee_id: worker.employee_id || "",
       notes: worker.notes || "",
+      id_number: worker.id_number || "",
+      id_photo_url: worker.id_photo_url || "",
+      national_id_type: worker.national_id_type || "",
+      passport_photo_url: worker.passport_photo_url || "",
     });
     setShowNew(true);
   }
@@ -425,6 +470,7 @@ export default function WorkersPage() {
                 onEdit={openEdit}
                 onView={w => setSelectedWorker(w)}
                 onDelete={id => setDeleteConfirm(id)}
+                onIdCard={w => setIdCardWorker(workers.find(x => x.id === w.id) || w)}
               />
             ))}
           </div>
@@ -521,6 +567,37 @@ export default function WorkersPage() {
             </button>
           )}
 
+          {/* Passport Photo Upload */}
+          <div className="flex items-center gap-4 p-3 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5">
+            <div className="relative flex-shrink-0">
+              <div className="w-16 h-20 rounded-lg border-2 border-amber-500/40 overflow-hidden bg-slate-800 flex items-center justify-center">
+                {passportPhotoPreview || form.passport_photo_url ? (
+                  <img src={passportPhotoPreview || form.passport_photo_url || undefined} alt="Passport" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-2xl opacity-30">👤</span>
+                )}
+              </div>
+              {(passportPhotoPreview || form.passport_photo_url) && (
+                <button onClick={() => { passportPhotoFileRef.current = null; setPassportPhotoPreview(null); setForm(f => ({ ...f, passport_photo_url: "" })); }}
+                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] flex items-center justify-center hover:bg-red-400">✕</button>
+              )}
+            </div>
+            <div className="flex-1">
+              <div className="text-xs font-semibold text-amber-300 mb-1">Passport Photo</div>
+              <div className="text-[10px] text-slate-500 mb-2">Upload a headshot for the ID card</div>
+              <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition-colors">
+                <span className="text-[10px] text-amber-300 font-medium">📷 Choose Photo</span>
+                <input type="file" accept="image/*" className="hidden" onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  passportPhotoFileRef.current = file;
+                  const reader = new FileReader();
+                  reader.onload = ev => setPassportPhotoPreview(ev.target?.result as string);
+                  reader.readAsDataURL(file);
+                }} />
+              </label>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="First Name">
               <Input placeholder="John" value={form.first_name}
@@ -697,6 +774,13 @@ export default function WorkersPage() {
           </div>
         </div>
       </Modal>
+      {idCardWorker && (
+        <WorkerIDCard
+          workerId={idCardWorker.id}
+          companyName="Magnus Boys Construction"
+          onClose={() => setIdCardWorker(null)}
+        />
+      )}
     </div>
   );
 }

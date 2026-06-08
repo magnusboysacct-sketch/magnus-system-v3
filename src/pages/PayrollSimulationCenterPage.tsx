@@ -862,13 +862,13 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
         {activeTab === 'comparison' && (
           <div className="space-y-6">
             <PayrollSimulationComparisonPanel
-              companyId={currentProject?.company_id || "demo-company"}
+              companyId={currentProject?.id || "demo-company"}
               payrollPeriodId={"all"}
               readOnly={true}
             />
 
             <PayrollSimulationVariancePanel
-              companyId={currentProject?.company_id || "demo-company"}
+              companyId={currentProject?.id || "demo-company"}
               payrollPeriodId={"all"}
               readOnly={true}
             />

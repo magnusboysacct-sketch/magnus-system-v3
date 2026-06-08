@@ -33,7 +33,7 @@ type Tab = "all" | "active" | "inactive";
 
 const EMPTY_FORM = {
   name: "", contact_name: "", phone: "",
-  email: "", address: "", notes: "", status: "active" as const
+  email: "", address: "", notes: "", status: "active" as "active" | "inactive"
 };
 
 // ─── Client Card ──────────────────────────────────────────────────────────────

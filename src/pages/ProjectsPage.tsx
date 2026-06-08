@@ -186,7 +186,7 @@ export default function ProjectsPage() {
 
       await refreshProjects();
       setShowNew(false);
-      setForm({ name: "", status: "active", budget: "", description: "", client_id: "" });
+      setForm({ name: "", status: "active", client_id: "" });
     } catch (e: any) {
       setError(e.message);
     } finally {
