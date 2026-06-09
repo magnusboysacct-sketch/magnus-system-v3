@@ -1,6 +1,7 @@
 ﻿// src/pages/WorkersPage.tsx
 import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { useCompanySettings } from "../hooks/useCompanySettings";
 import { WorkerIDCard } from "../components/WorkerIDCard";
 import { SimpleIDScanner } from "../components/SimpleIDScanner";
 import {
@@ -173,6 +174,7 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WorkersPage() {
+  const { settings: companySettings } = useCompanySettings();
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -777,7 +779,7 @@ export default function WorkersPage() {
       {idCardWorker && (
         <WorkerIDCard
           workerId={idCardWorker.id}
-          companyName="Magnus Boys Construction"
+          companyName={companySettings?.company_name || "Magnus Boys Construction"}
           onClose={() => setIdCardWorker(null)}
         />
       )}
