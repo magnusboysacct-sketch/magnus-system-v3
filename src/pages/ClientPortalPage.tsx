@@ -165,7 +165,7 @@ export default function ClientPortalPage() {
       const {data:c}=await supabase.from("clients").select("*").eq("portal_token",token).eq("portal_enabled",true).single();
       if(!c){setErrorMsg("This portal link is invalid or has been disabled.");setAuthState("error");return;}
       setClient(c);
-      const {data:cs}=await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").limit(1).maybeSingle();
+      const {data:cs}=await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").eq("company_id", c.company_id||"").maybeSingle();
       setCompany(cs);
       const sess=localStorage.getItem(`portal_${c.id}`);
       if(sess){

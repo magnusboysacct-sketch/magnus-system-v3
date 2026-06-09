@@ -227,7 +227,8 @@ export default function AppLayout() {
       )}>
         {/* Logo */}
         <div className={cn("flex items-center h-12 border-b border-white/[0.06] flex-shrink-0", collapsed ? "justify-center px-0" : "gap-2.5 px-4")}>
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {co?.logo_url && <img src={co.logo_url} alt="logo" className="w-full h-full object-cover" />}
             <Building2 size={14} className="text-white"/>
           </div>
           {!collapsed && (
