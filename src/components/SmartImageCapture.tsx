@@ -59,7 +59,7 @@ export default function SmartImageCapture({
   const [ocrSuggestion, setOcrSuggestion] = useState<string>('');
   const [cropOptimization, setCropOptimization] = useState<any>(null);
   const [userHasAdjustedCrop, setUserHasAdjustedCrop] = useState(false);
-  const analysisTimeoutRef = useRef<number | null>(null);
+  const analysisTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Smart crop frame detection and setup
