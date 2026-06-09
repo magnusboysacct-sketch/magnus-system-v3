@@ -6,6 +6,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
+import { useTheme } from "../hooks/useTheme";
 import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
@@ -199,6 +200,7 @@ export default function AppLayout() {
   const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
   const { settings: co } = useCompanySettings();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
   useEffect(() => {
@@ -263,6 +265,11 @@ export default function AppLayout() {
               </div>
             </div>
           )}
+          <button onClick={toggleTheme}
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+            <span style={{fontSize:13}}>{theme === "dark" ? "☀️" : "🌙"}</span>
+            {!collapsed && <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>}
+          </button>
           <button onClick={handleLogout}
             className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors", collapsed && "justify-center")}>
             <LogOut size={13}/>
