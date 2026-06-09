@@ -125,6 +125,7 @@ export default function ClientsPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [portalNotice, setPortalNotice] = useState<{name:string;url:string} | null>(null);
+  const [copied, setCopied] = useState(false);
   const portalNoticeRef = useRef<{name:string;url:string} | null>(null);
 
   useEffect(() => { loadClients(); }, []);
@@ -459,10 +460,21 @@ export default function ClientsPage() {
             <div className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-2">✅ Portal Enabled!</div>
             <p className="text-sm text-slate-500 mb-3">Portal activated for <strong>{portalNotice.name}</strong>. Share this link:</p>
             <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3 text-xs text-blue-500 break-all font-mono mb-4">{portalNotice.url}</div>
-            <div className="flex gap-3">
-              <button onClick={() => navigator.clipboard.writeText(portalNotice!.url)} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl">📋 Copy Link</button>
-              <button onClick={() => setPortalNotice(null)} className="flex-1 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-500 text-sm rounded-xl">Close</button>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={() => { navigator.clipboard.writeText(portalNotice!.url); setCopied(true); setTimeout(()=>setCopied(false),2000); }}
+                className={`flex-1 py-2.5 text-white text-sm font-semibold rounded-xl transition-all ${copied ? "bg-green-600" : "bg-blue-600 hover:bg-blue-700"}`}>
+                {copied ? "✓ Copied!" : "📋 Copy Link"}
+              </button>
+              <a href={`https://wa.me/?text=${encodeURIComponent("View your project portal: " + portalNotice!.url)}`} target="_blank" rel="noreferrer"
+                className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-colors text-center no-underline flex items-center justify-center">
+                💬 WhatsApp
+              </a>
+              <a href={`mailto:?subject=${encodeURIComponent("Your Project Portal")}&body=${encodeURIComponent("Hello,\n\nView your project updates here:\n\n" + portalNotice!.url)}`}
+                className="flex-1 py-2.5 bg-slate-600 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl transition-colors text-center no-underline flex items-center justify-center">
+                ✉️ Email
+              </a>
             </div>
+            <button onClick={() => { setPortalNotice(null); setCopied(false); }} className="w-full mt-2 py-2 text-slate-500 text-xs hover:text-slate-300 transition-colors">Close</button>
           </div>
         </div>
       )}
