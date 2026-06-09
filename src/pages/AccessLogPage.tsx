@@ -175,7 +175,7 @@ export default function AccessLogPage() {
             <thead>
               <tr>
                 <Th><button onClick={toggleAll} className="text-slate-400">{selected.size===filtered.length&&filtered.length>0?<CheckSquare size={14}/>:<Square size={14}/>}</button></Th>
-                <Th>Worker</Th><Th>Role</Th><Th>Status</Th><Th>Device</Th><Th>Time</Th><Th></Th>
+                <Th>Worker</Th><Th>Role</Th><Th>Status</Th><Th>Device</Th><Th>Time</Th><Th>Action</Th>
               </tr>
             </thead>
             <tbody>
