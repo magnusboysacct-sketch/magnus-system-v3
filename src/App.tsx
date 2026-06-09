@@ -3,6 +3,7 @@
 
 import React, { useEffect, useState } from "react";
 import VerifyWorkerPage from './pages/VerifyWorkerPage';
+import AccessLogPage from './pages/AccessLogPage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -185,6 +186,7 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/" replace />} />
             <Route path="/verify/:workerId" element={<VerifyWorkerPage />} />
+            <Route path="/access-log" element={<AccessLogPage />} />
         </Routes>
         </BrowserRouter>
       </ProjectProvider>

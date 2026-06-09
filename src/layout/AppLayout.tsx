@@ -9,10 +9,11 @@ import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
   ChevronLeft, ChevronRight, Building2, Layers,
-  Receipt, Truck, HardHat, Banknote, BookOpen,
+  Receipt, Truck, HardHat, Shield, Banknote, BookOpen,
   ClipboardList, Package, PieChart, Wrench,
   ChevronDown, ChevronUp, Plus, Zap
 } from "lucide-react";
+
 import { cn, SectionLabel } from "../components/ui";
 import { useTheme } from "../hooks/useTheme";
 
@@ -69,6 +70,7 @@ const NAV: NavItem[] = [
     children: [
       { label: "Workers",    icon: <HardHat size={14}/>,   to: "/workers" },
       { label: "Field Ops",  icon: <ClipboardList size={14}/>, to: "/field-ops" },
+      { label: "Access Log", icon: <Shield size={14}/>,       to: "/access-log" },
     ]
   },
   { label: "Reports",  icon: <BarChart3 size={15}/>, to: "/reports" },
