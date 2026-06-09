@@ -33,6 +33,11 @@ type Client = {
 type ViewMode = "grid" | "list";
 type Tab = "all" | "active" | "inactive";
 
+// Always use production domain for portal links
+const PORTAL_BASE = window.location.hostname === "localhost" 
+  ? window.location.origin 
+  : "https://app.magnusboys.com";
+
 const EMPTY_FORM = {
   name: "", contact_name: "", phone: "",
   email: "", address: "", notes: "", status: "active" as "active" | "inactive"
@@ -124,7 +129,7 @@ export default function ClientsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [portalNotice, setPortalNotice] = useState<{name:string;url:string} | null>(null);
+  const [portalNotice, setPortalNotice] = useState<{name:string;url:string;phone?:string|null;email?:string|null} | null>(null);
   const [copied, setCopied] = useState(false);
   const portalNoticeRef = useRef<{name:string;url:string} | null>(null);
 
@@ -191,14 +196,14 @@ export default function ClientsPage() {
       const token = client.portal_token || crypto.randomUUID();
       await supabase.from("clients").update({ portal_enabled: true, portal_token: token }).eq("id", client.id);
       setClients(prev => prev.map(cl => cl.id === client.id ? {...cl, portal_enabled: true, portal_token: token} : cl));
-      const url = `${window.location.origin}/portal/${token}`;
-      setPortalNotice({ name: client.name, url });
+      const url = `${PORTAL_BASE}/portal/${token}`;
+      setPortalNotice({ name: client.name, url, phone: client.phone, email: client.email });
     }
   }
 
   function copyPortalLink(client: Client) {
     if (!client.portal_token) { alert("Enable the portal first."); return; }
-    const url = `${window.location.origin}/portal/${client.portal_token}`;
+    const url = `${PORTAL_BASE}/portal/${client.portal_token}`;
     navigator.clipboard.writeText(url);
     alert(`Portal link copied!\n\n${url}`);
   }
@@ -458,18 +463,23 @@ export default function ClientsPage() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-md shadow-2xl">
             <div className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-2">✅ Portal Enabled!</div>
-            <p className="text-sm text-slate-500 mb-3">Portal activated for <strong>{portalNotice.name}</strong>. Share this link:</p>
+            <p className="text-sm text-slate-500 mb-2">Portal activated for <strong>{portalNotice.name}</strong>.</p>
+            <div className="flex gap-3 mb-3 text-xs text-slate-500">
+              {portalNotice.phone && <span>📞 {portalNotice.phone}</span>}
+              {portalNotice.email && <span>✉️ {portalNotice.email}</span>}
+            </div>
+            <p className="text-xs text-slate-500 mb-2">Share this link:</p>
             <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3 text-xs text-blue-500 break-all font-mono mb-4">{portalNotice.url}</div>
             <div className="flex gap-2 flex-wrap">
               <button onClick={() => { navigator.clipboard.writeText(portalNotice!.url); setCopied(true); setTimeout(()=>setCopied(false),2000); }}
                 className={`flex-1 py-2.5 text-white text-sm font-semibold rounded-xl transition-all ${copied ? "bg-green-600" : "bg-blue-600 hover:bg-blue-700"}`}>
                 {copied ? "✓ Copied!" : "📋 Copy Link"}
               </button>
-              <a href={`https://wa.me/?text=${encodeURIComponent("View your project portal: " + portalNotice!.url)}`} target="_blank" rel="noreferrer"
+              <a href={portalNotice!.phone ? `https://wa.me/${portalNotice!.phone.replace(/\D/g,"")}?text=${encodeURIComponent("Hello " + (portalNotice!.name||"") + ",\n\nYour project portal is ready. Tap the link below to view your project updates, invoices and progress:\n\n" + portalNotice!.url + "\n\nThis link is private and secure.")}` : `https://wa.me/?text=${encodeURIComponent("View your project portal: " + portalNotice!.url)}`} target="_blank" rel="noreferrer"
                 className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-colors text-center no-underline flex items-center justify-center">
                 💬 WhatsApp
               </a>
-              <a href={`mailto:?subject=${encodeURIComponent("Your Project Portal")}&body=${encodeURIComponent("Hello,\n\nView your project updates here:\n\n" + portalNotice!.url)}`}
+              <a href={`mailto:${portalNotice!.email||""}?subject=${encodeURIComponent("Your Project Portal - " + portalNotice!.name)}&body=${encodeURIComponent("Hello " + portalNotice!.name + ",\n\nYou can view your project updates, invoices and progress here:\n\n" + portalNotice!.url + "\n\nBest regards,\n" + (portalNotice!.name||"The Team"))}`}
                 className="flex-1 py-2.5 bg-slate-600 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl transition-colors text-center no-underline flex items-center justify-center">
                 ✉️ Email
               </a>
