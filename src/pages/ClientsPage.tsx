@@ -182,15 +182,17 @@ export default function ClientsPage() {
     finally { setSaving(false); }
   }
 
-  async function togglePortal(client: Client) {
-
+    async function togglePortal(client: Client) {
     if (client.portal_enabled) {
       await supabase.from("clients").update({ portal_enabled: false }).eq("id", client.id);
+      setClients(prev => prev.map(cl => cl.id === client.id ? {...cl, portal_enabled: false} : cl));
     } else {
       const token = client.portal_token || crypto.randomUUID();
       await supabase.from("clients").update({ portal_enabled: true, portal_token: token }).eq("id", client.id);
+      setClients(prev => prev.map(cl => cl.id === client.id ? {...cl, portal_enabled: true, portal_token: token} : cl));
+      const url = `${window.location.origin}/portal/${token}`;
+      setPortalNotice({ name: client.name, url });
     }
-    loadClients();
   }
 
   function copyPortalLink(client: Client) {
