@@ -1,6 +1,6 @@
 ﻿// src/pages/ClientsPage.tsx
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState, useRef } from "react";
+import { useNavigate, useNavigate as useNav } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
@@ -24,6 +24,8 @@ type Client = {
   address: string | null;
   notes: string | null;
   status: "active" | "inactive";
+  portal_enabled: boolean | null;
+  portal_token: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -38,10 +40,12 @@ const EMPTY_FORM = {
 
 // ─── Client Card ──────────────────────────────────────────────────────────────
 
-function ClientCard({ client, onEdit, onDelete }: {
+function ClientCard({ client, onEdit, onDelete, onPortalToggle, onCopyLink }: {
   client: Client;
   onEdit: (c: Client) => void;
   onDelete: (id: string) => void;
+  onPortalToggle: (c: Client) => void;
+  onCopyLink: (c: Client) => void;
 }) {
   return (
     <Card className="group hover:border-white/[0.13] transition-all">
@@ -53,6 +57,10 @@ function ClientCard({ client, onEdit, onDelete }: {
           <button onClick={() => onEdit(client)}
             className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
             <Edit2 size={12}/>
+          </button>
+          <button onClick={() => onPortalToggle(client)} title={client.portal_enabled ? "Disable Portal" : "Enable Portal"}
+            className={`p-1.5 rounded-lg transition-colors ${client.portal_enabled ? "text-green-400 hover:bg-green-500/15" : "text-slate-600 hover:bg-white/10 hover:text-slate-300"}`}>
+            <ArrowRight size={12}/>
           </button>
           <button onClick={() => onDelete(client.id)}
             className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
@@ -116,6 +124,8 @@ export default function ClientsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [portalNotice, setPortalNotice] = useState<{name:string;url:string} | null>(null);
+  const portalNoticeRef = useRef<{name:string;url:string} | null>(null);
 
   useEffect(() => { loadClients(); }, []);
 
@@ -170,6 +180,24 @@ export default function ClientsPage() {
       closeModal();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
+  }
+
+  async function togglePortal(client: Client) {
+
+    if (client.portal_enabled) {
+      await supabase.from("clients").update({ portal_enabled: false }).eq("id", client.id);
+    } else {
+      const token = client.portal_token || crypto.randomUUID();
+      await supabase.from("clients").update({ portal_enabled: true, portal_token: token }).eq("id", client.id);
+    }
+    loadClients();
+  }
+
+  function copyPortalLink(client: Client) {
+    if (!client.portal_token) { alert("Enable the portal first."); return; }
+    const url = `${window.location.origin}/portal/${client.portal_token}`;
+    navigator.clipboard.writeText(url);
+    alert(`Portal link copied!\n\n${url}`);
   }
 
   async function deleteClient(id: string) {
@@ -297,6 +325,8 @@ export default function ClientsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map(c => (
               <ClientCard key={c.id} client={c}
+                onPortalToggle={togglePortal}
+                onCopyLink={copyPortalLink}
                 onEdit={openEdit}
                 onDelete={id => setDeleteConfirm(id)}
               />
@@ -421,6 +451,19 @@ export default function ClientsPage() {
       </Modal>
 
       {/* Delete Confirm Modal */}
+      {portalNotice && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-2">✅ Portal Enabled!</div>
+            <p className="text-sm text-slate-500 mb-3">Portal activated for <strong>{portalNotice.name}</strong>. Share this link:</p>
+            <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3 text-xs text-blue-500 break-all font-mono mb-4">{portalNotice.url}</div>
+            <div className="flex gap-3">
+              <button onClick={() => navigator.clipboard.writeText(portalNotice!.url)} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl">📋 Copy Link</button>
+              <button onClick={() => setPortalNotice(null)} className="flex-1 py-2.5 border border-slate-200 dark:border-slate-700 text-slate-500 text-sm rounded-xl">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
       <Modal open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)}
         title="Delete Client" subtitle="This action cannot be undone." width="max-w-sm">
         <div className="space-y-4">
