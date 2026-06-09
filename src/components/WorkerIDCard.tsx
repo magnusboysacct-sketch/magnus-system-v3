@@ -90,7 +90,7 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     canvas.height = H;
     const ctx = canvas.getContext("2d")!;
 
-    const draw = (photo?: HTMLImageElement) => {
+    const draw = (photo?: HTMLImageElement, logoImage?: HTMLImageElement) => {
       // Background
       ctx.fillStyle = "#0A2342";
       ctx.beginPath();
@@ -104,13 +104,21 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, 46 * S); ctx.lineTo(W, 46 * S); ctx.stroke();
 
-      // MB circle
+      // Company logo circle
       ctx.fillStyle = "#ffffff";
       ctx.beginPath(); ctx.arc(22 * S, 23 * S, 13 * S, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#0A2342";
-      ctx.font = `bold ${8 * S}px sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("MB", 22 * S, 23 * S);
+      // Draw logo (pre-loaded)
+      if (logoImage) {
+        ctx.save();
+        ctx.beginPath(); ctx.arc(22 * S, 23 * S, 12 * S, 0, Math.PI * 2); ctx.clip();
+        ctx.drawImage(logoImage, 10 * S, 11 * S, 24 * S, 24 * S);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = "#0A2342";
+        ctx.font = `bold ${8 * S}px sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("MB", 22 * S, 23 * S);
+      }
 
       // Company name
       ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
@@ -224,15 +232,15 @@ img{width:338px;height:213px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0
       setTimeout(() => win.print(), 600);
     };
 
-    if (photoUrl) {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => draw(img);
-      img.onerror = () => draw();
-      img.src = photoUrl;
-    } else {
-      draw();
+    const logoUrl = companySettings?.logo_url;
+    async function loadAndDraw() {
+      let photo: HTMLImageElement | undefined;
+      let logo: HTMLImageElement | undefined;
+      if (photoUrl) { try { photo = await loadImage(photoUrl); } catch {} }
+      if (logoUrl) { try { logo = await loadImage(logoUrl); } catch {} }
+      draw(photo, logo);
     }
+    loadAndDraw();
   }
 
   if (loading) return (
@@ -258,7 +266,11 @@ img{width:338px;height:213px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0
         <div style={{ width:338, height:213, borderRadius:12, overflow:"hidden", background:"#0A2342", color:"#fff", display:"flex", flexDirection:"column", boxShadow:"0 4px 20px rgba(0,0,0,0.4)", margin:"0 auto" }}>
           {/* Header */}
           <div style={{ background:"#0d2d54", borderBottom:"1px solid rgba(255,255,255,0.08)", padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
-            <div style={{ width:26, height:26, background:"#fff", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:8, fontWeight:800, color:"#0A2342", flexShrink:0 }}>MB</div>
+            <div style={{ width:26, height:26, borderRadius:"50%", overflow:"hidden", background:"#fff", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              {companySettings?.logo_url
+                ? <img src={companySettings.logo_url} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                : <span style={{ fontSize:8, fontWeight:800, color:"#0A2342" }}>MB</span>
+              }</div>
             <div>
               <div style={{ fontSize:10, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:0.5 }}>{companyName}</div>
               <div style={{ fontSize:7, color:"rgba(255,255,255,0.45)", textTransform:"uppercase", letterSpacing:1 }}>Employee Identification</div>
@@ -315,6 +327,16 @@ img{width:338px;height:213px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0
       </div>
     </div>
   );
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
