@@ -16,6 +16,7 @@ import {
 
 import { cn, SectionLabel } from "../components/ui";
 import { useTheme } from "../hooks/useTheme";
+import { useCompanySettings } from "../hooks/useCompanySettings";
 
 // ─── Nav structure ────────────────────────────────────────────────────────────
 
@@ -200,6 +201,7 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
+  const { settings: companySettings } = useCompanySettings();
   const location = useLocation();
   const { theme, toggleTheme } = useTheme();
 
@@ -229,12 +231,13 @@ export default function AppLayout() {
       )}>
         {/* Logo */}
         <div className={cn("flex items-center h-12 border-b border-slate-200 dark:border-white/[0.06] flex-shrink-0", collapsed ? "justify-center px-0" : "gap-2.5 px-4")}>
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {companySettings?.logo_url && <img src={companySettings.logo_url} alt="logo" className="w-full h-full object-cover" />}
             <Building2 size={14} className="text-white"/>
           </div>
           {!collapsed && (
             <div>
-              <div className="text-xs font-bold text-slate-100 tracking-tight leading-tight">Magnus</div>
+              <div className="text-xs font-bold text-slate-100 tracking-tight leading-tight">{companySettings?.company_name || "Magnus"}</div>
               <div className="text-[8px] text-slate-600 uppercase tracking-widest leading-tight">Construction ERP</div>
             </div>
           )}

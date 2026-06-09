@@ -1,6 +1,7 @@
 ﻿// src/pages/AccessLogPage.tsx
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useNavigate } from "react-router-dom";
 import { PageHeader, Card, Badge, Table, Th, Tr, Td, Empty } from "../components/ui";
 import { Shield, RefreshCw, Clock, User } from "lucide-react";
 
@@ -42,6 +43,7 @@ function roleLabel(t?: string) {
 }
 
 export default function AccessLogPage() {
+  const navigate = useNavigate();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -82,6 +84,11 @@ export default function AccessLogPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <div className="mb-4">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 transition-colors">
+          ← Back
+        </button>
+      </div>
       <PageHeader
         title="Access Log"
         subtitle="Every QR scan recorded in real time"

@@ -40,6 +40,7 @@ import FieldPaymentsPage      from "./pages/FieldPaymentsPage";
 import WorkersPage            from "./pages/WorkersPage";
 import ReportsPage            from "./pages/ReportsPage";
 import SettingsPage           from "./pages/SettingsPage";
+import SettingsCompanyPage      from "./pages/SettingsCompanyPage";
 import SettingsMasterListsPage      from "./pages/SettingsMasterListsPage";
 import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import SettingsCostCodesPage  from "./pages/SettingsCostCodesPage";
@@ -171,6 +172,7 @@ export default function App() {
               <Route path="/reports"                       element={<ReportsPage />} />
               <Route path="/billing"                       element={<BillingPage />} />
               <Route path="/settings"                      element={<SettingsPage />} />
+              <Route path="/settings/company"              element={<SettingsCompanyPage />} />
               <Route path="/settings/master-lists"         element={<SettingsMasterListsPage />} />
               <Route path="/settings/master-categories"    element={<SettingsMasterCategoriesPage />} />
               <Route path="/settings/cost-codes"           element={<SettingsCostCodesPage />} />

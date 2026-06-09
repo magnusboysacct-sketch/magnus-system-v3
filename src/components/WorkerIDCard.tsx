@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import QRCode from "qrcode";
 import { supabase } from "../lib/supabase";
+import { useCompanySettings } from "../hooks/useCompanySettings";
 
 interface Worker {
   id: string;
@@ -39,7 +40,9 @@ function roleLabel(t?: string | null) {
 
 const BASE_URL = window.location.origin;
 
-export function WorkerIDCard({ workerId, companyName = "Magnus Boys Construction", onClose }: Props) {
+export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }: Props) {
+  const { settings: companySettings } = useCompanySettings();
+  const companyName = propCompanyName || companySettings?.company_name || "Magnus Boys Construction";
   const [worker, setWorker] = useState<Worker | null>(null);
   const [loading, setLoading] = useState(true);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
