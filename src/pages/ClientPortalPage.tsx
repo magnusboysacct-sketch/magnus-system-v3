@@ -1,456 +1,424 @@
-﻿// src/pages/ClientPortalPage.tsx — Public client-facing portal
-// Accessed via: /portal/:token
+﻿// src/pages/ClientPortalPage.tsx — Secure portal with password + PWA
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-interface Client { id: string; name: string; contact_name: string|null; email: string|null; phone: string|null; }
-interface Project { id: string; name: string; status: string; start_date: string|null; end_date: string|null; site_address: string|null; notes: string|null; }
-interface Invoice { id: string; invoice_number: string|null; total_amount: number; status: string; issue_date: string|null; due_date: string|null; }
-interface ChangeOrder { id: string; title: string; description: string|null; amount: number; status: string; created_at: string; }
-interface Comment { id: string; message: string; created_at: string; }
-interface Photo { id: string; url?: string; public_url?: string; publicUrl?: string; caption?: string; created_at: string; }
-interface CompanySettings { company_name: string|null; logo_url: string|null; phone: string|null; email: string|null; address_line1: string|null; }
+type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
+type Tab = "overview"|"photos"|"invoices"|"changes"|"feedback";
 
-const STATUS_COLORS: Record<string,string> = {
-  active: "bg-green-500/15 text-green-400 border-green-500/30",
-  planning: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  on_hold: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
-  completed: "bg-slate-500/15 text-slate-400 border-slate-500/30",
-  cancelled: "bg-red-500/15 text-red-400 border-red-500/30",
-  pending: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
-  paid: "bg-green-500/15 text-green-400 border-green-500/30",
-  overdue: "bg-red-500/15 text-red-400 border-red-500/30",
-};
+interface Client { id:string; name:string; contact_name:string|null; email:string|null; phone:string|null; portal_email:string|null; portal_password_hash:string|null; portal_activated_at:string|null; }
+interface Project { id:string; name:string; status:string; start_date:string|null; end_date:string|null; site_address:string|null; notes:string|null; budget:number|null; }
+interface Invoice { id:string; invoice_number:string|null; total_amount:number; status:string; issue_date:string|null; due_date:string|null; }
+interface ChangeOrder { id:string; title:string; description:string|null; amount:number; status:string; created_at:string; }
+interface Comment { id:string; message:string; created_at:string; }
+interface Photo { id:string; url?:string; public_url?:string; publicUrl?:string; caption?:string; created_at:string; }
+interface Co { company_name:string|null; logo_url:string|null; phone:string|null; email:string|null; address_line1:string|null; }
 
-function fmt(n: number) { return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n); }
-function fmtDate(d: string|null) { return d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—"; }
+const fmt = (n:number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n);
+const fmtDate = (d:string|null) => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—";
+const timeAgo = (d:string) => { const s=Math.floor((Date.now()-new Date(d).getTime())/1000); if(s<60)return "just now"; if(s<3600)return `${Math.floor(s/60)}m ago`; if(s<86400)return `${Math.floor(s/3600)}h ago`; return fmtDate(d); };
 
-type Tab = "overview"|"photos"|"invoices"|"documents"|"changes"|"feedback";
+async function hashPassword(p:string):Promise<string> {
+  const data = new TextEncoder().encode(p+"magnus_portal_2026");
+  const hash = await crypto.subtle.digest("SHA-256",data);
+  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
 
+function ProgressRing({pct}:{pct:number}) {
+  const r=28,circ=2*Math.PI*r;
+  const [off,setOff]=useState(circ);
+  useEffect(()=>{setTimeout(()=>setOff(circ-(pct/100)*circ),400);},[pct]);
+  return <svg width={72} height={72} style={{transform:"rotate(-90deg)"}}>
+    <circle cx={36} cy={36} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={6}/>
+    <circle cx={36} cy={36} r={r} fill="none" stroke="#3b82f6" strokeWidth={6} strokeDasharray={circ} strokeDashoffset={off} strokeLinecap="round" style={{transition:"stroke-dashoffset 1.2s ease"}}/>
+  </svg>;
+}
+
+function Stars({value,onChange}:{value:number;onChange:(n:number)=>void}) {
+  const [hover,setHover]=useState(0);
+  return <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+    {[1,2,3,4,5].map(s=><button key={s} onMouseEnter={()=>setHover(s)} onMouseLeave={()=>setHover(0)} onClick={()=>onChange(s)} style={{fontSize:34,background:"none",border:"none",cursor:"pointer",color:s<=(hover||value)?"#f59e0b":"rgba(255,255,255,0.15)",transition:"all 0.15s",transform:s<=(hover||value)?"scale(1.2)":"scale(1)"}}>★</button>)}
+  </div>;
+}
+
+function Toast({msg,type="success",onDone}:{msg:string;type?:"success"|"error";onDone:()=>void}) {
+  useEffect(()=>{const t=setTimeout(onDone,3000);return()=>clearTimeout(t);},[]);
+  return <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:type==="success"?"#1e293b":"#450a0a",border:`1px solid ${type==="success"?"rgba(34,197,94,0.3)":"rgba(239,68,68,0.3)"}`,borderRadius:12,padding:"12px 20px",color:type==="success"?"#4ade80":"#fca5a5",fontSize:13,fontWeight:600,zIndex:9999,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",whiteSpace:"nowrap"}}>
+    {type==="success"?"✓":"✗"} {msg}
+  </div>;
+}
+function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|null;mode:"setup"|"login";onSuccess:()=>void}) {
+  const [email,setEmail]=useState(client.portal_email||client.email||"");
+  const [password,setPassword]=useState("");
+  const [confirm,setConfirm]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
+  const [showPass,setShowPass]=useState(false);
+
+  async function handleSetup() {
+    if(!email.trim()){setError("Please enter your email address.");return;}
+    if(password.length<6){setError("Password must be at least 6 characters.");return;}
+    if(password!==confirm){setError("Passwords do not match.");return;}
+    setLoading(true);setError("");
+    const hash=await hashPassword(password);
+    const {error:e}=await supabase.from("clients").update({portal_email:email.trim(),portal_password_hash:hash,portal_activated_at:new Date().toISOString()}).eq("id",client.id);
+    if(e){setError("Failed to set up account.");setLoading(false);return;}
+    const tok=crypto.randomUUID();
+    await supabase.from("client_portal_sessions").insert({client_id:client.id,session_token:tok,device_info:navigator.userAgent.slice(0,200)});
+    localStorage.setItem(`portal_${client.id}`,tok);
+    onSuccess();setLoading(false);
+  }
+
+  async function handleLogin() {
+    if(!password){setError("Please enter your password.");return;}
+    setLoading(true);setError("");
+    const hash=await hashPassword(password);
+    if(hash!==client.portal_password_hash){setError("Incorrect password. Please try again.");setLoading(false);return;}
+    const tok=crypto.randomUUID();
+    await supabase.from("client_portal_sessions").insert({client_id:client.id,session_token:tok,device_info:navigator.userAgent.slice(0,200)});
+    localStorage.setItem(`portal_${client.id}`,tok);
+    onSuccess();setLoading(false);
+  }
+
+  const S={
+    page:{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center",padding:20} as React.CSSProperties,
+    card:{width:"100%",maxWidth:400,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:28} as React.CSSProperties,
+    input:{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 14px",fontSize:14,color:"#f1f5f9",boxSizing:"border-box" as "border-box",outline:"none"},
+    label:{fontSize:12,color:"#64748b",fontWeight:600,display:"block",marginBottom:6} as React.CSSProperties,
+    btn:{width:"100%",padding:"13px 0",background:"#3b82f6",border:"none",borderRadius:12,color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",marginTop:4} as React.CSSProperties,
+  };
+
+  return <div style={S.page}>
+    <div style={{width:"100%",maxWidth:400}}>
+      <div style={{textAlign:"center",marginBottom:28}}>
+        {company?.logo_url?<img src={company.logo_url} style={{width:52,height:52,borderRadius:12,objectFit:"cover",margin:"0 auto 10px",display:"block"}}/>
+          :<div style={{width:52,height:52,borderRadius:12,background:"linear-gradient(135deg,#3b82f6,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:18,margin:"0 auto 10px",color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
+        <div style={{fontSize:17,fontWeight:800,color:"#f1f5f9",marginBottom:3}}>{company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
+        <div style={{fontSize:12,color:"#475569"}}>Client Portal</div>
+      </div>
+      <div style={S.card}>
+        <h2 style={{fontSize:19,fontWeight:800,color:"#f1f5f9",margin:"0 0 6px"}}>{mode==="setup"?"Activate Your Account":"Welcome Back"}</h2>
+        <p style={{fontSize:13,color:"#475569",margin:"0 0 20px",lineHeight:1.6}}>
+          {mode==="setup"?`Hello ${client.contact_name||client.name}! Create a password to access your project portal.`:`Sign in to view your project updates.`}
+        </p>
+        {error&&<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#fca5a5",marginBottom:14}}>✗ {error}</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {mode==="setup"&&<div>
+            <label style={S.label}>EMAIL ADDRESS</label>
+            <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="your@email.com" style={S.input}/>
+          </div>}
+          {mode==="login"&&<div style={{background:"rgba(59,130,246,0.08)",border:"1px solid rgba(59,130,246,0.15)",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#60a5fa"}}>
+            📧 Signing in as: <strong>{client.portal_email||client.email}</strong>
+          </div>}
+          <div>
+            <label style={S.label}>{mode==="setup"?"CREATE PASSWORD":"PASSWORD"}</label>
+            <div style={{position:"relative"}}>
+              <input value={password} onChange={e=>setPassword(e.target.value)} type={showPass?"text":"password"}
+                placeholder={mode==="setup"?"Minimum 6 characters":"Enter your password"}
+                onKeyDown={e=>e.key==="Enter"&&(mode==="setup"?handleSetup():handleLogin())}
+                style={{...S.input,paddingRight:44}}/>
+              <button onClick={()=>setShowPass(!showPass)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:16}}>
+                {showPass?"🙈":"👁"}
+              </button>
+            </div>
+          </div>
+          {mode==="setup"&&<div>
+            <label style={S.label}>CONFIRM PASSWORD</label>
+            <input value={confirm} onChange={e=>setConfirm(e.target.value)} type={showPass?"text":"password"}
+              placeholder="Repeat your password" onKeyDown={e=>e.key==="Enter"&&handleSetup()} style={S.input}/>
+          </div>}
+          <button onClick={mode==="setup"?handleSetup:handleLogin} disabled={loading} style={{...S.btn,opacity:loading?0.6:1}}>
+            {loading?"Please wait…":mode==="setup"?"Activate Account →":"Sign In →"}
+          </button>
+        </div>
+      </div>
+      <div style={{textAlign:"center",marginTop:16,fontSize:11,color:"#1e293b"}}>🔒 Secured by {company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
+    </div>
+  </div>;
+}
 export default function ClientPortalPage() {
-  const { token } = useParams<{ token: string }>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string|null>(null);
-  const [client, setClient] = useState<Client|null>(null);
-  const [project, setProject] = useState<Project|null>(null);
-  const [company, setCompany] = useState<CompanySettings|null>(null);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [changes, setChanges] = useState<ChangeOrder[]>([]);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [tab, setTab] = useState<Tab>("overview");
-  const [newComment, setNewComment] = useState("");
-  const [rating, setRating] = useState(0);
-  const [reviewText, setReviewText] = useState("");
-  const [submittingReview, setSubmittingReview] = useState(false);
-  const [reviewSubmitted, setReviewSubmitted] = useState(false);
-  const [respondingTo, setRespondingTo] = useState<string|null>(null);
-  const [progress, setProgress] = useState(0);
+  const {token}=useParams<{token:string}>();
+  const [authState,setAuthState]=useState<AuthState>("loading");
+  const [client,setClient]=useState<Client|null>(null);
+  const [project,setProject]=useState<Project|null>(null);
+  const [company,setCompany]=useState<Co|null>(null);
+  const [invoices,setInvoices]=useState<Invoice[]>([]);
+  const [changes,setChanges]=useState<ChangeOrder[]>([]);
+  const [comments,setComments]=useState<Comment[]>([]);
+  const [photos,setPhotos]=useState<Photo[]>([]);
+  const [tab,setTab]=useState<Tab>("overview");
+  const [progress,setProgress]=useState(0);
+  const [newComment,setNewComment]=useState("");
+  const [rating,setRating]=useState(0);
+  const [reviewText,setReviewText]=useState("");
+  const [reviewSubmitted,setReviewSubmitted]=useState(false);
+  const [toast,setToast]=useState<{msg:string;type:"success"|"error"}|null>(null);
+  const [lightbox,setLightbox]=useState<Photo|null>(null);
+  const [respondingTo,setRespondingTo]=useState<string|null>(null);
+  const [errorMsg,setErrorMsg]=useState("");
 
-  useEffect(() => {
-    if (token) load();
-  }, [token]);
+  useEffect(()=>{if(token)checkAuth();},[token]);
 
-  async function load() {
-    setLoading(true);
+  async function checkAuth() {
+    setAuthState("loading");
     try {
-      // Find client by portal token
-      const { data: clientData, error: ce } = await supabase
-        .from("clients").select("*").eq("portal_token", token).eq("portal_enabled", true).single();
-      if (ce || !clientData) { setError("This portal link is invalid or has been disabled."); setLoading(false); return; }
-      setClient(clientData);
-
-      // Log access
-      await supabase.from("clients").update({ portal_last_accessed: new Date().toISOString() }).eq("id", clientData.id);
-
-      // Get company settings
-      const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", clientData.created_by || "").maybeSingle();
-
-      // Get projects for this client
-      const { data: projects } = await supabase.from("projects").select("*").eq("client_id", clientData.id).order("created_at",{ascending:false}).limit(1);
-      const proj = projects?.[0] || null;
-      setProject(proj);
-
-      if (proj) {
-        // Load everything in parallel
-        const [inv, co, cm, ph, boq] = await Promise.all([
-          supabase.from("invoices").select("*").eq("project_id", proj.id).order("issue_date",{ascending:false}),
-          supabase.from("change_orders").select("*").eq("project_id", proj.id).order("created_at",{ascending:false}),
-          supabase.from("client_comments").select("*").eq("project_id", proj.id).order("created_at",{ascending:false}),
-          supabase.from("project_photos").select("*").eq("project_id", proj.id).order("created_at",{ascending:false}),
-          supabase.from("boq_items").select("status").eq("project_id", proj.id),
-        ]);
-        setInvoices(inv.data || []);
-        setChanges(co.data || []);
-        setComments(cm.data || []);
-        setPhotos(ph.data || []);
-
-        // Calculate progress
-        const items = boq.data || [];
-        const done = items.filter((b:any) => b.status === "complete").length;
-        setProgress(items.length ? Math.round(done/items.length*100) : 0);
-      }
-
-      // Get company settings (try without auth)
-      const { data: cs } = await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").limit(1).maybeSingle();
+      const {data:c}=await supabase.from("clients").select("*").eq("portal_token",token).eq("portal_enabled",true).single();
+      if(!c){setErrorMsg("This portal link is invalid or has been disabled.");setAuthState("error");return;}
+      setClient(c);
+      const {data:cs}=await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").limit(1).maybeSingle();
       setCompany(cs);
-
-    } catch(e) { setError("Something went wrong loading the portal."); }
-    setLoading(false);
+      const sess=localStorage.getItem(`portal_${c.id}`);
+      if(sess){
+        const {data:s}=await supabase.from("client_portal_sessions").select("id").eq("session_token",sess).eq("client_id",c.id).gt("expires_at",new Date().toISOString()).maybeSingle();
+        if(s){await loadData(c);setAuthState("authenticated");return;}
+      }
+      setAuthState(c.portal_password_hash?"login":"setup");
+    } catch {setErrorMsg("Something went wrong.");setAuthState("error");}
   }
 
-  async function submitComment() {
-    if (!newComment.trim() || !client || !project) return;
-    await supabase.from("client_comments").insert({ client_id: client.id, project_id: project.id, message: newComment });
-    setNewComment("");
-    load();
+  async function loadData(c:Client) {
+    try {
+      const {data:p}=await supabase.from("projects").select("*").eq("client_id",c.id).order("created_at",{ascending:false}).limit(1);
+      const proj=p?.[0]||null; setProject(proj);
+      if(proj){
+        const [inv,co,cm,ph,boq]=await Promise.all([
+          supabase.from("invoices").select("*").eq("project_id",proj.id).order("issue_date",{ascending:false}),
+          supabase.from("change_orders").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
+          supabase.from("client_comments").select("*").eq("project_id",proj.id).order("created_at",{ascending:true}),
+          supabase.from("project_photos").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
+          supabase.from("boq_items").select("status").eq("project_id",proj.id),
+        ]);
+        setInvoices(inv.data||[]);setChanges(co.data||[]);setComments(cm.data||[]);setPhotos(ph.data||[]);
+        const items=boq.data||[];
+        setProgress(items.length?Math.round(items.filter((b:any)=>b.status==="complete").length/items.length*100):0);
+      }
+    } catch(e){console.error(e);}
   }
 
-  async function submitReview() {
-    if (!rating || !client || !project) return;
-    setSubmittingReview(true);
-    await supabase.from("client_reviews").insert({ client_id: client.id, project_id: project.id, rating, comment: reviewText });
-    setSubmittingReview(false);
-    setReviewSubmitted(true);
+  async function onAuthSuccess(){
+    const fresh=await supabase.from("clients").select("*").eq("portal_token",token).single();
+    if(fresh.data){setClient(fresh.data);await loadData(fresh.data);}
+    setAuthState("authenticated");
+    setToast({msg:"Welcome to your project portal!",type:"success"});
   }
 
-  async function respondToChange(id: string, response: "approved"|"rejected") {
-    await supabase.from("change_orders").update({ status: response, client_response: response, responded_at: new Date().toISOString() }).eq("id", id);
-    setRespondingTo(null);
-    load();
+  async function submitComment(){
+    if(!newComment.trim()||!client||!project)return;
+    await supabase.from("client_comments").insert({client_id:client.id,project_id:project.id,message:newComment});
+    setNewComment("");setToast({msg:"Message sent!",type:"success"});
+    loadData(client);
   }
 
-  const totalInvoiced = invoices.reduce((s,i) => s+Number(i.total_amount||0), 0);
-  const totalPaid = invoices.filter(i=>i.status==="paid").reduce((s,i) => s+Number(i.total_amount||0), 0);
-  const balanceDue = totalInvoiced - totalPaid;
-  const pendingChanges = changes.filter(c=>c.status==="pending").length;
+  async function submitReview(){
+    if(!rating||!client||!project)return;
+    await supabase.from("client_reviews").insert({client_id:client.id,project_id:project.id,rating,comment:reviewText});
+    setReviewSubmitted(true);setToast({msg:"Thank you for your review!",type:"success"});
+  }
 
-  if (loading) return (
-    <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"/>
-        <p className="text-slate-400 text-sm">Loading your portal...</p>
+  async function respondChange(id:string,resp:"approved"|"rejected"){
+    setRespondingTo(id);
+    await supabase.from("change_orders").update({status:resp,client_response:resp,responded_at:new Date().toISOString()}).eq("id",id);
+    setToast({msg:resp==="approved"?"Change approved!":"Change rejected.",type:resp==="approved"?"success":"error"});
+    setRespondingTo(null);if(client)loadData(client);
+  }
+
+  const totalInvoiced=invoices.reduce((s,i)=>s+Number(i.total_amount||0),0);
+  const totalPaid=invoices.filter(i=>i.status==="paid").reduce((s,i)=>s+Number(i.total_amount||0),0);
+  const balanceDue=totalInvoiced-totalPaid;
+  const pendingChanges=changes.filter(c=>c.status==="pending").length;
+
+  const G=`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} body{margin:0} input::placeholder,textarea::placeholder{color:#334155} input:focus,textarea:focus{border-color:#3b82f6!important} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px}`;
+
+  if(authState==="loading")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{G}</style><div style={{textAlign:"center"}}><div style={{width:44,height:44,border:"3px solid #3b82f6",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 14px"}}/><p style={{color:"#64748b",fontSize:14}}>Loading portal…</p></div></div>;
+
+  if(authState==="error")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><style>{G}</style><div style={{textAlign:"center",maxWidth:360}}><div style={{fontSize:52,marginBottom:14}}>🔒</div><h2 style={{color:"#f1f5f9",fontSize:20,fontWeight:700,marginBottom:8}}>Access Denied</h2><p style={{color:"#64748b",fontSize:14,lineHeight:1.6}}>{errorMsg}</p></div></div>;
+
+  if(authState==="setup"||authState==="login")return <><style>{G}</style><AuthScreen client={client!} company={company} mode={authState} onSuccess={onAuthSuccess}/></>;
+
+  if(!client||authState!=="authenticated")return null;
+
+  const sColor:Record<string,string>={active:"#22c55e",planning:"#3b82f6",on_hold:"#f59e0b",completed:"#94a3b8",cancelled:"#ef4444"};
+  const TABS=[{id:"overview",label:"Overview",emoji:"📋"},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"invoices",label:"Invoices",emoji:"🧾",badge:invoices.filter(i=>i.status!=="paid").length||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined},{id:"feedback",label:"Feedback",emoji:"⭐"}] as const;
+
+  return <div style={{minHeight:"100vh",background:"#060b14",color:"#f1f5f9",fontFamily:"system-ui,sans-serif"}}>
+    <style>{G}</style>
+
+    <div style={{position:"sticky",top:0,zIndex:100,background:"rgba(6,11,20,0.95)",backdropFilter:"blur(16px)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+      <div style={{maxWidth:860,margin:"0 auto",padding:"12px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {company?.logo_url?<img src={company.logo_url} style={{width:34,height:34,borderRadius:8,objectFit:"cover"}}/>
+            :<div style={{width:34,height:34,borderRadius:8,background:"linear-gradient(135deg,#3b82f6,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
+          <div>
+            <div style={{fontWeight:700,fontSize:13,color:"#f1f5f9"}}>{company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
+            <div style={{fontSize:10,color:"#475569"}}>Client Portal</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#cbd5e1"}}>{client.contact_name||client.name}</div>
+            <div style={{fontSize:10,color:"#475569"}}>{client.portal_email||client.email}</div>
+          </div>
+          <button onClick={()=>{localStorage.removeItem(`portal_${client.id}`);setAuthState("login");}} style={{padding:"6px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#64748b",fontSize:11,cursor:"pointer",fontWeight:600}}>Sign Out</button>
+        </div>
       </div>
     </div>
-  );
 
-  if (error) return (
-    <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center p-6">
-      <div className="text-center max-w-sm">
-        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-          <span className="text-3xl">🔒</span>
+    <div style={{maxWidth:860,margin:"0 auto",padding:"20px 20px 60px",display:"flex",flexDirection:"column",gap:16}}>
+
+      <div style={{background:"linear-gradient(135deg,rgba(59,130,246,0.12),rgba(6,182,212,0.06))",border:"1px solid rgba(59,130,246,0.18)",borderRadius:20,padding:"22px 24px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",animation:"fadeIn 0.4s ease"}}>
+        <div style={{flex:1,minWidth:180}}>
+          <div style={{fontSize:10,color:"#3b82f6",fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>Your Project</div>
+          <h1 style={{fontSize:24,fontWeight:800,color:"#f1f5f9",margin:"0 0 6px"}}>{project?.name||"No project assigned"}</h1>
+          {project?.site_address&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>📍 {project.site_address}</div>}
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            {project?.status&&<span style={{fontSize:11,padding:"4px 12px",borderRadius:20,fontWeight:700,background:`${sColor[project.status]||"#3b82f6"}18`,color:sColor[project.status]||"#3b82f6",border:`1px solid ${sColor[project.status]||"#3b82f6"}40`,textTransform:"capitalize"}}>● {project.status.replace("_"," ")}</span>}
+            {project?.start_date&&<span style={{fontSize:11,color:"#475569"}}>Started {fmtDate(project.start_date)}</span>}
+            {project?.end_date&&<span style={{fontSize:11,color:"#475569"}}>Est. done {fmtDate(project.end_date)}</span>}
+          </div>
         </div>
-        <h2 className="text-lg font-bold text-slate-100 mb-2">Access Denied</h2>
-        <p className="text-slate-400 text-sm">{error}</p>
-      </div>
-    </div>
-  );
-
-  const TABS: {id:Tab; label:string; badge?:number}[] = [
-    {id:"overview",  label:"Overview"},
-    {id:"photos",    label:"Site Photos", badge: photos.length},
-    {id:"invoices",  label:"Invoices",    badge: invoices.filter(i=>i.status!=="paid").length||undefined},
-    {id:"documents", label:"Documents"},
-    {id:"changes",   label:"Changes",     badge: pendingChanges||undefined},
-    {id:"feedback",  label:"Feedback"},
-  ];
-
-  return (
-    <div className="min-h-screen bg-[#0a0f1a] text-white font-sans">
-
-      {/* Header */}
-      <div className="border-b border-white/10 bg-[#0d1420]/80 backdrop-blur sticky top-0 z-20">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {company?.logo_url
-              ? <img src={company.logo_url} alt="logo" className="w-9 h-9 rounded-lg object-cover"/>
-              : <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center font-bold text-sm">{(company?.company_name||"M").charAt(0)}</div>
-            }
-            <div>
-              <div className="text-sm font-bold text-slate-100">{company?.company_name || "Magnus Boys Construction"}</div>
-              <div className="text-xs text-slate-500">Client Portal</div>
-            </div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+          <div style={{position:"relative",width:72,height:72}}>
+            <ProgressRing pct={progress}/>
+            <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:"#f1f5f9"}}>{progress}%</div>
           </div>
-          <div className="text-right">
-            <div className="text-sm font-semibold text-slate-200">{client?.contact_name || client?.name}</div>
-            <div className="text-xs text-slate-500">{client?.email}</div>
-          </div>
+          <div style={{fontSize:10,color:"#475569"}}>Complete</div>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+        {[{l:"Paid",v:fmt(totalPaid),c:"#22c55e"},{l:"Balance Due",v:fmt(balanceDue),c:balanceDue>0?"#ef4444":"#22c55e"},{l:"Pending",v:`${pendingChanges}`,c:pendingChanges>0?"#f59e0b":"#64748b"}].map((s,i)=>(
+          <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"14px 16px",textAlign:"center"}}>
+            <div style={{fontSize:18,fontWeight:800,color:s.c}}>{s.v}</div>
+            <div style={{fontSize:10,color:"#475569",marginTop:3}}>{s.l}</div>
+          </div>
+        ))}
+      </div>
 
-        {/* Project Hero */}
-        <div className="rounded-2xl bg-gradient-to-br from-blue-600/20 to-cyan-600/10 border border-blue-500/20 p-6">
-          <div className="flex items-start justify-between flex-wrap gap-4">
-            <div>
-              <div className="text-xs text-blue-400 font-semibold uppercase tracking-wider mb-1">Your Project</div>
-              <h1 className="text-2xl font-bold text-white">{project?.name || "No project assigned"}</h1>
-              {project?.site_address && <p className="text-slate-400 text-sm mt-1">📍 {project.site_address}</p>}
-              <div className="flex items-center gap-3 mt-3 flex-wrap">
-                {project?.status && (
-                  <span className={`text-xs px-3 py-1 rounded-full border font-semibold capitalize ${STATUS_COLORS[project.status]||STATUS_COLORS.planning}`}>
-                    {project.status.replace("_"," ")}
-                  </span>
-                )}
-                {project?.start_date && <span className="text-xs text-slate-400">Started {fmtDate(project.start_date)}</span>}
-                {project?.end_date && <span className="text-xs text-slate-400">Est. completion {fmtDate(project.end_date)}</span>}
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="relative w-20 h-20">
-                <svg className="w-20 h-20 -rotate-90" viewBox="0 0 36 36">
-                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="3"/>
-                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="#3b82f6" strokeWidth="3"
-                    strokeDasharray={`${progress} ${100-progress}`} strokeLinecap="round"/>
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-lg font-bold text-white">{progress}%</span>
-                </div>
-              </div>
-              <div className="text-xs text-slate-400 mt-1">Complete</div>
-            </div>
+      <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id as Tab)}
+            style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",borderRadius:12,border:"1px solid",fontSize:13,fontWeight:600,whiteSpace:"nowrap",cursor:"pointer",transition:"all 0.2s",background:tab===t.id?"#3b82f6":"rgba(255,255,255,0.04)",borderColor:tab===t.id?"#3b82f6":"rgba(255,255,255,0.08)",color:tab===t.id?"#fff":"#94a3b8"}}>
+            {t.emoji} {t.label}
+            {"badge" in t && t.badge?<span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:tab===t.id?"rgba(255,255,255,0.25)":"rgba(59,130,246,0.3)",color:tab===t.id?"#fff":"#60a5fa",fontWeight:700}}>{t.badge}</span>:null}
+          </button>
+        ))}
+      </div>
+
+      {tab==="overview"&&<div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn 0.3s ease"}}>
+        <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+            <span style={{fontSize:13,fontWeight:700,color:"#cbd5e1"}}>Project Progress</span>
+            <span style={{fontSize:14,fontWeight:800,color:"#3b82f6"}}>{progress}%</span>
+          </div>
+          <div style={{height:8,background:"rgba(255,255,255,0.08)",borderRadius:8,overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${progress}%`,background:"linear-gradient(90deg,#3b82f6,#06b6d4)",borderRadius:8,transition:"width 1.5s ease"}}/>
+          </div>
+          {project?.budget&&<div style={{marginTop:8,fontSize:11,color:"#475569"}}>Budget: <span style={{color:"#94a3b8",fontWeight:600}}>{fmt(project.budget)}</span></div>}
+        </div>
+        {project?.notes&&<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
+          <div style={{fontSize:10,color:"#475569",fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",marginBottom:8}}>Project Notes</div>
+          <p style={{fontSize:13,color:"#94a3b8",lineHeight:1.7,margin:0}}>{project.notes}</p>
+        </div>}
+        <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:14}}>💬 Messages</div>
+          {comments.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16,maxHeight:280,overflowY:"auto"}}>
+            {comments.map(c=><div key={c.id} style={{background:"rgba(59,130,246,0.07)",border:"1px solid rgba(59,130,246,0.12)",borderRadius:10,padding:"10px 14px"}}>
+              <p style={{fontSize:13,color:"#cbd5e1",margin:"0 0 4px",lineHeight:1.5}}>{c.message}</p>
+              <span style={{fontSize:10,color:"#475569"}}>{timeAgo(c.created_at)}</span>
+            </div>)}
+          </div>}
+          <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="Send a message to your contractor…"
+            style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 14px",fontSize:13,color:"#f1f5f9",resize:"none",height:76,outline:"none"}}/>
+          <button onClick={submitComment} disabled={!newComment.trim()}
+            style={{marginTop:10,padding:"10px 20px",background:newComment.trim()?"#3b82f6":"rgba(255,255,255,0.05)",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+            Send Message
+          </button>
+        </div>
+        <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:12}}>📞 Contact</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {company?.phone&&<a href={`tel:${company.phone}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>📞 {company.phone}</a>}
+            {company?.email&&<a href={`mailto:${company.email}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>✉️ {company.email}</a>}
+            {company?.address_line1&&<div style={{fontSize:13,color:"#64748b"}}>📍 {company.address_line1}</div>}
           </div>
         </div>
+      </div>}
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl bg-white/5 border border-white/10 p-4 text-center">
-            <div className="text-2xl font-bold text-green-400">{fmt(totalPaid)}</div>
-            <div className="text-xs text-slate-400 mt-1">Paid</div>
-          </div>
-          <div className="rounded-xl bg-white/5 border border-white/10 p-4 text-center">
-            <div className={`text-2xl font-bold ${balanceDue>0?"text-red-400":"text-green-400"}`}>{fmt(balanceDue)}</div>
-            <div className="text-xs text-slate-400 mt-1">Balance Due</div>
-          </div>
-          <div className="rounded-xl bg-white/5 border border-white/10 p-4 text-center">
-            <div className={`text-2xl font-bold ${pendingChanges>0?"text-yellow-400":"text-slate-300"}`}>{pendingChanges}</div>
-            <div className="text-xs text-slate-400 mt-1">Pending Approvals</div>
-          </div>
-        </div>
+      {tab==="photos"&&<div style={{animation:"fadeIn 0.3s ease"}}>
+        {photos.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:60,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>📸</div><p style={{color:"#475569"}}>No site photos yet.</p></div>
+          :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}}>
+            {photos.map(p=><div key={p.id} onClick={()=>setLightbox(p)} style={{aspectRatio:"1",borderRadius:12,overflow:"hidden",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",cursor:"zoom-in",position:"relative"}}>
+              <img src={p.url||p.public_url||p.publicUrl||""} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              {p.caption&&<div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.75))",padding:"16px 8px 8px",fontSize:11,color:"#e2e8f0"}}>{p.caption}</div>}
+            </div>)}
+          </div>}
+      </div>}
 
-        {/* Tabs */}
-        <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
-          {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${tab===t.id?"bg-blue-600 text-white shadow-lg":"bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200"}`}>
-              {t.label}
-              {t.badge ? <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${tab===t.id?"bg-white/20":"bg-blue-500/20 text-blue-400"}`}>{t.badge}</span> : null}
-            </button>
+      {tab==="invoices"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+          {[{l:"Total",v:fmt(totalInvoiced),c:"#f1f5f9"},{l:"Paid",v:fmt(totalPaid),c:"#22c55e"},{l:"Balance Due",v:fmt(balanceDue),c:balanceDue>0?"#ef4444":"#22c55e"}].map((s,i)=>(
+            <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:14,textAlign:"center"}}>
+              <div style={{fontSize:16,fontWeight:800,color:s.c}}>{s.v}</div>
+              <div style={{fontSize:10,color:"#475569",marginTop:3}}>{s.l}</div>
+            </div>
           ))}
         </div>
-
-        {/* Tab Content */}
-
-        {/* OVERVIEW */}
-        {tab === "overview" && (
-          <div className="space-y-4">
-            {project?.notes && (
-              <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-                <div className="text-xs font-semibold text-slate-400 uppercase mb-2">Project Notes</div>
-                <p className="text-sm text-slate-300 leading-relaxed">{project.notes}</p>
-              </div>
-            )}
-            {/* Progress bar */}
-            <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-semibold text-slate-200">Overall Progress</div>
-                <div className="text-sm font-bold text-blue-400">{progress}%</div>
-              </div>
-              <div className="w-full bg-white/10 rounded-full h-3">
-                <div className="bg-gradient-to-r from-blue-500 to-cyan-500 h-3 rounded-full transition-all" style={{width:`${progress}%`}}/>
-              </div>
+        {invoices.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🧾</div><p style={{color:"#475569"}}>No invoices yet.</p></div>
+          :invoices.map(inv=><div key={inv.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>Invoice #{inv.invoice_number||inv.id.slice(0,8).toUpperCase()}</div>
+              <div style={{fontSize:11,color:"#475569"}}>Issued {fmtDate(inv.issue_date)} · Due {fmtDate(inv.due_date)}</div>
             </div>
-            {/* Recent comments */}
-            <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-              <div className="text-sm font-semibold text-slate-200 mb-3">Leave a Comment</div>
-              <textarea value={newComment} onChange={e=>setNewComment(e.target.value)}
-                placeholder="Ask a question or leave a note for the team..."
-                className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-slate-200 placeholder-slate-500 resize-none h-20 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
-              <button onClick={submitComment} disabled={!newComment.trim()}
-                className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-medium rounded-xl transition-colors">
-                Send Comment
-              </button>
-              {comments.length > 0 && (
-                <div className="mt-4 space-y-2">
-                  <div className="text-xs font-semibold text-slate-500 uppercase">Previous Comments</div>
-                  {comments.map(c => (
-                    <div key={c.id} className="bg-white/5 rounded-lg p-3">
-                      <p className="text-sm text-slate-300">{c.message}</p>
-                      <p className="text-[10px] text-slate-500 mt-1">{fmtDate(c.created_at)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:16,fontWeight:800,color:"#f1f5f9",marginBottom:4}}>{fmt(Number(inv.total_amount||0))}</div>
+              <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,textTransform:"capitalize",background:inv.status==="paid"?"rgba(34,197,94,0.15)":inv.status==="overdue"?"rgba(239,68,68,0.15)":"rgba(245,158,11,0.15)",color:inv.status==="paid"?"#22c55e":inv.status==="overdue"?"#ef4444":"#f59e0b",border:`1px solid ${inv.status==="paid"?"rgba(34,197,94,0.3)":inv.status==="overdue"?"rgba(239,68,68,0.3)":"rgba(245,158,11,0.3)"}`}}>{inv.status}</span>
             </div>
-          </div>
-        )}
+          </div>)}
+      </div>}
 
-        {/* PHOTOS */}
-        {tab === "photos" && (
-          <div>
-            {photos.length === 0 ? (
-              <div className="rounded-xl bg-white/5 border border-white/10 p-12 text-center">
-                <div className="text-4xl mb-3">📸</div>
-                <p className="text-slate-400">No site photos yet. Check back soon!</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {photos.map(p => (
-                  <div key={p.id} className="rounded-xl overflow-hidden aspect-square bg-white/5 border border-white/10">
-                    <img src={p.url||p.public_url||p.publicUrl||""} alt={p.caption||"Site photo"} className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer"/>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* INVOICES */}
-        {tab === "invoices" && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
-                <div className="text-lg font-bold text-slate-100">{fmt(totalInvoiced)}</div>
-                <div className="text-xs text-slate-400">Total Invoiced</div>
-              </div>
-              <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
-                <div className="text-lg font-bold text-green-400">{fmt(totalPaid)}</div>
-                <div className="text-xs text-slate-400">Paid</div>
-              </div>
-              <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
-                <div className={`text-lg font-bold ${balanceDue>0?"text-red-400":"text-green-400"}`}>{fmt(balanceDue)}</div>
-                <div className="text-xs text-slate-400">Balance Due</div>
-              </div>
+      {tab==="changes"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
+        <div style={{background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#f59e0b"}}>⚠️ Change orders need your approval before work begins.</div>
+        {changes.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>✅</div><p style={{color:"#475569"}}>No change orders at this time.</p></div>
+          :changes.map(co=><div key={co.id} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${co.status==="approved"?"rgba(34,197,94,0.2)":co.status==="rejected"?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.07)"}`,borderRadius:16,padding:20}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>{co.title}</div>
+            {co.description&&<p style={{fontSize:13,color:"#64748b",margin:"0 0 10px",lineHeight:1.6}}>{co.description}</p>}
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:co.status==="pending"?14:6}}>
+              <span style={{fontSize:17,fontWeight:800,color:"#f1f5f9"}}>{fmt(Number(co.amount||0))}</span>
+              <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,textTransform:"capitalize",background:co.status==="approved"?"rgba(34,197,94,0.15)":co.status==="rejected"?"rgba(239,68,68,0.15)":"rgba(245,158,11,0.15)",color:co.status==="approved"?"#22c55e":co.status==="rejected"?"#ef4444":"#f59e0b"}}>{co.status}</span>
             </div>
-            {invoices.length === 0 ? (
-              <div className="rounded-xl bg-white/5 border border-white/10 p-12 text-center">
-                <div className="text-4xl mb-3">🧾</div>
-                <p className="text-slate-400">No invoices yet.</p>
-              </div>
-            ) : invoices.map(inv => (
-              <div key={inv.id} className="rounded-xl bg-white/5 border border-white/10 p-4 flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-slate-200">Invoice #{inv.invoice_number || inv.id.slice(0,8)}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">Issued {fmtDate(inv.issue_date)} · Due {fmtDate(inv.due_date)}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-base font-bold text-slate-100">{fmt(Number(inv.total_amount||0))}</div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold capitalize ${STATUS_COLORS[inv.status]||STATUS_COLORS.pending}`}>{inv.status}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+            {co.status==="pending"&&<div style={{display:"flex",gap:10}}>
+              <button onClick={()=>respondChange(co.id,"approved")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"#16a34a",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:respondingTo===co.id?0.6:1}}>✓ Approve</button>
+              <button onClick={()=>respondChange(co.id,"rejected")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:10,color:"#ef4444",fontSize:13,fontWeight:700,cursor:"pointer"}}>✗ Reject</button>
+            </div>}
+            {co.status==="approved"&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>✓ You approved this change</div>}
+            {co.status==="rejected"&&<div style={{fontSize:12,color:"#ef4444",fontWeight:600}}>✗ You rejected this change</div>}
+          </div>)}
+      </div>}
 
-        {/* DOCUMENTS */}
-        {tab === "documents" && (
-          <div className="rounded-xl bg-white/5 border border-white/10 p-8 text-center">
-            <div className="text-4xl mb-3">📁</div>
-            <p className="text-slate-300 font-medium mb-1">Documents & Contracts</p>
-            <p className="text-slate-500 text-sm">Your contracts and project documents will appear here. Contact us to request documents.</p>
-            <div className="mt-4 p-4 bg-white/5 rounded-xl text-sm text-slate-400">
-              📞 {company?.phone || "Contact us"} · ✉️ {company?.email || ""}
-            </div>
-          </div>
-        )}
-
-        {/* CHANGE ORDERS */}
-        {tab === "changes" && (
-          <div className="space-y-3">
-            <div className="rounded-xl bg-yellow-500/5 border border-yellow-500/20 p-3 text-xs text-yellow-400">
-              ⚠️ Change orders require your approval before work begins. Review carefully before approving.
-            </div>
-            {changes.length === 0 ? (
-              <div className="rounded-xl bg-white/5 border border-white/10 p-12 text-center">
-                <div className="text-4xl mb-3">✅</div>
-                <p className="text-slate-400">No change orders at this time.</p>
-              </div>
-            ) : changes.map(co => (
-              <div key={co.id} className="rounded-xl bg-white/5 border border-white/10 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold text-slate-200">{co.title}</div>
-                    {co.description && <p className="text-xs text-slate-400 mt-1">{co.description}</p>}
-                    <div className="flex items-center gap-3 mt-2">
-                      <span className="text-sm font-bold text-white">{fmt(Number(co.amount||0))}</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold capitalize ${STATUS_COLORS[co.status]||STATUS_COLORS.pending}`}>{co.status}</span>
-                      <span className="text-[10px] text-slate-500">{fmtDate(co.created_at)}</span>
-                    </div>
-                  </div>
-                </div>
-                {co.status === "pending" && (
-                  <div className="flex gap-2 mt-3">
-                    <button onClick={() => respondToChange(co.id, "approved")}
-                      className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors">
-                      ✓ Approve
-                    </button>
-                    <button onClick={() => respondToChange(co.id, "rejected")}
-                      className="flex-1 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 text-xs font-semibold rounded-lg border border-red-500/20 transition-colors">
-                      ✗ Reject
-                    </button>
-                  </div>
-                )}
-                {co.status === "approved" && <div className="mt-2 text-xs text-green-400">✓ You approved this change order</div>}
-                {co.status === "rejected" && <div className="mt-2 text-xs text-red-400">✗ You rejected this change order</div>}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* FEEDBACK */}
-        {tab === "feedback" && (
-          <div className="space-y-4">
-            {reviewSubmitted ? (
-              <div className="rounded-xl bg-green-500/10 border border-green-500/20 p-8 text-center">
-                <div className="text-4xl mb-3">⭐</div>
-                <p className="text-green-400 font-semibold">Thank you for your feedback!</p>
-                <p className="text-slate-400 text-sm mt-1">We appreciate you taking the time to rate our work.</p>
-              </div>
-            ) : (
-              <div className="rounded-xl bg-white/5 border border-white/10 p-6">
-                <div className="text-sm font-semibold text-slate-200 mb-4">Rate Our Work</div>
-                <div className="flex gap-2 justify-center mb-4">
-                  {[1,2,3,4,5].map(s => (
-                    <button key={s} onClick={() => setRating(s)}
-                      className={`text-3xl transition-transform hover:scale-110 ${s<=rating?"text-yellow-400":"text-slate-600"}`}>
-                      ★
-                    </button>
-                  ))}
-                </div>
-                {rating > 0 && (
-                  <>
-                    <textarea value={reviewText} onChange={e=>setReviewText(e.target.value)}
-                      placeholder="Tell us about your experience..."
-                      className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-slate-200 placeholder-slate-500 resize-none h-24 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
-                    <button onClick={submitReview} disabled={submittingReview}
-                      className="w-full mt-3 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold rounded-xl transition-colors">
-                      {submittingReview ? "Submitting..." : "Submit Review"}
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* Contact info */}
-            <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-              <div className="text-sm font-semibold text-slate-200 mb-3">Contact Us</div>
-              <div className="space-y-2 text-sm text-slate-400">
-                {company?.phone && <div>📞 {company.phone}</div>}
-                {company?.email && <div>✉️ {company.email}</div>}
-                {company?.address_line1 && <div>📍 {company.address_line1}</div>}
-              </div>
-            </div>
-          </div>
-        )}
-
-      </div>
-
-      {/* Footer */}
-      <div className="border-t border-white/5 mt-12 py-6 text-center text-xs text-slate-600">
-        {company?.company_name || "Magnus Boys Construction"} · Powered by Magnus ERP
-      </div>
+      {tab==="feedback"&&<div style={{animation:"fadeIn 0.3s ease"}}>
+        {reviewSubmitted?<div style={{background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>⭐</div><div style={{fontSize:18,fontWeight:700,color:"#22c55e",marginBottom:6}}>Thank you!</div><p style={{color:"#475569",fontSize:14}}>Your feedback means a lot to us.</p></div>
+          :<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:28}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>Rate Our Work</div>
+            <p style={{fontSize:13,color:"#475569",marginBottom:20}}>How satisfied are you with the project so far?</p>
+            <Stars value={rating} onChange={setRating}/>
+            {rating>0&&<div style={{marginTop:20}}>
+              <div style={{fontSize:12,color:"#475569",marginBottom:6}}>Tell us more (optional)</div>
+              <textarea value={reviewText} onChange={e=>setReviewText(e.target.value)} placeholder="What went well? What could be improved?"
+                style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 14px",fontSize:13,color:"#f1f5f9",resize:"none",height:90,outline:"none"}}/>
+              <button onClick={submitReview} style={{width:"100%",marginTop:12,padding:"13px 0",background:"#3b82f6",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Submit Review</button>
+            </div>}
+          </div>}
+      </div>}
     </div>
-  );
+
+    <div style={{borderTop:"1px solid rgba(255,255,255,0.04)",padding:"16px 0",textAlign:"center",fontSize:11,color:"#1e293b"}}>
+      {company?.company_name||company?.company_name||"Magnus Boys Construction"} · Secured Portal · Powered by Magnus ERP
+    </div>
+
+    {lightbox&&<div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.93)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
+      <img src={lightbox.url||lightbox.public_url||lightbox.publicUrl||""} style={{maxWidth:"100%",maxHeight:"90vh",borderRadius:12,objectFit:"contain"}}/>
+    </div>}
+
+    {toast&&<Toast msg={toast.msg} type={toast.type} onDone={()=>setToast(null)}/>}
+  </div>;
 }

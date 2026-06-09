@@ -5,18 +5,16 @@ import React, { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
 import { supabase } from "../lib/supabase";
+import { useCompanySettings } from "../hooks/useCompanySettings";
 import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
   ChevronLeft, ChevronRight, Building2, Layers,
-  Receipt, Truck, HardHat, Shield, Banknote, BookOpen,
+  Receipt, Truck, HardHat, Banknote, BookOpen,
   ClipboardList, Package, PieChart, Wrench,
   ChevronDown, ChevronUp, Plus, Zap
 } from "lucide-react";
-
 import { cn, SectionLabel } from "../components/ui";
-import { useTheme } from "../hooks/useTheme";
-import { useCompanySettings } from "../hooks/useCompanySettings";
 
 // ─── Nav structure ────────────────────────────────────────────────────────────
 
@@ -71,7 +69,6 @@ const NAV: NavItem[] = [
     children: [
       { label: "Workers",    icon: <HardHat size={14}/>,   to: "/workers" },
       { label: "Field Ops",  icon: <ClipboardList size={14}/>, to: "/field-ops" },
-      { label: "Access Log", icon: <Shield size={14}/>,       to: "/access-log" },
     ]
   },
   { label: "Reports",  icon: <BarChart3 size={15}/>, to: "/reports" },
@@ -90,7 +87,7 @@ function NavGroup({ item, collapsed, defaultOpen }: { item: NavItem; collapsed: 
       <NavLink to={item.to!} end={item.to === "/"}
         className={({ isActive }) => cn(
           "flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors mx-2",
-          isActive ? "bg-cyan-100 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300" : "text-slate-600 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.04]"
+          isActive ? "bg-cyan-500/15 text-cyan-300" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]"
         )}>
         <span className="flex-shrink-0">{item.icon}</span>
         {!collapsed && <span className="truncate">{item.label}</span>}
@@ -201,9 +198,8 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
-  const { settings: companySettings } = useCompanySettings();
+  const { settings: co } = useCompanySettings();
   const location = useLocation();
-  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
@@ -226,18 +222,17 @@ export default function AppLayout() {
 
       {/* ── Sidebar ── */}
       <aside className={cn(
-        "flex flex-col border-r border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0a0d14] transition-all duration-200 flex-shrink-0",
+        "flex flex-col border-r border-white/[0.06] bg-[#0a0d14] transition-all duration-200 flex-shrink-0",
         collapsed ? "w-14" : "w-56"
       )}>
         {/* Logo */}
-        <div className={cn("flex items-center h-12 border-b border-slate-200 dark:border-white/[0.06] flex-shrink-0", collapsed ? "justify-center px-0" : "gap-2.5 px-4")}>
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
-              {companySettings?.logo_url && <img src={companySettings.logo_url} alt="logo" className="w-full h-full object-cover" />}
+        <div className={cn("flex items-center h-12 border-b border-white/[0.06] flex-shrink-0", collapsed ? "justify-center px-0" : "gap-2.5 px-4")}>
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0">
             <Building2 size={14} className="text-white"/>
           </div>
           {!collapsed && (
             <div>
-              <div className="text-xs font-bold text-slate-100 tracking-tight leading-tight">{companySettings?.company_name || "Magnus"}</div>
+              <div className="text-xs font-bold text-slate-100 tracking-tight leading-tight">{co?.company_name || "Magnus"}</div>
               <div className="text-[8px] text-slate-600 uppercase tracking-widest leading-tight">Construction ERP</div>
             </div>
           )}
@@ -249,14 +244,14 @@ export default function AppLayout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-2 space-y-0.5 scrollbar-hide bg-white dark:bg-transparent">
+        <nav className="flex-1 overflow-y-auto py-2 space-y-0.5 scrollbar-hide">
           {NAV.map(item => (
             <NavGroup key={item.label} item={item} collapsed={collapsed} defaultOpen={isGroupActive(item)} />
           ))}
         </nav>
 
         {/* Bottom — user + collapse */}
-        <div className="border-t border-slate-200 dark:border-white/[0.06] p-2 flex-shrink-0 space-y-1 bg-white dark:bg-transparent">
+        <div className="border-t border-white/[0.06] p-2 flex-shrink-0 space-y-1">
           {user && !collapsed && (
             <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg">
               <div className="w-6 h-6 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center text-[9px] font-bold text-slate-300 flex-shrink-0">
@@ -267,18 +262,8 @@ export default function AppLayout() {
               </div>
             </div>
           )}
-          <button onClick={toggleTheme}
-            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors", collapsed && "justify-center")}
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
-            {theme === "dark" ? (
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            ) : (
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            )}
-            {!collapsed && (theme === "dark" ? "Light mode" : "Dark mode")}
-          </button>
           <button onClick={handleLogout}
-            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors", collapsed && "justify-center")}>
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors", collapsed && "justify-center")}>
             <LogOut size={13}/>
             {!collapsed && "Sign out"}
           </button>
@@ -290,7 +275,7 @@ export default function AppLayout() {
       </aside>
 
       {/* ── Main content ── */}
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden bg-slate-50 dark:bg-[#080b10]">
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
