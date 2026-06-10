@@ -32,10 +32,11 @@ export default function AIPriceLookup() {
   const [history, setHistory] = useState<{item:string;unit:string;jmd:number;usd:number}[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string|null>(null);
 
   async function lookup() {
     if (!item.trim()) return;
-    setLoading(true); setResult(null); setSaved(false);
+    setLoading(true); setResult(null); setSaved(false); setSaveError(null);
     const r = await askAI(item, unit);
     if (r) { setResult(r); setHistory(h=>[{item,unit,jmd:r.jmd,usd:r.usd},...h.slice(0,9)]); }
     setLoading(false);
@@ -44,17 +45,35 @@ export default function AIPriceLookup() {
   async function saveToLibrary() {
     if (!result) return;
     setSaving(true);
-    const {data:{user}} = await supabase.auth.getUser();
-    if (!user) { setSaving(false); return; }
-    const {data:p} = await supabase.from("user_profiles").select("company_id").eq("id",user.id).maybeSingle();
-    await supabase.from("cost_items").insert({
-      item_name: item, unit, unit_rate: result.jmd,
-      rate_jmd: result.jmd, rate_usd: result.usd,
-      price_notes: result.notes, ai_suggested: true,
-      company_id: p?.company_id, is_active: true,
-      item_type: "Material", category: "AI Suggested",
-    });
-    setSaving(false); setSaved(true);
+    try {
+      const {data:{user}} = await supabase.auth.getUser();
+      if (!user) { setSaving(false); return; }
+      const {data:p} = await supabase.from("user_profiles").select("company_id").eq("id",user.id).maybeSingle();
+      // Insert into cost_items
+      const {data:ci, error:e1} = await supabase.from("cost_items").insert({
+        item_name: item, unit, unit_rate: result.jmd,
+        rate_jmd: result.jmd, rate_usd: result.usd,
+        price_notes: result.notes, ai_suggested: true,
+        company_id: p?.company_id, is_active: true,
+        item_type: "Material", category: "AI Suggested",
+      }).select().single();
+      if (e1) throw e1;
+      // Insert rate into cost_item_rates so it shows in Rate Library
+      const {error:e2} = await supabase.from("cost_item_rates").insert({
+        cost_item_id: ci.id,
+        rate: result.jmd,
+        currency: "JMD",
+        effective_date: new Date().toISOString().slice(0,10),
+        source: "ai",
+        note: result.notes,
+      });
+      if (e2) throw e2;
+      setSaved(true);
+    } catch(e:any) { 
+      console.error("Save error:", e); 
+      setSaveError(e?.message || String(e));
+    }
+    setSaving(false);
   }
 
   const UNITS = ["each","ft","m","bag","lb","kg","gallon","sq ft","m²","roll","sheet","box","day","hour"];
@@ -110,6 +129,11 @@ export default function AIPriceLookup() {
               </div>
             </div>
             <div style={{fontSize:11,color:"#64748b",marginBottom:10,lineHeight:1.5}}>📍 {result.notes}</div>
+            {saveError && (
+              <div style={{background:"rgba(239,68,68,0.15)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:8,padding:"8px 10px",fontSize:11,color:"#f87171",marginBottom:6,wordBreak:"break-all"}}>
+                ❌ {saveError}
+              </div>
+            )}
             <button onClick={saveToLibrary} disabled={saving||saved}
               style={{width:"100%",padding:"8px 0",background:saved?"rgba(34,197,94,0.2)":saving?"rgba(255,255,255,0.05)":"rgba(124,58,237,0.2)",border:`1px solid ${saved?"rgba(34,197,94,0.3)":"rgba(124,58,237,0.3)"}`,borderRadius:8,color:saved?"#22c55e":"#a78bfa",fontSize:12,fontWeight:600,cursor:"pointer"}}>
               {saved?"✓ Saved to Rate Library!":saving?"Saving…":"+ Save to Rate Library"}
