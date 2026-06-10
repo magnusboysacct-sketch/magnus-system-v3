@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import MasterCategorySelect from "../components/master/MasterCategorySelect.tsx";
 import MasterUnitSelect from "../components/master/MasterUnitSelect.tsx";
 import { buildDefaultVars, computeQuantity } from "../lib/calculatorEngine";
 import { SmartItemSelectorButton } from "../components/SmartItemSelectorButton";
+import AIPriceLookup from "../components/AIPriceLookup";
 
 // ✅ Standard construction categories (future-proof baseline)
 const STANDARD_CATEGORIES = [
@@ -2559,6 +2560,7 @@ export default function RatesPage() {
       <div className="mt-3 text-xs opacity-60">
         Tip: Click a rate to edit. Next upgrades: Add Rate modal, category editing, unit editing, import/export, rate history.
       </div>
+      <AIPriceLookup />
     </div>
   );
 }

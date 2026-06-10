@@ -40,6 +40,7 @@ import AccountsReceivablePage from "./pages/AccountsReceivablePage";
 import FieldPaymentsPage      from "./pages/FieldPaymentsPage";
 import WorkersPage            from "./pages/WorkersPage";
 import ReportsPage            from "./pages/ReportsPage";
+import MaterialsLibraryPage from './pages/MaterialsLibraryPage';
 import SettingsPage           from "./pages/SettingsPage";
 import SettingsCompanyPage      from "./pages/SettingsCompanyPage";
 import SettingsMasterListsPage      from "./pages/SettingsMasterListsPage";
@@ -172,6 +173,7 @@ export default function App() {
               {/* Reports + Settings */}
               <Route path="/reports"                       element={<ReportsPage />} />
               <Route path="/billing"                       element={<BillingPage />} />
+              <Route path="/materials-library" element={<MaterialsLibraryPage />} />
               <Route path="/settings"                      element={<SettingsPage />} />
               <Route path="/settings/company"              element={<SettingsCompanyPage />} />
               <Route path="/settings/master-lists"         element={<SettingsMasterListsPage />} />
