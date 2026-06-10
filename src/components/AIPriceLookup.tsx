@@ -1,6 +1,6 @@
 ﻿// src/components/AIPriceLookup.tsx — Floating AI price assistant for Rate Library
-import React, { useState } from "react";
-import { Sparkles, X, DollarSign } from "lucide-react";
+// Units loaded from master_units table — no hardcoding
+import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { magnusAI } from "../lib/magnusAI";
 
@@ -11,7 +11,6 @@ async function askAI(item: string, unit: string): Promise<{jmd:number;usd:number
     const text = await magnusAI.chat(
       `You are a Jamaica construction materials pricing assistant. Based on typical Jamaica market rates, estimate the price for "${item}" per ${unit} in Kingston Jamaica. Use J$157 per USD. Give a realistic estimate even if approximate. Respond ONLY with this JSON and nothing else: {"price_jmd":1500,"price_usd":10,"notes":"Estimated based on Hardware and Lumber Kingston typical rates"}`
     );
-    console.log("AI RAW:", text);
     const clean = String(text).replace(/```json|```/g,"").trim();
     const start = clean.indexOf("{");
     const end = clean.lastIndexOf("}");
@@ -21,7 +20,16 @@ async function askAI(item: string, unit: string): Promise<{jmd:number;usd:number
   } catch(e) { console.error("AI price error:", e); return null; }
 }
 
-function fmt(n:number,cur="JMD"){return new Intl.NumberFormat("en-US",{style:"currency",currency:cur,minimumFractionDigits:2}).format(n);}
+function fmt(n:number,cur="JMD"){
+  return new Intl.NumberFormat("en-US",{style:"currency",currency:cur,minimumFractionDigits:2}).format(n);
+}
+
+// Fallback units in case DB is unavailable
+const FALLBACK_UNITS = [
+  "each","ft","m","bag","lb","kg","ton","gal","L",
+  "sq ft","m²","ft³","m³","yd³","roll","sheet","box",
+  "bundle","pack","board","day","hr","week","job","load","trip"
+];
 
 export default function AIPriceLookup() {
   const [open, setOpen] = useState(false);
@@ -33,6 +41,21 @@ export default function AIPriceLookup() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string|null>(null);
+  const [units, setUnits] = useState<string[]>(FALLBACK_UNITS);
+
+  // Load units from master_units table
+  useEffect(() => {
+    supabase
+      .from("master_units")
+      .select("name")
+      .eq("is_active", true)
+      .order("name")
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setUnits(data.map((u: any) => u.name));
+        }
+      });
+  }, []);
 
   async function lookup() {
     if (!item.trim()) return;
@@ -49,7 +72,6 @@ export default function AIPriceLookup() {
       const {data:{user}} = await supabase.auth.getUser();
       if (!user) { setSaving(false); return; }
       const {data:p} = await supabase.from("user_profiles").select("company_id").eq("id",user.id).maybeSingle();
-      // Insert into cost_items
       const {data:ci, error:e1} = await supabase.from("cost_items").insert({
         item_name: item, unit, unit_rate: result.jmd,
         rate_jmd: result.jmd, rate_usd: result.usd,
@@ -58,25 +80,19 @@ export default function AIPriceLookup() {
         item_type: "Material", category: "AI Suggested",
       }).select().single();
       if (e1) throw e1;
-      // Insert rate into cost_item_rates so it shows in Rate Library
       const {error:e2} = await supabase.from("cost_item_rates").insert({
-        cost_item_id: ci.id,
-        rate: result.jmd,
-        currency: "JMD",
+        cost_item_id: ci.id, rate: result.jmd, currency: "JMD",
         effective_date: new Date().toISOString().slice(0,10),
-        source: "ai",
-        note: result.notes,
+        source: "ai", note: result.notes,
       });
       if (e2) throw e2;
       setSaved(true);
-    } catch(e:any) { 
-      console.error("Save error:", e); 
+    } catch(e:any) {
+      console.error("Save error:", e);
       setSaveError(e?.message || String(e));
     }
     setSaving(false);
   }
-
-  const UNITS = ["each","ft","m","bag","lb","kg","gallon","sq ft","m²","roll","sheet","box","day","hour"];
 
   if (!open) return (
     <button onClick={()=>setOpen(true)}
@@ -106,10 +122,11 @@ export default function AIPriceLookup() {
             placeholder="e.g. Portland Cement 50kg"
             style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"9px 12px",fontSize:13,color:"#f1f5f9",outline:"none"}}/>
           <select value={unit} onChange={e=>setUnit(e.target.value)}
-            style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"9px 8px",fontSize:12,color:"#f1f5f9",outline:"none",cursor:"pointer"}}>
-            {UNITS.map(u=><option key={u} value={u}>{u}</option>)}
+            style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"9px 8px",fontSize:12,color:"#f1f5f9",outline:"none",cursor:"pointer",maxWidth:90}}>
+            {units.map(u=><option key={u} value={u}>{u}</option>)}
           </select>
         </div>
+
         <button onClick={lookup} disabled={loading||!item.trim()}
           style={{width:"100%",padding:"10px 0",background:loading?"rgba(124,58,237,0.4)":"#7c3aed",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",transition:"all 0.2s"}}>
           {loading?"Getting Jamaica price…":"Get AI Price ✨"}
@@ -156,6 +173,11 @@ export default function AIPriceLookup() {
             </div>
           </div>
         )}
+
+        {/* Unit count indicator */}
+        <div style={{fontSize:9,color:"#334155",textAlign:"center"}}>
+          {units.length} units from Settings · Add more in Settings → Master Lists
+        </div>
       </div>
     </div>
   );
