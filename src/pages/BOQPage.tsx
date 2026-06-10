@@ -1,14 +1,11 @@
-﻿// src/pages/BOQPage.tsx — Full Rebuild v2
-// Fixes: denser rows, tighter pick column, better wand button, scope bg, scope inline
-// All Supabase wiring 100% preserved.
-
+﻿// src/pages/BOQPage.tsx — v3 Rebuild: staff-friendly, search-first picker, clear UX
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-  Sparkles, X, Plus, Trash2, ChevronRight, ChevronDown,
-  Save, CheckCircle, Layers, Package, FileSpreadsheet,
-  ShoppingCart, Wand2, Download, RefreshCw, AlertCircle,
-  FolderOpen, Hash, DollarSign, Search, ArrowLeft, Check, Boxes
+  Plus, Trash2, ChevronRight, ChevronDown, Save, CheckCircle,
+  FileSpreadsheet, ShoppingCart, Download, RefreshCw, AlertCircle,
+  FolderOpen, DollarSign, Search, X, Check, Boxes, Sparkles,
+  BookOpen, Package, Users, Wrench, Layers, AlertTriangle, Wand2
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists";
@@ -22,7 +19,6 @@ import { BOQSuggestionCard } from "../components/BOQSuggestionCard";
 import { addSuggestionToBOQ, type BOQSuggestion } from "../lib/boqSuggestions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
 type RateItem = {
   id: string;
   item_name: string;
@@ -47,6 +43,7 @@ type BOQItemRow = {
   unit_id: string | null;
   qty: number;
   rate: number;
+  rate_source?: "library" | "manual" | "assembly" | "";
 };
 
 type Section = {
@@ -59,94 +56,184 @@ type Section = {
 };
 
 type AssemblyRow = {
-  id: string;
-  name: string;
-  description: string | null;
-  unit: string | null;
-  category: string | null;
-  is_active?: boolean | null;
+  id: string; name: string; description: string | null;
+  unit: string | null; category: string | null; is_active?: boolean | null;
 };
-
 type AssemblyComponentRow = {
-  id: string;
-  assembly_id: string;
-  cost_item_id: string;
-  line_type: string;
-  quantity_factor: number;
-  waste_percent: number;
-  sort_order: number;
-  notes: string | null;
+  id: string; assembly_id: string; cost_item_id: string; line_type: string;
+  quantity_factor: number; waste_percent: number; sort_order: number; notes: string | null;
 };
-
 type BoqHeaderRow = {
-  id: string;
-  project_id: string;
-  status: string;
-  version: number;
-  updated_at: string;
+  id: string; project_id: string; status: string; version: number; updated_at: string;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function safeId() {
-  try {
-    const c: any = typeof crypto !== "undefined" ? crypto : null;
-    if (c?.randomUUID) return c.randomUUID();
-  } catch {}
+  try { const c: any = typeof crypto !== "undefined" ? crypto : null; if (c?.randomUUID) return c.randomUUID(); } catch {}
   return `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
-
 function numOr(v: unknown, fallback = 0) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
-
-function uniqSorted(values: string[]) {
-  const set = new Set(values.map((v) => v.trim()).filter(Boolean));
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
-}
-
 function getCategoryId(c: any): string { return String(c?.id ?? ""); }
 function getCategoryLabel(c: any): string { return String(c?.name ?? "Unnamed Category"); }
 function getCategoryScope(c: any): string { return String(c?.scope_of_work ?? ""); }
 function getUnitId(u: any): string { return String(u?.id ?? ""); }
 function getUnitLabel(u: any): string { return String(u?.name ?? "Unit"); }
-
 function resolveProjectId(): string | null {
   const keys = ["active_project_id", "selected_project_id", "project_id"];
-  for (const k of keys) {
-    const v = localStorage.getItem(k);
-    if (v && v.trim()) return v.trim();
-  }
+  for (const k of keys) { const v = localStorage.getItem(k); if (v?.trim()) return v.trim(); }
   return null;
 }
-
-function fmt(n: number) {
+function fmtMoney(n: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", minimumFractionDigits: 2 }).format(n);
+}
+function fmtNum(n: number) {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Type chip — color coded, compact
-const TYPE_META: Record<string, { bg: string; text: string; border: string; short: string }> = {
-  material:    { bg: "bg-blue-500/20",    text: "text-blue-300",    border: "border-blue-500/30",    short: "MAT" },
-  labor:       { bg: "bg-amber-500/20",   text: "text-amber-300",   border: "border-amber-500/30",   short: "LAB" },
-  labour:      { bg: "bg-amber-500/20",   text: "text-amber-300",   border: "border-amber-500/30",   short: "LAB" },
-  equipment:   { bg: "bg-purple-500/20",  text: "text-purple-300",  border: "border-purple-500/30",  short: "EQP" },
-  subcontract: { bg: "bg-emerald-500/20", text: "text-emerald-300", border: "border-emerald-500/30", short: "SUB" },
-  other:       { bg: "bg-slate-500/20",   text: "text-slate-400",   border: "border-slate-500/30",   short: "OTH" },
+// ─── Type config ──────────────────────────────────────────────────────────────
+const TYPE_CFG: Record<string, { pill: string; icon: React.ReactNode; short: string }> = {
+  material:    { pill: "bg-blue-500/15 text-blue-300 border-blue-500/25",     icon: <Package size={9}/>,  short: "MAT" },
+  labor:       { pill: "bg-amber-500/15 text-amber-300 border-amber-500/25",  icon: <Users size={9}/>,    short: "LAB" },
+  labour:      { pill: "bg-amber-500/15 text-amber-300 border-amber-500/25",  icon: <Users size={9}/>,    short: "LAB" },
+  equipment:   { pill: "bg-purple-500/15 text-purple-300 border-purple-500/25",icon: <Wrench size={9}/>,  short: "EQP" },
+  subcontract: { pill: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25",icon:<Layers size={9}/>,short: "SUB" },
+  other:       { pill: "bg-slate-500/15 text-slate-400 border-slate-500/25",  icon: <Boxes size={9}/>,    short: "OTH" },
 };
-
 function TypeChip({ type }: { type: string }) {
-  const key = type.toLowerCase();
-  const m = TYPE_META[key] ?? TYPE_META.other;
+  const cfg = TYPE_CFG[type.toLowerCase()] ?? TYPE_CFG.other;
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${m.bg} ${m.text} ${m.border}`}>
-      {m.short}
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${cfg.pill}`}>
+      {cfg.icon}{cfg.short}
     </span>
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Find Item Modal ──────────────────────────────────────────────────────────
+function FindItemModal({
+  rateItems, onSelect, onClose
+}: {
+  rateItems: RateItem[];
+  onSelect: (item: RateItem) => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rateItems.filter(r => {
+      const matchType = !typeFilter || (r.item_type || "").toLowerCase() === typeFilter.toLowerCase();
+      const matchSearch = !q ||
+        (r.item_name || "").toLowerCase().includes(q) ||
+        (r.category || "").toLowerCase().includes(q) ||
+        (r.description || "").toLowerCase().includes(q) ||
+        (r.variant || "").toLowerCase().includes(q);
+      return matchType && matchSearch;
+    }).slice(0, 80);
+  }, [rateItems, search, typeFilter]);
+
+  const types = useMemo(() => {
+    const set = new Set(rateItems.map(r => r.item_type || "").filter(Boolean));
+    return Array.from(set).sort();
+  }, [rateItems]);
+
+  return (
+    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-[#0d1117] rounded-2xl border border-white/[0.08] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
+              <BookOpen size={14} className="text-blue-400"/>
+            </div>
+            <div>
+              <div className="text-sm font-bold text-slate-100">Find Item from Rate Library</div>
+              <div className="text-[11px] text-slate-500">{rateItems.length} items available · rate auto-fills</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">
+            <X size={15}/>
+          </button>
+        </div>
+
+        {/* Search + type filter */}
+        <div className="px-5 pt-4 pb-3 space-y-3 border-b border-white/[0.06]">
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+            <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name, category, or description…"
+              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-9 pr-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            <button onClick={() => setTypeFilter("")}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition ${!typeFilter ? "bg-blue-600 text-white border-blue-500" : "bg-white/[0.04] text-slate-500 border-white/[0.07] hover:text-slate-300"}`}>
+              All ({rateItems.length})
+            </button>
+            {types.map(t => {
+              const cfg = TYPE_CFG[t.toLowerCase()] ?? TYPE_CFG.other;
+              const count = rateItems.filter(r => (r.item_type||"").toLowerCase() === t.toLowerCase()).length;
+              return (
+                <button key={t} onClick={() => setTypeFilter(typeFilter === t ? "" : t)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition ${typeFilter === t ? cfg.pill : "bg-white/[0.04] text-slate-500 border-white/[0.07] hover:text-slate-300"}`}>
+                  {t} ({count})
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Results */}
+        <div className="flex-1 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-2">
+              <Package size={20} className="text-slate-700"/>
+              <p className="text-slate-500 text-sm">No items match your search</p>
+              <p className="text-slate-700 text-xs">Try a different keyword or clear filters</p>
+            </div>
+          ) : filtered.map((item, idx) => {
+            const cfg = TYPE_CFG[(item.item_type||"").toLowerCase()] ?? TYPE_CFG.other;
+            const hasRate = item.current_rate != null && item.current_rate > 0;
+            return (
+              <button key={item.id} onClick={() => onSelect(item)}
+                className={`w-full text-left px-5 py-3 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.04] transition group flex items-center gap-4 ${idx === 0 ? "" : ""}`}>
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase flex-shrink-0 ${cfg.pill}`}>
+                  {cfg.icon}{cfg.short}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-slate-200 group-hover:text-white transition truncate">{item.item_name}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {item.category && <span className="text-[10px] text-slate-600">{item.category}</span>}
+                    {item.variant && <span className="text-[10px] text-slate-700">· {item.variant}</span>}
+                    {item.description && <span className="text-[10px] text-slate-700 truncate">· {item.description}</span>}
+                  </div>
+                </div>
+                <div className="flex-shrink-0 text-right">
+                  {hasRate ? (
+                    <div>
+                      <div className="text-sm font-bold text-green-400">{fmtMoney(item.current_rate!)}</div>
+                      <div className="text-[10px] text-slate-600">per {item.unit || "unit"}</div>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-700 italic">No rate</div>
+                  )}
+                </div>
+                <ChevronRight size={13} className="text-slate-700 group-hover:text-slate-400 transition flex-shrink-0"/>
+              </button>
+            );
+          })}
+          {filtered.length === 80 && (
+            <div className="px-5 py-3 text-[11px] text-slate-600 text-center">Showing first 80 results — refine your search to see more</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function BOQPage() {
   const nav = useNavigate();
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
@@ -159,581 +246,344 @@ export default function BOQPage() {
   const [persistLoading, setPersistLoading] = useState(false);
   const [persistError, setPersistError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-
   const [activeProjectId, setActiveProjectId] = useState<string | null>(() =>
     routeProjectId || currentProjectId || resolveProjectId()
   );
-
-  const [autoSaveOn] = useState(true);
   const [lastAutoSaveAt, setLastAutoSaveAt] = useState<string | null>(null);
 
-  const { categories: masterCategories, units: masterUnits, loading: masterLoading, error: masterError } = useMasterLists();
-
+  const { categories: masterCategories, units: masterUnits } = useMasterLists();
   const canEdit = status === "draft";
 
   const usableCategories = useMemo(() => {
-    const arr = Array.isArray(masterCategories) ? masterCategories : [];
-    return arr.filter((c: any) => !!getCategoryId(c));
+    return (Array.isArray(masterCategories) ? masterCategories : []).filter((c: any) => !!getCategoryId(c));
   }, [masterCategories]);
-
   const usableUnits = useMemo(() => {
-    const arr = Array.isArray(masterUnits) ? masterUnits : [];
-    return arr.filter((u: any) => !!getUnitId(u));
+    return (Array.isArray(masterUnits) ? masterUnits : []).filter((u: any) => !!getUnitId(u));
   }, [masterUnits]);
 
   const [rateItems, setRateItems] = useState<RateItem[]>([]);
   const [rateLoading, setRateLoading] = useState(false);
-  const [rateError, setRateError] = useState<string | null>(null);
-  const [rateSource, setRateSource] = useState<string | null>(null);
-
   const [companyId, setCompanyId] = useState<string>("");
-  const [showSmartSelector, setShowSmartSelector] = useState(false);
-  const [smartSelectorContext, setSmartSelectorContext] = useState<{ sectionId: string; rowId: string } | null>(null);
 
+  // Find item modal
+  const [findModal, setFindModal] = useState<{ open: boolean; sectionId: string; rowId: string } | null>(null);
+
+  // Smart selector
+  const [showSmartSelector, setShowSmartSelector] = useState(false);
+  const [smartSelectorCtx, setSmartSelectorCtx] = useState<{ sectionId: string; rowId: string } | null>(null);
+
+  // Assembly modal
   const [assemblies, setAssemblies] = useState<AssemblyRow[]>([]);
   const [assemblyComponents, setAssemblyComponents] = useState<AssemblyComponentRow[]>([]);
-  const [assemblyLoading, setAssemblyLoading] = useState(false);
-  const [assemblyError, setAssemblyError] = useState<string | null>(null);
-
-  type AssemblyModalState = { open: boolean; sectionId: string | null; search: string; selectedAssemblyId: string; qty: string };
-  const [asmModal, setAsmModal] = useState<AssemblyModalState>({ open: false, sectionId: null, search: "", selectedAssemblyId: "", qty: "1" });
+  type AsmModal = { open: boolean; sectionId: string | null; search: string; selectedId: string; qty: string };
+  const [asmModal, setAsmModal] = useState<AsmModal>({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" });
 
   const [importTakeoffModal, setImportTakeoffModal] = useState<{ open: boolean; sectionId: string | null; itemId: string | null }>({ open: false, sectionId: null, itemId: null });
-
   const [aiSuggestionsModal, setAiSuggestionsModal] = useState<{ open: boolean; suggestions: BOQSuggestion[] }>({ open: false, suggestions: [] });
   const [ignoredSuggestions, setIgnoredSuggestions] = useState<Set<string>>(new Set());
   const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
 
-  // ─── Data Loading ──────────────────────────────────────────────────────────
-
+  // ─── Load rate items ───────────────────────────────────────────────────────
   useEffect(() => {
     let alive = true;
-    async function loadRateItems() {
+    async function load() {
       setRateLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user.id).single();
-        if (profile?.company_id && alive) setCompanyId(profile.company_id);
+        const { data: p } = await supabase.from("user_profiles").select("company_id").eq("id", user.id).single();
+        if (p?.company_id && alive) setCompanyId(p.company_id);
       }
       try {
-        const { data, error } = await supabase
-          .from("v_cost_items_current")
+        const { data, error } = await supabase.from("v_cost_items_current")
           .select("id,item_name,description,variant,unit,category,item_type,current_rate,current_currency")
           .order("item_name", { ascending: true }).limit(5000);
         if (error) throw error;
-        if (!alive) return;
-        setRateItems((data ?? []) as RateItem[]);
-        setRateSource("v_cost_items_current");
-        return;
-      } catch (e: any) {
-        console.warn("v_cost_items_current failed:", e?.message);
-      } finally { if (alive) setRateLoading(false); }
-      try {
-        setRateLoading(true);
-        const { data, error } = await supabase.from("cost_items")
-          .select("id,item_name,description,variant,unit,category,item_type")
-          .order("item_name", { ascending: true }).limit(5000);
-        if (error) throw error;
-        if (!alive) return;
-        setRateItems((data ?? []) as RateItem[]);
-        setRateSource("cost_items");
-      } catch (e: any) {
-        if (!alive) return;
-        setRateError(e?.message ?? "Failed to load rate items");
-        setRateItems([]);
+        if (alive) setRateItems((data ?? []) as RateItem[]);
+      } catch {
+        try {
+          const { data } = await supabase.from("cost_items")
+            .select("id,item_name,description,variant,unit,category,item_type")
+            .order("item_name", { ascending: true }).limit(5000);
+          if (alive) setRateItems((data ?? []) as RateItem[]);
+        } catch (e: any) { console.error("Failed to load rate items:", e); }
       } finally { if (alive) setRateLoading(false); }
     }
-    loadRateItems();
+    load();
     return () => { alive = false; };
   }, []);
 
+  // ─── Load assemblies ───────────────────────────────────────────────────────
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const { data: aData } = await supabase.from("assemblies")
+          .select("id,name,description,unit,category,is_active").order("name").limit(5000);
+        const active = (aData || []).filter((a: any) => a?.is_active !== false);
+        const { data: cData } = await supabase.from("assembly_components")
+          .select("id,assembly_id,cost_item_id,line_type,quantity_factor,waste_percent,sort_order,notes")
+          .order("sort_order").limit(20000);
+        if (!alive) return;
+        setAssemblies(active.map((a: any) => ({ id: String(a.id), name: String(a.name ?? ""), description: a.description ? String(a.description) : null, unit: a.unit ? String(a.unit) : null, category: a.category ? String(a.category) : null, is_active: a.is_active ?? true })));
+        setAssemblyComponents((cData || []).map((c: any) => ({ id: String(c.id), assembly_id: String(c.assembly_id), cost_item_id: String(c.cost_item_id), line_type: String(c.line_type ?? "material"), quantity_factor: numOr(c.quantity_factor, 1), waste_percent: numOr(c.waste_percent, 0), sort_order: numOr(c.sort_order, 0), notes: c.notes ? String(c.notes) : null })));
+      } catch (e) { console.error("Assembly load error:", e); }
+    }
+    load();
+    return () => { alive = false; };
+  }, []);
+
+  // ─── Takeoff import ────────────────────────────────────────────────────────
   useEffect(() => {
     const groupsParam = searchParams.get("groups");
     if (!groupsParam) return;
     try {
-      const takeoffGroups = JSON.parse(groupsParam);
-      if (Array.isArray(takeoffGroups) && takeoffGroups.length > 0) {
-        const newSection: Section = {
+      const groups = JSON.parse(groupsParam);
+      if (Array.isArray(groups) && groups.length > 0) {
+        setSections(prev => [...prev, {
           id: safeId(), masterCategoryId: null, title: "Takeoff Import",
           scope: "Quantities imported from takeoff measurements",
-          items: takeoffGroups.map((group: any) => ({
-            id: safeId(), pick_type: "manual", pick_category: "", pick_item: "", pick_variant: "",
-            cost_item_id: null, item_name: group.groupName || "Imported Item",
-            description: `${group.metric} measurement`, unit_id: null,
-            qty: Number(group.value) || 0, rate: 0,
-          })),
-        };
-        setSections((prev) => [...prev, newSection]);
+          items: groups.map((g: any) => ({ id: safeId(), pick_type: "manual", pick_category: "", pick_item: "", pick_variant: "", cost_item_id: null, item_name: g.groupName || "Imported Item", description: `${g.metric} measurement`, unit_id: null, qty: Number(g.value) || 0, rate: 0, rate_source: "" }))
+        }]);
         setSearchParams({});
       }
-    } catch (e) { console.error("Failed to parse takeoff groups:", e); }
+    } catch (e) { console.error("Takeoff parse error:", e); }
   }, [searchParams, setSearchParams]);
 
-  useEffect(() => {
-    let alive = true;
-    async function loadAssemblies() {
-      setAssemblyLoading(true);
-      try {
-        const { data: aData, error: aErr } = await supabase.from("assemblies")
-          .select("id,name,description,unit,category,is_active")
-          .order("name", { ascending: true }).limit(5000);
-        if (aErr) throw aErr;
-        const active = (Array.isArray(aData) ? aData : []).filter((a: any) => a?.is_active !== false);
-        const list = active.map((a: any) => ({
-          id: String(a.id), name: String(a.name ?? ""),
-          description: a.description ? String(a.description) : null,
-          unit: a.unit ? String(a.unit) : null,
-          category: a.category ? String(a.category) : null,
-          is_active: a.is_active ?? true
-        })) as AssemblyRow[];
-        const { data: cData, error: cErr } = await supabase.from("assembly_components")
-          .select("id,assembly_id,cost_item_id,line_type,quantity_factor,waste_percent,sort_order,notes")
-          .order("assembly_id", { ascending: true }).order("sort_order", { ascending: true }).limit(20000);
-        if (cErr) throw cErr;
-        const comps = (Array.isArray(cData) ? cData : []).map((c: any) => ({
-          id: String(c.id), assembly_id: String(c.assembly_id), cost_item_id: String(c.cost_item_id),
-          line_type: String(c.line_type ?? "material"), quantity_factor: numOr(c.quantity_factor, 1),
-          waste_percent: numOr(c.waste_percent, 0),
-          sort_order: Number.isFinite(Number(c.sort_order)) ? Number(c.sort_order) : 0,
-          notes: c.notes ? String(c.notes) : null
-        })) as AssemblyComponentRow[];
-        if (!alive) return;
-        setAssemblies(list);
-        setAssemblyComponents(comps);
-      } catch (e: any) {
-        if (!alive) return;
-        setAssemblyError(e?.message ?? "Failed to load assemblies");
-      } finally { if (alive) setAssemblyLoading(false); }
-    }
-    loadAssemblies();
-    return () => { alive = false; };
-  }, []);
-
-  // ─── Persistence ───────────────────────────────────────────────────────────
-
-  async function loadLatestBoqForProject(projectId: string) {
-    setPersistLoading(true);
-    setPersistError(null);
+  // ─── BOQ Persistence ───────────────────────────────────────────────────────
+  async function loadLatestBoq(projectId: string) {
+    setPersistLoading(true); setPersistError(null);
     try {
-      const { data: headers, error: headerErr } = await supabase
-        .from("boq_headers").select("id,project_id,status,version,updated_at")
-        .eq("project_id", projectId)
-        .order("updated_at", { ascending: false })
-        .order("version", { ascending: false }).limit(1);
-      if (headerErr) throw headerErr;
-      const header = Array.isArray(headers) ? (headers[0] as BoqHeaderRow | undefined) : undefined;
+      const { data: headers, error: hErr } = await supabase.from("boq_headers")
+        .select("id,project_id,status,version,updated_at").eq("project_id", projectId)
+        .order("updated_at", { ascending: false }).order("version", { ascending: false }).limit(1);
+      if (hErr) throw hErr;
+      const header = (Array.isArray(headers) ? headers[0] : undefined) as BoqHeaderRow | undefined;
       if (!header) { setBoqId(null); setStatus("draft"); setSections([]); return; }
-      setBoqId(header.id);
-      setStatus(header.status as "draft" | "approved");
-      const { data: secRows, error: secErr } = await supabase
-        .from("boq_sections").select("id,boq_id,sort_order,master_category_id,title,scope")
-        .eq("boq_id", header.id).order("sort_order", { ascending: true });
-      if (secErr) throw secErr;
+      setBoqId(header.id); setStatus(header.status as "draft" | "approved");
+      const { data: secRows, error: sErr } = await supabase.from("boq_sections")
+        .select("id,boq_id,sort_order,master_category_id,title,scope").eq("boq_id", header.id).order("sort_order");
+      if (sErr) throw sErr;
       const secList = Array.isArray(secRows) ? secRows : [];
       const sectionIds = secList.map((s: any) => s.id).filter(Boolean);
       const itemsBySection = new Map<string, any[]>();
       if (sectionIds.length > 0) {
-        const { data: itemRows, error: itemErr } = await supabase
-          .from("boq_section_items")
+        const { data: itemRows, error: iErr } = await supabase.from("boq_section_items")
           .select("id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate")
-          .in("section_id", sectionIds).order("sort_order", { ascending: true });
-        if (itemErr) throw itemErr;
-        for (const r of (Array.isArray(itemRows) ? itemRows : [])) {
+          .in("section_id", sectionIds).order("sort_order");
+        if (iErr) throw iErr;
+        for (const r of (itemRows || [])) {
           const sid = String((r as any).section_id ?? "");
           if (!sid) continue;
           if (!itemsBySection.has(sid)) itemsBySection.set(sid, []);
           itemsBySection.get(sid)!.push(r);
         }
       }
-      const rebuilt: Section[] = secList.map((s: any) => {
-        const sid = String(s.id);
-        const items: BOQItemRow[] = (itemsBySection.get(sid) ?? []).map((r: any) => ({
+      setSections(secList.map((s: any) => ({
+        id: String(s.id), masterCategoryId: s.master_category_id ? String(s.master_category_id) : null,
+        title: String(s.title ?? "New Section"), scope: String(s.scope ?? ""), collapsed: false,
+        items: (itemsBySection.get(String(s.id)) ?? []).map((r: any) => ({
           id: String(r.id ?? safeId()), pick_type: String(r.pick_type ?? ""),
           pick_category: String(r.pick_category ?? ""), pick_item: String(r.pick_item ?? ""),
-          pick_variant: String(r.pick_variant ?? ""),
-          cost_item_id: r.cost_item_id ? String(r.cost_item_id) : null,
+          pick_variant: String(r.pick_variant ?? ""), cost_item_id: r.cost_item_id ? String(r.cost_item_id) : null,
           item_name: String(r.item_name ?? ""), description: String(r.description ?? ""),
           unit_id: r.unit_id ? String(r.unit_id) : null,
-          qty: numOr(r.qty, 0), rate: numOr(r.rate, 0)
-        }));
-        return {
-          id: sid, masterCategoryId: s.master_category_id ? String(s.master_category_id) : null,
-          title: String(s.title ?? "New Section"), scope: String(s.scope ?? ""),
-          items, collapsed: false
-        };
-      });
-      setSections(rebuilt);
-    } catch (e: any) {
-      setPersistError(e?.message ?? "Failed to load BOQ");
-    } finally { setPersistLoading(false); }
+          qty: numOr(r.qty, 0), rate: numOr(r.rate, 0), rate_source: ""
+        }))
+      })));
+    } catch (e: any) { setPersistError(e?.message ?? "Failed to load BOQ"); }
+    finally { setPersistLoading(false); }
   }
 
-  async function saveBoqToSupabase(nextStatus: "draft" | "approved") {
+  async function saveBoq(nextStatus: "draft" | "approved") {
     const projectId = activeProjectId ?? resolveProjectId();
-    if (!projectId) { alert("Please select or create a project first."); return; }
-    setPersistLoading(true);
-    setPersistError(null);
+    if (!projectId) { alert("Please select a project first."); return; }
+    setPersistLoading(true); setPersistError(null);
     try {
       let headerId = boqId;
       let versionNumber = 1;
-      let operationType: "INSERT" | "UPDATE" = "INSERT";
+      let opType: "INSERT" | "UPDATE" = "INSERT";
       if (!headerId) {
-        const { data: existingBoqs, error: checkErr } = await supabase
-          .from("boq_headers").select("id, version, status")
-          .eq("project_id", projectId).order("version", { ascending: false }).limit(1);
-        if (checkErr) throw checkErr;
-        const existingBoq = Array.isArray(existingBoqs) && existingBoqs.length > 0 ? existingBoqs[0] : null;
-        if (existingBoq) {
-          if (nextStatus === "draft" && existingBoq.status === "draft") {
-            headerId = String(existingBoq.id); versionNumber = numOr(existingBoq.version, 1); operationType = "UPDATE";
-          } else { versionNumber = numOr(existingBoq.version, 0) + 1; operationType = "INSERT"; }
+        const { data: existing } = await supabase.from("boq_headers").select("id,version,status").eq("project_id", projectId).order("version", { ascending: false }).limit(1);
+        const ex = Array.isArray(existing) && existing.length > 0 ? existing[0] : null;
+        if (ex) {
+          if (nextStatus === "draft" && ex.status === "draft") { headerId = String(ex.id); versionNumber = numOr(ex.version, 1); opType = "UPDATE"; }
+          else { versionNumber = numOr(ex.version, 0) + 1; opType = "INSERT"; }
         }
       } else {
-        operationType = "UPDATE";
-        const { data: existingBoq, error: fetchErr } = await supabase
-          .from("boq_headers").select("id, version, project_id").eq("id", headerId).single();
-        if (fetchErr) throw fetchErr;
-        versionNumber = numOr(existingBoq.version, 1);
-        if (String(existingBoq.project_id) !== projectId) throw new Error("BOQ belongs to a different project!");
+        opType = "UPDATE";
+        const { data: ex } = await supabase.from("boq_headers").select("id,version,project_id").eq("id", headerId).single();
+        versionNumber = numOr(ex?.version, 1);
+        if (String(ex?.project_id) !== projectId) throw new Error("BOQ belongs to a different project!");
       }
-      if (operationType === "INSERT") {
-        const { data: versionCheck } = await supabase
-          .from("boq_headers").select("id").eq("project_id", projectId).eq("version", versionNumber).maybeSingle();
-        if (versionCheck) throw new Error(`BOQ version ${versionNumber} already exists.`);
-        const { data: ins, error: insErr } = await supabase
-          .from("boq_headers").insert([{ project_id: projectId, status: nextStatus, version: versionNumber }])
-          .select("id, version").single();
+      if (opType === "INSERT") {
+        const { data: vCheck } = await supabase.from("boq_headers").select("id").eq("project_id", projectId).eq("version", versionNumber).maybeSingle();
+        if (vCheck) throw new Error(`BOQ version ${versionNumber} already exists.`);
+        const { data: ins, error: insErr } = await supabase.from("boq_headers").insert([{ project_id: projectId, status: nextStatus, version: versionNumber }]).select("id,version").single();
         if (insErr) throw insErr;
-        headerId = String((ins as any).id);
-        setBoqId(headerId);
+        headerId = String((ins as any).id); setBoqId(headerId);
       } else {
-        const { error: upErr } = await supabase
-          .from("boq_headers").update({ status: nextStatus, updated_at: new Date().toISOString() }).eq("id", headerId);
+        const { error: upErr } = await supabase.from("boq_headers").update({ status: nextStatus, updated_at: new Date().toISOString() }).eq("id", headerId);
         if (upErr) throw upErr;
       }
-      const { error: delSecErr } = await supabase.from("boq_sections").delete().eq("boq_id", headerId);
-      if (delSecErr) throw delSecErr;
-      const sectionIdMapping = new Map<string, string>();
+      const { error: delErr } = await supabase.from("boq_sections").delete().eq("boq_id", headerId);
+      if (delErr) throw delErr;
+      const sectionIdMap = new Map<string, string>();
       if (sections.length > 0) {
-        const sectionPayload = sections.map((s, idx) => ({
-          boq_id: headerId, sort_order: idx,
-          master_category_id: s.masterCategoryId, title: s.title ?? "New Section", scope: s.scope ?? ""
-        }));
-        const { data: insertedSections, error: secInsErr } = await supabase
-          .from("boq_sections").insert(sectionPayload).select("id, sort_order");
-        if (secInsErr) throw secInsErr;
-        if (!insertedSections || insertedSections.length === 0) throw new Error("Failed to get inserted section IDs");
-        insertedSections.forEach((dbSection) => {
-          const clientSection = sections[dbSection.sort_order];
-          if (clientSection) sectionIdMapping.set(clientSection.id, dbSection.id);
-        });
+        const { data: insertedSecs, error: secErr } = await supabase.from("boq_sections")
+          .insert(sections.map((s, i) => ({ boq_id: headerId, sort_order: i, master_category_id: s.masterCategoryId, title: s.title ?? "New Section", scope: s.scope ?? "" })))
+          .select("id,sort_order");
+        if (secErr) throw secErr;
+        (insertedSecs || []).forEach((db: any) => { const cs = sections[db.sort_order]; if (cs) sectionIdMap.set(cs.id, db.id); });
       }
       const itemPayload: any[] = [];
       for (const s of sections) {
-        const dbSectionId = sectionIdMapping.get(s.id);
-        if (!dbSectionId) throw new Error(`Section ID mapping failed: ${s.title}`);
-        for (let i = 0; i < s.items.length; i++) {
-          const it = s.items[i];
-          itemPayload.push({
-            section_id: dbSectionId, sort_order: i,
-            pick_type: it.pick_type ?? "", pick_category: it.pick_category ?? "",
-            pick_item: it.pick_item ?? "", pick_variant: it.pick_variant ?? "",
-            cost_item_id: it.cost_item_id, item_name: it.item_name ?? "",
-            description: it.description ?? "", unit_id: it.unit_id,
-            qty: numOr(it.qty, 0), rate: numOr(it.rate, 0)
-          });
-        }
+        const dbSid = sectionIdMap.get(s.id);
+        if (!dbSid) throw new Error(`Section mapping failed: ${s.title}`);
+        s.items.forEach((it, i) => itemPayload.push({ section_id: dbSid, sort_order: i, pick_type: it.pick_type ?? "", pick_category: it.pick_category ?? "", pick_item: it.pick_item ?? "", pick_variant: it.pick_variant ?? "", cost_item_id: it.cost_item_id, item_name: it.item_name ?? "", description: it.description ?? "", unit_id: it.unit_id, qty: numOr(it.qty, 0), rate: numOr(it.rate, 0) }));
       }
       if (itemPayload.length > 0) {
-        const { error: itemInsErr } = await supabase.from("boq_section_items").insert(itemPayload).select("id, item_name");
-        if (itemInsErr) throw itemInsErr;
+        const { error: iErr } = await supabase.from("boq_section_items").insert(itemPayload).select("id,item_name");
+        if (iErr) throw iErr;
       }
       setStatus(nextStatus);
-      await supabase.rpc("sync_boq_budget_to_cost_events", { p_boq_id: headerId })
-        .then(({ error }) => { if (error) console.error("BOQ budget sync failed:", error); });
-      await loadLatestBoqForProject(projectId);
-      if (autoSaveOn) setLastAutoSaveAt(new Date().toLocaleTimeString());
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-    } catch (e: any) {
-      setPersistError(e?.message ?? "Failed to save BOQ");
-      alert(e?.message ?? "Failed to save BOQ");
-    } finally { setPersistLoading(false); }
+      await supabase.rpc("sync_boq_budget_to_cost_events", { p_boq_id: headerId }).then(({ error }) => { if (error) console.error("BOQ sync error:", error); });
+      await loadLatestBoq(projectId);
+      setLastAutoSaveAt(new Date().toLocaleTimeString());
+      setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (e: any) { setPersistError(e?.message ?? "Failed to save"); alert(e?.message ?? "Failed to save BOQ"); }
+    finally { setPersistLoading(false); }
   }
 
   useEffect(() => {
     const pid = activeProjectId;
     if (!pid) { setBoqId(null); setStatus("draft"); setSections([]); return; }
-    void loadLatestBoqForProject(pid);
+    void loadLatestBoq(pid);
   }, [activeProjectId]);
 
   useEffect(() => {
-    const nextProjectId = routeProjectId || currentProjectId || resolveProjectId() || null;
-    setActiveProjectId(nextProjectId);
+    const next = routeProjectId || currentProjectId || resolveProjectId() || null;
+    setActiveProjectId(next);
   }, [routeProjectId, currentProjectId]);
 
-  useEffect(() => {
-    if (routeProjectId && routeProjectId !== activeProjectId) setActiveProjectId(routeProjectId);
-  }, [routeProjectId, activeProjectId]);
-
   // ─── Mutations ─────────────────────────────────────────────────────────────
+  function addSection() { setSections(prev => [...prev, { id: safeId(), masterCategoryId: null, title: "New Section", scope: "", items: [], collapsed: false }]); }
+  function deleteSection(id: string) { setSections(prev => prev.filter(s => s.id !== id)); }
+  function updateSection(id: string, patch: Partial<Section>) { setSections(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s)); }
+  function toggleCollapse(id: string) { setSections(prev => prev.map(s => s.id === id ? { ...s, collapsed: !s.collapsed } : s)); }
 
-  function addSection() {
-    setSections((prev) => [...prev, { id: safeId(), masterCategoryId: null, title: "New Section", scope: "", items: [], collapsed: false }]);
-  }
-
-  function deleteSection(id: string) { setSections((prev) => prev.filter((s) => s.id !== id)); }
-
-  function updateSection(id: string, patch: Partial<Section>) {
-    setSections((prev) => prev.map((s) => s.id === id ? { ...s, ...patch } : s));
-  }
-
-  function toggleCollapse(id: string) {
-    setSections((prev) => prev.map((s) => s.id === id ? { ...s, collapsed: !s.collapsed } : s));
-  }
-
-  function onPickMasterCategory(sectionId: string, categoryId: string) {
-    const cat = usableCategories.find((c: any) => getCategoryId(c) === categoryId);
-    updateSection(sectionId, {
-      masterCategoryId: categoryId,
-      title: cat ? getCategoryLabel(cat) : "New Section",
-      scope: cat ? getCategoryScope(cat) : ""
-    });
+  function onPickCategory(sectionId: string, catId: string) {
+    const cat = usableCategories.find((c: any) => getCategoryId(c) === catId);
+    updateSection(sectionId, { masterCategoryId: catId, title: cat ? getCategoryLabel(cat) : "New Section", scope: cat ? getCategoryScope(cat) : "" });
   }
 
   function addItem(sectionId: string) {
-    setSections((prev) => prev.map((s) => {
-      if (s.id !== sectionId) return s;
-      const row: BOQItemRow = {
-        id: safeId(), pick_type: "", pick_category: "", pick_item: "", pick_variant: "",
-        cost_item_id: null, item_name: "", description: "", unit_id: null, qty: 0, rate: 0
-      };
-      return { ...s, items: [...s.items, row] };
-    }));
+    setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: [...s.items, { id: safeId(), pick_type: "", pick_category: "", pick_item: "", pick_variant: "", cost_item_id: null, item_name: "", description: "", unit_id: null, qty: 0, rate: 0, rate_source: "" }] }));
+  }
+  function deleteItem(sectionId: string, itemId: string) { setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: s.items.filter(it => it.id !== itemId) })); }
+  function updateItem(sectionId: string, itemId: string, patch: Partial<BOQItemRow>) { setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: s.items.map(it => it.id === itemId ? { ...it, ...patch } : it) })); }
+
+  // ─── Find Item Handler ─────────────────────────────────────────────────────
+  function handleFindItem(selected: RateItem) {
+    if (!findModal) return;
+    const { sectionId, rowId } = findModal;
+    const unitObj = usableUnits.find((u: any) => getUnitLabel(u).toLowerCase() === (selected.unit || "").toLowerCase());
+    updateItem(sectionId, rowId, {
+      pick_type: selected.item_type || "",
+      pick_category: selected.category || "",
+      pick_item: selected.item_name || "",
+      pick_variant: selected.variant || "",
+      cost_item_id: selected.id,
+      item_name: selected.item_name || "",
+      description: selected.description || "",
+      unit_id: unitObj ? getUnitId(unitObj) : null,
+      rate: numOr(selected.current_rate ?? 0, 0),
+      rate_source: "library",
+    });
+    setFindModal(null);
   }
 
-  function deleteItem(sectionId: string, itemId: string) {
-    setSections((prev) => prev.map((s) => s.id !== sectionId ? s : { ...s, items: s.items.filter((it) => it.id !== itemId) }));
+  // ─── Smart Selector Handler ────────────────────────────────────────────────
+  function handleSmartSelection(sel: any) {
+    if (!smartSelectorCtx) return;
+    const { sectionId, rowId } = smartSelectorCtx;
+    const updates: Partial<BOQItemRow> = {
+      pick_type: sel.type || "", pick_category: sel.category || "",
+      pick_item: sel.item || "", pick_variant: sel.variant || "",
+      item_name: sel.itemName || "", cost_item_id: sel.costItemId || null, rate_source: "library",
+    };
+    if (sel.unit) { const u = usableUnits.find((u: any) => getUnitLabel(u) === sel.unit); if (u) updates.unit_id = getUnitId(u); }
+    if (sel.currentRate != null) updates.rate = sel.currentRate;
+    updateItem(sectionId, rowId, updates);
+    setShowSmartSelector(false); setSmartSelectorCtx(null);
   }
 
-  function updateItem(sectionId: string, itemId: string, patch: Partial<BOQItemRow>) {
-    setSections((prev) => prev.map((s) => s.id !== sectionId ? s : {
-      ...s, items: s.items.map((it) => it.id === itemId ? { ...it, ...patch } : it)
-    }));
-  }
-
-  function handleImportTakeoff(_g: string, _m: string, value: number) {
-    if (!importTakeoffModal.sectionId || !importTakeoffModal.itemId) return;
-    updateItem(importTakeoffModal.sectionId, importTakeoffModal.itemId, { qty: value });
-  }
-
-  // ─── Assembly ──────────────────────────────────────────────────────────────
-
-  function mapLineType(lineType: string) {
-    const t = (lineType ?? "").toLowerCase();
-    if (t === "material") return "Material";
-    if (t === "labour" || t === "labor") return "Labor";
-    if (t === "equipment") return "Equipment";
-    if (t === "subcontract") return "Subcontract";
+  // ─── Assembly Handler ──────────────────────────────────────────────────────
+  function mapLineType(t: string) {
+    const x = (t || "").toLowerCase();
+    if (x === "material") return "Material";
+    if (x === "labour" || x === "labor") return "Labor";
+    if (x === "equipment") return "Equipment";
+    if (x === "subcontract") return "Subcontract";
     return "Other";
   }
-
   function matchUnitId(unitName: string | null) {
     if (!unitName) return null;
     const u = usableUnits.find((x: any) => getUnitLabel(x).toLowerCase() === unitName.toLowerCase());
     return u ? getUnitId(u) : null;
   }
-
   function addAssembly(sectionId: string, assemblyId: string, qtyStr: string) {
     const qtyBase = numOr(qtyStr, 0);
     if (!sectionId || !assemblyId || qtyBase <= 0) { alert("Pick an assembly and enter qty > 0."); return; }
-    const comps = assemblyComponents.filter((c) => c.assembly_id === assemblyId).sort((a, b) => a.sort_order - b.sort_order);
+    const comps = assemblyComponents.filter(c => c.assembly_id === assemblyId).sort((a, b) => a.sort_order - b.sort_order);
     if (comps.length === 0) { alert("This assembly has no components yet."); return; }
-    const newRows: BOQItemRow[] = comps.map((c) => {
-      const r = rateItems.find((x) => x.id === c.cost_item_id) ?? null;
+    const newRows: BOQItemRow[] = comps.map(c => {
+      const r = rateItems.find(x => x.id === c.cost_item_id) ?? null;
       const finalQty = qtyBase * numOr(c.quantity_factor, 1) * (1 + numOr(c.waste_percent, 0) / 100);
-      return {
-        id: safeId(), pick_type: mapLineType(c.line_type),
-        pick_category: (r?.category ?? "").trim(), pick_item: (r?.item_name ?? "").trim(),
-        pick_variant: (r?.variant ?? "").trim(), cost_item_id: c.cost_item_id,
-        item_name: r?.item_name ?? "",
-        description: (r?.description ?? "").trim() ? (r?.description ?? "") : c.notes ?? "",
-        unit_id: matchUnitId(r?.unit ?? null), qty: Number.isFinite(finalQty) ? finalQty : 0,
-        rate: numOr(r?.current_rate ?? 0, 0)
-      };
+      return { id: safeId(), pick_type: mapLineType(c.line_type), pick_category: (r?.category ?? "").trim(), pick_item: (r?.item_name ?? "").trim(), pick_variant: (r?.variant ?? "").trim(), cost_item_id: c.cost_item_id, item_name: r?.item_name ?? "", description: (r?.description ?? "").trim() || c.notes || "", unit_id: matchUnitId(r?.unit ?? null), qty: Number.isFinite(finalQty) ? finalQty : 0, rate: numOr(r?.current_rate ?? 0, 0), rate_source: "assembly" };
     });
-    setSections((prev) => prev.map((s) => s.id !== sectionId ? s : { ...s, items: [...s.items, ...newRows] }));
-    setAsmModal({ open: false, sectionId: null, search: "", selectedAssemblyId: "", qty: "1" });
-  }
-
-  // ─── Picker ────────────────────────────────────────────────────────────────
-
-  type PickerStep = "type" | "category" | "item" | "variant";
-  type PickerState = {
-    open: boolean; sectionId: string | null; rowId: string | null;
-    step: PickerStep; type: string; category: string; item: string; variant: string; search: string;
-  };
-
-  const [picker, setPicker] = useState<PickerState>({
-    open: false, sectionId: null, rowId: null, step: "type",
-    type: "", category: "", item: "", variant: "", search: ""
-  });
-
-  const typeOptions = useMemo(() => {
-    const discovered = uniqSorted(rateItems.map((r) => (r.item_type ?? "").trim()).filter(Boolean));
-    return uniqSorted([...["Material", "Labor", "Equipment", "Subcontract", "Other"], ...discovered]);
-  }, [rateItems]);
-
-  function itemsForType(type: string) {
-    return !type ? rateItems : rateItems.filter((r) => (r.item_type ?? "").toLowerCase() === type.toLowerCase());
-  }
-  function catOpts(type: string) { return uniqSorted(itemsForType(type).map((r) => (r.category ?? "").trim()).filter(Boolean)); }
-  function itemOpts(type: string, cat: string) {
-    return uniqSorted(itemsForType(type).filter((r) => !cat || (r.category ?? "").toLowerCase() === cat.toLowerCase()).map((r) => (r.item_name ?? "").trim()).filter(Boolean));
-  }
-  function varOpts(type: string, cat: string, itemName: string) {
-    return uniqSorted(itemsForType(type).filter((r) => {
-      if (cat && (r.category ?? "").toLowerCase() !== cat.toLowerCase()) return false;
-      if (itemName && (r.item_name ?? "").toLowerCase() !== itemName.toLowerCase()) return false;
-      return true;
-    }).map((r) => (r.variant ?? "").trim()).filter(Boolean));
-  }
-  function findRate(type: string, cat: string, itemName: string, variant: string | null) {
-    const list = itemsForType(type).filter((r) => {
-      if (cat && (r.category ?? "").toLowerCase() !== cat.toLowerCase()) return false;
-      if (itemName && (r.item_name ?? "").toLowerCase() !== itemName.toLowerCase()) return false;
-      return true;
-    });
-    if (variant) { const m = list.find((r) => (r.variant ?? "").toLowerCase() === variant.toLowerCase()); if (m) return m; }
-    return list[0] ?? null;
-  }
-
-  function openPicker(sectionId: string, rowId: string) {
-    const row = sections.find((s) => s.id === sectionId)?.items.find((x) => x.id === rowId);
-    setPicker({ open: true, sectionId, rowId, step: "type", type: row?.pick_type ?? "", category: row?.pick_category ?? "", item: row?.pick_item ?? "", variant: row?.pick_variant ?? "", search: "" });
-  }
-
-  const pickerOpts = useMemo(() => {
-    if (!picker.open) return { list: [] as string[], hasNone: false };
-    const q = picker.search.trim().toLowerCase();
-    const f = (arr: string[]) => !q ? arr : arr.filter((x) => x.toLowerCase().includes(q));
-    if (picker.step === "type") return { list: f(typeOptions), hasNone: false };
-    if (picker.step === "category") return { list: f(catOpts(picker.type)), hasNone: false };
-    if (picker.step === "item") return { list: f(itemOpts(picker.type, picker.category)), hasNone: false };
-    const vl = varOpts(picker.type, picker.category, picker.item);
-    return { list: f(vl), hasNone: vl.length === 0 };
-  }, [picker.open, picker.step, picker.search, picker.type, picker.category, picker.item, typeOptions, rateItems]);
-
-  async function fetchLatestRate(costItemId: string): Promise<number | null> {
-    try {
-      const { data, error } = await supabase.from("cost_item_rates")
-        .select("rate,effective_date").eq("cost_item_id", costItemId)
-        .order("effective_date", { ascending: false }).limit(1);
-      if (error) throw error;
-      const rate = (Array.isArray(data) ? data[0] : null)?.rate;
-      return typeof rate === "number" && Number.isFinite(rate) ? rate : null;
-    } catch { return null; }
-  }
-
-  async function applyRate(sectionId: string, rowId: string, r: RateItem | null) {
-    if (!r) return;
-    const pickedUnitId = matchUnitId(r.unit ?? null);
-    setSections((prev) => prev.map((s) => s.id !== sectionId ? s : {
-      ...s, items: s.items.map((it) => {
-        if (it.id !== rowId) return it;
-        const next: BOQItemRow = { ...it, cost_item_id: r.id, item_name: it.item_name.trim() ? it.item_name : r.item_name };
-        if (!next.description.trim()) next.description = r.description ?? "";
-        if (!next.unit_id && pickedUnitId) next.unit_id = pickedUnitId;
-        const viewRate = numOr(r.current_rate ?? 0, 0);
-        if (numOr(next.rate) === 0 && viewRate) next.rate = viewRate;
-        return next;
-      })
-    }));
-    const hasViewRate = typeof r.current_rate === "number" && Number.isFinite(r.current_rate) && r.current_rate > 0;
-    if (hasViewRate) return;
-    const latest = await fetchLatestRate(r.id);
-    if (!latest) return;
-    setSections((prev) => prev.map((s) => s.id !== sectionId ? s : {
-      ...s, items: s.items.map((it) => it.id !== rowId ? it : (numOr(it.rate) !== 0 ? it : { ...it, rate: latest }))
-    }));
-  }
-
-  async function finalizePick(variantValue: string) {
-    if (!picker.open || !picker.sectionId || !picker.rowId) return;
-    const [ft, fc, fi, fv] = [picker.type.trim(), picker.category.trim(), picker.item.trim(), variantValue.trim()];
-    setSections((prev) => prev.map((s) => s.id !== picker.sectionId ? s : {
-      ...s, items: s.items.map((it) => it.id !== picker.rowId ? it : {
-        ...it, pick_type: ft, pick_category: fc, pick_item: fi, pick_variant: fv,
-        item_name: it.item_name.trim() ? it.item_name : fi
-      })
-    }));
-    const r = findRate(ft, fc, fi, fv || null);
-    await applyRate(picker.sectionId, picker.rowId, r);
-    setPicker({ open: false, sectionId: null, rowId: null, step: "type", type: "", category: "", item: "", variant: "", search: "" });
-  }
-
-  function openSmartSelector(sectionId: string, rowId: string) { setSmartSelectorContext({ sectionId, rowId }); setShowSmartSelector(true); }
-
-  function handleSmartSelection(selection: any) {
-    if (!smartSelectorContext) return;
-    const { sectionId, rowId } = smartSelectorContext;
-    const updates: Partial<BOQItemRow> = {
-      pick_type: selection.type || "", pick_category: selection.category || "",
-      pick_item: selection.item || "", pick_variant: selection.variant || "",
-      item_name: selection.itemName || "", cost_item_id: selection.costItemId || null
-    };
-    if (selection.unit) { const u = usableUnits.find((u: any) => getUnitLabel(u) === selection.unit); if (u) updates.unit_id = getUnitId(u); }
-    if (selection.currentRate !== null) updates.rate = selection.currentRate;
-    updateItem(sectionId, rowId, updates);
-    setShowSmartSelector(false);
-    setSmartSelectorContext(null);
+    setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: [...s.items, ...newRows] }));
+    setAsmModal({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" });
   }
 
   // ─── Generate Actions ──────────────────────────────────────────────────────
-
   async function generateEstimate() {
     if (status !== "approved") { setPersistError("Approve the BOQ first."); return; }
-    if (!routeProjectId || !boqId) { setPersistError("Please save the BOQ first."); return; }
+    if (!routeProjectId || !boqId) { setPersistError("Save the BOQ first."); return; }
     setPersistLoading(true);
     try {
       const result = await generateEstimateFromBOQ(routeProjectId, boqId);
       if (result.success) setTimeout(() => nav(`/projects/${routeProjectId}/estimates`), 500);
       else setPersistError(`Failed: ${result.error}`);
-    } catch (e: any) { setPersistError(`Error: ${e?.message}`); } finally { setPersistLoading(false); }
+    } catch (e: any) { setPersistError(e?.message); } finally { setPersistLoading(false); }
   }
 
   async function handleGenerateProcurement() {
     if (!routeProjectId) { setPersistError("Select a project first"); return; }
     if (!boqId) { setPersistError("Save the BOQ before generating procurement"); return; }
-    if (!window.confirm("This will save the BOQ and regenerate the procurement list. Continue?")) return;
+    if (!window.confirm("Save BOQ and regenerate procurement list. Continue?")) return;
     setPersistLoading(true); setPersistError(null);
     try {
-      await saveBoqToSupabase("draft");
-      const hasTemp = sections.some(s => s.id.startsWith('id_') || s.items.some(i => i.id.startsWith('id_')));
-      if (hasTemp) { setPersistError("Save incomplete. Try saving again."); return; }
-      await loadLatestBoqForProject(routeProjectId);
+      await saveBoq("draft");
+      await loadLatestBoq(routeProjectId);
       const result = await generateProcurementFromBOQ(routeProjectId);
       if (result.success) {
         const procId = (result as any).procurementId as string | undefined;
-        if (procId) {
-          await supabase.rpc("sync_procurement_committed_to_cost_events", { p_procurement_id: procId });
-          setTimeout(() => nav(`/projects/${routeProjectId}/procurement?view=document&doc=${procId}`), 500);
-        } else setTimeout(() => nav(`/projects/${routeProjectId}/procurement`), 500);
+        if (procId) { await supabase.rpc("sync_procurement_committed_to_cost_events", { p_procurement_id: procId }); setTimeout(() => nav(`/projects/${routeProjectId}/procurement?view=document&doc=${procId}`), 500); }
+        else setTimeout(() => nav(`/projects/${routeProjectId}/procurement`), 500);
       } else setPersistError(`Failed: ${result.error}`);
-    } catch (e: any) { setPersistError(`Error: ${e?.message}`); } finally { setPersistLoading(false); }
+    } catch (e: any) { setPersistError(e?.message); } finally { setPersistLoading(false); }
   }
 
   async function handleAddSuggestion(suggestion: BOQSuggestion) {
     if (!boqId) { setPersistError("Save the BOQ before adding suggestions"); return; }
     setAddingSuggestion(suggestion.id);
     const result = await addSuggestionToBOQ(suggestion, boqId);
-    if (result.success) { setIgnoredSuggestions((prev) => new Set(prev).add(suggestion.id)); await loadLatestBoqForProject(routeProjectId || ""); }
+    if (result.success) { setIgnoredSuggestions(prev => new Set(prev).add(suggestion.id)); await loadLatestBoq(routeProjectId || ""); }
     else setPersistError(result.error || "Failed to add suggestion");
     setAddingSuggestion(null);
   }
 
   // ─── Totals ────────────────────────────────────────────────────────────────
-
   const totals = useMemo(() => {
     let subtotal = 0;
     for (const s of sections) for (const it of s.items) subtotal += numOr(it.qty) * numOr(it.rate);
@@ -741,12 +591,13 @@ export default function BOQPage() {
   }, [sections]);
 
   const totalItems = sections.reduce((sum, s) => sum + s.items.length, 0);
+  const missingRates = sections.reduce((sum, s) => sum + s.items.filter(it => it.qty > 0 && it.rate === 0).length, 0);
+  const missingUnits = sections.reduce((sum, s) => sum + s.items.filter(it => !it.unit_id).length, 0);
 
-  // ─── Guard ─────────────────────────────────────────────────────────────────
-
+  // ─── No project guard ──────────────────────────────────────────────────────
   if (!currentProjectId && !routeProjectId) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] flex items-center justify-center">
+      <div className="min-h-screen bg-[#080b10] flex items-center justify-center">
         <div className="text-center space-y-4">
           <FolderOpen className="w-12 h-12 text-slate-600 mx-auto" />
           <h2 className="text-xl font-semibold text-slate-200">No Project Selected</h2>
@@ -757,93 +608,104 @@ export default function BOQPage() {
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
-
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] text-slate-100">
+    <div className="min-h-screen bg-[#080b10] text-slate-100">
 
-      {/* ── Top Bar ── */}
-      <div className="sticky top-0 z-30 bg-[#0a0d12]/95 backdrop-blur-md border-b border-white/[0.06]">
-        <div className="px-5 py-2.5 flex items-center justify-between gap-4">
-
+      {/* ── Sticky Header ── */}
+      <div className="sticky top-0 z-30 bg-[#0d1117]/95 backdrop-blur-md border-b border-white/[0.06]">
+        <div className="px-5 py-3 flex items-center justify-between gap-4">
           {/* Left */}
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0">
-              <FileSpreadsheet className="w-3.5 h-3.5 text-white" />
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-cyan-900/30">
+              <FileSpreadsheet className="w-4 h-4 text-white" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-sm font-semibold text-slate-100 leading-tight">BOQ Builder</h1>
-                <StatusBadge status={status} />
+                <h1 className="text-sm font-bold text-slate-100">BOQ Builder</h1>
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${status === "approved" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/25" : "bg-amber-500/15 text-amber-300 border-amber-500/25"}`}>{status}</span>
               </div>
-              {selectedProject && <div className="text-[11px] text-slate-500 leading-tight truncate">{selectedProject.name}</div>}
+              {selectedProject && <div className="text-[11px] text-slate-500 truncate">{selectedProject.name}</div>}
             </div>
           </div>
 
-          {/* Right */}
-          <div className="flex items-center gap-1.5">
-            {persistLoading && <Pill icon={<RefreshCw className="w-3 h-3 animate-spin" />} label="Saving…" color="text-slate-400" />}
-            {saveSuccess && !persistLoading && <Pill icon={<CheckCircle className="w-3 h-3" />} label="Saved" color="text-emerald-400" />}
-            {persistError && (
-              <div className="flex items-center gap-1 text-[11px] text-red-400 max-w-[180px]">
-                <AlertCircle className="w-3 h-3 flex-shrink-0" />
-                <span className="truncate">{persistError}</span>
-              </div>
-            )}
+          {/* Right — action buttons */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {persistLoading && <span className="text-[11px] text-slate-500 flex items-center gap-1"><RefreshCw size={11} className="animate-spin"/>Saving…</span>}
+            {saveSuccess && !persistLoading && <span className="text-[11px] text-emerald-400 flex items-center gap-1"><CheckCircle size={11}/>Saved</span>}
+            {persistError && <span className="text-[11px] text-red-400 flex items-center gap-1 max-w-[160px] truncate"><AlertCircle size={11}/>{persistError}</span>}
 
-            <TopBtn onClick={() => activeProjectId && loadLatestBoqForProject(activeProjectId)} disabled={!activeProjectId || persistLoading} icon={<RefreshCw className="w-3.5 h-3.5" />} label="Load" />
-            <TopBtn onClick={() => void saveBoqToSupabase("draft")} disabled={!activeProjectId || persistLoading} icon={<Save className="w-3.5 h-3.5" />} label="Save Draft" variant="neutral" />
-            <TopBtn onClick={() => void saveBoqToSupabase("approved")} disabled={!activeProjectId || persistLoading} icon={<CheckCircle className="w-3.5 h-3.5" />} label="Approve" variant="green" />
-            <div className="w-px h-4 bg-white/10 mx-0.5" />
-            <TopBtn onClick={generateEstimate} disabled={status !== "approved" || persistLoading} icon={<FileSpreadsheet className="w-3.5 h-3.5" />} label="Estimate" variant="blue" title={status !== "approved" ? "Approve BOQ first" : ""} />
-            <TopBtn onClick={handleGenerateProcurement} disabled={!routeProjectId || sections.length === 0 || persistLoading} icon={<ShoppingCart className="w-3.5 h-3.5" />} label="Procurement" variant="purple" />
+            <button onClick={() => activeProjectId && loadLatestBoq(activeProjectId)} disabled={!activeProjectId || persistLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.08] text-[11px] text-slate-300 font-medium disabled:opacity-40 transition">
+              <RefreshCw size={12}/> Load
+            </button>
+            <button onClick={() => void saveBoq("draft")} disabled={!activeProjectId || persistLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 border border-white/[0.08] text-[11px] text-white font-semibold disabled:opacity-40 transition">
+              <Save size={12}/> Save Draft
+            </button>
+            <button onClick={() => void saveBoq("approved")} disabled={!activeProjectId || persistLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
+              <CheckCircle size={12}/> Approve
+            </button>
+            <div className="w-px h-4 bg-white/[0.08] mx-0.5"/>
+            <button onClick={generateEstimate} disabled={status !== "approved" || persistLoading}
+              title={status !== "approved" ? "Approve BOQ first" : ""}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
+              <FileSpreadsheet size={12}/> Estimate
+            </button>
+            <button onClick={handleGenerateProcurement} disabled={!routeProjectId || sections.length === 0 || persistLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
+              <ShoppingCart size={12}/> Procurement
+            </button>
           </div>
         </div>
 
         {/* Stats strip */}
-        <div className="px-5 pb-2 flex items-center gap-5">
-          <StatPill icon={<Layers className="w-3 h-3" />} label="Sections" value={sections.length} />
-          <StatPill icon={<Package className="w-3 h-3" />} label="Items" value={totalItems} />
-          <StatPill icon={<DollarSign className="w-3 h-3" />} label="Subtotal" value={`$${fmt(totals.subtotal)}`} highlight />
-          {lastAutoSaveAt && <span className="text-[10px] text-slate-700 ml-auto">Saved {lastAutoSaveAt}</span>}
+        <div className="px-5 pb-2.5 flex items-center gap-5 flex-wrap">
+          {[
+            { icon: <Layers size={11}/>, label: "Sections", value: sections.length, color: "text-slate-400" },
+            { icon: <Package size={11}/>, label: "Items", value: totalItems, color: "text-slate-400" },
+            { icon: <DollarSign size={11}/>, label: "Total", value: fmtMoney(totals.subtotal), color: "text-cyan-300" },
+          ].map(({ icon, label, value, color }) => (
+            <div key={label} className="flex items-center gap-1.5">
+              <span className="text-slate-700">{icon}</span>
+              <span className="text-[10px] text-slate-600">{label}</span>
+              <span className={`text-[10px] font-bold ${color}`}>{value}</span>
+            </div>
+          ))}
+          {missingRates > 0 && (
+            <div className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-0.5">
+              <AlertTriangle size={10}/> {missingRates} item{missingRates > 1 ? "s" : ""} missing rate
+            </div>
+          )}
+          {lastAutoSaveAt && <span className="text-[10px] text-slate-700 ml-auto">Last saved {lastAutoSaveAt}</span>}
         </div>
       </div>
 
       {/* ── Body ── */}
       <div className="px-5 py-4 space-y-3 max-w-[1440px] mx-auto">
 
-        {/* Errors / loading */}
-        {(masterError || rateError || assemblyError) && (
-          <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-            {masterError || rateError || assemblyError}
-          </div>
-        )}
-
         {/* Toolbar */}
         <div className="flex items-center justify-between">
-          <button
-            onClick={addSection}
-            disabled={!canEdit || !activeProjectId}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/25 text-cyan-300 text-xs font-semibold disabled:opacity-40 transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" /> Add Section
+          <button onClick={addSection} disabled={!canEdit || !activeProjectId}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/25 text-cyan-300 text-xs font-semibold disabled:opacity-40 transition">
+            <Plus size={13}/> Add Section
           </button>
-          <button onClick={() => nav("/settings/master-lists")} className="text-[11px] text-slate-600 hover:text-slate-400 transition-colors">
+          <button onClick={() => nav("/settings/master-lists")} className="text-[11px] text-slate-600 hover:text-slate-400 transition">
             Edit Categories →
           </button>
         </div>
 
-        {/* Empty */}
+        {/* Empty state */}
         {sections.length === 0 && !persistLoading && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mb-4">
-              <FileSpreadsheet className="w-7 h-7 text-slate-600" />
+            <div className="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/[0.07] flex items-center justify-center mb-4">
+              <FileSpreadsheet size={24} className="text-slate-600"/>
             </div>
-            <h3 className="text-sm font-medium text-slate-300 mb-1.5">No sections yet</h3>
-            <p className="text-xs text-slate-600 mb-5 max-w-xs">Start by adding a section. Each section groups related line items.</p>
+            <h3 className="text-sm font-semibold text-slate-300 mb-1.5">No sections yet</h3>
+            <p className="text-xs text-slate-600 mb-5 max-w-xs">Start by adding a section. Each section groups related items — e.g. "Foundations", "Blockwork", "Roofing".</p>
             <button onClick={addSection} disabled={!canEdit || !activeProjectId}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/25 text-cyan-300 text-xs font-semibold disabled:opacity-40 transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Add First Section
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/25 text-cyan-300 text-xs font-semibold disabled:opacity-40 transition">
+              <Plus size={13}/> Add First Section
             </button>
           </div>
         )}
@@ -851,62 +713,56 @@ export default function BOQPage() {
         {/* Sections */}
         {sections.map((section, sIdx) => {
           const sectionTotal = section.items.reduce((sum, it) => sum + numOr(it.qty) * numOr(it.rate), 0);
+          const sectionWarnings = section.items.filter(it => it.qty > 0 && it.rate === 0).length;
           return (
-            <div key={section.id} className="rounded-xl border border-white/[0.08] bg-[#0e1117] overflow-hidden">
-
+            <div key={section.id} className="rounded-xl border border-white/[0.07] bg-[#0d1117] overflow-hidden">
               {/* Section header */}
-              <div className="flex items-center gap-2 px-3.5 py-2 bg-white/[0.03] border-b border-white/[0.06]">
-                <button onClick={() => toggleCollapse(section.id)} className="text-slate-600 hover:text-slate-300 transition-colors flex-shrink-0 p-0.5">
-                  {section.collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.06]">
+                <button onClick={() => toggleCollapse(section.id)} className="text-slate-600 hover:text-slate-300 transition flex-shrink-0">
+                  {section.collapsed ? <ChevronRight size={14}/> : <ChevronDown size={14}/>}
                 </button>
-                <span className="text-[10px] font-bold text-slate-700 w-4 text-center flex-shrink-0">{sIdx + 1}</span>
+                <span className="text-[10px] font-bold text-slate-700 w-5 text-center flex-shrink-0">{sIdx + 1}</span>
 
-                <select
-                  value={section.masterCategoryId ?? ""}
-                  disabled={!canEdit}
-                  onChange={(e) => onPickMasterCategory(section.id, e.target.value)}
-                  className="bg-white/[0.05] border border-white/10 rounded-md px-2 py-1 text-[11px] text-slate-300 focus:outline-none focus:border-cyan-500/50 disabled:opacity-50 max-w-[160px] flex-shrink-0"
-                >
+                <select value={section.masterCategoryId ?? ""} disabled={!canEdit} onChange={e => onPickCategory(section.id, e.target.value)}
+                  className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1 text-[11px] text-slate-400 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50 max-w-[160px] flex-shrink-0">
                   <option value="">Category…</option>
-                  {usableCategories.map((c: any) => (
-                    <option key={getCategoryId(c)} value={getCategoryId(c)}>{getCategoryLabel(c)}</option>
-                  ))}
+                  {usableCategories.map((c: any) => <option key={getCategoryId(c)} value={getCategoryId(c)}>{getCategoryLabel(c)}</option>)}
                 </select>
 
-                <input
-                  value={section.title}
-                  disabled={!canEdit}
-                  onChange={(e) => updateSection(section.id, { title: e.target.value })}
-                  className="flex-1 bg-transparent text-sm font-semibold text-slate-100 placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
-                  placeholder="Section title"
-                />
+                <input value={section.title} disabled={!canEdit} onChange={e => updateSection(section.id, { title: e.target.value })}
+                  className="flex-1 bg-transparent text-sm font-bold text-slate-100 placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
+                  placeholder="Section title…"/>
 
-                <div className="flex items-center gap-2.5 flex-shrink-0 ml-auto">
+                <div className="flex items-center gap-3 flex-shrink-0 ml-auto">
+                  {sectionWarnings > 0 && (
+                    <span className="flex items-center gap-1 text-[10px] text-amber-400"><AlertTriangle size={10}/>{sectionWarnings} missing rate</span>
+                  )}
                   <span className="text-[11px] text-slate-600">{section.items.length} item{section.items.length !== 1 ? "s" : ""}</span>
-                  <span className="text-xs font-bold text-slate-200">${fmt(sectionTotal)}</span>
-
+                  <span className="text-sm font-bold text-slate-200">{fmtMoney(sectionTotal)}</span>
                   {canEdit && (
                     <div className="flex items-center gap-1">
-                      <SectionBtn onClick={() => addItem(section.id)} icon={<Plus className="w-3 h-3" />} label="Item" />
-                      <SectionBtn onClick={() => setAsmModal({ open: true, sectionId: section.id, search: "", selectedAssemblyId: "", qty: "1" })} disabled={assemblyLoading} icon={<Boxes className="w-3 h-3" />} label="Assembly" />
-                      <button onClick={() => deleteSection(section.id)} className="p-1 rounded hover:bg-red-500/15 text-slate-700 hover:text-red-400 transition-colors">
-                        <Trash2 className="w-3 h-3" />
+                      <button onClick={() => addItem(section.id)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-[10px] text-cyan-400 font-semibold transition">
+                        <Plus size={10}/> Item
+                      </button>
+                      <button onClick={() => setAsmModal({ open: true, sectionId: section.id, search: "", selectedId: "", qty: "1" })}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.07] text-[10px] text-slate-400 transition">
+                        <Boxes size={10}/> Assembly
+                      </button>
+                      <button onClick={() => deleteSection(section.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-700 hover:text-red-400 transition">
+                        <Trash2 size={12}/>
                       </button>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Scope — inline, subtle background */}
+              {/* Scope */}
               {!section.collapsed && (
-                <div className="px-3.5 py-1.5 bg-white/[0.015] border-b border-white/[0.04]">
-                  <input
-                    value={section.scope}
-                    disabled={!canEdit}
-                    onChange={(e) => updateSection(section.id, { scope: e.target.value })}
-                    className="w-full bg-transparent text-[11px] text-slate-500 placeholder-slate-700 focus:outline-none focus:text-slate-400 disabled:opacity-50"
-                    placeholder="Section scope / remarks…"
-                  />
+                <div className="px-4 py-1.5 bg-white/[0.01] border-b border-white/[0.04]">
+                  <input value={section.scope} disabled={!canEdit} onChange={e => updateSection(section.id, { scope: e.target.value })}
+                    className="w-full bg-transparent text-[11px] text-slate-600 placeholder-slate-800 focus:outline-none focus:text-slate-400 disabled:opacity-50"
+                    placeholder="Section scope / description (e.g. All 6&quot; block walls including mortar and ties)…"/>
                 </div>
               )}
 
@@ -914,80 +770,87 @@ export default function BOQPage() {
               {!section.collapsed && (
                 <div>
                   {section.items.length === 0 ? (
-                    <div className="px-4 py-4 text-center text-[11px] text-slate-700">
-                      No items — click <span className="text-cyan-500/70">+ Item</span> or <span className="text-cyan-500/70">Assembly</span> above.
+                    <div className="px-4 py-6 text-center">
+                      <p className="text-xs text-slate-700 mb-3">No items yet in this section</p>
+                      <button onClick={() => addItem(section.id)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-xs text-cyan-400 font-semibold transition">
+                        <Plus size={11}/> Add Item
+                      </button>
                     </div>
                   ) : (
                     <>
-                      {/* Table header */}
-                      <div className="grid px-3.5 py-1.5 border-b border-white/[0.05] text-[9px] font-bold uppercase tracking-widest text-slate-700"
-                        style={{ gridTemplateColumns: "56px 1fr 180px 88px 76px 76px 84px 28px" }}>
+                      {/* Column headers */}
+                      <div className="grid px-4 py-2 border-b border-white/[0.04] text-[9px] font-bold uppercase tracking-widest text-slate-700"
+                        style={{ gridTemplateColumns: "44px 1fr 160px 80px 80px 90px 90px 32px" }}>
                         <span>Type</span>
                         <span>Item / Description</span>
-                        <span>Pick</span>
+                        <span>From Library</span>
                         <span>Unit</span>
                         <span className="text-right">Qty</span>
-                        <span className="text-right">Rate</span>
+                        <span className="text-right">Rate (JMD)</span>
                         <span className="text-right">Amount</span>
-                        <span />
+                        <span/>
                       </div>
 
-                      {/* Rows */}
-                      {section.items.map((item) => {
+                      {/* Item rows */}
+                      {section.items.map(item => {
                         const amount = numOr(item.qty) * numOr(item.rate);
-                        const pickLabel = [item.pick_type, item.pick_category, item.pick_item, item.pick_variant]
-                          .map(x => (x ?? "").trim()).filter(Boolean).join(" › ");
-
+                        const isMissingRate = item.qty > 0 && item.rate === 0;
+                        const linkedItem = item.pick_item || item.cost_item_id;
                         return (
-                          <div
-                            key={item.id}
-                            className="grid px-3.5 py-1.5 border-b border-white/[0.03] hover:bg-white/[0.015] transition-colors group items-center"
-                            style={{ gridTemplateColumns: "56px 1fr 180px 88px 76px 76px 84px 28px" }}
-                          >
-                            {/* Type */}
+                          <div key={item.id}
+                            className={`grid px-4 py-2 border-b border-white/[0.03] hover:bg-white/[0.02] transition group items-center ${isMissingRate ? "bg-amber-500/[0.02]" : ""}`}
+                            style={{ gridTemplateColumns: "44px 1fr 160px 80px 80px 90px 90px 32px" }}>
+
+                            {/* Type chip */}
                             <div>
-                              {item.pick_type ? <TypeChip type={item.pick_type} /> : <span className="text-[10px] text-slate-800">—</span>}
+                              {item.pick_type
+                                ? <TypeChip type={item.pick_type}/>
+                                : <span className="text-[10px] text-slate-800">—</span>}
                             </div>
 
-                            {/* Item + desc */}
-                            <div className="pr-2 space-y-0.5 min-w-0">
-                              <input
-                                value={item.item_name}
-                                disabled={!canEdit}
-                                onChange={(e) => updateItem(section.id, item.id, { item_name: e.target.value })}
-                                className="w-full bg-transparent text-xs font-medium text-slate-200 placeholder-slate-700 focus:outline-none disabled:opacity-60"
-                                placeholder="Item name…"
-                              />
-                              <input
-                                value={item.description}
-                                disabled={!canEdit}
-                                onChange={(e) => updateItem(section.id, item.id, { description: e.target.value })}
+                            {/* Item name + description */}
+                            <div className="pr-3 space-y-0.5 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <input value={item.item_name} disabled={!canEdit}
+                                  onChange={e => updateItem(section.id, item.id, { item_name: e.target.value, rate_source: "manual" })}
+                                  className="flex-1 bg-transparent text-xs font-semibold text-slate-200 placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
+                                  placeholder="Item name…"/>
+                                {isMissingRate && <AlertTriangle size={10} className="text-amber-500 flex-shrink-0" title="Missing rate — qty set but no rate"/>}
+                              </div>
+                              <input value={item.description} disabled={!canEdit}
+                                onChange={e => updateItem(section.id, item.id, { description: e.target.value })}
                                 className="w-full bg-transparent text-[10px] text-slate-600 placeholder-slate-800 focus:outline-none disabled:opacity-60"
-                                placeholder="Description…"
-                              />
+                                placeholder="Description…"/>
+                              {item.rate_source === "library" && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/15 font-medium">Library</span>
+                              )}
+                              {item.rate_source === "assembly" && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/15 font-medium">Assembly</span>
+                              )}
+                              {item.rate_source === "manual" && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-500 border border-slate-500/15 font-medium">Manual</span>
+                              )}
                             </div>
 
-                            {/* Pick */}
-                            <div className="pr-2 space-y-0.5">
-                              {pickLabel && (
-                                <div className="text-[9px] text-slate-600 truncate leading-tight" title={pickLabel}>{pickLabel}</div>
+                            {/* Library picker */}
+                            <div className="pr-2 space-y-1">
+                              {linkedItem && (
+                                <div className="text-[9px] text-slate-600 truncate" title={item.pick_item || ""}>
+                                  {item.pick_item || "Linked"}
+                                </div>
                               )}
                               <div className="flex gap-1">
-                                <button
-                                  onClick={() => openPicker(section.id, item.id)}
+                                <button onClick={() => setFindModal({ open: true, sectionId: section.id, rowId: item.id })}
                                   disabled={!canEdit || rateLoading}
-                                  className="flex-1 px-1.5 py-0.5 rounded bg-white/[0.05] hover:bg-white/10 border border-white/[0.08] text-[10px] text-slate-500 hover:text-slate-300 disabled:opacity-40 transition-colors truncate"
-                                >
-                                  Pick…
+                                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-[10px] text-blue-400 font-semibold disabled:opacity-40 transition">
+                                  <Search size={9}/> Find Item
                                 </button>
                                 {companyId && (
-                                  <button
-                                    onClick={() => openSmartSelector(section.id, item.id)}
-                                    disabled={!canEdit || rateLoading}
-                                    title="Smart Selector — guided item search"
-                                    className="px-1.5 py-0.5 rounded bg-gradient-to-r from-cyan-600/25 to-violet-600/25 hover:from-cyan-600/45 hover:to-violet-600/45 border border-cyan-500/25 hover:border-cyan-400/40 text-cyan-300 disabled:opacity-40 transition-all group/wand"
-                                  >
-                                    <Wand2 className="w-3 h-3 group-hover/wand:scale-110 transition-transform" />
+                                  <button onClick={() => { setSmartSelectorCtx({ sectionId: section.id, rowId: item.id }); setShowSmartSelector(true); }}
+                                    disabled={!canEdit || rateLoading} title="Smart guided selector"
+                                    className="p-1.5 rounded-lg bg-gradient-to-r from-cyan-600/20 to-violet-600/20 hover:from-cyan-600/40 hover:to-violet-600/40 border border-cyan-500/25 text-cyan-400 disabled:opacity-40 transition">
+                                    <Wand2 size={11}/>
                                   </button>
                                 )}
                               </div>
@@ -995,73 +858,54 @@ export default function BOQPage() {
 
                             {/* Unit */}
                             <div className="pr-1">
-                              <select
-                                value={item.unit_id ?? ""}
-                                disabled={!canEdit}
-                                onChange={(e) => updateItem(section.id, item.id, { unit_id: e.target.value || null })}
-                                className="w-full bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:border-cyan-500/50 disabled:opacity-50"
-                              >
+                              <select value={item.unit_id ?? ""} disabled={!canEdit}
+                                onChange={e => updateItem(section.id, item.id, { unit_id: e.target.value || null })}
+                                className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg px-1.5 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50">
                                 <option value="">—</option>
-                                {usableUnits.map((u: any) => (
-                                  <option key={getUnitId(u)} value={getUnitId(u)}>{getUnitLabel(u)}</option>
-                                ))}
+                                {usableUnits.map((u: any) => <option key={getUnitId(u)} value={getUnitId(u)}>{getUnitLabel(u)}</option>)}
                               </select>
                             </div>
 
                             {/* Qty */}
-                            <div className="flex items-center gap-0.5">
-                              <input
-                                type="number"
-                                value={Number.isFinite(item.qty) ? item.qty : 0}
-                                disabled={!canEdit}
-                                onChange={(e) => updateItem(section.id, item.id, { qty: numOr(e.target.value, 0) })}
-                                className="w-full bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 text-[10px] text-right text-slate-200 focus:outline-none focus:border-cyan-500/50 disabled:opacity-50"
-                              />
+                            <div className="flex items-center gap-0.5 pr-1">
+                              <input type="number" value={Number.isFinite(item.qty) ? item.qty : 0} disabled={!canEdit}
+                                onChange={e => updateItem(section.id, item.id, { qty: numOr(e.target.value, 0) })}
+                                className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg px-1.5 py-1 text-[10px] text-right text-slate-200 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50"/>
                               {canEdit && routeProjectId && (
-                                <button
-                                  onClick={() => setImportTakeoffModal({ open: true, sectionId: section.id, itemId: item.id })}
-                                  className="p-0.5 rounded hover:bg-emerald-500/15 text-slate-700 hover:text-emerald-400 transition-colors flex-shrink-0"
-                                  title="Import from Takeoff"
-                                >
-                                  <Download className="w-2.5 h-2.5" />
+                                <button onClick={() => setImportTakeoffModal({ open: true, sectionId: section.id, itemId: item.id })}
+                                  className="p-0.5 rounded hover:bg-emerald-500/15 text-slate-700 hover:text-emerald-400 transition flex-shrink-0" title="Import from Takeoff">
+                                  <Download size={10}/>
                                 </button>
                               )}
                             </div>
 
                             {/* Rate */}
-                            <div>
-                              <input
-                                type="number"
-                                value={Number.isFinite(item.rate) ? item.rate : 0}
-                                disabled={!canEdit}
-                                onChange={(e) => updateItem(section.id, item.id, { rate: numOr(e.target.value, 0) })}
-                                className="w-full bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 text-[10px] text-right text-slate-200 focus:outline-none focus:border-cyan-500/50 disabled:opacity-50"
-                              />
+                            <div className="pr-1">
+                              <input type="number" value={Number.isFinite(item.rate) ? item.rate : 0} disabled={!canEdit}
+                                onChange={e => updateItem(section.id, item.id, { rate: numOr(e.target.value, 0), rate_source: "manual" })}
+                                className={`w-full bg-white/[0.04] border rounded-lg px-1.5 py-1 text-[10px] text-right font-semibold focus:outline-none disabled:opacity-50 transition ${isMissingRate ? "border-amber-500/40 text-amber-500" : "border-white/[0.07] text-green-400 focus:border-cyan-500/40"}`}/>
                             </div>
 
                             {/* Amount */}
-                            <div className="text-right text-xs font-semibold text-slate-200 pr-1">
-                              ${fmt(amount)}
+                            <div className="text-right text-xs font-bold text-slate-200 pr-1">
+                              {fmtMoney(amount)}
                             </div>
 
                             {/* Delete */}
                             <div className="flex justify-center">
-                              <button
-                                onClick={() => deleteItem(section.id, item.id)}
-                                disabled={!canEdit}
-                                className="p-0.5 rounded hover:bg-red-500/15 text-transparent group-hover:text-slate-700 hover:!text-red-400 transition-colors disabled:hidden"
-                              >
-                                <X className="w-3 h-3" />
+                              <button onClick={() => deleteItem(section.id, item.id)} disabled={!canEdit}
+                                className="p-1 rounded-lg text-transparent group-hover:text-slate-700 hover:!text-red-400 hover:bg-red-500/10 transition disabled:hidden">
+                                <X size={12}/>
                               </button>
                             </div>
                           </div>
                         );
                       })}
 
-                      {/* Section subtotal */}
-                      <div className="flex items-center justify-end gap-3 px-3.5 py-2 bg-white/[0.01]">
-                        <span className="text-[10px] text-slate-600 uppercase tracking-wider">Section Total</span>
-                        <span className="text-xs font-bold text-slate-300">${fmt(sectionTotal)}</span>
+                      {/* Section total */}
+                      <div className="flex items-center justify-end gap-3 px-4 py-2.5 bg-white/[0.01] border-t border-white/[0.04]">
+                        <span className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold">Section Total</span>
+                        <span className="text-sm font-bold text-slate-300">{fmtMoney(sectionTotal)}</span>
                       </div>
                     </>
                   )}
@@ -1073,140 +917,90 @@ export default function BOQPage() {
 
         {/* Grand total */}
         {sections.length > 0 && (
-          <div className="flex items-center justify-end gap-4 px-5 py-3.5 rounded-xl border border-cyan-500/20 bg-cyan-500/[0.04]">
-            <span className="text-xs text-slate-400 font-medium uppercase tracking-wider">Grand Total</span>
-            <span className="text-xl font-bold text-cyan-300">${fmt(totals.subtotal)}</span>
+          <div className="flex items-center justify-end gap-4 px-5 py-4 rounded-xl border border-cyan-500/20 bg-cyan-500/[0.04]">
+            <div className="text-right">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold mb-0.5">Grand Total</div>
+              <div className="text-2xl font-bold text-cyan-300">{fmtMoney(totals.subtotal)}</div>
+            </div>
           </div>
         )}
       </div>
 
-      {/* ── Picker Modal ── */}
-      {picker.open && (
-        <ModalShell onClose={() => setPicker(p => ({ ...p, open: false }))} title="Rate Library" subtitle={buildBreadcrumb(picker)}>
-          <div className="flex gap-1 mb-4">
-            {(["type", "category", "item", "variant"] as PickerStep[]).map((s, i) => {
-              const done = (s === "type" && !!picker.type) || (s === "category" && !!picker.category) || (s === "item" && !!picker.item);
-              const active = picker.step === s;
-              const accessible = i === 0 || (i === 1 && !!picker.type) || (i === 2 && !!picker.category) || (i === 3 && !!picker.item);
-              return (
-                <button key={s} onClick={() => accessible && setPicker(p => ({ ...p, step: s, search: "" }))} disabled={!accessible}
-                  className={`flex-1 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${active ? "bg-cyan-500/20 border-cyan-500/40 text-cyan-300" : done ? "bg-white/[0.06] border-white/10 text-slate-400" : "bg-transparent border-white/[0.05] text-slate-700 cursor-not-allowed"}`}>
-                  {i + 1}. {s.charAt(0).toUpperCase() + s.slice(1)}{done ? " ✓" : ""}
-                </button>
-              );
-            })}
-          </div>
-          <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
-            <input value={picker.search} onChange={(e) => setPicker(p => ({ ...p, search: e.target.value }))} autoFocus
-              className="w-full pl-8 pr-3 py-2 bg-white/[0.05] border border-white/[0.08] rounded-lg text-xs text-slate-200 placeholder-slate-700 focus:outline-none focus:border-cyan-500/50"
-              placeholder={`Search ${picker.step}…`} />
-          </div>
-          <div className="rounded-lg border border-white/[0.07] overflow-hidden max-h-64 overflow-y-auto">
-            {picker.step === "variant" && pickerOpts.hasNone ? (
-              <div className="p-4 space-y-2">
-                <p className="text-xs text-slate-400">No variants — continue without one.</p>
-                <button onClick={() => void finalizePick("")} className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition-colors">
-                  Use No Variant
-                </button>
-              </div>
-            ) : pickerOpts.list.length === 0 ? (
-              <div className="p-4 text-xs text-slate-600 text-center">No matches.</div>
-            ) : (
-              pickerOpts.list.map((opt) => (
-                <button key={opt}
-                  onClick={() => {
-                    if (picker.step === "type") setPicker(p => ({ ...p, type: opt, category: "", item: "", variant: "", step: "category", search: "" }));
-                    else if (picker.step === "category") setPicker(p => ({ ...p, category: opt, item: "", variant: "", step: "item", search: "" }));
-                    else if (picker.step === "item") setPicker(p => ({ ...p, item: opt, variant: "", step: "variant", search: "" }));
-                    else void finalizePick(opt);
-                  }}
-                  className="w-full text-left px-3.5 py-2.5 hover:bg-white/[0.05] border-b border-white/[0.04] last:border-0 flex items-center justify-between group transition-colors">
-                  <span className="text-xs text-slate-300">{opt}</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-700 group-hover:text-slate-400 transition-colors" />
-                </button>
-              ))
-            )}
-          </div>
-          <div className="flex items-center justify-between mt-3">
-            <button
-              onClick={() => {
-                const steps: PickerStep[] = ["type", "category", "item", "variant"];
-                const idx = steps.indexOf(picker.step);
-                if (idx > 0) setPicker(p => ({ ...p, step: steps[idx - 1], search: "" }));
-              }}
-              disabled={picker.step === "type"}
-              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 disabled:opacity-30 transition-colors">
-              <ArrowLeft className="w-3.5 h-3.5" /> Back
-            </button>
-            <span className="text-[10px] text-slate-700">{rateItems.length} items in library</span>
-          </div>
-        </ModalShell>
+      {/* ── Find Item Modal ── */}
+      {findModal && (
+        <FindItemModal rateItems={rateItems} onSelect={handleFindItem} onClose={() => setFindModal(null)}/>
       )}
 
       {/* ── Assembly Modal ── */}
       {asmModal.open && (
-        <ModalShell onClose={() => setAsmModal({ open: false, sectionId: null, search: "", selectedAssemblyId: "", qty: "1" })} title="Add From Assembly" subtitle="Explode an assembly into BOQ line items">
-          <div className="grid grid-cols-3 gap-2 mb-3">
-            <div className="col-span-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
-                <input value={asmModal.search} onChange={(e) => setAsmModal(p => ({ ...p, search: e.target.value }))} autoFocus
-                  className="w-full pl-8 pr-3 py-2 bg-white/[0.05] border border-white/[0.08] rounded-lg text-xs text-slate-200 placeholder-slate-700 focus:outline-none focus:border-cyan-500/50"
-                  placeholder="Search assemblies…" />
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0d1117] rounded-2xl border border-white/[0.08] shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+              <div>
+                <div className="text-sm font-bold text-slate-100">Add From Assembly</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Explodes an assembly into individual line items</div>
+              </div>
+              <button onClick={() => setAsmModal({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" })} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition"><X size={15}/></button>
+            </div>
+            <div className="p-5 space-y-3 flex-1 overflow-y-auto">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+                  <input autoFocus value={asmModal.search} onChange={e => setAsmModal(p => ({ ...p, search: e.target.value }))}
+                    placeholder="Search assemblies…"
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50"/>
+                </div>
+                <input value={asmModal.qty} onChange={e => setAsmModal(p => ({ ...p, qty: e.target.value }))} type="number"
+                  className="w-20 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 text-right"
+                  placeholder="Qty"/>
+              </div>
+              <div className="rounded-xl border border-white/[0.07] overflow-hidden max-h-72 overflow-y-auto">
+                {assemblies.filter(a => {
+                  const q = asmModal.search.trim().toLowerCase();
+                  return !q || (a.name||"").toLowerCase().includes(q) || (a.category||"").toLowerCase().includes(q);
+                }).map(a => {
+                  const selected = asmModal.selectedId === a.id;
+                  const cc = assemblyComponents.filter(c => c.assembly_id === a.id).length;
+                  return (
+                    <button key={a.id} onClick={() => setAsmModal(p => ({ ...p, selectedId: a.id }))}
+                      className={`w-full text-left px-4 py-3 border-b border-white/[0.04] last:border-0 flex items-center justify-between transition ${selected ? "bg-cyan-500/10" : "hover:bg-white/[0.03]"}`}>
+                      <div>
+                        <div className="text-sm font-semibold text-slate-200">{a.name}</div>
+                        <div className="text-[10px] text-slate-600 mt-0.5">{a.category && `${a.category} · `}{cc} component{cc !== 1 ? "s" : ""}{a.unit && ` · ${a.unit}`}</div>
+                      </div>
+                      {selected && <Check size={14} className="text-cyan-400 flex-shrink-0"/>}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            <input value={asmModal.qty} onChange={(e) => setAsmModal(p => ({ ...p, qty: e.target.value }))} type="number"
-              className="px-2 py-2 bg-white/[0.05] border border-white/[0.08] rounded-lg text-xs text-slate-200 focus:outline-none focus:border-cyan-500/50"
-              placeholder="Qty" />
+            <div className="flex items-center justify-between px-5 py-4 border-t border-white/[0.07]">
+              <span className="text-[11px] text-slate-600">{asmModal.selectedId ? "Ready to add" : "Select an assembly"}</span>
+              <button onClick={() => asmModal.sectionId && asmModal.selectedId && addAssembly(asmModal.sectionId, asmModal.selectedId, asmModal.qty)}
+                disabled={!asmModal.sectionId || !asmModal.selectedId}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold disabled:opacity-40 transition">
+                <Plus size={12}/> Add Lines
+              </button>
+            </div>
           </div>
-          {assemblyError && <p className="text-xs text-red-400 mb-2">{assemblyError}</p>}
-          <div className="rounded-lg border border-white/[0.07] overflow-hidden max-h-64 overflow-y-auto">
-            {assemblies.filter(a => {
-              const q = asmModal.search.trim().toLowerCase();
-              return !q || (a.name ?? "").toLowerCase().includes(q) || (a.category ?? "").toLowerCase().includes(q);
-            }).map(a => {
-              const selected = asmModal.selectedAssemblyId === a.id;
-              const cc = assemblyComponents.filter(c => c.assembly_id === a.id).length;
-              return (
-                <button key={a.id} onClick={() => setAsmModal(p => ({ ...p, selectedAssemblyId: a.id }))}
-                  className={`w-full text-left px-3.5 py-2.5 border-b border-white/[0.04] last:border-0 flex items-center justify-between transition-colors ${selected ? "bg-cyan-500/10" : "hover:bg-white/[0.03]"}`}>
-                  <div>
-                    <div className="text-xs font-medium text-slate-200">{a.name}</div>
-                    <div className="text-[10px] text-slate-600">{a.category && `${a.category} · `}{cc} component{cc !== 1 ? "s" : ""}{a.unit && ` · ${a.unit}`}</div>
-                  </div>
-                  {selected && <Check className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex items-center justify-between mt-3">
-            <span className="text-[10px] text-slate-600">{asmModal.selectedAssemblyId ? "Ready to add" : "Select an assembly first"}</span>
-            <button
-              onClick={() => asmModal.sectionId && asmModal.selectedAssemblyId && addAssembly(asmModal.sectionId, asmModal.selectedAssemblyId, asmModal.qty)}
-              disabled={!asmModal.sectionId || !asmModal.selectedAssemblyId}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold disabled:opacity-40 transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Add Lines
-            </button>
-          </div>
-        </ModalShell>
+        </div>
       )}
 
       {/* ── AI Suggestions Modal ── */}
       {aiSuggestionsModal.open && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#111318] rounded-2xl border border-white/10 shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="bg-[#0d1117] rounded-2xl border border-white/[0.08] shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-white/[0.07]">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-                  <Sparkles className="w-4 h-4 text-white" />
+                  <Sparkles size={16} className="text-white"/>
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-100">AI BOQ Suggestions</h3>
-                  <p className="text-xs text-slate-500">{aiSuggestionsModal.suggestions.filter(s => !ignoredSuggestions.has(s.id)).length} items recommended</p>
+                  <div className="text-sm font-bold text-slate-100">AI BOQ Suggestions</div>
+                  <div className="text-[11px] text-slate-500">{aiSuggestionsModal.suggestions.filter(s => !ignoredSuggestions.has(s.id)).length} items recommended</div>
                 </div>
               </div>
-              <button onClick={() => setAiSuggestionsModal({ open: false, suggestions: [] })} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-500 transition-colors"><X className="w-4 h-4" /></button>
+              <button onClick={() => setAiSuggestionsModal({ open: false, suggestions: [] })} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition"><X size={15}/></button>
             </div>
             <div className="flex-1 overflow-y-auto p-5">
               {aiSuggestionsModal.suggestions.filter(s => !ignoredSuggestions.has(s.id)).length === 0 ? (
@@ -1215,7 +1009,7 @@ export default function BOQPage() {
                 <div className="space-y-3">
                   {aiSuggestionsModal.suggestions.filter(s => !ignoredSuggestions.has(s.id)).map(s => (
                     <BOQSuggestionCard key={s.id} suggestion={s} onAdd={handleAddSuggestion}
-                      onIgnore={(id) => setIgnoredSuggestions(p => new Set(p).add(id))} isAdding={addingSuggestion === s.id} />
+                      onIgnore={id => setIgnoredSuggestions(p => new Set(p).add(id))} isAdding={addingSuggestion === s.id}/>
                   ))}
                 </div>
               )}
@@ -1227,23 +1021,21 @@ export default function BOQPage() {
       {/* ── Smart Selector ── */}
       {showSmartSelector && companyId && (
         <SmartItemSelector companyId={companyId} onSelect={handleSmartSelection}
-          onCancel={() => { setShowSmartSelector(false); setSmartSelectorContext(null); }}
-          title="Smart Item Selector" />
+          onCancel={() => { setShowSmartSelector(false); setSmartSelectorCtx(null); }} title="Smart Item Selector"/>
       )}
 
       {/* ── Import Takeoff ── */}
       <ImportTakeoffModal isOpen={importTakeoffModal.open}
         onClose={() => setImportTakeoffModal({ open: false, sectionId: null, itemId: null })}
-        projectId={routeProjectId || ""} onImport={handleImportTakeoff} />
+        projectId={routeProjectId || ""}
+        onImport={(_g: string, _m: string, value: number) => {
+          if (!importTakeoffModal.sectionId || !importTakeoffModal.itemId) return;
+          updateItem(importTakeoffModal.sectionId, importTakeoffModal.itemId, { qty: value });
+        }}/>
 
       {/* ── AI Assistant ── */}
       <AIAssistantPanel context="boq"
-        currentData={{
-          itemCount: totalItems,
-          missingUnits: sections.reduce((sum, s) => sum + s.items.filter(i => !i.unit_id).length, 0),
-          hasContingency: sections.some(s => s.items.some(i => i.item_name.toLowerCase().includes("contingency"))),
-          boqItems: sections.flatMap(s => s.items.map(item => ({ id: item.id, item_code: "", description: item.item_name, unit: "", quantity: item.qty || 0, rate: item.rate || 0, category: s.title || "" }))),
-        }}
+        currentData={{ itemCount: totalItems, missingUnits, hasContingency: sections.some(s => s.items.some(i => i.item_name.toLowerCase().includes("contingency"))), boqItems: sections.flatMap(s => s.items.map(it => ({ id: it.id, item_code: "", description: it.item_name, unit: "", quantity: it.qty || 0, rate: it.rate || 0, category: s.title || "" }))) }}
         projectId={routeProjectId || undefined}
         onAction={(action, data) => {
           if (action === "Import from Takeoff") setImportTakeoffModal({ open: true, sectionId: sections[0]?.id || null, itemId: null });
@@ -1251,82 +1043,7 @@ export default function BOQPage() {
           else if (action === "Export to Procurement") handleGenerateProcurement();
           else if (action === "show_ai_suggestions" && data.suggestions) setAiSuggestionsModal({ open: true, suggestions: data.suggestions });
           else if (data.route) nav(data.route);
-        }} />
+        }}/>
     </div>
   );
-}
-
-// ─── Micro-components ─────────────────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${
-      status === "approved" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/25" : "bg-amber-500/15 text-amber-300 border-amber-500/25"
-    }`}>{status}</span>
-  );
-}
-
-function StatPill({ icon, label, value, highlight }: { icon: React.ReactNode; label: string; value: string | number; highlight?: boolean }) {
-  return (
-    <div className="flex items-center gap-1">
-      <span className={highlight ? "text-cyan-500" : "text-slate-700"}>{icon}</span>
-      <span className="text-[10px] text-slate-600">{label}</span>
-      <span className={`text-[10px] font-bold ${highlight ? "text-cyan-300" : "text-slate-400"}`}>{value}</span>
-    </div>
-  );
-}
-
-function Pill({ icon, label, color }: { icon: React.ReactNode; label: string; color: string }) {
-  return (
-    <div className={`flex items-center gap-1 text-[11px] ${color}`}>
-      {icon}<span>{label}</span>
-    </div>
-  );
-}
-
-type TopBtnVariant = "default" | "neutral" | "green" | "blue" | "purple";
-function TopBtn({ onClick, disabled, icon, label, variant = "default", title }: { onClick: () => void; disabled?: boolean; icon: React.ReactNode; label: string; variant?: TopBtnVariant; title?: string }) {
-  const styles: Record<TopBtnVariant, string> = {
-    default: "bg-white/[0.05] hover:bg-white/10 text-slate-300 border-white/10",
-    neutral: "bg-slate-700/80 hover:bg-slate-600 text-white border-white/10",
-    green:   "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500/30",
-    blue:    "bg-blue-600 hover:bg-blue-500 text-white border-blue-500/30",
-    purple:  "bg-violet-600 hover:bg-violet-500 text-white border-violet-500/30",
-  };
-  return (
-    <button onClick={onClick} disabled={disabled} title={title}
-      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border disabled:opacity-40 transition-colors ${styles[variant]}`}>
-      {icon}{label}
-    </button>
-  );
-}
-
-function SectionBtn({ onClick, disabled, icon, label }: { onClick: () => void; disabled?: boolean; icon: React.ReactNode; label: string }) {
-  return (
-    <button onClick={onClick} disabled={disabled}
-      className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-[10px] text-slate-400 disabled:opacity-40 transition-colors">
-      {icon}{label}
-    </button>
-  );
-}
-
-function ModalShell({ children, onClose, title, subtitle }: { children: React.ReactNode; onClose: () => void; title: string; subtitle?: string }) {
-  return (
-    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-[#0f1218] rounded-2xl border border-white/[0.09] shadow-2xl max-w-xl w-full max-h-[88vh] flex flex-col">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.07]">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-100">{title}</h3>
-            {subtitle && <p className="text-[10px] text-slate-600 mt-0.5">{subtitle}</p>}
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors"><X className="w-4 h-4" /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function buildBreadcrumb(p: { type: string; category: string; item: string; variant: string }) {
-  return [p.type, p.category, p.item, p.variant].map(x => (x ?? "").trim()).filter(Boolean).join(" › ");
 }
