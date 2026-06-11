@@ -1,8 +1,9 @@
-// src/pages/EstimatesPage.tsx
+﻿// src/pages/EstimatesPage.tsx — v2 Rebuild
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
+import { magnusAI } from "../lib/magnusAI";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
   Table, Th, Tr, Td, Empty, Modal, Alert, Textarea,
@@ -11,7 +12,7 @@ import {
 import {
   Plus, Search, FileText, ArrowRight, RefreshCw,
   DollarSign, Edit2, Trash2, Copy, Send,
-  CheckCircle2, XCircle, Clock, LayoutGrid, List
+  CheckCircle2, XCircle, Clock, LayoutGrid, List, Bot, Sparkles, Loader, Printer
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -64,7 +65,7 @@ const ITEM_TYPE_COLOR: Record<string, string> = {
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD", maximumFractionDigits: 2
+    style: "currency", currency: "JMD", maximumFractionDigits: 2
   }).format(n);
 }
 
@@ -242,6 +243,8 @@ export default function EstimatesPage() {
   const [viewingEstimate, setViewingEstimate] = useState<EstimateHeader | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", project_id: currentProject?.id || "", notes: "", status: "draft" });
 
@@ -261,7 +264,7 @@ export default function EstimatesPage() {
       const { data, error: e } = await supabase
         .from("estimate_headers")
         .select("*, projects(name)")
-        .eq("company_id", companyId!)
+        
         .order("updated_at", { ascending: false });
       if (e) throw e;
       const hdrs = data || [];
@@ -290,7 +293,6 @@ export default function EstimatesPage() {
     setSaving(true); setError(null);
     try {
       const { error: e } = await supabase.from("estimate_headers").insert({
-        company_id: companyId,
         project_id: form.project_id || null,
         title: form.title.trim(),
         status: form.status,
@@ -339,6 +341,16 @@ export default function EstimatesPage() {
   async function updateStatus(id: string, status: EstimateHeader["status"]) {
     await supabase.from("estimate_headers").update({ status }).eq("id", id);
     setEstimates(prev => prev.map(e => e.id === id ? { ...e, status } : e));
+  }
+
+  async function getAISuggestion() {
+    if (!form.title.trim()) return;
+    setAiLoading(true); setAiSuggestion(null);
+    try {
+      const text = await magnusAI.chat(`You are a Jamaica construction expert. Write professional estimate notes for: "${form.title}". 2-3 sentences covering scope, terms, and conditions. Be concise and professional.`);
+      setAiSuggestion(String(text).trim());
+    } catch { setAiSuggestion(null); }
+    setAiLoading(false);
   }
 
   function getTotal(estimateId: string) {
@@ -520,10 +532,30 @@ export default function EstimatesPage() {
               <option value="approved">Approved</option>
             </Select>
           </Field>
-          <Field label="Notes (optional)">
-            <Textarea rows={2} placeholder="Any notes or terms..."
-              value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}/>
-          </Field>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Notes</span>
+              <button type="button" onClick={getAISuggestion} disabled={aiLoading || !form.title.trim()}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-[10px] text-purple-400 font-semibold disabled:opacity-40 transition">
+                {aiLoading ? <Loader size={9} className="animate-spin"/> : <Sparkles size={9}/>}
+                {aiLoading ? "Writing..." : "AI Write Notes"}
+              </button>
+            </div>
+            {aiSuggestion && (
+              <div className="mb-2 rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-2 flex gap-2">
+                <Bot size={11} className="text-purple-400 flex-shrink-0 mt-0.5"/>
+                <div className="flex-1">
+                  <p className="text-[11px] text-slate-300 leading-relaxed">{aiSuggestion}</p>
+                  <button type="button" onClick={() => setForm(f => ({ ...f, notes: aiSuggestion }))}
+                    className="mt-1 text-[10px] text-purple-400 hover:text-purple-300 font-semibold">Use this →</button>
+                </div>
+                <button type="button" onClick={() => setAiSuggestion(null)} className="text-slate-600 hover:text-slate-400"><X size={10}/></button>
+              </div>
+            )}
+            <textarea rows={2} placeholder="Any notes or terms..."
+              value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
+          </div>
           <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
             <Btn variant="ghost" onClick={() => { setShowNew(false); setError(null); }}>Cancel</Btn>
             <Btn variant="primary" onClick={createEstimate}
