@@ -1,4 +1,4 @@
-﻿// src/pages/BOQPage.tsx — v3 Rebuild: staff-friendly, search-first picker, clear UX
+// src/pages/BOQPage.tsx � v3 Rebuild: staff-friendly, search-first picker, clear UX
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -19,7 +19,7 @@ import { magnusAI } from "../lib/magnusAI";
 import { BOQSuggestionCard } from "../components/BOQSuggestionCard";
 import { addSuggestionToBOQ, type BOQSuggestion } from "../lib/boqSuggestions";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types --------------------------------------------------------------------
 type RateItem = {
   id: string;
   item_name: string;
@@ -68,7 +68,7 @@ type BoqHeaderRow = {
   id: string; project_id: string; status: string; version: number; updated_at: string;
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 function safeId() {
   try { const c: any = typeof crypto !== "undefined" ? crypto : null; if (c?.randomUUID) return c.randomUUID(); } catch {}
   return `id_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -94,7 +94,7 @@ function fmtNum(n: number) {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// ─── Type config ──────────────────────────────────────────────────────────────
+// --- Type config --------------------------------------------------------------
 const TYPE_CFG: Record<string, { pill: string; icon: React.ReactNode; short: string }> = {
   material:    { pill: "bg-blue-500/15 text-blue-300 border-blue-500/25",     icon: <Package size={9}/>,  short: "MAT" },
   labor:       { pill: "bg-amber-500/15 text-amber-300 border-amber-500/25",  icon: <Users size={9}/>,    short: "LAB" },
@@ -112,7 +112,7 @@ function TypeChip({ type }: { type: string }) {
   );
 }
 
-// ─── Find Item Modal ──────────────────────────────────────────────────────────
+// --- Find Item Modal ----------------------------------------------------------
 function FindItemModal({
   rateItems, onSelect, onClose
 }: {
@@ -152,7 +152,7 @@ function FindItemModal({
             </div>
             <div>
               <div className="text-sm font-bold text-slate-100">Find Item from Rate Library</div>
-              <div className="text-[11px] text-slate-500">{rateItems.length} items available · rate auto-fills</div>
+              <div className="text-[11px] text-slate-500">{rateItems.length} items available � rate auto-fills</div>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">
@@ -165,7 +165,7 @@ function FindItemModal({
           <div className="relative">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
             <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search by name, category, or description…"
+              placeholder="Search by name, category, or description�"
               className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-9 pr-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
           </div>
           <div className="flex gap-1.5 flex-wrap">
@@ -207,8 +207,8 @@ function FindItemModal({
                   <div className="text-sm font-semibold text-slate-200 group-hover:text-white transition truncate">{item.item_name}</div>
                   <div className="flex items-center gap-2 mt-0.5">
                     {item.category && <span className="text-[10px] text-slate-600">{item.category}</span>}
-                    {item.variant && <span className="text-[10px] text-slate-700">· {item.variant}</span>}
-                    {item.description && <span className="text-[10px] text-slate-700 truncate">· {item.description}</span>}
+                    {item.variant && <span className="text-[10px] text-slate-700">� {item.variant}</span>}
+                    {item.description && <span className="text-[10px] text-slate-700 truncate">� {item.description}</span>}
                   </div>
                 </div>
                 <div className="flex-shrink-0 text-right">
@@ -226,7 +226,7 @@ function FindItemModal({
             );
           })}
           {filtered.length === 80 && (
-            <div className="px-5 py-3 text-[11px] text-slate-600 text-center">Showing first 80 results — refine your search to see more</div>
+            <div className="px-5 py-3 text-[11px] text-slate-600 text-center">Showing first 80 results � refine your search to see more</div>
           )}
         </div>
       </div>
@@ -234,7 +234,7 @@ function FindItemModal({
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// --- Main Component -----------------------------------------------------------
 export default function BOQPage() {
   const nav = useNavigate();
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
@@ -288,7 +288,7 @@ export default function BOQPage() {
   const [ignoredSuggestions, setIgnoredSuggestions] = useState<Set<string>>(new Set());
   const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
 
-  // ─── Load rate items ───────────────────────────────────────────────────────
+  // --- Load rate items -------------------------------------------------------
   useEffect(() => {
     let alive = true;
     async function load() {
@@ -317,7 +317,7 @@ export default function BOQPage() {
     return () => { alive = false; };
   }, []);
 
-  // ─── Load assemblies ───────────────────────────────────────────────────────
+  // --- Load assemblies -------------------------------------------------------
   useEffect(() => {
     let alive = true;
     async function load() {
@@ -337,7 +337,7 @@ export default function BOQPage() {
     return () => { alive = false; };
   }, []);
 
-  // ─── Takeoff import ────────────────────────────────────────────────────────
+  // --- Takeoff import --------------------------------------------------------
   useEffect(() => {
     const groupsParam = searchParams.get("groups");
     if (!groupsParam) return;
@@ -354,7 +354,7 @@ export default function BOQPage() {
     } catch (e) { console.error("Takeoff parse error:", e); }
   }, [searchParams, setSearchParams]);
 
-  // ─── BOQ Persistence ───────────────────────────────────────────────────────
+  // --- BOQ Persistence -------------------------------------------------------
   async function loadLatestBoq(projectId: string) {
     setPersistLoading(true); setPersistError(null);
     try {
@@ -470,7 +470,7 @@ export default function BOQPage() {
     setActiveProjectId(next);
   }, [routeProjectId, currentProjectId]);
 
-  // ─── Mutations ─────────────────────────────────────────────────────────────
+  // --- Mutations -------------------------------------------------------------
   function addSection() { setSections(prev => [...prev, { id: safeId(), masterCategoryId: null, title: "New Section", scope: "", items: [], collapsed: false }]); }
   function deleteSection(id: string) { setSections(prev => prev.filter(s => s.id !== id)); }
   function updateSection(id: string, patch: Partial<Section>) { setSections(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s)); }
@@ -487,7 +487,7 @@ export default function BOQPage() {
   function deleteItem(sectionId: string, itemId: string) { setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: s.items.filter(it => it.id !== itemId) })); }
   function updateItem(sectionId: string, itemId: string, patch: Partial<BOQItemRow>) { setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: s.items.map(it => it.id === itemId ? { ...it, ...patch } : it) })); }
 
-  // ─── Find Item Handler ─────────────────────────────────────────────────────
+  // --- Find Item Handler -----------------------------------------------------
   function handleFindItem(selected: RateItem) {
     if (!findModal) return;
     const { sectionId, rowId } = findModal;
@@ -507,7 +507,7 @@ export default function BOQPage() {
     setFindModal(null);
   }
 
-  // ─── Smart Selector Handler ────────────────────────────────────────────────
+  // --- Smart Selector Handler ------------------------------------------------
   function handleSmartSelection(sel: any) {
     if (!smartSelectorCtx) return;
     const { sectionId, rowId } = smartSelectorCtx;
@@ -522,7 +522,7 @@ export default function BOQPage() {
     setShowSmartSelector(false); setSmartSelectorCtx(null);
   }
 
-  // ─── Assembly Handler ──────────────────────────────────────────────────────
+  // --- Assembly Handler ------------------------------------------------------
   function mapLineType(t: string) {
     const x = (t || "").toLowerCase();
     if (x === "material") return "Material";
@@ -550,7 +550,7 @@ export default function BOQPage() {
     setAsmModal({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" });
   }
 
-  // ─── Generate Actions ──────────────────────────────────────────────────────
+  // --- Generate Actions ------------------------------------------------------
   async function generateEstimate() {
     if (status !== "approved") { setPersistError("Approve the BOQ first."); return; }
     if (!routeProjectId || !boqId) { setPersistError("Save the BOQ first."); return; }
@@ -588,7 +588,7 @@ export default function BOQPage() {
     setAddingSuggestion(null);
   }
 
-  // ─── Totals ────────────────────────────────────────────────────────────────
+  // --- Totals ----------------------------------------------------------------
   const totals = useMemo(() => {
     let subtotal = 0;
     for (const s of sections) for (const it of s.items) subtotal += numOr(it.qty) * numOr(it.rate);
@@ -599,7 +599,7 @@ export default function BOQPage() {
   const missingRates = sections.reduce((sum, s) => sum + s.items.filter(it => it.qty > 0 && it.rate === 0).length, 0);
   const missingUnits = sections.reduce((sum, s) => sum + s.items.filter(it => !it.unit_id).length, 0);
 
-  // ─── BOQ AI Actions ───────────────────────────────────────────────────────
+  // --- BOQ AI Actions -------------------------------------------------------
   function addAiMessage(text: string, actions?: {label:string;onClick:()=>void}[]) {
     setAiMessages(prev => [...prev, { role: "ai", text, actions }]);
   }
@@ -610,11 +610,11 @@ export default function BOQPage() {
     const missingRateItems = sections.flatMap(s => s.items.filter(it => it.qty > 0 && it.rate === 0).map(it => it.item_name || "Unnamed item"));
     const emptyItems = sections.flatMap(s => s.items.filter(it => !it.item_name.trim()).map(() => s.title));
     const emptySections = sections.filter(s => s.items.length === 0).map(s => s.title);
-    if (missingRateItems.length > 0) issues.push(`⚠️ ${missingRateItems.length} item${missingRateItems.length>1?"s":""} have qty but no rate: ${missingRateItems.slice(0,3).join(", ")}${missingRateItems.length>3?` +${missingRateItems.length-3} more`:""}`);
-    if (emptySections.length > 0) issues.push(`📋 ${emptySections.length} empty section${emptySections.length>1?"s":""}: ${emptySections.join(", ")}`);
-    if (emptyItems.length > 0) issues.push(`📝 ${emptyItems.length} item${emptyItems.length>1?"s":""} with no name`);
+    if (missingRateItems.length > 0) issues.push(`?? ${missingRateItems.length} item${missingRateItems.length>1?"s":""} have qty but no rate: ${missingRateItems.slice(0,3).join(", ")}${missingRateItems.length>3?` +${missingRateItems.length-3} more`:""}`);
+    if (emptySections.length > 0) issues.push(`?? ${emptySections.length} empty section${emptySections.length>1?"s":""}: ${emptySections.join(", ")}`);
+    if (emptyItems.length > 0) issues.push(`?? ${emptyItems.length} item${emptyItems.length>1?"s":""} with no name`);
     if (issues.length === 0) {
-      addAiMessage("✅ Your BOQ looks good! All items have names, rates, and quantities. Ready to approve.");
+      addAiMessage("? Your BOQ looks good! All items have names, rates, and quantities. Ready to approve.");
     } else {
       addAiMessage(`Found ${issues.length} issue${issues.length>1?"s":""}:\n\n${issues.join("\n\n")}`);
     }
@@ -666,7 +666,7 @@ Respond in plain English, section by section. Keep it brief and actionable. Max 
         }
       } catch {}
     }
-    addAiMessage(`✅ Filled rates for ${filled} item${filled>1?"s":""}${noRate.length>5?` (first 5 of ${noRate.length} — run again for more)`:""}.`);
+    addAiMessage(`? Filled rates for ${filled} item${filled>1?"s":""}${noRate.length>5?` (first 5 of ${noRate.length} � run again for more)`:""}.`);
     setAiPanelLoading(false);
   }
 
@@ -688,7 +688,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
     setAiPanelLoading(false);
   }
 
-  // ─── No project guard ──────────────────────────────────────────────────────
+  // --- No project guard ------------------------------------------------------
   if (!currentProjectId && !routeProjectId) {
     return (
       <div className="min-h-screen bg-[#080b10] flex items-center justify-center">
@@ -701,11 +701,11 @@ Answer briefly and practically. If they ask to add items, explain they need to u
     );
   }
 
-  // ─── Render ────────────────────────────────────────────────────────────────
+  // --- Render ----------------------------------------------------------------
   return (
     <div className="min-h-screen bg-[#080b10] text-slate-100">
 
-      {/* ── Sticky Header ── */}
+      {/* -- Sticky Header -- */}
       <div className="sticky top-0 z-30 bg-[#0d1117]/95 backdrop-blur-md border-b border-white/[0.06]">
         <div className="px-5 py-3 flex items-center justify-between gap-4">
           {/* Left */}
@@ -722,9 +722,9 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             </div>
           </div>
 
-          {/* Right — action buttons */}
+          {/* Right � action buttons */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {persistLoading && <span className="text-[11px] text-slate-500 flex items-center gap-1"><RefreshCw size={11} className="animate-spin"/>Saving…</span>}
+            {persistLoading && <span className="text-[11px] text-slate-500 flex items-center gap-1"><RefreshCw size={11} className="animate-spin"/>Saving�</span>}
             {saveSuccess && !persistLoading && <span className="text-[11px] text-emerald-400 flex items-center gap-1"><CheckCircle size={11}/>Saved</span>}
             {persistError && <span className="text-[11px] text-red-400 flex items-center gap-1 max-w-[160px] truncate"><AlertCircle size={11}/>{persistError}</span>}
 
@@ -781,7 +781,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         </div>
       </div>
 
-      {/* ── Body ── */}
+      {/* -- Body -- */}
       <div className="px-5 py-4 space-y-3 max-w-[1440px] mx-auto">
 
         {/* Toolbar */}
@@ -791,7 +791,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             <Plus size={13}/> Add Section
           </button>
           <button onClick={() => nav("/settings/master-lists")} className="text-[11px] text-slate-600 hover:text-slate-400 transition">
-            Edit Categories →
+            Edit Categories ?
           </button>
         </div>
 
@@ -802,7 +802,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               <FileSpreadsheet size={24} className="text-slate-600"/>
             </div>
             <h3 className="text-sm font-semibold text-slate-300 mb-1.5">No sections yet</h3>
-            <p className="text-xs text-slate-600 mb-5 max-w-xs">Start by adding a section. Each section groups related items — e.g. "Foundations", "Blockwork", "Roofing".</p>
+            <p className="text-xs text-slate-600 mb-5 max-w-xs">Start by adding a section. Each section groups related items � e.g. "Foundations", "Blockwork", "Roofing".</p>
             <button onClick={addSection} disabled={!canEdit || !activeProjectId}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/25 text-cyan-300 text-xs font-semibold disabled:opacity-40 transition">
               <Plus size={13}/> Add First Section
@@ -825,13 +825,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
 
                 <select value={section.masterCategoryId ?? ""} disabled={!canEdit} onChange={e => onPickCategory(section.id, e.target.value)}
                   className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1 text-[11px] text-slate-400 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50 max-w-[160px] flex-shrink-0">
-                  <option value="">Category…</option>
+                  <option value="">Category�</option>
                   {usableCategories.map((c: any) => <option key={getCategoryId(c)} value={getCategoryId(c)}>{getCategoryLabel(c)}</option>)}
                 </select>
 
                 <input value={section.title} disabled={!canEdit} onChange={e => updateSection(section.id, { title: e.target.value })}
                   className="flex-1 bg-transparent text-sm font-bold text-slate-100 placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
-                  placeholder="Section title…"/>
+                  placeholder="Section title�"/>
 
                 <div className="flex items-center gap-3 flex-shrink-0 ml-auto">
                   {sectionWarnings > 0 && (
@@ -862,7 +862,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 <div className="px-4 py-1.5 bg-white/[0.01] border-b border-white/[0.04]">
                   <input value={section.scope} disabled={!canEdit} onChange={e => updateSection(section.id, { scope: e.target.value })}
                     className="w-full bg-transparent text-[11px] text-slate-600 placeholder-slate-800 focus:outline-none focus:text-slate-400 disabled:opacity-50"
-                    placeholder="Section scope / description (e.g. All 6&quot; block walls including mortar and ties)…"/>
+                    placeholder="Section scope / description (e.g. All 6&quot; block walls including mortar and ties)�"/>
                 </div>
               )}
 
@@ -906,7 +906,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             <div>
                               {item.pick_type
                                 ? <TypeChip type={item.pick_type}/>
-                                : <span className="text-[10px] text-slate-800">—</span>}
+                                : <span className="text-[10px] text-slate-800">�</span>}
                             </div>
 
                             {/* Item name + description */}
@@ -915,13 +915,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                 <input value={item.item_name} disabled={!canEdit}
                                   onChange={e => updateItem(section.id, item.id, { item_name: e.target.value, rate_source: "manual" })}
                                   className="flex-1 bg-transparent text-xs font-semibold text-slate-200 placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
-                                  placeholder="Item name…"/>
-                                {isMissingRate && <AlertTriangle size={10} className="text-amber-500 flex-shrink-0" title="Missing rate — qty set but no rate"/>}
+                                  placeholder="Item name�"/>
+                                {isMissingRate && <span title="Missing rate � qty set but no rate"><AlertTriangle size={10} className="text-amber-500 flex-shrink-0" /></span>}
                               </div>
                               <input value={item.description} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { description: e.target.value })}
                                 className="w-full bg-transparent text-[10px] text-slate-600 placeholder-slate-800 focus:outline-none disabled:opacity-60"
-                                placeholder="Description…"/>
+                                placeholder="Description�"/>
                               {item.rate_source === "library" && (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/15 font-medium">Library</span>
                               )}
@@ -961,7 +961,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                               <select value={item.unit_id ?? ""} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { unit_id: e.target.value || null })}
                                 className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg px-1.5 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50">
-                                <option value="">—</option>
+                                <option value="">�</option>
                                 {usableUnits.map((u: any) => <option key={getUnitId(u)} value={getUnitId(u)}>{getUnitLabel(u)}</option>)}
                               </select>
                             </div>
@@ -1026,12 +1026,12 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         )}
       </div>
 
-      {/* ── Find Item Modal ── */}
+      {/* -- Find Item Modal -- */}
       {findModal && (
         <FindItemModal rateItems={rateItems} onSelect={handleFindItem} onClose={() => setFindModal(null)}/>
       )}
 
-      {/* ── Assembly Modal ── */}
+      {/* -- Assembly Modal -- */}
       {asmModal.open && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0d1117] rounded-2xl border border-white/[0.08] shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
@@ -1047,7 +1047,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 <div className="relative flex-1">
                   <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
                   <input autoFocus value={asmModal.search} onChange={e => setAsmModal(p => ({ ...p, search: e.target.value }))}
-                    placeholder="Search assemblies…"
+                    placeholder="Search assemblies�"
                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50"/>
                 </div>
                 <input value={asmModal.qty} onChange={e => setAsmModal(p => ({ ...p, qty: e.target.value }))} type="number"
@@ -1066,7 +1066,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                       className={`w-full text-left px-4 py-3 border-b border-white/[0.04] last:border-0 flex items-center justify-between transition ${selected ? "bg-cyan-500/10" : "hover:bg-white/[0.03]"}`}>
                       <div>
                         <div className="text-sm font-semibold text-slate-200">{a.name}</div>
-                        <div className="text-[10px] text-slate-600 mt-0.5">{a.category && `${a.category} · `}{cc} component{cc !== 1 ? "s" : ""}{a.unit && ` · ${a.unit}`}</div>
+                        <div className="text-[10px] text-slate-600 mt-0.5">{a.category && `${a.category} � `}{cc} component{cc !== 1 ? "s" : ""}{a.unit && ` � ${a.unit}`}</div>
                       </div>
                       {selected && <Check size={14} className="text-cyan-400 flex-shrink-0"/>}
                     </button>
@@ -1086,7 +1086,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         </div>
       )}
 
-      {/* ── AI Suggestions Modal ── */}
+      {/* -- AI Suggestions Modal -- */}
       {aiSuggestionsModal.open && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0d1117] rounded-2xl border border-white/[0.08] shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
@@ -1118,13 +1118,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         </div>
       )}
 
-      {/* ── Smart Selector ── */}
+      {/* -- Smart Selector -- */}
       {showSmartSelector && companyId && (
         <SmartItemSelector companyId={companyId} onSelect={handleSmartSelection}
           onCancel={() => { setShowSmartSelector(false); setSmartSelectorCtx(null); }} title="Smart Item Selector"/>
       )}
 
-      {/* ── BOQ AI Panel ── */}
+      {/* -- BOQ AI Panel -- */}
       {showAIPanel && (
         <div className="fixed right-0 top-0 h-full w-96 bg-[#0d1117] border-l border-white/[0.08] shadow-2xl z-50 flex flex-col">
           {/* Header */}
@@ -1187,7 +1187,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               <div className="flex justify-start">
                 <div className="bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2.5 flex items-center gap-2">
                   <Loader size={12} className="text-purple-400 animate-spin"/>
-                  <span className="text-[11px] text-slate-500">Thinking…</span>
+                  <span className="text-[11px] text-slate-500">Thinking�</span>
                 </div>
               </div>
             )}
@@ -1198,19 +1198,19 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             <div className="flex gap-2">
               <input value={aiInput} onChange={e=>setAiInput(e.target.value)}
                 onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&aiChat(aiInput)}
-                placeholder="Ask anything about your BOQ…"
+                placeholder="Ask anything about your BOQ�"
                 className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-purple-500/50"/>
               <button onClick={()=>aiChat(aiInput)} disabled={!aiInput.trim()||aiPanelLoading}
                 className="p-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-40 transition">
                 <MessageSquare size={14}/>
               </button>
             </div>
-            <p className="text-[9px] text-slate-700 mt-1.5 text-center">Press Enter to send · AI uses Jamaica construction knowledge</p>
+            <p className="text-[9px] text-slate-700 mt-1.5 text-center">Press Enter to send � AI uses Jamaica construction knowledge</p>
           </div>
         </div>
       )}
 
-      {/* ── Import Takeoff ── */}
+      {/* -- Import Takeoff -- */}
       <ImportTakeoffModal isOpen={importTakeoffModal.open}
         onClose={() => setImportTakeoffModal({ open: false, sectionId: null, itemId: null })}
         projectId={routeProjectId || ""}
@@ -1219,7 +1219,8 @@ Answer briefly and practically. If they ask to add items, explain they need to u
           updateItem(importTakeoffModal.sectionId, importTakeoffModal.itemId, { qty: value });
         }}/>
 
-      {/* ── AI Assistant ── */}
+      {/* -- AI Assistant -- */}
     </div>
   );
 }
+
