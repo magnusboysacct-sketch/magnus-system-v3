@@ -1,4 +1,4 @@
-﻿// src/pages/EstimatesPage.tsx
+// src/pages/EstimatesPage.tsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -363,7 +363,7 @@ export default function EstimatesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+    <div className="min-h-screen bg-[#080b10]">
       <PageHeader
         title="Estimates"
         subtitle={`${stats.total} total · ${fmt(stats.totalValue)} approved`}
