@@ -40,6 +40,7 @@ import AccountsReceivablePage from "./pages/AccountsReceivablePage";
 import FieldPaymentsPage      from "./pages/FieldPaymentsPage";
 import WorkersPage            from "./pages/WorkersPage";
 import ReportsPage            from "./pages/ReportsPage";
+import ContractsPage          from "./pages/ContractsPage";
 
 import SettingsPage           from "./pages/SettingsPage";
 import SettingsCompanyPage      from "./pages/SettingsCompanyPage";
@@ -146,6 +147,7 @@ export default function App() {
 
               {/* Estimating */}
               <Route path="/estimates"    element={<EstimatesPage />} />
+              <Route path="/contracts"    element={<ContractsPage />} />
               <Route path="/boq"          element={<BOQPage />} />
               <Route path="/takeoff"      element={<TakeoffPage />} />
               <Route path="/assemblies"   element={<AssembliesPage />} />

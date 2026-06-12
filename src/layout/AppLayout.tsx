@@ -40,6 +40,7 @@ const NAV: NavItem[] = [
     label: "Estimating", icon: <FileText size={15}/>,
     children: [
       { label: "Estimates",   icon: <ClipboardList size={14}/>, to: "/estimates" },
+      { label: "Contracts",   icon: <FileText size={14}/>, to: "/contracts" },
       { label: "BOQ Builder", icon: <Layers size={14}/>,        to: "/boq" },
       { label: "Takeoff",     icon: <Ruler size={14}/>,         to: "/takeoff" },
       { label: "Assemblies",  icon: <Wrench size={14}/>,        to: "/assemblies" },
