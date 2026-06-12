@@ -17,6 +17,7 @@ import AcceptInvitePage       from "./pages/AcceptInvitePage";
 import ClientProjectPage      from "./pages/ClientProjectPage";
 import WorkerPortalPage       from "./pages/WorkerPortalPage";
 import FieldOpsPage           from "./pages/FieldOpsPage";
+import FieldAppPage           from "./pages/FieldAppPage";
 import DashboardPage          from "./pages/DashboardPage";
 import ClientsPage            from "./pages/ClientsPage";
 import ProjectsPage           from "./pages/ProjectsPage";
@@ -126,6 +127,7 @@ export default function App() {
             <Route path="/client/projects/:projectId" element={<RequireAuth><ClientProjectPage /></RequireAuth>} />
             <Route path="/worker/portal"              element={<RequireAuth><WorkerPortalPage /></RequireAuth>} />
             <Route path="/field-ops"                  element={<RequireAuth><FieldOpsPage /></RequireAuth>} />
+            <Route path="/field"                      element={<RequireAuth><FieldAppPage /></RequireAuth>} />
 
             {/* Protected app shell */}
             <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
