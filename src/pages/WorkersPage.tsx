@@ -779,7 +779,7 @@ export default function WorkersPage() {
       {idCardWorker && (
         <WorkerIDCard
           workerId={idCardWorker.id}
-          companyName={companySettings?.company_name || company?.company_name||"Magnus Boys Construction"}
+          companyName={companySettings?.company_name || "Magnus Boys Construction"}
           onClose={() => setIdCardWorker(null)}
         />
       )}
