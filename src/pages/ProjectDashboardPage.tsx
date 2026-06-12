@@ -58,7 +58,7 @@ export default function ProjectDashboardPage() {
     setLoading(true); setError(null);
     try {
       const { data:proj, error:pe } = await supabase.from("projects")
-        .select("id,name,status,client_id,budget,start_date,end_date,description")
+        .select("id,name,status,client_id,budget,start_date,end_date,description,company_id")
         .eq("id", projectId!).maybeSingle();
       if (pe) throw pe;
       if (!proj) throw new Error("Project not found");
