@@ -1,13 +1,15 @@
 // src/components/FieldPaymentForm.tsx
-// Step 1: Scan ID | Step 2: Payment | Step 3: Sign | Step 4: Receipt + PDF + WhatsApp + Email
+// Step 1: Scan ID | Step 2: Payment | Step 3: Sign | Step 4: Receipt → Generate PDF/Image → Share
 import React, { useRef, useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { SimpleIDScanner } from "./SimpleIDScanner";
+import html2canvas from "html2canvas";
 import {
   Check, X, ChevronRight, ChevronLeft,
   DollarSign, FileText, PenTool, User,
-  AlertCircle, CheckCircle2, Share2, RefreshCw, Mail, Printer
+  AlertCircle, CheckCircle2, Share2, RefreshCw, 
+  Mail, Printer, Image, Loader
 } from "lucide-react";
 import { cn } from "../components/ui";
 
@@ -23,6 +25,7 @@ type FormData = {
   notes: string; project_id: string;
   signature_data: string; supervisor_name: string;
   rate_type: string; task_description: string;
+  task_quantity: string; task_unit_rate: string;
 };
 
 const WORK_TYPES = [
@@ -69,7 +72,8 @@ function fmtJMD(n: number) {
   }, []);
 
   function clear() {
-    const canvas=canvasRef.current!; canvas.getContext("2d")!.clearRect(0,0,canvas.width,canvas.height);
+    const canvas=canvasRef.current!;
+    canvas.getContext("2d")!.clearRect(0,0,canvas.width,canvas.height);
     setHasSign(false); onClear();
   }
 
@@ -120,6 +124,9 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
   const [supervisorId, setSupervisorId] = useState<string|null>(null);
   const [idPhotoFile, setIdPhotoFile] = useState<File|null>(null);
   const [company, setCompany] = useState<any>(null);
+  const [showPDFModal, setShowPDFModal] = useState(false);
+  const [generatingImage, setGeneratingImage] = useState(false);
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   const [form, setForm] = useState<FormData>({
     worker_name:"", worker_id_number:"", worker_phone:"",
@@ -130,6 +137,7 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
     project_id:currentProject?.id||"",
     signature_data:"", supervisor_name:"",
     rate_type:"day", task_description:"",
+    task_quantity:"", task_unit_rate:"",
   });
 
   function set(key: keyof FormData) {
@@ -154,17 +162,22 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
     });
   },[]);
 
+  // Auto-calculate total
   useEffect(()=>{
-    if(form.rate_type==="task")return;
-    const days=parseFloat(form.days_worked)||0;
-    const hours=parseFloat(form.hours_worked)||0;
-    const rDay=parseFloat(form.rate_per_day)||0;
-    const rHour=parseFloat(form.rate_per_hour)||0;
-    let total=0;
-    if(rDay>0&&days>0)total=rDay*days;
-    if(rHour>0&&hours>0)total=rHour*hours;
-    if(total>0)setForm(f=>({...f,total_amount:total.toFixed(2)}));
-  },[form.days_worked,form.hours_worked,form.rate_per_day,form.rate_per_hour,form.rate_type]);
+    if(form.rate_type==="day"){
+      const days=parseFloat(form.days_worked)||0;
+      const rate=parseFloat(form.rate_per_day)||0;
+      if(days>0&&rate>0)setForm(f=>({...f,total_amount:(days*rate).toFixed(2)}));
+    } else if(form.rate_type==="hour"){
+      const hours=parseFloat(form.hours_worked)||0;
+      const rate=parseFloat(form.rate_per_hour)||0;
+      if(hours>0&&rate>0)setForm(f=>({...f,total_amount:(hours*rate).toFixed(2)}));
+    } else if(form.rate_type==="task"){
+      const qty=parseFloat(form.task_quantity)||0;
+      const rate=parseFloat(form.task_unit_rate)||0;
+      if(qty>0&&rate>0)setForm(f=>({...f,total_amount:(qty*rate).toFixed(2)}));
+    }
+  },[form.days_worked,form.rate_per_day,form.hours_worked,form.rate_per_hour,form.task_quantity,form.task_unit_rate,form.rate_type]);
 
   function handleIDScanResult(ocr: any) {
     const name=[ocr.firstName,ocr.middleName,ocr.lastName].filter(Boolean).join(" ");
@@ -182,12 +195,16 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
       }
       const recNum=`FP-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,"0")}-${Date.now().toString().slice(-6)}`;
       setReceiptNumber(recNum);
+
+      const workTypeLabel = form.rate_type==="task"
+        ? `Task: ${form.task_description}${form.task_quantity?` (${form.task_quantity} units)`:""}`
+        : form.work_type;
+
       const {data:payment,error:pe}=await supabase.from("field_payments").insert({
         company_id:companyId, project_id:form.project_id||null,
         worker_name:form.worker_name.trim(), worker_id_number:form.worker_id_number.trim()||null,
         worker_phone:form.worker_phone.trim()||null, worker_address:form.worker_address.trim()||null,
-        id_photo_url:idPhotoUrl||null,
-        work_type:form.rate_type==="task"?`Task: ${form.task_description}`:form.work_type,
+        id_photo_url:idPhotoUrl||null, work_type:workTypeLabel,
         work_date:form.work_date,
         hours_worked:parseFloat(form.hours_worked)||null, days_worked:parseFloat(form.days_worked)||null,
         rate_per_hour:parseFloat(form.rate_per_hour)||null, rate_per_day:parseFloat(form.rate_per_day)||null,
@@ -220,62 +237,53 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
     finally{ setSaving(false); }
   }
 
-  function downloadPDF() {
-    const w=window.open("","_blank"); if(!w)return;
-    const total=parseFloat(form.total_amount)||0;
+  // Generate image and share via WhatsApp
+  async function generateImageAndWhatsApp() {
+    const el = receiptRef.current; if(!el) return;
+    setGeneratingImage(true);
+    try {
+      const canvas = await html2canvas(el, {
+        scale:2, useCORS:true, backgroundColor:"#ffffff",
+        logging:false, allowTaint:true,
+      });
+      // Download image
+      const link = document.createElement("a");
+      link.download = `Receipt-${receiptNumber}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      // Open WhatsApp after short delay
+      setTimeout(()=>{
+        const phone = form.worker_phone?.replace(/\D/g,"");
+        const msg = `Receipt #${receiptNumber} for ${form.worker_name} — ${fmtJMD(parseFloat(form.total_amount)||0)} — Please find receipt image attached.`;
+        window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`,"_blank");
+      },1000);
+    } catch(e){ console.error(e); }
+    setGeneratingImage(false);
+  }
+
+  // Print PDF
+  function printPDF() {
+    const el = receiptRef.current; if(!el) return;
+    const w = window.open("","_blank"); if(!w) return;
     w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${receiptNumber}</title>
-    <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Georgia,serif;color:#1a1a1a;padding:40px}
-    .header{text-align:center;border-bottom:3px solid #1a1a1a;padding-bottom:20px;margin-bottom:20px}
-    .logo{width:72px;height:72px;border-radius:10px;object-fit:cover;margin:0 auto 10px;display:block}
-    .co-name{font-size:18px;font-weight:900;letter-spacing:2px;text-transform:uppercase}
-    .co-info{font-size:11px;color:#666;margin-top:4px}
-    .title{font-size:22px;font-weight:900;margin:14px 0 4px;text-transform:uppercase;letter-spacing:4px}
-    .ref{font-size:11px;color:#666}
-    table{width:100%;border-collapse:collapse;margin:14px 0}
-    td{padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:13px}
-    td:first-child{color:#666;width:160px}td:last-child{font-weight:600;text-align:right}
-    .total-row td{padding:12px;font-size:18px;font-weight:900;border-top:3px solid #1a1a1a;border-bottom:3px solid #1a1a1a}
-    .total-row td:last-child{color:#16a34a;font-size:22px}
-    .sig{margin-top:20px;border-top:1px solid #e5e7eb;padding-top:14px}
-    .sig-label{font-size:10px;color:#999;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}
-    .footer{margin-top:28px;text-align:center;font-size:10px;color:#999;border-top:1px solid #e5e7eb;padding-top:14px}
-    @media print{body{padding:20px}}</style></head><body>
-    <div class="header">
-    ${company?.logo_url?`<img src="${company.logo_url}" class="logo"/>`:""}
-    <div class="co-name">${company?.company_name||"Magnus Boys Construction"}</div>
-    <div class="co-info">${company?.address_line1||""}${company?.city?`, ${company.city}`:""}<br/>${company?.phone?`Tel: ${company.phone}`:""}${company?.phone&&company?.email?" · ":""}${company?.email||""}</div>
-    <div class="title">Payment Receipt</div>
-    <div class="ref">Receipt #${receiptNumber} &nbsp;|&nbsp; ${new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
-    </div>
-    <table>
-    <tr><td>Worker</td><td>${form.worker_name}</td></tr>
-    ${form.worker_id_number?`<tr><td>ID Number</td><td>${form.worker_id_number}</td></tr>`:""}
-    ${form.worker_phone?`<tr><td>Phone</td><td>${form.worker_phone}</td></tr>`:""}
-    ${form.rate_type==="task"?`<tr><td>Task</td><td>${form.task_description}</td></tr>`:`<tr><td>Work Type</td><td>${form.work_type}</td></tr>`}
-    <tr><td>Work Date</td><td>${form.work_date}</td></tr>
-    <tr><td>Payment Method</td><td>${form.payment_method.replace("_"," ").toUpperCase()}</td></tr>
-    ${form.rate_type==="day"&&form.days_worked&&form.rate_per_day?`<tr><td>Days × Rate</td><td>${form.days_worked} days × ${fmtJMD(parseFloat(form.rate_per_day))}</td></tr>`:""}
-    ${form.rate_type==="hour"&&form.hours_worked&&form.rate_per_hour?`<tr><td>Hours × Rate</td><td>${form.hours_worked} hrs × ${fmtJMD(parseFloat(form.rate_per_hour))}</td></tr>`:""}
-    ${form.notes?`<tr><td>Notes</td><td>${form.notes}</td></tr>`:""}
-    <tr class="total-row"><td>TOTAL PAID</td><td>${fmtJMD(total)}</td></tr>
-    </table>
-    ${form.signature_data?`<div class="sig"><div class="sig-label">Worker Signature</div><img src="${form.signature_data}" style="height:56px;border:1px solid #e5e7eb;border-radius:6px;padding:4px"/><div style="font-size:11px;color:#666;margin-top:4px">${form.worker_name}</div></div>`:""}
-    <div class="footer">Paid by: ${form.supervisor_name} &nbsp;|&nbsp; ${new Date().toLocaleDateString()}<br/>${company?.company_name||"Magnus Boys Construction"}${company?.tagline?` · ${company.tagline}`:""}</div>
-    </body></html>`);
-    w.document.close(); setTimeout(()=>w.print(),500);
+    <style>*{box-sizing:border-box}body{margin:0;font-family:Georgia,serif}</style></head>
+    <body>${el.innerHTML}</body></html>`);
+    w.document.close();
+    setTimeout(()=>w.print(),500);
   }
 
-  function sendWhatsApp() {
-    const total=parseFloat(form.total_amount)||0;
-    const msg=`*PAYMENT RECEIPT*\n*${company?.company_name||"Magnus Boys Construction"}*\n\nReceipt #: ${receiptNumber}\nWorker: ${form.worker_name}\nID: ${form.worker_id_number||"—"}\n${form.rate_type==="task"?`Task: ${form.task_description}`:`Work: ${form.work_type}`}\nDate: ${form.work_date}\nPayment: ${form.payment_method.replace("_"," ")}\n\n*TOTAL PAID: ${fmtJMD(total)}*\n\nPaid by: ${form.supervisor_name} · ${new Date().toLocaleDateString()}\n${company?.phone||""} · ${company?.email||""}`;
-    const phone=form.worker_phone?.replace(/\D/g,"");
-    window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`,"_blank");
-  }
-
+  // Email
   function sendEmail() {
     const total=parseFloat(form.total_amount)||0;
     const subject=encodeURIComponent(`Payment Receipt - ${form.worker_name} - ${receiptNumber}`);
-    const body=encodeURIComponent(`PAYMENT RECEIPT\n${company?.company_name||"Magnus Boys Construction"}\n${company?.address_line1||""} ${company?.city||""}\nTel: ${company?.phone||""} | ${company?.email||""}\n\nReceipt #: ${receiptNumber}\nDate: ${new Date().toLocaleDateString()}\n\nWorker: ${form.worker_name}\nID: ${form.worker_id_number||"—"}\n${form.rate_type==="task"?`Task: ${form.task_description}`:`Work Type: ${form.work_type}`}\nWork Date: ${form.work_date}\nPayment: ${form.payment_method.replace("_"," ")}\n\nTOTAL PAID: ${fmtJMD(total)}\n\nPaid by: ${form.supervisor_name} · ${new Date().toLocaleDateString()}`);
+    const body=encodeURIComponent(
+      `PAYMENT RECEIPT\n${company?.company_name||"Magnus Boys Construction"}\n${company?.address_line1||""} ${company?.city||""}\nTel: ${company?.phone||""} | ${company?.email||""}\n\n`+
+      `Receipt #: ${receiptNumber}\nDate: ${new Date().toLocaleDateString()}\n\n`+
+      `Worker: ${form.worker_name}\nID: ${form.worker_id_number||"—"}\n`+
+      `${form.rate_type==="task"?`Task: ${form.task_description} (${form.task_quantity} units × ${fmtJMD(parseFloat(form.task_unit_rate)||0)})`:form.work_type}\n`+
+      `Work Date: ${form.work_date}\nPayment: ${form.payment_method.replace("_"," ")}\n\n`+
+      `TOTAL PAID: ${fmtJMD(total)}\n\nPaid by: ${form.supervisor_name} · ${new Date().toLocaleDateString()}`
+    );
     window.open(`mailto:?subject=${subject}&body=${body}`,"_blank");
   }
 
@@ -299,6 +307,7 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
 
         {error&&<div className="mb-4 flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2.5 text-xs text-red-300"><AlertCircle size={13}/>{error}<button onClick={()=>setError(null)} className="ml-auto"><X size={11}/></button></div>}
 
+        {/* ── STEP 1: ID SCAN ── */}
         {step==="id_scan"&&(
           <div className="space-y-4">
             <SimpleIDScanner onResult={handleIDScanResult} onCancel={()=>{}}/>
@@ -324,6 +333,7 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
           </div>
         )}
 
+        {/* ── STEP 2: PAYMENT ── */}
         {step==="payment"&&(
           <div className="space-y-4">
             <div className="flex items-center gap-3 rounded-xl bg-white/[0.03] border border-white/[0.06] p-3">
@@ -335,6 +345,7 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
               <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Project</label>
                 <select value={form.project_id} onChange={set("project_id")} className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none [&>option]:bg-[#111820]">
                   <option value="">No project</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Work Type</label>
                   <select value={form.work_type} onChange={set("work_type")} className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none [&>option]:bg-[#111820]">
@@ -343,36 +354,64 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
                   <input type="date" value={form.work_date} onChange={set("work_date")} className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none"/></div>
               </div>
 
+              {/* Payment Type */}
               <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-2">Payment Type</label>
                 <div className="grid grid-cols-3 gap-2">
                   {[{v:"day",l:"By Day"},{v:"hour",l:"By Hour"},{v:"task",l:"By Task"}].map(t=>(
-                    <button key={t.v} onClick={()=>setForm(f=>({...f,rate_type:t.v}))}
-                      className={cn("py-2.5 rounded-lg text-xs font-bold border transition",form.rate_type===t.v?"bg-cyan-500/20 border-cyan-500/40 text-cyan-300":"bg-white/[0.03] border-white/[0.07] text-slate-500")}>
+                    <button key={t.v} onClick={()=>setForm(f=>({...f,rate_type:t.v,total_amount:""}))}
+                      className={cn("py-2.5 rounded-lg text-xs font-bold border transition",form.rate_type===t.v?"bg-cyan-500/20 border-cyan-500/40 text-cyan-300":"bg-white/[0.03] border-white/[0.07] text-slate-500 hover:border-white/[0.14]")}>
                       {t.l}</button>))}</div></div>
 
-              {form.rate_type==="day"&&<div className="grid grid-cols-2 gap-3">
-                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Days Worked</label>
-                  <input type="number" value={form.days_worked} onChange={set("days_worked")} placeholder="1" className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none"/></div>
-                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Rate per Day (JMD)</label>
-                  <input type="number" value={form.rate_per_day} onChange={set("rate_per_day")} placeholder="0.00" className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none"/></div>
-              </div>}
+              {/* By Day */}
+              {form.rate_type==="day"&&(
+                <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Number of Days</label>
+                      <input type="number" value={form.days_worked} onChange={set("days_worked")} placeholder="1"
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                    <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Rate per Day (JMD)</label>
+                      <input type="number" value={form.rate_per_day} onChange={set("rate_per_day")} placeholder="0.00"
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                  </div>
+                  {form.days_worked&&form.rate_per_day&&<div className="text-xs text-slate-500 text-center">{form.days_worked} days × {fmtJMD(parseFloat(form.rate_per_day)||0)} = <span className="text-emerald-400 font-bold text-sm">{fmtJMD(totalAmount)}</span></div>}
+                </div>
+              )}
 
-              {form.rate_type==="hour"&&<div className="grid grid-cols-2 gap-3">
-                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Hours Worked</label>
-                  <input type="number" value={form.hours_worked} onChange={set("hours_worked")} placeholder="0" className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none"/></div>
-                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Rate per Hour (JMD)</label>
-                  <input type="number" value={form.rate_per_hour} onChange={set("rate_per_hour")} placeholder="0.00" className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none"/></div>
-              </div>}
+              {/* By Hour */}
+              {form.rate_type==="hour"&&(
+                <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Number of Hours</label>
+                      <input type="number" value={form.hours_worked} onChange={set("hours_worked")} placeholder="0"
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                    <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Rate per Hour (JMD)</label>
+                      <input type="number" value={form.rate_per_hour} onChange={set("rate_per_hour")} placeholder="0.00"
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                  </div>
+                  {form.hours_worked&&form.rate_per_hour&&<div className="text-xs text-slate-500 text-center">{form.hours_worked} hrs × {fmtJMD(parseFloat(form.rate_per_hour)||0)} = <span className="text-emerald-400 font-bold text-sm">{fmtJMD(totalAmount)}</span></div>}
+                </div>
+              )}
 
-              {form.rate_type==="task"&&<div className="space-y-3">
-                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Task Description *</label>
-                  <input value={form.task_description} onChange={set("task_description")} placeholder="e.g. Lay 100 blocks, Paint 2 rooms, Pour foundation..." className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none"/></div>
-                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Amount for Task (JMD)</label>
-                  <input type="number" value={form.total_amount} onChange={set("total_amount")} placeholder="0.00" className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-xl font-bold text-emerald-400 placeholder-slate-700 outline-none"/></div>
-              </div>}
-
-              {form.rate_type!=="task"&&<div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Total Amount (JMD) *</label>
-                <input type="number" value={form.total_amount} onChange={set("total_amount")} placeholder="0.00" className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-xl font-bold text-emerald-400 placeholder-slate-700 outline-none"/></div>}
+              {/* By Task */}
+              {form.rate_type==="task"&&(
+                <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 space-y-3">
+                  <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Task Description *</label>
+                    <input value={form.task_description} onChange={set("task_description")} placeholder="e.g. Lay blocks, Paint rooms, Pour foundation..."
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Quantity / Units</label>
+                      <input type="number" value={form.task_quantity} onChange={set("task_quantity")} placeholder="e.g. 100"
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                    <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Rate per Unit (JMD)</label>
+                      <input type="number" value={form.task_unit_rate} onChange={set("task_unit_rate")} placeholder="e.g. 18"
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                  </div>
+                  {form.task_quantity&&form.task_unit_rate&&<div className="text-xs text-slate-500 text-center">{form.task_quantity} units × {fmtJMD(parseFloat(form.task_unit_rate)||0)} = <span className="text-emerald-400 font-bold text-sm">{fmtJMD(totalAmount)}</span></div>}
+                  <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Total Amount (JMD)</label>
+                    <input type="number" value={form.total_amount} onChange={set("total_amount")} placeholder="0.00"
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-xl font-bold text-emerald-400 placeholder-slate-700 outline-none"/></div>
+                </div>
+              )}
 
               <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Payment Method</label>
                 <div className="grid grid-cols-4 gap-2">{PAYMENT_METHODS.map(m=>(
@@ -385,13 +424,14 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
             </div>
             <div className="flex gap-3">
               <button onClick={()=>setStep("id_scan")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-slate-400"><ChevronLeft size={15}/> Back</button>
-              <button onClick={()=>setStep("signature")} disabled={!form.total_amount||(!form.work_type&&form.rate_type!=="task")}
+              <button onClick={()=>setStep("signature")} disabled={!form.total_amount}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-sm text-white font-semibold">
                 Continue to Signature <ChevronRight size={15}/></button>
             </div>
           </div>
         )}
 
+        {/* ── STEP 3: SIGNATURE ── */}
         {step==="signature"&&(
           <div className="space-y-4">
             <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-4">
@@ -399,7 +439,12 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-semibold text-slate-200">{form.worker_name}</div>
-                  <div className="text-[10px] text-slate-500">{form.rate_type==="task"?form.task_description:form.work_type} · {form.work_date}</div>
+                  <div className="text-[10px] text-slate-500">
+                    {form.rate_type==="task"?form.task_description:form.work_type} · {form.work_date}
+                  </div>
+                  {form.rate_type==="day"&&<div className="text-[10px] text-slate-600">{form.days_worked} days × {fmtJMD(parseFloat(form.rate_per_day)||0)}</div>}
+                  {form.rate_type==="hour"&&<div className="text-[10px] text-slate-600">{form.hours_worked} hrs × {fmtJMD(parseFloat(form.rate_per_hour)||0)}</div>}
+                  {form.rate_type==="task"&&<div className="text-[10px] text-slate-600">{form.task_quantity} units × {fmtJMD(parseFloat(form.task_unit_rate)||0)}</div>}
                 </div>
                 <div className="text-2xl font-bold text-emerald-400">{fmtJMD(totalAmount)}</div>
               </div>
@@ -421,6 +466,7 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
           </div>
         )}
 
+        {/* ── STEP 4: RECEIPT ── */}
         {step==="receipt"&&(
           <div className="space-y-4">
             <div className="flex items-center gap-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 p-4">
@@ -428,55 +474,82 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
               <div><div className="text-sm font-bold text-emerald-300">Payment Recorded!</div><div className="text-[10px] text-emerald-600">Receipt #{receiptNumber}</div></div>
             </div>
 
-            <div className="rounded-xl border border-white/[0.07] bg-[#0c1018] p-5 space-y-4">
-              <div className="text-center border-b border-white/[0.06] pb-4">
-                {company?.logo_url&&<img src={company.logo_url} style={{width:60,height:60,borderRadius:10,objectFit:"cover",margin:"0 auto 10px",display:"block"}}/>}
-                <div className="text-base font-black text-slate-100 uppercase tracking-wider">{company?.company_name||"Magnus Boys Construction"}</div>
-                {company?.address_line1&&<div className="text-[10px] text-slate-500 mt-1">{company.address_line1}{company?.city?`, ${company.city}`:""}</div>}
-                <div className="text-[10px] text-slate-500">{company?.phone&&`Tel: ${company.phone}`}{company?.phone&&company?.email?" · ":""}{company?.email||""}</div>
-                <div className="text-base font-bold text-slate-100 mt-3 uppercase tracking-widest">Payment Receipt</div>
-                <div className="text-[10px] text-slate-500">Receipt #{receiptNumber}</div>
+            {/* Receipt — rendered for screenshot */}
+            <div ref={receiptRef} style={{background:"#ffffff",borderRadius:16,padding:28,fontFamily:"Georgia,serif",color:"#1a1a1a"}}>
+              {/* Company Header */}
+              <div style={{textAlign:"center",borderBottom:"3px solid #1a1a1a",paddingBottom:20,marginBottom:20}}>
+                {company?.logo_url&&<img src={company.logo_url} crossOrigin="anonymous" style={{width:72,height:72,borderRadius:10,objectFit:"cover",margin:"0 auto 10px",display:"block"}}/>}
+                <div style={{fontSize:18,fontWeight:900,letterSpacing:2,textTransform:"uppercase"}}>{company?.company_name||"Magnus Boys Construction"}</div>
+                {company?.address_line1&&<div style={{fontSize:11,color:"#666",marginTop:4}}>{company.address_line1}{company?.city?`, ${company.city}`:""}</div>}
+                <div style={{fontSize:11,color:"#666"}}>{company?.phone?`Tel: ${company.phone}`:""}{company?.phone&&company?.email?" · ":""}{company?.email||""}</div>
+                <div style={{fontSize:20,fontWeight:900,marginTop:14,textTransform:"uppercase",letterSpacing:4}}>Payment Receipt</div>
+                <div style={{fontSize:11,color:"#666",marginTop:4}}>Receipt #{receiptNumber} · {new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
               </div>
-              <div className="space-y-2 text-sm">
-                {[
-                  {label:"Worker",value:form.worker_name},
-                  {label:"ID Number",value:form.worker_id_number||"—"},
-                  form.rate_type==="task"?{label:"Task",value:form.task_description}:{label:"Work Type",value:form.work_type},
-                  {label:"Work Date",value:form.work_date},
-                  {label:"Payment",value:form.payment_method.replace("_"," ")},
-                  form.rate_type==="day"&&form.days_worked&&form.rate_per_day?{label:"Days × Rate",value:`${form.days_worked} days × ${fmtJMD(parseFloat(form.rate_per_day))}`}:null,
-                  form.rate_type==="hour"&&form.hours_worked&&form.rate_per_hour?{label:"Hours × Rate",value:`${form.hours_worked} hrs × ${fmtJMD(parseFloat(form.rate_per_hour))}`}:null,
-                ].filter(Boolean).map((row:any)=>(
-                  <div key={row.label} className="flex justify-between">
-                    <span className="text-slate-600 text-xs">{row.label}</span>
-                    <span className="text-slate-300 text-xs font-semibold capitalize">{row.value}</span>
-                  </div>
-                ))}
+
+              {/* Details */}
+              <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16}}>
+                <tbody>
+                  {[
+                    ["Worker", form.worker_name],
+                    form.worker_id_number?["ID Number", form.worker_id_number]:null,
+                    form.worker_phone?["Phone", form.worker_phone]:null,
+                    form.rate_type==="task"?["Task", form.task_description]:["Work Type", form.work_type],
+                    ["Work Date", form.work_date],
+                    ["Payment Method", form.payment_method.replace("_"," ").toUpperCase()],
+                    form.rate_type==="day"&&form.days_worked?["Days × Rate", `${form.days_worked} days × ${fmtJMD(parseFloat(form.rate_per_day)||0)}`]:null,
+                    form.rate_type==="hour"&&form.hours_worked?["Hours × Rate", `${form.hours_worked} hrs × ${fmtJMD(parseFloat(form.rate_per_hour)||0)}`]:null,
+                    form.rate_type==="task"&&form.task_quantity?["Qty × Rate", `${form.task_quantity} units × ${fmtJMD(parseFloat(form.task_unit_rate)||0)}`]:null,
+                    form.notes?["Notes", form.notes]:null,
+                  ].filter(Boolean).map((row:any,i:number)=>(
+                    <tr key={i} style={{borderBottom:"1px solid #f0f0f0"}}>
+                      <td style={{padding:"7px 10px",color:"#666",fontSize:12,width:150}}>{row[0]}</td>
+                      <td style={{padding:"7px 10px",fontSize:13,fontWeight:600,textAlign:"right",textTransform:"capitalize"}}>{row[1]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Total */}
+              <div style={{borderTop:"3px solid #1a1a1a",borderBottom:"3px solid #1a1a1a",padding:"12px 10px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                <span style={{fontSize:16,fontWeight:900}}>TOTAL PAID</span>
+                <span style={{fontSize:24,fontWeight:900,color:"#16a34a"}}>{fmtJMD(totalAmount)}</span>
               </div>
-              <div className="border-t-2 border-white/[0.1] pt-3 flex justify-between items-center">
-                <span className="font-black text-slate-100 text-sm">TOTAL PAID</span>
-                <span className="text-2xl font-black text-emerald-400">{fmtJMD(totalAmount)}</span>
-              </div>
+
+              {/* Signature */}
               {form.signature_data&&(
-                <div className="border-t border-white/[0.06] pt-3">
-                  <div className="text-[9px] text-slate-500 mb-1 uppercase tracking-wider">Worker Signature</div>
-                  <img src={form.signature_data} alt="Signature" className="h-14 object-contain"/>
-                  <div className="text-[9px] text-slate-500 mt-1">{form.worker_name}</div>
+                <div style={{borderTop:"1px solid #e5e7eb",paddingTop:14,marginTop:8}}>
+                  <div style={{fontSize:10,color:"#999",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Worker Signature</div>
+                  <img src={form.signature_data} style={{height:56,border:"1px solid #e5e7eb",borderRadius:6,padding:4}}/>
+                  <div style={{fontSize:11,color:"#666",marginTop:4}}>{form.worker_name}</div>
                 </div>
               )}
-              <div className="border-t border-white/[0.06] pt-3 text-[9px] text-slate-500 text-center">
+
+              {/* Footer */}
+              <div style={{borderTop:"1px solid #e5e7eb",marginTop:16,paddingTop:12,textAlign:"center",fontSize:10,color:"#999"}}>
                 Paid by: {form.supervisor_name} · {new Date().toLocaleDateString()}<br/>
                 {company?.company_name||"Magnus Boys Construction"}{company?.tagline?` · ${company.tagline}`:""}
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <button onClick={downloadPDF} className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border border-white/[0.08] hover:border-white/[0.14] text-slate-400 hover:text-slate-200 transition">
-                <Printer size={16}/><span className="text-[11px] font-semibold">Print/PDF</span></button>
-              <button onClick={sendWhatsApp} className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 transition">
-                <Share2 size={16}/><span className="text-[11px] font-semibold">WhatsApp</span></button>
-              <button onClick={sendEmail} className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 transition">
-                <Mail size={16}/><span className="text-[11px] font-semibold">Email</span></button>
+            {/* Action Buttons */}
+            <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 space-y-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-2">Share Receipt</div>
+
+              {/* Generate Image + WhatsApp */}
+              <button onClick={generateImageAndWhatsApp} disabled={generatingImage}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-semibold transition">
+                {generatingImage?<><Loader size={16} className="animate-spin"/>Generating image…</>:<><Image size={16}/>Generate Image & Send WhatsApp</>}
+              </button>
+              <div className="text-[10px] text-slate-700 text-center">Downloads receipt image → opens WhatsApp → attach and send</div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <button onClick={printPDF} className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/[0.08] hover:border-white/[0.14] text-slate-400 hover:text-slate-200 transition text-sm font-semibold">
+                  <Printer size={15}/> Print / PDF
+                </button>
+                <button onClick={sendEmail} className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 transition text-sm font-semibold">
+                  <Mail size={15}/> Email
+                </button>
+              </div>
             </div>
 
             <button onClick={onComplete} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-sm text-white font-semibold">
