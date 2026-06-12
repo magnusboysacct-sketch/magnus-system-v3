@@ -12,7 +12,7 @@ import {
 import {
   Plus, Search, FileText, ArrowRight, RefreshCw,
   DollarSign, Edit2, Trash2, Copy, Send,
-  CheckCircle2, XCircle, Clock, LayoutGrid, List, Bot, Sparkles, Loader, Printer
+  CheckCircle2, XCircle, Clock, LayoutGrid, List, X, Bot, Sparkles, Loader, Printer
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
