@@ -234,7 +234,7 @@ export default function FieldAppPage() {
         {screen==="photos" && <PhotoScreen projectId={project?.id} photos={photos} onSave={async()=>{await loadProjectData(project.id,companyId);showToast("Photo uploaded!");}} onBack={()=>setScreen("home")}/>}
 
         {/* ── PAYMENTS ── */}
-        {screen==="payments" && <PaymentsScreen companyId={companyId} payments={recentPayments} onBack={()=>setScreen("home")}/>}
+        {screen==="payments" && <PaymentsScreen companyId={companyId} payments={recentPayments} onBack={()=>setScreen("home")} onRefresh={async()=>await loadProjectData(project.id,companyId)}/>}
 
         {/* ── LOG ISSUE ── */}
         {screen==="issue" && <IssueScreen projectId={project?.id} onSave={()=>{setScreen("home");showToast("Issue logged!");}} onBack={()=>setScreen("home")}/>}
