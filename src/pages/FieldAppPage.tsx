@@ -228,19 +228,19 @@ export default function FieldAppPage() {
         )}
 
         {/* ── DAILY LOG ── */}
-        {screen==="log" && <DailyLogScreen projectId={project?.id} today={today} existing={todayLog} onSave={async()=>{await loadProjectData(project.id,companyId);setScreen("home");showToast("Daily log saved!");}} onBack={()=>setScreen("home")}/>}
+        {screen==="log" && <DailyLogScreen projectId={project?.id} today={today} existing={todayLog} onSave={async()=>{await loadProjectData(project.id,companyId);setScreen("home");showToast("Daily log saved!");}} onBack={()=>setScreen("home")} onRefresh={async()=>await loadProjectData(project.id,companyId)}/>}
 
         {/* ── PHOTOS ── */}
-        {screen==="photos" && <PhotoScreen projectId={project?.id} photos={photos} onSave={async()=>{await loadProjectData(project.id,companyId);showToast("Photo uploaded!");}} onBack={()=>setScreen("home")}/>}
+        {screen==="photos" && <PhotoScreen projectId={project?.id} photos={photos} onSave={async()=>{await loadProjectData(project.id,companyId);showToast("Photo uploaded!");}} onBack={()=>setScreen("home")} onRefresh={async()=>await loadProjectData(project.id,companyId)}/>}
 
         {/* ── PAYMENTS ── */}
         {screen==="payments" && <PaymentsScreen companyId={companyId} payments={recentPayments} onBack={()=>setScreen("home")} onRefresh={async()=>await loadProjectData(project.id,companyId)}/>}
 
         {/* ── LOG ISSUE ── */}
-        {screen==="issue" && <IssueScreen projectId={project?.id} onSave={()=>{setScreen("home");showToast("Issue logged!");}} onBack={()=>setScreen("home")}/>}
+        {screen==="issue" && <IssueScreen projectId={project?.id} onSave={()=>{setScreen("home");showToast("Issue logged!");}} onBack={()=>setScreen("home")} onRefresh={async()=>await loadProjectData(project.id,companyId)}/>}
 
         {/* ── SAFETY ── */}
-        {screen==="safety" && <SafetyScreen checked={safetyChecked} onChange={setSafetyChecked} onBack={()=>setScreen("home")}/>}
+        {screen==="safety" && <SafetyScreen checked={safetyChecked} onChange={setSafetyChecked} onBack={()=>setScreen("home")} onRefresh={async()=>await loadProjectData(project.id,companyId)}/>}
       </div>
 
       {/* Bottom Nav */}
@@ -385,14 +385,62 @@ function PhotoScreen({ projectId, photos, onSave, onBack }: any) {
 }
 
 // ─── Payments Screen ──────────────────────────────────────────────────────────
-function PaymentsScreen({ companyId, payments, onBack }: any) {
+function PaymentsScreen({ companyId, payments, onBack, onRefresh }: any) {
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [workers, setWorkers] = React.useState<any[]>([]);
+  const [selWorker, setSelWorker] = React.useState("");
+  const [amount, setAmount] = React.useState("");
+  const [method, setMethod] = React.useState("Cash");
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(()=>{
+    if(companyId) supabase.from("workers").select("id,first_name,last_name").eq("company_id",companyId).eq("status","active").then(({data})=>setWorkers(data||[]));
+  },[companyId]);
+
+  async function savePayment() {
+    if(!selWorker||!amount){alert("Select worker and enter amount.");return;}
+    setSaving(true);
+    await supabase.from("field_payments").insert({
+      company_id:companyId, worker_id:selWorker,
+      amount:parseFloat(amount), payment_method:method,
+      paid_at:new Date().toISOString(), status:"paid"
+    });
+    setSaving(false); setShowAdd(false); setSelWorker(""); setAmount("");
+    if(onRefresh) onRefresh();
+  }
+
   const total = payments.reduce((s:number,p:any)=>s+Number(p.amount||0),0);
   return (
     <div style={{padding:16}}>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
         <button onClick={onBack} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"8px 14px",color:"#94a3b8",fontSize:13,cursor:"pointer"}}>← Back</button>
         <h2 style={{fontSize:18,fontWeight:800,color:"#f1f5f9",margin:0}}>Field Payments</h2>
+        <button onClick={()=>setShowAdd(!showAdd)} style={{marginLeft:"auto",background:"linear-gradient(135deg,#d97706,#b45309)",border:"none",borderRadius:10,padding:"10px 20px",color:"white",fontSize:14,fontWeight:700,cursor:"pointer"}}>+ Add</button>
       </div>
+      {showAdd && (
+        <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(217,119,6,0.3)",borderRadius:16,padding:16,marginBottom:16,display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f59e0b"}}>New Field Payment</div>
+          <select value={selWorker} onChange={(e:any)=>setSelWorker(e.target.value)}
+            style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"12px 14px",color:selWorker?"#f1f5f9":"#64748b",fontSize:15,outline:"none"}}>
+            <option value="">Select worker...</option>
+            {workers.map((w:any)=><option key={w.id} value={w.id}>{w.first_name} {w.last_name}</option>)}
+          </select>
+          <input type="number" value={amount} onChange={(e:any)=>setAmount(e.target.value)} placeholder="Amount (JMD)"
+            style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"12px 14px",color:"#f1f5f9",fontSize:15,outline:"none"}}/>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+            {["Cash","Cheque","Transfer"].map((m:string)=>(
+              <button key={m} onClick={()=>setMethod(m)}
+                style={{padding:"10px",borderRadius:10,border:"2px solid "+(method===m?"#d97706":"rgba(255,255,255,0.08)"),background:method===m?"rgba(217,119,6,0.15)":"rgba(255,255,255,0.04)",color:method===m?"#f59e0b":"#64748b",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+                {m}
+              </button>
+            ))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <button onClick={()=>setShowAdd(false)} style={{padding:"12px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"#94a3b8",fontSize:14,cursor:"pointer"}}>Cancel</button>
+            <button onClick={savePayment} disabled={saving} style={{padding:"12px",borderRadius:10,border:"none",background:saving?"rgba(217,119,6,0.4)":"linear-gradient(135deg,#d97706,#b45309)",color:"white",fontSize:14,fontWeight:700,cursor:"pointer"}}>{saving?"Saving...":"Save Payment"}</button>
+          </div>
+        </div>
+      )}
       <div style={{background:"linear-gradient(135deg,rgba(217,119,6,0.15),rgba(180,83,9,0.08))",border:"1px solid rgba(217,119,6,0.25)",borderRadius:16,padding:"20px",textAlign:"center",marginBottom:16}}>
         <div style={{fontSize:11,color:"#d97706",fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Total Paid (Recent)</div>
         <div style={{fontSize:32,fontWeight:900,color:"#f59e0b"}}>{new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",maximumFractionDigits:0}).format(total)}</div>
