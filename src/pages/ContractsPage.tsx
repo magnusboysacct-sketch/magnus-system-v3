@@ -248,7 +248,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose }: {
                 <img src={company.logo_url} alt="logo" style={{width:80,height:80,borderRadius:12,objectFit:"cover",marginBottom:20}}/>
               )}
               <div style={{fontSize:13,fontWeight:700,letterSpacing:4,textTransform:"uppercase",color:"#6b7280",marginBottom:8}}>
-                {company?.company_name || "Magnus Boys Construction"}
+                {company?.company_name || company?.company_name||"Magnus Boys Construction"}
               </div>
               <div style={{fontSize:11,color:"#9ca3af",marginBottom:40}}>
                 {company?.address_line1 || ""} {company?.city || ""} · {company?.phone || ""} · {company?.email || ""}
@@ -369,7 +369,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose }: {
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:60}}>
                   <div>
                     <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>CONTRACTOR</div>
-                    <div style={{fontSize:12,color:"#6b7280",marginBottom:32}}>{company?.company_name || "Magnus Boys Construction"}</div>
+                    <div style={{fontSize:12,color:"#6b7280",marginBottom:32}}>{company?.company_name || company?.company_name||"Magnus Boys Construction"}</div>
                     {contract.contractor_signed_at ? (
                       <div style={{fontSize:12,color:"#16a34a",fontWeight:700}}>✓ Signed {fmtDate(contract.contractor_signed_at)}</div>
                     ) : (
@@ -394,7 +394,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose }: {
 
               {/* Footer */}
               <div style={{borderTop:"2px solid #1a1a1a",paddingTop:16,textAlign:"center",fontSize:11,color:"#9ca3af"}}>
-                {company?.company_name || "Magnus Boys Construction"} · {company?.phone || ""} · {company?.email || ""} · Powered by Magnus ERP
+                {company?.company_name || company?.company_name||"Magnus Boys Construction"} · {company?.phone || ""} · {company?.email || ""} · Powered by Magnus ERP
               </div>
             </div>
           </div>
