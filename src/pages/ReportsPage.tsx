@@ -1,4 +1,4 @@
-// src/pages/ReportsPage.tsx — v2 Rebuild: dark theme, JMD, AI insights
+﻿// src/pages/ReportsPage.tsx — v2 Rebuild: dark theme, JMD, AI insights
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { magnusAI } from "../lib/magnusAI";
@@ -228,7 +228,7 @@ Period: Last ${dateRange}`
           <div>
             <h1 className="text-xl font-bold text-slate-100">Reports</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              {company?.company_name || "Magnus Boys Construction"} — {currentProject?.name || "All Projects"}
+              {company?.company_name || company?.company_name||"Magnus Boys Construction"} — {currentProject?.name || "All Projects"}
             </p>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">

@@ -1,4 +1,4 @@
-// src/pages/DashboardPage.tsx — v2 Rebuild: dark theme, JMD, AI morning briefing
+﻿// src/pages/DashboardPage.tsx — v2 Rebuild: dark theme, JMD, AI morning briefing
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
@@ -103,7 +103,7 @@ export default function DashboardPage() {
     setAiLoading(true); setAiBriefing("");
     try {
       const text = await magnusAI.chat(
-        `You are a construction business assistant for ${company?.company_name||"Magnus Boys Construction"} in Jamaica.
+        `You are a construction business assistant for ${company?.company_name||company?.company_name||"Magnus Boys Construction"} in Jamaica.
 Give a brief morning briefing based on this data:
 - Active projects: ${stats.activeProjects}
 - Active workers: ${stats.activeWorkers}
@@ -160,7 +160,7 @@ Keep it under 80 words. Be direct and practical for a Jamaica construction compa
               </div>
             )}
             <div>
-              <h1 className="text-xl font-bold text-slate-100">{company?.company_name||"Magnus Boys Construction"}</h1>
+              <h1 className="text-xl font-bold text-slate-100">{company?.company_name||company?.company_name||"Magnus Boys Construction"}</h1>
               <p className="text-xs text-slate-500">{today}</p>
             </div>
           </div>
@@ -316,7 +316,7 @@ Keep it under 80 words. Be direct and practical for a Jamaica construction compa
                     </div>
                 }
                 <div>
-                  <div className="text-sm font-bold text-slate-100">{company?.company_name||"Magnus Boys Construction"}</div>
+                  <div className="text-sm font-bold text-slate-100">{company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
                   {company?.tagline && <div className="text-[10px] text-slate-500">{company.tagline}</div>}
                 </div>
               </div>

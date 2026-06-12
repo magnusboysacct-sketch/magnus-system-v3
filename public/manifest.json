@@ -1,13 +1,18 @@
 ﻿{
-  "name": "Magnus Boys Field",
-  "short_name": "MB Field",
-  "description": "Magnus Boys Construction Field App",
+  "name": "Field App",
+  "short_name": "Field",
+  "description": "Construction Field Management App",
   "start_url": "/field",
   "display": "standalone",
   "background_color": "#080b10",
   "theme_color": "#0891b2",
   "orientation": "portrait",
   "icons": [
-    { "src": "/vite.svg", "sizes": "any", "type": "image/svg+xml" }
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }
