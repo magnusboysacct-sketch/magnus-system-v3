@@ -1,7 +1,8 @@
-// src/pages/FieldAppPage.tsx — Magnus Boys Field Worker PWA
+﻿// src/pages/FieldAppPage.tsx — Magnus Boys Field Worker PWA
 // Mobile-first, touch-friendly, installs as app on phone
 import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { useCompanySettings } from "../hooks/useCompanySettings";
 import {
   FileText, Camera, DollarSign, AlertTriangle, ShieldCheck,
   CheckCircle2, Circle, RefreshCw, Users, CloudSun, Clock,
@@ -38,6 +39,7 @@ export default function FieldAppPage() {
   const [safetyChecked, setSafetyChecked] = useState<Set<number>>(new Set());
   const [toast, setToast] = useState<string|null>(null);
   const [companyId, setCompanyId] = useState<string>("");
+  const { settings: company } = useCompanySettings();
 
   const today = new Date().toISOString().slice(0,10);
 
