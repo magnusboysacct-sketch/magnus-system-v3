@@ -1,4 +1,4 @@
-import { supabase } from "../../../lib/supabase";
+﻿import { supabase } from "../../../lib/supabase";
 import type { Measurement, MeasurementGroup, CalibrationState } from "../types/takeoff.types";
 
 export type TakeoffSession = {
@@ -18,7 +18,7 @@ export type TakeoffData = {
   calibration: CalibrationState | null;
 };
 
-let saveTimeout: number | null = null;
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
 export async function getOrCreateSession(
   projectId: string,

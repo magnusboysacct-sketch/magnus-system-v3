@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+﻿import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -223,7 +223,7 @@ export default function FinanceDashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
         <div className="flex items-center justify-center p-8">
           <div className="text-center">
             <div className="mb-4 text-2xl text-slate-400">Loading Finance Dashboard...</div>
@@ -235,7 +235,7 @@ export default function FinanceDashboardPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-950">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
         <div className="flex items-center justify-center p-8">
           <div className="rounded-xl border border-rose-800/60 bg-rose-900/20 p-6">
             <div className="text-rose-300">Error: {error}</div>
@@ -246,7 +246,7 @@ export default function FinanceDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <div className="border-b border-slate-800 bg-slate-900/30">
         <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">

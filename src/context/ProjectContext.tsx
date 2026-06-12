@@ -1,4 +1,4 @@
-import React, {
+﻿import React, {
   createContext,
   useCallback,
   useContext,
@@ -36,9 +36,34 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const loadProjects = useCallback(async () => {
     setLoadingProjects(true);
 
+    // Get current authenticated user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      console.error("No authenticated user found");
+      setProjects([]);
+      setLoadingProjects(false);
+      return;
+    }
+
+    // Load user's company_id from user_profiles
+    const { data: profileData, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("company_id")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError || !profileData?.company_id) {
+      console.error("Failed to load user profile or no company assigned:", profileError);
+      setProjects([]);
+      setLoadingProjects(false);
+      return;
+    }
+
+    // Filter projects by user's company_id
     const { data, error } = await supabase
       .from("projects")
       .select("id, name, client_id, status")
+      .eq("company_id", profileData.company_id)
       .order("name", { ascending: true });
 
     if (error) {

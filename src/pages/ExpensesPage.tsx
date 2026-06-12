@@ -1,828 +1,359 @@
+﻿// src/pages/ExpensesPage.tsx
 import React, { useEffect, useState } from "react";
-import { Receipt, Plus, Upload, Check, X, Eye, FileText, DollarSign, Image as ImageIcon } from "lucide-react";
-import { fetchExpenses, createExpense, approveExpense } from "../lib/finance";
-import { ReceiptUpload } from "../components/ReceiptUpload";
-import { OCRPreview } from "../components/OCRPreview";
-import { linkReceiptToExpense, getExpenseReceipts, getReceiptUrl, type OCRResult } from "../lib/receiptOCR";
-import type { Expense } from "../lib/finance";
-import { useFinanceAccess } from "../hooks/useFinanceAccess";
-import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
-import AIAssistantPanel from "../components/AIAssistantPanel";
-import { AIReceiptCategorizer } from "../components/AIReceiptCategorizer";
+import { ReceiptScanner } from "../components/ReceiptScanner";
+import { supabase } from "../lib/supabase";
+import { useProjectContext } from "../context/ProjectContext";
+import {
+  PageHeader, Card, Badge, Btn, Input, Select, Field,
+  Table, Th, Tr, Td, Empty, Modal, Alert, Tabs, cn
+} from "../components/ui";
+import {
+  Plus, Search, Download, Receipt, DollarSign,
+  RefreshCw, Filter, X, Check, Calendar
+} from "lucide-react";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Expense = {
+  id: string;
+  amount: number;
+  description: string | null;
+  expense_date: string | null;
+  category_id: string | null;
+  project_id: string | null;
+  worker_id: string | null;
+  status: string | null;
+  receipt_url: string | null;
+  created_at: string;
+  projects?: { name: string } | null;
+  workers?: { first_name: string; last_name: string } | null;
+  expense_categories?: { name: string } | null;
+};
+
+type Category = { id: string; name: string; category_type: string };
+
+type Tab = "all" | "pending" | "approved";
+
+const STATUS_COLOR: Record<string, any> = {
+  pending:  "amber",
+  approved: "green",
+  rejected: "red",
+  paid:     "blue",
+};
+
+function fmt(n: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", maximumFractionDigits: 2
+  }).format(n);
+}
+
+function fmtDate(d: string | null) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ExpensesPage() {
-  const financeAccess = useFinanceAccess();
-  const [expenses, setExpenses] = useState<any[]>([]);
+  const { projects, currentProject } = useProjectContext();
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedExpense, setSelectedExpense] = useState<any>(null);
-  const [editingExpense, setEditingExpense] = useState<any>(null);
-  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
-  const [projects, setProjects] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [companyId, setCompanyId] = useState<string>("");
-  const [userId, setUserId] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<Tab>("all");
+  const [projectFilter, setProjectFilter] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [showExpenseScanner, setShowExpenseScanner] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [uploadedReceiptId, setUploadedReceiptId] = useState<string | null>(null);
-  const [ocrResult, setOcrResult] = useState<OCRResult | null>(null);
-  const [showOcrPreview, setShowOcrPreview] = useState(false);
-  const [receiptUrls, setReceiptUrls] = useState<Record<string, string>>({});
-  const [showAICategorizer, setShowAICategorizer] = useState(false);
-  const [pendingOCRData, setPendingOCRData] = useState<OCRResult | null>(null);
+  function handleExpenseScan(result: any) {
+    setShowExpenseScanner(false);
+    setForm(f => ({
+      ...f,
+      description: result.vendor ? `${result.vendor} - Receipt` : f.description,
+      amount:      result.amount ? result.amount.toString() : f.amount,
+      expense_date: result.date || f.expense_date,
+    }));
+  }
+  const [companyId, setCompanyId] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState({
-    expense_date: new Date().toISOString().split("T")[0],
-    project_id: "",
-    category_id: "",
-    vendor: "",
-    description: "",
-    amount: "",
-    payment_method: "credit_card",
-    receipt_url: "",
-    notes: "",
+  const [form, setForm] = useState({
+    description: "", amount: "", expense_date: "",
+    category_id: "", project_id: currentProject?.id || "", status: "pending",
   });
 
+  // Load company ID
   useEffect(() => {
-    loadExpenses();
-    loadProjectsAndCategories();
-    loadUserInfo();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle()
+        .then(({ data }) => { if (data?.company_id) setCompanyId(data.company_id); });
+    });
   }, []);
 
-  if (financeAccess.loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-slate-600">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!financeAccess.canViewExpenses) {
-    return <FinanceAccessDenied />;
-  }
-
-  async function loadUserInfo() {
-    try {
-      const { supabase } = await import("../lib/supabase");
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: profile } = await supabase
-        .from("user_profiles")
-        .select("company_id")
-        .eq("id", user.id)
-        .single();
-
-      if (profile?.company_id) {
-        setCompanyId(profile.company_id);
-        setUserId(user.id);
-      }
-    } catch (error) {
-      console.error("Error loading user info:", error);
-    }
-  }
+  useEffect(() => {
+    if (companyId) { loadExpenses(); loadCategories(); }
+  }, [companyId]);
 
   async function loadExpenses() {
+    setLoading(true);
     try {
-      const { supabase } = await import("../lib/supabase");
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: profile } = await supabase
-        .from("user_profiles")
-        .select("company_id")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile?.company_id) return;
-
-      const data = await fetchExpenses(profile.company_id);
-      setExpenses(data);
-    } catch (error) {
-      console.error("Error loading expenses:", error);
-    } finally {
-      setLoading(false);
-    }
+      const { data, error: e } = await supabase
+        .from("expenses")
+        .select("*, projects(name), workers(first_name, last_name), expense_categories(name)")
+        .eq("company_id", companyId!)
+        .order("created_at", { ascending: false });
+      if (e) throw e;
+      setExpenses(data || []);
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
   }
 
-  async function loadProjectsAndCategories() {
+  async function loadCategories() {
+    const { data } = await supabase
+      .from("expense_categories")
+      .select("id, name, category_type")
+      .eq("company_id", companyId!);
+    setCategories(data || []);
+  }
+
+  async function createExpense() {
+    setSaving(true); setError(null);
     try {
-      const { supabase } = await import("../lib/supabase");
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: profile } = await supabase
-        .from("user_profiles")
-        .select("company_id")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile?.company_id) return;
-
-      const [projectsData, categoriesData] = await Promise.all([
-        supabase.from("projects").select("id, name").eq("company_id", profile.company_id).order("name"),
-        supabase.from("expense_categories").select("id, name").eq("company_id", profile.company_id).order("name"),
-      ]);
-
-      if (projectsData.data) setProjects(projectsData.data);
-      if (categoriesData.data) setCategories(categoriesData.data);
-    } catch (error) {
-      console.error("Error loading projects/categories:", error);
-    }
+      const { error: e } = await supabase.from("expenses").insert({
+        company_id: companyId,
+        description: form.description.trim(),
+        amount: parseFloat(form.amount) || 0,
+        expense_date: form.expense_date || null,
+        category_id: form.category_id || null,
+        project_id: form.project_id || null,
+        status: form.status,
+      });
+      if (e) throw e;
+      await loadExpenses();
+      setShowNew(false);
+      setForm({ description: "", amount: "", expense_date: "", category_id: "", project_id: currentProject?.id || "", status: "pending" });
+    } catch (e: any) { setError(e.message); }
+    finally { setSaving(false); }
   }
 
-  function openCreateModal() {
-    setEditingExpense(null);
-    setUploadedReceiptId(null);
-    setOcrResult(null);
-    setShowOcrPreview(false);
-    setFormData({
-      expense_date: new Date().toISOString().split("T")[0],
-      project_id: "",
-      category_id: "",
-      vendor: "",
-      description: "",
-      amount: "",
-      payment_method: "credit_card",
-      receipt_url: "",
-      notes: "",
-    });
-    setShowModal(true);
+  async function updateStatus(id: string, status: string) {
+    await supabase.from("expenses").update({ status }).eq("id", id);
+    setExpenses(prev => prev.map(e => e.id === id ? { ...e, status } : e));
   }
 
-  function openEditModal(expense: any) {
-    setEditingExpense(expense);
-    setUploadedReceiptId(null);
-    setOcrResult(null);
-    setShowOcrPreview(false);
-    setFormData({
-      expense_date: expense.expense_date,
-      project_id: expense.project_id || "",
-      category_id: expense.category_id || "",
-      vendor: expense.vendor || "",
-      description: expense.description,
-      amount: expense.amount.toString(),
-      payment_method: expense.payment_method || "credit_card",
-      receipt_url: expense.receipt_url || "",
-      notes: expense.notes || "",
-    });
-    setShowModal(true);
+  function exportCSV() {
+    const rows = filtered.map(e => [
+      fmtDate(e.expense_date), e.description || "", fmt(e.amount),
+      e.expense_categories?.name || "", e.projects?.name || "",
+      `${e.workers?.first_name || ""} ${e.workers?.last_name || ""}`.trim(), e.status || ""
+    ].join(","));
+    const csv = ["Date,Description,Amount,Category,Project,Worker,Status", ...rows].join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `expenses_${Date.now()}.csv`; a.click();
   }
 
-  async function openDetailModal(expense: any) {
-    setSelectedExpense(expense);
-    setShowDetailModal(true);
+  // Filter
+  const filtered = expenses.filter(e => {
+    const matchSearch = (e.description || "").toLowerCase().includes(search.toLowerCase()) ||
+      (e.expense_categories?.name || "").toLowerCase().includes(search.toLowerCase());
+    const matchTab = tab === "all" || e.status === tab;
+    const matchProject = !projectFilter || e.project_id === projectFilter;
+    return matchSearch && matchTab && matchProject;
+  });
 
-    try {
-      const receipts = await getExpenseReceipts(expense.id);
-      const urls: Record<string, string> = {};
-      for (const receipt of receipts) {
-        const url = await getReceiptUrl(receipt.storage_path);
-        urls[receipt.id] = url;
-      }
-      setReceiptUrls(urls);
-    } catch (error) {
-      console.error("Error loading receipt URLs:", error);
-    }
-  }
-
-  function handleReceiptUploadComplete(receiptId: string, result: OCRResult | null) {
-    setUploadedReceiptId(receiptId);
-    setOcrResult(result);
-
-    if (result) {
-      setShowOcrPreview(true);
-    }
-  }
-
-  function handleAcceptOCR() {
-    if (!ocrResult) return;
-
-    setFormData({
-      ...formData,
-      vendor: ocrResult.vendor || formData.vendor,
-      expense_date: ocrResult.date || formData.expense_date,
-      amount: ocrResult.amount ? ocrResult.amount.toString() : formData.amount,
-      description: formData.description || `Receipt from ${ocrResult.vendor || 'vendor'}`,
-      notes: ocrResult.receiptNumber
-        ? `Receipt #: ${ocrResult.receiptNumber}${formData.notes ? '\n' + formData.notes : ''}`
-        : formData.notes,
-    });
-
-    setPendingOCRData(ocrResult);
-    setShowOcrPreview(false);
-    setShowAICategorizer(true);
-  }
-
-  function handleAICategorization(categorization: { category: string; description: string; vendorType?: string }) {
-    const matchedCategory = categories.find(c => c.name === categorization.category);
-
-    setFormData({
-      ...formData,
-      category_id: matchedCategory?.id || formData.category_id,
-      description: categorization.description,
-    });
-    setShowAICategorizer(false);
-    setPendingOCRData(null);
-  }
-
-  function handleEditManually() {
-    setShowOcrPreview(false);
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-
-    try {
-      const { supabase } = await import("../lib/supabase");
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data: profile } = await supabase
-        .from("user_profiles")
-        .select("company_id")
-        .eq("id", user.id)
-        .single();
-
-      if (!profile?.company_id) return;
-
-      const payload = {
-        company_id: profile.company_id,
-        expense_date: formData.expense_date,
-        project_id: formData.project_id || null,
-        category_id: formData.category_id || null,
-        vendor: formData.vendor || null,
-        description: formData.description,
-        amount: parseFloat(formData.amount),
-        payment_method: formData.payment_method || null,
-        receipt_url: formData.receipt_url || null,
-        notes: formData.notes || null,
-        status: "pending" as const,
-      };
-
-      let expenseId: string;
-
-      if (editingExpense) {
-        await supabase.from("expenses").update(payload).eq("id", editingExpense.id);
-        expenseId = editingExpense.id;
-      } else {
-        const { data: newExpense, error } = await supabase
-          .from("expenses")
-          .insert(payload)
-          .select()
-          .single();
-
-        if (error) throw error;
-        expenseId = newExpense.id;
-      }
-
-      if (uploadedReceiptId) {
-        await linkReceiptToExpense(uploadedReceiptId, expenseId);
-      }
-
-      setShowModal(false);
-      loadExpenses();
-    } catch (error) {
-      console.error("Error saving expense:", error);
-      alert("Failed to save expense");
-    }
-  }
-
-  async function handleApprove(id: string) {
-    try {
-      await approveExpense(id);
-      loadExpenses();
-    } catch (error) {
-      console.error("Error approving expense:", error);
-    }
-  }
-
-  async function handleReject(id: string) {
-    try {
-      const { supabase } = await import("../lib/supabase");
-      await supabase.from("expenses").update({ status: "rejected" }).eq("id", id);
-      loadExpenses();
-    } catch (error) {
-      console.error("Error rejecting expense:", error);
-    }
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this expense?")) return;
-
-    try {
-      const { supabase } = await import("../lib/supabase");
-      await supabase.from("expenses").delete().eq("id", id);
-      loadExpenses();
-    } catch (error) {
-      console.error("Error deleting expense:", error);
-      alert("Failed to delete expense");
-    }
-  }
-
-  const filteredExpenses = expenses.filter((exp) => filter === "all" || exp.status === filter);
-
-  const summary = {
-    total: expenses.reduce((sum, e) => sum + Number(e.amount), 0),
-    pending: expenses.filter((e) => e.status === "pending").length,
-    approved: expenses.filter((e) => e.status === "approved").reduce((sum, e) => sum + Number(e.amount), 0),
-  };
+  // Totals
+  const totalAll = expenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const totalPending = expenses.filter(e => e.status === "pending").reduce((s, e) => s + (e.amount || 0), 0);
+  const totalApproved = expenses.filter(e => e.status === "approved").reduce((s, e) => s + (e.amount || 0), 0);
 
   return (
-    <>
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-8 py-5">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Expenses</h1>
-          <p className="text-sm text-slate-600">Track and manage business expenses</p>
-        </div>
-        <button
-          onClick={openCreateModal}
-          className="flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
-        >
-          <Plus size={18} />
-          Add Expense
-        </button>
-      </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+      <PageHeader
+        title="Expenses"
+        subtitle={`${expenses.length} total · ${fmt(totalAll)}`}
+        actions={
+          <>
+            <Btn variant="ghost" size="sm" icon={<Download size={13}/>} onClick={exportCSV}>Export</Btn>
+            <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => setShowNew(true)}>Log Expense</Btn>
+          </>
+        }
+      />
 
-      <div className="p-8">
-        <div className="mb-6 grid grid-cols-3 gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="text-sm font-medium text-slate-600">Total Expenses</div>
-            <div className="mt-2 text-2xl font-bold text-slate-900">${summary.total.toLocaleString()}</div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="text-sm font-medium text-slate-600">Pending Approval</div>
-            <div className="mt-2 text-2xl font-bold text-orange-600">{summary.pending}</div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="text-sm font-medium text-slate-600">Approved</div>
-            <div className="mt-2 text-2xl font-bold text-green-600">${summary.approved.toLocaleString()}</div>
-          </div>
+      <div className="p-6 space-y-5">
+        {/* Summary cards */}
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: "Total Expenses", value: fmt(totalAll),     color: "text-slate-200" },
+            { label: "Pending",        value: fmt(totalPending),  color: "text-amber-400" },
+            { label: "Approved",       value: fmt(totalApproved), color: "text-emerald-400" },
+          ].map(s => (
+            <Card key={s.label}>
+              <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">{s.label}</div>
+              <div className={cn("text-2xl font-bold", s.color)}>{s.value}</div>
+            </Card>
+          ))}
         </div>
 
-        <div className="mb-4">
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as any)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-          >
-            <option value="all">All Expenses</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-          </select>
+        {/* Tabs */}
+        <Tabs
+          tabs={[
+            { key: "all" as Tab,      label: "All",      count: expenses.length },
+            { key: "pending" as Tab,  label: "Pending",  count: expenses.filter(e => e.status === "pending").length },
+            { key: "approved" as Tab, label: "Approved", count: expenses.filter(e => e.status === "approved").length },
+          ]}
+          active={tab}
+          onChange={setTab}
+        />
+
+        {/* Filters */}
+        <div className="flex gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700"/>
+            <Input className="pl-8" placeholder="Search expenses..." value={search} onChange={e => setSearch(e.target.value)}/>
+          </div>
+          <Select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="w-44">
+            <option value="">All projects</option>
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </Select>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="w-full">
-            <thead className="border-b border-slate-200 bg-slate-50">
+        {/* Table */}
+        <Card padding={false}>
+          <Table>
+            <thead>
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                  Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                  Description
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                  Category
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                  Vendor
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                  Project
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-700">
-                  Amount
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-700">
-                  Actions
-                </th>
+                <Th>Date</Th>
+                <Th>Description</Th>
+                <Th>Category</Th>
+                <Th>Project</Th>
+                <Th>Worker</Th>
+                <Th right>Amount</Th>
+                <Th>Status</Th>
+                <Th>Actions</Th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
-              {filteredExpenses.map((exp) => (
-                <tr key={exp.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 text-sm text-slate-600">{exp.expense_date}</td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm font-medium text-slate-900">{exp.description}</div>
-                    {exp.payment_method && (
-                      <div className="text-xs text-slate-500 capitalize">{exp.payment_method.replace("_", " ")}</div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-slate-600">{exp.expense_categories?.name || "-"}</td>
-                  <td className="px-6 py-4 text-sm text-slate-600">{exp.vendor || "-"}</td>
-                  <td className="px-6 py-4 text-sm text-slate-600">{exp.projects?.name || "-"}</td>
-                  <td className="px-6 py-4 text-right text-sm font-medium text-slate-900">
-                    ${Number(exp.amount).toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ${
-                        exp.status === "approved"
-                          ? "bg-green-50 text-green-700"
-                          : exp.status === "rejected"
-                          ? "bg-red-50 text-red-700"
-                          : "bg-orange-50 text-orange-700"
-                      }`}
-                    >
-                      {exp.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <button
-                      onClick={() => openDetailModal(exp)}
-                      className="mr-3 text-sm font-medium text-slate-600 hover:text-slate-900"
-                    >
-                      View
-                    </button>
-                    {exp.status === "pending" && (
-                      <>
-                        <button
-                          onClick={() => openEditModal(exp)}
-                          className="mr-3 text-sm font-medium text-blue-600 hover:text-blue-700"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleApprove(exp.id)}
-                          className="mr-3 text-sm font-medium text-green-600 hover:text-green-700"
-                        >
+            <tbody>
+              {loading ? (
+                <tr><Td colSpan={8} className="text-center py-10 text-slate-600">
+                  <RefreshCw size={14} className="animate-spin inline mr-2"/>Loading...
+                </Td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><Td colSpan={8}>
+                  <Empty icon={<Receipt size={18}/>} title="No expenses found"
+                    action={<Btn variant="primary" size="sm" icon={<Plus size={12}/>} onClick={() => setShowNew(true)}>Log Expense</Btn>}/>
+                </Td></tr>
+              ) : filtered.map(e => (
+                <Tr key={e.id}>
+                  <Td muted>{fmtDate(e.expense_date)}</Td>
+                  <Td><span className="font-medium text-slate-200">{e.description || "—"}</span></Td>
+                  <Td muted>{e.expense_categories?.name || "—"}</Td>
+                  <Td muted>{e.projects?.name || "—"}</Td>
+                  <Td muted>
+                    {e.workers ? `${e.workers.first_name} ${e.workers.last_name}` : "—"}
+                  </Td>
+                  <Td right><span className="font-semibold text-slate-200">{fmt(e.amount)}</span></Td>
+                  <Td>
+                    <Badge color={STATUS_COLOR[e.status || "pending"] || "slate"} dot>
+                      {e.status || "pending"}
+                    </Badge>
+                  </Td>
+                  <Td>
+                    <div className="flex items-center gap-1">
+                      {e.status === "pending" && (
+                        <button onClick={() => updateStatus(e.id, "approved")}
+                          className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors">
                           Approve
                         </button>
-                        <button
-                          onClick={() => handleReject(exp.id)}
-                          className="text-sm font-medium text-red-600 hover:text-red-700"
-                        >
-                          Reject
+                      )}
+                      {e.status === "approved" && (
+                        <button onClick={() => updateStatus(e.id, "approved")}
+                          className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors">
+                          Mark Paid
                         </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
+                      )}
+                    </div>
+                  </Td>
+                </Tr>
               ))}
             </tbody>
-          </table>
-          {filteredExpenses.length === 0 && (
-            <div className="py-12 text-center text-sm text-slate-500">No expenses found</div>
-          )}
-        </div>
+          </Table>
+        </Card>
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="mb-6 text-xl font-bold text-slate-900">
-              {editingExpense ? "Edit Expense" : "Add Expense"}
-            </h2>
+      {/* New Expense Modal */}
+      <Modal open={showNew} onClose={() => { setShowNew(false); setError(null); }}
+        title="Log Expense" subtitle="Record a new project expense">
+        <div className="space-y-4">
+          {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {!editingExpense && companyId && userId && (
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    Receipt Upload (Optional)
-                  </label>
-                  <ReceiptUpload
-                    companyId={companyId}
-                    userId={userId}
-                    onUploadComplete={handleReceiptUploadComplete}
-                  />
-                </div>
-              )}
-
-              {showOcrPreview && ocrResult && (
-                <OCRPreview
-                  ocrResult={ocrResult}
-                  onAccept={handleAcceptOCR}
-                  onEdit={handleEditManually}
-                />
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={formData.expense_date}
-                    onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Amount *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={formData.amount}
-                    onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                    placeholder="0.00"
-                  />
-                </div>
+          {/* Receipt Scanner */}
+          {showExpenseScanner ? (
+            <ReceiptScanner
+              onResult={handleExpenseScan}
+              onCancel={() => setShowExpenseScanner(false)}
+            />
+          ) : (
+            <button onClick={() => setShowExpenseScanner(true)}
+              className="w-full flex items-center gap-2.5 rounded-xl border border-dashed border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 px-4 py-3 transition-all group">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center group-hover:bg-emerald-500/20 transition">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
               </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Description *</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  placeholder="Office supplies, fuel, equipment rental, etc."
-                />
+              <div className="text-left">
+                <div className="text-xs font-semibold text-emerald-300">Scan Receipt with AI</div>
+                <div className="text-[10px] text-slate-600">Auto-fill from photo</div>
               </div>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-700 ml-auto"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Category</label>
-                  <select
-                    value={formData.category_id}
-                    onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  >
-                    <option value="">Select Category</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Vendor</label>
-                  <input
-                    type="text"
-                    value={formData.vendor}
-                    onChange={(e) => setFormData({ ...formData, vendor: e.target.value })}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                    placeholder="Vendor name"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Project (Optional)</label>
-                <select
-                  value={formData.project_id}
-                  onChange={(e) => setFormData({ ...formData, project_id: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                >
-                  <option value="">No Project</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Payment Method</label>
-                <select
-                  value={formData.payment_method}
-                  onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                >
-                  <option value="credit_card">Credit Card</option>
-                  <option value="cash">Cash</option>
-                  <option value="check">Check</option>
-                  <option value="ach">ACH</option>
-                  <option value="wire">Wire Transfer</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Notes</label>
-                <textarea
-                  rows={3}
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400"
-                  placeholder="Additional notes about this expense"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                >
-                  {editingExpense ? "Update" : "Create"} Expense
-                </button>
-              </div>
-            </form>
+          <Field label="Description">
+            <Input placeholder="e.g. Cement bags from Hardware Plus" value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))} autoFocus/>
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Amount ($)">
+              <Input type="number" placeholder="0.00" value={form.amount}
+                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}/>
+            </Field>
+            <Field label="Date">
+              <Input type="date" value={form.expense_date}
+                onChange={e => setForm(f => ({ ...f, expense_date: e.target.value }))}/>
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Category">
+              <Select value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}>
+                <option value="">No category</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Project">
+              <Select value={form.project_id} onChange={e => setForm(f => ({ ...f, project_id: e.target.value }))}>
+                <option value="">No project</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <Field label="Status">
+            <Select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="approved">Approved / Paid</option>
+              <option value="rejected">Rejected</option>
+            </Select>
+          </Field>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+            <Btn variant="ghost" onClick={() => { setShowNew(false); setError(null); }}>Cancel</Btn>
+            <Btn variant="primary" onClick={createExpense}
+              disabled={!form.description.trim() || !form.amount || saving}>
+              {saving ? "Saving..." : "Log Expense"}
+            </Btn>
           </div>
         </div>
-      )}
-
-      {showDetailModal && selectedExpense && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Expense Details</h2>
-                <p className="text-sm text-slate-600">{selectedExpense.expense_date}</p>
-              </div>
-              <button
-                onClick={() => setShowDetailModal(false)}
-                className="rounded-lg p-2 hover:bg-slate-100"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-6">
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <div>
-                  <div className="text-sm text-slate-600">Amount</div>
-                  <div className="text-3xl font-bold text-slate-900">
-                    ${Number(selectedExpense.amount).toLocaleString()}
-                  </div>
-                </div>
-                <span
-                  className={`inline-flex rounded-full px-3 py-1.5 text-sm font-medium capitalize ${
-                    selectedExpense.status === "approved"
-                      ? "bg-green-50 text-green-700"
-                      : selectedExpense.status === "rejected"
-                      ? "bg-red-50 text-red-700"
-                      : "bg-orange-50 text-orange-700"
-                  }`}
-                >
-                  {selectedExpense.status}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">Description</div>
-                  <div className="text-sm text-slate-900">{selectedExpense.description}</div>
-                </div>
-                <div>
-                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">
-                    Payment Method
-                  </div>
-                  <div className="text-sm capitalize text-slate-900">
-                    {selectedExpense.payment_method?.replace("_", " ") || "-"}
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">Category</div>
-                  <div className="text-sm text-slate-900">{selectedExpense.expense_categories?.name || "-"}</div>
-                </div>
-                <div>
-                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">Vendor</div>
-                  <div className="text-sm text-slate-900">{selectedExpense.vendor || "-"}</div>
-                </div>
-              </div>
-
-              {selectedExpense.project_id && (
-                <div>
-                  <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-500">Project</div>
-                  <div className="text-sm text-slate-900">{selectedExpense.projects?.name || "-"}</div>
-                </div>
-              )}
-
-              {Object.keys(receiptUrls).length > 0 && (
-                <div>
-                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Receipts</div>
-                  <div className="space-y-2">
-                    {Object.entries(receiptUrls).map(([id, url]) => (
-                      <a
-                        key={id}
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm font-medium text-blue-600 hover:bg-slate-50"
-                      >
-                        <ImageIcon size={16} />
-                        View Receipt
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {selectedExpense.receipt_url && (
-                <div>
-                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Legacy Receipt</div>
-                  <a
-                    href={selectedExpense.receipt_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
-                  >
-                    <FileText size={16} />
-                    View Receipt
-                  </a>
-                </div>
-              )}
-
-              {selectedExpense.notes && (
-                <div>
-                  <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-500">Notes</div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                    {selectedExpense.notes}
-                  </div>
-                </div>
-              )}
-
-              {selectedExpense.approved_by && (
-                <div className="rounded-lg border border-slate-200 bg-green-50 p-4">
-                  <div className="flex items-center gap-2 text-sm font-medium text-green-700">
-                    <Check size={16} />
-                    Approved on {new Date(selectedExpense.approved_at).toLocaleDateString()}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
-                {selectedExpense.status === "pending" && (
-                  <>
-                    <button
-                      onClick={() => {
-                        setShowDetailModal(false);
-                        openEditModal(selectedExpense);
-                      }}
-                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => {
-                        handleApprove(selectedExpense.id);
-                        setShowDetailModal(false);
-                      }}
-                      className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => {
-                        handleReject(selectedExpense.id);
-                        setShowDetailModal(false);
-                      }}
-                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
-                    >
-                      Reject
-                    </button>
-                  </>
-                )}
-                <button
-                  onClick={() => setShowDetailModal(false)}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <AIAssistantPanel
-        context="expense"
-        currentData={{
-          isNewExpense: showModal && !editingExpense,
-          missingCostCodes: expenses.filter((e) => !e.cost_code_id).length,
-          hasExpenses: expenses.length > 0,
-          duplicateWarning: false,
-        }}
-        onAction={(action, data) => {
-          if (action === "Upload Receipt") {
-            setShowModal(true);
-          } else if (action === "View Budget") {
-            window.location.href = "/finance";
-          }
-        }}
-      />
-
-      <AIReceiptCategorizer
-        isOpen={showAICategorizer}
-        onClose={() => {
-          setShowAICategorizer(false);
-          setPendingOCRData(null);
-        }}
-        onAccept={handleAICategorization}
-        vendor={pendingOCRData?.vendor || formData.vendor}
-        amount={pendingOCRData?.amount || parseFloat(formData.amount) || 0}
-        ocrText={pendingOCRData?.rawText}
-      />
-    </>
+      </Modal>
+    </div>
   );
 }

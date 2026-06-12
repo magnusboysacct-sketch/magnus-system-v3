@@ -1,2165 +1,1337 @@
-import React, { useEffect, useRef, useState } from "react";
+﻿// src/pages/TakeoffPage.tsx — Magnus Boys Takeoff v4
+// PlanSwift-inspired layout: left toolbar, canvas center, right panel
+// Fixed: single-canvas rendering, correct pan/zoom coords, assembly templates
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { usePanZoom } from "../features/takeoff/hooks/usePanZoom";
-import { useMeasurements } from "../features/takeoff/hooks/useMeasurements";
-import { MeasurementLayer } from "../features/takeoff/components/MeasurementLayer";
-import {
-  getOrCreateSession,
-  loadTakeoff,
-} from "../features/takeoff/persistence/takeoffPersistence";
-import { usePlan } from "../hooks/usePlan";
-import PaywallModal from "../components/PaywallModal";
 import { supabase } from "../lib/supabase";
-import type { Measurement, MeasurementGroup, CalibrationState } from "../features/takeoff/types/takeoff.types";
+import { useProjectContext } from "../context/ProjectContext";
+import {
+  Upload, Ruler, Download, FileText, X, ChevronLeft, ChevronRight,
+  ZoomIn, ZoomOut, Maximize2, Trash2, Hash, Square, Box,
+  AlertCircle, RefreshCw, Send, MousePointer, Plus, Check,
+  Crosshair, Package, Layers, BarChart2, ChevronRight as Arrow,
+  BookOpen, Wand2
+} from "lucide-react";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
+// ─── Types ────────────────────────────────────────────────────────────────────
 type Point = { x: number; y: number };
-type CalibPoint = { x: number; y: number };
+type ToolMode = "select" | "line" | "area" | "count" | "volume";
 
-function clamp(n: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, n));
+interface Measurement {
+  id: string;
+  type: ToolMode;
+  points: Point[];
+  result: number;
+  unit: string;
+  label: string;
+  color: string;
+  linkedAssemblyId?: string;
+  linkedAssemblyName?: string;
+  linkedItemId?: string;
+  linkedItemName?: string;
+  timestamp: number;
 }
 
-function dist(a: Point, b: Point) {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  return Math.sqrt(dx * dx + dy * dy);
+interface PdfFile {
+  name: string;
+  storagePath?: string;
+  size: number;
 }
 
-function parseFraction(input: string): number | null {
-  const s = input.trim();
-  if (!s) return 0;
-  if (/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
-  const m = s.match(/^(\d+)\s*\/\s*(\d+)$/);
-  if (!m) return null;
-  const a = parseInt(m[1], 10);
-  const b = parseInt(m[2], 10);
-  if (!b) return null;
-  return a / b;
+interface Assembly {
+  id: string;
+  name: string;
+  category: string | null;
+  unit: string | null;
+  componentCount?: number;
 }
 
-function feetFromFIS(feet: number, inches: number, frac: number) {
-  return feet + (inches + frac) / 12;
+interface CostItem {
+  id: string;
+  item_name: string;
+  unit: string | null;
+  category: string | null;
 }
 
-type ScaleMode = "standard" | "fis" | "metric" | "auto";
+// ─── Constants ────────────────────────────────────────────────────────────────
+const TOOL_CFG: Record<ToolMode, { label: string; shortcut: string; color: string; desc: string; icon: React.ReactNode }> = {
+  select: { label: "Select",  shortcut: "S", color: "#94a3b8", desc: "Click to select. Space+drag to pan.",    icon: <MousePointer size={16}/> },
+  line:   { label: "Linear",  shortcut: "L", color: "#38bdf8", desc: "Click start → click end to measure.",    icon: <Ruler size={16}/> },
+  area:   { label: "Area",    shortcut: "A", color: "#a78bfa", desc: "Click corners. Double-click to close.",  icon: <Square size={16}/> },
+  count:  { label: "Count",   shortcut: "C", color: "#fb923c", desc: "Click to place markers.",                icon: <Hash size={16}/> },
+  volume: { label: "Volume",  shortcut: "V", color: "#34d399", desc: "Trace base. Double-click → enter depth.", icon: <Box size={16}/> },
+};
 
-function ScaleModal(props: {
-  open: boolean;
-  onClose: () => void;
-  onApply: (feet: number, opts: { applyAllPages: boolean; autoDimLine: boolean }) => void;
-  canApply: boolean;
-  isCalibrating?: boolean;
-  calibPointsCount?: number;
-  canConfirmCalibration?: boolean;
-  onCalibrationOk?: (lengthFeet: number) => void;
-  onCalibrationCancel?: () => void;
-}) {
-  const { open, onClose, onApply, canApply, isCalibrating = false, calibPointsCount = 0, canConfirmCalibration = false, onCalibrationOk, onCalibrationCancel } = props;
-  const [tab, setTab] = useState<ScaleMode>("standard");
+const MEASURE_COLORS = ["#38bdf8","#a78bfa","#fb923c","#34d399","#f472b6","#facc15","#60a5fa","#f87171"];
+let colorIdx = 0;
+function nextColor() { return MEASURE_COLORS[colorIdx++ % MEASURE_COLORS.length]; }
 
-  const [stdFeet, setStdFeet] = useState("10");
+function clamp(n: number, min: number, max: number) { return Math.min(max, Math.max(min, n)); }
+function fmt2(n: number) { return Number.isFinite(n) ? n.toFixed(2) : "0.00"; }
+function fmtMoney(n: number) { return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0}).format(n); }
+function uid() { try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(16).slice(2)}`; } }
+function dist(a: Point, b: Point) { return Math.sqrt((b.x-a.x)**2+(b.y-a.y)**2); }
+function polyArea(pts: Point[]) {
+  if (pts.length < 3) return 0;
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) { const j = (i+1)%pts.length; a += pts[i].x*pts[j].y - pts[j].x*pts[i].y; }
+  return Math.abs(a)/2;
+}
+function distToSeg(p: Point, a: Point, b: Point) {
+  const A=p.x-a.x,B=p.y-a.y,C=b.x-a.x,D=b.y-a.y;
+  const dot=A*C+B*D,len=C*C+D*D,t=len?clamp(dot/len,0,1):0;
+  return Math.sqrt((p.x-a.x-t*C)**2+(p.y-a.y-t*D)**2);
+}
 
-  const [fisFeet, setFisFeet] = useState("");
-  const [fisInch, setFisInch] = useState("");
-  const [fisFrac, setFisFrac] = useState("");
+// ─── Error Boundary ───────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component<{children:React.ReactNode},{err:any}> {
+  constructor(p:any){super(p);this.state={err:null};}
+  static getDerivedStateFromError(e:any){return{err:e};}
+  render(){
+    if(this.state.err) return(
+      <div className="min-h-screen bg-[#080b10] flex items-center justify-center">
+        <div className="text-center gap-3 flex flex-col items-center">
+          <AlertCircle size={32} className="text-red-400"/>
+          <p className="text-slate-300 text-sm">Takeoff crashed.</p>
+          <button onClick={()=>window.location.reload()} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs">Reload</button>
+        </div>
+      </div>
+    );
+    return this.props.children as any;
+  }
+}
 
-  const [metricMeters, setMetricMeters] = useState("3");
-  const [applyAllPages, setApplyAllPages] = useState(true);
-  const [autoDimLine, setAutoDimLine] = useState(true);
+// ─── Main ─────────────────────────────────────────────────────────────────────
+function TakeoffInner() {
+  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
+  const { currentProject } = useProjectContext();
+  const nav = useNavigate();
+  const projectId = routeProjectId || currentProject?.id;
 
-  const canStartCalibration = Number(stdFeet || 0) > 0;
+  // Canvas & viewport
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const panRef = useRef<Point>({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
+  const panningRef = useRef(false);
+  const panStartRef = useRef<{ mouse: Point; pan: Point }>({ mouse: { x: 0, y: 0 }, pan: { x: 0, y: 0 } });
+  const spaceRef = useRef(false);
 
-  useEffect(() => {
-    if (!open) return;
-    setTab("standard");
-  }, [open]);
+  // PDF
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [pageNum, setPageNum] = useState(1);
+  const [numPages, setNumPages] = useState(0);
+  const [pdfFiles, setPdfFiles] = useState<PdfFile[]>([]);
+  const [activePdfIdx, setActivePdfIdx] = useState(0);
+  const [loadingPdf, setLoadingPdf] = useState(false);
+  const [pdfPageSize, setPdfPageSize] = useState<Point>({ x: 0, y: 0 }); // native page size in pts
+  const renderTaskRef = useRef<any>(null);
+  const renderSeqRef = useRef(0);
 
-  if (!open) return null;
+  // Tools & drawing
+  const [tool, setTool] = useState<ToolMode>("select");
+  const toolRef = useRef<ToolMode>("select");
+  const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const measurementsRef = useRef<Measurement[]>([]);
+  const [selectedId, setSelectedId] = useState<string|null>(null);
+  const selectedIdRef = useRef<string|null>(null);
+  const [inProgress, setInProgress] = useState<Point[]>([]);
+  const inProgressRef = useRef<Point[]>([]);
+  const [hoverPt, setHoverPt] = useState<Point|null>(null);
+  const hoverRef = useRef<Point|null>(null);
 
-  function apply() {
-    let feet: number | null = null;
+  // Calibration
+  const [calibration, setCalibration] = useState<{p1:Point;p2:Point;feetPerPx:number}|null>(null);
+  const calibRef = useRef<typeof calibration>(null);
+  const [calibrating, setCalibrating] = useState(false);
+  const calibratingRef = useRef(false);
+  const [calibPts, setCalibPts] = useState<Point[]>([]);
+  const calibPtsRef = useRef<Point[]>([]);
+  const [showCalibModal, setShowCalibModal] = useState(false);
+  const [calibFeet, setCalibFeet] = useState("10");
 
-    if (tab === "standard") {
-      const n = Number(stdFeet);
-      if (Number.isFinite(n) && n > 0) feet = n;
-    }
+  // Depth modal for volume
+  const [showDepthModal, setShowDepthModal] = useState(false);
+  const [depthInches, setDepthInches] = useState("4");
+  const pendingVolumeRef = useRef<Point[]>([]);
 
-    if (tab === "fis") {
-      const f = Number(fisFeet || 0);
-      const i = Number(fisInch || 0);
-      const fr = parseFraction(fisFrac);
-      if (fr == null) {
-        alert("Invalid fraction (use 1/2, 3/8, etc.)");
-        return;
-      }
-      const total = feetFromFIS(f, i, fr);
-      if (Number.isFinite(total) && total > 0) feet = total;
-    }
+  // Library
+  const [assemblies, setAssemblies] = useState<Assembly[]>([]);
+  const [costItems, setCostItems] = useState<CostItem[]>([]);
+  const [linkedAssemblyId, setLinkedAssemblyId] = useState<string>("");
+  const [linkedItemId, setLinkedItemId] = useState<string>("");
 
-    if (tab === "metric") {
-      const m = Number(metricMeters);
-      if (Number.isFinite(m) && m > 0) feet = m * 3.28084;
-    }
+  // Session
+  const [sessionId, setSessionId] = useState<string|null>(null);
+  const [dbReady, setDbReady] = useState(false);
+  const [error, setError] = useState<string|null>(null);
+  const [rightTab, setRightTab] = useState<"templates"|"measurements"|"stats">("templates");
+  const [searchLib, setSearchLib] = useState("");
 
-    if (tab === "auto") {
-      alert("Auto scale is coming next (read scale from title block).");
-      return;
-    }
+  // Keep refs in sync
+  useEffect(()=>{ zoomRef.current = zoom; },[zoom]);
+  useEffect(()=>{ panRef.current = pan; },[pan]);
+  useEffect(()=>{ toolRef.current = tool; },[tool]);
+  useEffect(()=>{ measurementsRef.current = measurements; },[measurements]);
+  useEffect(()=>{ selectedIdRef.current = selectedId; },[selectedId]);
+  useEffect(()=>{ calibRef.current = calibration; },[calibration]);
+  useEffect(()=>{ calibratingRef.current = calibrating; },[calibrating]);
+  useEffect(()=>{ calibPtsRef.current = calibPts; },[calibPts]);
+  useEffect(()=>{ inProgressRef.current = inProgress; },[inProgress]);
+  useEffect(()=>{ hoverRef.current = hoverPt; },[hoverPt]);
 
-    if (!feet) {
-      alert("Please enter a valid scale distance.");
-      return;
-    }
-
-    if (isCalibrating) {
-      if (onCalibrationOk) {
-        onCalibrationOk(feet);
-      }
-      return;
-    }
-
-    onApply(feet, { applyAllPages, autoDimLine });
+  // ─── Coordinate helpers ──────────────────────────────────────────────────────
+  // Convert screen coords to PDF-page coords
+  function screenToPdf(sx: number, sy: number): Point {
+    const c = containerRef.current;
+    if (!c) return { x: 0, y: 0 };
+    const rect = c.getBoundingClientRect();
+    const cx = sx - rect.left;
+    const cy = sy - rect.top;
+    return {
+      x: (cx - panRef.current.x) / zoomRef.current,
+      y: (cy - panRef.current.y) / zoomRef.current,
+    };
   }
 
+  // Convert PDF-page coords to canvas draw coords (canvas is full container size, pan/zoom applied in draw)
+  function pdfToCanvas(p: Point): Point {
+    return {
+      x: p.x * zoomRef.current + panRef.current.x,
+      y: p.y * zoomRef.current + panRef.current.y,
+    };
+  }
+
+  // ─── Main render loop ────────────────────────────────────────────────────────
+  const rafRef = useRef<number|null>(null);
+  const needsRender = useRef(true);
+
+  function scheduleRender() { needsRender.current = true; }
+
+  useEffect(() => {
+    function loop() {
+      rafRef.current = requestAnimationFrame(loop);
+      if (!needsRender.current) return;
+      needsRender.current = false;
+      drawAll();
+    }
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, []);
+
+  function drawAll() {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
+    // Size canvas to container
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, w, h);
+
+    // Draw checkerboard bg
+    const size = 24;
+    for (let x = 0; x < w; x += size) {
+      for (let y = 0; y < h; y += size) {
+        ctx.fillStyle = ((Math.floor(x/size)+Math.floor(y/size))%2===0) ? "#0a0d14" : "#080b10";
+        ctx.fillRect(x, y, size, size);
+      }
+    }
+
+    const z = zoomRef.current;
+    const px = panRef.current.x;
+    const py = panRef.current.y;
+
+    // Draw PDF page background (white rect)
+    if (pdfPageSize.x > 0) {
+      ctx.fillStyle = "#fff";
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = 20;
+      ctx.fillRect(px, py, pdfPageSize.x * z, pdfPageSize.y * z);
+      ctx.shadowBlur = 0;
+    }
+
+    // Draw measurements
+    const ms = measurementsRef.current;
+    ms.forEach(m => {
+      if (m.points.length === 0) return;
+      const col = m.color;
+      const selected = m.id === selectedIdRef.current;
+
+      ctx.save();
+      if (selected) { ctx.shadowColor = col; ctx.shadowBlur = 12; }
+
+      if (m.type === "line" && m.points.length >= 2) {
+        const [a, b] = [pdfToCanvas(m.points[0]), pdfToCanvas(m.points[1])];
+        ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        // Endpoint dots
+        [a, b].forEach(p => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill(); });
+        // Label
+        const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+        const label = `${fmt2(m.result)} ${m.unit}`;
+        drawLabel(ctx, label, mx, my-14, col);
+        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, mx, my+4, "#a78bfa", true);
+
+      } else if ((m.type === "area" || m.type === "volume") && m.points.length >= 3) {
+        const pts = m.points.map(pdfToCanvas);
+        ctx.strokeStyle = col; ctx.fillStyle = col + "22"; ctx.lineWidth = selected ? 2.5 : 1.5;
+        ctx.beginPath(); pts.forEach((p,i) => { if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        // Centroid label
+        const cx = pts.reduce((s,p)=>s+p.x,0)/pts.length;
+        const cy = pts.reduce((s,p)=>s+p.y,0)/pts.length;
+        drawLabel(ctx, `${fmt2(m.result)} ${m.unit}`, cx, cy, col);
+        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, cx, cy+18, "#a78bfa", true);
+
+      } else if (m.type === "count") {
+        m.points.forEach((p, i) => {
+          const cp = pdfToCanvas(p);
+          ctx.fillStyle = col; ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.arc(cp.x, cp.y, 7, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = "#fff"; ctx.font = "bold 9px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText(String(i+1), cp.x, cp.y);
+        });
+      }
+      ctx.restore();
+    });
+
+    // Draw in-progress
+    const ip = inProgressRef.current;
+    const hp = hoverRef.current;
+    const t = toolRef.current;
+    const tcol = TOOL_CFG[t].color;
+
+    if (calibratingRef.current) {
+      const cpts = calibPtsRef.current;
+      cpts.forEach(p => {
+        const cp = pdfToCanvas(p);
+        ctx.save();
+        ctx.fillStyle = "#ef4444"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cp.x, cp.y, 8, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.restore();
+      });
+      if (cpts.length === 1 && hp) {
+        const a = pdfToCanvas(cpts[0]), b = pdfToCanvas(hp);
+        ctx.save(); ctx.strokeStyle="#ef4444"; ctx.lineWidth=2; ctx.setLineDash([8,4]);
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.restore();
+      }
+    }
+
+    if (t === "line" && ip.length === 1 && hp) {
+      const a = pdfToCanvas(ip[0]), b = pdfToCanvas(hp);
+      ctx.save(); ctx.strokeStyle = tcol; ctx.lineWidth = 2; ctx.setLineDash([6,4]);
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      ctx.fillStyle = tcol; ctx.beginPath(); ctx.arc(a.x,a.y,4,0,Math.PI*2); ctx.fill();
+      const d = calibRef.current ? dist(ip[0], hp) * calibRef.current.feetPerPx : 0;
+      if (d > 0) drawLabel(ctx, `${fmt2(d)} ft`, (a.x+b.x)/2, (a.y+b.y)/2-12, tcol);
+      ctx.restore();
+    }
+
+    if ((t === "area" || t === "volume") && ip.length > 0 && hp) {
+      const allPts = [...ip, hp].map(pdfToCanvas);
+      ctx.save(); ctx.strokeStyle = tcol; ctx.fillStyle = tcol+"18"; ctx.lineWidth = 1.5; ctx.setLineDash([6,4]);
+      ctx.beginPath(); allPts.forEach((p,i)=>{ if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); }); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ip.forEach(p => { const cp=pdfToCanvas(p); ctx.fillStyle=tcol; ctx.setLineDash([]); ctx.beginPath(); ctx.arc(cp.x,cp.y,4,0,Math.PI*2); ctx.fill(); });
+      ctx.restore();
+    }
+
+    // Crosshair
+    if (hp && t !== "select") {
+      const cp = pdfToCanvas(hp);
+      ctx.save(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.globalAlpha = 0.3; ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(cp.x-20,cp.y); ctx.lineTo(cp.x+20,cp.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cp.x,cp.y-20); ctx.lineTo(cp.x,cp.y+20); ctx.stroke();
+      ctx.restore();
+    }
+
+    // Calibration line if set
+    if (calibRef.current) {
+      const a = pdfToCanvas(calibRef.current.p1), b = pdfToCanvas(calibRef.current.p2);
+      ctx.save(); ctx.strokeStyle="#ef4444"; ctx.lineWidth=2; ctx.globalAlpha=0.5;
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      [a,b].forEach(p=>{ ctx.fillStyle="#ef4444"; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); });
+      ctx.restore();
+    }
+  }
+
+  function drawLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, small = false) {
+    const font = small ? "bold 9px system-ui" : "bold 11px system-ui";
+    ctx.font = font;
+    ctx.textAlign = "center";
+    const tw = ctx.measureText(text).width;
+    const pad = 4, h = small ? 14 : 17;
+    ctx.fillStyle = "rgba(10,13,20,0.88)";
+    ctx.beginPath();
+    roundRect(ctx, x-tw/2-pad, y-h+2, tw+pad*2, h, 4);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.textBaseline = "bottom";
+    ctx.fillText(text, x, y+1);
+  }
+
+  function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+    ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+    ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+    ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+  }
+
+  // Schedule render when deps change
+  useEffect(() => { scheduleRender(); }, [zoom, pan, measurements, selectedId, inProgress, hoverPt, calibration, calibrating, calibPts, pdfPageSize]);
+
+  // ─── PDF rendering ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!pdfDoc) return;
+    let cancelled = false;
+    const seq = ++renderSeqRef.current;
+
+    async function render() {
+      try {
+        if (renderTaskRef.current) { renderTaskRef.current.cancel(); renderTaskRef.current = null; }
+        const page = await pdfDoc.getPage(pageNum);
+        if (cancelled || seq !== renderSeqRef.current) return;
+        const vp = page.getViewport({ scale: 1 });
+        setPdfPageSize({ x: vp.width, y: vp.height });
+
+        // Render to offscreen canvas, then draw onto main canvas in draw loop
+        const offscreen = document.createElement("canvas");
+        offscreen.width = vp.width;
+        offscreen.height = vp.height;
+        const octx = offscreen.getContext("2d")!;
+        const rt = page.render({ canvasContext: octx, viewport: vp });
+        renderTaskRef.current = rt;
+        await rt.promise;
+        if (cancelled || seq !== renderSeqRef.current) return;
+
+        // Replace drawAll to include the PDF image
+        const img = new Image();
+        img.src = offscreen.toDataURL();
+        img.onload = () => {
+          if (cancelled || seq !== renderSeqRef.current) return;
+          // Monkey-patch drawAll to draw PDF image
+          pdfImageRef.current = img;
+          scheduleRender();
+        };
+      } catch (e: any) {
+        if (e?.name !== "RenderingCancelledException") console.error("PDF render error:", e);
+      }
+    }
+    render();
+    return () => { cancelled = true; if (renderTaskRef.current) { renderTaskRef.current.cancel(); renderTaskRef.current = null; } };
+  }, [pdfDoc, pageNum]);
+
+  const pdfImageRef = useRef<HTMLImageElement|null>(null);
+
+  // Override drawAll to include PDF image
+  const drawAllWithPdf = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+    const w = container.clientWidth, h = container.clientHeight;
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, w, h);
+
+    // BG
+    const size = 24;
+    for (let x = 0; x < w; x += size) for (let y = 0; y < h; y += size) {
+      ctx.fillStyle = ((Math.floor(x/size)+Math.floor(y/size))%2===0) ? "#0a0d14" : "#080b10";
+      ctx.fillRect(x, y, size, size);
+    }
+
+    const z = zoomRef.current, px = panRef.current.x, py = panRef.current.y;
+
+    // Page shadow + white bg
+    if (pdfPageSize.x > 0) {
+      ctx.save(); ctx.shadowColor="rgba(0,0,0,0.6)"; ctx.shadowBlur=24;
+      ctx.fillStyle="#1a1d28"; ctx.fillRect(px+4, py+4, pdfPageSize.x*z, pdfPageSize.y*z);
+      ctx.shadowBlur=0; ctx.fillStyle="#fff"; ctx.fillRect(px, py, pdfPageSize.x*z, pdfPageSize.y*z);
+      ctx.restore();
+    }
+
+    // PDF image
+    if (pdfImageRef.current && pdfPageSize.x > 0) {
+      ctx.drawImage(pdfImageRef.current, px, py, pdfPageSize.x*z, pdfPageSize.y*z);
+    }
+
+    // Measurements
+    const ms = measurementsRef.current;
+    ms.forEach(m => {
+      if (m.points.length === 0) return;
+      const col = m.color;
+      const selected = m.id === selectedIdRef.current;
+      ctx.save();
+      if (selected) { ctx.shadowColor = col; ctx.shadowBlur = 14; }
+
+      if (m.type === "line" && m.points.length >= 2) {
+        const [a, b] = [pdfToCanvas(m.points[0]), pdfToCanvas(m.points[1])];
+        ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+        [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
+        drawLabel(ctx, `${fmt2(m.result)} ${m.unit}`, (a.x+b.x)/2, (a.y+b.y)/2-14, col);
+        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+4, "#a78bfa", true);
+      } else if ((m.type==="area"||m.type==="volume") && m.points.length>=3) {
+        const pts = m.points.map(pdfToCanvas);
+        ctx.strokeStyle=col; ctx.fillStyle=col+"28"; ctx.lineWidth=selected?2.5:1.5;
+        ctx.beginPath(); pts.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);}); ctx.closePath(); ctx.fill(); ctx.stroke();
+        const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length, cy=pts.reduce((s,p)=>s+p.y,0)/pts.length;
+        drawLabel(ctx, `${fmt2(m.result)} ${m.unit}`, cx, cy, col);
+        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, cx, cy+20, "#a78bfa", true);
+      } else if (m.type==="count") {
+        m.points.forEach((p,i)=>{
+          const cp=pdfToCanvas(p);
+          ctx.fillStyle=col; ctx.strokeStyle="#fff"; ctx.lineWidth=1.5;
+          ctx.beginPath(); ctx.arc(cp.x,cp.y,8,0,Math.PI*2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle="#fff"; ctx.font="bold 9px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
+          ctx.fillText(String(i+1),cp.x,cp.y);
+        });
+      }
+      ctx.restore();
+    });
+
+    // In-progress + hover preview
+    const ip = inProgressRef.current, hp = hoverRef.current, t = toolRef.current;
+    const tcol = TOOL_CFG[t].color;
+
+    if (calibratingRef.current) {
+      calibPtsRef.current.forEach(p => {
+        const cp=pdfToCanvas(p);
+        ctx.save(); ctx.fillStyle="#ef4444"; ctx.strokeStyle="#fff"; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(cp.x,cp.y,8,0,Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle="#fff"; ctx.font="bold 10px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.fillText("×",cp.x,cp.y); ctx.restore();
+      });
+      if (calibPtsRef.current.length===1&&hp){
+        const a=pdfToCanvas(calibPtsRef.current[0]),b=pdfToCanvas(hp);
+        ctx.save(); ctx.strokeStyle="#ef4444"; ctx.lineWidth=2; ctx.setLineDash([8,4]);
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.restore();
+      }
+    }
+
+    if (t==="line"&&ip.length===1&&hp){
+      const a=pdfToCanvas(ip[0]),b=pdfToCanvas(hp);
+      ctx.save(); ctx.strokeStyle=tcol; ctx.lineWidth=2; ctx.setLineDash([6,4]);
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      ctx.fillStyle=tcol; ctx.setLineDash([]); ctx.beginPath(); ctx.arc(a.x,a.y,5,0,Math.PI*2); ctx.fill();
+      if (calibRef.current){ const d=dist(ip[0],hp)*calibRef.current.feetPerPx; drawLabel(ctx,`${fmt2(d)} ft`,(a.x+b.x)/2,(a.y+b.y)/2-14,tcol); }
+      ctx.restore();
+    }
+    if ((t==="area"||t==="volume")&&ip.length>0&&hp){
+      const allPts=[...ip,hp].map(pdfToCanvas);
+      ctx.save(); ctx.strokeStyle=tcol; ctx.fillStyle=tcol+"18"; ctx.lineWidth=1.5; ctx.setLineDash([6,4]);
+      ctx.beginPath(); allPts.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);}); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ip.forEach(p=>{const cp=pdfToCanvas(p);ctx.fillStyle=tcol;ctx.setLineDash([]);ctx.beginPath();ctx.arc(cp.x,cp.y,4,0,Math.PI*2);ctx.fill();});
+      ctx.restore();
+    }
+    if (hp&&t!=="select"&&!calibratingRef.current){
+      const cp=pdfToCanvas(hp);
+      ctx.save(); ctx.strokeStyle="#fff"; ctx.lineWidth=1; ctx.globalAlpha=0.25; ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(0,cp.y); ctx.lineTo(w,cp.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cp.x,0); ctx.lineTo(cp.x,h); ctx.stroke();
+      ctx.restore();
+    }
+    if (calibRef.current){
+      const a=pdfToCanvas(calibRef.current.p1),b=pdfToCanvas(calibRef.current.p2);
+      ctx.save(); ctx.strokeStyle="#ef4444"; ctx.lineWidth=1.5; ctx.globalAlpha=0.4;
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      ctx.restore();
+    }
+  }, [pdfPageSize]);
+
+  // Use the PDF-aware draw function
+  useEffect(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    function loop() {
+      rafRef.current = requestAnimationFrame(loop);
+      if (!needsRender.current) return;
+      needsRender.current = false;
+      drawAllWithPdf();
+    }
+    rafRef.current = requestAnimationFrame(loop);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [drawAllWithPdf]);
+
+  // ─── Fit view ────────────────────────────────────────────────────────────────
+  function fitView() {
+    const c = containerRef.current;
+    if (!c || pdfPageSize.x === 0) return;
+    const cw = c.clientWidth, ch = c.clientHeight;
+    const newZ = Math.min(cw / pdfPageSize.x, ch / pdfPageSize.y) * 0.92;
+    const newPan = { x: (cw - pdfPageSize.x * newZ) / 2, y: (ch - pdfPageSize.y * newZ) / 2 };
+    setZoom(newZ); setPan(newPan);
+    zoomRef.current = newZ; panRef.current = newPan;
+    scheduleRender();
+  }
+  useEffect(() => { if (pdfPageSize.x > 0) fitView(); }, [pdfPageSize]);
+
+  // ─── DB init ─────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!projectId) return;
+    async function init() {
+      try {
+        // Load session
+        const { data: session } = await supabase.from("takeoff_sessions")
+          .select("id,scale,pdf_file,pdf_files,page_number").eq("project_id", projectId)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+
+        let sid = session?.id;
+        if (!sid) {
+          const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id: projectId, page_number: 1 }).select().maybeSingle();
+          sid = ns?.id;
+        }
+        if (sid) setSessionId(sid);
+
+        // Restore calibration
+        if (session?.scale?.calibration) {
+          const c = session.scale.calibration;
+          setCalibration(c); calibRef.current = c;
+        }
+
+        // Restore PDFs
+        const files = Array.isArray(session?.pdf_files) ? session.pdf_files.filter((f:any)=>f?.storagePath) : (session?.pdf_file?.storagePath ? [session.pdf_file] : []);
+        if (files.length > 0) {
+          setPdfFiles(files);
+          setLoadingPdf(true);
+          try {
+            const { data: sd } = await supabase.storage.from("project-files").createSignedUrl(files[0].storagePath, 3600*24*7);
+            if (sd?.signedUrl) {
+              const doc = await getDocument(sd.signedUrl).promise;
+              setPdfDoc(doc); setNumPages(doc.numPages);
+              setPageNum(session?.page_number || 1);
+            }
+          } catch (e) { console.warn("PDF restore failed:", e); }
+          finally { setLoadingPdf(false); }
+        }
+
+        // Restore measurements
+        if (sid) {
+          const { data: mData } = await supabase.from("takeoff_measurements")
+            .select("id,type,points,unit,result,meta,group_id,linked_item_id,linked_assembly_id")
+            .eq("session_id", sid).order("created_at", { ascending: true });
+          if (mData && mData.length > 0) {
+            const ms: Measurement[] = mData.map((r:any) => ({
+              id: r.id, type: r.type, points: r.points, result: Number(r.result), unit: r.unit,
+              label: r.meta?.label || "", color: r.meta?.color || nextColor(),
+              linkedAssemblyId: r.linked_assembly_id || r.meta?.linked_assembly_id,
+              linkedAssemblyName: r.meta?.linked_assembly_name,
+              linkedItemId: r.linked_item_id || r.meta?.linked_item_id,
+              linkedItemName: r.meta?.linked_item_name,
+              timestamp: r.meta?.timestamp || Date.now(),
+            }));
+            setMeasurements(ms); measurementsRef.current = ms;
+          }
+        }
+
+        // Load assemblies
+        const { data: asmbs } = await supabase.from("assemblies").select("id,name,category,unit,is_active").eq("is_active",true).order("name");
+        const { data: acomps } = await supabase.from("assembly_components").select("assembly_id");
+        const compCounts: Record<string,number> = {};
+        (acomps||[]).forEach((c:any) => { compCounts[c.assembly_id] = (compCounts[c.assembly_id]||0)+1; });
+        setAssemblies((asmbs||[]).map((a:any) => ({ id:a.id, name:a.name, category:a.category, unit:a.unit, componentCount:compCounts[a.id]||0 })));
+
+        // Load cost items
+        const { data: items } = await supabase.from("cost_items").select("id,item_name,unit,category").eq("is_active",true).order("item_name");
+        setCostItems(items||[]);
+
+      } catch (e:any) { setError("Load failed: "+e?.message); }
+      setDbReady(true);
+    }
+    init();
+  }, [projectId]);
+
+  // Auto-save measurements
+  useEffect(() => {
+    if (!sessionId || !dbReady) return;
+    const tid = setTimeout(async () => {
+      try {
+        await supabase.from("takeoff_measurements").delete().eq("session_id", sessionId);
+        if (measurements.length > 0) {
+          await supabase.from("takeoff_measurements").insert(measurements.map(m => ({
+            session_id: sessionId, type: m.type, points: m.points, result: m.result, unit: m.unit,
+            linked_item_id: m.linkedItemId || null, linked_assembly_id: m.linkedAssemblyId || null,
+            meta: { label:m.label, color:m.color, timestamp:m.timestamp, linked_assembly_name:m.linkedAssemblyName, linked_item_name:m.linkedItemName },
+          })));
+        }
+        await supabase.from("takeoff_sessions").update({ page_number: pageNum }).eq("id", sessionId);
+      } catch (e:any) { console.warn("Auto-save failed:", e?.message); }
+    }, 800);
+    return () => clearTimeout(tid);
+  }, [measurements, sessionId, dbReady, pageNum]);
+
+  // ─── PDF upload ───────────────────────────────────────────────────────────────
+  async function onPickFile(file: File | null) {
+    if (!file) return;
+    setLoadingPdf(true); setError(null);
+    try {
+      const url = URL.createObjectURL(file);
+      const doc = await getDocument(url).promise;
+      URL.revokeObjectURL(url);
+      setPdfDoc(doc); setNumPages(doc.numPages); setPageNum(1); pdfImageRef.current = null;
+
+      if (!projectId) { setLoadingPdf(false); return; }
+      const fn = `${projectId}/${Date.now()}-${file.name}`;
+      const { error: ue } = await supabase.storage.from("project-files").upload(fn, file, { cacheControl:"3600", upsert:false });
+      if (ue) throw ue;
+      const { data: sd } = await supabase.storage.from("project-files").createSignedUrl(fn, 3600*24*7);
+      const info: PdfFile = { name: file.name, storagePath: fn, size: file.size };
+      setPdfFiles(prev => [...prev, info]);
+      const newIdx = pdfFiles.length;
+      setActivePdfIdx(newIdx);
+      let sid = sessionId;
+      if (!sid) {
+        const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id:projectId, pdf_file:info, pdf_files:[info], page_number:1 }).select().maybeSingle();
+        if (ns) { sid = ns.id; setSessionId(ns.id); }
+      } else {
+        const { data: es } = await supabase.from("takeoff_sessions").select("pdf_files").eq("id",sid).maybeSingle();
+        const existing = Array.isArray(es?.pdf_files) ? es.pdf_files : [];
+        await supabase.from("takeoff_sessions").update({ pdf_file:info, pdf_files:[...existing,info] }).eq("id",sid);
+      }
+    } catch (e:any) { setError("Upload failed: "+e?.message); }
+    finally { setLoadingPdf(false); }
+  }
+
+  // ─── Canvas events ────────────────────────────────────────────────────────────
+  function onMouseMove(e: React.MouseEvent) {
+    const p = screenToPdf(e.clientX, e.clientY);
+    setHoverPt(p); hoverRef.current = p;
+    if (panningRef.current) {
+      const dx = e.clientX - panStartRef.current.mouse.x;
+      const dy = e.clientY - panStartRef.current.mouse.y;
+      const np = { x: panStartRef.current.pan.x+dx, y: panStartRef.current.pan.y+dy };
+      setPan(np); panRef.current = np;
+    }
+    scheduleRender();
+  }
+
+  function onMouseDown(e: React.MouseEvent) {
+    const p = screenToPdf(e.clientX, e.clientY);
+
+    // Middle mouse or Space+left = pan
+    if (e.button === 1 || (e.button === 0 && spaceRef.current)) {
+      e.preventDefault();
+      panningRef.current = true;
+      panStartRef.current = { mouse: { x: e.clientX, y: e.clientY }, pan: { ...panRef.current } };
+      return;
+    }
+    if (e.button !== 0) return;
+
+    // Calibration
+    if (calibratingRef.current) {
+      const np = [...calibPtsRef.current, p];
+      setCalibPts(np); calibPtsRef.current = np;
+      if (np.length >= 2) setShowCalibModal(true);
+      scheduleRender();
+      return;
+    }
+
+    if (toolRef.current === "select") {
+      // Find closest measurement
+      const hit = measurementsRef.current.find(m => {
+        if (m.type==="line"&&m.points.length>=2) return distToSeg(p,m.points[0],m.points[1]) < 12/zoomRef.current;
+        if (m.type==="count") return m.points.some(q=>dist(p,q)<10/zoomRef.current);
+        return false;
+      }) || null;
+      setSelectedId(hit?.id||null); selectedIdRef.current = hit?.id||null;
+      if (!hit) {
+        panningRef.current = true;
+        panStartRef.current = { mouse: { x: e.clientX, y: e.clientY }, pan: { ...panRef.current } };
+      }
+      scheduleRender();
+      return;
+    }
+
+    const snap = snapToNearby(p);
+    if (toolRef.current === "line") {
+      const ip = inProgressRef.current;
+      if (ip.length === 0) {
+        setInProgress([snap]); inProgressRef.current = [snap];
+      } else {
+        // Complete line
+        const calib = calibRef.current;
+        const result = calib ? dist(ip[0], snap) * calib.feetPerPx : dist(ip[0], snap);
+        const col = nextColor();
+        const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+        const item = costItems.find(i=>i.id===linkedItemId);
+        const nm: Measurement = { id:uid(), type:"line", points:[ip[0],snap], result, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now() };
+        const next = [...measurementsRef.current, nm];
+        setMeasurements(next); measurementsRef.current = next;
+        setInProgress([]); inProgressRef.current = [];
+      }
+    } else if (toolRef.current === "area" || toolRef.current === "volume") {
+      setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
+    } else if (toolRef.current === "count") {
+      const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+      const existing = measurementsRef.current.find(m=>m.type==="count"&&m.linkedAssemblyId===linkedAssemblyId&&!m.id.includes("solo"));
+      if (existing) {
+        const next = measurementsRef.current.map(m=>m.id===existing.id?{...m,points:[...m.points,snap],result:m.points.length+1}:m);
+        setMeasurements(next); measurementsRef.current = next;
+      } else {
+        const nm: Measurement = { id:uid(), type:"count", points:[snap], result:1, unit:"ea", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now() };
+        const next = [...measurementsRef.current, nm];
+        setMeasurements(next); measurementsRef.current = next;
+      }
+    }
+    scheduleRender();
+  }
+
+  function onMouseUp(e: React.MouseEvent) {
+    if (panningRef.current) { panningRef.current = false; }
+  }
+
+  function onDblClick(e: React.MouseEvent) {
+    const t = toolRef.current;
+    const ip = inProgressRef.current;
+    if ((t==="area"||t==="volume") && ip.length >= 3) {
+      if (t==="volume") {
+        pendingVolumeRef.current = [...ip];
+        setShowDepthModal(true);
+      } else {
+        const calib = calibRef.current;
+        const areaPx = polyArea(ip);
+        const result = calib ? areaPx * calib.feetPerPx * calib.feetPerPx : areaPx;
+        const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+        const nm: Measurement = { id:uid(), type:"area", points:[...ip], result, unit:"ft²", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now() };
+        const next = [...measurementsRef.current, nm];
+        setMeasurements(next); measurementsRef.current = next;
+      }
+      setInProgress([]); inProgressRef.current = [];
+      scheduleRender();
+    }
+  }
+
+  function confirmDepth() {
+    const d = parseFloat(depthInches) || 0;
+    if (d <= 0 || pendingVolumeRef.current.length < 3) return;
+    const ip = pendingVolumeRef.current;
+    const calib = calibRef.current;
+    const areaPx = polyArea(ip);
+    const areaFt2 = calib ? areaPx * calib.feetPerPx * calib.feetPerPx : areaPx;
+    const depthFt = d / 12;
+    const result = areaFt2 * depthFt;
+    const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+    const nm: Measurement = { id:uid(), type:"volume", points:[...ip], result, unit:"ft³", label:`${d}" deep`, color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now() };
+    const next = [...measurementsRef.current, nm];
+    setMeasurements(next); measurementsRef.current = next;
+    setShowDepthModal(false); setDepthInches("4"); pendingVolumeRef.current = [];
+    scheduleRender();
+  }
+
+  function onWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.12 : 0.88;
+    const c = containerRef.current; if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    setZoom(prev => {
+      const nz = clamp(prev * factor, 0.05, 12);
+      const np = { x: mx - (mx - panRef.current.x) * (nz/prev), y: my - (my - panRef.current.y) * (nz/prev) };
+      setPan(np); panRef.current = np; zoomRef.current = nz;
+      scheduleRender();
+      return nz;
+    });
+  }
+
+  function snapToNearby(p: Point): Point {
+    const tol = 10 / zoomRef.current;
+    for (const m of measurementsRef.current) for (const q of m.points) if (dist(p, q) < tol) return q;
+    return p;
+  }
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.code === "Space") { spaceRef.current = true; e.preventDefault(); return; }
+      const map: Record<string,ToolMode> = {s:"select",l:"line",a:"area",c:"count",v:"volume"};
+      const k = e.key.toLowerCase();
+      if (map[k]) { setTool(map[k]); toolRef.current = map[k]; setInProgress([]); inProgressRef.current = []; }
+      if (e.key === "Escape") { setInProgress([]); inProgressRef.current = []; setCalibrating(false); calibratingRef.current = false; setCalibPts([]); calibPtsRef.current = []; scheduleRender(); }
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedIdRef.current) {
+        const next = measurementsRef.current.filter(m=>m.id!==selectedIdRef.current);
+        setMeasurements(next); measurementsRef.current = next; setSelectedId(null); selectedIdRef.current = null; scheduleRender();
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) { if (e.code === "Space") spaceRef.current = false; }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); };
+  }, []);
+
+  // ─── Calibration confirm ──────────────────────────────────────────────────────
+  function confirmCalibration() {
+    const feet = parseFloat(calibFeet) || 0;
+    if (feet <= 0 || calibPts.length < 2) return;
+    const px = dist(calibPts[0], calibPts[1]);
+    const nc = { p1: calibPts[0], p2: calibPts[1], feetPerPx: feet / px };
+    setCalibration(nc); calibRef.current = nc;
+    setCalibrating(false); calibratingRef.current = false; setCalibPts([]); calibPtsRef.current = [];
+    setShowCalibModal(false);
+    if (sessionId) supabase.from("takeoff_sessions").update({ scale: { calibration: nc } }).eq("id", sessionId);
+    scheduleRender();
+  }
+
+  // ─── Export & Send to BOQ ─────────────────────────────────────────────────────
+  function exportCSV() {
+    const rows = measurements.map(m => [m.type, fmt2(m.result), m.unit, m.linkedAssemblyName||"", m.linkedItemName||""].join(","));
+    const csv = ["Type,Result,Unit,Assembly,Item",...rows].join("\n");
+    const a = document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download=`takeoff_${Date.now()}.csv`; a.click();
+  }
+
+  function sendToBOQ() {
+    const groups: Record<string, {name:string;value:number;metric:string}> = {};
+    measurements.forEach(m => {
+      const key = m.linkedAssemblyName || m.linkedItemName || m.type;
+      if (!groups[key]) groups[key] = { name:key, value:0, metric:m.unit };
+      groups[key].value += m.result;
+    });
+    const data = Object.values(groups);
+    const pid = routeProjectId || currentProject?.id;
+    if (pid) nav(`/projects/${pid}/boq?groups=${encodeURIComponent(JSON.stringify(data))}`);
+    else nav(`/boq?groups=${encodeURIComponent(JSON.stringify(data))}`);
+  }
+
+  // ─── Stats ─────────────────────────────────────────────────────────────────────
+  const stats = useMemo(() => ({
+    total: measurements.length,
+    lines: measurements.filter(m=>m.type==="line").reduce((s,m)=>s+m.result, 0),
+    areas: measurements.filter(m=>m.type==="area").reduce((s,m)=>s+m.result, 0),
+    counts: measurements.filter(m=>m.type==="count").reduce((s,m)=>s+m.result, 0),
+    volumes: measurements.filter(m=>m.type==="volume").reduce((s,m)=>s+m.result, 0),
+  }), [measurements]);
+
+  const filteredAssemblies = useMemo(() => {
+    const q = searchLib.trim().toLowerCase();
+    return !q ? assemblies : assemblies.filter(a => (a.name||"").toLowerCase().includes(q)||(a.category||"").toLowerCase().includes(q));
+  }, [assemblies, searchLib]);
+
+  const filteredItems = useMemo(() => {
+    const q = searchLib.trim().toLowerCase();
+    return !q ? costItems.slice(0,20) : costItems.filter(i=>(i.item_name||"").toLowerCase().includes(q)||(i.category||"").toLowerCase().includes(q)).slice(0,20);
+  }, [costItems, searchLib]);
+
+  const activeLinkedName = linkedAssemblyId
+    ? assemblies.find(a=>a.id===linkedAssemblyId)?.name
+    : linkedItemId ? costItems.find(i=>i.id===linkedItemId)?.item_name : null;
+
+  const curTool = TOOL_CFG[tool];
+
+  // ─── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-950 shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
-          <div className="text-lg font-semibold">Scale</div>
-          <button onClick={onClose} className="px-2 py-1 rounded-lg hover:bg-slate-800/50">
-            ✕
-          </button>
+    <div className="flex h-screen flex-col bg-[#080b10] text-slate-100 select-none overflow-hidden">
+
+      {/* ── Top Bar ── */}
+      <header className="flex-shrink-0 h-12 flex items-center gap-3 px-4 bg-[#0d1117] border-b border-white/[0.06] z-20">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-sky-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+            <Ruler size={14} className="text-white"/>
+          </div>
+          <span className="text-sm font-bold text-slate-100">Takeoff</span>
+          {currentProject && <><span className="text-white/20 text-xs">·</span><span className="text-xs text-slate-500 truncate max-w-[140px]">{currentProject.name}</span></>}
         </div>
 
-        <div className="px-5 pt-4">
-          <div className="flex gap-2 text-sm">
-            {[
-              ["standard", "Standard"],
-              ["fis", "F-I-S"],
-              ["metric", "Metric"],
-              ["auto", "Auto"],
-            ].map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => setTab(k as ScaleMode)}
-                className={
-                  "px-3 py-2 rounded-xl border " +
-                  (tab === k ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")
-                }
-              >
+        {/* Page nav */}
+        {pdfDoc && (
+          <div className="flex items-center gap-1 bg-white/[0.04] border border-white/[0.07] rounded-lg px-1.5 py-1">
+            <button onClick={()=>setPageNum(v=>Math.max(1,v-1))} disabled={pageNum<=1}
+              className="p-0.5 rounded hover:bg-white/10 text-slate-600 hover:text-slate-300 disabled:opacity-30 transition"><ChevronLeft size={13}/></button>
+            <span className="text-[10px] text-slate-500 px-1">{pageNum}/{numPages}</span>
+            <button onClick={()=>setPageNum(v=>Math.min(numPages,v+1))} disabled={pageNum>=numPages}
+              className="p-0.5 rounded hover:bg-white/10 text-slate-600 hover:text-slate-300 disabled:opacity-30 transition"><ChevronRight size={13}/></button>
+          </div>
+        )}
+
+        <div className="flex-1"/>
+
+        {/* Calibrate status */}
+        <button onClick={()=>{setCalibrating(true);calibratingRef.current=true;setCalibPts([]);calibPtsRef.current=[];}}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition ${calibrating?"bg-amber-500/15 border-amber-400/30 text-amber-300":calibration?"bg-emerald-500/10 border-emerald-500/20 text-emerald-300":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+          <Crosshair size={12}/>
+          {calibrating ? "Click 2 points…" : calibration ? `Scale set ✓` : "Set Scale"}
+        </button>
+
+        {/* Upload */}
+        <label className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-[11px] text-slate-300 font-medium transition">
+          <Upload size={12}/> Upload PDF
+          <input type="file" accept=".pdf" className="hidden" onChange={e=>onPickFile(e.target.files?.[0]||null)}/>
+        </label>
+
+        {/* Export */}
+        <button onClick={exportCSV} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-[11px] text-slate-400 transition">
+          <Download size={12}/> Export
+        </button>
+
+        {/* Send to BOQ */}
+        <button onClick={sendToBOQ} disabled={measurements.length===0}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold disabled:opacity-40 transition shadow-sm">
+          <Send size={12}/> Send to BOQ
+        </button>
+      </header>
+
+      {/* ── Main layout ── */}
+      <div className="flex flex-1 min-h-0">
+
+        {/* ── Left Tool Bar ── */}
+        <div className="flex-shrink-0 w-14 flex flex-col items-center py-3 gap-1 bg-[#0d1117] border-r border-white/[0.06] z-10">
+          {(Object.entries(TOOL_CFG) as [ToolMode, typeof TOOL_CFG[ToolMode]][]).map(([key, cfg]) => (
+            <button key={key} onClick={()=>{setTool(key);toolRef.current=key;setInProgress([]);inProgressRef.current=[];scheduleRender();}}
+              title={`${cfg.label} (${cfg.shortcut})`}
+              className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center gap-0.5 border transition-all ${tool===key?"border-white/20 bg-white/10":"border-transparent hover:bg-white/[0.05] hover:border-white/[0.07]"}`}>
+              <span style={{color:tool===key?cfg.color:"#475569"}}>{cfg.icon}</span>
+              <span className={`text-[7px] font-bold uppercase tracking-wider ${tool===key?"text-slate-300":"text-slate-700"}`}>{cfg.label.slice(0,3)}</span>
+            </button>
+          ))}
+
+          <div className="flex-1"/>
+
+          {/* Zoom controls */}
+          <button onClick={()=>{setZoom(v=>clamp(v*1.2,0.05,12));scheduleRender();}} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-white/[0.05] text-slate-600 hover:text-slate-300 transition"><ZoomIn size={15}/></button>
+          <button onClick={()=>{setZoom(v=>clamp(v*0.8,0.05,12));scheduleRender();}} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-white/[0.05] text-slate-600 hover:text-slate-300 transition"><ZoomOut size={15}/></button>
+          <button onClick={fitView} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-white/[0.05] text-slate-600 hover:text-slate-300 transition" title="Fit view"><Maximize2 size={15}/></button>
+        </div>
+
+        {/* ── Canvas Area ── */}
+        <div className="flex-1 relative min-w-0 overflow-hidden bg-[#080b10]"
+          ref={containerRef}
+          style={{ cursor: panningRef.current ? "grabbing" : spaceRef.current ? "grab" : tool==="select" ? "default" : "crosshair" }}
+          onMouseMove={onMouseMove}
+          onMouseDown={onMouseDown}
+          onMouseUp={onMouseUp}
+          onDoubleClick={onDblClick}
+          onWheel={onWheel}
+          onContextMenu={e=>e.preventDefault()}>
+
+          <canvas ref={canvasRef} className="absolute inset-0"/>
+
+          {/* Empty state */}
+          {!pdfDoc && !loadingPdf && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 pointer-events-none">
+              <div className="w-20 h-20 rounded-3xl border border-white/[0.07] bg-white/[0.02] flex items-center justify-center">
+                <FileText size={36} className="text-slate-800"/>
+              </div>
+              <div className="text-center">
+                <div className="text-base font-semibold text-slate-400 mb-1">No drawing loaded</div>
+                <div className="text-xs text-slate-700">Upload a PDF plan to start measuring</div>
+              </div>
+              <div className="flex items-center gap-8 mt-2">
+                {(Object.entries(TOOL_CFG) as [ToolMode, typeof TOOL_CFG[ToolMode]][]).filter(([k])=>k!=="select").map(([k,cfg])=>(
+                  <div key={k} className="flex flex-col items-center gap-1.5">
+                    <div className="w-9 h-9 rounded-xl border border-white/[0.06] bg-white/[0.03] flex items-center justify-center" style={{color:cfg.color}}>{cfg.icon}</div>
+                    <span className="text-[9px] text-slate-700 uppercase tracking-wider">{cfg.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Loading */}
+          {loadingPdf && (
+            <div className="absolute inset-0 flex items-center justify-center bg-[#080b10]/70 backdrop-blur-sm pointer-events-none">
+              <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.08] bg-[#0d1117] px-4 py-3 shadow-xl">
+                <RefreshCw size={14} className="animate-spin text-sky-400"/>
+                <span className="text-xs text-slate-400">Loading drawing…</span>
+              </div>
+            </div>
+          )}
+
+          {/* Calibration banner */}
+          {calibrating && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 rounded-xl border border-amber-500/25 bg-[#0d1117]/95 backdrop-blur px-4 py-2.5 shadow-xl pointer-events-auto">
+              <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0"/>
+              <span className="text-xs text-amber-300 font-medium">Click 2 known points on the drawing · <kbd className="bg-white/10 px-1 rounded text-[10px]">Esc</kbd> to cancel</span>
+              <span className="text-xs text-amber-500 ml-1">{calibPts.length}/2 placed</span>
+              <button onClick={()=>{setCalibrating(false);calibratingRef.current=false;setCalibPts([]);calibPtsRef.current=[];}} className="ml-1 text-slate-600 hover:text-slate-300"><X size={13}/></button>
+            </div>
+          )}
+
+          {/* Tool hint */}
+          {tool!=="select"&&!calibrating&&(
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-xl border border-white/[0.07] bg-[#0d1117]/90 backdrop-blur px-3.5 py-2 shadow-xl pointer-events-none">
+              <span style={{color:curTool.color}}>{curTool.icon}</span>
+              <span className="text-[11px] font-semibold text-slate-300">{curTool.label}</span>
+              <span className="text-[10px] text-slate-600">— {curTool.desc}</span>
+              {tool==="line"&&inProgress.length===1&&<span className="text-[10px] text-sky-400 ml-1">· Click endpoint to finish</span>}
+              {(tool==="area"||tool==="volume")&&inProgress.length>0&&<span className="text-[10px] text-violet-400 ml-1">· {inProgress.length} pts · double-click to close</span>}
+            </div>
+          )}
+
+          {/* Zoom indicator */}
+          <div className="absolute bottom-4 left-4 z-10 rounded-lg border border-white/[0.07] bg-[#0d1117]/90 px-2.5 py-1 pointer-events-none">
+            <span className="text-[10px] font-mono text-slate-600">{Math.round(zoom*100)}%</span>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="absolute top-4 right-4 z-20 flex items-center gap-2 rounded-xl border border-red-500/20 bg-[#0d1117]/95 px-3 py-2.5 shadow-xl max-w-72">
+              <AlertCircle size={13} className="text-red-400 flex-shrink-0"/>
+              <span className="text-[11px] text-red-300">{error}</span>
+              <button onClick={()=>setError(null)} className="ml-auto text-slate-700 hover:text-slate-400"><X size={12}/></button>
+            </div>
+          )}
+        </div>
+
+        {/* ── Right Panel ── */}
+        <div className="flex-shrink-0 w-72 flex flex-col bg-[#0d1117] border-l border-white/[0.06] z-10">
+
+          {/* Tabs */}
+          <div className="flex border-b border-white/[0.06]">
+            {([["templates","Templates"],["measurements","Taken"],["stats","Summary"]] as const).map(([k,label])=>(
+              <button key={k} onClick={()=>setRightTab(k)}
+                className={`flex-1 py-2.5 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-colors ${rightTab===k?"border-sky-500 text-sky-300":"border-transparent text-slate-700 hover:text-slate-500"}`}>
                 {label}
               </button>
             ))}
           </div>
 
-          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/20 p-4">
-            {isCalibrating && (
-              <div className="text-sm text-slate-300 mb-3">
-                Calibration mode: Click {calibPointsCount}/2 points on the drawing
-              </div>
-            )}
+          <div className="flex-1 overflow-y-auto">
 
-            {tab === "standard" && (
-              <div className="grid grid-cols-2 gap-3 items-end">
-                <div className="col-span-2 text-sm text-slate-300">
-                  Enter the real distance between your two clicked points:
+            {/* ── Templates Tab ── */}
+            {rightTab==="templates"&&(
+              <div className="p-3 space-y-3">
+                {/* Search */}
+                <div className="relative">
+                  <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+                  <input value={searchLib} onChange={e=>setSearchLib(e.target.value)}
+                    placeholder="Search templates & items…"
+                    className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-300 placeholder:text-slate-700 outline-none focus:border-sky-500/40"/>
                 </div>
-                <label className="text-xs text-slate-400">
-                  Feet
-                  <input
-                    value={stdFeet}
-                    onChange={(e) => setStdFeet(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                    placeholder="10"
-                  />
-                </label>
-                <div className="text-xs text-slate-400 flex items-center">ft</div>
+
+                {/* Active link */}
+                {activeLinkedName && (
+                  <div className="flex items-center gap-2 rounded-lg bg-sky-500/10 border border-sky-500/20 px-3 py-2">
+                    <div className="w-2 h-2 rounded-full bg-sky-400 flex-shrink-0 animate-pulse"/>
+                    <span className="text-[11px] text-sky-300 font-semibold truncate flex-1">{activeLinkedName}</span>
+                    <button onClick={()=>{setLinkedAssemblyId("");setLinkedItemId("");}} className="text-slate-600 hover:text-slate-400"><X size={11}/></button>
+                  </div>
+                )}
+
+                {/* Instruction */}
+                {!activeLinkedName && (
+                  <div className="text-[10px] text-slate-700 bg-white/[0.02] border border-white/[0.05] rounded-lg px-3 py-2 leading-relaxed">
+                    Select a template or item below, then draw on the plan. Each measurement will be linked to it automatically.
+                  </div>
+                )}
+
+                {/* Assemblies */}
+                {filteredAssemblies.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-1.5 px-1 mb-2">
+                      <Wand2 size={10} className="text-purple-400"/>
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Assemblies (Templates)</span>
+                    </div>
+                    <div className="space-y-1">
+                      {filteredAssemblies.map(a => {
+                        const active = linkedAssemblyId === a.id;
+                        return (
+                          <button key={a.id} onClick={()=>{setLinkedAssemblyId(active?"":a.id);setLinkedItemId("");}}
+                            className={`w-full text-left rounded-lg px-3 py-2.5 border transition-all flex items-center gap-2.5 ${active?"border-purple-500/30 bg-purple-500/10":"border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.09]"}`}>
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${active?"bg-purple-500/20":"bg-white/[0.04]"}`}>
+                              <Layers size={12} className={active?"text-purple-400":"text-slate-600"}/>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-[11px] font-semibold truncate ${active?"text-purple-200":"text-slate-300"}`}>{a.name}</div>
+                              <div className="text-[9px] text-slate-700">{a.category||"General"} · {a.componentCount} component{a.componentCount!==1?"s":""}{a.unit?` · ${a.unit}`:""}</div>
+                            </div>
+                            {active && <Check size={12} className="text-purple-400 flex-shrink-0"/>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Items */}
+                {filteredItems.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-1.5 px-1 mb-2 mt-1">
+                      <Package size={10} className="text-blue-400"/>
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Rate Library Items</span>
+                    </div>
+                    <div className="space-y-1">
+                      {filteredItems.map(i => {
+                        const active = linkedItemId === i.id;
+                        return (
+                          <button key={i.id} onClick={()=>{setLinkedItemId(active?"":i.id);setLinkedAssemblyId("");}}
+                            className={`w-full text-left rounded-lg px-3 py-2 border transition-all flex items-center gap-2 ${active?"border-blue-500/30 bg-blue-500/10":"border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]"}`}>
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-[11px] font-medium truncate ${active?"text-blue-200":"text-slate-400"}`}>{i.item_name}</div>
+                              <div className="text-[9px] text-slate-700">{i.category||"—"}{i.unit?` · ${i.unit}`:""}</div>
+                            </div>
+                            {active && <Check size={11} className="text-blue-400 flex-shrink-0"/>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {assemblies.length===0&&costItems.length===0&&(
+                  <div className="text-[11px] text-slate-700 text-center py-6">No templates or items found.<br/>Build assemblies in the Assemblies page.</div>
+                )}
               </div>
             )}
 
-            {tab === "fis" && (
-              <div className="grid grid-cols-3 gap-3 items-end">
-                <label className="text-xs text-slate-400">
-                  Feet
-                  <input
-                    value={fisFeet}
-                    onChange={(e) => setFisFeet(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                    placeholder="45"
-                  />
-                </label>
+            {/* ── Measurements Tab ── */}
+            {rightTab==="measurements"&&(
+              <div className="p-3 space-y-2">
+                {measurements.length===0?(
+                  <div className="text-[11px] text-slate-700 text-center py-10">No measurements yet.<br/>Select a template and draw on the plan.</div>
+                ):(
+                  <>
+                    {measurements.map(m=>(
+                      <div key={m.id} onClick={()=>{setSelectedId(m.id===selectedId?null:m.id);selectedIdRef.current=m.id===selectedId?null:m.id;scheduleRender();}}
+                        className={`rounded-lg border px-3 py-2.5 cursor-pointer transition-all flex items-center gap-2.5 ${m.id===selectedId?"border-sky-500/25 bg-sky-500/[0.07]":"border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]"}`}>
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:m.color}}/>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11px] font-semibold text-slate-200">{fmt2(m.result)} <span className="text-slate-600 font-normal">{m.unit}</span></div>
+                          {m.linkedAssemblyName&&<div className="text-[9px] text-purple-400 truncate">⚡ {m.linkedAssemblyName}</div>}
+                          {m.linkedItemName&&!m.linkedAssemblyName&&<div className="text-[9px] text-blue-400 truncate">{m.linkedItemName}</div>}
+                          <div className="text-[9px] text-slate-700 capitalize">{m.type}</div>
+                        </div>
+                        <button onClick={e=>{e.stopPropagation();const next=measurementsRef.current.filter(x=>x.id!==m.id);setMeasurements(next);measurementsRef.current=next;if(selectedId===m.id){setSelectedId(null);selectedIdRef.current=null;}scheduleRender();}}
+                          className="p-1 rounded hover:bg-red-500/15 text-slate-700 hover:text-red-400 transition">
+                          <X size={11}/>
+                        </button>
+                      </div>
+                    ))}
+                    <button onClick={()=>{setMeasurements([]);measurementsRef.current=[];setSelectedId(null);selectedIdRef.current=null;scheduleRender();}}
+                      className="w-full py-2 rounded-lg border border-red-500/15 text-[10px] text-red-500/60 hover:text-red-400 hover:border-red-500/25 transition mt-2">
+                      Clear All
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
 
-                <label className="text-xs text-slate-400">
-                  Inch
-                  <input
-                    value={fisInch}
-                    onChange={(e) => setFisInch(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                    placeholder="6"
-                  />
-                </label>
-
-                <label className="text-xs text-slate-400">
-                  Fraction
-                  <input
-                    value={fisFrac}
-                    onChange={(e) => setFisFrac(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                    placeholder="1/2"
-                  />
-                </label>
-
-                <div className="col-span-3 text-xs text-slate-500">
-                  Tip: Fraction accepts 1/2, 3/8, 0.25, etc.
+            {/* ── Stats Tab ── */}
+            {rightTab==="stats"&&(
+              <div className="p-3 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    ["Total Items", measurements.length, "text-slate-200"],
+                    ["Linear ft", fmt2(stats.lines), "text-sky-300"],
+                    ["Area ft²", fmt2(stats.areas), "text-purple-300"],
+                    ["Count", stats.counts, "text-amber-300"],
+                    ["Volume ft³", fmt2(stats.volumes), "text-emerald-300"],
+                    ["Scale", calibration ? "Set ✓" : "Not set", calibration?"text-emerald-400":"text-amber-400"],
+                  ].map(([l,v,c])=>(
+                    <div key={l as string} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-3">
+                      <div className="text-[9px] text-slate-700 uppercase tracking-widest mb-1">{l}</div>
+                      <div className={`text-lg font-bold ${c}`}>{v}</div>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            )}
 
-            {tab === "metric" && (
-              <div className="grid grid-cols-2 gap-3 items-end">
-                <div className="col-span-2 text-sm text-slate-300">Enter the distance in meters:</div>
-                <label className="text-xs text-slate-400">
-                  Meters
-                  <input
-                    value={metricMeters}
-                    onChange={(e) => setMetricMeters(e.target.value)}
-                    className="mt-1 w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                    placeholder="3"
-                  />
-                </label>
-                <div className="text-xs text-slate-400 flex items-center">m</div>
-              </div>
-            )}
+                {/* Group by assembly */}
+                {measurements.filter(m=>m.linkedAssemblyName).length > 0 && (
+                  <div className="rounded-xl border border-white/[0.07] overflow-hidden">
+                    <div className="px-3 py-2 bg-white/[0.02] border-b border-white/[0.05] text-[9px] font-bold uppercase tracking-widest text-slate-600">By Assembly</div>
+                    {Object.entries(
+                      measurements.filter(m=>m.linkedAssemblyName).reduce((acc:Record<string,number>, m) => {
+                        const k = m.linkedAssemblyName!; acc[k] = (acc[k]||0) + m.result; return acc;
+                      }, {})
+                    ).map(([name, total]) => (
+                      <div key={name} className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.04] last:border-0">
+                        <div className="flex items-center gap-2"><Layers size={10} className="text-purple-400"/><span className="text-[11px] text-slate-300 truncate">{name}</span></div>
+                        <span className="text-[11px] font-bold text-purple-300 flex-shrink-0 ml-2">{fmt2(total)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-            {tab === "auto" && (
-              <div className="text-sm text-slate-300">
-                Auto scale (read scale from drawing title block) — coming next.
+                <button onClick={sendToBOQ} disabled={measurements.length===0}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-bold disabled:opacity-40 transition shadow-sm">
+                  <Send size={14}/> Send All to BOQ
+                </button>
               </div>
             )}
           </div>
-
-          <div className="mt-4 space-y-2 text-sm">
-            <label className="flex items-center gap-2 text-slate-300">
-              <input type="checkbox" checked={applyAllPages} onChange={(e) => setApplyAllPages(e.target.checked)} />
-              Apply scale to all pages
-            </label>
-            <label className="flex items-center gap-2 text-slate-300">
-              <input type="checkbox" checked={autoDimLine} onChange={(e) => setAutoDimLine(e.target.checked)} />
-              Automatically create dimension line
-            </label>
-          </div>
-
-          <div className="mt-5 flex items-center justify-between pb-5">
-            <button
-              onClick={() => onApply(0, { applyAllPages, autoDimLine })}
-              className="px-3 py-2 rounded-xl bg-slate-800/40 hover:bg-slate-800/60 text-sm"
-            >
-              Clear Scale
-            </button>
-
-            <div className="flex gap-2">
-              <button onClick={onCalibrationCancel || onClose} className="px-4 py-2 rounded-xl bg-slate-800/30 hover:bg-slate-800/50 text-sm">
-                Cancel
-              </button>
-              <button
-                disabled={isCalibrating ? !canStartCalibration : !canApply}
-                onClick={apply}
-                className={
-                  "px-4 py-2 rounded-xl text-sm " +
-                  ((isCalibrating ? canStartCalibration : canApply) ? "bg-emerald-900/50 hover:bg-emerald-900/70 border border-emerald-900/40" : "bg-slate-800/20 text-slate-500")
-                }
-              >
-                OK
-              </button>
-            </div>
-          </div>
-
-          {!(isCalibrating ? canConfirmCalibration : canApply) && (
-            <div className="pb-5 text-xs text-slate-500">
-              {isCalibrating
-                ? `Click ${2 - calibPointsCount} more point${calibPointsCount === 1 ? '' : 's'} on the drawing first, then press OK.`
-                : "Click two points on the drawing first, then press OK."
-              }
-            </div>
-          )}
         </div>
       </div>
+
+      {/* ── Calibration Modal ── */}
+      {showCalibModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
+            <div>
+              <div className="text-sm font-bold text-slate-100">Set Drawing Scale</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">What is the real-world distance between your 2 points?</div>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
+              <Check size={11} className="text-emerald-400"/>
+              <span className="text-[11px] text-emerald-300">2 points placed — enter the distance below</span>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1.5">Real distance (feet)</label>
+              <div className="flex gap-2">
+                <input type="number" value={calibFeet} onChange={e=>setCalibFeet(e.target.value)} autoFocus
+                  className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
+                  placeholder="10" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
+                <span className="flex items-center text-xs text-slate-600 px-1">ft</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={()=>{setShowCalibModal(false);setCalibrating(false);calibratingRef.current=false;setCalibPts([]);calibPtsRef.current=[];}}
+                className="flex-1 py-2 rounded-xl border border-white/[0.07] text-xs text-slate-500 hover:text-slate-300 transition">Cancel</button>
+              <button onClick={confirmCalibration}
+                className="flex-1 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition">Confirm Scale</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Volume Depth Modal ── */}
+      {showDepthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xs rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
+            <div>
+              <div className="text-sm font-bold text-slate-100">Volume Depth</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Enter the depth of the slab or excavation</div>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1.5">Depth (inches)</label>
+              <input type="number" value={depthInches} onChange={e=>setDepthInches(e.target.value)} autoFocus
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-emerald-500/50"
+                placeholder="4" onKeyDown={e=>{if(e.key==="Enter")confirmDepth();}}/>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={()=>{setShowDepthModal(false);pendingVolumeRef.current=[];setInProgress([]);inProgressRef.current=[];}}
+                className="flex-1 py-2 rounded-xl border border-white/[0.07] text-xs text-slate-500 hover:text-slate-300 transition">Cancel</button>
+              <button onClick={confirmDepth}
+                className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-class TakeoffErrorBoundary extends React.Component<{ children: React.ReactNode }, { err: any }> {
-  constructor(props: any) {
-    super(props);
-    this.state = { err: null };
-  }
-  static getDerivedStateFromError(err: any) {
-    return { err };
-  }
-  componentDidCatch(err: any) {
-    console.error("TAKEOFF PAGE CRASH:", err);
-  }
-  render() {
-    if (this.state.err) {
-      return (
-        <div style={{ padding: 16, color: "#fff", background: "#111" }}>
-          <h2 style={{ marginBottom: 8 }}>Takeoff crashed</h2>
-          <pre style={{ whiteSpace: "pre-wrap" }}>
-            {String(this.state.err?.message || this.state.err)}
-          </pre>
-          <pre style={{ whiteSpace: "pre-wrap", opacity: 0.8 }}>
-            {String(this.state.err?.stack || "")}
-          </pre>
-        </div>
-      );
-    }
-    return this.props.children as any;
-  }
-}
-
-function TakeoffPageInner() {
-  const nav = useNavigate();
-  const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
-
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const viewerRef = useRef<HTMLDivElement | null>(null);
-
-  const renderTaskRef = useRef<any>(null);
-  const renderSeqRef = useRef(0);
-
-  const [pdf, setPdf] = useState<any>(null);
-  const [pageNumber, setPageNumber] = useState(1);
-  const [numPages, setNumPages] = useState(0);
-
-  const panZoom = usePanZoom({
-    minZoom: 0.2,
-    maxZoom: 6,
-    zoomSpeed: 0.08,
-    initialZoom: 1.0,
-  });
-
-  const {
-    measurements,
-    addMeasurement,
-    removeMeasurement,
-    updateMeasurement,
-    setAllMeasurements,
-  } = useMeasurements();
-
-  const [calibrating, setCalibrating] = useState(false);
-  const [calPoints, setCalPoints] = useState<Point[]>([]);
-  const [feetPerPixel, setFeetPerPixel] = useState<number | null>(null);
-
-  const [isCalibrating, setIsCalibrating] = useState(false);
-  const [calibPoints, setCalibPoints] = useState<CalibPoint[]>([]);
-  const [pendingCalibLength, setPendingCalibLength] = useState<number | null>(null);
-
-  function getEnteredFeet(): number {
-    return 1;
-  }
-
-  const canStartCalibration = getEnteredFeet() > 0;
-
-  const [error, setError] = useState<string | null>(null);
-  const [loadingPdf, setLoadingPdf] = useState(false);
-  const [overViewer, setOverViewer] = useState(false);
-
-  const [scaleModalOpen, setScaleModalOpen] = useState(false);
-
-  const fitScaleRef = useRef<number | null>(null);
-
-  const isSpaceDownRef = useRef(false);
-  const isPanningRef = useRef(false);
-  const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
-  const activePointerIdRef = useRef<number | null>(null);
-
-  type ToolMode = "select" | "line" | "area" | "count" | "volume";
-  const [tool, setTool] = useState<ToolMode>("select");
-
-  const [lineStart, setLineStart] = useState<Point | null>(null);
-  const [lineEnd, setLineEnd] = useState<Point | null>(null);
-  const [hoverPt, setHoverPt] = useState<Point | null>(null);
-
-  const [areaPoints, setAreaPoints] = useState<Point[]>([]);
-  const [areaHoverPt, setAreaHoverPt] = useState<Point | null>(null);
-
-  const [countPoints, setCountPoints] = useState<Point[]>([]);
-
-  const [volumePoints, setVolumePoints] = useState<Point[]>([]);
-  const [volumeHoverPt, setVolumeHoverPt] = useState<Point | null>(null);
-  const [showDepthPrompt, setShowDepthPrompt] = useState(false);
-  const [depthInput, setDepthInput] = useState("4");
-  const [feetPerPdfUnit, setFeetPerPdfUnit] = useState<number | null>(null);
-
-  const [canvasWidth, setCanvasWidth] = useState(0);
-  const [canvasHeight, setCanvasHeight] = useState(0);
-
-  const [groups, setGroups] = useState<Array<{
-    id: string;
-    name: string;
-    color: string;
-    visible: boolean;
-    sortOrder: number;
-    locked: boolean;
-    trade?: string;
-  }>>([]);
-
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(() => {
-    if (routeProjectId) return routeProjectId;
-    const keys = ["active_project_id", "selected_project_id", "project_id"];
-    for (const k of keys) {
-      const v = localStorage.getItem(k);
-      if (v && v.trim()) return v.trim();
-    }
-    return null;
-  });
-  const [dbLoaded, setDbLoaded] = useState(false);
-  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
-  const [newGroupName, setNewGroupName] = useState("");
-  const [showNewGroupForm, setShowNewGroupForm] = useState(false);
-
-  const [currentProject, setCurrentProject] = useState<{ id: string; name: string | null } | null>(null);
-
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
-
-  const { hasFeature, features } = usePlan();
-  const [showPaywall, setShowPaywall] = useState(false);
-  const [paywallFeature, setPaywallFeature] = useState("");
-
-  function distFeet(a:{x:number;y:number}, b:{x:number;y:number}) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const d = Math.sqrt(dx*dx + dy*dy);
-    if (!d) return 0;
-
-    if (!feetPerPdfUnit) return 0;
-    return d * feetPerPdfUnit;
-  }
-
-  function formatFeetInches(totalFeet:number) {
-    if (!isFinite(totalFeet) || totalFeet <= 0) return "";
-    const feet = Math.floor(totalFeet);
-    const inchesTotal = (totalFeet - feet) * 12;
-    const inches = Math.floor(inchesTotal);
-    const frac = inchesTotal - inches;
-
-    const denom = 16;
-    let num = Math.round(frac * denom);
-    let fFeet = feet;
-    let fIn = inches;
-
-    if (num === denom) { num = 0; fIn += 1; }
-    if (fIn === 12) { fIn = 0; fFeet += 1; }
-
-    const fracStr = num === 0 ? "" : ` ${num}/${denom}`;
-    return `${fFeet}' ${fIn}"${fracStr}`;
-  }
-
-  useEffect(() => {
-    if (routeProjectId && routeProjectId !== activeProjectId) {
-      setActiveProjectId(routeProjectId);
-    }
-  }, [routeProjectId, activeProjectId]);
-
-  useEffect(() => {
-    if (!routeProjectId) {
-      setCurrentProject(null);
-      return;
-    }
-
-    let alive = true;
-    async function loadProject() {
-      try {
-        const { data, error } = await supabase
-          .from("projects")
-          .select("id, name")
-          .eq("id", routeProjectId)
-          .maybeSingle();
-
-        if (error) throw error;
-        if (!alive) return;
-        if (data) {
-          setCurrentProject(data);
-        }
-      } catch (e) {
-        console.error("Failed to load project:", e);
-      }
-    }
-    loadProject();
-    return () => {
-      alive = false;
-    };
-  }, [routeProjectId]);
-
-  useEffect(() => {
-    if (groups.length === 0) {
-      const defaultGroups = [
-        { id: crypto.randomUUID(), name: "Concrete", color: "#10b981", visible: true, sortOrder: 0, locked: false },
-        { id: crypto.randomUUID(), name: "Masonry", color: "#f59e0b", visible: true, sortOrder: 1, locked: false },
-        { id: crypto.randomUUID(), name: "Electrical", color: "#3b82f6", visible: true, sortOrder: 2, locked: false },
-        { id: crypto.randomUUID(), name: "Plumbing", color: "#06b6d4", visible: true, sortOrder: 3, locked: false },
-      ];
-      setGroups(defaultGroups);
-      setActiveGroupId(defaultGroups[0].id);
-    }
-  }, []);
-
-  async function onPickFile(file: File | null) {
-    setError(null);
-    if (!file) return;
-
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      setError("Please upload a PDF file.");
-      return;
-    }
-
-    try {
-      setLoadingPdf(true);
-
-      const arrayBuffer = await file.arrayBuffer();
-      const task = getDocument({ data: arrayBuffer });
-      const loadedPdf = await task.promise;
-
-      setPdf(loadedPdf);
-      setNumPages(loadedPdf.numPages);
-      setPageNumber(1);
-
-      setFeetPerPixel(null);
-      setCalibrating(false);
-      setIsCalibrating(false);
-      setCalPoints([]);
-      setCalibPoints([]);
-
-      if (activeProjectId) {
-        const session = await getOrCreateSession(activeProjectId, file.name);
-        if (session) {
-          setSessionId(session.id);
-          const data = await loadTakeoff(session.id);
-          if (data && !dbLoaded) {
-            if (data.groups && data.groups.length > 0) {
-              setGroups(data.groups);
-            }
-            if (data.measurements && data.measurements.length > 0) {
-              setAllMeasurements(data.measurements);
-            }
-            setDbLoaded(true);
-          }
-        }
-      }
-
-      panZoom.resetView();
-
-      setTool("select");
-      setLineStart(null);
-      setLineEnd(null);
-      setHoverPt(null);
-      setAreaPoints([]);
-      setAreaHoverPt(null);
-      setCountPoints([]);
-      setVolumePoints([]);
-      setVolumeHoverPt(null);
-      setShowDepthPrompt(false);
-
-      fitScaleRef.current = null;
-
-      if (viewerRef.current) {
-        viewerRef.current.scrollLeft = 0;
-        viewerRef.current.scrollTop = 0;
-      }
-    } catch (e: any) {
-      setError("PDF load failed: " + (e?.message || String(e)));
-      setPdf(null);
-      setNumPages(0);
-      setPageNumber(1);
-    } finally {
-      setLoadingPdf(false);
-    }
-  }
-
-  async function computeFitScale() {
-    if (!pdf) return null;
-    const viewer = viewerRef.current;
-    if (!viewer) return null;
-
-    const page = await pdf.getPage(pageNumber);
-    const v = page.getViewport({ scale: 1 });
-
-    const pad = 24;
-    const vw = Math.max(200, viewer.clientWidth - pad);
-    const vh = Math.max(200, viewer.clientHeight - pad);
-
-    const fit = Math.min(vw / v.width, vh / v.height) * 0.98;
-    return clamp(fit, 0.3, 4);
-  }
-
-  function drawOverlay(ctx: CanvasRenderingContext2D) {
-    if (calPoints.length > 0) {
-      ctx.save();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#22c55e";
-      ctx.fillStyle = "#22c55e";
-
-      for (const p of calPoints) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      if (calPoints.length === 2) {
-        ctx.beginPath();
-        ctx.moveTo(calPoints[0].x, calPoints[0].y);
-        ctx.lineTo(calPoints[1].x, calPoints[1].y);
-        ctx.stroke();
-      }
-
-      ctx.restore();
-    }
-
-    const a = lineStart;
-    const b = lineEnd ?? (tool === "line" ? hoverPt : null);
-    if (tool === "line" && a && b) {
-      ctx.save();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#60a5fa";
-      ctx.fillStyle = "#60a5fa";
-
-      ctx.beginPath();
-      ctx.arc(a.x, a.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-
-      const px = dist(a, b);
-      const totalFeet = distFeet(a, b);
-      const label = totalFeet > 0 ? formatFeetInches(totalFeet) : `${px.toFixed(0)} px (calibrate to get feet)`;
-
-      const midX = (a.x + b.x) / 2;
-      const midY = (a.y + b.y) / 2;
-
-      ctx.font = "14px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-      const pad = 6;
-      const w = ctx.measureText(label).width + pad * 2;
-      const h = 22;
-
-      ctx.fillStyle = "rgba(2,6,23,0.85)";
-      ctx.strokeStyle = "rgba(96,165,250,0.9)";
-      ctx.lineWidth = 1;
-
-      (ctx as any).roundRect
-        ? (ctx as any).roundRect(midX - w / 2, midY - h - 8, w, h, 8)
-        : (() => {
-            ctx.beginPath();
-            ctx.rect(midX - w / 2, midY - h - 8, w, h);
-          })();
-
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = "#e2e8f0";
-      ctx.fillText(label, midX - w / 2 + pad, midY - 12);
-
-      ctx.restore();
-    }
-
-    if (tool === "area" && areaPoints.length > 0) {
-      ctx.save();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#a78bfa";
-      ctx.fillStyle = "rgba(167,139,250,0.2)";
-
-      ctx.beginPath();
-      ctx.moveTo(areaPoints[0].x, areaPoints[0].y);
-      for (let i = 1; i < areaPoints.length; i++) {
-        ctx.lineTo(areaPoints[i].x, areaPoints[i].y);
-      }
-
-      if (areaHoverPt && areaPoints.length >= 1) {
-        ctx.lineTo(areaHoverPt.x, areaHoverPt.y);
-        ctx.lineTo(areaPoints[0].x, areaPoints[0].y);
-      }
-
-      if (areaPoints.length >= 3) {
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      ctx.stroke();
-
-      ctx.fillStyle = "#a78bfa";
-      for (const p of areaPoints) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.restore();
-    }
-
-    if (tool === "volume" && volumePoints.length > 0) {
-      ctx.save();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = "#10b981";
-      ctx.fillStyle = "rgba(16,185,129,0.2)";
-
-      ctx.beginPath();
-      ctx.moveTo(volumePoints[0].x, volumePoints[0].y);
-      for (let i = 1; i < volumePoints.length; i++) {
-        ctx.lineTo(volumePoints[i].x, volumePoints[i].y);
-      }
-
-      if (volumeHoverPt && volumePoints.length >= 1) {
-        ctx.lineTo(volumeHoverPt.x, volumeHoverPt.y);
-        ctx.lineTo(volumePoints[0].x, volumePoints[0].y);
-      }
-
-      if (volumePoints.length >= 3) {
-        ctx.closePath();
-        ctx.fill();
-      }
-
-      ctx.stroke();
-
-      ctx.fillStyle = "#10b981";
-      for (const p of volumePoints) {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.restore();
-    }
-  }
-
-  async function render() {
-    try {
-      if (!pdf) return;
-
-      const canvas = canvasRef.current;
-      const viewer = viewerRef.current;
-      if (!canvas || !viewer) return;
-
-      const seq = ++renderSeqRef.current;
-
-      const page = await pdf.getPage(pageNumber);
-
-      if (fitScaleRef.current == null) {
-        const fit = await computeFitScale();
-        if (fit != null) {
-          fitScaleRef.current = fit;
-          panZoom.fitToView(
-            page.getViewport({ scale: 1 }).width,
-            page.getViewport({ scale: 1 }).height,
-            viewer.clientWidth,
-            viewer.clientHeight
-          );
-          return;
-        }
-      }
-
-      const viewport = page.getViewport({ scale: panZoom.zoom });
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-
-      setCanvasWidth(canvas.width);
-      setCanvasHeight(canvas.height);
-
-      canvas.style.width = canvas.width + "px";
-      canvas.style.height = canvas.height + "px";
-      canvas.style.maxWidth = "none";
-      canvas.style.maxHeight = "none";
-      canvas.style.display = "block";
-
-      if (renderTaskRef.current) {
-        try {
-          renderTaskRef.current.cancel();
-        } catch {}
-        renderTaskRef.current = null;
-      }
-
-      const task = page.render({ canvasContext: ctx, viewport });
-      renderTaskRef.current = task;
-
-      try {
-        await task.promise;
-      } catch (err: any) {
-        if (err?.name !== "RenderingCancelledException") throw err;
-        return;
-      } finally {
-        if (renderTaskRef.current === task) renderTaskRef.current = null;
-      }
-
-      if (seq !== renderSeqRef.current) return;
-
-      drawOverlay(ctx);
-    } catch (e: any) {
-      setError("Render failed: " + (e?.message || String(e)));
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (!cancelled) await render();
-      } catch (e: any) {
-        if (!cancelled) setError("Render failed: " + (e?.message || String(e)));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [pdf, pageNumber, panZoom.zoom, panZoom.panX, panZoom.panY, calPoints.length, calibPoints.length, tool, lineStart?.x, lineStart?.y, lineEnd?.x, lineEnd?.y, hoverPt?.x, hoverPt?.y, areaPoints.length, areaHoverPt?.x, areaHoverPt?.y, volumePoints.length, volumeHoverPt?.x, volumeHoverPt?.y]);
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        e.preventDefault();
-        isSpaceDownRef.current = true;
-      }
-
-      if (tool === "area") {
-        if (e.code === "Enter" && areaPoints.length >= 3) {
-          e.preventDefault();
-          finishAreaPolygon();
-        }
-        if (e.code === "Escape") {
-          e.preventDefault();
-          setAreaPoints([]);
-          setAreaHoverPt(null);
-        }
-      }
-
-      if (tool === "count") {
-        if (e.code === "Escape") {
-          e.preventDefault();
-          setCountPoints([]);
-        }
-      }
-
-      if (tool === "volume") {
-        if (e.code === "Enter" && volumePoints.length >= 3) {
-          e.preventDefault();
-          finishVolumePolygon();
-        }
-        if (e.code === "Escape") {
-          e.preventDefault();
-          setVolumePoints([]);
-          setVolumeHoverPt(null);
-          setShowDepthPrompt(false);
-        }
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
-        isSpaceDownRef.current = false;
-        isPanningRef.current = false;
-        activePointerIdRef.current = null;
-      }
-    };
-    window.addEventListener("keydown", onKeyDown, { passive: false });
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown as any);
-      window.removeEventListener("keyup", onKeyUp as any);
-    };
-  }, [tool, areaPoints, countPoints, volumePoints]);
-
-  useEffect(() => {
-    function onWheel(e: WheelEvent) {
-      if (!overViewer) return;
-      if (e.ctrlKey || e.metaKey) e.preventDefault();
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (!overViewer) return;
-      if (e.ctrlKey || e.metaKey) {
-        const k = e.key.toLowerCase();
-        if (k === "+" || k === "=" || k === "-" || k === "0") e.preventDefault();
-      }
-    }
-
-    window.addEventListener("wheel", onWheel, { passive: false, capture: true });
-    window.addEventListener("keydown", onKeyDown, { capture: true });
-
-    return () => {
-      window.removeEventListener("wheel", onWheel as any, { capture: true } as any);
-      window.removeEventListener("keydown", onKeyDown as any, { capture: true } as any);
-    };
-  }, [overViewer]);
-
-  function nextPage() {
-    if (pageNumber < numPages) {
-      setPageNumber((p) => p + 1);
-      fitScaleRef.current = null;
-      setLineStart(null);
-      setLineEnd(null);
-      setHoverPt(null);
-      setAreaPoints([]);
-      setAreaHoverPt(null);
-      setCountPoints([]);
-      setVolumePoints([]);
-      setVolumeHoverPt(null);
-      setShowDepthPrompt(false);
-      setCalPoints([]);
-      setCalibrating(false);
-      setIsCalibrating(false);
-      setCalibPoints([]);
-    }
-  }
-
-  function prevPage() {
-    if (pageNumber > 1) {
-      setPageNumber((p) => p - 1);
-      fitScaleRef.current = null;
-      setLineStart(null);
-      setLineEnd(null);
-      setHoverPt(null);
-      setAreaPoints([]);
-      setAreaHoverPt(null);
-      setCountPoints([]);
-      setVolumePoints([]);
-      setVolumeHoverPt(null);
-      setShowDepthPrompt(false);
-      setCalPoints([]);
-      setCalibrating(false);
-      setIsCalibrating(false);
-      setCalibPoints([]);
-    }
-  }
-
-  function startCalibrate() {
-    setError(null);
-    setCalibrating(true);
-    setIsCalibrating(true);
-    setCalibPoints([]);
-    setTool("select");
-    setLineStart(null);
-    setLineEnd(null);
-    setHoverPt(null);
-    setCalPoints([]);
-    setScaleModalOpen(true);
-  }
-
-  function cancelCalibrate() {
-    setCalibrating(false);
-    setIsCalibrating(false);
-    setCalibPoints([]);
-    setCalPoints([]);
-    setScaleModalOpen(false);
-  }
-
-  function canvasPointFromEvent(e: React.MouseEvent<HTMLCanvasElement>) {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: Math.round(e.clientX - rect.left),
-      y: Math.round(e.clientY - rect.top),
-    };
-  }
-
-  function shouldStartPan(e: React.PointerEvent) {
-    const LEFT = 0;
-    const MIDDLE = 1;
-
-    if (e.button === MIDDLE) return true;
-
-    if (e.button === LEFT && isSpaceDownRef.current) return true;
-
-    return false;
-  }
-
-  function onViewerPointerDown(e: React.PointerEvent) {
-    const el = viewerRef.current;
-    if (!el) return;
-
-    if (!shouldStartPan(e)) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    isPanningRef.current = true;
-    activePointerIdRef.current = e.pointerId;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-
-    panZoom.startPan(e.clientX, e.clientY);
-  }
-
-  function onViewerPointerMove(e: React.PointerEvent) {
-    if (!isPanningRef.current) return;
-    if (activePointerIdRef.current !== e.pointerId) return;
-
-    e.preventDefault();
-
-    panZoom.updatePan(e.clientX, e.clientY);
-  }
-
-  function endPan(e?: React.PointerEvent) {
-    if (!isPanningRef.current) return;
-    isPanningRef.current = false;
-    if (e && activePointerIdRef.current === e.pointerId) {
-      try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
-    }
-    activePointerIdRef.current = null;
-    panZoom.endPan();
-  }
-
-  function onViewerPointerUp(e: React.PointerEvent) {
-    if (!isPanningRef.current) return;
-    e.preventDefault();
-    e.stopPropagation();
-    endPan(e);
-  }
-
-  function onViewerPointerLeave(e: React.PointerEvent) {
-    endPan(e);
-  }
-
-  function onViewerWheel(e: React.WheelEvent) {
-    const el = viewerRef.current;
-    if (!el) return;
-
-    e.preventDefault();
-
-    const isZoomGesture = e.ctrlKey;
-
-    if (!isZoomGesture) {
-      panZoom.updatePan(e.clientX + e.deltaX, e.clientY + e.deltaY);
-      return;
-    }
-
-    const rect = el.getBoundingClientRect();
-    panZoom.handleWheel(e.nativeEvent, rect);
-  }
-
-  function onCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (isPanningRef.current) return;
-
-    if (isCalibrating) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const el = viewerRef.current;
-      if (!el) return;
-
-      const rect = el.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-
-      const x = (mx - panZoom.panX) / panZoom.zoom;
-      const y = (my - panZoom.panY) / panZoom.zoom;
-
-      const newPoint = { x, y };
-
-      setCalibPoints((prev) => {
-        if (prev.length >= 2) return [newPoint];
-        return [...prev, newPoint];
-      });
-
-      return;
-    }
-
-    if (calibrating) {
-      const p = canvasPointFromEvent(e);
-      setCalPoints((prev) => {
-        if (prev.length >= 2) return [p];
-        return [...prev, p];
-      });
-      return;
-    }
-
-    if (tool === "line") {
-      const p = canvasPointFromEvent(e);
-      if (!lineStart) {
-        setLineStart(p);
-        setLineEnd(null);
-        return;
-      }
-      if (!lineEnd) {
-        setLineEnd(p);
-
-        if (feetPerPixel && feetPerPixel > 0) {
-          const pixelsPerUnit = 1 / feetPerPixel;
-          const activeGroup = groups.find(g => g.id === activeGroupId);
-          addMeasurement({
-            type: "line",
-            points: [lineStart, p],
-            pixelsPerUnit,
-            unit: "ft",
-            label: `Line measurement ${measurements.length + 1}`,
-            color: activeGroup?.color || "#60a5fa",
-            groupId: activeGroupId || undefined,
-          });
-        }
-
-        return;
-      }
-      setLineStart(p);
-      setLineEnd(null);
-      return;
-    }
-
-    if (tool === "area") {
-      const p = canvasPointFromEvent(e);
-      setAreaPoints((prev) => [...prev, p]);
-      return;
-    }
-
-    if (tool === "volume") {
-      const p = canvasPointFromEvent(e);
-      setVolumePoints((prev) => [...prev, p]);
-      return;
-    }
-
-    if (tool === "count") {
-      const p = canvasPointFromEvent(e);
-
-      if (feetPerPixel && feetPerPixel > 0) {
-        const pixelsPerUnit = 1 / feetPerPixel;
-        const activeGroup = groups.find(g => g.id === activeGroupId);
-        addMeasurement({
-          type: "count",
-          points: [p],
-          pixelsPerUnit,
-          unit: "ea",
-          label: `Count ${measurements.length + 1}`,
-          color: activeGroup?.color || "#f59e0b",
-          groupId: activeGroupId || undefined,
-        });
-      }
-      return;
-    }
-  }
-
-  function onCanvasDoubleClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (tool === "area" && areaPoints.length >= 3) {
-      e.preventDefault();
-      e.stopPropagation();
-      finishAreaPolygon();
-    }
-
-    if (tool === "volume" && volumePoints.length >= 3) {
-      e.preventDefault();
-      e.stopPropagation();
-      finishVolumePolygon();
-    }
-  }
-
-  function onCanvasMove(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (tool === "line") {
-      if (!lineStart) return;
-      if (lineEnd) return;
-      setHoverPt(canvasPointFromEvent(e));
-      return;
-    }
-
-    if (tool === "area" && areaPoints.length > 0) {
-      setAreaHoverPt(canvasPointFromEvent(e));
-      return;
-    }
-
-    if (tool === "volume" && volumePoints.length > 0) {
-      setVolumeHoverPt(canvasPointFromEvent(e));
-      return;
-    }
-  }
-
-  function applyScaleFromModal(realFeet: number, opts: { applyAllPages: boolean; autoDimLine: boolean }) {
-    if (realFeet === 0) {
-      setFeetPerPixel(null);
-      setCalibrating(false);
-      setIsCalibrating(false);
-      setCalPoints([]);
-      setCalibPoints([]);
-      setScaleModalOpen(false);
-      setError(null);
-      return;
-    }
-
-    const pointsToUse = isCalibrating ? calibPoints : calPoints;
-    const pointsLength = isCalibrating ? calibPoints.length : calPoints.length;
-
-    if (pointsLength !== 2) {
-      setError("Click two points on the drawing first.");
-      return;
-    }
-
-    const pixelDist = dist(pointsToUse[0], pointsToUse[1]);
-    if (pixelDist <= 0) {
-      setError("Points too close.");
-      return;
-    }
-
-    const fpp = realFeet / pixelDist;
-    setFeetPerPixel(fpp);
-
-    setCalibrating(false);
-    setIsCalibrating(false);
-    setScaleModalOpen(false);
-    setError(null);
-
-    if (!opts.autoDimLine) {
-      setCalPoints([]);
-      setCalibPoints([]);
-    }
-  }
-
-  function handleCalibrationOk(lengthFeet: number) {
-    if (!lengthFeet) return;
-
-    setPendingCalibLength(lengthFeet);
-    setCalibPoints([]);
-    setIsCalibrating(true);
-    setScaleModalOpen(false);
-  }
-
-  function onCalibrationCancel() {
-    setIsCalibrating(false);
-    setCalibPoints([]);
-    setPendingCalibLength(null);
-    setScaleModalOpen(false);
-  }
-
-  function finishAreaPolygon() {
-    if (areaPoints.length < 3) return;
-
-    if (feetPerPixel && feetPerPixel > 0) {
-      const pixelsPerUnit = 1 / feetPerPixel;
-
-      let areaPixels = 0;
-      for (let i = 0; i < areaPoints.length; i++) {
-        const j = (i + 1) % areaPoints.length;
-        areaPixels += areaPoints[i].x * areaPoints[j].y;
-        areaPixels -= areaPoints[j].x * areaPoints[i].y;
-      }
-      areaPixels = Math.abs(areaPixels / 2);
-
-      const areaFt2 = areaPixels / (pixelsPerUnit * pixelsPerUnit);
-
-      const activeGroup = groups.find(g => g.id === activeGroupId);
-      addMeasurement({
-        type: "area",
-        points: [...areaPoints],
-        pixelsPerUnit,
-        unit: "ft²",
-        label: `Area ${measurements.length + 1}`,
-        color: activeGroup?.color || "#a78bfa",
-        groupId: activeGroupId || undefined,
-      });
-    }
-
-    setAreaPoints([]);
-    setAreaHoverPt(null);
-  }
-
-  function finishVolumePolygon() {
-    if (volumePoints.length < 3) return;
-    setShowDepthPrompt(true);
-  }
-
-  function confirmVolumeWithDepth() {
-    if (volumePoints.length < 3) return;
-
-    const depthInches = parseFloat(depthInput);
-    if (!depthInches || depthInches <= 0) {
-      alert("Please enter a valid depth in inches");
-      return;
-    }
-
-    if (feetPerPixel && feetPerPixel > 0) {
-      const pixelsPerUnit = 1 / feetPerPixel;
-
-      let areaPixels = 0;
-      for (let i = 0; i < volumePoints.length; i++) {
-        const j = (i + 1) % volumePoints.length;
-        areaPixels += volumePoints[i].x * volumePoints[j].y;
-        areaPixels -= volumePoints[j].x * volumePoints[i].y;
-      }
-      areaPixels = Math.abs(areaPixels / 2);
-
-      const areaFt2 = areaPixels / (pixelsPerUnit * pixelsPerUnit);
-      const depthFt = depthInches / 12;
-      const volumeFt3 = areaFt2 * depthFt;
-      const volumeYd3 = volumeFt3 / 27;
-      const volumeM3 = volumeFt3 * 0.028316846592;
-
-      const activeGroup = groups.find(g => g.id === activeGroupId);
-      addMeasurement({
-        type: "volume",
-        points: [...volumePoints],
-        pixelsPerUnit,
-        unit: "yd³",
-        label: `Volume ${measurements.length + 1}`,
-        color: activeGroup?.color || "#10b981",
-        groupId: activeGroupId || undefined,
-        meta: {
-          depthInches,
-          volumeM3,
-        },
-      });
-    }
-
-    setVolumePoints([]);
-    setVolumeHoverPt(null);
-    setShowDepthPrompt(false);
-    setDepthInput("4");
-  }
-
-  const canConfirmCalibration = calibPoints.length === 2;
-
-  useEffect(() => {
-    if (!isCalibrating) return;
-    if (calibPoints.length !== 2) return;
-    if (!pendingCalibLength) return;
-
-    const [a,b] = calibPoints;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const pixelDist = Math.sqrt(dx*dx + dy*dy);
-    if (!pixelDist || pixelDist <= 0) return;
-
-    const newFeetPerPixel = pendingCalibLength / pixelDist;
-    setFeetPerPixel(newFeetPerPixel);
-    setFeetPerPdfUnit(newFeetPerPixel);
-
-    setIsCalibrating(false);
-    setPendingCalibLength(null);
-    setCalibPoints([]);
-  }, [isCalibrating, calibPoints, pendingCalibLength]);
-
-  function toggleGroupVisibility(groupId: string) {
-    setGroups(prev => prev.map(g =>
-      g.id === groupId ? { ...g, visible: !g.visible } : g
-    ));
-  }
-
-  function addNewGroup() {
-    if (!newGroupName.trim()) return;
-
-    const maxGroups = features.maxTakeoffGroups;
-    if (maxGroups !== null && groups.length >= maxGroups) {
-      setPaywallFeature("Unlimited Takeoff Groups");
-      setShowPaywall(true);
-      return;
-    }
-
-    const colors = ["#ef4444", "#84cc16", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
-
-    const newGroup = {
-      id: crypto.randomUUID(),
-      name: newGroupName.trim(),
-      color: randomColor,
-      visible: true,
-      sortOrder: groups.length,
-      locked: false,
-    };
-
-    setGroups(prev => [...prev, newGroup]);
-    setNewGroupName("");
-    setShowNewGroupForm(false);
-  }
-
-  function deleteGroup(groupId: string) {
-    setGroups(prev => prev.filter(g => g.id !== groupId));
-    if (activeGroupId === groupId) {
-      setActiveGroupId(groups.find(g => g.id !== groupId)?.id || null);
-    }
-  }
-
-  function exportToCSV() {
-    if (!hasFeature("takeoffExport")) {
-      setPaywallFeature("Export Takeoff to CSV");
-      setShowPaywall(true);
-      return;
-    }
-
-    const rows = [["Group", "Type", "Label", "Result", "Unit"]];
-
-    groups.forEach(group => {
-      const groupMeasurements = measurements.filter(m => m.groupId === group.id);
-      groupMeasurements.forEach(m => {
-        const unit = m.type === "line" ? "ft" : m.type === "area" ? "ft²" : m.type === "volume" ? "ft³" : "count";
-        rows.push([
-          group.name,
-          m.type,
-          m.label || "",
-          m.result.toFixed(2),
-          unit
-        ]);
-      });
-    });
-
-    const csv = rows.map(row => row.map(cell => `"${cell}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "takeoff-export.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function changeMeasurementGroup(measurementId: string, newGroupId: string | null) {
-    updateMeasurement(measurementId, { groupId: newGroupId || undefined });
-  }
-
-  function getGroupTotals(groupId: string) {
-    const groupMeasurements = measurements.filter(m => m.groupId === groupId);
-
-    return {
-      line: groupMeasurements
-        .filter(m => m.type === "line")
-        .reduce((sum, m) => sum + m.result, 0),
-      area: groupMeasurements
-        .filter(m => m.type === "area")
-        .reduce((sum, m) => sum + m.result, 0),
-      volume: groupMeasurements
-        .filter(m => m.type === "volume")
-        .reduce((sum, m) => sum + m.result, 0),
-      count: groupMeasurements
-        .filter(m => m.type === "count")
-        .reduce((sum, m) => sum + m.result, 0),
-    };
-  }
-
-  const visibleMeasurements = measurements.filter(m => {
-    if (!m.groupId) return true;
-    const group = groups.find(g => g.id === m.groupId);
-    return group?.visible !== false;
-  });
-
-  // Track previous state for incremental saves
-  const prevMeasurementsRef = useRef<Measurement[]>([]);
-  const prevGroupsRef = useRef<MeasurementGroup[]>([]);
-  const prevCalibrationRef = useRef<CalibrationState | null>(null);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Incremental persistence
-  useEffect(() => {
-    if (!sessionId || !dbLoaded) return;
-
-    const calibrationData = feetPerPixel ? {
-      isCalibrated: true,
-      point1: calPoints[0] || null,
-      point2: calPoints[1] || null,
-      realDistance: 0,
-      unit: "ft" as const,
-      pixelsPerUnit: 1 / (feetPerPixel || 1),
-    } : null;
-
-    // Only save if something actually changed
-    const measurementsChanged = JSON.stringify(measurements) !== JSON.stringify(prevMeasurementsRef.current);
-    const groupsChanged = JSON.stringify(groups) !== JSON.stringify(prevGroupsRef.current);
-    const calibrationChanged = JSON.stringify(calibrationData) !== JSON.stringify(prevCalibrationRef.current);
-
-    if (!measurementsChanged && !groupsChanged && !calibrationChanged) return;
-
-    const saveTimeout = setTimeout(async () => {
-      try {
-        // Update calibration if changed
-        if (calibrationChanged && calibrationData) {
-          await supabase
-            .from("takeoff_sessions")
-            .update({ calibration: calibrationData, updated_at: new Date().toISOString() })
-            .eq("id", sessionId);
-        }
-
-        // Incremental groups sync
-        if (groupsChanged) {
-          const prevGroups = prevGroupsRef.current;
-          const currentGroups = groups;
-
-          // Find groups to delete (in prev but not current)
-          const groupsToDelete = prevGroups.filter(pg => !currentGroups.find(cg => cg.id === pg.id));
-          if (groupsToDelete.length > 0) {
-            await supabase
-              .from("takeoff_groups")
-              .delete()
-              .in("id", groupsToDelete.map(g => g.id));
-          }
-
-          // Find groups to insert (in current but not prev)
-          const groupsToInsert = currentGroups.filter(cg => !prevGroups.find(pg => pg.id === cg.id));
-          if (groupsToInsert.length > 0) {
-            await supabase
-              .from("takeoff_groups")
-              .insert(groupsToInsert.map((g, idx) => ({
-                id: g.id,
-                session_id: sessionId,
-                name: g.name,
-                color: g.color,
-                trade: g.trade || null,
-                is_hidden: !g.visible,
-                sort_order: g.sortOrder !== undefined ? g.sortOrder : idx,
-              })));
-          }
-
-          // Find groups to update (in both but potentially changed)
-          const groupsToUpdate = currentGroups.filter(cg => {
-            const pg = prevGroups.find(pg => pg.id === cg.id);
-            return pg && (pg.name !== cg.name || pg.color !== cg.color || pg.visible !== cg.visible || pg.sortOrder !== cg.sortOrder);
-          });
-          for (const g of groupsToUpdate) {
-            await supabase
-              .from("takeoff_groups")
-              .update({
-                name: g.name,
-                color: g.color,
-                is_hidden: !g.visible,
-                sort_order: g.sortOrder,
-              })
-              .eq("id", g.id);
-          }
-        }
-
-        // Incremental measurements sync
-        if (measurementsChanged) {
-          const prevMeasurements = prevMeasurementsRef.current;
-          const currentMeasurements = measurements;
-
-          // Find measurements to delete (in prev but not current)
-          const measurementsToDelete = prevMeasurements.filter(pm => !currentMeasurements.find(cm => cm.id === pm.id));
-          if (measurementsToDelete.length > 0) {
-            await supabase
-              .from("takeoff_measurements")
-              .delete()
-              .in("id", measurementsToDelete.map(m => m.id));
-          }
-
-          // Find measurements to insert (in current but not prev)
-          const measurementsToInsert = currentMeasurements.filter(cm => !prevMeasurements.find(pm => pm.id === cm.id));
-          if (measurementsToInsert.length > 0) {
-            await supabase
-              .from("takeoff_measurements")
-              .insert(measurementsToInsert.map((m, idx) => ({
-                id: m.id,
-                session_id: sessionId,
-                page_number: 1,
-                group_id: m.groupId || null,
-                type: m.type,
-                points: m.points,
-                unit: m.unit,
-                result: m.result,
-                meta: m.meta || null,
-                sort_order: idx,
-              })));
-          }
-
-          // Find measurements to update (in both but potentially changed)
-          const measurementsToUpdate = currentMeasurements.filter(cm => {
-            const pm = prevMeasurements.find(pm => pm.id === cm.id);
-            return pm && (
-              pm.type !== cm.type ||
-              JSON.stringify(pm.points) !== JSON.stringify(cm.points) ||
-              pm.unit !== cm.unit ||
-              pm.result !== cm.result ||
-              pm.groupId !== cm.groupId ||
-              JSON.stringify(pm.meta) !== JSON.stringify(cm.meta)
-            );
-          });
-          for (const m of measurementsToUpdate) {
-            await supabase
-              .from("takeoff_measurements")
-              .update({
-                group_id: m.groupId || null,
-                type: m.type,
-                points: m.points,
-                unit: m.unit,
-                result: m.result,
-                meta: m.meta || null,
-              })
-              .eq("id", m.id);
-          }
-        }
-
-        // Update refs for next comparison
-        prevMeasurementsRef.current = [...measurements];
-        prevGroupsRef.current = [...groups];
-        prevCalibrationRef.current = calibrationData;
-
-      } catch (err) {
-        console.error("Incremental save failed:", err);
-      }
-    }, 800);
-
-    return () => {
-      clearTimeout(saveTimeout);
-    };
-  }, [sessionId, measurements, groups, feetPerPixel, dbLoaded, calPoints]);
-
+// Missing import for Search icon used in the component
+function Search({ size, className }: { size: number; className?: string }) {
   return (
-    <div className="p-6 h-full flex gap-6">
-      <div className="flex-1 flex flex-col min-w-0">
-        <ScaleModal
-          open={scaleModalOpen}
-          onClose={onCalibrationCancel}
-          onApply={applyScaleFromModal}
-          canApply={calPoints && calPoints.length === 2}
-          isCalibrating={isCalibrating}
-          calibPointsCount={calibPoints.length}
-          canConfirmCalibration={canConfirmCalibration}
-          onCalibrationOk={handleCalibrationOk}
-          onCalibrationCancel={onCalibrationCancel}
-        />
-
-      {routeProjectId ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="text-xs text-slate-500 mb-1">Project Context</div>
-              <div className="text-sm font-semibold">
-                {currentProject?.name || `Project ${routeProjectId}`}
-              </div>
-              <div className="text-xs text-slate-400 mt-1">
-                Project ID: {routeProjectId}
-              </div>
-            </div>
-            <button
-              onClick={() => nav(`/projects/${routeProjectId}`)}
-              className="px-3 py-2 rounded-xl bg-slate-800/50 hover:bg-slate-800 text-sm"
-            >
-              Back to Project
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 p-4 mb-4">
-          <div className="text-sm font-semibold text-amber-300">Global Takeoff Mode</div>
-          <div className="text-xs text-amber-400/70 mt-1">
-            No project context. Access takeoff from a project dashboard for project-specific measurements.
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Takeoff</h1>
-          <p className="text-slate-400 text-sm">Fit-to-view on load. Ctrl+wheel zoom-to-cursor. Line tool measures.</p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div
-            className={`px-3 py-1 rounded-lg text-xs font-medium ${
-              saveStatus === "saved"
-                ? "bg-emerald-900/20 text-emerald-300 border border-emerald-900/30"
-                : saveStatus === "saving"
-                ? "bg-slate-800/50 text-slate-400 border border-slate-700"
-                : "bg-red-900/20 text-red-300 border border-red-900/30"
-            }`}
-          >
-            {saveStatus === "saved" ? "Saved ✓" : saveStatus === "saving" ? "Saving…" : "Save failed"}
-          </div>
-
-          <label className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm cursor-pointer">
-            Upload PDF
-            <input
-              type="file"
-              accept="application/pdf,.pdf"
-              className="hidden"
-              onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
-
-          {pdf && (
-            <>
-              <button
-                onClick={startCalibrate}
-                className="px-3 py-2 rounded-xl bg-emerald-900/25 hover:bg-emerald-900/40 border border-emerald-900/40 text-sm"
-              >
-                Calibrate Scale
-              </button>
-              <button
-                onClick={exportToCSV}
-                className="px-3 py-2 rounded-xl bg-blue-900/25 hover:bg-blue-900/40 border border-blue-900/40 text-sm"
-              >
-                Export CSV
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 flex items-center gap-2">
-        <button
-          onClick={() => {
-            setTool("select");
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setAreaPoints([]);
-            setAreaHoverPt(null);
-            setCountPoints([]);
-            setVolumePoints([]);
-            setVolumeHoverPt(null);
-            setShowDepthPrompt(false);
-          }}
-          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "select" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
-        >
-          Select
-        </button>
-
-        <button
-          onClick={() => {
-            setTool("line");
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setAreaPoints([]);
-            setAreaHoverPt(null);
-            setCountPoints([]);
-            setVolumePoints([]);
-            setVolumeHoverPt(null);
-            setShowDepthPrompt(false);
-          }}
-          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "line" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
-        >
-          Line
-        </button>
-
-        <button
-          onClick={() => {
-            setTool("area");
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setAreaPoints([]);
-            setAreaHoverPt(null);
-            setCountPoints([]);
-            setVolumePoints([]);
-            setVolumeHoverPt(null);
-            setShowDepthPrompt(false);
-          }}
-          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "area" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
-        >
-          Area
-        </button>
-
-        <button
-          onClick={() => {
-            setTool("count");
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setAreaPoints([]);
-            setAreaHoverPt(null);
-            setCountPoints([]);
-            setVolumePoints([]);
-            setVolumeHoverPt(null);
-            setShowDepthPrompt(false);
-          }}
-          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "count" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
-        >
-          Count
-        </button>
-
-        <button
-          onClick={() => {
-            setTool("volume");
-            setLineStart(null);
-            setLineEnd(null);
-            setHoverPt(null);
-            setAreaPoints([]);
-            setAreaHoverPt(null);
-            setCountPoints([]);
-            setVolumePoints([]);
-            setVolumeHoverPt(null);
-            setShowDepthPrompt(false);
-          }}
-          className={"px-3 py-2 rounded-xl text-sm border " + (tool === "volume" ? "bg-slate-800 border-slate-700" : "bg-slate-950 border-slate-800 hover:bg-slate-900")}
-        >
-          Volume
-        </button>
-
-        <div className="flex-1" />
-
-        {tool === "line" && <div className="text-xs text-slate-400">Click 2 points to measure. 3rd click starts new line.</div>}
-        {tool === "area" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points). ESC to cancel.</div>}
-        {tool === "count" && <div className="text-xs text-slate-400">Click to place count markers. ESC to cancel.</div>}
-        {tool === "volume" && <div className="text-xs text-slate-400">Click to add vertices. Double-click or press Enter to finish (min 3 points), then enter depth. ESC to cancel.</div>}
-        {measurements.length > 0 && (
-          <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
-            {measurements.length} measurement{measurements.length === 1 ? '' : 's'}
-          </div>
-        )}
-      </div>
-
-      {groups.length > 0 && (
-        <div className="mt-4 flex items-center gap-2">
-          <label className="text-sm text-slate-400">Group:</label>
-          <select
-            value={activeGroupId || ""}
-            onChange={(e) => setActiveGroupId(e.target.value || null)}
-            className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm"
-          >
-            <option value="">None</option>
-            {groups.map(group => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
-          {activeGroupId && (
-            <div className="flex items-center gap-1 px-2 py-1 bg-slate-800 rounded-lg text-xs">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: groups.find(g => g.id === activeGroupId)?.color }}
-              />
-              <span>{groups.find(g => g.id === activeGroupId)?.name}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {showDepthPrompt && (
-        <div className="mt-4 rounded-xl border border-emerald-900/40 bg-emerald-950/30 p-4">
-          <div className="text-sm font-semibold text-emerald-200 mb-2">Enter Depth</div>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={depthInput}
-              onChange={(e) => setDepthInput(e.target.value)}
-              className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm w-24"
-              placeholder="4"
-              autoFocus
-            />
-            <span className="text-sm text-slate-400">inches</span>
-            <button
-              onClick={confirmVolumeWithDepth}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium"
-            >
-              Confirm
-            </button>
-            <button
-              onClick={() => {
-                setShowDepthPrompt(false);
-                setVolumePoints([]);
-                setVolumeHoverPt(null);
-              }}
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="mt-4 rounded-xl border border-red-900/40 bg-red-950/30 p-3 text-sm text-red-200">
-          {error}
-        </div>
-      )}
-
-      {loadingPdf && <div className="mt-4 text-sm text-slate-400">Loading PDF…</div>}
-
-      {pdf && (
-        <div className="mt-4 flex items-center gap-2">
-          <button onClick={prevPage} className="px-3 py-2 bg-slate-800 rounded-lg">
-            Prev
-          </button>
-
-          <span className="text-sm">
-            Page {pageNumber} / {numPages}
-          </span>
-
-          <button onClick={nextPage} className="px-3 py-2 bg-slate-800 rounded-lg">
-            Next
-          </button>
-
-          <div className="flex-1" />
-
-          {feetPerPixel ? (
-            <div className="text-xs text-emerald-300 border border-emerald-900/40 bg-emerald-950/20 px-2 py-1 rounded-lg">
-              Scale set: {feetPerPixel.toFixed(4)} ft / px
-            </div>
-          ) : (
-            <div className="text-xs text-slate-400">Scale not set (calibrate before measuring)</div>
-          )}
-
-          <div className="w-3" />
-          <span className="text-sm">{Math.round(panZoom.zoom * 100)}%</span>
-
-          <button
-            onClick={async () => {
-              fitScaleRef.current = null;
-              const fit = await computeFitScale();
-              if (fit != null) {
-                fitScaleRef.current = fit;
-                const page = await pdf.getPage(pageNumber);
-                const v = page.getViewport({ scale: 1 });
-                const viewer = viewerRef.current;
-                if (viewer) {
-                  panZoom.fitToView(v.width, v.height, viewer.clientWidth, viewer.clientHeight);
-                }
-              }
-            }}
-            className="ml-2 px-3 py-2 bg-slate-800 rounded-lg text-sm"
-          >
-            Fit
-          </button>
-        </div>
-      )}
-
-      <div className="mt-4 flex-1 border border-slate-800 rounded-xl bg-slate-950 overflow-hidden">
-        {pdf ? (
-          <div
-            ref={viewerRef}
-            onPointerDown={onViewerPointerDown}
-            onPointerMove={onViewerPointerMove}
-            onPointerUp={onViewerPointerUp}
-            onPointerLeave={onViewerPointerLeave}
-            onWheel={onViewerWheel}
-            onMouseEnter={() => setOverViewer(true)}
-            onMouseLeave={() => setOverViewer(false)}
-            className="p-3 h-full relative"
-            style={{ touchAction: "none", cursor: "default" }}
-          >
-            <div style={{ display: "inline-block", transform: `translate(${panZoom.panX}px, ${panZoom.panY}px)` }}>
-              <canvas
-                ref={canvasRef}
-                onClick={onCanvasClick}
-                onDoubleClick={onCanvasDoubleClick}
-                onMouseMove={onCanvasMove}
-                className={calibrating || isPanningRef.current ? "cursor-crosshair" : (tool === "line" || tool === "area" || tool === "count" || tool === "volume") ? "cursor-crosshair" : "cursor-default"}
-                style={{ userSelect: "none" }}
-              />
-
-              <MeasurementLayer
-                measurements={visibleMeasurements}
-                scale={panZoom.zoom}
-                offsetX={0}
-                offsetY={0}
-                width={canvasWidth}
-                height={canvasHeight}
-                onMeasurementClick={(id) => {
-                  console.log("Clicked measurement:", id);
-                }}
-              />
-            </div>
-
-            <div className="mt-2 text-xs text-slate-400">
-              {isCalibrating
-                ? `Calibration: click 2 points on drawing (${calibPoints.length}/2).`
-                : "Calibrate: open Scale, click 2 points on drawing, then OK."
-              }
-            </div>
-          </div>
-        ) : (
-          <div className="h-full flex items-center justify-center text-slate-500">Upload a PDF drawing to begin.</div>
-        )}
-      </div>
-    </div>
-
-    <div className="w-80 flex-shrink-0 border-l border-slate-800 pl-6 flex flex-col overflow-hidden">
-      <div className="mb-4 flex-shrink-0">
-        <h2 className="text-xl font-semibold mb-2">Groups</h2>
-        <p className="text-slate-400 text-xs">Organize measurements by trade or category</p>
-      </div>
-
-      <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
-        {groups.map(group => {
-          const totals = getGroupTotals(group.id);
-          const hasData = totals.line > 0 || totals.area > 0 || totals.volume > 0 || totals.count > 0;
-          const groupMeasurements = measurements.filter(m => m.groupId === group.id);
-
-          return (
-            <div
-              key={group.id}
-              className={`rounded-lg border p-3 ${
-                activeGroupId === group.id
-                  ? "bg-slate-800/50 border-slate-700"
-                  : "bg-slate-900/30 border-slate-800 hover:bg-slate-900/50"
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <button
-                  onClick={() => toggleGroupVisibility(group.id)}
-                  className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-slate-700"
-                >
-                  {group.visible ? (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                  )}
-                </button>
-
-                <div
-                  className="w-3 h-3 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: group.color }}
-                />
-
-                <button
-                  onClick={() => setActiveGroupId(group.id)}
-                  className="flex-1 text-left text-sm font-medium"
-                >
-                  {group.name}
-                </button>
-
-                {groupMeasurements.length > 0 && (
-                  <div className="px-2 py-0.5 bg-slate-700/50 rounded-full text-xs text-slate-300">
-                    {groupMeasurements.length}
-                  </div>
-                )}
-
-                <button
-                  onClick={() => deleteGroup(group.id)}
-                  className="flex-shrink-0 w-5 h-5 rounded flex items-center justify-center hover:bg-red-900/30 text-slate-400 hover:text-red-400"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {hasData && (
-                <div className="mt-2 pt-2 border-t border-slate-700/50 space-y-1 text-xs">
-                  {totals.line > 0 && (
-                    <div className="flex justify-between text-slate-400">
-                      <span>Line:</span>
-                      <span className="font-mono">{totals.line.toFixed(2)} ft</span>
-                    </div>
-                  )}
-                  {totals.area > 0 && (
-                    <div className="flex justify-between text-slate-400">
-                      <span>Area:</span>
-                      <span className="font-mono">{totals.area.toFixed(2)} ft²</span>
-                    </div>
-                  )}
-                  {totals.volume > 0 && (
-                    <div className="flex justify-between text-slate-400">
-                      <span>Volume:</span>
-                      <span className="font-mono">{totals.volume.toFixed(2)} yd³</span>
-                    </div>
-                  )}
-                  {totals.count > 0 && (
-                    <div className="flex justify-between text-slate-400">
-                      <span>Count:</span>
-                      <span className="font-mono">{totals.count} ea</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {measurements.filter(m => !m.groupId).length > 0 && (
-          <div className="mt-4 pt-4 border-t border-slate-700/50">
-            <div className="text-xs font-semibold text-slate-400 mb-2">Ungrouped Measurements</div>
-            <div className="space-y-1">
-              {measurements.filter(m => !m.groupId).map(m => (
-                <div
-                  key={m.id}
-                  className="flex items-center gap-2 p-2 bg-slate-900/30 rounded text-xs"
-                >
-                  <div className="flex-1 truncate">
-                    <div className="font-medium">{m.label || `${m.type} measurement`}</div>
-                    <div className="text-slate-400">
-                      {m.result.toFixed(2)} {m.unit}
-                    </div>
-                  </div>
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        changeMeasurementGroup(m.id, e.target.value);
-                      }
-                    }}
-                    className="px-2 py-1 bg-slate-800 border border-slate-700 rounded text-xs"
-                  >
-                    <option value="">Move to...</option>
-                    {groups.map(g => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-4 pt-4 border-t border-slate-800 flex-shrink-0">
-        {showNewGroupForm ? (
-          <div className="space-y-2">
-            <input
-              type="text"
-              value={newGroupName}
-              onChange={(e) => setNewGroupName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") addNewGroup();
-                if (e.key === "Escape") {
-                  setShowNewGroupForm(false);
-                  setNewGroupName("");
-                }
-              }}
-              placeholder="Group name"
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm"
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={addNewGroup}
-                className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium"
-              >
-                Add
-              </button>
-              <button
-                onClick={() => {
-                  setShowNewGroupForm(false);
-                  setNewGroupName("");
-                }}
-                className="flex-1 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowNewGroupForm(true)}
-            className="w-full px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm flex items-center justify-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Group
-          </button>
-        )}
-      </div>
-    </div>
-
-    <PaywallModal
-      isOpen={showPaywall}
-      onClose={() => setShowPaywall(false)}
-      featureName={paywallFeature}
-    />
-  </div>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+    </svg>
   );
 }
 
 export default function TakeoffPage() {
-  return (
-    <TakeoffErrorBoundary>
-      <TakeoffPageInner />
-    </TakeoffErrorBoundary>
-  );
+  return <ErrorBoundary><TakeoffInner/></ErrorBoundary>;
 }

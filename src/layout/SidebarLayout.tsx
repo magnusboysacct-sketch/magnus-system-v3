@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle, ChevronDown, ChevronUp, Wallet, ChartBar as BarChart, Package, Library, ClipboardList, Truck, Calculator, Building2, ShieldCheck, Smartphone } from "lucide-react";
+import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle, Shield, ChevronDown, ChevronUp, Wallet, ChartBar, Package, Library, ClipboardList, Truck, Calculator, Building2, ShieldCheck, Smartphone, HandCoins, Activity, Eye } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useTheme } from "../hooks/useTheme";
 import ProjectSelector from "../components/ProjectSelector";
@@ -27,6 +27,7 @@ const navSections: NavSection[] = [
     items: [
       { to: "/", label: "Dashboard", icon: LayoutDashboard },
       { to: "/field-ops", label: "Field Ops", icon: Smartphone },
+      { to: "/access-log", label: "Access Log", icon: Shield },
     ],
   },
   {
@@ -66,16 +67,19 @@ const navSections: NavSection[] = [
     items: [
       { to: "/finance", label: "Finance Hub", icon: Landmark },
       { to: "/finance/transactions", label: "Finance Transactions", icon: CreditCard },
+      { to: "/finance/reports", label: "Finance Reports", icon: BarChart3 },
       { to: "/expenses", label: "Expenses", icon: Receipt },
       { to: "/cash-flow", label: "Cash Flow", icon: TrendingUp },
       { to: "/accounts-receivable", label: "Receivables", icon: FileText },
       { to: "/billing", label: "Billing", icon: CreditCard },
       { to: "/workers", label: "Payroll", icon: UserCircle },
+      { to: "/access-log", label: "Access Log", icon: Shield },
+      { to: "/field-payments", label: "Field Payments", icon: HandCoins },
     ],
   },
   {
     title: "Reports",
-    icon: BarChart,
+    icon: BarChart3,
     collapsible: true,
     items: [
       { to: "/reports", label: "Analytics", icon: BarChart3 }
@@ -88,6 +92,8 @@ const navSections: NavSection[] = [
     items: [
       { to: "/settings", label: "Settings", icon: Settings },
       { to: "/settings/users", label: "User Manager", icon: Users },
+      { to: "/admin/jamaican-payroll-monitoring", label: "Jamaican Payroll Monitor", icon: Activity },
+      { to: "/admin/payroll-comparison-review", label: "Payroll Comparison Review", icon: Eye },
     ],
   },
 ];
@@ -143,10 +149,13 @@ export default function SidebarLayout() {
       "/settings/master-lists",
       "/billing",
       "/workers",
+      "/access-log",
+      "/field-payments",
       "/cash-flow",
       "/accounts-receivable",
       "/expenses",
       "/finance",
+      "/finance/reports",
     ];
 
     const pathAllowed = allowedWithoutProject.some((p) =>
@@ -249,6 +258,12 @@ export default function SidebarLayout() {
                 to: currentProjectId ? `/projects/${currentProjectId}/finance/transactions` : "/finance/transactions"
               };
             }
+            if (item.label === "Finance Reports") {
+              return {
+                ...item,
+                to: currentProjectId ? `/projects/${currentProjectId}/finance/reports` : "/finance/reports"
+              };
+            }
             return item;
           })
         };
@@ -279,6 +294,9 @@ export default function SidebarLayout() {
           return false;
         }
         if (item.to === "/billing" && !financeAccess.canViewBilling) {
+          return false;
+        }
+        if (item.to === "/finance/reports" && !financeAccess.canViewCompanyReports) {
           return false;
         }
 

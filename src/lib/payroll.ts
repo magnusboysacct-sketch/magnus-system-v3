@@ -1,4 +1,10 @@
 import { supabase } from "./supabase";
+import { jamaicanPayrollCalculator } from "./jamaicanPayroll";
+import { payrollValidator } from "./payrollValidation";
+import { payrollAuditor } from "./payrollAudit";
+import type { JamaicanPayrollInput, JamaicanWorkerTaxInfo } from "./jamaicanPayroll";
+import type { PayrollValidationInput } from "./payrollValidation";
+import type { PayrollAuditInput } from "./payrollAudit";
 
 export interface PayrollPeriod {
   id: string;
@@ -38,12 +44,24 @@ export interface PayrollEntry {
   status: "pending" | "paid" | "cancelled";
   created_at?: string;
   updated_at?: string;
+  // PHASE 1C SHADOW CALCULATION ONLY — NOT ACTIVE PAYROLL
+  jamaicanShadowCalculation?: any;
+  jamaicanShadowNetPay?: number;
+  jamaicanShadowDeductions?: any;
+  jamaicanShadowVersion?: string;
+  // PHASE 1D VALIDATION ONLY — NOT ACTIVE PAYROLL
+  jamaicanValidationStatus?: 'valid' | 'warning' | 'error' | 'not_available';
+  jamaicanValidationWarnings?: string[];
+  jamaicanValidationDifferences?: any;
+  jamaicanValidationVersion?: string;
 }
 
+// PHASE 2B STEP 2 BACKEND EXTENSION ONLY — NOT ACTIVE PAYROLL
 export interface WorkerTaxInfo {
   id: string;
   worker_id: string;
   company_id: string;
+  // Existing US tax fields (preserved)
   filing_status?: "single" | "married" | "head_of_household" | null;
   federal_allowances: number;
   additional_federal_withholding: number;
@@ -55,6 +73,17 @@ export interface WorkerTaxInfo {
   is_exempt_federal: boolean;
   is_exempt_state: boolean;
   is_exempt_fica: boolean;
+  // New Jamaican statutory fields (optional for backward compatibility)
+  nis_number?: string | null;
+  tax_file_number?: string | null;
+  trn?: string | null;
+  is_exempt_nis?: boolean;
+  is_exempt_nht?: boolean;
+  is_exempt_education_tax?: boolean;
+  is_exempt_paye?: boolean;
+  payroll_country?: string;
+  jamaican_payroll_enabled?: boolean;
+  statutory_notes?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -198,6 +227,129 @@ export async function generatePayrollEntries(periodId: string, companyId: string
 
     const netPay = grossPay - deductions.total_deductions;
 
+    // PHASE 1C SHADOW CALCULATION ONLY — NOT ACTIVE PAYROLL
+    let jamaicanShadowCalculation = null;
+    let jamaicanShadowNetPay = 0;
+    let jamaicanShadowDeductions = null;
+    let jamaicanShadowVersion = null;
+
+    try {
+      // Convert US tax info to Jamaican tax info format
+      const jamaicanTaxInfo: JamaicanWorkerTaxInfo = {
+        nisNumber: undefined,
+        taxFileNumber: undefined,
+        isExemptNIS: false, // Default to not exempt
+        isExemptNHT: false, // Default to not exempt
+        isExemptEducationTax: false, // Default to not exempt
+        isExemptPAYE: false, // Default to not exempt
+        // Preserve US fields for compatibility
+        isExemptFederal: taxInfo?.is_exempt_federal || false,
+        isExemptState: taxInfo?.is_exempt_state || false,
+        isExemptFICA: taxInfo?.is_exempt_fica || false,
+        additionalFederalWithholding: taxInfo?.additional_federal_withholding || 0,
+        additionalStateWithholding: taxInfo?.additional_state_withholding || 0,
+      };
+
+      const jamaicanInput: JamaicanPayrollInput = {
+        grossPay: grossPay,
+        employeeId: wh.worker_id,
+        companyId: companyId,
+        payrollFrequency: 'monthly', // Default to monthly for now
+        taxInfo: jamaicanTaxInfo,
+      };
+
+      jamaicanShadowCalculation = jamaicanPayrollCalculator.calculateJamaicanPayroll(jamaicanInput);
+      jamaicanShadowNetPay = jamaicanShadowCalculation.netPay;
+      jamaicanShadowDeductions = {
+        nis_deduction: jamaicanShadowCalculation.nisDeduction,
+        nht_deduction: jamaicanShadowCalculation.nhtDeduction,
+        paye_deduction: jamaicanShadowCalculation.payeDeduction,
+        education_tax_deduction: jamaicanShadowCalculation.educationTaxDeduction,
+        total_employee_deductions: jamaicanShadowCalculation.totalEmployeeDeductions,
+        employer_nis_contribution: jamaicanShadowCalculation.employerNISContribution,
+        employer_nht_contribution: jamaicanShadowCalculation.employerNHTContribution,
+        employer_education_tax_contribution: jamaicanShadowCalculation.employerEducationTaxContribution,
+        total_employer_contributions: jamaicanShadowCalculation.totalEmployerContributions,
+      };
+      jamaicanShadowVersion = jamaicanShadowCalculation.calculationVersion;
+    } catch (error) {
+      // PHASE 1C SHADOW CALCULATION ONLY — NOT ACTIVE PAYROLL
+      // If Jamaican calculation fails, log warning but don't break payroll
+      console.warn('Jamaican shadow calculation failed:', error);
+      // Keep shadow fields as null/0 to indicate failure
+    }
+
+    // PHASE 1D VALIDATION ONLY — NOT ACTIVE PAYROLL
+    let jamaicanValidationStatus: 'valid' | 'warning' | 'error' | 'not_available' = 'not_available';
+    let jamaicanValidationWarnings: string[] = [];
+    let jamaicanValidationDifferences = null;
+    let jamaicanValidationVersion = null;
+
+    try {
+      // Create validation input
+      const validationInput: PayrollValidationInput = {
+        existingNetPay: netPay,
+        existingTotalDeductions: deductions.total_deductions,
+        existingGrossPay: grossPay,
+        jamaicanShadowNetPay,
+        jamaicanShadowDeductions,
+        jamaicanShadowVersion: jamaicanShadowVersion || undefined,
+        employeeId: wh.worker_id,
+        companyId: companyId,
+        payrollPeriodId: periodId,
+      };
+
+      // Perform validation
+      const validationResult = payrollValidator.validatePayrollComparison(validationInput);
+      
+      jamaicanValidationStatus = validationResult.validationStatus;
+      jamaicanValidationWarnings = validationResult.warnings;
+      jamaicanValidationDifferences = validationResult.differences;
+      jamaicanValidationVersion = validationResult.validationVersion;
+
+      // Log validation summary for monitoring
+      console.log(payrollValidator.generateValidationSummary(validationResult, wh.worker_id));
+    } catch (validationError) {
+      // PHASE 1D VALIDATION ONLY — NOT ACTIVE PAYROLL
+      // If validation fails, log warning but don't break payroll
+      console.warn('Jamaican validation failed:', validationError);
+      // Keep validation fields as defaults to indicate failure
+    }
+
+    // PHASE 1E AUDIT PERSISTENCE ONLY — NOT ACTIVE PAYROLL
+    // Create audit record for Jamaican shadow calculation and validation
+    try {
+      const auditInput: PayrollAuditInput = {
+        companyId: companyId,
+        employeeId: wh.worker_id,
+        payrollPeriodId: periodId,
+        grossPay: grossPay,
+        existingNetPay: netPay,
+        existingTotalDeductions: deductions.total_deductions,
+        jamaicanShadowNetPay,
+        jamaicanShadowDeductions,
+        jamaicanShadowCalculation,
+        jamaicanShadowVersion: jamaicanShadowVersion || undefined,
+        validationStatus: jamaicanValidationStatus,
+        validationWarnings: jamaicanValidationWarnings,
+        validationDifferences: jamaicanValidationDifferences,
+        validationVersion: jamaicanValidationVersion || undefined,
+      };
+
+      // Get current user for audit
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Create audit record (best effort - never blocks payroll)
+      await payrollAuditor.createPayrollAuditRecord(auditInput, user?.id);
+      
+      console.log(payrollAuditor.generateAuditSummary(auditInput));
+    } catch (auditError) {
+      // PHASE 1E AUDIT PERSISTENCE ONLY — NOT ACTIVE PAYROLL
+      // If audit fails, log warning but don't break payroll
+      console.warn('Jamaican payroll audit failed:', auditError);
+      // Continue with payroll processing
+    }
+
     entries.push({
       company_id: companyId,
       payroll_period_id: periodId,
@@ -210,6 +362,16 @@ export async function generatePayrollEntries(periodId: string, companyId: string
       ...deductions,
       net_pay: netPay,
       status: "pending",
+      // PHASE 1C SHADOW CALCULATION ONLY — NOT ACTIVE PAYROLL
+      jamaicanShadowCalculation,
+      jamaicanShadowNetPay,
+      jamaicanShadowDeductions,
+      jamaicanShadowVersion,
+      // PHASE 1D VALIDATION ONLY — NOT ACTIVE PAYROLL
+      jamaicanValidationStatus,
+      jamaicanValidationWarnings,
+      jamaicanValidationDifferences,
+      jamaicanValidationVersion,
     });
   }
 
@@ -298,6 +460,7 @@ export async function processPayroll(periodId: string) {
   return data;
 }
 
+// PHASE 2B STEP 2 BACKEND EXTENSION ONLY — NOT ACTIVE PAYROLL
 export async function fetchWorkerTaxInfo(workerId: string) {
   const { data, error } = await supabase
     .from("worker_tax_info")
@@ -309,6 +472,7 @@ export async function fetchWorkerTaxInfo(workerId: string) {
   return data as WorkerTaxInfo | null;
 }
 
+// PHASE 2B STEP 2 BACKEND EXTENSION ONLY — NOT ACTIVE PAYROLL
 export async function upsertWorkerTaxInfo(workerId: string, companyId: string, taxInfo: Partial<WorkerTaxInfo>) {
   const { data, error } = await supabase
     .from("worker_tax_info")
@@ -324,4 +488,64 @@ export async function upsertWorkerTaxInfo(workerId: string, companyId: string, t
 
   if (error) throw error;
   return data as WorkerTaxInfo;
+}
+
+// PHASE 2B STEP 2 BACKEND EXTENSION ONLY — NOT ACTIVE PAYROLL
+// Jamaican Tax Validation Helpers (non-blocking for backward compatibility)
+export function validateNISNumber(nisNumber?: string | null): { valid: boolean; error?: string } {
+  if (!nisNumber || nisNumber.trim() === '') {
+    return { valid: true }; // Optional field
+  }
+
+  const cleaned = nisNumber.replace(/[^0-9]/g, '');
+  
+  if (cleaned.length !== 7) {
+    return { valid: false, error: 'NIS number must be 7 digits' };
+  }
+
+  // Basic format validation: NNNNNNN
+  if (!/^\d{7}$/.test(cleaned)) {
+    return { valid: false, error: 'NIS number must contain only digits' };
+  }
+
+  return { valid: true };
+}
+
+export function validateTRN(trn?: string | null): { valid: boolean; error?: string } {
+  if (!trn || trn.trim() === '') {
+    return { valid: true }; // Optional field
+  }
+
+  const cleaned = trn.replace(/[^0-9]/g, '');
+  
+  if (cleaned.length !== 9) {
+    return { valid: false, error: 'TRN must be 9 digits' };
+  }
+
+  // Basic format validation: NNN-NNN-NNN
+  if (!/^\d{3}-?\d{3}-?\d{3}$/.test(trn.replace(/\s/g, ''))) {
+    return { valid: false, error: 'TRN must be in format NNN-NNN-NNN' };
+  }
+
+  return { valid: true };
+}
+
+export function sanitizePayrollCountry(country?: string | null): string {
+  if (!country || country.trim() === '') {
+    return 'US'; // Default for backward compatibility
+  }
+
+  const normalized = country.trim().toUpperCase();
+  
+  // Accept common variations
+  if (normalized === 'JM' || normalized === 'JAMAICA' || normalized === 'JAM') {
+    return 'JM';
+  }
+  
+  if (normalized === 'US' || normalized === 'USA' || normalized === 'UNITED STATES' || normalized === 'AMERICA') {
+    return 'US';
+  }
+  
+  // Return original if not recognized (let UI handle)
+  return normalized;
 }

@@ -22,6 +22,7 @@ export interface ProcurementItem {
   quantity: number;
   unit: string | null;
   category: string | null;
+  finance_bucket: 'material' | 'labor' | 'equipment' | 'other' | null;
   notes: string | null;
   status: "pending" | "requested" | "quoted" | "approved" | "ordered" | "part_delivered" | "received" | "cancelled";
   supplier: string | null;

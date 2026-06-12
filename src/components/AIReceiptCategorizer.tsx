@@ -111,7 +111,15 @@ export function AIReceiptCategorizer({
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 mb-1">Amount</p>
-                    <p className="text-sm text-slate-200 font-medium">${amount.toFixed(2)}</p>
+                    <p className="text-sm text-slate-200 font-medium">
+                      ${(() => {
+                        const amountNumber = 
+                          typeof amount === "number"
+                            ? amount
+                            : Number(String(amount).replace(/[^0-9.-]/g, ""));
+                        return Number.isFinite(amountNumber) ? amountNumber.toFixed(2) : "Not detected";
+                      })()}
+                    </p>
                   </div>
                 </div>
               </div>

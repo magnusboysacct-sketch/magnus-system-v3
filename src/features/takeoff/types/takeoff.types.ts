@@ -24,6 +24,12 @@ export type Measurement = {
   groupId?: string;
   color?: string;
   timestamp: number;
+  linked_item_id?: string;
+  linked_item_name?: string;
+  linked_assembly_id?: string;
+  linked_assembly_name?: string;
+  linked_tag_ids?: string[];
+  calculated_quantity?: number;
   meta?: {
     depthInches?: number;
     [key: string]: any;

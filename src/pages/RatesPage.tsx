@@ -1,51 +1,44 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import MasterCategorySelect from "../components/master/MasterCategorySelect.tsx";
 import MasterUnitSelect from "../components/master/MasterUnitSelect.tsx";
 import { buildDefaultVars, computeQuantity } from "../lib/calculatorEngine";
 import { SmartItemSelectorButton } from "../components/SmartItemSelectorButton";
+import AIPriceLookup from "../components/AIPriceLookup";
+import {
+  Plus, Download, Upload, RefreshCw, Zap, RotateCcw,
+  Edit2, Trash2, ChevronDown, Search, Package,
+  Layers, Wrench, Users, MoreHorizontal
+} from "lucide-react";
 
-// ✅ Standard construction categories (future-proof baseline)
+// ─── Constants ────────────────────────────────────────────────────────────────
 const STANDARD_CATEGORIES = [
-  "Cement & Concrete Products",
-  "Blocks & Bricks",
-  "Timber & Lumber",
-  "Plywood / Boards",
-  "Reinforcement",
-  "General Hardware",
-  "Doors & Windows",
-  "Plumbing Materials",
-  "Electrical Materials",
-  "Paints & Coatings",
-  "Tools & Equipment",
-  "Adhesives & Sealants",
-  "Tiles & Flooring",
-  "Finishes / Interior",
-  "Aggregates & Sand",
-  "Roofing Materials",
-  "Safety Gear / Site Accessories",
-  "Fencing / Outdoor",
-  "Cleaning Supplies",
-  "Gypsum Material",
-  "Fasteners",
-  "Miscellaneous",
-  "Uncategorized",
+  "Cement & Concrete Products","Blocks & Bricks","Timber & Lumber",
+  "Plywood / Boards","Reinforcement","General Hardware","Doors & Windows",
+  "Plumbing Materials","Electrical Materials","Paints & Coatings",
+  "Tools & Equipment","Adhesives & Sealants","Tiles & Flooring",
+  "Finishes / Interior","Aggregates & Sand","Roofing Materials",
+  "Safety Gear / Site Accessories","Fencing / Outdoor","Cleaning Supplies",
+  "Gypsum Material","Fasteners","Miscellaneous","Uncategorized",
 ] as const;
 
-const ITEM_TYPES = ["Material", "Labor", "Equipment", "Subcontract", "Other"] as const;
+const ITEM_TYPES = ["Material","Labor","Equipment","Subcontract","Other"] as const;
 
 const STANDARD_UNITS = [
-  "each","ft","m","in",
-  "ft²","m²",
-  "ft³","m³",
-  "yd³",
-  "bag","box","roll",
-  "lb","kg","ton",
-  "gal","L",
-  "hour","day","week",
-  "sq yd","sq m"
+  "each","ft","m","in","ft²","m²","ft³","m³","yd³",
+  "bag","box","roll","lb","kg","ton","gal","L",
+  "hour","day","week","sq yd","sq m"
 ] as const;
 
+const TYPE_STYLE: Record<string,{pill:string;icon:React.ReactNode}> = {
+  Material:   {pill:"bg-blue-500/10 text-blue-400 border-blue-500/20",   icon:<Package size={10}/>},
+  Labor:      {pill:"bg-emerald-500/10 text-emerald-400 border-emerald-500/20", icon:<Users size={10}/>},
+  Equipment:  {pill:"bg-amber-500/10 text-amber-400 border-amber-500/20", icon:<Wrench size={10}/>},
+  Subcontract:{pill:"bg-purple-500/10 text-purple-400 border-purple-500/20",icon:<Layers size={10}/>},
+  Other:      {pill:"bg-slate-500/10 text-slate-400 border-slate-500/20", icon:<MoreHorizontal size={10}/>},
+};
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 type CostItem = {
   id: string;
   item_name: string;
@@ -56,281 +49,12 @@ type CostItem = {
   category: string | null;
   item_type: string | null;
   updated_at: string | null;
-
-  // NEW: from v_cost_items_current
   current_rate: number | null;
   current_currency: string | null;
   current_effective_date: string | null;
   current_source: string | null;
   current_batch_id: string | null;
 };
-
-function normCategory(c: string | null | undefined) {
-  const t = (c || "").trim();
-  return t ? t : "Uncategorized";
-}
-
-function formatDate(iso: string | null) {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "-";
-  return d.toLocaleDateString();
-}
-
-function formatMoney(n: number | null) {
-  if (n == null) return "-";
-  if (!isFinite(n)) return "-";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
-/** ✅ Custom dark dropdown (fixes "white options" native select issue) */
-function CategoryCombobox(props: {
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-  allLabel?: string;
-}) {
-  const { value, options, onChange, allLabel = "All Categories" } = props;
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      const el = wrapRef.current;
-      if (!el) return;
-      if (!el.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
-
-  const filtered = useMemo(() => {
-    const qq = q.trim().toLowerCase();
-    if (!qq) return options;
-    return options.filter((o) => o.toLowerCase().includes(qq));
-  }, [options, q]);
-
-  const label = value === "__ALL__" ? allLabel : value;
-
-  return (
-    <div ref={wrapRef} className="relative w-[260px]">
-      <button
-        type="button"
-        onClick={() => {
-          setOpen((v) => !v);
-          setTimeout(() => inputRef.current?.focus(), 0);
-        }}
-        className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm text-left hover:bg-white/10 transition flex items-center justify-between"
-      >
-        <span className="truncate">{label}</span>
-        <span className="opacity-70">▾</span>
-      </button>
-
-      {open && (
-        <div className="absolute z-50 mt-2 w-full rounded-md border border-white/10 bg-[#0b1220] shadow-xl overflow-hidden">
-          <div className="p-2 border-b border-white/10">
-            <input
-              ref={inputRef}
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search categories…"
-              className="w-full bg-white/5 border border-white/10 rounded px-2 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-            />
-          </div>
-
-          <div className="max-h-72 overflow-auto">
-            <button
-              type="button"
-              onClick={() => {
-                onChange("__ALL__");
-                setOpen(false);
-                setQ("");
-              }}
-              className={`w-full text-left px-3 py-2 text-sm hover:bg-white/10 ${
-                value === "__ALL__" ? "bg-white/10" : ""
-              }`}
-            >
-              {allLabel}
-            </button>
-
-            {filtered.map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => {
-                  onChange(opt);
-                  setOpen(false);
-                  setQ("");
-                }}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-white/10 ${
-                  value === opt ? "bg-white/10" : ""
-                }`}
-                title={opt}
-              >
-                {opt}
-              </button>
-            ))}
-
-            {filtered.length === 0 && (
-              <div className="px-3 py-3 text-sm opacity-70">No matches.</div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SmartCombobox(props: {
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-  placeholder?: string;
-  widthClassName?: string; // e.g. "w-full" or "w-[260px]"
-}) {
-  const { value, options, onChange, placeholder = "Search…", widthClassName = "w-full" } = props;
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      const el = wrapRef.current;
-      if (!el) return;
-      if (!el.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
-
-  const filtered = useMemo(() => {
-    const qq = q.trim().toLowerCase();
-    if (!qq) return options;
-    return options.filter((o) => o.toLowerCase().includes(qq));
-  }, [options, q]);
-
-  return (
-    <div ref={wrapRef} className={`relative ${widthClassName}`}>
-      <button
-        type="button"
-        onClick={() => {
-          setOpen((v) => !v);
-          setTimeout(() => inputRef.current?.focus(), 0);
-        }}
-        className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm text-left hover:bg-white/10 transition flex items-center justify-between"
-      >
-        <span className="truncate">{value || "Select…"}</span>
-        <span className="opacity-70">▾</span>
-      </button>
-
-      {open && (
-        <div className="absolute z-50 mt-2 w-full rounded-md border border-white/10 bg-[#0b1220] shadow-xl overflow-hidden">
-          <div className="p-2 border-b border-white/10">
-            <input
-              ref={inputRef}
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder={placeholder}
-              className="w-full bg-white/5 border border-white/10 rounded px-2 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-            />
-          </div>
-
-          <div className="max-h-72 overflow-auto">
-            {filtered.map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => {
-                  onChange(opt);
-                  setOpen(false);
-                  setQ("");
-                }}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-white/10 ${
-                  value === opt ? "bg-white/10" : ""
-                }`}
-                title={opt}
-              >
-                {opt}
-              </button>
-            ))}
-
-            {filtered.length === 0 && (
-              <div className="px-3 py-3 text-sm opacity-70">No matches.</div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function slug3(s: string) {
-  const t = (s || "")
-    .toUpperCase()
-    .replace(/&/g, " AND ")
-    .replace(/[^A-Z0-9]+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean);
-
-  // keep first 2-3 tokens, max 8 chars total
-  const joined = t.slice(0, 3).join("").slice(0, 8);
-  return joined || "MISC";
-}
-
-function typePrefix(t: string) {
-  const x = (t || "").toLowerCase();
-  if (x === "material") return "MAT";
-  if (x === "labor") return "LAB";
-  if (x === "equipment") return "EQP";
-  if (x === "subcontract") return "SUB";
-  return "OTH";
-}
-
-function pad3(n: number) {
-  return String(n).padStart(3, "0");
-}
-
-function nextCodeFor(category: string, itemType: string, existing: CostItem[]) {
-  const catKey = slug3(category);
-  const pre = typePrefix(itemType);
-  const base = `${pre}-${catKey}-`;
-
-  // Find existing codes like "MAT-REIN-001"
-  let max = 0;
-  for (const it of existing) {
-    const c = (it.cost_code || "").toUpperCase();
-    if (!c.startsWith(base)) continue;
-    const tail = c.slice(base.length);
-    const num = Number(tail);
-    if (Number.isFinite(num)) max = Math.max(max, num);
-  }
-
-  return `${base}${pad3(max + 1)}`;
-}
-
-function csvEscape(v: any) {
-  const s = v == null ? "" : String(v);
-  // escape quotes + wrap if needed
-  if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
-
-function downloadCsv(filename: string, rows: any[][]) {
-  const content = rows.map(r => r.map(csvEscape).join(",")).join("\n");
-  const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
 
 type ImportRow = {
   rowNum: number;
@@ -343,2118 +67,1141 @@ type ImportRow = {
   item_type?: string;
 };
 
-function parseCsvText(text: string): { headers: string[]; rows: string[][] } {
-  // Simple CSV parser that supports quotes
-  const rows: string[][] = [];
-  let cur = "";
-  let inQuotes = false;
-  let row: string[] = [];
-
-  function pushCell() {
-    row.push(cur);
-    cur = "";
-  }
-  function pushRow() {
-    rows.push(row);
-    row = [];
-  }
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const next = text[i + 1];
-
-    if (ch === '"' ) {
-      if (inQuotes && next === '"') {
-        cur += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (!inQuotes && (ch === ",")) {
-      pushCell();
-      continue;
-    }
-
-    if (!inQuotes && (ch === "\n")) {
-      pushCell();
-      pushRow();
-      continue;
-    }
-
-    if (!inQuotes && (ch === "\r")) {
-      continue;
-    }
-
-    cur += ch;
-  }
-
-  // last cell
-  pushCell();
-  if (row.length) pushRow();
-
-  const headers = (rows.shift() || []).map((h) => h.trim());
-  return { headers, rows };
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function normCategory(c: string | null | undefined) {
+  const t = (c || "").trim();
+  return t ? t : "Uncategorized";
 }
-
-function normalizeHeader(h: string) {
-  return h.trim().toLowerCase().replace(/\s+/g, "_");
+function formatDate(iso: string | null) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
 }
-
-function toNum(v: string) {
-  const n = Number(String(v || "").replace(/,/g, "").trim());
-  return isFinite(n) ? n : null;
+function formatMoney(n: number | null) {
+  if (n == null || !isFinite(n)) return "—";
+  return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:2}).format(n);
 }
-
-export default function RatesPage() {
-  const [items, setItems] = useState<CostItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [companyId, setCompanyId] = useState<string>("");
-
-  // ✅ Toolbar state
-  const [categoryFilter, setCategoryFilter] = useState<string>("__ALL__");
-  const [search, setSearch] = useState("");
-
-  const TYPE_ALL = "__ALL_TYPES__";
-
-  const [typeFilter, setTypeFilter] = useState<Record<string, boolean>>(() => ({
-    Material: true,
-    Labor: true,
-    Equipment: true,
-    Subcontract: true,
-    Other: true,
-  }));
-
-  function toggleType(t: string) {
-    setTypeFilter((prev) => ({ ...prev, [t]: !prev[t] }));
-  }
-
-  function setOnlyType(t: string) {
-    setTypeFilter({
-      Material: false,
-      Labor: false,
-      Equipment: false,
-      Subcontract: false,
-      Other: false,
-      [t]: true,
-    });
-  }
-
-  function setAllTypes(on: boolean) {
-    setTypeFilter({
-      Material: on,
-      Labor: on,
-      Equipment: on,
-      Subcontract: on,
-      Other: on,
-    });
-  }
-
-  const selectedTypeCount = useMemo(() => {
-    return Object.values(typeFilter).filter(Boolean).length;
-  }, [typeFilter]);
-
-  // ✅ Inline edit (rate)
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingRate, setEditingRate] = useState<string>("");
-
-  // ✅ Inline edit (category + type)
-  const [editingCatId, setEditingCatId] = useState<string | null>(null);
-  const [editingCatValue, setEditingCatValue] = useState<string>("");
-  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
-  const [editingTypeValue, setEditingTypeValue] = useState<string>("");
-
-  // ✅ Inline edit (description + cost_code)
-  const [editingDescId, setEditingDescId] = useState<string | null>(null);
-  const [editingDescValue, setEditingDescValue] = useState<string>("");
-  const [editingCodeId, setEditingCodeId] = useState<string | null>(null);
-  const [editingCodeValue, setEditingCodeValue] = useState<string>("");
-
-  // ✅ Buttons (placeholders for future)
-  const [busy, setBusy] = useState(false);
-
-  // ✅ Modal state
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [mode, setMode] = useState<"add"|"edit">("add");
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [autoCode, setAutoCode] = useState(true);
-
-  // Bulk update state
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [bulkTitle, setBulkTitle] = useState("Bulk rate update");
-  const [bulkReason, setBulkReason] = useState("");
-  const [bulkMode, setBulkMode] = useState<"percent" | "add" | "set">("percent");
-  const [bulkValue, setBulkValue] = useState<string>("");
-  const [lastBulkBatches, setLastBulkBatches] = useState<string[]>([]);
-  const [exportOpen, setExportOpen] = useState(false);
-
-  // Import state
-  const [importOpen, setImportOpen] = useState(false);
-  const [importTitle, setImportTitle] = useState("CSV import");
-  const [importReason, setImportReason] = useState("");
-  const [importCsvName, setImportCsvName] = useState<string>("");
-  const [importRows, setImportRows] = useState<ImportRow[]>([]);
-  const [importMatched, setImportMatched] = useState<
-    { src: ImportRow; matchId: string; matchName: string }[]
-  >([]);
-  const [importUnmatched, setImportUnmatched] = useState<ImportRow[]>([]);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const [bulkEffectiveDate, setBulkEffectiveDate] = useState<string>(todayISO);
-  const [importEffectiveDate, setImportEffectiveDate] = useState<string>(todayISO);
-
-  function openBulk() {
-    setBulkTitle(
-      bulkMode === "percent"
-        ? "Bulk update (+% / -%)"
-        : bulkMode === "add"
-        ? "Bulk update (+amount / -amount)"
-        : "Bulk update (set value)"
-    );
-    setBulkReason("");
-    setBulkValue("");
-    setBulkOpen(true);
-  }
-
-  async function applyBulk() {
-    const n = Number(bulkValue);
-    if (!isFinite(n)) return;
-
-    // If category filter is __ALL__ => pass null so function applies to all
-    const cat = categoryFilter === "__ALL__" ? null : categoryFilter;
-
-    setBusy(true);
-    try {
-      // IMPORTANT:
-      // Our SQL function accepts ONE type at a time (p_type_filter text).
-      // So we call it once per selected type.
-      for (const t of selectedTypes) {
-        const { data, error } = await supabase.rpc("bulk_update_rates", {
-          p_title: bulkTitle,
-          p_reason: bulkReason || null,
-          p_type_filter: t,
-          p_category_filter: cat,
-          p_mode: bulkMode,
-          p_value: n,
-          p_effective_date: bulkEffectiveDate,
-        });
-
-        if (error) {
-          console.error("bulk_update_rates error:", error);
-          alert(`Bulk update failed for ${t}: ${error.message}`);
-          return;
-        }
-
-        console.log("Bulk batch created:", data);
-
-        const batchId = data as string; // supabase returns uuid as string
-        setLastBulkBatches((prev) => [batchId, ...prev].slice(0, 10));
-      }
-
-      console.log("Last bulk batches:", lastBulkBatches);
-
-      setBulkOpen(false);
-
-      // reload after bulk update
-      await reload();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function undoLastBulk() {
-  if (lastBulkBatches.length === 0) return;
-
-  if (!confirm("Undo last bulk update?")) return;
-
-  setBusy(true);
-  try {
-    let totalDeleted = 0;
-
-    for (const batchId of lastBulkBatches) {
-      const { data, error } = await supabase.rpc("undo_rate_batch", {
-        p_batch_id: batchId,
-      });
-
-      if (error) {
-        console.error("undo_rate_batch error:", error);
-        continue;
-      }
-
-      totalDeleted += data || 0;
-    }
-
-    console.log("Total rows reverted:", totalDeleted);
-
-    setLastBulkBatches([]);
-
-    await reload();
-  } finally {
-    setBusy(false);
-  }
+function csvEscape(v: any) {
+  const s = v == null ? "" : String(v);
+  if (/[,"\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+  return s;
 }
-
-  function exportCurrentViewCsv() {
-    const ts = new Date();
-    const y = ts.getFullYear();
-    const m = String(ts.getMonth() + 1).padStart(2, "0");
-    const d = String(ts.getDate()).padStart(2, "0");
-
-    const catLabel = categoryFilter === "__ALL__" ? "AllCategories" : categoryFilter.replace(/\s+/g, "_");
-    const filename = `rate-library_${catLabel}_${y}-${m}-${d}.csv`;
-
-    const header = [
-      "Item",
-      "Variant",
-      "Description",
-      "Cost Code",
-      "Category",
-      "Type",
-      "Unit",
-      "Rate",
-      "Currency",
-      "Last Updated",
-    ];
-
-    const dataRows = filteredItems.map((it) => [
-      it.item_name || "",
-      it.variant || "",
-      it.description || "",
-      it.cost_code || "",
-      normCategory(it.category),
-      it.item_type || "",
-      it.unit || "",
-      it.current_rate ?? "",
-      it.current_currency ?? "JMD",
-      it.updated_at || "",
-    ]);
-
-    downloadCsv(filename, [header, ...dataRows]);
+function downloadCsv(filename: string, rows: any[][]) {
+  const content = rows.map(r=>r.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob([content],{type:"text/csv;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+function slug3(s: string) {
+  const t=(s||"").toUpperCase().replace(/&/g," AND ").replace(/[^A-Z0-9]+/g," ").trim().split(" ").filter(Boolean);
+  return t.slice(0,3).join("").slice(0,8)||"MISC";
+}
+function typePrefix(t: string) {
+  const x=(t||"").toLowerCase();
+  if(x==="material") return "MAT";
+  if(x==="labor")    return "LAB";
+  if(x==="equipment")return "EQP";
+  if(x==="subcontract")return "SUB";
+  return "OTH";
+}
+function pad3(n: number){return String(n).padStart(3,"0");}
+function nextCodeFor(category: string, itemType: string, existing: CostItem[]) {
+  const catKey=slug3(category);
+  const pre=typePrefix(itemType);
+  const base=`${pre}-${catKey}-`;
+  let max=0;
+  for(const it of existing){
+    const c=(it.cost_code||"").toUpperCase();
+    if(!c.startsWith(base)) continue;
+    const num=Number(c.slice(base.length));
+    if(Number.isFinite(num)) max=Math.max(max,num);
   }
-
-  function exportByTypeCsv(forcedType: string | null, label: string) {
-    const ts = new Date();
-    const y = ts.getFullYear();
-    const m = String(ts.getMonth() + 1).padStart(2, "0");
-    const d = String(ts.getDate()).padStart(2, "0");
-
-    const catLabel = categoryFilter === "__ALL__" ? "AllCategories" : categoryFilter.replace(/\s+/g, "_");
-    const typeLabel = forcedType ? forcedType.replace(/\s+/g, "_") : "CurrentView";
-
-    const filename = `rate-library_${label}_${catLabel}_${typeLabel}_${y}-${m}-${d}.csv`;
-
-    const header = [
-      "Item",
-      "Description",
-      "Cost Code",
-      "Category",
-      "Type",
-      "Unit",
-      "Rate",
-      "Currency",
-      "Last Updated",
-    ];
-
-    // Respect current view filters first (category + search already in filteredItems)
-    let rows = filteredItems;
-
-    // Then force type if requested
-    if (forcedType) {
-      rows = rows.filter((it) => (it.item_type || "").toLowerCase() === forcedType.toLowerCase());
-    }
-
-    const dataRows = rows.map((it) => [
-      it.item_name || "",
-      it.description || "",
-      it.cost_code || "",
-      normCategory(it.category),
-      it.item_type || "",
-      it.unit || "",
-      it.current_rate ?? "",
-      it.current_currency ?? "JMD",
-      it.updated_at || "",
-    ]);
-
-    downloadCsv(filename, [header, ...dataRows]);
+  return `${base}${pad3(max+1)}`;
+}
+function parseCsvText(text: string):{headers:string[];rows:string[][]}{
+  const rows:string[][]=[];
+  let cur="",inQuotes=false,row:string[]=[];
+  const pushCell=()=>{row.push(cur);cur="";};
+  const pushRow=()=>{rows.push(row);row=[];};
+  for(let i=0;i<text.length;i++){
+    const ch=text[i],next=text[i+1];
+    if(ch==='"'){if(inQuotes&&next==='"'){cur+='"';i++;}else{inQuotes=!inQuotes;}continue;}
+    if(!inQuotes&&ch===","){pushCell();continue;}
+    if(!inQuotes&&ch==="\n"){pushCell();pushRow();continue;}
+    if(!inQuotes&&ch==="\r")continue;
+    cur+=ch;
   }
-
-  async function exportAllTypesSeparate() {
-    // This will download multiple files (one per type)
-    for (const t of ITEM_TYPES) {
-      exportByTypeCsv(t, "ByType");
-    }
-  }
-
-  function downloadTemplateCurrentView() {
-    const ts = new Date();
-    const y = ts.getFullYear();
-    const m = String(ts.getMonth() + 1).padStart(2, "0");
-    const d = String(ts.getDate()).padStart(2, "0");
-
-    const catLabel = categoryFilter === "__ALL__" ? "AllCategories" : categoryFilter.replace(/\s+/g, "_");
-    const filename = `rate-template_${catLabel}_${y}-${m}-${d}.csv`;
-
-    const header = ["cost_code","item_name","rate","currency","unit","category","item_type"];
-
-    const dataRows = filteredItems.map((it) => [
-      it.cost_code || "",
-      it.item_name || "",
-      it.current_rate ?? "",
-      (it.current_currency || "JMD").toUpperCase(),
-      it.unit || "",
-      normCategory(it.category),
-      it.item_type || "",
-    ]);
-
-    downloadCsv(filename, [header, ...dataRows]);
-  }
-
-  function openImport() {
-    setImportOpen(true);
-    setImportTitle("CSV import");
-    setImportReason("");
-    setImportCsvName("");
-    setImportRows([]);
-    setImportMatched([]);
-    setImportUnmatched([]);
-    setTimeout(() => fileInputRef.current?.click(), 0);
-  }
-
-  function closeImport() {
-    setImportOpen(false);
-  }
-
-  function buildLookupMaps() {
-    const byCode = new Map<string, CostItem>();
-    const byName = new Map<string, CostItem>();
-
-    for (const it of items) {
-      const cc = (it.cost_code || "").trim().toLowerCase();
-      const nm = (it.item_name || "").trim().toLowerCase();
-      if (cc) byCode.set(cc, it);
-      if (nm) byName.set(nm, it);
-    }
-    return { byCode, byName };
-  }
-
-  function computeImportMatches(rows: ImportRow[]) {
-    const { byCode, byName } = buildLookupMaps();
-    const matched: { src: ImportRow; matchId: string; matchName: string }[] = [];
-    const unmatched: ImportRow[] = [];
-
-    for (const r of rows) {
-      const cc = (r.cost_code || "").trim().toLowerCase();
-      const nm = (r.item_name || "").trim().toLowerCase();
-
-      let hit: CostItem | undefined;
-      if (cc) hit = byCode.get(cc);
-      if (!hit && nm) hit = byName.get(nm);
-
-      if (hit && r.rate != null) {
-        matched.push({ src: r, matchId: hit.id, matchName: hit.item_name });
-      } else {
-        unmatched.push(r);
-      }
-    }
-
-    setImportMatched(matched);
-    setImportUnmatched(unmatched);
-  }
-
-  async function onPickImportFile(file: File) {
-    setImportCsvName(file.name);
-
-    const text = await file.text();
-    const { headers, rows } = parseCsvText(text);
-
-    const H = headers.map(normalizeHeader);
-    const idx = (name: string) => H.indexOf(name);
-
-    // Accept flexible columns:
-    // cost_code OR item_name required, rate required
-    const iCost = idx("cost_code");
-    const iName = idx("item_name");
-    const iVariant = idx("variant");
-    const iRate = idx("rate");
-    const iCur = idx("currency");
-    const iUnit = idx("unit");
-    const iCat = idx("category");
-    const iType = idx("type"); // allow "type"
-    const iItemType = idx("item_type"); // also allow "item_type"
-
-    const parsed: ImportRow[] = rows
-      .map((r, k) => {
-        const cost_code = iCost >= 0 ? (r[iCost] || "").trim() : "";
-        const item_name = iName >= 0 ? (r[iName] || "").trim() : "";
-        const variant = iVariant >= 0 ? (r[iVariant] || "").trim() : "";
-        const rate = iRate >= 0 ? toNum(r[iRate] || "") : null;
-        const currency = (iCur >= 0 ? (r[iCur] || "").trim() : "JMD") || "JMD";
-        const unit = iUnit >= 0 ? (r[iUnit] || "").trim() : "";
-        const category = iCat >= 0 ? (r[iCat] || "").trim() : "";
-        const item_type =
-          iItemType >= 0 ? (r[iItemType] || "").trim()
-          : iType >= 0 ? (r[iType] || "").trim()
-          : "";
-
-        return {
-          rowNum: k + 2, // header is row 1
-          cost_code,
-          item_name,
-          rate,
-          currency,
-          unit: unit || undefined,
-          category: category || undefined,
-          item_type: item_type || undefined,
-        };
-      })
-      .filter((r) => (r.cost_code || r.item_name)); // keep rows that have an identifier
-
-    setImportRows(parsed);
-    computeImportMatches(parsed);
-  }
-
-  async function applyImport() {
-    if (importMatched.length === 0) return;
-
-    setBusy(true);
-    try {
-      // 1) create batch
-      const { data: batch, error: bErr } = await supabase
-        .from("rate_update_batches")
-        .insert({
-          title: importTitle || "CSV import",
-          reason: importReason || null,
-        })
-        .select("id")
-        .single();
-
-      if (bErr) {
-        console.error("batch insert error:", bErr);
-        alert(bErr.message);
-        return;
-      }
-
-      const batchId = batch.id as string;
-
-      // 2) insert rates (history ledger)
-      const payload = importMatched.map((m) => ({
-        cost_item_id: m.matchId,
-        rate: m.src.rate,
-        currency: (m.src.currency || "JMD").toUpperCase(),
-        effective_date: importEffectiveDate,
-        source: "import",
-        batch_id: batchId,
-        note: importReason || `CSV: ${importCsvName || "import"}`,
-      }));
-
-      const { error: rErr } = await supabase.from("cost_item_rates").insert(payload);
-
-      if (rErr) {
-        console.error("rates insert error:", rErr);
-        alert(rErr.message);
-        return;
-      }
-
-      // Push to undo stack (so Undo Last Bulk can undo import too)
-      setLastBulkBatches((prev) => [batchId, ...prev].slice(0, 10));
-
-      closeImport();
-      await reload();
-      console.log("Import batch created:", batchId);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const [fName, setFName] = useState("");
-  const [fDesc, setFDesc] = useState("");
-  const [fCode, setFCode] = useState("");
-  const [fVariant, setFVariant] = useState("");
-  const [fCategory, setFCategory] = useState<string>(STANDARD_CATEGORIES[0] ?? "Uncategorized");
-  const [fType, setFType] = useState<string>(ITEM_TYPES[0]);
-  const [fUnit, setFUnit] = useState<string>("each");
-  const [fRate, setFRate] = useState<string>("");
-  const [fCalcJson, setFCalcJson] = useState<string>("");
-  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
-  const [previewMsg, setPreviewMsg] = useState<string>("");
-
-  useEffect(() => {
-    let alive = true;
-
-    async function load() {
-      setLoading(true);
-
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from("user_profiles")
-          .select("company_id")
-          .eq("id", user.id)
-          .single();
-        if (profile?.company_id && alive) {
-          setCompanyId(profile.company_id);
-        }
-      }
-
-      const baseSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-      const fullSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-
-      let resp = await supabase
-        .from("v_cost_items_current")
-        .select(fullSelect)
-        .order("item_name", { ascending: true });
-
-      console.log("RATE_LIBRARY_SOURCE: v_cost_items_current (initial)");
-      console.log("RATE_LIBRARY_DATA", resp.data, resp.error);
-
-      if (resp.error) {
-        console.error("RatesPage load error (fullSelect):", resp.error);
-        alert("Rates load failed: " + (resp.error.message || JSON.stringify(resp.error)));
-        resp = await supabase
-          .from("v_cost_items_current")
-          .select(baseSelect)
-          .order("item_name", { ascending: true });
-        if (resp.error) {
-          console.error("RatesPage load error (baseSelect):", resp.error);
-          alert("Rates load failed: " + (resp.error.message || JSON.stringify(resp.error)));
-        }
-      }
-
-      if (!alive) return;
-
-      // Merge variant data from cost_items
-      const items = resp.data as any[];
-      if (items && items.length > 0) {
-        const ids = items.map(item => item.id);
-        const variants = await supabase
-          .from("cost_items")
-          .select("id,variant")
-          .in("id", ids);
-
-        if (variants.data && !variants.error) {
-          const variantMap = new Map(variants.data.map((v: any) => [v.id, v.variant]));
-          const itemsWithVariants = items.map(item => ({
-            ...item,
-            variant: (variantMap.get(item.id) || "") as string
-          }));
-          setItems(itemsWithVariants as CostItem[]);
-        } else {
-          const itemsWithVariants = items.map(item => ({
-            ...item,
-            variant: "" as string
-          }));
-          setItems(itemsWithVariants as CostItem[]);
-        }
-      } else {
-        setItems([]);
-      }
-      setLoading(false);
-    }
-
-    load();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // Make load() available for Save handler
-  const reload = () => {
-    let alive = true;
-
-    async function load() {
-      setLoading(true);
-      const baseSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-      const fullSelect = "id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-
-      let resp = await supabase
-        .from("v_cost_items_current")
-        .select(fullSelect)
-        .order("item_name", { ascending: true });
-
-      console.log("RATE_LIBRARY_SOURCE: v_cost_items_current (reload)");
-      console.log("RATE_LIBRARY_DATA", resp.data, resp.error);
-
-      if (resp.error) {
-        console.error("RatesPage load error (fullSelect):", resp.error);
-        alert("Rates load failed: " + (resp.error.message || JSON.stringify(resp.error)));
-        resp = await supabase
-          .from("v_cost_items_current")
-          .select(baseSelect)
-          .order("item_name", { ascending: true });
-        if (resp.error) {
-          console.error("RatesPage load error (baseSelect):", resp.error);
-          alert("Rates load failed: " + (resp.error.message || JSON.stringify(resp.error)));
-        }
-      }
-
-      if (!alive) return;
-
-      // Merge variant data from cost_items
-      const items = resp.data as any[];
-      if (items && items.length > 0) {
-        const ids = items.map(item => item.id);
-        const variants = await supabase
-          .from("cost_items")
-          .select("id,variant")
-          .in("id", ids);
-
-        if (variants.data && !variants.error) {
-          const variantMap = new Map(variants.data.map((v: any) => [v.id, v.variant]));
-          const itemsWithVariants = items.map(item => ({
-            ...item,
-            variant: (variantMap.get(item.id) || "") as string
-          }));
-          setItems(itemsWithVariants as CostItem[]);
-        } else {
-          const itemsWithVariants = items.map(item => ({
-            ...item,
-            variant: "" as string
-          }));
-          setItems(itemsWithVariants as CostItem[]);
-        }
-      } else {
-        setItems([]);
-      }
-      setLoading(false);
-    }
-
-    load();
-    return () => {
-      alive = false;
-    };
-  };
-
-  useEffect(() => {
-    if (!isModalOpen) return;
-    if (!autoCode) return;
-
-    const gen = nextCodeFor(fCategory || "Uncategorized", fType || "Other", items);
-    setFCode(gen);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isModalOpen, autoCode, fCategory, fType]);
-
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      const t = e.target as HTMLElement;
-      // close if clicking outside any export panel
-      if (!t.closest("[data-export-menu]")) setExportOpen(false);
-    }
-    if (exportOpen) document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [exportOpen]);
-
-  // ✅ Options: standard first (stable order), then extras (alphabetical)
-  const categoryOptions = useMemo(() => {
-    const base = [...STANDARD_CATEGORIES];
-    const baseSet = new Set<string>(base);
-    const extras: string[] = [];
-
-    for (const it of items) {
-      const c = normCategory(it.category);
-      if (!baseSet.has(c)) extras.push(c);
-    }
-
-    const uniqueExtras = Array.from(new Set(extras)).sort((a, b) =>
-      a.localeCompare(b)
-    );
-
-    return [...base, ...uniqueExtras];
-  }, [items]);
-
-  const unitOptions = useMemo(() => {
-    const base = Array.from(new Set(STANDARD_UNITS as unknown as string[]));
-    const baseSet = new Set<string>(base);
-    const extras: string[] = [];
-
-    for (const it of items) {
-      const u = (it.unit || "").trim();
-      if (u && !baseSet.has(u)) extras.push(u);
-    }
-
-    extras.sort((a,b) => a.localeCompare(b));
-    return [...base, ...Array.from(new Set(extras))];
-  }, [items]);
-
-  function openAdd() {
-    setMode("add");
-    setActiveId(null);
-    setFName("");
-    setFDesc("");
-    setFCode((prev) => {
-      // generate only if empty or autoCode enabled
-      const cat = STANDARD_CATEGORIES[0] ?? "Uncategorized";
-      const typ = ITEM_TYPES[0];
-      const gen = nextCodeFor(cat, typ, items);
-      return autoCode ? gen : prev;
-    });
-    setFCategory(STANDARD_CATEGORIES[0] ?? "Uncategorized");
-    setFType(ITEM_TYPES[0]);
-    setFUnit(unitOptions[0] ?? "each");
-    setFRate("");
-    setIsModalOpen(true);
-  }
-
-  function openEdit(item: CostItem) {
-    setMode("edit");
-    setActiveId(item.id);
-    setFName(item.item_name || "");
-    setFDesc(item.description || "");
-    setFCode(item.cost_code || "");
-    setFCategory(normCategory(item.category));
-    setFType(item.item_type || ITEM_TYPES[0]);
-    setFUnit((item.unit || "").trim() || (unitOptions[0] ?? "each"));
-    setFRate(item.current_rate == null ? "" : String(item.current_rate));
-    setFVariant(item.variant || "");
-    setIsModalOpen(true);
-  }
-
-  function closeModal() {
-    setIsModalOpen(false);
-    setFName("");
-    setFDesc("");
-    setFCode("");
-    setFVariant("");
-    setFCategory(STANDARD_CATEGORIES[0] ?? "Uncategorized");
-    setFType(ITEM_TYPES[0]);
-    setFUnit("each");
-    setFRate("");
-    setActiveId(null);
-    setMode("add");
-  }
-
-  const filteredItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
-
-    return items.filter((it) => {
-      const cat = normCategory(it.category);
-
-      if (categoryFilter !== "__ALL__" && cat !== categoryFilter) return false;
-
-      const type = (it.item_type || "Other").trim();
-      const safeType = (ITEM_TYPES as unknown as string[]).includes(type) ? type : "Other";
-      if (!typeFilter[safeType]) return false;
-
-      if (!q) return true;
-
-      const name = (it.item_name || "").toLowerCase();
-      const variant = (it.variant || "").toLowerCase();
-      const unit = (it.unit || "").toLowerCase();
-      const rateStr = it.current_rate == null ? "" : String(it.current_rate);
-
-      return (
-        name.includes(q) ||
-          variant.includes(q) ||
-          unit.includes(q) ||
-          cat.toLowerCase().includes(q) ||
-          rateStr.includes(q)
-      );
-    });
-  }, [items, categoryFilter, search, typeFilter]);
-
-  /** ✅ Bulk Update scope helpers (MUST be below filteredItems) */
-  const selectedTypes = useMemo(() => {
-    // If you don't have type toggles yet, default to all
-    // If you DO have `typeFilter` state, it should be a Record<string, boolean>
-    const anyTypeFilter = (typeof (typeFilter as any) !== "undefined") ? (typeFilter as any) : null;
-
-    if (!anyTypeFilter) return [...ITEM_TYPES];
-
-    const chosen = ITEM_TYPES.filter((t) => !!anyTypeFilter[t]);
-    return chosen.length ? chosen : [...ITEM_TYPES];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [/* keep this if you have typeFilter: */ (typeof (typeFilter as any) !== "undefined") ? (typeFilter as any) : null]);
-
-  const bulkTargetCount = useMemo(() => {
-    return filteredItems.filter((x) => x.current_rate != null).length;
-  }, [filteredItems]);
-
-  async function saveRate(itemId: string, nextRate: number) {
-    setBusy(true);
-    try {
-      const { error } = await supabase
-        .from("cost_items")
-        .update({ unit_rate: nextRate })
-        .eq("id", itemId);
-
-      if (error) {
-        console.error("Rate update error:", error);
-        return;
-      }
-
-      // optimistic UI update
-      const nowIso = new Date().toISOString();
-      setItems((prev) =>
-        prev.map((r) =>
-          r.id === itemId ? { ...r, unit_rate: nextRate, updated_at: nowIso } : r
-        )
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveCategory(itemId: string, nextCategory: string) {
-    setBusy(true);
-    try {
-      const { error } = await supabase
-        .from("cost_items")
-        .update({ category: nextCategory })
-        .eq("id", itemId);
-
-      if (error) {
-        console.error("Category update error:", error);
-        return;
-      }
-
-      const nowIso = new Date().toISOString();
-      setItems((prev) =>
-        prev.map((r) =>
-          r.id === itemId ? { ...r, category: nextCategory, updated_at: nowIso } : r
-        )
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveItemType(itemId: string, nextType: string) {
-    setBusy(true);
-    try {
-      const { error } = await supabase
-        .from("cost_items")
-        .update({ item_type: nextType })
-        .eq("id", itemId);
-
-      if (error) {
-        console.error(
-          "Item type update error (column may not exist yet):",
-          error
-        );
-        return;
-      }
-
-      const nowIso = new Date().toISOString();
-      setItems((prev) =>
-        prev.map((r) =>
-          r.id === itemId ? { ...r, item_type: nextType, updated_at: nowIso } : r
-        )
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveDescription(itemId: string, nextDesc: string) {
-    setBusy(true);
-    try {
-      const { error } = await supabase
-        .from("cost_items")
-        .update({ description: nextDesc })
-        .eq("id", itemId);
-
-      if (error) {
-        console.error("Description update error (column may not exist yet):", error);
-        return;
-      }
-
-      const nowIso = new Date().toISOString();
-      setItems((prev) =>
-        prev.map((r) =>
-          r.id === itemId ? { ...r, description: nextDesc, updated_at: nowIso } : r
-        )
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveCostCode(itemId: string, nextCode: string) {
-    setBusy(true);
-    try {
-      const { error } = await supabase
-        .from("cost_items")
-        .update({ cost_code: nextCode })
-        .eq("id", itemId);
-
-      if (error) {
-        console.error("Cost code update error (column may not exist yet):", error);
-        return;
-      }
-
-      const nowIso = new Date().toISOString();
-      setItems((prev) =>
-        prev.map((r) =>
-          r.id === itemId ? { ...r, cost_code: nextCode, updated_at: nowIso } : r
-        )
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-5">
-        <div>
-          <h1 className="text-xl font-semibold">Rate Library</h1>
-          <div className="text-sm opacity-70">
-            Cost items, categories, units, last-updated, rate history.
+  pushCell();if(row.length)pushRow();
+  const headers=(rows.shift()||[]).map(h=>h.trim());
+  return{headers,rows};
+}
+function normalizeHeader(h:string){return h.trim().toLowerCase().replace(/\s+/g,"_");}
+function toNum(v:string){const n=Number(String(v||"").replace(/,/g,"").trim());return isFinite(n)?n:null;}
+
+// ─── CategoryCombobox ─────────────────────────────────────────────────────────
+function CategoryCombobox(props:{value:string;options:string[];onChange:(v:string)=>void;allLabel?:string}){
+  const{value,options,onChange,allLabel="All Categories"}=props;
+  const[open,setOpen]=useState(false);
+  const[q,setQ]=useState("");
+  const wrapRef=useRef<HTMLDivElement|null>(null);
+  const inputRef=useRef<HTMLInputElement|null>(null);
+  useEffect(()=>{
+    function onDoc(e:MouseEvent){if(wrapRef.current&&!wrapRef.current.contains(e.target as Node))setOpen(false);}
+    document.addEventListener("mousedown",onDoc);
+    return()=>document.removeEventListener("mousedown",onDoc);
+  },[]);
+  const filtered=useMemo(()=>{const qq=q.trim().toLowerCase();return qq?options.filter(o=>o.toLowerCase().includes(qq)):options;},[options,q]);
+  const label=value==="__ALL__"?allLabel:value;
+  return(
+    <div ref={wrapRef} className="relative w-[240px]">
+      <button type="button" onClick={()=>{setOpen(v=>!v);setTimeout(()=>inputRef.current?.focus(),0);}}
+        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-left hover:bg-white/[0.07] transition flex items-center justify-between text-slate-300">
+        <span className="truncate">{label}</span>
+        <ChevronDown size={13} className="opacity-50 flex-shrink-0"/>
+      </button>
+      {open&&(
+        <div className="absolute z-50 mt-1.5 w-full rounded-xl border border-white/[0.08] bg-[#0d1117] shadow-2xl overflow-hidden">
+          <div className="p-2 border-b border-white/[0.06]">
+            <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…"
+              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-blue-500/50 text-slate-200 placeholder:text-slate-600"/>
           </div>
-        </div>
-
-        {/* Buttons row */}
-        <div className="flex items-center gap-2">
-          <button
-            className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-3 py-2 text-sm transition"
-            type="button"
-            onClick={openAdd}
-            disabled={busy}
-          >
-            Add Rate
-          </button>
-          <div className="relative" data-export-menu>
-          <button
-            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-3 py-2 text-sm transition"
-            type="button"
-            onClick={() => setExportOpen((v) => !v)}
-            disabled={busy || loading || filteredItems.length === 0}
-            title={filteredItems.length ? "Export options" : "Nothing to export"}
-          >
-            Export ▾
-          </button>
-
-          {exportOpen && (
-            <div className="absolute right-0 mt-2 w-[260px] rounded-lg border border-white/10 bg-[#0b1220] shadow-2xl overflow-hidden z-50">
-              <div className="px-3 py-2 text-xs opacity-70 border-b border-white/10">
-                Exports respect Category + Search filters.
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setExportOpen(false);
-                  openImport();
-                }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-white/10"
-              >
-                Import CSV (preview)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  downloadTemplateCurrentView();
-                  setExportOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-white/10"
-              >
-                Download Template (Current View)
-              </button>
-
-              <div className="h-px bg-white/10" />
-
-              <button
-                type="button"
-                onClick={() => {
-                  exportCurrentViewCsv();
-                  setExportOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-white/10"
-              >
-                Export Current View
-              </button>
-
-              <div className="h-px bg-white/10" />
-
-              <button
-                type="button"
-                onClick={() => {
-                  exportByTypeCsv("Material", "MaterialsOnly");
-                  setExportOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-white/10"
-              >
-                Materials only
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  exportByTypeCsv("Labor", "LaborOnly");
-                  setExportOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-white/10"
-              >
-                Labor only
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  exportByTypeCsv("Equipment", "EquipmentOnly");
-                  setExportOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-white/10"
-              >
-                Equipment only
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  exportByTypeCsv("Subcontract", "SubcontractOnly");
-                  setExportOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-white/10"
-              >
-                Subcontract only
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  exportByTypeCsv("Other", "OtherOnly");
-                  setExportOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-white/10"
-              >
-                Other only
-              </button>
-
-              <div className="h-px bg-white/10" />
-
-              <button
-                type="button"
-                onClick={async () => {
-                  await exportAllTypesSeparate();
-                  setExportOpen(false);
-                }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-white/10"
-              >
-                Export ALL Types (separate files)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setExportOpen(false)}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-white/10 opacity-80"
-              >
-                Close
-              </button>
-            </div>
-          )}
-        </div>
-          <button
-            className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-3 py-2 text-sm transition"
-            type="button"
-            onClick={openBulk}
-            disabled={busy}
-          >
-            Bulk Update
-          </button>
-          <button
-            className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-3 py-2 text-sm transition"
-            type="button"
-            onClick={undoLastBulk}
-            disabled={busy || lastBulkBatches.length === 0}
-            title={lastBulkBatches.length ? `Last: ${lastBulkBatches[0]}` : "No bulk batch yet"}
-          >
-            Undo Last Bulk
-          </button>
-        </div>
-      </div>
-
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="text-sm opacity-80">Category</div>
-        <CategoryCombobox
-          value={categoryFilter}
-          options={categoryOptions}
-          onChange={setCategoryFilter}
-        />
-
-        <div className="text-sm opacity-80 ml-2">Search</div>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search item, category, unit, or rate…"
-          className="flex-1 min-w-[260px] bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-        />
-
-        <div className="text-sm opacity-70 ml-auto">
-          {filteredItems.length} item{filteredItems.length === 1 ? "" : "s"}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <div className="text-sm opacity-80 mr-2">Type</div>
-
-        <button
-          type="button"
-          onClick={() => setAllTypes(true)}
-          className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-3 py-2 text-xs"
-        >
-          All
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setAllTypes(false)}
-          className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-3 py-2 text-xs"
-        >
-          None
-        </button>
-
-        {ITEM_TYPES.map((t) => {
-          const on = !!typeFilter[t];
-          return (
-            <button
-              key={t}
-              type="button"
-              onClick={() => toggleType(t)}
-              onDoubleClick={() => setOnlyType(t)}  // PlanSwift-like: double-click isolates
-              className={[
-                "border rounded-md px-3 py-2 text-xs transition",
-                on
-                  ? "bg-white/15 border-white/20"
-                  : "bg-white/5 border-white/10 opacity-70 hover:opacity-100 hover:bg-white/10",
-              ].join(" ")}
-              title="Click to toggle. Double-click to show only this type."
-            >
-              {t}
+          <div className="max-h-64 overflow-auto">
+            <button type="button" onClick={()=>{onChange("__ALL__");setOpen(false);setQ("");}}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-white/[0.06] transition ${value==="__ALL__"?"bg-white/[0.06] text-blue-400":"text-slate-400"}`}>
+              {allLabel}
             </button>
-          );
-        })}
-
-        <div className="text-xs opacity-60 ml-auto">
-          {selectedTypeCount} selected
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="border border-white/10 rounded-lg overflow-hidden">
-        {loading ? (
-          <div className="p-6 text-sm opacity-70">Loading rates...</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-white/5">
-                <tr className="text-left border-b border-white/10">
-                  <th className="py-3 px-4">Item</th>
-                  <th className="py-3 px-4">Description</th>
-                  <th className="py-3 px-4">Variant</th>
-                  <th className="py-3 px-4">Cost Code</th>
-                  <th className="py-3 px-4">Category</th>
-                  <th className="py-3 px-4">Type</th>
-                  <th className="py-3 px-4">Unit</th>
-                  <th className="py-3 px-4">Rate</th>
-                  <th className="py-3 px-4">Actions</th>
-                  <th className="py-3 px-4">Last Updated</th>
-                </tr>
-              </thead>
-
-              <tbody>
-  {filteredItems.map((item) => {
-    const formula = (item as any).formula || "";
-    const waste = (item as any).waste_percent ?? 0;
-
-    const preview = formula
-      ? computeQuantity(
-          formula,
-          buildDefaultVars({ length: 10, width: 10, depth: 1, count: 1 }),
-          { wastePercent: waste, roundTo: 2, clampZero: true }
-        )
-      : null;
-
-    return (
-      <tr key={item.id} className="border-b border-white/5">
-        {/* Item */}
-        <td className="py-3 px-4">
-          <div className="font-medium">{item.item_name}</div>
-
-          {/* Preview line */}
-          {formula ? (
-            <div className="mt-1 text-[11px] opacity-70">
-              Calc preview (10×10×1):{" "}
-              <span className="opacity-100">
-                {preview?.ok ? String(preview.value) : "ERR"}
-              </span>
-              {!preview?.ok && preview?.error ? (
-                <span className="ml-2 opacity-70">({preview.error})</span>
-              ) : null}
-            </div>
-          ) : (
-            <div className="mt-1 text-[11px] opacity-40">No formula</div>
-          )}
-        </td>
-
-        {/* Description */}
-        <td className="py-3 px-4">
-          {editingDescId === item.id ? (
-            <input
-              autoFocus
-              value={editingDescValue}
-              onChange={(e) => setEditingDescValue(e.target.value)}
-              onBlur={() => setEditingDescId(null)}
-              onKeyDown={async (e) => {
-                if (e.key === "Escape") return setEditingDescId(null);
-                if (e.key === "Enter") {
-                  await saveDescription(item.id, editingDescValue);
-                  setEditingDescId(null);
-                }
-              }}
-              className="bg-white/5 border border-white/10 rounded px-2 py-1 w-[320px] max-w-[45vw] outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="—"
-            />
-          ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setEditingDescId(item.id);
-                setEditingDescValue(item.description || "");
-              }}
-              className="text-left cursor-pointer hover:opacity-80 disabled:opacity-50 w-[320px] max-w-[45vw] truncate"
-              title={item.description || ""}
-            >
-              {item.description ? item.description : "—"}
-            </button>
-          )}
-        </td>
-
-        {/* Variant */}
-        <td className="py-3 px-4">{item.variant || "—"}</td>
-
-        {/* Cost Code */}
-        <td className="py-3 px-4">
-          {editingCodeId === item.id ? (
-            <input
-              autoFocus
-              value={editingCodeValue}
-              onChange={(e) => setEditingCodeValue(e.target.value)}
-              onBlur={() => setEditingCodeId(null)}
-              onKeyDown={async (e) => {
-                if (e.key === "Escape") return setEditingCodeId(null);
-                if (e.key === "Enter") {
-                  await saveCostCode(item.id, editingCodeValue.trim());
-                  setEditingCodeId(null);
-                }
-              }}
-              className="bg-white/5 border border-white/10 rounded px-2 py-1 w-44 outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="—"
-            />
-          ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setEditingCodeId(item.id);
-                setEditingCodeValue(item.cost_code || "");
-              }}
-              className="cursor-pointer hover:opacity-80 disabled:opacity-50"
-              title="Click to edit cost code"
-            >
-              {item.cost_code ? item.cost_code : "—"}
-            </button>
-          )}
-        </td>
-
-        {/* Category */}
-        <td className="py-3 px-4">
-          {editingCatId === item.id ? (
-            <select
-              autoFocus
-              value={editingCatValue}
-              onChange={(e) => setEditingCatValue(e.target.value)}
-              onBlur={() => setEditingCatId(null)}
-              onKeyDown={async (e) => {
-                if (e.key === "Escape") setEditingCatId(null);
-                if (e.key === "Enter") {
-                  const v = (editingCatValue || "").trim() || "Uncategorized";
-                  await saveCategory(item.id, v);
-                  setEditingCatId(null);
-                }
-              }}
-              className="bg-[#0b1220] border border-white/10 rounded px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-white/20"
-            >
-              {categoryOptions.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setEditingCatId(item.id);
-                setEditingCatValue(normCategory(item.category));
-              }}
-              className="cursor-pointer hover:opacity-80 disabled:opacity-50"
-              title="Click to edit category"
-            >
-              {normCategory(item.category)}
-            </button>
-          )}
-        </td>
-
-        {/* Type */}
-        <td className="py-3 px-4">
-          {editingTypeId === item.id ? (
-            <select
-              autoFocus
-              value={editingTypeValue}
-              onChange={(e) => setEditingTypeValue(e.target.value)}
-              onBlur={() => setEditingTypeId(null)}
-              onKeyDown={async (e) => {
-                if (e.key === "Escape") setEditingTypeId(null);
-                if (e.key === "Enter") {
-                  await saveItemType(item.id, editingTypeValue || "Other");
-                  setEditingTypeId(null);
-                }
-              }}
-              className="bg-[#0b1220] border border-white/10 rounded px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-white/20"
-            >
-              {ITEM_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setEditingTypeId(item.id);
-                setEditingTypeValue(item.item_type || "Material");
-              }}
-              className="cursor-pointer hover:opacity-80 disabled:opacity-50"
-              title="Click to edit type"
-            >
-              {item.item_type || "-"}
-            </button>
-          )}
-        </td>
-
-        {/* Unit */}
-        <td className="py-3 px-4">{item.unit || "-"}</td>
-
-        {/* Rate */}
-        <td className="py-3 px-4">{formatMoney(item.current_rate)}</td>
-
-        {/* Actions */}
-        <td className="py-3 px-4">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-3 py-1 text-xs"
-              onClick={() => openEdit(item)}
-              disabled={busy}
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-3 py-1 text-xs"
-              onClick={async () => {
-                if (!confirm("Delete this rate?")) return;
-                setBusy(true);
-                try {
-                  const { error } = await supabase
-                    .from("cost_items")
-                    .delete()
-                    .eq("id", item.id);
-                  if (error) {
-                    console.error("Delete error:", error);
-                    return;
-                  }
-                  setItems((prev) => prev.filter((r) => r.id !== item.id));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              disabled={busy}
-            >
-              Delete
-            </button>
-          </div>
-        </td>
-
-        {/* Last Updated */}
-        <td className="py-3 px-4">{formatDate(item.updated_at)}</td>
-      </tr>
-    );
-  })}
-
-  {filteredItems.length === 0 && (
-    <tr>
-      <td className="py-8 px-4 text-sm opacity-70" colSpan={10}>
-        No results.
-      </td>
-    </tr>
-  )}
-</tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-2xl rounded-xl border border-white/10 bg-[#0b1220] shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-              <div className="text-base font-semibold">
-                {mode === "add" ? "Add Rate" : "Edit Rate"}
-              </div>
-              <button
-                type="button"
-                onClick={closeModal}
-                className="opacity-70 hover:opacity-100"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              {mode === "add" && companyId && (
-                <div className="pb-4 border-b border-white/10">
-                  <SmartItemSelectorButton
-                    companyId={companyId}
-                    onSelect={(selection) => {
-                      if (selection.itemName) setFName(selection.itemName);
-                      if (selection.category) setFCategory(selection.category);
-                      if (selection.unit) setFUnit(selection.unit);
-                      if (selection.variant) {
-                        setFVariant(selection.variant);
-                      }
-                      if (selection.currentRate !== null) {
-                        setFRate(selection.currentRate.toString());
-                      }
-                    }}
-                    className="w-full"
-                    label="🪄 Use Smart Selector (Guided Selection)"
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <div className="text-xs opacity-70 mb-1">Item</div>
-                  <input
-                    value={fName}
-                    onChange={(e) => setFName(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                    placeholder="e.g. Ready Mix Concrete"
-                  />
-                </div>
-
-                <div>
-                  <div className="text-xs opacity-70 mb-1">Variant</div>
-                  <input
-                    value={fVariant}
-                    onChange={(e) => setFVariant(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                    placeholder="e.g. 2x4x16 Treated or 6&quot; Standard Grey"
-                  />
-                </div>
-
-                <div>
-                  <div className="text-xs opacity-70 mb-1">Cost Code</div>
-                  <input
-                    value={fCode}
-                    onChange={(e) => setFCode(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                    placeholder="e.g. CON-001"
-                  />
-                  <div className="flex items-center gap-2 mt-2">
-                    <input
-                      id="autoCode"
-                      type="checkbox"
-                      checked={autoCode}
-                      onChange={(e) => setAutoCode(e.target.checked)}
-                    />
-                    <label htmlFor="autoCode" className="text-xs opacity-70">
-                      Auto-generate Cost Code from Type + Category
-                    </label>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs opacity-70 mb-1">Category</div>
-                  <select
-                    value={fCategory}
-                    onChange={(e) => setFCategory(e.target.value)}
-                    className="w-full bg-[#0b1220] border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                  >
-                    {STANDARD_CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <div className="text-xs opacity-70 mb-1">Type</div>
-                  <select
-                    value={fType}
-                    onChange={(e) => setFType(e.target.value)}
-                    className="w-full bg-[#0b1220] border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                  >
-                    {ITEM_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <div className="text-xs opacity-70 mb-1">Unit</div>
-                  <select
-                    value={fUnit}
-                    onChange={(e) => setFUnit(e.target.value)}
-                    className="w-full bg-[#0b1220] border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                  >
-                    {unitOptions.map((unit) => (
-                      <option key={unit} value={unit}>
-                        {unit}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <div className="text-xs opacity-70 mb-1">Rate</div>
-                  <input
-                    value={fRate}
-                    onChange={(e) => setFRate(e.target.value)}
-                    type="number"
-                    step="0.01"
-                    className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                    placeholder="e.g. 18500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs opacity-70 mb-1">Description</div>
-              {/* Advanced: Calculator Engine */}
-              <div className="mt-3 border border-white/10 rounded-xl overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced((v: boolean) => !v)}
-                  className="w-full px-4 py-3 flex items-center justify-between bg-white/5 hover:bg-white/10 transition"
-                >
-                  <div className="text-sm font-semibold">Advanced</div>
-                  <div className="opacity-70">{showAdvanced ? "▾" : "▸"}</div>
-                </button>
-
-                {showAdvanced && (
-                  <div className="p-4 bg-[#07101d] space-y-3">
-                    <div>
-                      <div className="text-xs opacity-70 mb-1">Calculator JSON (saved on this item)</div>
-                      <textarea
-                        value={fCalcJson}
-                        onChange={(e) => setFCalcJson(e.target.value)}
-                        placeholder='{"version":1,"vars":[{"key":"Area","default":0}],"consts":{},"formulas":{},"qty_expr":"Area","qty_rounding":{"mode":"round","decimals":0}}'
-                        className="w-full h-[220px] bg-white/5 border border-white/10 rounded-md p-3 text-xs font-mono outline-none focus:ring-1 focus:ring-white/20"
-                      />
-                      <div className="text-[11px] opacity-60 mt-2">
-                        Tip: Put your calculator JSON here. Preview will validate the JSON format (next step we’ll add real math preview).
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          try {
-                            if (!fCalcJson.trim()) {
-                              setPreviewMsg("No calculator JSON entered.");
-                              return;
-                            }
-                            JSON.parse(fCalcJson);
-                            setPreviewMsg("✅ JSON is valid. Next step: run actual qty preview using the engine.");
-                          } catch (e:any) {
-                            setPreviewMsg("❌ Invalid JSON: " + (e?.message || String(e)));
-                          }
-                        }}
-                        className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-4 py-2 text-sm"
-                      >
-                        Preview
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFCalcJson(JSON.stringify({
-                            version: 1,
-                            vars: [{ key: "Area", label: "Wall Area", unit: "ft²", default: 0, min: 0 }],
-                            consts: { WastePct: 0.05, BlockFaceArea: 0.8889 },
-                            formulas: {
-                              BaseQty: "Area / BlockFaceArea",
-                              WithWaste: "BaseQty * (1 + WastePct)"
-                            },
-                            qty_expr: "WithWaste",
-                            qty_rounding: { mode: "ceil" },
-                            outputs: { BaseQty: "BaseQty", WithWaste: "WithWaste" }
-                          }, null, 2));
-                          setPreviewMsg("Example loaded.");
-                        }}
-                        className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-4 py-2 text-sm"
-                      >
-                        Load Example
-                      </button>
-
-                      <div className="text-xs opacity-70 ml-auto truncate">{previewMsg}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-                <input
-                  value={fDesc}
-                  onChange={(e) => setFDesc(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                  placeholder="Optional description"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/10">
-              <button
-                type="button"
-                onClick={closeModal}
-                className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-4 py-2 text-sm"
-                disabled={busy}
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-4 py-2 text-sm"
-                disabled={busy || !fName.trim()}
-                onClick={async () => {
-                  const name = fName.trim();
-                  if (!name) return;
-
-                  const payload = {
-                    item_name: fName.trim(),
-                    description: fDesc.trim() || null,
-                    variant: fVariant.trim() || null,
-                    cost_code: fCode.trim() || null,
-                    category: (fCategory || "Uncategorized").trim(),
-                    item_type: (fType || "Other").trim(),
-                    unit: (fUnit || "each").trim(),
-                    updated_at: new Date().toISOString(),
-                  };
-
-                  // Calculator Engine JSON (optional)
-                  let calc_engine_json: any = null;
-                  if (fCalcJson && fCalcJson.trim()) {
-                    try { calc_engine_json = JSON.parse(fCalcJson); } catch { calc_engine_json = null; }
-                  }
-
-                  (payload as any).calc_engine_json = calc_engine_json;
-
-                  setBusy(true);
-                  try {
-                    if (mode === "add") {
-                      // Insert into cost_items (without unit_rate)
-                      const { data: newItem, error: insertError } = await supabase
-                        .from("cost_items")
-                        .insert(payload)
-                        .select("id,item_name,description,cost_code,category,item_type,unit,updated_at")
-                        .single();
-
-                      if (insertError) {
-                        console.error("Insert error:", insertError);
-                        return;
-                      }
-
-                      // Insert rate into cost_item_rates if provided
-                      if (fRate.trim()) {
-                        const ratePayload = {
-                          cost_item_id: (newItem as any).id,
-                          rate: Number(fRate),
-                          currency: "JMD",
-                          effective_date: new Date().toISOString().slice(0, 10),
-                          source: "manual",
-                          note: null
-                        };
-
-                        const { error: rateError } = await supabase
-                          .from("cost_item_rates")
-                          .insert(ratePayload);
-
-                        if (rateError) {
-                          console.error("Rate insert error:", rateError);
-                        }
-                      }
-
-                      // Reload data
-                      reload();
-                      closeModal();
-                    } else {
-                      if (!activeId) return;
-
-                      // Update cost_items (without unit_rate)
-                      const { data: updatedItem, error: updateError } = await supabase
-                        .from("cost_items")
-                        .update(payload)
-                        .eq("id", activeId)
-                        .select("id,item_name,description,cost_code,category,item_type,unit,updated_at")
-                        .single();
-
-                      if (updateError) {
-                        console.error("Update error:", updateError);
-                        return;
-                      }
-
-                      // Insert new rate if provided
-                      if (fRate.trim()) {
-                        const ratePayload = {
-                          cost_item_id: activeId,
-                          rate: Number(fRate),
-                          currency: "JMD",
-                          effective_date: new Date().toISOString().slice(0, 10),
-                          source: "manual",
-                          note: null
-                        };
-
-                        const { error: rateError } = await supabase
-                          .from("cost_item_rates")
-                          .insert(ratePayload);
-
-                        if (rateError) {
-                          console.error("Rate insert error:", rateError);
-                        }
-                      }
-
-                      // Reload data
-                      reload();
-                      closeModal();
-                    }
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                {mode === "add" ? "Save" : "Update"}
-              </button>
-            </div>
+            {filtered.map(opt=>(
+              <button key={opt} type="button" onClick={()=>{onChange(opt);setOpen(false);setQ("");}}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-white/[0.06] transition truncate ${value===opt?"bg-white/[0.06] text-blue-400":"text-slate-300"}`}
+                title={opt}>{opt}</button>
+            ))}
+            {filtered.length===0&&<div className="px-3 py-3 text-sm text-slate-600">No matches.</div>}
           </div>
         </div>
       )}
-
-      {bulkOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-xl rounded-xl border border-white/10 bg-[#0b1220] shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-              <div className="text-base font-semibold">Bulk Update Rates</div>
-              <button
-                type="button"
-                onClick={() => setBulkOpen(false)}
-                className="opacity-70 hover:opacity-100"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              <div className="text-sm opacity-80">
-                This will update <b>{bulkTargetCount}</b> item(s) in the current view (only items with an existing rate).
-              </div>
-
-              <div className="grid grid-cols-1 gap-3">
-                <div>
-                  <div className="text-xs opacity-70 mb-1">Title (batch name)</div>
-                  <input
-                    value={bulkTitle}
-                    onChange={(e) => setBulkTitle(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                    placeholder="e.g. Materials +8% March 2026"
-                  />
-                </div>
-
-                <div>
-                  <div className="text-xs opacity-70 mb-1">Reason / Note (optional)</div>
-                  <input
-                    value={bulkReason}
-                    onChange={(e) => setBulkReason(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                    placeholder="e.g. Supplier price increase"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-xs opacity-70 mb-1">Mode</div>
-                    <select
-                      value={bulkMode}
-                      onChange={(e) => setBulkMode(e.target.value as any)}
-                      className="w-full bg-[#0b1220] border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                    >
-                      <option value="percent">Percent (+/- %)</option>
-                      <option value="add">Add amount (+/-)</option>
-                      <option value="set">Set value</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <div className="text-xs opacity-70 mb-1">
-                      Value {bulkMode === "percent" ? "(e.g. 8 or -3)" : bulkMode === "add" ? "(e.g. 250 or -100)" : "(e.g. 18500)"}
-                    </div>
-                    <input
-                      value={bulkValue}
-                      onChange={(e) => setBulkValue(e.target.value)}
-                      type="number"
-                      step="0.01"
-                      className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                      placeholder={bulkMode === "percent" ? "8" : bulkMode === "add" ? "250" : "18500"}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs opacity-70 mb-1">Effective Date</div>
-                  <input
-                    type="date"
-                    value={bulkEffectiveDate}
-                    onChange={(e) => setBulkEffectiveDate(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                  />
-                </div>
-
-                <div className="text-xs opacity-60">
-                  Scope: current Category filter + currently selected Type toggles.
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/10">
-              <button
-                type="button"
-                onClick={() => setBulkOpen(false)}
-                className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-4 py-2 text-sm"
-                disabled={busy}
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-4 py-2 text-sm"
-                disabled={busy || !bulkValue.trim() || bulkTargetCount === 0}
-                onClick={applyBulk}
-              >
-                Apply
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {importOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-4xl rounded-xl border border-white/10 bg-[#0b1220] shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-              <div className="text-base font-semibold">Import CSV (Preview)</div>
-              <button type="button" onClick={closeImport} className="opacity-70 hover:opacity-100">✕</button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  onPickImportFile(f);
-                  e.currentTarget.value = ""; // allow re-pick same file
-                }}
-              />
-
-              <div className="flex flex-wrap gap-3 items-end">
-                <div className="flex-1 min-w-[260px]">
-                  <div className="text-xs opacity-70 mb-1">Batch Title</div>
-                  <input
-                    value={importTitle}
-                    onChange={(e) => setImportTitle(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                    placeholder="e.g. Rapid True Value price list update"
-                  />
-                </div>
-
-                <div className="flex-1 min-w-[260px]">
-                  <div className="text-xs opacity-70 mb-1">Reason / Note</div>
-                  <input
-                    value={importReason}
-                    onChange={(e) => setImportReason(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                    placeholder="e.g. Supplier increase"
-                  />
-                </div>
-
-                <div className="min-w-[180px]">
-                  <div className="text-xs opacity-70 mb-1">Effective Date</div>
-                  <input
-                    type="date"
-                    value={importEffectiveDate}
-                    onChange={(e) => setImportEffectiveDate(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-4 py-2 text-sm"
-                  disabled={busy}
-                >
-                  Choose CSV
-                </button>
-              </div>
-
-              <div className="text-sm opacity-80">
-                File: <span className="opacity-100">{importCsvName || "—"}</span>
-                <span className="ml-4 opacity-70">Rows: {importRows.length}</span>
-                <span className="ml-4 opacity-70">Matched: {importMatched.length}</span>
-                <span className="ml-4 opacity-70">Unmatched: {importUnmatched.length}</span>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="border border-white/10 rounded-lg overflow-hidden">
-                  <div className="px-3 py-2 text-xs bg-white/5 border-b border-white/10">
-                    Matched (will update)
-                  </div>
-                  <div className="max-h-[360px] overflow-auto">
-                    <table className="w-full text-xs">
-                      <thead className="bg-white/5">
-                        <tr className="text-left border-b border-white/10">
-                          <th className="py-2 px-3">Row</th>
-                          <th className="py-2 px-3">Cost Code</th>
-                          <th className="py-2 px-3">CSV Item</th>
-                          <th className="py-2 px-3">Variant</th>
-                          <th className="py-2 px-3">Match</th>
-                          <th className="py-2 px-3">Rate</th>
-                          <th className="py-2 px-3">Cur</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {importMatched.slice(0, 200).map((m) => (
-                          <tr key={m.src.rowNum} className="border-b border-white/5">
-                            <td className="py-2 px-3 opacity-70">{m.src.rowNum}</td>
-                            <td className="py-2 px-3">{m.src.cost_code || "—"}</td>
-                            <td className="py-2 px-3">{m.src.item_name || "—"}</td>
-                            <td className="py-2 px-3 opacity-80">{m.matchName}</td>
-                            <td className="py-2 px-3">{m.src.rate ?? "—"}</td>
-                            <td className="py-2 px-3">{(m.src.currency || "JMD").toUpperCase()}</td>
-                          </tr>
-                        ))}
-                        {importMatched.length > 200 && (
-                          <tr>
-                            <td className="py-2 px-3 opacity-60" colSpan={6}>
-                              Showing first 200 matches…
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div className="border border-white/10 rounded-lg overflow-hidden">
-                  <div className="px-3 py-2 text-xs bg-white/5 border-b border-white/10">
-                    Unmatched / Invalid (not applied)
-                  </div>
-                  <div className="max-h-[360px] overflow-auto">
-                    <table className="w-full text-xs">
-                      <thead className="bg-white/5">
-                        <tr className="text-left border-b border-white/10">
-                          <th className="py-2 px-3">Row</th>
-                          <th className="py-2 px-3">Cost Code</th>
-                          <th className="py-2 px-3">Item</th>
-                          <th className="py-2 px-3">Rate</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {importUnmatched.slice(0, 200).map((r) => (
-                          <tr key={r.rowNum} className="border-b border-white/5">
-                            <td className="py-2 px-3 opacity-70">{r.rowNum}</td>
-                            <td className="py-2 px-3">{r.cost_code || "—"}</td>
-                            <td className="py-2 px-3">{r.item_name || "—"}</td>
-                            <td className="py-2 px-3">{r.rate ?? "—"}</td>
-                          </tr>
-                        ))}
-                        {importUnmatched.length > 200 && (
-                          <tr>
-                            <td className="py-2 px-3 opacity-60" colSpan={4}>
-                              Showing first 200 unmatched…
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-xs opacity-60">
-                CSV columns supported: cost_code, item_name, rate, currency, unit, category, type/item_type
-                (cost_code is best match; item_name is fallback).
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/10">
-              <button
-                type="button"
-                onClick={closeImport}
-                className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-4 py-2 text-sm"
-                disabled={busy}
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                className="bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-4 py-2 text-sm"
-                disabled={busy || importMatched.length === 0}
-                onClick={applyImport}
-                title={importMatched.length ? "Apply matched updates as a batch" : "No matches to apply"}
-              >
-                Apply Import
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Small note */}
-      <div className="mt-3 text-xs opacity-60">
-        Tip: Click a rate to edit. Next upgrades: Add Rate modal, category editing, unit editing, import/export, rate history.
-      </div>
     </div>
   );
 }
 
+// ─── SmartCombobox ────────────────────────────────────────────────────────────
+function SmartCombobox(props:{value:string;options:string[];onChange:(v:string)=>void;placeholder?:string;widthClassName?:string}){
+  const{value,options,onChange,placeholder="Search…",widthClassName="w-full"}=props;
+  const[open,setOpen]=useState(false);
+  const[q,setQ]=useState("");
+  const wrapRef=useRef<HTMLDivElement|null>(null);
+  const inputRef=useRef<HTMLInputElement|null>(null);
+  useEffect(()=>{
+    function onDoc(e:MouseEvent){if(wrapRef.current&&!wrapRef.current.contains(e.target as Node))setOpen(false);}
+    document.addEventListener("mousedown",onDoc);
+    return()=>document.removeEventListener("mousedown",onDoc);
+  },[]);
+  const filtered=useMemo(()=>{const qq=q.trim().toLowerCase();return qq?options.filter(o=>o.toLowerCase().includes(qq)):options;},[options,q]);
+  return(
+    <div ref={wrapRef} className={`relative ${widthClassName}`}>
+      <button type="button" onClick={()=>{setOpen(v=>!v);setTimeout(()=>inputRef.current?.focus(),0);}}
+        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-left hover:bg-white/[0.07] transition flex items-center justify-between text-slate-300">
+        <span className="truncate">{value||"Select…"}</span>
+        <ChevronDown size={13} className="opacity-50 flex-shrink-0"/>
+      </button>
+      {open&&(
+        <div className="absolute z-50 mt-1.5 w-full rounded-xl border border-white/[0.08] bg-[#0d1117] shadow-2xl overflow-hidden">
+          <div className="p-2 border-b border-white/[0.06]">
+            <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} placeholder={placeholder}
+              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-blue-500/50 text-slate-200 placeholder:text-slate-600"/>
+          </div>
+          <div className="max-h-64 overflow-auto">
+            {filtered.map(opt=>(
+              <button key={opt} type="button" onClick={()=>{onChange(opt);setOpen(false);setQ("");}}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-white/[0.06] transition ${value===opt?"bg-white/[0.06] text-blue-400":"text-slate-300"}`}
+                title={opt}>{opt}</button>
+            ))}
+            {filtered.length===0&&<div className="px-3 py-3 text-sm text-slate-600">No matches.</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
+// ─── Main Page ────────────────────────────────────────────────────────────────
+export default function RatesPage() {
+  const [items,setItems]=useState<CostItem[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [companyId,setCompanyId]=useState<string>("");
+  const [categoryFilter,setCategoryFilter]=useState<string>("__ALL__");
+  const [search,setSearch]=useState("");
+  const [typeFilter,setTypeFilter]=useState<Record<string,boolean>>({Material:true,Labor:true,Equipment:true,Subcontract:true,Other:true});
+  const [editingId,setEditingId]=useState<string|null>(null);
+  const [editingRate,setEditingRate]=useState<string>("");
+  const [editingCatId,setEditingCatId]=useState<string|null>(null);
+  const [editingCatValue,setEditingCatValue]=useState<string>("");
+  const [editingTypeId,setEditingTypeId]=useState<string|null>(null);
+  const [editingTypeValue,setEditingTypeValue]=useState<string>("");
+  const [editingDescId,setEditingDescId]=useState<string|null>(null);
+  const [editingDescValue,setEditingDescValue]=useState<string>("");
+  const [editingCodeId,setEditingCodeId]=useState<string|null>(null);
+  const [editingCodeValue,setEditingCodeValue]=useState<string>("");
+  const [busy,setBusy]=useState(false);
+  const [isModalOpen,setIsModalOpen]=useState(false);
+  const [mode,setMode]=useState<"add"|"edit">("add");
+  const [activeId,setActiveId]=useState<string|null>(null);
+  const [autoCode,setAutoCode]=useState(true);
+  const [bulkOpen,setBulkOpen]=useState(false);
+  const [bulkTitle,setBulkTitle]=useState("Bulk rate update");
+  const [bulkReason,setBulkReason]=useState("");
+  const [bulkMode,setBulkMode]=useState<"percent"|"add"|"set">("percent");
+  const [bulkValue,setBulkValue]=useState<string>("");
+  const [lastBulkBatches,setLastBulkBatches]=useState<string[]>([]);
+  const [exportOpen,setExportOpen]=useState(false);
+  const [importOpen,setImportOpen]=useState(false);
+  const [importTitle,setImportTitle]=useState("CSV import");
+  const [importReason,setImportReason]=useState("");
+  const [importCsvName,setImportCsvName]=useState<string>("");
+  const [importRows,setImportRows]=useState<ImportRow[]>([]);
+  const [importMatched,setImportMatched]=useState<{src:ImportRow;matchId:string;matchName:string}[]>([]);
+  const [importUnmatched,setImportUnmatched]=useState<ImportRow[]>([]);
+  const fileInputRef=useRef<HTMLInputElement|null>(null);
+  const todayISO=new Date().toISOString().slice(0,10);
+  const [bulkEffectiveDate,setBulkEffectiveDate]=useState<string>(todayISO);
+  const [importEffectiveDate,setImportEffectiveDate]=useState<string>(todayISO);
+  const [fName,setFName]=useState("");
+  const [fDesc,setFDesc]=useState("");
+  const [fCode,setFCode]=useState("");
+  const [fVariant,setFVariant]=useState("");
+  const [fCategory,setFCategory]=useState<string>(STANDARD_CATEGORIES[0]??"Uncategorized");
+  const [fType,setFType]=useState<string>(ITEM_TYPES[0]);
+  const [fUnit,setFUnit]=useState<string>("each");
+  const [fRate,setFRate]=useState<string>("");
+  const [showAdvanced,setShowAdvanced]=useState<boolean>(false);
+  const [formulaType,setFormulaType]=useState<string>("");
+  const [formulaInput,setFormulaInput]=useState<string>("");
+  const [formulaPreview,setFormulaPreview]=useState<number|null>(null);
 
+  function toggleType(t:string){setTypeFilter(prev=>({...prev,[t]:!prev[t]}));}
+  function setOnlyType(t:string){setTypeFilter({Material:false,Labor:false,Equipment:false,Subcontract:false,Other:false,[t]:true});}
+  function setAllTypes(on:boolean){setTypeFilter({Material:on,Labor:on,Equipment:on,Subcontract:on,Other:on});}
+  const selectedTypeCount=useMemo(()=>Object.values(typeFilter).filter(Boolean).length,[typeFilter]);
 
+  useEffect(()=>{
+    let alive=true;
+    async function load(){
+      setLoading(true);
+      const{data:{user}}=await supabase.auth.getUser();
+      if(user){
+        const{data:profile}=await supabase.from("user_profiles").select("company_id").eq("id",user.id).single();
+        if(profile?.company_id&&alive) setCompanyId(profile.company_id);
+      }
+      const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
+      let resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true});
+      if(resp.error){
+        console.error("RatesPage load error:",resp.error);
+        resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true});
+      }
+      if(!alive) return;
+      const rawItems=resp.data as any[];
+      if(rawItems&&rawItems.length>0){
+        const ids=rawItems.map(i=>i.id);
+        const variants=await supabase.from("cost_items").select("id,variant").in("id",ids);
+        const varMap=new Map((variants.data||[]).map((v:any)=>[v.id,v.variant]));
+        setItems(rawItems.map(i=>({...i,variant:(varMap.get(i.id)||"") as string})) as CostItem[]);
+      } else setItems([]);
+      setLoading(false);
+    }
+    load();
+    return()=>{alive=false;};
+  },[]);
 
+  const reload=()=>{
+    let alive=true;
+    async function load(){
+      setLoading(true);
+      const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
+      let resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true});
+      if(!alive) return;
+      const rawItems=resp.data as any[];
+      if(rawItems&&rawItems.length>0){
+        const ids=rawItems.map(i=>i.id);
+        const variants=await supabase.from("cost_items").select("id,variant").in("id",ids);
+        const varMap=new Map((variants.data||[]).map((v:any)=>[v.id,v.variant]));
+        setItems(rawItems.map(i=>({...i,variant:(varMap.get(i.id)||"") as string})) as CostItem[]);
+      } else setItems([]);
+      setLoading(false);
+    }
+    load();
+    return()=>{alive=false;};
+  };
 
+  useEffect(()=>{
+    if(!isModalOpen||!autoCode) return;
+    setFCode(nextCodeFor(fCategory||"Uncategorized",fType||"Other",items));
+  },[isModalOpen,autoCode,fCategory,fType]);
 
+  useEffect(()=>{
+    function onDoc(e:MouseEvent){if(!(e.target as HTMLElement).closest("[data-export-menu]"))setExportOpen(false);}
+    if(exportOpen) document.addEventListener("mousedown",onDoc);
+    return()=>document.removeEventListener("mousedown",onDoc);
+  },[exportOpen]);
 
+  const categoryOptions=useMemo(()=>{
+    const base=[...STANDARD_CATEGORIES];
+    const baseSet=new Set<string>(base);
+    const extras:string[]=[];
+    for(const it of items){const c=normCategory(it.category);if(!baseSet.has(c))extras.push(c);}
+    return [...base,...Array.from(new Set(extras)).sort((a,b)=>a.localeCompare(b))];
+  },[items]);
 
+  const unitOptions=useMemo(()=>{
+    const base=Array.from(new Set(STANDARD_UNITS as unknown as string[]));
+    const baseSet=new Set<string>(base);
+    const extras:string[]=[];
+    for(const it of items){const u=(it.unit||"").trim();if(u&&!baseSet.has(u))extras.push(u);}
+    return [...base,...Array.from(new Set(extras)).sort((a,b)=>a.localeCompare(b))];
+  },[items]);
 
+  const filteredItems=useMemo(()=>{
+    const q=search.trim().toLowerCase();
+    return items.filter(it=>{
+      const cat=normCategory(it.category);
+      if(categoryFilter!=="__ALL__"&&cat!==categoryFilter) return false;
+      const type=(it.item_type||"Other").trim();
+      const safeType=(ITEM_TYPES as unknown as string[]).includes(type)?type:"Other";
+      if(!typeFilter[safeType]) return false;
+      if(!q) return true;
+      return (it.item_name||"").toLowerCase().includes(q)||
+        (it.variant||"").toLowerCase().includes(q)||
+        (it.unit||"").toLowerCase().includes(q)||
+        cat.toLowerCase().includes(q)||
+        (it.current_rate==null?"":String(it.current_rate)).includes(q)||
+        (it.cost_code||"").toLowerCase().includes(q)||
+        (it.description||"").toLowerCase().includes(q);
+    });
+  },[items,categoryFilter,search,typeFilter]);
+
+  const selectedTypes=useMemo(()=>{
+    const chosen=ITEM_TYPES.filter(t=>!!typeFilter[t]);
+    return chosen.length?chosen:[...ITEM_TYPES];
+  },[typeFilter]);
+
+  const bulkTargetCount=useMemo(()=>filteredItems.filter(x=>x.current_rate!=null).length,[filteredItems]);
+
+  // Stats
+  const total=items.length;
+  const priced=items.filter(i=>i.current_rate!=null).length;
+  const coverage=total>0?Math.round((priced/total)*100):0;
+  const typeCounts=useMemo(()=>{const c:Record<string,number>={};items.forEach(i=>{const t=i.item_type||"Other";c[t]=(c[t]||0)+1;});return c;},[items]);
+
+  function openAdd(){
+    setMode("add");setActiveId(null);setFName("");setFDesc("");setFVariant("");
+    setFCategory(STANDARD_CATEGORIES[0]??"Uncategorized");setFType(ITEM_TYPES[0]);
+    setFUnit(unitOptions[0]??"each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
+    setIsModalOpen(true);
+  }
+  function openEdit(item:CostItem){
+    setMode("edit");setActiveId(item.id);
+    setFName(item.item_name||"");setFDesc(item.description||"");
+    setFCode(item.cost_code||"");setFCategory(normCategory(item.category));
+    setFType(item.item_type||ITEM_TYPES[0]);setFUnit((item.unit||"").trim()||(unitOptions[0]??"each"));
+    setFRate(item.current_rate==null?"":String(item.current_rate));setFVariant(item.variant||"");
+    const calcJson=(item as any).calc_engine_json;
+    if(calcJson){
+      try{
+        const p=typeof calcJson==="string"?JSON.parse(calcJson):calcJson;
+        if(p.vars?.length>0){
+          const keys=p.vars.map((v:any)=>v.key);
+          if(keys.includes("count")){setFormulaType("count");setFormulaInput(p.formulas?.qty||"count");}
+          else if(keys.includes("area")){setFormulaType("area");setFormulaInput(p.formulas?.qty||"area");}
+          else if(keys.includes("length")&&keys.includes("width")){setFormulaType("volume");setFormulaInput(p.formulas?.qty||"length * width * height");}
+          else if(keys.includes("length")){setFormulaType("length");setFormulaInput(p.formulas?.qty||"length");}
+        }
+      }catch{setFormulaType("");setFormulaInput("");}
+    } else{setFormulaType("");setFormulaInput("");}
+    setIsModalOpen(true);
+  }
+  function closeModal(){
+    setIsModalOpen(false);setFName("");setFDesc("");setFCode("");setFVariant("");
+    setFCategory(STANDARD_CATEGORIES[0]??"Uncategorized");setFType(ITEM_TYPES[0]);
+    setFUnit("each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
+    setActiveId(null);setMode("add");
+  }
+
+  function buildCalcJson(type:string,formula:string){
+    if(!type||!formula) return null;
+    const base={version:1,qty_expr:"qty"};
+    switch(type){
+      case "length": return{...base,vars:[{key:"length",label:"Length"}],formulas:{qty:formula}};
+      case "area":   return{...base,vars:[{key:"area",label:"Area"}],formulas:{qty:formula}};
+      case "volume": return{...base,vars:[{key:"length"},{key:"width"},{key:"height"}],formulas:{qty:formula}};
+      case "count":  return{...base,vars:[{key:"count"}],formulas:{qty:formula}};
+      default:       return null;
+    }
+  }
+  function previewFormula(type:string,formula:string){
+    if(!type||!formula){setFormulaPreview(null);return;}
+    const vars:any={length:10,width:5,height:2,area:100,count:1};
+    const result=computeQuantity(formula,vars,{roundTo:2,clampZero:true});
+    setFormulaPreview(result.ok?result.value:null);
+  }
+
+  async function saveRate(itemId:string,nextRate:number){
+    setBusy(true);
+    try{
+      const{error}=await supabase.from("cost_item_rates").insert({cost_item_id:itemId,rate:nextRate,currency:"JMD",effective_date:new Date().toISOString().slice(0,10),source:"manual_edit"});
+      if(error){console.error("Rate update error:",error);return;}
+      await reload();
+    }finally{setBusy(false);}
+  }
+  async function saveCategory(itemId:string,nextCategory:string){
+    setBusy(true);
+    try{
+      const{error}=await supabase.from("cost_items").update({category:nextCategory}).eq("id",itemId);
+      if(error){console.error(error);return;}
+      setItems(prev=>prev.map(r=>r.id===itemId?{...r,category:nextCategory,updated_at:new Date().toISOString()}:r));
+    }finally{setBusy(false);}
+  }
+  async function saveItemType(itemId:string,nextType:string){
+    setBusy(true);
+    try{
+      const{error}=await supabase.from("cost_items").update({item_type:nextType}).eq("id",itemId);
+      if(error){console.error(error);return;}
+      setItems(prev=>prev.map(r=>r.id===itemId?{...r,item_type:nextType,updated_at:new Date().toISOString()}:r));
+    }finally{setBusy(false);}
+  }
+  async function saveDescription(itemId:string,nextDesc:string){
+    setBusy(true);
+    try{
+      const{error}=await supabase.from("cost_items").update({description:nextDesc}).eq("id",itemId);
+      if(error){console.error(error);return;}
+      setItems(prev=>prev.map(r=>r.id===itemId?{...r,description:nextDesc,updated_at:new Date().toISOString()}:r));
+    }finally{setBusy(false);}
+  }
+  async function saveCostCode(itemId:string,nextCode:string){
+    setBusy(true);
+    try{
+      const{error}=await supabase.from("cost_items").update({cost_code:nextCode}).eq("id",itemId);
+      if(error){console.error(error);return;}
+      setItems(prev=>prev.map(r=>r.id===itemId?{...r,cost_code:nextCode,updated_at:new Date().toISOString()}:r));
+    }finally{setBusy(false);}
+  }
+
+  async function applyBulk(){
+    const n=Number(bulkValue);
+    if(!isFinite(n)) return;
+    const cat=categoryFilter==="__ALL__"?null:categoryFilter;
+    setBusy(true);
+    try{
+      for(const t of selectedTypes){
+        const{data,error}=await supabase.rpc("bulk_update_rates",{p_title:bulkTitle,p_reason:bulkReason||null,p_type_filter:t,p_category_filter:cat,p_mode:bulkMode,p_value:n,p_effective_date:bulkEffectiveDate});
+        if(error){alert(`Bulk update failed for ${t}: ${error.message}`);return;}
+        setLastBulkBatches(prev=>[data as string,...prev].slice(0,10));
+      }
+      setBulkOpen(false);
+      await reload();
+    }finally{setBusy(false);}
+  }
+
+  async function undoLastBulk(){
+    if(lastBulkBatches.length===0) return;
+    if(!confirm("Undo last bulk update?")) return;
+    setBusy(true);
+    try{
+      for(const batchId of lastBulkBatches){
+        const{data,error}=await supabase.rpc("undo_rate_batch",{p_batch_id:batchId});
+        if(error) console.error("undo error:",error);
+      }
+      setLastBulkBatches([]);
+      await reload();
+    }finally{setBusy(false);}
+  }
+
+  function exportCurrentViewCsv(){
+    const ts=new Date();
+    const cat=categoryFilter==="__ALL__"?"AllCategories":categoryFilter.replace(/\s+/g,"_");
+    downloadCsv(`rate-library_${cat}_${ts.toISOString().slice(0,10)}.csv`,[
+      ["Item","Variant","Description","Cost Code","Category","Type","Unit","Rate","Currency","Last Updated"],
+      ...filteredItems.map(it=>[it.item_name||"",it.variant||"",it.description||"",it.cost_code||"",normCategory(it.category),it.item_type||"",it.unit||"",it.current_rate??"",it.current_currency??"JMD",it.updated_at||""])
+    ]);
+  }
+  function exportByTypeCsv(forcedType:string|null,label:string){
+    const ts=new Date();
+    const cat=categoryFilter==="__ALL__"?"AllCategories":categoryFilter.replace(/\s+/g,"_");
+    const typeLabel=forcedType?forcedType.replace(/\s+/g,"_"):"CurrentView";
+    let rows=filteredItems;
+    if(forcedType) rows=rows.filter(it=>(it.item_type||"").toLowerCase()===forcedType.toLowerCase());
+    downloadCsv(`rate-library_${label}_${cat}_${typeLabel}_${ts.toISOString().slice(0,10)}.csv`,[
+      ["Item","Description","Cost Code","Category","Type","Unit","Rate","Currency","Last Updated"],
+      ...rows.map(it=>[it.item_name||"",it.description||"",it.cost_code||"",normCategory(it.category),it.item_type||"",it.unit||"",it.current_rate??"",it.current_currency??"JMD",it.updated_at||""])
+    ]);
+  }
+  function downloadTemplateCurrentView(){
+    const cat=categoryFilter==="__ALL__"?"AllCategories":categoryFilter.replace(/\s+/g,"_");
+    downloadCsv(`rate-template_${cat}_${new Date().toISOString().slice(0,10)}.csv`,[
+      ["cost_code","item_name","rate","currency","unit","category","item_type"],
+      ...filteredItems.map(it=>[it.cost_code||"",it.item_name||"",it.current_rate??"",it.current_currency||"JMD",it.unit||"",normCategory(it.category),it.item_type||""])
+    ]);
+  }
+
+  function buildLookupMaps(){
+    const byCode=new Map<string,CostItem>();
+    const byName=new Map<string,CostItem>();
+    for(const it of items){
+      const cc=(it.cost_code||"").trim().toLowerCase();
+      const nm=(it.item_name||"").trim().toLowerCase();
+      if(cc) byCode.set(cc,it);
+      if(nm) byName.set(nm,it);
+    }
+    return{byCode,byName};
+  }
+  function computeImportMatches(rows:ImportRow[]){
+    const{byCode,byName}=buildLookupMaps();
+    const matched:{src:ImportRow;matchId:string;matchName:string}[]=[];
+    const unmatched:ImportRow[]=[];
+    for(const r of rows){
+      const cc=(r.cost_code||"").trim().toLowerCase();
+      const nm=(r.item_name||"").trim().toLowerCase();
+      let hit=cc?byCode.get(cc):undefined;
+      if(!hit&&nm) hit=byName.get(nm);
+      if(hit&&r.rate!=null) matched.push({src:r,matchId:hit.id,matchName:hit.item_name});
+      else unmatched.push(r);
+    }
+    setImportMatched(matched);setImportUnmatched(unmatched);
+  }
+  async function onPickImportFile(file:File){
+    setImportCsvName(file.name);
+    const text=await file.text();
+    const{headers,rows}=parseCsvText(text);
+    const H=headers.map(normalizeHeader);
+    const idx=(name:string)=>H.indexOf(name);
+    const parsed:ImportRow[]=rows.map((r,k)=>({
+      rowNum:k+2,
+      cost_code:idx("cost_code")>=0?(r[idx("cost_code")]||"").trim():"",
+      item_name:idx("item_name")>=0?(r[idx("item_name")]||"").trim():"",
+      rate:idx("rate")>=0?toNum(r[idx("rate")]||""):null,
+      currency:(idx("currency")>=0?(r[idx("currency")]||"").trim():"JMD")||"JMD",
+      unit:idx("unit")>=0?(r[idx("unit")]||"").trim()||undefined:undefined,
+      category:idx("category")>=0?(r[idx("category")]||"").trim()||undefined:undefined,
+      item_type:idx("item_type")>=0?(r[idx("item_type")]||"").trim()||undefined:idx("type")>=0?(r[idx("type")]||"").trim()||undefined:undefined,
+    })).filter(r=>r.cost_code||r.item_name);
+    setImportRows(parsed);computeImportMatches(parsed);
+  }
+  async function applyImport(){
+    if(importMatched.length===0) return;
+    setBusy(true);
+    try{
+      const{data:batch,error:bErr}=await supabase.from("rate_update_batches").insert({title:importTitle||"CSV import",reason:importReason||null}).select("id").single();
+      if(bErr){alert(bErr.message);return;}
+      const batchId=batch.id as string;
+      const payload=importMatched.map(m=>({cost_item_id:m.matchId,rate:m.src.rate,currency:(m.src.currency||"JMD").toUpperCase(),effective_date:importEffectiveDate,source:"import",batch_id:batchId,note:importReason||`CSV: ${importCsvName||"import"}`}));
+      const{error:rErr}=await supabase.from("cost_item_rates").insert(payload);
+      if(rErr){alert(rErr.message);return;}
+      setLastBulkBatches(prev=>[batchId,...prev].slice(0,10));
+      setImportOpen(false);
+      await reload();
+    }finally{setBusy(false);}
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-[#080b10]">
+
+      {/* Header */}
+      <div className="border-b border-white/[0.06] bg-[#0d1117]">
+        <div className="px-6 py-5 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-slate-100 tracking-tight">Rate Library</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {total} items &nbsp;·&nbsp; {priced} priced &nbsp;·&nbsp;
+              <span className={coverage>=80?"text-green-400":coverage>=50?"text-amber-400":"text-red-400"}>
+                {coverage}% coverage
+              </span>
+              &nbsp;·&nbsp;
+              {ITEM_TYPES.map(t=>(
+                <span key={t} className="mr-2 text-slate-600">
+                  {t}: <span className="text-slate-400">{typeCounts[t]||0}</span>
+                </span>
+              ))}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={openAdd} disabled={busy}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition shadow-sm disabled:opacity-50">
+              <Plus size={13}/> Add Rate
+            </button>
+            <div className="relative" data-export-menu>
+              <button onClick={()=>setExportOpen(v=>!v)} disabled={busy||loading||filteredItems.length===0}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] text-slate-300 text-xs font-medium border border-white/[0.08] transition disabled:opacity-40">
+                <Download size={12}/> Export <ChevronDown size={11} className="opacity-60"/>
+              </button>
+              {exportOpen&&(
+                <div className="absolute right-0 mt-1.5 w-[240px] rounded-xl border border-white/[0.08] bg-[#0d1117] shadow-2xl overflow-hidden z-50">
+                  <div className="px-3 py-2 text-[10px] text-slate-600 border-b border-white/[0.06] uppercase tracking-wider">Export Options</div>
+                  {[
+                    {label:"Import CSV (preview)",action:()=>{setExportOpen(false);setImportOpen(true);setImportTitle("CSV import");setImportReason("");setImportCsvName("");setImportRows([]);setImportMatched([]);setImportUnmatched([]);setTimeout(()=>fileInputRef.current?.click(),0);}},
+                    {label:"Download Template",action:()=>{downloadTemplateCurrentView();setExportOpen(false);}},
+                    {label:"Export Current View",action:()=>{exportCurrentViewCsv();setExportOpen(false);}},
+                    {label:"Materials only",action:()=>{exportByTypeCsv("Material","MaterialsOnly");setExportOpen(false);}},
+                    {label:"Labor only",action:()=>{exportByTypeCsv("Labor","LaborOnly");setExportOpen(false);}},
+                    {label:"Equipment only",action:()=>{exportByTypeCsv("Equipment","EquipmentOnly");setExportOpen(false);}},
+                    {label:"Subcontract only",action:()=>{exportByTypeCsv("Subcontract","SubcontractOnly");setExportOpen(false);}},
+                  ].map(({label,action})=>(
+                    <button key={label} type="button" onClick={action}
+                      className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-white/[0.05] transition">{label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={()=>{setBulkTitle("Bulk rate update");setBulkReason("");setBulkValue("");setBulkOpen(true);}} disabled={busy}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] text-slate-300 text-xs font-medium border border-white/[0.08] transition disabled:opacity-40">
+              <Zap size={12}/> Bulk Update
+            </button>
+            <button onClick={undoLastBulk} disabled={busy||lastBulkBatches.length===0}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] text-slate-400 text-xs font-medium border border-white/[0.08] transition disabled:opacity-30"
+              title={lastBulkBatches.length?`Last: ${lastBulkBatches[0]}`:"No bulk batch yet"}>
+              <RotateCcw size={12}/> Undo Bulk
+            </button>
+          </div>
+        </div>
+        {/* Coverage bar */}
+        <div className="px-6 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-1 bg-white/[0.04] rounded-full overflow-hidden">
+              <div className="h-1 rounded-full transition-all duration-700"
+                style={{width:`${coverage}%`,background:coverage>=80?"linear-gradient(90deg,#22c55e,#16a34a)":coverage>=50?"linear-gradient(90deg,#f59e0b,#d97706)":"linear-gradient(90deg,#ef4444,#dc2626)"}}/>
+            </div>
+            <span className="text-[10px] text-slate-600 font-medium">{priced}/{total} priced</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-6 py-4 space-y-3">
+        {/* Filters row */}
+        <div className="flex flex-wrap items-center gap-3">
+          <CategoryCombobox value={categoryFilter} options={categoryOptions} onChange={setCategoryFilter}/>
+          <div className="relative flex-1 min-w-52 max-w-sm">
+            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+            <input value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="Search item, category, code, rate…"
+              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
+          </div>
+          <button onClick={()=>companyId&&reload()}
+            className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-slate-500 hover:text-slate-300 transition">
+            <RefreshCw size={13} className={loading?"animate-spin":""}/>
+          </button>
+          <span className="text-xs text-slate-600 ml-auto">{filteredItems.length} item{filteredItems.length===1?"":"s"}</span>
+        </div>
+
+        {/* Type pills */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-slate-600 mr-1">Type</span>
+          <button onClick={()=>setAllTypes(true)}
+            className="px-2.5 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.07] text-xs text-slate-500 transition">All</button>
+          <button onClick={()=>setAllTypes(false)}
+            className="px-2.5 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.07] text-xs text-slate-500 transition">None</button>
+          {ITEM_TYPES.map(t=>{
+            const on=!!typeFilter[t];
+            const s=TYPE_STYLE[t]||TYPE_STYLE.Other;
+            return(
+              <button key={t} onClick={()=>toggleType(t)} onDoubleClick={()=>setOnlyType(t)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold border transition ${on?s.pill:"bg-white/[0.03] text-slate-600 border-white/[0.06] opacity-60 hover:opacity-100"}`}
+                title="Click toggle · Double-click isolate">
+                {s.icon}{t}
+                <span className="opacity-60">({typeCounts[t]||0})</span>
+              </button>
+            );
+          })}
+          <span className="text-[10px] text-slate-700 ml-auto">{selectedTypeCount} selected</span>
+        </div>
+
+        {/* Table */}
+        <div className="rounded-xl border border-white/[0.07] overflow-hidden bg-[#0d1117]">
+          {/* Header */}
+          <div className="grid text-[10px] font-semibold text-slate-600 uppercase tracking-wider px-4 py-2.5 border-b border-white/[0.05] bg-white/[0.02]"
+            style={{gridTemplateColumns:"2fr 1.2fr 0.7fr 1fr 1fr 0.7fr 1fr 0.9fr 96px"}}>
+            <span>Item</span><span>Description</span><span>Code</span>
+            <span>Category</span><span>Type</span><span>Unit</span>
+            <span>Rate (JMD)</span><span>Updated</span><span></span>
+          </div>
+
+          {loading?(
+            <div className="flex items-center justify-center py-16 text-slate-600 text-sm gap-2">
+              <RefreshCw size={14} className="animate-spin"/> Loading rates…
+            </div>
+          ):filteredItems.length===0?(
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <Package size={20} className="text-slate-700"/>
+              <span className="text-slate-500 text-sm">No items match your filters</span>
+              {!search&&categoryFilter==="__ALL__"&&(
+                <button onClick={openAdd} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition mt-1">
+                  <Plus size={12}/> Add First Rate
+                </button>
+              )}
+            </div>
+          ):filteredItems.map((item,idx)=>{
+            const calcJson=(item as any).calc_engine_json;
+            let formulaBadge:React.ReactNode=null;
+            if(calcJson){
+              try{
+                const p=typeof calcJson==="string"?JSON.parse(calcJson):calcJson;
+                if(p.vars?.length>0){
+                  const keys=p.vars.map((v:any)=>v.key);
+                  if(keys.includes("count")) formulaBadge=<span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 border border-orange-500/20 font-semibold">Count</span>;
+                  else if(keys.includes("area")) formulaBadge=<span className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 border border-green-500/20 font-semibold">Area</span>;
+                  else if(keys.includes("length")&&keys.includes("width")) formulaBadge=<span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 border border-purple-500/20 font-semibold">Volume</span>;
+                  else if(keys.includes("length")) formulaBadge=<span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/20 font-semibold">Length</span>;
+                }
+              }catch{}
+            }
+            const ts=TYPE_STYLE[item.item_type||"Other"]||TYPE_STYLE.Other;
+            return(
+              <div key={item.id}
+                className={`grid items-center px-4 py-3 gap-2 border-b border-white/[0.04] hover:bg-white/[0.02] transition group ${idx===filteredItems.length-1?"border-b-0":""}`}
+                style={{gridTemplateColumns:"2fr 1.2fr 0.7fr 1fr 1fr 0.7fr 1fr 0.9fr 96px"}}>
+
+                {/* Item */}
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-200 truncate">{item.item_name}</div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    {formulaBadge||<span className="text-[9px] text-slate-700">No formula</span>}
+                    {item.variant&&<span className="text-[9px] text-slate-600 truncate">{item.variant}</span>}
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div className="min-w-0">
+                  {editingDescId===item.id?(
+                    <input autoFocus value={editingDescValue} onChange={e=>setEditingDescValue(e.target.value)}
+                      onBlur={()=>setEditingDescId(null)}
+                      onKeyDown={async e=>{if(e.key==="Escape")return setEditingDescId(null);if(e.key==="Enter"){await saveDescription(item.id,editingDescValue);setEditingDescId(null);}}}
+                      className="w-full bg-white/[0.06] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-200 outline-none"/>
+                  ):(
+                    <button type="button" disabled={busy}
+                      onClick={()=>{setEditingDescId(item.id);setEditingDescValue(item.description||"");}}
+                      className="text-left text-xs text-slate-500 hover:text-slate-300 truncate w-full transition disabled:opacity-50"
+                      title={item.description||"Click to add description"}>
+                      {item.description||<span className="text-slate-700 italic">—</span>}
+                    </button>
+                  )}
+                </div>
+
+                {/* Cost Code */}
+                <div>
+                  {editingCodeId===item.id?(
+                    <input autoFocus value={editingCodeValue} onChange={e=>setEditingCodeValue(e.target.value)}
+                      onBlur={()=>setEditingCodeId(null)}
+                      onKeyDown={async e=>{if(e.key==="Escape")return setEditingCodeId(null);if(e.key==="Enter"){await saveCostCode(item.id,editingCodeValue.trim());setEditingCodeId(null);}}}
+                      className="w-full bg-white/[0.06] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-200 outline-none font-mono"/>
+                  ):(
+                    <button type="button" disabled={busy}
+                      onClick={()=>{setEditingCodeId(item.id);setEditingCodeValue(item.cost_code||"");}}
+                      className="text-xs text-slate-500 hover:text-slate-300 font-mono transition disabled:opacity-50">
+                      {item.cost_code||<span className="text-slate-700 italic">—</span>}
+                    </button>
+                  )}
+                </div>
+
+                {/* Category */}
+                <div>
+                  {editingCatId===item.id?(
+                    <select autoFocus value={editingCatValue} onChange={e=>setEditingCatValue(e.target.value)}
+                      onBlur={()=>setEditingCatId(null)}
+                      onKeyDown={async e=>{if(e.key==="Escape")setEditingCatId(null);if(e.key==="Enter"){await saveCategory(item.id,(editingCatValue||"Uncategorized").trim());setEditingCatId(null);}}}
+                      className="bg-[#0b1220] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-200 outline-none w-full">
+                      {categoryOptions.map(c=><option key={c} value={c}>{c}</option>)}
+                    </select>
+                  ):(
+                    <button type="button" disabled={busy}
+                      onClick={()=>{setEditingCatId(item.id);setEditingCatValue(normCategory(item.category));}}
+                      className="text-xs text-slate-400 hover:text-slate-200 transition truncate disabled:opacity-50">
+                      {normCategory(item.category)}
+                    </button>
+                  )}
+                </div>
+
+                {/* Type */}
+                <div>
+                  {editingTypeId===item.id?(
+                    <select autoFocus value={editingTypeValue} onChange={e=>setEditingTypeValue(e.target.value)}
+                      onBlur={()=>setEditingTypeId(null)}
+                      onKeyDown={async e=>{if(e.key==="Escape")setEditingTypeId(null);if(e.key==="Enter"){await saveItemType(item.id,editingTypeValue||"Other");setEditingTypeId(null);}}}
+                      className="bg-[#0b1220] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-200 outline-none">
+                      {ITEM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                  ):(
+                    <button type="button" disabled={busy}
+                      onClick={()=>{setEditingTypeId(item.id);setEditingTypeValue(item.item_type||"Material");}}
+                      className={`text-[10px] font-bold px-2 py-1 rounded-md border transition ${ts.pill}`}>
+                      {item.item_type||"—"}
+                    </button>
+                  )}
+                </div>
+
+                {/* Unit */}
+                <div>
+                  <span className="text-xs text-slate-400 bg-white/[0.04] border border-white/[0.07] rounded-md px-2 py-0.5">{item.unit||"—"}</span>
+                </div>
+
+                {/* Rate */}
+                <div>
+                  {editingId===item.id?(
+                    <input autoFocus value={editingRate} onChange={e=>setEditingRate(e.target.value)} type="number"
+                      onBlur={()=>setEditingId(null)}
+                      onKeyDown={async e=>{
+                        if(e.key==="Escape")return setEditingId(null);
+                        if(e.key==="Enter"){const n=Number(editingRate);if(isFinite(n)&&n>0){await saveRate(item.id,n);}setEditingId(null);}
+                      }}
+                      className="bg-white/[0.06] border border-blue-500/40 rounded-md px-2 py-1 text-sm text-green-400 font-bold w-32 outline-none"/>
+                  ):(
+                    <button type="button" disabled={busy}
+                      onClick={()=>{setEditingId(item.id);setEditingRate(item.current_rate==null?"":String(item.current_rate));}}
+                      className="text-sm font-bold text-green-400 hover:text-green-300 transition disabled:opacity-50">
+                      {item.current_rate!=null?formatMoney(item.current_rate):<span className="text-slate-700 text-xs font-normal italic">Set rate</span>}
+                    </button>
+                  )}
+                </div>
+
+                {/* Updated */}
+                <div className="text-[11px] text-slate-700">{formatDate(item.updated_at)}</div>
+
+                {/* Actions */}
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                  <button type="button" onClick={()=>openEdit(item)} disabled={busy}
+                    className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-600 hover:text-blue-400 transition" title="Edit">
+                    <Edit2 size={13}/>
+                  </button>
+                  <button type="button" disabled={busy}
+                    onClick={async()=>{
+                      if(!confirm("Delete this item?")) return;
+                      setBusy(true);
+                      try{
+                        const{error}=await supabase.from("cost_items").delete().eq("id",item.id);
+                        if(error){console.error(error);return;}
+                        setItems(prev=>prev.filter(r=>r.id!==item.id));
+                      }finally{setBusy(false);}
+                    }}
+                    className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition" title="Delete">
+                    <Trash2 size={13}/>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {!loading&&filteredItems.length>0&&(
+          <div className="text-xs text-slate-700 text-right pr-1">
+            {filteredItems.length} of {total} items · Click any cell to edit inline
+          </div>
+        )}
+      </div>
+
+      {/* ── Add/Edit Modal ──────────────────────────────────────────────────── */}
+      {isModalOpen&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07]">
+              <div>
+                <div className="text-base font-bold text-slate-100">{mode==="add"?"Add Rate":"Edit Rate"}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{mode==="add"?"Add a new item to your rate library":"Update item details and rate"}</div>
+              </div>
+              <button type="button" onClick={closeModal} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">✕</button>
+            </div>
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              {mode==="add"&&companyId&&(
+                <div className="pb-4 border-b border-white/[0.07]">
+                  <SmartItemSelectorButton companyId={companyId}
+                    onSelect={sel=>{
+                      if(sel.itemName) setFName(sel.itemName);
+                      if(sel.category) setFCategory(sel.category);
+                      if(sel.unit) setFUnit(sel.unit);
+                      if(sel.variant) setFVariant(sel.variant);
+                      if(sel.currentRate!=null) setFRate(sel.currentRate.toString());
+                    }}
+                    className="w-full" label="🪄 Smart Selector (Guided Selection)"/>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Item Name</div>
+                  <input value={fName} onChange={e=>setFName(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-600"
+                    placeholder="e.g. Ready Mix Concrete"/>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Variant</div>
+                  <input value={fVariant} onChange={e=>setFVariant(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-600"
+                    placeholder='e.g. 6" Standard Grey'/>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Cost Code</div>
+                  <input value={fCode} onChange={e=>setFCode(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 font-mono outline-none focus:border-blue-500/50 transition"
+                    placeholder="e.g. MAT-CON-001"/>
+                  <label className="flex items-center gap-2 mt-1.5 cursor-pointer">
+                    <input type="checkbox" checked={autoCode} onChange={e=>setAutoCode(e.target.checked)} className="rounded"/>
+                    <span className="text-[11px] text-slate-600">Auto-generate from Type + Category</span>
+                  </label>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Category</div>
+                  <select value={fCategory} onChange={e=>setFCategory(e.target.value)}
+                    className="w-full bg-[#0b1220] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition">
+                    {STANDARD_CATEGORIES.map(cat=><option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Type</div>
+                  <select value={fType} onChange={e=>setFType(e.target.value)}
+                    className="w-full bg-[#0b1220] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition">
+                    {ITEM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Unit</div>
+                  <select value={fUnit} onChange={e=>setFUnit(e.target.value)}
+                    className="w-full bg-[#0b1220] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition">
+                    {unitOptions.map(u=><option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Rate (JMD)</div>
+                  <input value={fRate} onChange={e=>setFRate(e.target.value)} type="number" step="0.01"
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-green-400 font-bold outline-none focus:border-blue-500/50 transition"
+                    placeholder="e.g. 18500"/>
+                </div>
+              </div>
+
+              {/* Advanced: Calculator */}
+              <div className="rounded-xl border border-white/[0.07] overflow-hidden">
+                <button type="button" onClick={()=>setShowAdvanced(v=>!v)}
+                  className="w-full px-4 py-3 flex items-center justify-between bg-white/[0.02] hover:bg-white/[0.04] transition">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Advanced · Calculator Engine</span>
+                  <ChevronDown size={13} className={`text-slate-600 transition-transform ${showAdvanced?"rotate-180":""}`}/>
+                </button>
+                {showAdvanced&&(
+                  <div className="p-4 bg-[#080b10] space-y-3 border-t border-white/[0.06]">
+                    <div>
+                      <div className="text-xs text-slate-500 mb-1.5">Formula Type</div>
+                      <select value={formulaType} onChange={e=>{
+                        const t=e.target.value;setFormulaType(t);
+                        const def={length:"length",area:"area",volume:"length * width * height",count:"count"}[t]||"";
+                        setFormulaInput(def);previewFormula(t,def);
+                      }} className="w-full bg-[#0b1220] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50">
+                        <option value="">No formula</option>
+                        <option value="length">Length</option>
+                        <option value="area">Area</option>
+                        <option value="volume">Volume</option>
+                        <option value="count">Count</option>
+                      </select>
+                    </div>
+                    {formulaType&&(
+                      <div>
+                        <div className="text-xs text-slate-500 mb-1.5">Formula Expression</div>
+                        <input value={formulaInput} onChange={e=>{setFormulaInput(e.target.value);previewFormula(formulaType,e.target.value);}}
+                          placeholder="Enter formula…"
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 font-mono outline-none focus:border-blue-500/50"/>
+                        <div className="text-[11px] text-slate-600 mt-1">Variables: {formulaType==="volume"?"length, width, height":formulaType}</div>
+                      </div>
+                    )}
+                    {formulaPreview!=null&&(
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-slate-500">Preview qty:</span>
+                        <span className="text-green-400 font-bold">{formulaPreview.toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="text-xs text-slate-500 mb-1.5 font-medium">Description</div>
+                <input value={fDesc} onChange={e=>setFDesc(e.target.value)}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition"
+                  placeholder="Optional description"/>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/[0.07]">
+              <button type="button" onClick={closeModal} disabled={busy}
+                className="px-4 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-sm text-slate-300 transition disabled:opacity-50">Cancel</button>
+              <button type="button" disabled={busy||!fName.trim()} onClick={async()=>{
+                const name=fName.trim();if(!name) return;
+                const payload:any={
+                  item_name:name,description:fDesc.trim()||null,variant:fVariant.trim()||null,
+                  cost_code:fCode.trim()||null,category:(fCategory||"Uncategorized").trim(),
+                  item_type:(fType||"Other").trim(),unit:(fUnit||"each").trim(),
+                  updated_at:new Date().toISOString(),
+                  calc_engine_json:formulaType&&formulaInput?buildCalcJson(formulaType,formulaInput):null,
+                };
+                setBusy(true);
+                try{
+                  if(mode==="add"){
+                    const{data:newItem,error:insertError}=await supabase.from("cost_items").insert(payload).select("id").single();
+                    if(insertError){console.error(insertError);return;}
+                    if(fRate.trim()){
+                      await supabase.from("cost_item_rates").insert({cost_item_id:(newItem as any).id,rate:Number(fRate),currency:"JMD",effective_date:new Date().toISOString().slice(0,10),source:"manual",note:null});
+                    }
+                  } else {
+                    if(!activeId) return;
+                    const{error:updateError}=await supabase.from("cost_items").update(payload).eq("id",activeId);
+                    if(updateError){console.error(updateError);return;}
+                    if(fRate.trim()){
+                      await supabase.from("cost_item_rates").insert({cost_item_id:activeId,rate:Number(fRate),currency:"JMD",effective_date:new Date().toISOString().slice(0,10),source:"manual",note:null});
+                    }
+                  }
+                  reload();closeModal();
+                }finally{setBusy(false);}
+              }}
+                className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition disabled:opacity-40">
+                {busy?"Saving…":mode==="add"?"Save Rate":"Update"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Update Modal ───────────────────────────────────────────────── */}
+      {bulkOpen&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07]">
+              <div>
+                <div className="text-base font-bold text-slate-100">Bulk Update Rates</div>
+                <div className="text-xs text-slate-500 mt-0.5">Will update <span className="text-amber-400 font-semibold">{bulkTargetCount}</span> items in current view</div>
+              </div>
+              <button type="button" onClick={()=>setBulkOpen(false)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <div className="text-xs text-slate-500 mb-1.5 font-medium">Batch Name</div>
+                <input value={bulkTitle} onChange={e=>setBulkTitle(e.target.value)}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"
+                  placeholder="e.g. Materials +8% March 2026"/>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 mb-1.5 font-medium">Reason (optional)</div>
+                <input value={bulkReason} onChange={e=>setBulkReason(e.target.value)}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"
+                  placeholder="e.g. Supplier price increase"/>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Mode</div>
+                  <select value={bulkMode} onChange={e=>setBulkMode(e.target.value as any)}
+                    className="w-full bg-[#0b1220] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50">
+                    <option value="percent">Percent (+/- %)</option>
+                    <option value="add">Add amount (+/-)</option>
+                    <option value="set">Set value</option>
+                  </select>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Value</div>
+                  <input value={bulkValue} onChange={e=>setBulkValue(e.target.value)} type="number" step="0.01"
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"
+                    placeholder={bulkMode==="percent"?"8":bulkMode==="add"?"250":"18500"}/>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-slate-500 mb-1.5 font-medium">Effective Date</div>
+                <input type="date" value={bulkEffectiveDate} onChange={e=>setBulkEffectiveDate(e.target.value)}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+              </div>
+              <div className="text-xs text-slate-600">Scope: current Category filter + selected Type toggles</div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/[0.07]">
+              <button type="button" onClick={()=>setBulkOpen(false)} disabled={busy}
+                className="px-4 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-sm text-slate-300 transition disabled:opacity-50">Cancel</button>
+              <button type="button" disabled={busy||!bulkValue.trim()||bulkTargetCount===0} onClick={applyBulk}
+                className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold transition disabled:opacity-40">
+                {busy?"Applying…":"Apply Bulk Update"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Import Modal ────────────────────────────────────────────────────── */}
+      {importOpen&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-4xl rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07]">
+              <div>
+                <div className="text-base font-bold text-slate-100">Import CSV</div>
+                <div className="text-xs text-slate-500 mt-0.5">Preview matches before applying · {importMatched.length} matched · {importUnmatched.length} unmatched</div>
+              </div>
+              <button type="button" onClick={()=>setImportOpen(false)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden"
+                onChange={e=>{const f=e.target.files?.[0];if(!f)return;onPickImportFile(f);e.currentTarget.value="";}}/>
+              <div className="flex flex-wrap gap-3 items-end">
+                <div className="flex-1 min-w-[220px]">
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Batch Title</div>
+                  <input value={importTitle} onChange={e=>setImportTitle(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"
+                    placeholder="e.g. Rapid True Value price update"/>
+                </div>
+                <div className="flex-1 min-w-[220px]">
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Reason</div>
+                  <input value={importReason} onChange={e=>setImportReason(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"
+                    placeholder="Optional note"/>
+                </div>
+                <div className="min-w-[160px]">
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Effective Date</div>
+                  <input type="date" value={importEffectiveDate} onChange={e=>setImportEffectiveDate(e.target.value)}
+                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+                </div>
+                <button type="button" onClick={()=>fileInputRef.current?.click()} disabled={busy}
+                  className="px-4 py-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.09] border border-white/[0.08] text-sm text-slate-300 transition flex items-center gap-1.5">
+                  <Upload size={13}/> Choose CSV
+                </button>
+              </div>
+              {importCsvName&&<div className="text-xs text-slate-600">File: <span className="text-slate-400">{importCsvName}</span> · {importRows.length} rows parsed</div>}
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  {title:`Matched — will update (${importMatched.length})`,color:"text-green-400",rows:importMatched.map(m=>({row:m.src.rowNum,code:m.src.cost_code||"—",name:m.src.item_name||"—",match:m.matchName,rate:m.src.rate,cur:m.src.currency})),cols:["Row","Code","CSV Item","Match","Rate","Cur"]},
+                  {title:`Unmatched — not applied (${importUnmatched.length})`,color:"text-slate-500",rows:importUnmatched.map(r=>({row:r.rowNum,code:r.cost_code||"—",name:r.item_name||"—",match:"",rate:r.rate,cur:""})),cols:["Row","Code","Item","","Rate",""]},
+                ].map(({title,color,rows,cols})=>(
+                  <div key={title} className="rounded-xl border border-white/[0.07] overflow-hidden">
+                    <div className={`px-3 py-2 text-xs font-semibold ${color} border-b border-white/[0.06] bg-white/[0.02]`}>{title}</div>
+                    <div className="max-h-56 overflow-auto">
+                      <table className="w-full text-xs">
+                        <thead><tr className="border-b border-white/[0.05]">{cols.map((c,i)=><th key={i} className="py-2 px-3 text-left text-slate-600 font-medium">{c}</th>)}</tr></thead>
+                        <tbody>
+                          {(rows as any[]).slice(0,100).map((r:any)=>(
+                            <tr key={r.row} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
+                              <td className="py-1.5 px-3 text-slate-700">{r.row}</td>
+                              <td className="py-1.5 px-3 text-slate-500 font-mono">{r.code}</td>
+                              <td className="py-1.5 px-3 text-slate-400">{r.name}</td>
+                              <td className="py-1.5 px-3 text-slate-500">{r.match}</td>
+                              <td className="py-1.5 px-3 text-green-400 font-semibold">{r.rate??""}</td>
+                              <td className="py-1.5 px-3 text-slate-600">{r.cur}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs text-slate-700">Columns: cost_code, item_name, rate, currency, unit, category, type/item_type · cost_code is best match; item_name is fallback</div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/[0.07]">
+              <button type="button" onClick={()=>setImportOpen(false)} disabled={busy}
+                className="px-4 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-sm text-slate-300 transition disabled:opacity-50">Cancel</button>
+              <button type="button" disabled={busy||importMatched.length===0} onClick={applyImport}
+                className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition disabled:opacity-40">
+                {busy?"Applying…":`Apply ${importMatched.length} Updates`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <AIPriceLookup/>
+    </div>
+  );
+}

@@ -1,255 +1,156 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿// src/pages/SettingsMasterCategoriesPage.tsx
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import {
+  PageHeader, Card, Badge, Btn, Input, Field,
+  Table, Th, Tr, Td, Empty, Modal, Alert, Textarea, cn
+} from "../components/ui";
+import { Plus, Search, Tag, Edit2, Trash2, RefreshCw, ToggleLeft, ToggleRight } from "lucide-react";
 
-type MasterCategoryRow = {
+type MasterCategory = {
   id: string;
-  name: string | null;
-  is_active: boolean | null;
+  name: string;
   scope_of_work: string | null;
+  is_active: boolean;
+  sort_order: number | null;
 };
 
-type RowDraft = {
-  name: string;
-  is_active: boolean;
-  scope_of_work: string;
-  dirty: boolean;
-  saving: boolean;
-  error: string | null;
-};
+const EMPTY_FORM = { name: "", scope_of_work: "", sort_order: "" };
 
 export default function SettingsMasterCategoriesPage() {
+  const nav = useNavigate();
+  const [cats, setCats] = useState<MasterCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [editCat, setEditCat] = useState<MasterCategory | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [rows, setRows] = useState<MasterCategoryRow[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
-  const [savingAll, setSavingAll] = useState(false);
+  useEffect(() => { loadCats(); }, []);
 
-  async function load() {
+  async function loadCats() {
     setLoading(true);
-    setLoadError(null);
-
     try {
-      const { data, error } = await supabase
+      const { data, error: e } = await supabase
         .from("master_categories")
-        .select("id, name, is_active, scope_of_work")
+        .select("id, name, scope_of_work, is_active, sort_order")
         .order("name", { ascending: true });
-
-      if (error) throw error;
-
-      const safe = (data ?? []) as MasterCategoryRow[];
-      setRows(safe);
-
-      // initialize drafts (keep existing dirty edits if already present)
-      setDrafts((prev) => {
-        const next: Record<string, RowDraft> = { ...prev };
-        for (const r of safe) {
-          if (!next[r.id]) {
-            next[r.id] = {
-              name: (r.name ?? "").toString(),
-              is_active: !!r.is_active,
-              scope_of_work: (r.scope_of_work ?? "").toString(),
-              dirty: false,
-              saving: false,
-              error: null,
-            };
-          }
-        }
-        return next;
-      });
-    } catch (e: unknown) {
-      console.error("Failed to load master_categories:", e);
-      setLoadError(e instanceof Error ? e.message : "Failed to load categories");
-    } finally {
-      setLoading(false);
-    }
+      if (e) throw e;
+      setCats(data || []);
+    } catch (e: any) { setError(e.message); }
+    finally { setLoading(false); }
   }
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  const dirtyIds = useMemo(
-    () => Object.entries(drafts).filter(([, d]) => d.dirty).map(([id]) => id),
-    [drafts]
-  );
-
-  function updateDraft(id: string, patch: Partial<RowDraft>) {
-    setDrafts((prev) => {
-      const cur = prev[id];
-      if (!cur) return prev;
-      const nextRow: RowDraft = { ...cur, ...patch, dirty: true, error: null };
-      return { ...prev, [id]: nextRow };
-    });
-  }
-
-  async function saveRow(id: string) {
-    const d = drafts[id];
-    if (!d) return;
-
-    setDrafts((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], saving: true, error: null },
-    }));
-
+  async function saveCat() {
+    setSaving(true); setError(null);
     try {
       const payload = {
-        name: d.name.trim(),
-        is_active: d.is_active,
-        scope_of_work: d.scope_of_work.trim(),
+        name: form.name.trim(),
+        scope_of_work: form.scope_of_work.trim() || null,
+        sort_order: form.sort_order ? parseInt(form.sort_order) : null,
+        is_active: true,
       };
-
-      const { error } = await supabase
-        .from("master_categories")
-        .update(payload)
-        .eq("id", id);
-
-      if (error) throw error;
-
-      // mark clean + refresh local rows view
-      setRows((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, ...payload } : r))
-      );
-      setDrafts((prev) => ({
-        ...prev,
-        [id]: { ...prev[id], saving: false, dirty: false, error: null },
-      }));
-    } catch (e: unknown) {
-      console.error("Save row failed:", e);
-      setDrafts((prev) => ({
-        ...prev,
-        [id]: {
-          ...prev[id],
-          saving: false,
-          error: e instanceof Error ? e.message : "Save failed",
-        },
-      }));
-    }
-  }
-
-  async function saveAll() {
-    if (dirtyIds.length === 0) return;
-
-    setSavingAll(true);
-    try {
-      // Save sequentially (simple + predictable)
-      for (const id of dirtyIds) {
-        // eslint-disable-next-line no-await-in-loop
-        await saveRow(id);
+      if (editCat) {
+        const { error: e } = await supabase.from("master_categories").update(payload).eq("id", editCat.id);
+        if (e) throw e;
+      } else {
+        const { error: e } = await supabase.from("master_categories").insert(payload);
+        if (e) throw e;
       }
-    } finally {
-      setSavingAll(false);
-    }
+      await loadCats(); closeModal();
+    } catch (e: any) { setError(e.message); }
+    finally { setSaving(false); }
   }
+
+  async function toggleActive(cat: MasterCategory) {
+    await supabase.from("master_categories").update({ is_active: !cat.is_active }).eq("id", cat.id);
+    setCats(prev => prev.map(c => c.id === cat.id ? { ...c, is_active: !c.is_active } : c));
+  }
+
+  async function deleteCat(id: string) {
+    try {
+      const { error: e } = await supabase.from("master_categories").delete().eq("id", id);
+      if (e) throw e;
+      setCats(prev => prev.filter(c => c.id !== id));
+    } catch (e: any) { setError(e.message); }
+  }
+
+  function openEdit(cat: MasterCategory) {
+    setEditCat(cat);
+    setForm({ name: cat.name, scope_of_work: cat.scope_of_work || "", sort_order: cat.sort_order?.toString() || "" });
+    setShowNew(true);
+  }
+
+  function closeModal() { setShowNew(false); setEditCat(null); setForm(EMPTY_FORM); setError(null); }
+
+  const filtered = cats.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || (c.scope_of_work || "").toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Master Categories</h1>
-          <div className="text-sm text-slate-500">
-            Edit category scopes here so nobody has to touch Supabase.
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+      <PageHeader
+        title="Master Categories"
+        subtitle={`${cats.length} categories · ${cats.filter(c => c.is_active).length} active`}
+        back={() => nav("/settings")}
+        actions={
+          <>
+            <Btn variant="ghost" size="sm" icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>} onClick={loadCats}/>
+            <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => { setEditCat(null); setForm(EMPTY_FORM); setShowNew(true); }}>
+              Add Category
+            </Btn>
+          </>
+        }
+      />
+      <div className="p-6 space-y-4">
+        <div className="relative max-w-sm">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700"/>
+          <Input className="pl-8" placeholder="Search categories..." value={search} onChange={e => setSearch(e.target.value)}/>
+        </div>
+        <Card padding={false}>
+          <Table>
+            <thead><tr><Th>Category Name</Th><Th>Scope of Work</Th><Th>Status</Th><Th>Actions</Th></tr></thead>
+            <tbody>
+              {loading ? (
+                <tr><Td colSpan={4} className="text-center py-8 text-slate-600"><RefreshCw size={14} className="animate-spin inline mr-2"/>Loading...</Td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><Td colSpan={4}><Empty icon={<Tag size={18}/>} title="No categories found" action={<Btn variant="primary" size="sm" icon={<Plus size={12}/>} onClick={() => setShowNew(true)}>Add Category</Btn>}/></Td></tr>
+              ) : filtered.map(c => (
+                <Tr key={c.id}>
+                  <Td><span className="font-semibold text-slate-200">{c.name}</span></Td>
+                  <Td muted className="max-w-xs truncate">{c.scope_of_work || "—"}</Td>
+                  <Td>
+                    <button onClick={() => toggleActive(c)} className="flex items-center gap-1.5 text-xs transition-colors"
+                      style={{ color: c.is_active ? "#34d399" : "#64748b" }}>
+                      {c.is_active ? <ToggleRight size={16}/> : <ToggleLeft size={16}/>}
+                      {c.is_active ? "Active" : "Inactive"}
+                    </button>
+                  </Td>
+                  <Td>
+                    <div className="flex gap-1">
+                      <button onClick={() => openEdit(c)} className="p-1.5 rounded hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors"><Edit2 size={12}/></button>
+                      <button onClick={() => deleteCat(c.id)} className="p-1.5 rounded hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={12}/></button>
+                    </div>
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
+      </div>
+      <Modal open={showNew} onClose={closeModal} title={editCat ? "Edit Category" : "Add Category"}>
+        <div className="space-y-4">
+          {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
+          <Field label="Category Name"><Input placeholder="e.g. Concrete Works" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus/></Field>
+          <Field label="Scope of Work (optional)"><Textarea rows={2} placeholder="Brief description of this category..." value={form.scope_of_work} onChange={e => setForm(f => ({ ...f, scope_of_work: e.target.value }))}/></Field>
+          <Field label="Sort Order"><Input type="number" placeholder="0" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))}/></Field>
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+            <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
+            <Btn variant="primary" onClick={saveCat} disabled={!form.name.trim() || saving}>{saving ? "Saving..." : editCat ? "Save" : "Add Category"}</Btn>
           </div>
         </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={load}
-            className="px-3 py-2 rounded bg-slate-800 text-white"
-            disabled={loading || savingAll}
-          >
-            Refresh
-          </button>
-
-          <button
-            onClick={saveAll}
-            className="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
-            disabled={dirtyIds.length === 0 || savingAll || loading}
-          >
-            {savingAll ? "Saving…" : `Save All (${dirtyIds.length})`}
-          </button>
-        </div>
-      </div>
-
-      {/* Load state */}
-      {loading ? (
-        <div className="text-sm text-slate-400">Loading categories…</div>
-      ) : loadError ? (
-        <div className="text-sm text-red-400">Error: {loadError}</div>
-      ) : null}
-
-      {/* Table */}
-      {!loading && !loadError ? (
-        <div className="space-y-3">
-          {rows.length === 0 ? (
-            <div className="text-sm text-slate-400">No categories found.</div>
-          ) : (
-            rows.map((r) => {
-              const d = drafts[r.id];
-              if (!d) return null;
-
-              return (
-                <div
-                  key={r.id}
-                  className="p-4 border border-slate-700 rounded space-y-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="text-sm text-slate-400">Category</div>
-                      <input
-                        value={d.name}
-                        onChange={(e) => updateDraft(r.id, { name: e.target.value })}
-                        className="px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white w-[320px]"
-                        placeholder="Category name"
-                      />
-                      <label className="flex items-center gap-2 text-sm text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={d.is_active}
-                          onChange={(e) =>
-                            updateDraft(r.id, { is_active: e.target.checked })
-                          }
-                        />
-                        Active
-                      </label>
-                      {d.dirty ? (
-                        <span className="text-xs text-yellow-400">Unsaved</span>
-                      ) : (
-                        <span className="text-xs text-slate-500">Saved</span>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => saveRow(r.id)}
-                      disabled={!d.dirty || d.saving}
-                      className="px-3 py-2 rounded bg-slate-800 text-white disabled:opacity-50"
-                    >
-                      {d.saving ? "Saving…" : "Save"}
-                    </button>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="text-xs text-slate-400">Scope of Work</div>
-                    <textarea
-                      value={d.scope_of_work}
-                      onChange={(e) =>
-                        updateDraft(r.id, { scope_of_work: e.target.value })
-                      }
-                      className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700 text-white"
-                      rows={4}
-                      placeholder="Type the default scope that should auto-fill on BOQ sections…"
-                    />
-                    {d.error ? (
-                      <div className="text-xs text-red-400">{d.error}</div>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      ) : null}
+      </Modal>
     </div>
   );
 }
