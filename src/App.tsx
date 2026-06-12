@@ -127,7 +127,7 @@ export default function App() {
             <Route path="/client/projects/:projectId" element={<RequireAuth><ClientProjectPage /></RequireAuth>} />
             <Route path="/worker/portal"              element={<RequireAuth><WorkerPortalPage /></RequireAuth>} />
             <Route path="/field-ops"                  element={<RequireAuth><FieldOpsPage /></RequireAuth>} />
-            <Route path="/field"                      element={<RequireAuth><FieldAppPage /></RequireAuth>} />
+            <Route path="/field"                      element={<Navigate to="/field-payments" replace />} />
 
             {/* Protected app shell */}
             <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
