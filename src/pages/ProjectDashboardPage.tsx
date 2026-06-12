@@ -58,7 +58,7 @@ export default function ProjectDashboardPage() {
     setLoading(true); setError(null);
     try {
       const { data:proj, error:pe } = await supabase.from("projects")
-        .select("id,name,status,client_id,budget,start_date,end_date,description,company_id")
+        .select("id,name,status,client_id,start_date,end_date,description,company_id")
         .eq("id", projectId!).maybeSingle();
       if (pe) throw pe;
       if (!proj) throw new Error("Project not found");
@@ -116,7 +116,7 @@ export default function ProjectDashboardPage() {
     </div>
   );
 
-  const budget = Number(project.budget||0);
+  const budget = 0; // budget column not in projects table
   const spent = stats.totalExpenses;
   const budgetPct = budget > 0 ? Math.min(100, (spent/budget)*100) : 0;
   const remaining = budget - spent;
