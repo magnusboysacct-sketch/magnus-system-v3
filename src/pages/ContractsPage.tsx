@@ -1,4 +1,7 @@
 ﻿// src/pages/ContractsPage.tsx — Full Contracts & Proposals Module
+// @ts-ignore
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -160,6 +163,29 @@ function ContractPDFPreview({ contract, schedule, company, onClose }: {
 }) {
   const totalScheduled = schedule.reduce((s, p) => s + Number(p.amount || 0), 0);
 
+  async function downloadPDF() {
+    const el = document.getElementById("contract-print-content");
+    if (!el) return;
+    try {
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      let heightLeft = pdfHeight;
+      let position = 0;
+      pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pdf.internal.pageSize.getHeight();
+      while (heightLeft > 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pdf.internal.pageSize.getHeight();
+      }
+      pdf.save(`${contract.contract_number}-${contract.contract_name.replace(/\s+/g,"-")}.pdf`);
+    } catch(e) { console.error("PDF error:", e); alert("PDF generation failed. Use Print instead."); }
+  }
+
   function printContract() {
     const w = window.open("", "_blank");
     if (!w) return;
@@ -197,9 +223,13 @@ function ContractPDFPreview({ contract, schedule, company, onClose }: {
           <span className="text-xs text-slate-600 font-mono">{contract.contract_number}</span>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={downloadPDF}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition">
+            <Download size={12}/> Download PDF
+          </button>
           <button onClick={printContract}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition">
-            <Printer size={12}/> Print / Save PDF
+            <Printer size={12}/> Print
           </button>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">
             <X size={15}/>
@@ -240,11 +270,6 @@ function ContractPDFPreview({ contract, schedule, company, onClose }: {
                   </div>
                 ))}
               </div>
-                {(company as any)?.tagline && (
-                  <div style={{marginTop:32,fontSize:13,color:"#6b7280",fontStyle:"italic",letterSpacing:1,textAlign:"center",borderTop:"1px solid #e5e7eb",paddingTop:20,width:"100%"}}>
-                    {(company as any).tagline}
-                  </div>
-                )}
             </div>
 
             <div style={{padding:"0 60px 60px"}}>
@@ -740,8 +765,24 @@ Adjust percentages based on the project type and value. Make sure they add up to
                 <p className="text-[11px] text-slate-600 font-mono">{viewingContract.contract_number}</p>
               </div>
               <div className="flex items-center gap-2">
+                <button onClick={() => {
+                    const msg = encodeURIComponent(`Hello ${viewingContract.client?.contact_name || viewingContract.client?.name || ""},\n\nPlease find your contract details below:\n\nContract: ${viewingContract.contract_name}\nContract No: ${viewingContract.contract_number}\nValue: ${fmtJMD(viewingContract.contract_amount)}\n\nPlease contact us to review and sign.\n\nMagnus Boys Construction`);
+                    window.open(`https://wa.me/?text=${msg}`, "_blank");
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition">
+                  <Send size={12}/> WhatsApp
+                </button>
+                <button onClick={() => {
+                    const subject = encodeURIComponent(`Contract: ${viewingContract.contract_name} - ${viewingContract.contract_number}`);
+                    const body = encodeURIComponent(`Dear ${viewingContract.client?.contact_name || viewingContract.client?.name || "Client"},\n\nPlease find your contract details below:\n\nContract Name: ${viewingContract.contract_name}\nContract No: ${viewingContract.contract_number}\nContract Value: ${fmtJMD(viewingContract.contract_amount)}\nStart Date: ${fmtDate(viewingContract.start_date)}\nCompletion Date: ${fmtDate(viewingContract.completion_date)}\n\nPlease contact us to review and sign.\n\nRegards,\nMagnus Boys Construction`);
+                    const email = viewingContract.client?.email || "";
+                    window.open(`mailto:${email}?subject=${subject}&body=${body}`, "_blank");
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold transition">
+                  <Send size={12}/> Email
+                </button>
                 <button onClick={() => setShowPDF(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition">
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-white text-xs font-bold transition">
                   <Eye size={12}/> Preview & Print
                 </button>
                 <button onClick={() => setViewingContract(null)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">
