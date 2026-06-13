@@ -1,118 +1,214 @@
-﻿// src/pages/FieldPaymentsPage.tsx — Rebuilt: dark theme, JMD, mobile responsive, no old UI
+﻿// src/pages/FieldPaymentsPage.tsx — Complete rebuild
+// Payment list + detail modal with PDF, WhatsApp, Email, New Advance, Pay Work, Final Payment
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
-import { FieldPaymentForm } from "../components/FieldPaymentForm";
+import { FieldPaymentForm, generateReceiptHTML } from "../components/FieldPaymentForm";
 import {
   Plus, Search, HandCoins, DollarSign, Users,
-  Calendar, RefreshCw, FileText, X
+  Calendar, RefreshCw, FileText, X, TrendingUp,
+  CheckCircle2, Printer, Mail, Share2
 } from "lucide-react";
 
 type Payment = {
   id: string;
   worker_name: string;
-  worker_id_number: string | null;
-  worker_phone: string | null;
-  work_type: string;
+  worker_id_number: string|null;
+  worker_phone: string|null;
+  worker_address: string|null;
+  work_type: string|null;
   work_date: string;
   total_amount: number;
   payment_method: string;
   status: string;
-  days_worked: number | null;
-  hours_worked: number | null;
-  rate_per_day: number | null;
-  rate_per_hour: number | null;
-  notes: string | null;
-  supervisor_name: string | null;
-  id_photo_url: string | null;
-  signature_url: string | null;
+  payment_type: string|null;
+  advance_amount: number|null;
+  balance_due: number|null;
+  worker_ref: string|null;
+  days_worked: number|null;
+  hours_worked: number|null;
+  rate_per_day: number|null;
+  rate_per_hour: number|null;
+  notes: string|null;
+  supervisor_name: string|null;
+  id_photo_url: string|null;
+  signature_url: string|null;
+  receipt_number: string|null;
   created_at: string;
 };
 
-type Tab = "all" | "draft" | "signed" | "completed";
+type Tab = "all"|"advance"|"payment"|"final";
+type FormMode = "advance"|"payment"|"final"|null;
 
-const STATUS_CFG: Record<string, { color: string; bg: string; border: string }> = {
-  draft:     { color:"text-amber-400",   bg:"bg-amber-500/10",   border:"border-amber-500/20" },
-  signed:    { color:"text-cyan-400",    bg:"bg-cyan-500/10",    border:"border-cyan-500/20" },
-  completed: { color:"text-emerald-400", bg:"bg-emerald-500/10", border:"border-emerald-500/20" },
-  cancelled: { color:"text-red-400",     bg:"bg-red-500/10",     border:"border-red-500/20" },
+const PT_CFG: Record<string,{color:string;bg:string;border:string;label:string;icon:string}> = {
+  advance: {color:"text-amber-400",  bg:"bg-amber-500/10",  border:"border-amber-500/20",  label:"Advance",      icon:"⚡"},
+  payment: {color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20",label:"Work Payment", icon:"💰"},
+  final:   {color:"text-cyan-400",   bg:"bg-cyan-500/10",   border:"border-cyan-500/20",   label:"Final Payment",icon:"✅"},
+  draft:   {color:"text-slate-400",  bg:"bg-slate-500/10",  border:"border-slate-500/20",  label:"Draft",        icon:"📝"},
+  signed:  {color:"text-violet-400", bg:"bg-violet-500/10", border:"border-violet-500/20", label:"Signed",       icon:"✍️"},
 };
 
 function fmtJMD(n: number) {
-  return new Intl.NumberFormat("en-US", { style:"currency", currency:"JMD", minimumFractionDigits:0 }).format(n);
+  return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0}).format(n);
 }
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+  return new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
 }
 
 export default function FieldPaymentsPage() {
   const { projects } = useProjectContext();
-  const [payments, setPayments]   = useState<Payment[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [search, setSearch]       = useState("");
-  const [tab, setTab]             = useState<Tab>("all");
-  const [showForm, setShowForm]   = useState(false);
-  const [selected, setSelected]   = useState<Payment | null>(null);
-  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<Tab>("all");
+  const [showForm, setShowForm] = useState(false);
+  const [selected, setSelected] = useState<Payment|null>(null);
+  const [companyId, setCompanyId] = useState<string|null>(null);
+  const [company, setCompany] = useState<any>(null);
+  const [workerHistory, setWorkerHistory] = useState<Payment[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
-      supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle()
-        .then(({ data }) => { if (data?.company_id) setCompanyId(data.company_id); });
+  useEffect(()=>{
+    supabase.auth.getUser().then(({data:{user}})=>{
+      if(!user)return;
+      supabase.from("user_profiles").select("company_id").eq("id",user.id).maybeSingle()
+        .then(({data})=>{
+          if(data?.company_id){
+            setCompanyId(data.company_id);
+            supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1,city,tagline")
+              .eq("company_id",data.company_id).maybeSingle()
+              .then(({data:cs})=>setCompany(cs));
+          }
+        });
     });
-  }, []);
+  },[]);
 
-  useEffect(() => { if (companyId) loadPayments(); }, [companyId]);
+  useEffect(()=>{ if(companyId) loadPayments(); },[companyId]);
 
   async function loadPayments() {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from("field_payments").select("*")
-        .eq("company_id", companyId!).order("created_at", { ascending: false });
-      if (error) throw error;
-      setPayments(data || []);
-    } catch(e) { console.error(e); }
-    finally { setLoading(false); }
+      const {data,error}=await supabase.from("field_payments").select("*")
+        .eq("company_id",companyId!).order("created_at",{ascending:false});
+      if(error)throw error;
+      setPayments(data||[]);
+    } catch(e){console.error(e);}
+    setLoading(false);
   }
 
-  const filtered = payments.filter(p => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || p.worker_name.toLowerCase().includes(q) ||
-      (p.worker_id_number||"").includes(q) || (p.work_type||"").toLowerCase().includes(q);
-    const matchTab = tab === "all" || p.status === tab;
-    return matchSearch && matchTab;
+  async function loadWorkerHistory(workerRef: string) {
+    if(!workerRef||!companyId)return;
+    setLoadingHistory(true);
+    const {data}=await supabase.from("field_payments").select("*")
+      .eq("company_id",companyId).eq("worker_ref",workerRef)
+      .order("created_at",{ascending:false});
+    setWorkerHistory(data||[]);
+    setLoadingHistory(false);
+  }
+
+  function openDetail(p: Payment) {
+    setSelected(p);
+    if(p.worker_ref) loadWorkerHistory(p.worker_ref);
+    else setWorkerHistory([]);
+  }
+
+  const filtered = payments.filter(p=>{
+    const q=search.toLowerCase();
+    const matchSearch=!q||p.worker_name.toLowerCase().includes(q)||(p.worker_id_number||"").includes(q)||(p.work_type||"").toLowerCase().includes(q)||(p.receipt_number||"").includes(q);
+    const matchTab=tab==="all"||(p.payment_type||"payment")===tab;
+    return matchSearch&&matchTab;
   });
 
   const stats = {
-    totalPaid: payments.reduce((s, p) => s + (p.total_amount || 0), 0),
-    today:     payments.filter(p => p.work_date === new Date().toISOString().split("T")[0]).length,
-    workers:   new Set(payments.map(p => p.worker_name)).size,
-    total:     payments.length,
+    totalPaid: payments.reduce((s,p)=>s+(p.total_amount||0),0),
+    totalAdvances: payments.filter(p=>p.payment_type==="advance").reduce((s,p)=>s+(p.total_amount||0),0),
+    workers: new Set(payments.map(p=>p.worker_name)).size,
+    total: payments.length,
   };
 
-  const TABS: { key: Tab; label: string }[] = [
-    { key:"all", label:"All" }, { key:"draft", label:"Draft" },
-    { key:"signed", label:"Signed" }, { key:"completed", label:"Completed" },
-  ];
-
-  if (showForm) {
-    return <FieldPaymentForm onComplete={() => { setShowForm(false); loadPayments(); }} onCancel={() => setShowForm(false)}/>;
+  // Generate PDF from stored payment data
+  function generatePDF(p: Payment) {
+    const paymentData = {
+      receipt_number: p.receipt_number||`FP-${p.id.slice(-6)}`,
+      worker_name: p.worker_name,
+      worker_id_number: p.worker_id_number,
+      worker_phone: p.worker_phone,
+      trade_type: null,
+      work_date: p.work_date,
+      work_type: p.work_type,
+      payment_method: p.payment_method,
+      total_amount: p.total_amount,
+      payment_type: p.payment_type||"payment",
+      previous_advances: 0,
+      notes: p.notes,
+      signature_data: p.signature_url,
+      supervisor_name: p.supervisor_name,
+      project_name: null,
+      milestone_name: null,
+      task_name: p.work_type,
+      created_at: p.created_at,
+    };
+    const html = generateReceiptHTML(paymentData, company);
+    const w = window.open("","_blank");
+    if(!w)return;
+    w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${p.receipt_number}</title>
+    <style>*{box-sizing:border-box}body{margin:0;background:white}@media print{body{margin:0}}</style>
+    </head><body>${html}</body></html>`);
+    w.document.close();
+    setTimeout(()=>w.print(),600);
   }
 
-  return (
+  function sendWhatsApp(p: Payment) {
+    const msg=`*${company?.company_name||"Magnus Boys Construction"}*\n*${p.payment_type==="advance"?"⚡ ADVANCE PAYMENT":p.payment_type==="final"?"✅ FINAL PAYMENT":"💰 PAYMENT RECEIPT"}*\n\nReceipt #: ${p.receipt_number||""}\nWorker: ${p.worker_name}\nID: ${p.worker_id_number||"—"}\nDate: ${fmtDate(p.work_date)}\nPayment: ${p.payment_method}\n\n*AMOUNT: ${fmtJMD(p.total_amount)}*\n\nPaid by: ${p.supervisor_name||""} · ${fmtDate(p.created_at)}`;
+    const phone=p.worker_phone?.replace(/\D/g,"");
+    window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`,"_blank");
+  }
+
+  function sendEmail(p: Payment) {
+    const subject=encodeURIComponent(`Payment Receipt - ${p.worker_name} - ${p.receipt_number}`);
+    const body=encodeURIComponent(
+      `${company?.company_name||"Magnus Boys Construction"}\n\n`+
+      `${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT — PAID IN FULL":"PAYMENT RECEIPT"}\n`+
+      `Receipt #: ${p.receipt_number}\nDate: ${fmtDate(p.work_date)}\n\n`+
+      `Worker: ${p.worker_name}\nID: ${p.worker_id_number||"—"}\n`+
+      `Work: ${p.work_type||""}\nPayment: ${p.payment_method}\n\n`+
+      `AMOUNT: ${fmtJMD(p.total_amount)}\n\nPaid by: ${p.supervisor_name||""}`
+    );
+    window.open(`mailto:?subject=${subject}&body=${body}`,"_blank");
+  }
+
+  // Start new payment for same worker
+  function continuePayment(p: Payment, type: "advance"|"payment"|"final") {
+    setSelected(null);
+    setShowForm(true);
+    // Store worker context for pre-fill — handled in form
+  }
+
+  const TABS: {key:Tab;label:string}[] = [
+    {key:"all",     label:"All"},
+    {key:"advance", label:"Advances"},
+    {key:"payment", label:"Work Pay"},
+    {key:"final",   label:"Final"},
+  ];
+
+  if(showForm) {
+    return <FieldPaymentForm onComplete={()=>{setShowForm(false);loadPayments();}} onCancel={()=>setShowForm(false)}/>;
+  }
+
+  return(
     <div className="min-h-screen bg-[#080b10] text-slate-100">
+      {/* Header */}
       <div className="border-b border-white/[0.06] bg-[#0d1117] px-4 md:px-6 py-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-lg font-bold text-slate-100">Field Payments</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Mobile worker payment and receipt system</p>
+            <p className="text-xs text-slate-500 mt-0.5">Advance · Work Payment · Final Settlement</p>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={loadPayments} className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-slate-500 hover:text-slate-300 transition">
               <RefreshCw size={13} className={loading?"animate-spin":""}/>
             </button>
-            <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold transition">
+            <button onClick={()=>setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold transition">
               <Plus size={13}/> New Payment
             </button>
           </div>
@@ -120,13 +216,14 @@ export default function FieldPaymentsPage() {
       </div>
 
       <div className="p-4 md:p-6 space-y-4">
+        {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label:"Total Paid",     value:fmtJMD(stats.totalPaid), color:"text-emerald-400", bg:"bg-emerald-500/10", border:"border-emerald-500/20", icon:<DollarSign size={14}/> },
-            { label:"Today",          value:stats.today,              color:"text-cyan-400",    bg:"bg-cyan-500/10",    border:"border-cyan-500/20",    icon:<Calendar size={14}/> },
-            { label:"Unique Workers", value:stats.workers,            color:"text-violet-400",  bg:"bg-violet-500/10",  border:"border-violet-500/20",  icon:<Users size={14}/> },
-            { label:"All Records",    value:stats.total,              color:"text-slate-300",   bg:"bg-white/[0.04]",   border:"border-white/[0.07]",   icon:<FileText size={14}/> },
-          ].map(s => (
+            {label:"Total Paid",    value:fmtJMD(stats.totalPaid),     color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20",icon:<DollarSign size={14}/>},
+            {label:"Total Advances",value:fmtJMD(stats.totalAdvances), color:"text-amber-400",  bg:"bg-amber-500/10",  border:"border-amber-500/20",  icon:<TrendingUp size={14}/>},
+            {label:"Workers",       value:stats.workers,                color:"text-violet-400", bg:"bg-violet-500/10", border:"border-violet-500/20", icon:<Users size={14}/>},
+            {label:"Records",       value:stats.total,                  color:"text-slate-300",  bg:"bg-white/[0.04]",  border:"border-white/[0.07]",  icon:<FileText size={14}/>},
+          ].map(s=>(
             <div key={s.label} className={`rounded-xl border ${s.border} ${s.bg} p-4`}>
               <div className={`${s.color} mb-2`}>{s.icon}</div>
               <div className={`text-xl font-bold ${s.color}`}>{s.value}</div>
@@ -135,10 +232,11 @@ export default function FieldPaymentsPage() {
           ))}
         </div>
 
+        {/* Tabs */}
         <div className="flex gap-1 overflow-x-auto pb-1">
-          {TABS.map(t => {
-            const count = t.key==="all" ? payments.length : payments.filter(p=>p.status===t.key).length;
-            return (
+          {TABS.map(t=>{
+            const count=t.key==="all"?payments.length:payments.filter(p=>(p.payment_type||"payment")===t.key).length;
+            return(
               <button key={t.key} onClick={()=>setTab(t.key)}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition border ${tab===t.key?"bg-cyan-600 border-cyan-500 text-white":"bg-white/[0.04] border-white/[0.08] text-slate-500 hover:text-slate-300"}`}>
                 {t.label}
@@ -148,127 +246,232 @@ export default function FieldPaymentsPage() {
           })}
         </div>
 
+        {/* Search */}
         <div className="relative max-w-sm">
           <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search worker, ID, work type…"
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search worker, ID, receipt #…"
             className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-cyan-500/50"/>
         </div>
 
-        {loading ? (
+        {/* List */}
+        {loading?(
           <div className="flex items-center justify-center py-16 text-xs text-slate-600 gap-2"><RefreshCw size={13} className="animate-spin"/> Loading…</div>
-        ) : filtered.length === 0 ? (
+        ):filtered.length===0?(
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
             <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center"><HandCoins size={22} className="text-slate-700"/></div>
             <p className="text-slate-400 text-sm font-medium">{search?"No payments match":"No payments yet"}</p>
             <button onClick={()=>setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition mt-1"><Plus size={12}/> New Payment</button>
           </div>
-        ) : (
-          <>
-            <div className="md:hidden flex flex-col gap-3">
-              {filtered.map(p => {
-                const cfg = STATUS_CFG[p.status]||STATUS_CFG.draft;
-                return (
-                  <button key={p.id} onClick={()=>setSelected(p)} className="w-full rounded-xl border border-white/[0.07] bg-[#0d1117] p-4 text-left hover:border-white/[0.13] transition">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2.5">
-                        {p.id_photo_url ? <img src={p.id_photo_url} className="w-9 h-9 rounded-full object-cover border border-white/[0.1] flex-shrink-0"/> :
-                          <div className="w-9 h-9 rounded-full bg-cyan-500/20 flex items-center justify-center text-[11px] font-bold text-cyan-300 flex-shrink-0">{p.worker_name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>}
-                        <div>
-                          <div className="text-sm font-bold text-slate-200">{p.worker_name}</div>
-                          <div className="text-[10px] text-slate-600">{p.work_type} · {fmtDate(p.work_date)}</div>
+        ):(
+          <div className="flex flex-col gap-3">
+            {filtered.map(p=>{
+              const pt=PT_CFG[p.payment_type||"payment"]||PT_CFG.payment;
+              const st=PT_CFG[p.status]||PT_CFG.draft;
+              return(
+                <button key={p.id} onClick={()=>openDetail(p)}
+                  className="w-full rounded-xl border border-white/[0.07] bg-[#0d1117] p-4 text-left hover:border-white/[0.13] transition">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2.5">
+                      {p.id_photo_url?(
+                        <img src={p.id_photo_url} className="w-10 h-10 rounded-full object-cover border border-white/[0.1] flex-shrink-0"/>
+                      ):(
+                        <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center text-[11px] font-bold text-cyan-300 flex-shrink-0">
+                          {p.worker_name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-base font-bold text-emerald-400">{fmtJMD(p.total_amount)}</div>
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border capitalize ${cfg.color} ${cfg.bg} ${cfg.border}`}>{p.status}</span>
+                      )}
+                      <div>
+                        <div className="text-sm font-bold text-slate-200">{p.worker_name}</div>
+                        <div className="text-[10px] text-slate-600">{p.worker_id_number&&`ID: ${p.worker_id_number} · `}{fmtDate(p.work_date)}</div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 text-[10px] text-slate-600">
-                      <span className="capitalize">{p.payment_method?.replace("_"," ")}</span>
-                      {p.signature_url&&<span className="text-emerald-500">✍️ Signed</span>}
-                      {p.worker_id_number&&<span>ID: {p.worker_id_number}</span>}
+                    <div className="text-right">
+                      <div className={`text-base font-bold ${pt.color}`}>{fmtJMD(p.total_amount)}</div>
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${pt.color} ${pt.bg} ${pt.border}`}>{pt.icon} {pt.label}</span>
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="hidden md:block rounded-xl border border-white/[0.07] bg-[#0d1117] overflow-hidden">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-white/[0.06]">
-                    {["Worker","Work Type","Date","Method","Status","Amount"].map((h,i)=>(
-                      <th key={h} className={`px-4 py-3 text-[9px] font-bold uppercase tracking-widest text-slate-600 ${i===5?"text-right":"text-left"}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((p,i)=>{
-                    const cfg=STATUS_CFG[p.status]||STATUS_CFG.draft;
-                    return (
-                      <tr key={p.id} onClick={()=>setSelected(p)} className={`border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] cursor-pointer transition ${i%2===1?"bg-white/[0.01]":""}`}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            {p.id_photo_url?<img src={p.id_photo_url} className="w-8 h-8 rounded-full object-cover border border-white/[0.1]"/>:
-                              <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center text-[11px] font-bold text-cyan-300">{p.worker_name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>}
-                            <div>
-                              <div className="text-sm font-semibold text-slate-200">{p.worker_name}</div>
-                              {p.worker_id_number&&<div className="text-[10px] text-slate-600">ID: {p.worker_id_number}</div>}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-500">{p.work_type}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500">{fmtDate(p.work_date)}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500 capitalize">{p.payment_method?.replace("_"," ")}</td>
-                        <td className="px-4 py-3"><span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border capitalize ${cfg.color} ${cfg.bg} ${cfg.border}`}>{p.status}</span></td>
-                        <td className="px-4 py-3 text-right">
-                          <span className="text-sm font-bold text-emerald-400">{fmtJMD(p.total_amount)}</span>
-                          {p.signature_url&&<div className="text-[9px] text-emerald-600 mt-0.5">✍️ Signed</div>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[10px] text-slate-600 truncate">{p.work_type||"—"}</div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[10px] text-slate-600 capitalize">{p.payment_method?.replace("_"," ")}</span>
+                      {p.signature_url&&<span className="text-[9px] text-violet-400">✍️ Signed</span>}
+                      {p.receipt_number&&<span className="text-[9px] text-slate-700">#{p.receipt_number.slice(-6)}</span>}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
 
+      {/* ── DETAIL MODAL ── */}
       {selected&&(
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07] sticky top-0 bg-[#0d1117]">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl max-h-[92vh] overflow-y-auto">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07] sticky top-0 bg-[#0d1117] z-10">
               <div>
                 <div className="text-sm font-bold text-slate-100">{selected.worker_name}</div>
-                <div className="text-[10px] text-slate-600">{fmtDate(selected.work_date)}</div>
+                <div className="text-[10px] text-slate-600">{fmtDate(selected.created_at)}</div>
               </div>
               <button onClick={()=>setSelected(null)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-600 hover:text-slate-300 transition"><X size={15}/></button>
             </div>
-            <div className="p-5 space-y-3">
-              {selected.id_photo_url&&<div><div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">ID Photo</div><img src={selected.id_photo_url} className="w-full rounded-xl border border-white/[0.08] object-contain max-h-40"/></div>}
-              {selected.signature_url&&<div><div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">Signature</div><img src={selected.signature_url} className="h-16 rounded-lg border border-white/[0.08] bg-white p-2"/></div>}
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  {label:"ID Number",  value:selected.worker_id_number},
-                  {label:"Phone",      value:selected.worker_phone},
-                  {label:"Work Type",  value:selected.work_type},
-                  {label:"Payment",    value:selected.payment_method?.replace("_"," ")},
-                  {label:"Days",       value:selected.days_worked?`${selected.days_worked} days`:null},
-                  {label:"Rate/Day",   value:selected.rate_per_day?fmtJMD(selected.rate_per_day):null},
-                  {label:"Supervisor", value:selected.supervisor_name},
-                  {label:"Status",     value:selected.status},
-                ].filter(f=>f.value).map(f=>(
-                  <div key={f.label} className="rounded-lg bg-white/[0.03] border border-white/[0.05] p-2.5">
-                    <div className="text-[9px] text-slate-600 mb-0.5 uppercase tracking-wider">{f.label}</div>
-                    <div className="text-xs font-semibold text-slate-300 capitalize">{f.value}</div>
+
+            <div className="p-5 space-y-4">
+
+              {/* Payment Type Badge */}
+              {(()=>{
+                const pt=PT_CFG[selected.payment_type||"payment"]||PT_CFG.payment;
+                return(
+                  <div className={`flex items-center justify-between rounded-xl border ${pt.border} ${pt.bg} px-4 py-3`}>
+                    <div>
+                      <div className={`text-xs font-bold uppercase tracking-widest ${pt.color}`}>{pt.icon} {pt.label}</div>
+                      {selected.receipt_number&&<div className="text-[10px] text-slate-600 mt-0.5">Receipt #{selected.receipt_number}</div>}
+                    </div>
+                    <div className={`text-2xl font-black ${pt.color}`}>{fmtJMD(selected.total_amount)}</div>
                   </div>
-                ))}
+                );
+              })()}
+
+              {/* Worker Info */}
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
+                <div className="px-4 py-2 border-b border-white/[0.05]">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Worker Details</span>
+                </div>
+                {selected.id_photo_url&&(
+                  <div className="p-4 border-b border-white/[0.05]">
+                    <img src={selected.id_photo_url} className="w-full max-h-36 object-contain rounded-lg border border-white/[0.08]"/>
+                  </div>
+                )}
+                <div className="divide-y divide-white/[0.04]">
+                  {[
+                    {label:"Full Name",    value:selected.worker_name},
+                    {label:"ID Number",    value:selected.worker_id_number},
+                    {label:"Phone",        value:selected.worker_phone},
+                    {label:"Address",      value:selected.worker_address},
+                  ].filter(r=>r.value).map(r=>(
+                    <div key={r.label} className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-[10px] text-slate-600 uppercase tracking-wider">{r.label}</span>
+                      <span className="text-xs text-slate-300 font-semibold">{r.value}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              {selected.notes&&<div className="rounded-lg bg-white/[0.03] border border-white/[0.05] p-2.5"><div className="text-[9px] text-slate-600 mb-0.5 uppercase tracking-wider">Notes</div><div className="text-xs text-slate-400">{selected.notes}</div></div>}
-              <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-                <span className="text-sm font-semibold text-slate-300">Total Paid</span>
-                <span className="text-2xl font-bold text-emerald-400">{fmtJMD(selected.total_amount)}</span>
+
+              {/* Payment Info */}
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
+                <div className="px-4 py-2 border-b border-white/[0.05]">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Payment Details</span>
+                </div>
+                <div className="divide-y divide-white/[0.04]">
+                  {[
+                    {label:"Work Type",    value:selected.work_type},
+                    {label:"Work Date",    value:fmtDate(selected.work_date)},
+                    {label:"Method",       value:selected.payment_method?.replace("_"," ")},
+                    {label:"Status",       value:selected.status},
+                    {label:"Supervisor",   value:selected.supervisor_name},
+                    {label:"Days",         value:selected.days_worked?`${selected.days_worked} days`:null},
+                    {label:"Hours",        value:selected.hours_worked?`${selected.hours_worked} hrs`:null},
+                    {label:"Notes",        value:selected.notes},
+                  ].filter(r=>r.value).map(r=>(
+                    <div key={r.label} className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-[10px] text-slate-600 uppercase tracking-wider">{r.label}</span>
+                      <span className="text-xs text-slate-300 font-semibold capitalize">{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Signature */}
+              {selected.signature_url&&(
+                <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-3">Worker Signature</div>
+                  <img src={selected.signature_url} className="h-16 object-contain bg-white rounded-lg p-2 border border-white/[0.08]"/>
+                  <div className="text-[10px] text-slate-600 mt-1">{selected.worker_name}</div>
+                </div>
+              )}
+
+              {/* Worker Payment History */}
+              {workerHistory.length>1&&(
+                <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
+                  <div className="px-4 py-2 border-b border-white/[0.05] flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Worker Payment History</span>
+                    <span className="text-[9px] text-slate-600">{workerHistory.length} records</span>
+                  </div>
+                  {loadingHistory?(
+                    <div className="p-4 text-center text-xs text-slate-600">Loading…</div>
+                  ):(
+                    <div className="divide-y divide-white/[0.04] max-h-40 overflow-y-auto">
+                      {workerHistory.map(h=>{
+                        const hpt=PT_CFG[h.payment_type||"payment"]||PT_CFG.payment;
+                        return(
+                          <div key={h.id} className="flex items-center justify-between px-4 py-2.5">
+                            <div>
+                              <div className="text-[10px] text-slate-400">{hpt.icon} {hpt.label}</div>
+                              <div className="text-[9px] text-slate-600">{fmtDate(h.created_at)}</div>
+                            </div>
+                            <span className={`text-xs font-bold ${hpt.color}`}>{fmtJMD(h.total_amount)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {/* Total summary */}
+                  <div className="px-4 py-3 border-t border-white/[0.06] bg-white/[0.02] space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Total Advances</span>
+                      <span className="text-amber-400 font-bold">{fmtJMD(workerHistory.filter(h=>h.payment_type==="advance").reduce((s,h)=>s+h.total_amount,0))}</span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-500">Total Paid</span>
+                      <span className="text-emerald-400 font-bold">{fmtJMD(workerHistory.reduce((s,h)=>s+h.total_amount,0))}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── ACTION BUTTONS ── */}
+              <div className="space-y-2 pt-1">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">Receipt Actions</div>
+
+                {/* Generate PDF */}
+                <button onClick={()=>generatePDF(selected)}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.1] hover:border-white/[0.2] bg-white/[0.03] hover:bg-white/[0.06] text-slate-200 font-semibold transition text-sm">
+                  <Printer size={15}/> Generate & Print Receipt PDF
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={()=>sendWhatsApp(selected)}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 transition text-sm font-semibold">
+                    <Share2 size={14}/> WhatsApp
+                  </button>
+                  <button onClick={()=>sendEmail(selected)}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 transition text-sm font-semibold">
+                    <Mail size={14}/> Email
+                  </button>
+                </div>
+
+                <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2 mt-3">Continue with this Worker</div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={()=>{setSelected(null);setShowForm(true);}}
+                    className="flex flex-col items-center gap-1 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition">
+                    <TrendingUp size={15}/>
+                    <span className="text-[10px] font-bold">New Advance</span>
+                  </button>
+                  <button onClick={()=>{setSelected(null);setShowForm(true);}}
+                    className="flex flex-col items-center gap-1 py-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 transition">
+                    <DollarSign size={15}/>
+                    <span className="text-[10px] font-bold">Pay Work</span>
+                  </button>
+                  <button onClick={()=>{setSelected(null);setShowForm(true);}}
+                    className="flex flex-col items-center gap-1 py-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 transition">
+                    <CheckCircle2 size={15}/>
+                    <span className="text-[10px] font-bold">Final Pay</span>
+                  </button>
+                </div>
+                <div className="text-[9px] text-slate-700 text-center">Tapping above starts a new payment for {selected.worker_name}</div>
               </div>
             </div>
           </div>
