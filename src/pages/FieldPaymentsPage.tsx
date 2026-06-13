@@ -75,7 +75,7 @@ export default function FieldPaymentsPage() {
         .then(({data})=>{
           if(data?.company_id){
             setCompanyId(data.company_id);
-            supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1,city,tagline")
+            supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1,address_line2,parish,country,tagline,website")
               .eq("company_id",data.company_id).maybeSingle()
               .then(({data:cs})=>setCompany(cs));
           }
