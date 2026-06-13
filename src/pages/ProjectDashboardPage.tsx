@@ -76,7 +76,7 @@ export default function ProjectDashboardPage() {
   const [taskForm, setTaskForm] = useState({
     task_name:"", task_description:"", trade_type:"General Labour",
     quantity:"", unit:"m²", rate_per_unit:"",
-    start_date:"", end_date:"", status:"pending",
+    start_date:"", end_date:"", status:"planned",
   });
   const [savingTask, setSavingTask] = useState(false);
 
@@ -101,9 +101,9 @@ export default function ProjectDashboardPage() {
 
       const [expRes, poRes, workerRes, taskRes] = await Promise.allSettled([
         supabase.from("expenses").select("amount,description,created_at").eq("project_id",projectId!),
-        supabase.from("purchase_orders").select("id,status,total_amount,created_at,supplier_name").eq("project_id",projectId!),
+        supabase.from("purchase_orders").select("id,status,created_at,supplier_name").eq("project_id",projectId!),
         supabase.from("workers").select("id,first_name,last_name,worker_type,status").eq("company_id", proj.company_id||"").eq("status","active").limit(30),
-        supabase.from("project_tasks").select("*").eq("project_id",projectId!).order("created_at",{ascending:true}),
+        supabase.from("project_tasks").select("id,task_name,task_description,trade_type,quantity,unit,rate_per_unit,start_date,end_date,status,percent_complete").eq("project_id",projectId!).order("created_at",{ascending:true}),
       ]);
 
       const expenses = expRes.status==="fulfilled" ? expRes.value.data||[] : [];
@@ -116,14 +116,14 @@ export default function ProjectDashboardPage() {
 
       setStats({
         totalExpenses: expenses.reduce((s:number,e:any)=>s+(Number(e.amount)||0),0),
-        openPOs: pos.filter((p:any)=>["pending","submitted","approved"].includes(p.status)).length,
-        totalPOValue: pos.reduce((s:number,p:any)=>s+(Number(p.total_amount)||0),0),
+        openPOs: pos.filter((p:any)=>["planned","submitted","approved"].includes(p.status)).length,
+        totalPOValue: 0,
         activeWorkers: workerList.length,
         boqTotal: 0, boqItems: 0,
       });
 
       const acts: any[] = [];
-      pos.slice(0,5).forEach((p:any) => acts.push({ id:p.id, type:"po", label:`PO to ${p.supplier_name||"Supplier"}`, amount:p.total_amount, time:p.created_at, status:p.status }));
+      pos.slice(0,5).forEach((p:any) => acts.push({ id:p.id, type:"po", label:`PO to ${p.supplier_name||"Supplier"}`, amount:0, time:p.created_at, status:p.status }));
       expenses.slice(0,5).forEach((e:any,i:number) => acts.push({ id:`exp-${i}`, type:"expense", label:e.description||"Expense", amount:e.amount, time:e.created_at||new Date().toISOString() }));
       acts.sort((a,b)=>new Date(b.time).getTime()-new Date(a.time).getTime());
       setActivity(acts.slice(0,8));
@@ -132,13 +132,13 @@ export default function ProjectDashboardPage() {
   }
 
   async function loadTasks() {
-    const { data } = await supabase.from("project_tasks").select("*").eq("project_id",projectId!).order("created_at",{ascending:true});
+    const { data } = await supabase.from("project_tasks").select("id,task_name,task_description,trade_type,quantity,unit,rate_per_unit,start_date,end_date,status,percent_complete").eq("project_id",projectId!).order("created_at",{ascending:true});
     setTasks(data||[]);
   }
 
   function openNewTask() {
     setEditingTask(null);
-    setTaskForm({ task_name:"", task_description:"", trade_type:"General Labour", quantity:"", unit:"m²", rate_per_unit:"", start_date:"", end_date:"", status:"pending" });
+    setTaskForm({ task_name:"", task_description:"", trade_type:"General Labour", quantity:"", unit:"m²", rate_per_unit:"", start_date:"", end_date:"", status:"planned" });
     setShowTaskForm(true);
   }
 
@@ -153,7 +153,7 @@ export default function ProjectDashboardPage() {
       rate_per_unit: String(task.rate_per_unit||""),
       start_date: task.start_date||"",
       end_date: task.end_date||"",
-      status: task.status||"pending",
+      status: task.status||"planned",
     });
     setShowTaskForm(true);
   }
@@ -171,7 +171,7 @@ export default function ProjectDashboardPage() {
       rate_per_unit: parseFloat(taskForm.rate_per_unit)||null,
       start_date: taskForm.start_date||null,
       end_date: taskForm.end_date||null,
-      status: taskForm.status||"pending",
+      status: taskForm.status||"planned",
     };
     if(editingTask){
       await supabase.from("project_tasks").update(payload).eq("id",editingTask.id);
@@ -190,7 +190,7 @@ export default function ProjectDashboardPage() {
   }
 
   async function updateTaskStatus(id: string, status: string) {
-    await supabase.from("project_tasks").update({ status, percent_complete: status==="completed"?100:status==="in_progress"?50:0 }).eq("id",id);
+    await supabase.from("project_tasks").update({ status, percent_complete: status==="complete"?100:status==="active"?50:0 }).eq("id",id);
     setTasks(prev=>prev.map(t=>t.id===id?{...t,status}:t));
   }
 
@@ -236,9 +236,9 @@ export default function ProjectDashboardPage() {
 
   const taskStats = {
     total: tasks.length,
-    pending: tasks.filter(t=>t.status==="pending").length,
-    inProgress: tasks.filter(t=>t.status==="in_progress").length,
-    completed: tasks.filter(t=>t.status==="completed").length,
+    pending: tasks.filter(t=>t.status==="planned").length,
+    inProgress: tasks.filter(t=>t.status==="active").length,
+    completed: tasks.filter(t=>t.status==="complete").length,
   };
 
   return (
@@ -479,9 +479,9 @@ export default function ProjectDashboardPage() {
                         <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Status</label>
                         <select value={taskForm.status} onChange={e=>setTaskForm(f=>({...f,status:e.target.value}))}
                           className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none [&>option]:bg-[#111820]">
-                          <option value="pending">Pending</option>
-                          <option value="in_progress">In Progress</option>
-                          <option value="completed">Completed</option>
+                          <option value="planned">Pending</option>
+                          <option value="active">In Progress</option>
+                          <option value="complete">Completed</option>
                           <option value="on_hold">On Hold</option>
                         </select>
                       </div>
@@ -593,9 +593,9 @@ export default function ProjectDashboardPage() {
                         {/* Quick status change */}
                         <select value={task.status} onChange={e=>updateTaskStatus(task.id,e.target.value)}
                           className="text-[10px] bg-[#080b10] border border-white/[0.07] rounded px-2 py-1 text-slate-400 outline-none">
-                          <option value="pending">Pending</option>
-                          <option value="in_progress">In Progress</option>
-                          <option value="completed">Completed</option>
+                          <option value="planned">Pending</option>
+                          <option value="active">In Progress</option>
+                          <option value="complete">Completed</option>
                           <option value="on_hold">On Hold</option>
                         </select>
                       </div>
@@ -665,7 +665,7 @@ export default function ProjectDashboardPage() {
                   </div>
                   {a.amount !== undefined && <div className="text-xs font-bold text-slate-300 flex-shrink-0">{fmtShort(Number(a.amount||0))}</div>}
                   {a.status && (
-                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${a.status==="approved"?"bg-emerald-500/10 text-emerald-400 border-emerald-500/20":a.status==="pending"?"bg-amber-500/10 text-amber-400 border-amber-500/20":"bg-slate-500/10 text-slate-400 border-slate-500/20"}`}>
+                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${a.status==="approved"?"bg-emerald-500/10 text-emerald-400 border-emerald-500/20":a.status==="planned"?"bg-amber-500/10 text-amber-400 border-amber-500/20":"bg-slate-500/10 text-slate-400 border-slate-500/20"}`}>
                       {a.status}
                     </span>
                   )}
