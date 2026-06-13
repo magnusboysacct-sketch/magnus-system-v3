@@ -1,4 +1,4 @@
-// src/components/FieldPaymentForm.tsx
+﻿// src/components/FieldPaymentForm.tsx
 // Complete Field Payment: Advance + Progress + Final
 // Receipt generated from text data on demand — no image storage
 import React, { useRef, useState, useEffect } from "react";
@@ -130,9 +130,9 @@ export function generateReceiptHTML(payment: any, company: any) {
   return `
   <div style="background:#fff;padding:32px;font-family:Georgia,serif;color:#1a1a1a;max-width:600px;margin:0 auto">
     <div style="text-align:center;border-bottom:3px solid #1a1a1a;padding-bottom:20px;margin-bottom:20px">
-      ${company?.logo_url?`<img src="${company.logo_url}" style="width:64px;height:64px;border-radius:10px;object-fit:cover;margin:0 auto 10px;display:block"/>`:""}
-      <div style="font-size:18px;font-weight:900;letter-spacing:2px;text-transform:uppercase">${company?.company_name||"Magnus Boys Construction"}</div>
-      ${company?.address_line1?`<div style="font-size:11px;color:#666;margin-top:3px">${company.address_line1}${company?.city?`, ${company.city}`:""}</div>`:""}
+      ${logoBase64?`<img src="${logoBase64}" style="width:64px;height:64px;border-radius:10px;object-fit:cover;margin:0 auto 10px;display:block"/>`:""}
+      <div style="font-size:18px;font-weight:900;letter-spacing:2px;text-transform:uppercase">${company?.company_name||""}</div>
+      ${company?.address_line1?`<div style="font-size:11px;color:#666;margin-top:3px">${company.address_line1}${company?.parish?`, ${company.parish}`:""}${company?.country?`, ${company.country}`:""}</div>`:""}
       <div style="font-size:11px;color:#666">${company?.phone?`Tel: ${company.phone}`:""}${company?.phone&&company?.email?" · ":""}${company?.email||""}</div>
       <div style="margin-top:12px">
         <div style="font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:${payment.payment_type==="advance"?"#d97706":payment.payment_type==="final"?"#16a34a":"#0891b2"}">
@@ -188,7 +188,7 @@ export function generateReceiptHTML(payment: any, company: any) {
 
     <div style="border-top:1px solid #e5e7eb;margin-top:16px;padding-top:12px;text-align:center;font-size:10px;color:#999">
       Paid by: ${payment.supervisor_name||""} · ${new Date(payment.created_at||Date.now()).toLocaleDateString()}<br/>
-      ${company?.company_name||"Magnus Boys Construction"}${company?.tagline?` · "${company.tagline}"`:""}
+      ${company?.company_name||""}${company?.tagline?` · "${company.tagline}"`:""}
     </div>
   </div>`;
 }interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; }
@@ -203,6 +203,7 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [supervisorId, setSupervisorId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
+  const [logoBase64, setLogoBase64] = useState<string>("");
   const [idPhotoFile, setIdPhotoFile] = useState<File|null>(null);
 
   // Worker advance history
@@ -242,9 +243,20 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
         .then(({data})=>{
           if(data?.company_id){
             setCompanyId(data.company_id);
-            supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1,city,tagline")
+            supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1,address_line2,parish,country,tagline,website")
               .eq("company_id",data.company_id).maybeSingle()
-              .then(({data:cs})=>setCompany(cs));
+              .then(({data:cs})=>{
+            setCompany(cs);
+            if(cs?.logo_url){
+              fetch(cs.logo_url)
+                .then(r=>r.blob())
+                .then(blob=>{
+                  const reader=new FileReader();
+                  reader.onloadend=()=>setLogoBase64(reader.result as string);
+                  reader.readAsDataURL(blob);
+                }).catch(()=>{});
+            }
+          });
           }
           if(data?.full_name)setForm(f=>({...f,supervisor_name:data.full_name}));
         });
@@ -454,7 +466,7 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
   // WhatsApp — text summary (receipt shown in print)
   function sendWhatsApp() {
     const amount=form.payment_type==="advance"?parseFloat(form.advance_amount)||0:parseFloat(form.total_amount)||0;
-    const msg=`*${company?.company_name||"Magnus Boys Construction"}*\n*${form.payment_type==="advance"?"⚡ ADVANCE PAYMENT":form.payment_type==="final"?"✅ FINAL PAYMENT":"💰 PAYMENT RECEIPT"}*\n\nReceipt #: ${receiptNumber}\nWorker: ${form.worker_name}\nID: ${form.worker_id_number||"—"}\n${selectedProject?`Project: ${selectedProject.name}\n`:""}${selectedMilestone?`Milestone: ${selectedMilestone.milestone_name}\n`:""}${form.task_name?`Task: ${form.task_name}\n`:""}Payment: ${form.payment_method.replace("_"," ")}\n\n*AMOUNT: ${fmtJMD(amount)}*\n${form.payment_type==="advance"?"⚡ This is an advance. Balance due on completion.":form.payment_type==="final"?"✅ PAID IN FULL. All advances settled.":""}\n\nPaid by: ${form.supervisor_name} · ${new Date().toLocaleDateString()}`;
+    const msg=`*${company?.company_name||""}*\n*${form.payment_type==="advance"?"⚡ ADVANCE PAYMENT":form.payment_type==="final"?"✅ FINAL PAYMENT":"💰 PAYMENT RECEIPT"}*\n\nReceipt #: ${receiptNumber}\nWorker: ${form.worker_name}\nID: ${form.worker_id_number||"—"}\n${selectedProject?`Project: ${selectedProject.name}\n`:""}${selectedMilestone?`Milestone: ${selectedMilestone.milestone_name}\n`:""}${form.task_name?`Task: ${form.task_name}\n`:""}Payment: ${form.payment_method.replace("_"," ")}\n\n*AMOUNT: ${fmtJMD(amount)}*\n${form.payment_type==="advance"?"⚡ This is an advance. Balance due on completion.":form.payment_type==="final"?"✅ PAID IN FULL. All advances settled.":""}\n\nPaid by: ${form.supervisor_name} · ${new Date().toLocaleDateString()}`;
     const phone=form.worker_phone?.replace(/\D/g,"");
     window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`,"_blank");
   }
@@ -463,7 +475,7 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
     const amount=form.payment_type==="advance"?parseFloat(form.advance_amount)||0:parseFloat(form.total_amount)||0;
     const subject=encodeURIComponent(`Payment Receipt - ${form.worker_name} - ${receiptNumber}`);
     const body=encodeURIComponent(
-      `${company?.company_name||"Magnus Boys Construction"}\n\n`+
+      `${company?.company_name||""}\n\n`+
       `${form.payment_type==="advance"?"ADVANCE PAYMENT":form.payment_type==="final"?"FINAL PAYMENT — PAID IN FULL":"PAYMENT RECEIPT"}\n`+
       `Receipt #: ${receiptNumber}\nDate: ${new Date().toLocaleDateString()}\n\n`+
       `Worker: ${form.worker_name}\nID: ${form.worker_id_number||"—"}\n`+
