@@ -35,6 +35,9 @@ type Payment = {
   signature_url: string|null;
   receipt_number: string|null;
   created_at: string;
+  project_name: string|null;
+  milestone_name: string|null;
+  task_name: string|null;
 };
 
 type Tab = "all"|"advance"|"payment"|"final";
@@ -161,9 +164,9 @@ export default function FieldPaymentsPage() {
       notes: p.notes,
       signature_data: p.signature_url,
       supervisor_name: p.supervisor_name,
-      project_name: null,
-      milestone_name: null,
-      task_name: p.work_type,
+      project_name: p.project_name||null,
+      milestone_name: p.milestone_name||null,
+      task_name: p.task_name||p.work_type,
       created_at: p.created_at,
     };
     const html = generateReceiptHTML(paymentData, company, logo);
