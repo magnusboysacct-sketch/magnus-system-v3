@@ -1,4 +1,4 @@
-// src/components/ReceiptScanner.tsx
+﻿// src/components/ReceiptScanner.tsx
 // AI-powered receipt & invoice scanner
 // Uses Claude Vision via Supabase Edge Function
 // Falls back to manual entry if AI unavailable
@@ -47,6 +47,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const containerRef   = useRef<HTMLDivElement>(null);
+  const lastCroppedFile = useRef<File | null>(null);
   const imgRef         = useRef<HTMLImageElement>(null);
   const previewRef     = useRef<HTMLCanvasElement>(null);
 
@@ -148,6 +149,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
     setStep("scanning"); setProgress("Preparing image...");
     try {
       const file = await cropFile(imgRef.current, containerRef.current, box);
+      lastCroppedFile.current = file;
       setProgress("AI reading receipt...");
       const result = await aiScanReceipt(file);
       if (result) {
@@ -166,7 +168,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
   }
 
   function handleUseData() {
-    onResult({ ...fields, aiPowered, confidence: aiPowered ? fields.confidence : 0.8 });
+    onResult({ ...fields, aiPowered, confidence: aiPowered ? fields.confidence : 0.8 }, lastCroppedFile.current || undefined);
   }
 
   function reset() {
@@ -205,12 +207,12 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
       <div className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/20 px-3 py-2">
         <Sparkles size={13} className="text-emerald-400 flex-shrink-0"/>
         <div>
-          <div className="text-xs font-semibold text-emerald-300">Magnus AI — {mode === "invoice" ? "Invoice" : "Receipt"} Scanner</div>
+          <div className="text-xs font-semibold text-emerald-300">Magnus AI â€” {mode === "invoice" ? "Invoice" : "Receipt"} Scanner</div>
           <div className="text-[10px] text-slate-500">
             {step==="upload"   && "Upload or photograph the receipt/invoice."}
             {step==="crop"     && "Frame the document in the box, then tap Scan."}
             {step==="scanning" && progress}
-            {step==="review"   && (aiPowered ? "AI extracted these fields — correct anything wrong." : "Fill in the fields manually.")}
+            {step==="review"   && (aiPowered ? "AI extracted these fields â€” correct anything wrong." : "Fill in the fields manually.")}
           </div>
         </div>
         {aiPowered && step==="review" && (
@@ -318,9 +320,9 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
 
           {step==="crop" && (
             <>
-              <p className="text-[10px] text-slate-600 text-center">Frame the entire receipt · Drag corners to resize</p>
+              <p className="text-[10px] text-slate-600 text-center">Frame the entire receipt Â· Drag corners to resize</p>
               <div className="flex gap-2">
-                <button onClick={reset} className="px-4 py-2 rounded-lg border border-white/[0.08] text-xs text-slate-400 hover:text-slate-300 transition-colors">← Change</button>
+                <button onClick={reset} className="px-4 py-2 rounded-lg border border-white/[0.08] text-xs text-slate-400 hover:text-slate-300 transition-colors">â† Change</button>
                 <button onClick={cropAndScan} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-xs text-white font-semibold transition-all shadow-lg shadow-emerald-500/20">
                   <Sparkles size={13}/> Scan with AI
                 </button>
@@ -335,7 +337,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
         <div className="space-y-3">
           {!aiPowered && (
             <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-[11px] text-amber-300">
-              <AlertCircle size={12}/> AI unavailable — fill in manually
+              <AlertCircle size={12}/> AI unavailable â€” fill in manually
             </div>
           )}
 
@@ -402,7 +404,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
               </button>
             </div>
             {(fields.lineItems||[]).length === 0 && (
-              <div className="text-[10px] text-slate-700 text-center py-2">No line items extracted — add manually if needed</div>
+              <div className="text-[10px] text-slate-700 text-center py-2">No line items extracted â€” add manually if needed</div>
             )}
             {(fields.lineItems||[]).map((item, i) => (
               <div key={i} className="grid grid-cols-12 gap-1.5 items-center">

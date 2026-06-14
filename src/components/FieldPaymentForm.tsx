@@ -325,9 +325,10 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     }
   },[form.task_quantity,form.task_unit_rate,form.days_worked,form.rate_per_day,form.hours_worked,form.rate_per_hour,form.rate_type,form.payment_type]);
 
-  function handleIDScanResult(ocr:any) {
+  function handleIDScanResult(ocr:any, photoFile?: File) {
     const name=[ocr.firstName,ocr.middleName,ocr.lastName].filter(Boolean).join(" ");
     setForm(f=>({...f,worker_name:name||f.worker_name,worker_id_number:ocr.idNumber||ocr.documentNumber||f.worker_id_number,worker_address:ocr.address||f.worker_address}));
+    if(photoFile) setIdPhotoFile(photoFile);
   }
 
   async function savePayment() {

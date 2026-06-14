@@ -67,8 +67,9 @@ export default function ExpensesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function handleExpenseScan(result: any) {
+  function handleExpenseScan(result: any, receiptFile?: File) {
     setShowExpenseScanner(false);
+    if(receiptFile&&companyId){const now=new Date();const p="receipts/"+now.getFullYear()+"/"+String(now.getMonth()+1).padStart(2,"0")+"/"+Date.now()+"_receipt.jpg";supabase.storage.from("project-files").upload(p,receiptFile,{upsert:true}).then(({error:ue})=>{if(!ue){const{data:ud}=supabase.storage.from("project-files").getPublicUrl(p);setForm(f=>({...f,receipt_url:ud.publicUrl}));}});}
     setForm(f => ({
       ...f,
       description: result.vendor ? `${result.vendor} - Receipt` : f.description,
@@ -80,7 +81,7 @@ export default function ExpensesPage() {
 
   const [form, setForm] = useState({
     description: "", amount: "", expense_date: "",
-    category_id: "", project_id: currentProject?.id || "", status: "pending",
+    category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "",
   });
 
   // Load company ID
@@ -129,6 +130,7 @@ export default function ExpensesPage() {
         category_id: form.category_id || null,
         project_id: form.project_id || null,
         status: form.status,
+        receipt_url: form.receipt_url || null,
       });
       if (e) throw e;
       await loadExpenses();
