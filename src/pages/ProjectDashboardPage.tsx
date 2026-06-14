@@ -766,7 +766,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
             )}
           </>
         )}{/* ── TASKS ── */}
-        {tab==="tasks"&&(
+        {(tab==="tasks"||showTaskForm)&&(
           <>
             <div className="grid grid-cols-4 gap-3">
               {[

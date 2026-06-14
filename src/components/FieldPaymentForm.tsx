@@ -122,7 +122,7 @@ function StepBar({step, paymentType}:{step:Step; paymentType:PaymentType}) {
 
 // ── Receipt Generator ─────────────────────────────────────────────────────────
 // Generates receipt HTML from payment data — no image stored
-export function generateReceiptHTML(payment: any, company: any) {
+export function generateReceiptHTML(payment: any, company: any, logoBase64?: string|null, watermark?: {url:string;opacity:number}|null) {
   const totalAdvances = payment.previous_advances||0;
   const earned = Number(payment.total_amount||0);
   const balance = earned - totalAdvances;
@@ -186,16 +186,18 @@ export function generateReceiptHTML(payment: any, company: any) {
       <div style="font-size:11px;color:#666;margin-top:4px">${payment.worker_name}</div>
     </div>`:""}
 
+    ${watermark?.url?`<img src="${watermark.url}" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);width:60%;opacity:${watermark.opacity};pointer-events:none;z-index:0"/>`:""}
     <div style="border-top:1px solid #e5e7eb;margin-top:16px;padding-top:12px;text-align:center;font-size:10px;color:#999">
       Paid by: ${payment.supervisor_name||""} · ${new Date(payment.created_at||Date.now()).toLocaleDateString()}<br/>
       ${company?.company_name||""}${company?.tagline?` · "${company.tagline}"`:""}
     </div>
   </div>`;
-}interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; }
+}interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; prefillWorker?:{name:string;id_number:string;phone:string;payment_type:string}|null; }
 
-export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps) {
+export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldPaymentFormProps) {
   const { projects } = useProjectContext();
-  const [step, setStep] = useState<Step>("type_select");
+  const initialStep = useRef<Step>(prefillWorker?"id_scan":"type_select");
+  const [step, setStep] = useState<Step>(initialStep.current);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string|null>(null);
   const [receiptNumber, setReceiptNumber] = useState("");
@@ -218,8 +220,8 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
   const [selectedTask, setSelectedTask] = useState<any>(null);
 
   const [form, setForm] = useState<FormData>({
-    payment_type:"payment",
-    worker_name:"", worker_id_number:"", worker_phone:"",
+    payment_type:(prefillWorker?.payment_type as PaymentType)||"payment",
+    worker_name:prefillWorker?.name||"", worker_id_number:prefillWorker?.id_number||"", worker_phone:prefillWorker?.phone||"",
     worker_address:"", worker_ref:"",
     project_id:"", milestone_id:"", task_id:"",
     task_name:"", trade_type:"", unit:"",
@@ -325,9 +327,10 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
     }
   },[form.task_quantity,form.task_unit_rate,form.days_worked,form.rate_per_day,form.hours_worked,form.rate_per_hour,form.rate_type,form.payment_type]);
 
-  function handleIDScanResult(ocr:any) {
+  function handleIDScanResult(ocr:any, photoFile?: File) {
     const name=[ocr.firstName,ocr.middleName,ocr.lastName].filter(Boolean).join(" ");
     setForm(f=>({...f,worker_name:name||f.worker_name,worker_id_number:ocr.idNumber||ocr.documentNumber||f.worker_id_number,worker_address:ocr.address||f.worker_address}));
+    if(photoFile) setIdPhotoFile(photoFile);
   }
 
   async function savePayment() {

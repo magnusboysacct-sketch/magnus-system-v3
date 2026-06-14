@@ -32,7 +32,7 @@ type Expense = {
 
 type Category = { id: string; name: string; category_type: string };
 
-type Tab = "all" | "pending" | "approved";
+type Tab = "all" | "pending" | "approved" | "filing";
 
 const STATUS_COLOR: Record<string, any> = {
   pending:  "amber",
@@ -67,8 +67,9 @@ export default function ExpensesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function handleExpenseScan(result: any) {
+  function handleExpenseScan(result: any, receiptFile?: File) {
     setShowExpenseScanner(false);
+    if(receiptFile&&companyId){const now=new Date();const p="receipts/"+now.getFullYear()+"/"+String(now.getMonth()+1).padStart(2,"0")+"/"+Date.now()+"_receipt.jpg";supabase.storage.from("project-files").upload(p,receiptFile,{upsert:true}).then(({error:ue})=>{if(!ue){const{data:ud}=supabase.storage.from("project-files").getPublicUrl(p);setForm(f=>({...f,receipt_url:ud.publicUrl}));}});}
     setForm(f => ({
       ...f,
       description: result.vendor ? `${result.vendor} - Receipt` : f.description,
@@ -80,7 +81,7 @@ export default function ExpensesPage() {
 
   const [form, setForm] = useState({
     description: "", amount: "", expense_date: "",
-    category_id: "", project_id: currentProject?.id || "", status: "pending",
+    category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "",
   });
 
   // Load company ID
@@ -129,6 +130,7 @@ export default function ExpensesPage() {
         category_id: form.category_id || null,
         project_id: form.project_id || null,
         status: form.status,
+        receipt_url: form.receipt_url || null,
       });
       if (e) throw e;
       await loadExpenses();
@@ -203,6 +205,7 @@ export default function ExpensesPage() {
             { key: "all" as Tab,      label: "All",      count: expenses.length },
             { key: "pending" as Tab,  label: "Pending",  count: expenses.filter(e => e.status === "pending").length },
             { key: "approved" as Tab, label: "Approved", count: expenses.filter(e => e.status === "approved").length },
+            { key: "filing" as Tab, label: "📁 Filing Cabinet", count: expenses.filter(e=>!!e.receipt_url).length },
           ]}
           active={tab}
           onChange={setTab}
@@ -284,6 +287,70 @@ export default function ExpensesPage() {
       </div>
 
       {/* New Expense Modal */}
+      {/* Filing Cabinet */}
+      {tab==="filing"&&(
+        <div className="space-y-4">
+          {(() => {
+            const withReceipts = expenses.filter(e=>e.receipt_url);
+            if(withReceipts.length===0) return (
+              <div className="text-center py-16 text-slate-600 text-sm">
+                <div className="text-4xl mb-3">📁</div>
+                <div>No receipts filed yet</div>
+                <div className="text-xs mt-1">Scan a receipt when logging an expense to file it here</div>
+              </div>
+            );
+            // Group by year/month
+            const grouped: Record<string, Expense[]> = {};
+            withReceipts.forEach(e=>{
+              const d = new Date(e.expense_date||e.created_at);
+              const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+              if(!grouped[key]) grouped[key]=[];
+              grouped[key].push(e);
+            });
+            return Object.entries(grouped).sort((a,b)=>b[0].localeCompare(a[0])).map(([key, items])=>{
+              const [year, month] = key.split("-");
+              const monthName = new Date(Number(year), Number(month)-1).toLocaleString("en-US",{month:"long"});
+              return (
+                <div key={key} className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
+                  <div className="px-4 py-2 border-b border-white/[0.05] flex items-center gap-2">
+                    <span>📁</span>
+                    <span className="text-xs font-bold text-slate-300">{monthName} {year}</span>
+                    <span className="text-[10px] text-slate-600 ml-auto">{items.length} receipt{items.length!==1?"s":""}</span>
+                  </div>
+                  <div className="divide-y divide-white/[0.04]">
+                    {items.map(e=>(
+                      <div key={e.id} className="flex items-center gap-3 px-4 py-3">
+                        <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/[0.08] bg-white/[0.04] flex-shrink-0 cursor-pointer"
+                          onClick={()=>window.open(e.receipt_url!,"_blank")}>
+                          <img src={e.receipt_url!} className="w-full h-full object-cover"/>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold text-slate-200 truncate">{e.description||"Expense"}</div>
+                          <div className="text-[10px] text-slate-500">{e.expense_date?new Date(e.expense_date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):""}</div>
+                          <div className="text-[10px] text-slate-600">{e.projects?.name||"No project"}</div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-sm font-bold text-emerald-400">JMD {(e.amount||0).toLocaleString()}</div>
+                          <div className="flex gap-1 mt-1">
+                            <button onClick={()=>window.open(e.receipt_url!,"_blank")}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 text-[10px] transition">
+                              👁 View
+                            </button>
+                            <button onClick={()=>{const w=window.open("","_blank");if(w){w.document.write(`<html><body style="margin:0"><img src="${e.receipt_url}" style="max-width:100%"/></body></html>`);w.document.close();setTimeout(()=>w.print(),500);}}}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 text-[10px] transition">
+                              🖨 Print
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            });
+          })()}
+        </div>
+      )}
       <Modal open={showNew} onClose={() => { setShowNew(false); setError(null); }}
         title="Log Expense" subtitle="Record a new project expense">
         <div className="space-y-4">

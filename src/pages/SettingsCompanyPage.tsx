@@ -6,7 +6,7 @@ import {
   PageHeader, Card, CardHeader, Btn, Input, Field,
   Alert, Divider, Spinner, cn
 } from "../components/ui";
-import { Building2, Save, RefreshCw, Globe, Phone, Mail, MapPin } from "lucide-react";
+import { Building2, Save, RefreshCw, Globe, Phone, Mail, MapPin, ImageIcon, Upload, Eye, EyeOff } from "lucide-react";
 
 type CompanySettings = {
   id: number;
@@ -37,6 +37,10 @@ export default function SettingsCompanyPage() {
   });
 
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [watermarkUrl, setWatermarkUrl] = useState<string | null>(null);
+  const [watermarkEnabled, setWatermarkEnabled] = useState(false);
+  const [watermarkOpacity, setWatermarkOpacity] = useState(0.15);
+  const [uploadingWatermark, setUploadingWatermark] = useState(false);
 
   useEffect(() => { loadSettings(); }, []);
 
@@ -70,6 +74,9 @@ export default function SettingsCompanyPage() {
 
       if (settings) {
         setLogoUrl(settings.logo_url || null);
+        setWatermarkUrl((settings as any).watermark_url || null);
+        setWatermarkEnabled((settings as any).watermark_enabled || false);
+        setWatermarkOpacity((settings as any).watermark_opacity || 0.15);
         setForm({
           company_name:  settings.company_name  || "",
           tagline:       settings.tagline        || "",
@@ -237,6 +244,60 @@ export default function SettingsCompanyPage() {
               <Field label="Country">
                 <Input placeholder="Jamaica" value={form.country} onChange={set("country")}/>
               </Field>
+            </div>
+          </div>
+        </Card>
+
+        {/* Watermark Settings */}
+        <Card>
+          <CardHeader title="Document Watermark" subtitle="Applied to ID cards, receipts and printed documents"/>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs font-semibold text-slate-300">Enable Watermark</div>
+                <div className="text-[10px] text-slate-600">Show watermark on all printed documents</div>
+              </div>
+              <button onClick={()=>setWatermarkEnabled(!watermarkEnabled)}
+                className={`w-10 h-5 rounded-full transition-colors relative ${watermarkEnabled?"bg-cyan-600":"bg-white/[0.08]"}`}>
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${watermarkEnabled?"left-5":"left-0.5"}`}/>
+              </button>
+            </div>
+            {watermarkUrl&&(
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.07] bg-white/[0.02]">
+                <img src={watermarkUrl} className="w-16 h-16 object-contain rounded-lg border border-white/[0.08] bg-white/[0.04]"/>
+                <div className="flex-1">
+                  <div className="text-xs text-slate-300 font-semibold mb-1">Watermark Image</div>
+                  <div className="text-[10px] text-slate-600">Current watermark uploaded</div>
+                  <button onClick={()=>setWatermarkUrl(null)} className="text-[10px] text-red-400 hover:text-red-300 mt-1">Remove</button>
+                </div>
+              </div>
+            )}
+            <div>
+              <div className="text-xs text-slate-500 mb-2">Upload Watermark Image</div>
+              <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-white/[0.1] hover:border-cyan-500/40 cursor-pointer transition">
+                <Upload size={14} className="text-slate-600"/>
+                <span className="text-xs text-slate-500">{uploadingWatermark?"Uploading...":"Click to upload PNG or SVG"}</span>
+                <input type="file" accept="image/*" className="hidden" onChange={async(e)=>{
+                  const f=e.target.files?.[0]; if(!f||!companyId) return;
+                  setUploadingWatermark(true);
+                  const path=`watermarks/${companyId}/${Date.now()}_watermark.png`;
+                  const {error:ue}=await supabase.storage.from("project-files").upload(path,f,{upsert:true});
+                  if(!ue){const{data:ud}=supabase.storage.from("project-files").getPublicUrl(path);setWatermarkUrl(ud.publicUrl);}
+                  setUploadingWatermark(false);
+                }}/>
+              </label>
+            </div>
+            <div>
+              <div className="flex justify-between text-xs text-slate-500 mb-1">
+                <span>Opacity</span>
+                <span>{Math.round(watermarkOpacity*100)}%</span>
+              </div>
+              <input type="range" min="5" max="50" value={Math.round(watermarkOpacity*100)}
+                onChange={e=>setWatermarkOpacity(Number(e.target.value)/100)}
+                className="w-full accent-cyan-500"/>
+              <div className="flex justify-between text-[10px] text-slate-700 mt-1">
+                <span>Light</span><span>Heavy</span>
+              </div>
             </div>
           </div>
         </Card>
