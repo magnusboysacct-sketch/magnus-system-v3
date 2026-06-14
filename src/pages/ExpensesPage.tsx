@@ -81,7 +81,7 @@ export default function ExpensesPage() {
 
   const [form, setForm] = useState({
     description: "", amount: "", expense_date: "",
-    category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "",
+    category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", receipt_url: "",
   });
 
   // Load company ID
@@ -135,7 +135,7 @@ export default function ExpensesPage() {
       if (e) throw e;
       await loadExpenses();
       setShowNew(false);
-      setForm({ description: "", amount: "", expense_date: "", category_id: "", project_id: currentProject?.id || "", status: "pending" });
+      setForm({ description: "", amount: "", expense_date: "", category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "" });
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
   }

@@ -85,8 +85,8 @@ export default function FieldPaymentsPage() {
               .eq("company_id",data.company_id).maybeSingle()
               .then(({data:cs})=>{
               setCompany(cs);
-              if(cs?.watermark_enabled && cs?.watermark_url){
-                setWatermark({url:cs.watermark_url, opacity:cs.watermark_opacity||0.15});
+              if((cs as any)?.watermark_enabled && (cs as any)?.watermark_url){
+                setWatermark({url:(cs as any).watermark_url, opacity:(cs as any).watermark_opacity||0.15});
               } else { setWatermark(null); }
               if(cs?.logo_url){
                 fetch(cs.logo_url)
