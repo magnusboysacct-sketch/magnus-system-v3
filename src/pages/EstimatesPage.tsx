@@ -156,6 +156,50 @@ function EstimateDetailModal({ estimate, items, onClose }: {
     return acc;
   }, {});
 
+  function printProposal() {
+    const fmtJMD = (n: number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:2}).format(n);
+    const html = `<!DOCTYPE html><html><head><title>Proposal</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:Georgia,serif;color:#1a1a1a;background:white;padding:40px;max-width:800px;margin:0 auto}
+      .header{border-bottom:3px solid #1a1a1a;padding-bottom:20px;margin-bottom:24px;display:flex;justify-content:space-between}
+      .company{font-size:22px;font-weight:900;letter-spacing:2px;text-transform:uppercase}
+      .doc-title{text-align:right}
+      .doc-title h1{font-size:20px;font-weight:900;letter-spacing:3px;text-transform:uppercase}
+      .doc-title p{font-size:11px;color:#666;margin-top:4px}
+      table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:12px}
+      th{text-align:left;padding:8px;background:#f8f8f8;border-bottom:2px solid #1a1a1a;font-size:10px;text-transform:uppercase}
+      td{padding:8px;border-bottom:1px solid #eee}
+      .tr{text-align:right}
+      .total-row td{border-top:2px solid #1a1a1a;padding:12px 8px;font-weight:900}
+      .footer{margin-top:40px;border-top:2px solid #1a1a1a;padding-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+      .sig-line{border-top:1px solid #1a1a1a;margin-top:50px;padding-top:6px;font-size:11px;color:#666}
+      @media print{body{padding:20px}@page{size:A4;margin:15mm}}
+    </style></head><body>
+    <div class="header">
+      <div><div class="company">${estimate.projects?.name||"Project"}</div><div style="font-size:12px;color:#666;margin-top:4px">Magnus Boys Construction</div></div>
+      <div class="doc-title"><h1>Cost Proposal</h1><p>${estimate.title}</p><p>Version ${estimate.version}</p></div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Item</th><th>Type</th><th>Unit</th><th class="tr">Qty</th><th class="tr">Rate (JMD)</th><th class="tr">Amount (JMD)</th></tr></thead>
+      <tbody>
+        ${items.map(i=>`<tr><td>${i.line_no}</td><td><strong>${i.item}</strong>${i.description?`<br/><span style="color:#666;font-size:11px">${i.description}</span>`:""}</td><td style="color:#666;font-size:11px;text-transform:capitalize">${i.item_type}</td><td style="color:#666">${i.unit||"—"}</td><td class="tr">${i.qty}</td><td class="tr">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.rate)}</td><td class="tr" style="font-weight:600">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.amount)}</td></tr>`).join("")}
+        <tr class="total-row"><td colspan="6">TOTAL ESTIMATE</td><td class="tr">${fmtJMD(total)}</td></tr>
+      </tbody>
+    </table>
+    ${estimate.notes?`<div style="background:#f8f8f8;border-left:4px solid #1a1a1a;padding:12px;margin-top:16px;font-size:12px"><strong>Notes:</strong> ${estimate.notes}</div>`:""}
+    <div class="footer">
+      <div><div style="font-size:11px;color:#666;margin-bottom:50px">Client Acceptance</div><div class="sig-line">Client Signature &amp; Date</div></div>
+      <div><div style="font-size:11px;color:#666;margin-bottom:50px">Authorized By</div><div class="sig-line">Company Representative &amp; Date</div></div>
+    </div>
+    <div style="margin-top:24px;text-align:center;font-size:10px;color:#999">Magnus Boys Construction · This proposal is valid for 30 days from date of issue</div>
+    </body></html>`;
+    const w = window.open("","_blank");
+    if(!w) return;
+    w.document.write(html);
+    w.document.close();
+    setTimeout(()=>w.print(),600);
+  }
   return (
     <Modal open onClose={onClose} title={estimate.title}
       subtitle={`v${estimate.version} · ${estimate.projects?.name || "No project"}`}
@@ -222,6 +266,9 @@ function EstimateDetailModal({ estimate, items, onClose }: {
             <div className="text-xs text-slate-400">{estimate.notes}</div>
           </div>
         )}
+             <div className="flex justify-end pt-2 border-t border-white/[0.06]">
+          <button onClick={printProposal} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition"><Printer size={14}/> Print / Export Proposal</button>
+        </div>
       </div>
     </Modal>
   );
