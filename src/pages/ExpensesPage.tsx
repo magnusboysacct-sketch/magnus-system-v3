@@ -81,7 +81,7 @@ export default function ExpensesPage() {
 
   const [form, setForm] = useState({
     description: "", amount: "", expense_date: "",
-    category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", receipt_url: "",
+    category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "",
   });
 
   // Load company ID

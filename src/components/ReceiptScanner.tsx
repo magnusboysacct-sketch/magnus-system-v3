@@ -8,7 +8,7 @@ import { Camera, Upload, ScanLine, Check, X, RefreshCw, Move, Sparkles, AlertCir
 import { aiScanReceipt, type ReceiptScanResult } from "../lib/magnusAI";
 
 interface ReceiptScannerProps {
-  onResult:  (result: ReceiptScanResult) => void;
+  onResult:  (result: ReceiptScanResult, file?: File) => void;
   onCancel:  () => void;
   mode?:     "receipt" | "invoice";
 }
