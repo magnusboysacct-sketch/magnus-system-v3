@@ -44,6 +44,7 @@ import ReportsPage            from "./pages/ReportsPage";
 import ContractsPage          from "./pages/ContractsPage";
 
 import SettingsPage           from "./pages/SettingsPage";
+import SettingsRecordsPage     from "./pages/SettingsRecordsPage";
 import SettingsCompanyPage      from "./pages/SettingsCompanyPage";
 import SettingsMasterListsPage      from "./pages/SettingsMasterListsPage";
 import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
@@ -184,6 +185,7 @@ export default function App() {
               <Route path="/settings/master-categories"    element={<SettingsMasterCategoriesPage />} />
               <Route path="/settings/cost-codes"           element={<SettingsCostCodesPage />} />
               <Route path="/settings/users"                element={<CompanyUsersPage />} />
+              <Route path="/settings/records"              element={<SettingsRecordsPage />} />
               <Route path="/settings/company"              element={<Navigate to="/settings" replace />} />
 
               {/* Admin / Payroll */}
