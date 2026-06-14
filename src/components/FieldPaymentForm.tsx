@@ -196,7 +196,8 @@ export function generateReceiptHTML(payment: any, company: any, logoBase64?: str
 
 export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldPaymentFormProps) {
   const { projects } = useProjectContext();
-  const [step, setStep] = useState<Step>(prefillWorker?"id_scan":"type_select");
+  const initialStep = useRef<Step>(prefillWorker?"id_scan":"type_select");
+  const [step, setStep] = useState<Step>(initialStep.current);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string|null>(null);
   const [receiptNumber, setReceiptNumber] = useState("");
