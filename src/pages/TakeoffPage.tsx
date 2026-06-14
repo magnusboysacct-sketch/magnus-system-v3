@@ -887,6 +887,70 @@ function TakeoffInner() {
     scheduleRender();
   }
 
+  // ─── Generate Milestones from Takeoff ────────────────────────────────────────
+  const [generatingMilestones, setGeneratingMilestones] = useState(false);
+  const [milestoneMsg, setMilestoneMsg] = useState<string|null>(null);
+
+  async function generateMilestones() {
+    const pid = routeProjectId || currentProject?.id;
+    if(!pid || measurements.length===0) return;
+    setGeneratingMilestones(true); setMilestoneMsg(null);
+    try {
+      // Get company_id
+      const {data:{user}} = await supabase.auth.getUser();
+      if(!user) throw new Error("Not authenticated");
+      const {data:profile} = await supabase.from("user_profiles").select("company_id").eq("id",user.id).maybeSingle();
+      const companyId = profile?.company_id;
+      if(!companyId) throw new Error("No company");
+
+      // Group measurements by assembly/category → milestones
+      const groups: Record<string, {name:string; measurements: typeof measurements}> = {};
+      measurements.forEach(m => {
+        const key = m.linkedAssemblyName || m.type;
+        if(!groups[key]) groups[key] = {name:key, measurements:[]};
+        groups[key].measurements.push(m);
+      });
+
+      let milestonesCreated = 0;
+      let tasksCreated = 0;
+
+      for(const [key, group] of Object.entries(groups)) {
+        // Create milestone
+        const totalCost = group.measurements.reduce((s,m)=>s+m.result,0);
+        const {data:ms, error:me} = await supabase.from("project_milestones").insert({
+          company_id: companyId,
+          project_id: pid,
+          milestone_name: group.name,
+          status: "planned",
+        }).select().maybeSingle();
+        if(me) { console.error("Milestone insert error:", me); continue; }
+        if(me) continue;
+        milestonesCreated++;
+
+        // Create tasks under milestone
+        for(const m of group.measurements) {
+          await supabase.from("project_tasks").insert({
+            project_id: pid,
+            milestone_id: ms?.id,
+            task_name: m.linkedItemName || m.label || m.type,
+            trade_type: "General Labour",
+            quantity: m.result,
+            unit: m.unit,
+            rate_per_unit: 0,
+            status: "planned",
+          });
+          tasksCreated++;
+        }
+      }
+      setMilestoneMsg(`✅ Created ${milestonesCreated} milestones and ${tasksCreated} tasks`);
+      setTimeout(()=>setMilestoneMsg(null), 4000);
+    } catch(e:any) {
+      setMilestoneMsg(`❌ ${e.message}`);
+    } finally {
+      setGeneratingMilestones(false);
+    }
+  }
+
   // ─── Export & Send to BOQ ─────────────────────────────────────────────────────
   function exportCSV() {
     const rows = measurements.map(m => [m.type, fmt2(m.result), m.unit, m.linkedAssemblyName||"", m.linkedItemName||""].join(","));
@@ -982,6 +1046,11 @@ function TakeoffInner() {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold disabled:opacity-40 transition shadow-sm">
           <Send size={12}/> Send to BOQ
         </button>
+        <button onClick={generateMilestones} disabled={measurements.length===0||generatingMilestones}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold disabled:opacity-40 transition shadow-sm">
+          <Layers size={12}/> {generatingMilestones?"Generating...":"→ Milestones"}
+        </button>
+        {milestoneMsg&&<div className="text-[10px] text-emerald-400 font-semibold">{milestoneMsg}</div>}
       </header>
 
       {/* ── Main layout ── */}
