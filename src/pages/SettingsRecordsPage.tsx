@@ -19,6 +19,7 @@ export default function SettingsRecordsPage() {
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
   const [logoBase64, setLogoBase64] = useState<string|null>(null);
+  const [watermark, setWatermark] = useState<{url:string;opacity:number}|null>(null);
   const [tab, setTab] = useState<"company"|"field">("company");
   const [search, setSearch] = useState("");
   const [companyWorkers, setCompanyWorkers] = useState<any[]>([]);
@@ -40,6 +41,9 @@ export default function SettingsRecordsPage() {
         supabase.from("company_settings").select("*").eq("company_id",p.company_id).maybeSingle()
           .then(({data:cs})=>{
             setCompany(cs);
+            if(cs?.watermark_enabled && cs?.watermark_url){
+              setWatermark({url:cs.watermark_url, opacity:cs.watermark_opacity||0.15});
+            } else { setWatermark(null); }
             if(cs?.logo_url){
               fetch(cs.logo_url).then(r=>r.blob())
                 .then(blob=>new Promise<string>((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result as string);fr.onerror=rej;fr.readAsDataURL(blob);}))
@@ -148,6 +152,7 @@ export default function SettingsRecordsPage() {
       <div><div class="sig-line">Authorized By</div></div>
       <div><div class="sig-line">Date</div></div>
     </div>
+    ${watermark?`<img src="${watermark.url}" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);width:60%;opacity:${watermark.opacity};pointer-events:none;z-index:0"/>`:""}
     <div style="margin-top:24px;text-align:center;font-size:10px;color:#999">${company?.company_name||""} · ${company?.tagline?`"${company.tagline}" · `:""}CONFIDENTIAL</div>
     </body></html>`;
     const w = window.open("","_blank");
@@ -229,6 +234,7 @@ export default function SettingsRecordsPage() {
       <div><div style="border-top:1px solid #1a1a1a;margin-top:40px;padding-top:6px;font-size:11px;color:#666">Authorized By</div></div>
       <div><div style="border-top:1px solid #1a1a1a;margin-top:40px;padding-top:6px;font-size:11px;color:#666">Date</div></div>
     </div>
+    ${watermark?`<img src="${watermark.url}" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);width:60%;opacity:${watermark.opacity};pointer-events:none;z-index:0"/>`:""}
     <div style="margin-top:24px;text-align:center;font-size:10px;color:#999">${company?.company_name||""} · CONFIDENTIAL</div>
     </body></html>`;
     const w = window.open("","_blank");

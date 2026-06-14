@@ -70,6 +70,7 @@ export default function FieldPaymentsPage() {
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
   const [logoBase64, setLogoBase64] = useState<string|null>(null);
+  const [watermark, setWatermark] = useState<{url:string;opacity:number}|null>(null);
   const [workerHistory, setWorkerHistory] = useState<Payment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -84,6 +85,9 @@ export default function FieldPaymentsPage() {
               .eq("company_id",data.company_id).maybeSingle()
               .then(({data:cs})=>{
               setCompany(cs);
+              if(cs?.watermark_enabled && cs?.watermark_url){
+                setWatermark({url:cs.watermark_url, opacity:cs.watermark_opacity||0.15});
+              } else { setWatermark(null); }
               if(cs?.logo_url){
                 fetch(cs.logo_url)
                   .then(r=>r.blob())
@@ -169,7 +173,7 @@ export default function FieldPaymentsPage() {
       task_name: p.task_name||p.work_type,
       created_at: p.created_at,
     };
-    const html = generateReceiptHTML(paymentData, company, logo);
+    const html = generateReceiptHTML(paymentData, company, logo, watermark);
     const w = window.open("","_blank");
     if(!w)return;
     w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${p.receipt_number}</title>

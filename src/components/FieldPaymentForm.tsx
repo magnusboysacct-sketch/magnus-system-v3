@@ -122,7 +122,7 @@ function StepBar({step, paymentType}:{step:Step; paymentType:PaymentType}) {
 
 // ── Receipt Generator ─────────────────────────────────────────────────────────
 // Generates receipt HTML from payment data — no image stored
-export function generateReceiptHTML(payment: any, company: any, logoBase64?: string|null) {
+export function generateReceiptHTML(payment: any, company: any, logoBase64?: string|null, watermark?: {url:string;opacity:number}|null) {
   const totalAdvances = payment.previous_advances||0;
   const earned = Number(payment.total_amount||0);
   const balance = earned - totalAdvances;
@@ -186,6 +186,7 @@ export function generateReceiptHTML(payment: any, company: any, logoBase64?: str
       <div style="font-size:11px;color:#666;margin-top:4px">${payment.worker_name}</div>
     </div>`:""}
 
+    ${watermark?.url?`<img src="${watermark.url}" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);width:60%;opacity:${watermark.opacity};pointer-events:none;z-index:0"/>`:""}
     <div style="border-top:1px solid #e5e7eb;margin-top:16px;padding-top:12px;text-align:center;font-size:10px;color:#999">
       Paid by: ${payment.supervisor_name||""} · ${new Date(payment.created_at||Date.now()).toLocaleDateString()}<br/>
       ${company?.company_name||""}${company?.tagline?` · "${company.tagline}"`:""}
