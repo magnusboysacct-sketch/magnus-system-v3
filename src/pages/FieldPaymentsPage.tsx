@@ -62,9 +62,11 @@ export default function FieldPaymentsPage() {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const [showForm, setShowForm] = useState(false);
+  const [prefillWorker, setPrefillWorker] = useState<{name:string;id_number:string;phone:string;payment_type:string}|null>(null);
   const [selected, setSelected] = useState<Payment|null>(null);
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
+  const [logoBase64, setLogoBase64] = useState<string|null>(null);
   const [workerHistory, setWorkerHistory] = useState<Payment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -77,7 +79,16 @@ export default function FieldPaymentsPage() {
             setCompanyId(data.company_id);
             supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1,address_line2,parish,country,tagline,website")
               .eq("company_id",data.company_id).maybeSingle()
-              .then(({data:cs})=>setCompany(cs));
+              .then(({data:cs})=>{
+              setCompany(cs);
+              if(cs?.logo_url){
+                fetch(cs.logo_url)
+                  .then(r=>r.blob())
+                  .then(blob=>new Promise<string>((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result as string);fr.onerror=rej;fr.readAsDataURL(blob);}))
+                  .then(b64=>setLogoBase64(b64))
+                  .catch(()=>setLogoBase64(null));
+              }
+            });
           }
         });
     });
@@ -127,7 +138,14 @@ export default function FieldPaymentsPage() {
   };
 
   // Generate PDF from stored payment data
-  function generatePDF(p: Payment) {
+  async function generatePDF(p: Payment) {
+    let logo = logoBase64;
+    if(!logo && company?.logo_url) {
+      try {
+        const blob = await fetch(company.logo_url).then(r=>r.blob());
+        logo = await new Promise<string>((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result as string);fr.onerror=rej;fr.readAsDataURL(blob);});
+      } catch {}
+    }
     const paymentData = {
       receipt_number: p.receipt_number||`FP-${p.id.slice(-6)}`,
       worker_name: p.worker_name,
@@ -148,7 +166,7 @@ export default function FieldPaymentsPage() {
       task_name: p.work_type,
       created_at: p.created_at,
     };
-    const html = generateReceiptHTML(paymentData, company);
+    const html = generateReceiptHTML(paymentData, company, logo);
     const w = window.open("","_blank");
     if(!w)return;
     w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${p.receipt_number}</title>
@@ -192,7 +210,7 @@ export default function FieldPaymentsPage() {
   ];
 
   if(showForm) {
-    return <FieldPaymentForm onComplete={()=>{setShowForm(false);loadPayments();}} onCancel={()=>setShowForm(false)}/>;
+    return <FieldPaymentForm onComplete={()=>{setShowForm(false);setPrefillWorker(null);loadPayments();}} onCancel={()=>{setShowForm(false);setPrefillWorker(null);}} prefillWorker={prefillWorker}/>;
   }
 
   return(
@@ -455,17 +473,17 @@ export default function FieldPaymentsPage() {
                 <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2 mt-3">Continue with this Worker</div>
 
                 <div className="grid grid-cols-3 gap-2">
-                  <button onClick={()=>{setSelected(null);setShowForm(true);}}
+                  <button onClick={()=>{const w=selected;setSelected(null);setPrefillWorker({name:w?.worker_name||"",id_number:w?.worker_id_number||"",phone:w?.worker_phone||"",payment_type:"advance"});setShowForm(true);}}
                     className="flex flex-col items-center gap-1 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition">
                     <TrendingUp size={15}/>
                     <span className="text-[10px] font-bold">New Advance</span>
                   </button>
-                  <button onClick={()=>{setSelected(null);setShowForm(true);}}
+                  <button onClick={()=>{const w=selected;setSelected(null);setPrefillWorker({name:w?.worker_name||"",id_number:w?.worker_id_number||"",phone:w?.worker_phone||"",payment_type:"payment"});setShowForm(true);}}
                     className="flex flex-col items-center gap-1 py-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 transition">
                     <DollarSign size={15}/>
                     <span className="text-[10px] font-bold">Pay Work</span>
                   </button>
-                  <button onClick={()=>{setSelected(null);setShowForm(true);}}
+                  <button onClick={()=>{const w=selected;setSelected(null);setPrefillWorker({name:w?.worker_name||"",id_number:w?.worker_id_number||"",phone:w?.worker_phone||"",payment_type:"final"});setShowForm(true);}}
                     className="flex flex-col items-center gap-1 py-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 transition">
                     <CheckCircle2 size={15}/>
                     <span className="text-[10px] font-bold">Final Pay</span>

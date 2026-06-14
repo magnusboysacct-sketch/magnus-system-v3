@@ -122,7 +122,7 @@ function StepBar({step, paymentType}:{step:Step; paymentType:PaymentType}) {
 
 // ── Receipt Generator ─────────────────────────────────────────────────────────
 // Generates receipt HTML from payment data — no image stored
-export function generateReceiptHTML(payment: any, company: any) {
+export function generateReceiptHTML(payment: any, company: any, logoBase64?: string|null) {
   const totalAdvances = payment.previous_advances||0;
   const earned = Number(payment.total_amount||0);
   const balance = earned - totalAdvances;
@@ -191,11 +191,11 @@ export function generateReceiptHTML(payment: any, company: any) {
       ${company?.company_name||""}${company?.tagline?` · "${company.tagline}"`:""}
     </div>
   </div>`;
-}interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; }
+}interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; prefillWorker?:{name:string;id_number:string;phone:string;payment_type:string}|null; }
 
-export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps) {
+export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldPaymentFormProps) {
   const { projects } = useProjectContext();
-  const [step, setStep] = useState<Step>("type_select");
+  const [step, setStep] = useState<Step>(prefillWorker?"id_scan":"type_select");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string|null>(null);
   const [receiptNumber, setReceiptNumber] = useState("");
@@ -218,8 +218,8 @@ export function FieldPaymentForm({ onComplete, onCancel }: FieldPaymentFormProps
   const [selectedTask, setSelectedTask] = useState<any>(null);
 
   const [form, setForm] = useState<FormData>({
-    payment_type:"payment",
-    worker_name:"", worker_id_number:"", worker_phone:"",
+    payment_type:(prefillWorker?.payment_type as PaymentType)||"payment",
+    worker_name:prefillWorker?.name||"", worker_id_number:prefillWorker?.id_number||"", worker_phone:prefillWorker?.phone||"",
     worker_address:"", worker_ref:"",
     project_id:"", milestone_id:"", task_id:"",
     task_name:"", trade_type:"", unit:"",
