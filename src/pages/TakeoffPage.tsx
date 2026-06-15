@@ -906,7 +906,7 @@ function TakeoffInner() {
       // Group measurements by assembly/category → milestones
       const groups: Record<string, {name:string; measurements: typeof measurements}> = {};
       measurements.forEach(m => {
-        const key = m.linkedAssemblyName || m.type;
+        const key = m.linkedAssemblyName || "General Works";
         if(!groups[key]) groups[key] = {name:key, measurements:[]};
         groups[key].measurements.push(m);
       });
@@ -932,7 +932,7 @@ function TakeoffInner() {
           await supabase.from("project_tasks").insert({
             project_id: pid,
             milestone_id: ms?.id,
-            task_name: m.linkedItemName || m.label || m.type,
+            task_name: m.linkedItemName || m.label || (m.type==="line"?`Line ${m.result.toFixed(2)} ${m.unit}`:m.type==="area"?`Area ${m.result.toFixed(2)} ${m.unit}`:m.type==="count"?`Count ${m.result} items`:`${m.type} ${m.result.toFixed(2)} ${m.unit}`),
             trade_type: "General Labour",
             quantity: m.result,
             unit: m.unit,
