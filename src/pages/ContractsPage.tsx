@@ -160,8 +160,8 @@ function ContractCard({ contract, onView, onDelete, onDuplicate }: {
 // ─── PDF Preview Modal ────────────────────────────────────────────────────────
 function ContractPDFPreview({ contract, schedule, company, onClose, watermark }: {
   contract: Contract; schedule: PaymentSchedule[]; company: any; onClose: () => void;
+  watermark?: {url:string;opacity:number}|null;
 }) {
-  const totalScheduled = schedule.reduce((s, p) => s + Number(p.amount || 0), 0);
 
   async function downloadPDF() {
     const el = document.getElementById("contract-print-content");
