@@ -158,7 +158,7 @@ function ContractCard({ contract, onView, onDelete, onDuplicate }: {
 }
 
 // ─── PDF Preview Modal ────────────────────────────────────────────────────────
-function ContractPDFPreview({ contract, schedule, company, onClose }: {
+function ContractPDFPreview({ contract, schedule, company, onClose, watermark }: {
   contract: Contract; schedule: PaymentSchedule[]; company: any; onClose: () => void;
 }) {
   const totalScheduled = schedule.reduce((s, p) => s + Number(p.amount || 0), 0);
@@ -927,7 +927,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
 
       {/* ── PDF Preview ── */}
       {showPDF && viewingContract && (
-        <ContractPDFPreview
+        <ContractPDFPreview watermark={watermark}
           contract={viewingContract} schedule={schedule} company={company}
           onClose={() => setShowPDF(false)}/>
       )}
