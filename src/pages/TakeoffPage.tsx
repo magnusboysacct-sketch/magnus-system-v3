@@ -20,7 +20,7 @@ GlobalWorkerOptions.workerSrc = workerSrc;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Point = { x: number; y: number };
-type ToolMode = "select" | "line" | "area" | "count" | "volume";
+type ToolMode = "select" | "pan" | "line" | "area" | "count" | "volume";
 
 interface Measurement {
   id: string;
@@ -61,6 +61,7 @@ interface CostItem {
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TOOL_CFG: Record<ToolMode, { label: string; shortcut: string; color: string; desc: string; icon: React.ReactNode }> = {
   select: { label: "Select",  shortcut: "S", color: "#94a3b8", desc: "Click to select. Space+drag to pan.",    icon: <MousePointer size={16}/> },
+  pan:    { label: "Pan",     shortcut: "P", color: "#64748b", desc: "Click and drag to pan the view.",       icon: <span style={{fontSize:16}}>✥</span> },
   line:   { label: "Linear",  shortcut: "L", color: "#38bdf8", desc: "Click start → click end to measure.",    icon: <Ruler size={16}/> },
   area:   { label: "Area",    shortcut: "A", color: "#a78bfa", desc: "Click corners. Double-click to close.",  icon: <Square size={16}/> },
   count:  { label: "Count",   shortcut: "C", color: "#fb923c", desc: "Click to place markers.",                icon: <Hash size={16}/> },
@@ -859,7 +860,7 @@ function TakeoffInner() {
     function onKeyDown(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.code === "Space") { spaceRef.current = true; e.preventDefault(); return; }
-      const map: Record<string,ToolMode> = {s:"select",l:"line",a:"area",c:"count",v:"volume"};
+      const map: Record<string,ToolMode> = {s:"select",p:"pan",l:"line",a:"area",c:"count",v:"volume"};
       const k = e.key.toLowerCase();
       if (map[k]) { setTool(map[k]); toolRef.current = map[k]; setInProgress([]); inProgressRef.current = []; }
       if (e.key === "Escape") { setInProgress([]); inProgressRef.current = []; setCalibrating(false); calibratingRef.current = false; setCalibPts([]); calibPtsRef.current = []; scheduleRender(); }
@@ -1078,7 +1079,7 @@ function TakeoffInner() {
         {/* ── Canvas Area ── */}
         <div className="flex-1 relative min-w-0 overflow-hidden bg-[#080b10]"
           ref={containerRef}
-          style={{ cursor: panningRef.current ? "grabbing" : spaceRef.current ? "grab" : tool==="select" ? "default" : "crosshair" }}
+          style={{ cursor: panningRef.current ? "grabbing" : (spaceRef.current || tool==="pan") ? "grab" : tool==="select" ? "default" : "crosshair" }}
           onMouseMove={onMouseMove}
           onMouseDown={onMouseDown}
           onMouseUp={onMouseUp}
