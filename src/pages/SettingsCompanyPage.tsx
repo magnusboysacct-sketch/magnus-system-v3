@@ -111,6 +111,9 @@ export default function SettingsCompanyPage() {
         phone:         form.phone.trim()           || null,
         email:         form.email.trim()           || null,
         website:       form.website.trim()         || null,
+                watermark_url:     watermarkUrl || null,
+        watermark_enabled: watermarkEnabled,
+        watermark_opacity: watermarkOpacity,
         updated_at:    new Date().toISOString(),
       }, { onConflict: "company_id" });
       if (error) throw error;
