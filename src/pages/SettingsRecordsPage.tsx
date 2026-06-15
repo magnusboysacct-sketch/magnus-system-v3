@@ -310,6 +310,7 @@ export default function SettingsRecordsPage() {
         <div class="back-auth">This card certifies the bearer is an authorized representative of ${company?.company_name||"this company"}</div>
       </div>
     </div>
+        ${watermark?`<img src="${watermark.url}" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);width:60%;opacity:${watermark.opacity};pointer-events:none;z-index:0"/>`:""}
     </body></html>`;
     const w = window.open("","_blank");
     if(!w) return;
