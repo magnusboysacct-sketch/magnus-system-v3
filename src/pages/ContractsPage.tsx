@@ -240,9 +240,10 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
       {/* Preview */}
       <div className="flex-1 overflow-y-auto bg-gray-100 p-8">
         <div id="contract-print-content" style={{position:"relative"}}>
-          {watermark&&<img src={watermark.url} style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%) rotate(-30deg)",width:"60%",opacity:watermark.opacity,pointerEvents:"none",zIndex:0}}/> }
+          {watermark&&<img src={watermark.url} style={{position:"absolute",bottom:"6mm",right:"6mm",height:"80mm",width:"auto",opacity:watermark.opacity,pointerEvents:"none",zIndex:0}}/> }
           <div className="page bg-white shadow-2xl mx-auto max-w-[800px]" style={{fontFamily:"Georgia,serif",color:"#1a1a1a"}}>
 
+            {watermark&&<img src={watermark.url} style={{position:"absolute",bottom:"6mm",right:"6mm",height:"80mm",width:"auto",opacity:watermark.opacity,pointerEvents:"none",zIndex:0}}/>}
             {/* Cover Page */}
             <div className="cover" style={{minHeight:"60vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",textAlign:"center",borderBottom:"4px solid #1a1a1a",marginBottom:60,padding:"80px 40px"}}>
               {company?.logo_url && (
