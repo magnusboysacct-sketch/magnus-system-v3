@@ -239,7 +239,8 @@ function ContractPDFPreview({ contract, schedule, company, onClose }: {
 
       {/* Preview */}
       <div className="flex-1 overflow-y-auto bg-gray-100 p-8">
-        <div id="contract-print-content">
+        <div id="contract-print-content" style={{position:"relative"}}>
+          {watermark&&<img src={watermark.url} style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%) rotate(-30deg)",width:"60%",opacity:watermark.opacity,pointerEvents:"none",zIndex:0}}/> }
           <div className="page bg-white shadow-2xl mx-auto max-w-[800px]" style={{fontFamily:"Georgia,serif",color:"#1a1a1a"}}>
 
             {/* Cover Page */}
@@ -413,6 +414,7 @@ export default function ContractsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [companyId, setCompanyId] = useState<string>("");
+  const [watermark, setWatermark] = useState<{url:string;opacity:number}|null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -458,7 +460,14 @@ export default function ContractsPage() {
       const { data:{ user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data:p } = await supabase.from("user_profiles").select("company_id").eq("id",user.id).maybeSingle();
-      if (p?.company_id) { setCompanyId(p.company_id); await loadAll(p.company_id); }
+      if (p?.company_id) {
+        setCompanyId(p.company_id);
+        await loadAll(p.company_id);
+        const {data:cs} = await supabase.from("company_settings").select("*").eq("company_id",p.company_id).maybeSingle();
+        if(cs?.watermark_enabled && cs?.watermark_url){
+          setWatermark({url:cs.watermark_url, opacity:cs.watermark_opacity||0.15});
+        }
+      }
     }
     init();
   }, []);
