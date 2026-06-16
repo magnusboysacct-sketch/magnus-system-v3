@@ -186,7 +186,7 @@ export function generateReceiptHTML(payment: any, company: any, logoBase64?: str
       <div style="font-size:11px;color:#666;margin-top:4px">${payment.worker_name}</div>
     </div>`:""}
 
-    ${watermark?.url?`<img src="${watermark.url}" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);width:60%;opacity:${watermark.opacity};pointer-events:none;z-index:0"/>`:""}
+    ${watermark?.url?`<img src="${watermark.url}" style="position:fixed;bottom:6mm;right:6mm;height:${(watermark as any).size||25}mm;width:${(watermark as any).size||25}mm;object-fit:contain;object-position:bottom right;opacity:${watermark.opacity};pointer-events:none;z-index:0;-webkit-print-color-adjust:exact;print-color-adjust:exact"/>`:""}
     <div style="border-top:1px solid #e5e7eb;margin-top:16px;padding-top:12px;text-align:center;font-size:10px;color:#999">
       Paid by: ${payment.supervisor_name||""} · ${new Date(payment.created_at||Date.now()).toLocaleDateString()}<br/>
       ${company?.company_name||""}${company?.tagline?` · "${company.tagline}"`:""}

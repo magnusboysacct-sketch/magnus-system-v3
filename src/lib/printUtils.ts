@@ -27,11 +27,6 @@ export function openPrintWindow(html: string, options: PrintOptions = {}) {
     </style>
   </head><body>${html}${wmHtml}</body></html>`);
 
-  // Add print tip banner
-  const tip = w.document.createElement("div");
-  tip.style.cssText = "position:fixed;top:0;left:0;right:0;background:#1a1a1a;color:white;text-align:center;padding:8px;font-size:11px;font-family:sans-serif;z-index:9999;";
-  tip.innerHTML = "💡 To save as PDF: Change Destination to <b>Save as PDF</b> · Enable <b>Background graphics</b> for watermark";
-  w.document.body.appendChild(tip);
   w.document.close();
   setTimeout(() => w.print(), 600);
 }

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { FieldPaymentForm, generateReceiptHTML } from "../components/FieldPaymentForm";
+import { openPrintWindow } from "../lib/printUtils";
 import {
   Plus, Search, HandCoins, DollarSign, Users,
   Calendar, RefreshCw, FileText, X, TrendingUp,
@@ -81,7 +82,7 @@ export default function FieldPaymentsPage() {
         .then(({data})=>{
           if(data?.company_id){
             setCompanyId(data.company_id);
-            supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1,address_line2,parish,country,tagline,website")
+            supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1,address_line2,parish,country,tagline,website,watermark_url,watermark_enabled,watermark_opacity,watermark_size")
               .eq("company_id",data.company_id).maybeSingle()
               .then(({data:cs})=>{
               setCompany(cs);
@@ -174,13 +175,7 @@ export default function FieldPaymentsPage() {
       created_at: p.created_at,
     };
     const html = generateReceiptHTML(paymentData, company, logo, watermark);
-    const w = window.open("","_blank");
-    if(!w)return;
-    w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${p.receipt_number}</title>
-    <style>*{box-sizing:border-box}body{margin:0;background:white}@media print{body{margin:0}}</style>
-    </head><body>${html}</body></html>`);
-    w.document.close();
-    setTimeout(()=>w.print(),600);
+    if(html) openPrintWindow(html, { title: 'Receipt - ' + p.worker_name, watermark: watermark||undefined, tagline: company?.tagline||undefined });
   }
 
   function sendWhatsApp(p: Payment) {
