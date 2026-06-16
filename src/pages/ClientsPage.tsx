@@ -208,6 +208,15 @@ export default function ClientsPage() {
     alert(`Portal link copied!\n\n${url}`);
   }
 
+  async function resetPortalPassword(client: Client) {
+    if (!confirm(`Reset portal password for ${client.name}? They will need to create a new password on next login.`)) return;
+    await supabase.from("clients").update({
+      portal_password_hash: null,
+      portal_activated_at: null
+    }).eq("id", client.id);
+    alert(`Password reset for ${client.name}. They can now set a new password at app.magnusboys.com/client-login`);
+  }
+
   async function deleteClient(id: string) {
     try {
       const { error: e } = await supabase.from("clients").delete().eq("id", id);
