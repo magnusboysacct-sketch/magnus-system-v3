@@ -45,14 +45,14 @@ const EMPTY_FORM = {
 
 // ─── Client Card ──────────────────────────────────────────────────────────────
 
-function ClientCard({ client, onEdit, onDelete, onPortalToggle, onCopyLink, onResetPassword }: {
+function ClientCard({ client, onEdit, onDelete, onPortalToggle, onResetPassword }: {
   client: Client;
   onEdit: (c: Client) => void;
   onDelete: (id: string) => void;
   onPortalToggle: (c: Client) => void;
-  onCopyLink: (c: Client) => void;
-  onCopyLink: (c: Client) => void;
   onResetPassword: (c: Client) => void;
+}) {
+  return (
     <Card className="group hover:border-white/[0.13] transition-all">
       <div className="flex items-start justify-between mb-4">
         <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
@@ -66,7 +66,6 @@ function ClientCard({ client, onEdit, onDelete, onPortalToggle, onCopyLink, onRe
           <button onClick={() => onPortalToggle(client)} title={client.portal_enabled ? "Disable Portal" : "Enable Portal"}
             className={`p-1.5 rounded-lg transition-colors ${client.portal_enabled ? "text-green-400 hover:bg-green-500/15" : "text-slate-600 hover:bg-white/10 hover:text-slate-300"}`}>
             <ArrowRight size={12}/>
-          </button>
           </button>
           {client.portal_enabled && (
             <button onClick={()=>onResetPassword(client)} title="Reset Portal Password"
@@ -350,7 +349,6 @@ export default function ClientsPage() {
             {filtered.map(c => (
               <ClientCard key={c.id} client={c}
                 onPortalToggle={togglePortal}
-                onCopyLink={copyPortalLink}
                 onEdit={openEdit}
                 onDelete={id => setDeleteConfirm(id)}
                 onResetPassword={resetPortalPassword}
