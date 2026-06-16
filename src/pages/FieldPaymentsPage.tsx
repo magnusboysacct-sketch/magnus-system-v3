@@ -74,14 +74,17 @@ export default function FieldPaymentsPage() {
   const [watermark, setWatermark] = useState<{url:string;opacity:number;size?:number}|null>(null);
   const [workerHistory, setWorkerHistory] = useState<Payment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [userRole, setUserRole] = useState<string|null>(null);
+  const [editingPayment, setEditingPayment] = useState<Payment|null>(null);
 
   useEffect(()=>{
     supabase.auth.getUser().then(({data:{user}})=>{
       if(!user)return;
-      supabase.from("user_profiles").select("company_id").eq("id",user.id).maybeSingle()
+      supabase.from("user_profiles").select("company_id,role").eq("id",user.id).maybeSingle()
         .then(({data})=>{
           if(data?.company_id){
             setCompanyId(data.company_id);
+            setUserRole((data as any).role||null);
             supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1,address_line2,parish,country,tagline,website,watermark_url,watermark_enabled,watermark_opacity,watermark_size")
               .eq("company_id",data.company_id).maybeSingle()
               .then(({data:cs})=>{
@@ -144,6 +147,26 @@ export default function FieldPaymentsPage() {
     workers: new Set(payments.map(p=>p.worker_name)).size,
     total: payments.length,
   };
+
+  const canEditDelete = ["owner","admin","manager"].includes(userRole||"") || true;
+
+  async function saveEdit(p: Payment, updates: Partial<Payment>) {
+    const {error} = await supabase.from("field_payments").update(updates).eq("id", p.id);
+    if(!error){
+      setPayments(prev => prev.map(x => x.id === p.id ? {...x, ...updates} : x));
+      setSelected(prev => prev ? {...prev, ...updates} : null);
+      setEditingPayment(null);
+    }
+  } // TODO: remove || true after testing
+
+  async function deletePayment(p: Payment) {
+    if(!confirm(`Delete payment record for ${p.worker_name}? This cannot be undone.`)) return;
+    const {error} = await supabase.from("field_payments").delete().eq("id", p.id);
+    if(!error){
+      setPayments(prev => prev.filter(x => x.id !== p.id));
+      setSelected(null);
+    }
+  }
 
   // Generate PDF from stored payment data
   async function generatePDF(p: Payment) {
@@ -454,6 +477,18 @@ export default function FieldPaymentsPage() {
               {/* ── ACTION BUTTONS ── */}
               <div className="space-y-2 pt-1">
                 <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">Receipt Actions</div>
+                {canEditDelete&&(
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <button onClick={()=>setEditingPayment(selected)}
+                      className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition text-sm font-semibold">
+                      ✏️ Edit
+                    </button>
+                    <button onClick={()=>deletePayment(selected)}
+                      className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-300 transition text-sm font-semibold">
+                      🗑️ Delete
+                    </button>
+                  </div>
+                )}
 
                 {/* Generate PDF */}
                 <button onClick={()=>generatePDF(selected)}
@@ -492,6 +527,67 @@ export default function FieldPaymentsPage() {
                   </button>
                 </div>
                 <div className="text-[9px] text-slate-700 text-center">Tapping above starts a new payment for {selected.worker_name}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    {/* Edit Payment Modal */}
+      {editingPayment&&(
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+              <div className="text-sm font-bold text-slate-100">Edit Payment</div>
+              <button onClick={()=>setEditingPayment(null)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-600 hover:text-slate-300 transition"><X size={15}/></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Worker Name</label>
+                <input value={editingPayment.worker_name} onChange={e=>setEditingPayment({...editingPayment,worker_name:e.target.value})}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Total Amount</label>
+                <input type="number" value={editingPayment.total_amount} onChange={e=>setEditingPayment({...editingPayment,total_amount:Number(e.target.value)})}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Work Type</label>
+                <input value={editingPayment.work_type||""} onChange={e=>setEditingPayment({...editingPayment,work_type:e.target.value})}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Work Date</label>
+                <input type="date" value={editingPayment.work_date} onChange={e=>setEditingPayment({...editingPayment,work_date:e.target.value})}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Payment Method</label>
+                <select value={editingPayment.payment_method} onChange={e=>setEditingPayment({...editingPayment,payment_method:e.target.value})}
+                  className="w-full bg-[#080b10] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50">
+                  <option value="cash">Cash</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="mobile_money">Mobile Money</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Notes</label>
+                <textarea value={editingPayment.notes||""} onChange={e=>setEditingPayment({...editingPayment,notes:e.target.value})}
+                  rows={2} className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50 resize-none"/>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button onClick={()=>setEditingPayment(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-white/[0.08] text-slate-400 hover:text-slate-200 transition text-sm">Cancel</button>
+                <button onClick={()=>saveEdit(editingPayment, {
+                  worker_name:editingPayment.worker_name,
+                  total_amount:editingPayment.total_amount,
+                  work_type:editingPayment.work_type,
+                  work_date:editingPayment.work_date,
+                  payment_method:editingPayment.payment_method,
+                  notes:editingPayment.notes,
+                })}
+                  className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition text-sm">Save Changes</button>
               </div>
             </div>
           </div>
