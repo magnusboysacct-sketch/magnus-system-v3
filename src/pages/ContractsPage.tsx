@@ -162,7 +162,7 @@ function ContractCard({ contract, onView, onDelete, onDuplicate }: {
 // ─── PDF Preview Modal ────────────────────────────────────────────────────────
 function ContractPDFPreview({ contract, schedule, company, onClose, watermark }: {
   contract: Contract; schedule: PaymentSchedule[]; company: any; onClose: () => void;
-  watermark?: {url:string;opacity:number}|null;
+  watermark?: {url:string;opacity:number;size?:number}|null;
 }) {
   const totalScheduled = schedule.reduce((s, p) => s + Number(p.amount || 0), 0);
   function downloadPDF() {
@@ -181,7 +181,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
     `;
     openPrintWindow(`<style>${extraCss}</style>${html}`, {
       title: contract.contract_number + "-" + contract.contract_name,
-      watermark: watermark ? {...watermark, size: watermark.size} : null,
+      watermark: watermark,
       tagline: company?.tagline
     });
   }
