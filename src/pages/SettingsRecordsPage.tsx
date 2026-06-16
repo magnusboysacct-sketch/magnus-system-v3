@@ -19,7 +19,7 @@ export default function SettingsRecordsPage() {
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
   const [logoBase64, setLogoBase64] = useState<string|null>(null);
-  const [watermark, setWatermark] = useState<{url:string;opacity:number}|null>(null);
+  const [watermark, setWatermark] = useState<{url:string;opacity:number;size?:number}|null>(null);
   const [tab, setTab] = useState<"company"|"field">("company");
   const [search, setSearch] = useState("");
   const [companyWorkers, setCompanyWorkers] = useState<any[]>([]);

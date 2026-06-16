@@ -70,7 +70,7 @@ export default function FieldPaymentsPage() {
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
   const [logoBase64, setLogoBase64] = useState<string|null>(null);
-  const [watermark, setWatermark] = useState<{url:string;opacity:number}|null>(null);
+  const [watermark, setWatermark] = useState<{url:string;opacity:number;size?:number}|null>(null);
   const [workerHistory, setWorkerHistory] = useState<Payment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 

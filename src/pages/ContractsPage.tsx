@@ -410,7 +410,7 @@ export default function ContractsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [companyId, setCompanyId] = useState<string>("");
-  const [watermark, setWatermark] = useState<{url:string;opacity:number}|null>(null);
+  const [watermark, setWatermark] = useState<{url:string;opacity:number;size?:number}|null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
