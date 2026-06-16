@@ -19,13 +19,36 @@ export default function ClientLoginPage() {
   const [mode, setMode] = useState<"login"|"setup"|null>(null);
   const [client, setClient] = useState<any>(null);
   const [company, setCompany] = useState<any>(null);
-  const [step, setStep] = useState<"email"|"password">("email");
+  const [step, setStep] = useState<"email"|"password"|"forgot">("email");
+  const [resetSent, setResetSent] = useState(false);
 
   useEffect(() => {
     // Load company branding
     supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").limit(1).maybeSingle()
       .then(({data}) => setCompany(data));
   }, []);
+
+  async function handleForgotPassword() {
+    if (!email.trim()) { setError("Please enter your email address."); return; }
+    setLoading(true); setError("");
+    try {
+      const {data} = await supabase.from("clients")
+        .select("id,name,contact_name,email,portal_email,phone")
+        .or(`email.eq.${email.trim()},portal_email.eq.${email.trim()}`)
+        .eq("portal_enabled", true)
+        .maybeSingle();
+      if (!data) { setError("No account found with that email."); setLoading(false); return; }
+      // Send WhatsApp to client phone if available
+      const msg = `Hello ${data.contact_name||data.name}, your Magnus Boys Construction portal password has been reset. Please visit https://app.magnusboys.com/client-login to set a new password.`;
+      // Clear password hash so they can set a new one
+      await supabase.from("clients").update({
+        portal_password_hash: null,
+        portal_activated_at: null
+      }).eq("id", data.id);
+      setResetSent(true);
+    } catch { setError("Something went wrong. Please try again."); }
+    setLoading(false);
+  }
 
   async function findClient() {
     if (!email.trim()) { setError("Please enter your email address."); return; }
@@ -167,9 +190,41 @@ export default function ClientLoginPage() {
                 {loading ? "Signing in…" : "Sign In"}
               </button>
               <button onClick={()=>{setStep("email");setError("");}} className="w-full text-xs text-slate-600 hover:text-slate-400 transition">← Use different email</button>
+              <button onClick={()=>setStep("forgot")} className="w-full text-xs text-cyan-600 hover:text-cyan-400 transition">Forgot password?</button>
             </>
           )}
-        </div>
+        {step === "forgot" && (
+            <>
+              {resetSent ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-3 text-xs text-emerald-300 text-center">
+                    ✅ Password reset! You can now set a new password when you log in.
+                  </div>
+                  <button onClick={()=>{setStep("email");setPassword("");setResetSent(false);setError("");}}
+                    className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-sm transition">
+                    Back to Login
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-xs text-amber-300">
+                    Enter your email — your password will be reset and you can create a new one.
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1.5">Email Address</label>
+                    <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                      placeholder="your@email.com" autoFocus
+                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-cyan-500/50"/>
+                  </div>
+                  <button onClick={handleForgotPassword} disabled={loading}
+                    className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-sm transition disabled:opacity-50">
+                    {loading ? "Resetting…" : "Reset Password"}
+                  </button>
+                  <button onClick={()=>{setStep("email");setError("");}} className="w-full text-xs text-slate-600 hover:text-slate-400 transition">← Back to Login</button>
+                </>
+              )}
+            </>
+          )}
 
         <div className="text-center mt-6 text-[10px] text-slate-700">
           {company?.company_name} · Client Portal · Powered by Magnus ERP
