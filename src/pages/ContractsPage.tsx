@@ -1,5 +1,7 @@
 ﻿// src/pages/ContractsPage.tsx — Full Contracts & Proposals Module
 // @ts-ignore
+import { openPrintWindow } from "../lib/printUtils";
+// @ts-ignore
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import React, { useEffect, useState, useMemo } from "react";
@@ -162,55 +164,47 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
   contract: Contract; schedule: PaymentSchedule[]; company: any; onClose: () => void;
   watermark?: {url:string;opacity:number}|null;
 }) {
-
-  async function downloadPDF() {
-    const el = document.getElementById("contract-print-content");
-    if (!el) return;
-    try {
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      let heightLeft = pdfHeight;
-      let position = 0;
-      pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pdf.internal.pageSize.getHeight();
-      while (heightLeft > 0) {
-        position = heightLeft - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pdf.internal.pageSize.getHeight();
-      }
-      pdf.save(`${contract.contract_number}-${contract.contract_name.replace(/\s+/g,"-")}.pdf`);
-    } catch(e) { console.error("PDF error:", e); alert("PDF generation failed. Use Print instead."); }
+  const totalScheduled = schedule.reduce((s, p) => s + Number(p.amount || 0), 0);
+  function downloadPDF() {
+    const html = document.getElementById("contract-print-content")?.innerHTML || "";
+    const extraCss = `
+      .page{max-width:800px;margin:0 auto;padding:60px}
+      h1{font-size:32px;font-weight:900}
+      h2{font-size:18px;font-weight:700;margin-bottom:12px;border-bottom:2px solid #1a1a1a;padding-bottom:8px}
+      table{width:100%;border-collapse:collapse;margin-bottom:16px}
+      th{background:#1a1a1a;color:white;padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase}
+      td{padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px}
+      .cover{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;border-bottom:4px solid #1a1a1a;margin-bottom:60px;padding:80px 40px;page-break-after:always}
+      .section{margin-bottom:48px;page-break-inside:avoid}
+      .sig-block{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px}
+      .sig-line{border-top:2px solid #1a1a1a;margin-top:48px;padding-top:8px;font-size:12px}
+    `;
+    openPrintWindow(`<style>${extraCss}</style>${html}`, {
+      title: contract.contract_number + "-" + contract.contract_name,
+      watermark: watermark ? {...watermark, size: watermark.size} : null,
+      tagline: company?.tagline
+    });
   }
 
-  function printContract() {
-    const w = window.open("", "_blank");
-    if (!w) return;
+    function printContract() {
     const html = document.getElementById("contract-print-content")?.innerHTML || "";
-    w.document.write(`<!DOCTYPE html><html><head><title>${contract.contract_name}</title>
-    <style>
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: 'Georgia', serif; color: #1a1a1a; background: white; }
-      .page { max-width: 800px; margin: 0 auto; padding: 60px 60px; }
-      h1 { font-size: 32px; font-weight: 900; }
-      h2 { font-size: 18px; font-weight: 700; margin-bottom: 12px; border-bottom: 2px solid #1a1a1a; padding-bottom: 8px; }
-      h3 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-      p { font-size: 13px; line-height: 1.8; margin-bottom: 10px; }
-      table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-      th { background: #1a1a1a; color: white; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; }
-      td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
-      .cover { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; border-bottom: 4px solid #1a1a1a; margin-bottom: 60px; padding: 80px 40px; }
-      .section { margin-bottom: 48px; page-break-inside: avoid; }
-      .sig-block { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; }
-      .sig-line { border-top: 2px solid #1a1a1a; margin-top: 48px; padding-top: 8px; font-size: 12px; }
-      .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid; }
-      @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
-    </style></head><body>${html}</body></html>`);
-    w.document.close();
-    setTimeout(() => { w.print(); }, 500);
+    const extraCss = `
+      .page{max-width:800px;margin:0 auto;padding:60px}
+      h1{font-size:32px;font-weight:900}
+      h2{font-size:18px;font-weight:700;margin-bottom:12px;border-bottom:2px solid #1a1a1a;padding-bottom:8px}
+      table{width:100%;border-collapse:collapse;margin-bottom:16px}
+      th{background:#1a1a1a;color:white;padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase}
+      td{padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px}
+      .cover{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;border-bottom:4px solid #1a1a1a;margin-bottom:60px;padding:80px 40px}
+      .section{margin-bottom:48px;page-break-inside:avoid}
+      .sig-block{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px}
+      .sig-line{border-top:2px solid #1a1a1a;margin-top:48px;padding-top:8px;font-size:12px}
+    `;
+    openPrintWindow(`<style>${extraCss}</style>${html}`, {
+      title: contract.contract_name,
+      watermark,
+      tagline: company?.tagline
+    });
   }
 
   return (
@@ -225,7 +219,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
         <div className="flex items-center gap-2">
           <button onClick={downloadPDF}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition">
-            <Download size={12}/> Download PDF
+            <Download size={12}/> Save as PDF
           </button>
           <button onClick={printContract}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition">
@@ -240,12 +234,12 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
       {/* Preview */}
       <div className="flex-1 overflow-y-auto bg-gray-100 p-8">
         <div id="contract-print-content" style={{position:"relative"}}>
-          {watermark&&<img src={watermark.url} style={{position:"absolute",bottom:"6mm",right:"6mm",height:"80mm",width:"auto",opacity:watermark.opacity,pointerEvents:"none",zIndex:0}}/> }
+
           <div className="page bg-white shadow-2xl mx-auto max-w-[800px]" style={{fontFamily:"Georgia,serif",color:"#1a1a1a"}}>
 
-            {watermark&&<img src={watermark.url} style={{position:"absolute",bottom:"6mm",right:"6mm",height:"80mm",width:"auto",opacity:watermark.opacity,pointerEvents:"none",zIndex:0}}/>}
+
             {/* Cover Page */}
-            <div className="cover" style={{minHeight:"60vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",textAlign:"center",borderBottom:"4px solid #1a1a1a",marginBottom:60,padding:"80px 40px"}}>
+            <div id="contract-cover-section" className="cover" style={{minHeight:"60vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",textAlign:"center",borderBottom:"4px solid #1a1a1a",marginBottom:60,padding:"80px 40px"}}>
               {company?.logo_url && (
                 <img src={company.logo_url} alt="logo" style={{width:80,height:80,borderRadius:12,objectFit:"cover",marginBottom:20}}/>
               )}
@@ -273,9 +267,9 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                 ))}
               </div>
             </div>
-              {company?.tagline&&<div style={{position:"absolute",bottom:"2mm",left:0,right:0,textAlign:"center",fontSize:10,fontWeight:700,letterSpacing:3,textTransform:"uppercase",color:"#9ca3af",zIndex:2}}>{company.tagline}</div>}
 
-            <div style={{padding:"0 60px 60px"}}>
+
+            <div id="contract-body-section" style={{padding:"0 60px 60px"}}>
 
               {/* Executive Summary */}
               <div className="section" style={{marginBottom:48}}>
@@ -467,7 +461,7 @@ export default function ContractsPage() {
         await loadAll(p.company_id);
         const {data:cs} = await supabase.from("company_settings").select("*").eq("company_id",p.company_id).maybeSingle();
         if(cs?.watermark_enabled && cs?.watermark_url){
-          setWatermark({url:cs.watermark_url, opacity:cs.watermark_opacity||0.15});
+          setWatermark({url:cs.watermark_url, opacity:cs.watermark_opacity||0.15, size:cs.watermark_size||25});
         }
       }
     }

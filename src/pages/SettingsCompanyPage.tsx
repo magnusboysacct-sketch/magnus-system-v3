@@ -41,6 +41,7 @@ export default function SettingsCompanyPage() {
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [watermarkOpacity, setWatermarkOpacity] = useState(0.15);
   const [uploadingWatermark, setUploadingWatermark] = useState(false);
+  const [watermarkSize, setWatermarkSize] = useState(25);
 
   useEffect(() => { loadSettings(); }, []);
 
@@ -77,6 +78,7 @@ export default function SettingsCompanyPage() {
         setWatermarkUrl((settings as any).watermark_url || null);
         setWatermarkEnabled((settings as any).watermark_enabled || false);
         setWatermarkOpacity((settings as any).watermark_opacity || 0.15);
+        setWatermarkSize((settings as any).watermark_size || 25);
         setForm({
           company_name:  settings.company_name  || "",
           tagline:       settings.tagline        || "",
@@ -114,6 +116,7 @@ export default function SettingsCompanyPage() {
                 watermark_url:     watermarkUrl || null,
         watermark_enabled: watermarkEnabled,
         watermark_opacity: watermarkOpacity,
+        watermark_size: watermarkSize,
         updated_at:    new Date().toISOString(),
       }, { onConflict: "company_id" });
       if (error) throw error;
@@ -300,6 +303,15 @@ export default function SettingsCompanyPage() {
                 className="w-full accent-cyan-500"/>
               <div className="flex justify-between text-[10px] text-slate-700 mt-1">
                 <span>Light</span><span>Heavy</span>
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-xs text-slate-500 mb-1">
+                <span>Size</span><span>{watermarkSize}mm</span>
+              </div>
+              <input type="range" min="10" max="60" value={watermarkSize} onChange={e=>setWatermarkSize(Number(e.target.value))} className="w-full accent-cyan-500"/>
+              <div className="flex justify-between text-[10px] text-slate-700 mt-1">
+                <span>Small</span><span>Large</span>
               </div>
             </div>
           </div>

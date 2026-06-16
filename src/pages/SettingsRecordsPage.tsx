@@ -42,7 +42,7 @@ export default function SettingsRecordsPage() {
           .then(({data:cs})=>{
             setCompany(cs);
             if(cs?.watermark_enabled && cs?.watermark_url){
-              setWatermark({url:cs.watermark_url, opacity:cs.watermark_opacity||0.15});
+              setWatermark({url:cs.watermark_url, opacity:cs.watermark_opacity||0.15, size:cs.watermark_size||25});
             } else { setWatermark(null); }
             if(cs?.logo_url){
               fetch(cs.logo_url).then(r=>r.blob())
@@ -107,7 +107,7 @@ export default function SettingsRecordsPage() {
       .id-photo{width:100%;max-height:180px;object-fit:contain;border:1px solid #eee;border-radius:6px;margin-top:8px}
       .footer{margin-top:32px;border-top:2px solid #1a1a1a;padding-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:20px}
       .sig-line{border-top:1px solid #1a1a1a;margin-top:40px;padding-top:6px;font-size:11px;color:#666}
-      @media print{body{padding:20px}}
+      @media print{@page{size:A4;margin:15mm}body{padding:20px}}
     </style></head><body>
     <div class="header">
       ${logoBase64?`<img src="${logoBase64}" class="logo"/>`:""}
@@ -187,7 +187,7 @@ export default function SettingsRecordsPage() {
       .advance{background:#fef3c7;color:#92400e}
       .payment{background:#d1fae5;color:#065f46}
       .final{background:#cffafe;color:#164e63}
-      @media print{body{padding:20px}}
+      @media print{@page{size:A4;margin:15mm}body{padding:20px}}
     </style></head><body>
     <div class="header">
       ${logoBase64?`<img src="${logoBase64}" class="logo"/>`:""}
