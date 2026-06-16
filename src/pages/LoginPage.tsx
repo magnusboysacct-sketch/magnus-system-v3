@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
@@ -21,7 +21,21 @@ export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showForgot, setShowForgot] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const [fullName, setFullName] = useState("");
+
+  async function handleForgotPassword() {
+    if (!resetEmail.trim()) { setErr("Please enter your email address."); return; }
+    setResetLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+      redirectTo: "https://app.magnusboys.com/reset-password"
+    });
+    if (error) { setErr(error.message); } else { setResetSent(true); }
+    setResetLoading(false);
+  }
   const [companyName, setCompanyName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -228,7 +242,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               type="password"
               className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
-              placeholder="••••••••"
+              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
             />
           </div>
