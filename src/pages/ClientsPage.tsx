@@ -468,18 +468,18 @@ export default function ClientsPage() {
               {portalNotice.phone && <span>📞 {portalNotice.phone}</span>}
               {portalNotice.email && <span>✉️ {portalNotice.email}</span>}
             </div>
-            <p className="text-xs text-slate-500 mb-2">Share this link:</p>
+            <p className="text-xs text-slate-500 mb-2">Client Login Page:</p>
             <div className="bg-slate-100 dark:bg-slate-800 rounded-xl p-3 text-xs text-blue-500 break-all font-mono mb-4">{portalNotice.url}</div>
             <div className="flex gap-2 flex-wrap">
               <button onClick={() => { navigator.clipboard.writeText(portalNotice!.url); setCopied(true); setTimeout(()=>setCopied(false),2000); }}
                 className={`flex-1 py-2.5 text-white text-sm font-semibold rounded-xl transition-all ${copied ? "bg-green-600" : "bg-blue-600 hover:bg-blue-700"}`}>
                 {copied ? "✓ Copied!" : "📋 Copy Link"}
               </button>
-              <a href={portalNotice!.phone ? `https://wa.me/${portalNotice!.phone.replace(/\D/g,"")}?text=${encodeURIComponent("Hello " + (portalNotice!.name||"") + ",\n\nYour project portal is ready. Tap the link below to view your project updates, invoices and progress:\n\n" + portalNotice!.url + "\n\nThis link is private and secure.")}` : `https://wa.me/?text=${encodeURIComponent("View your project portal: " + portalNotice!.url)}`} target="_blank" rel="noreferrer"
+              <a href={portalNotice!.phone ? `https://wa.me/${portalNotice!.phone.replace(/\D/g,"")}?text=${encodeURIComponent("Hello " + (portalNotice!.name||"") + ",\n\nYour project portal is ready!\n\n" + portalNotice!.url + "\n\nSign in with your email: " + (portalNotice!.email||"your email") + "\n\nFirst time? You will be asked to create a password.\n\nMagnus Boys Construction")}` : `https://wa.me/?text=${encodeURIComponent("View your project portal: " + portalNotice!.url)}`} target="_blank" rel="noreferrer"
                 className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-colors text-center no-underline flex items-center justify-center">
                 💬 WhatsApp
               </a>
-              <a href={`mailto:${portalNotice!.email||""}?subject=${encodeURIComponent("Your Project Portal - " + portalNotice!.name)}&body=${encodeURIComponent("Hello " + portalNotice!.name + ",\n\nYou can view your project updates, invoices and progress here:\n\n" + portalNotice!.url + "\n\nBest regards,\n" + (portalNotice!.name||"The Team"))}`}
+              <a href={`mailto:${portalNotice!.email||""}?subject=${encodeURIComponent("Your Project Portal - " + portalNotice!.name)}&body=${encodeURIComponent("Hello " + portalNotice!.name + ",\n\nYour client portal is ready.\n\nVisit: " + portalNotice!.url + "\n\nSign in with your email: " + (portalNotice!.email||"your registered email") + "\n\nIf this is your first visit, you will be prompted to create a password.\n\nBest regards,\nMagnus Boys Construction")}`}
                 className="flex-1 py-2.5 bg-slate-600 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl transition-colors text-center no-underline flex items-center justify-center">
                 ✉️ Email
               </a>
