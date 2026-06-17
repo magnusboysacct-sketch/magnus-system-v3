@@ -25,10 +25,10 @@ export default function LoginPage() {
   const [resetEmail, setResetEmail] = useState("");
   const [resetSent, setResetSent] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
-  const [showForgot, setShowForgot] = useState(false);
-  const [resetEmail, setResetEmail] = useState("");
-  const [resetSent, setResetSent] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
+
+
+
+
   const [fullName, setFullName] = useState("");
 
   async function handleForgotPassword() {
@@ -80,15 +80,6 @@ export default function LoginPage() {
     setSuccess(null);
   }
 
-  async function handleForgotPassword() {
-    if (!resetEmail.trim()) { setErr("Please enter your email address."); return; }
-    setResetLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
-      redirectTo: "https://app.magnusboys.com/reset-password"
-    });
-    if (error) { setErr(error.message); } else { setResetSent(true); }
-    setResetLoading(false);
-  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -293,6 +284,7 @@ export default function LoginPage() {
           </button>
 
           {mode === "signin" && (
+              <button type="button" onClick={()=>{setShowForgot(true);setResetEmail(email);setErr(null);}} className="text-xs text-cyan-400 hover:text-cyan-300 underline block w-full mb-2">Forgot password?</button>
             <div className="mt-4 pt-4 border-t border-white/10 text-center">
               <p className="text-xs opacity-60">
                 Don't have an account?{" "}
@@ -324,5 +316,25 @@ export default function LoginPage() {
         </form>
       </div>
     </div>
+      {showForgot && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0d1117] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="text-sm font-bold text-slate-100 mb-1">Reset Password</div>
+            <div className="text-xs text-slate-500 mb-4">Enter your email and we will send you a reset link.</div>
+            {resetSent ? (
+              <div className="space-y-4">
+                <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-3 text-xs text-emerald-300 text-center">Reset email sent! Check your inbox.</div>
+                <button onClick={()=>{setShowForgot(false);setResetSent(false);}} className="w-full py-2 rounded-lg bg-white/10 text-sm text-white transition">Close</button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <input type="email" value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="your@email.com" autoFocus className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none text-white"/>
+                <button onClick={handleForgotPassword} disabled={resetLoading} className="w-full py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold transition disabled:opacity-50">{resetLoading ? "Sending..." : "Send Reset Link"}</button>
+                <button onClick={()=>{setShowForgot(false);setErr(null);}} className="w-full py-2 rounded-lg bg-white/5 text-slate-400 text-xs transition">Cancel</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
   );
 }
