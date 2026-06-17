@@ -315,7 +315,6 @@ export default function LoginPage() {
           )}
         </form>
       </div>
-    </div>
       {showForgot && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-[#0d1117] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
@@ -336,5 +335,6 @@ export default function LoginPage() {
           </div>
         </div>
       )}
+    </div>
   );
 }
