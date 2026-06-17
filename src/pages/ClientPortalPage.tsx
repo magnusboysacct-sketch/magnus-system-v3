@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
 type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
-type Tab = "overview"|"photos"|"invoices"|"changes"|"feedback";
+type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback";
 
 interface Client { id:string; name:string; contact_name:string|null; email:string|null; phone:string|null; portal_email:string|null; portal_password_hash:string|null; portal_activated_at:string|null; }
 interface Project { id:string; name:string; status:string; start_date:string|null; end_date:string|null; site_address:string|null; notes:string|null; budget:number|null; }
@@ -146,6 +146,9 @@ export default function ClientPortalPage() {
   const [changes,setChanges]=useState<ChangeOrder[]>([]);
   const [comments,setComments]=useState<Comment[]>([]);
   const [photos,setPhotos]=useState<Photo[]>([]);
+  const [contracts,setContracts]=useState<any[]>([]);
+  const [signingContract,setSigningContract]=useState<any|null>(null);
+  const [savingSignature,setSavingSignature]=useState(false);
   const [tab,setTab]=useState<Tab>("overview");
   const [progress,setProgress]=useState(0);
   const [newComment,setNewComment]=useState("");
@@ -238,7 +241,7 @@ export default function ClientPortalPage() {
   if(!client||authState!=="authenticated")return null;
 
   const sColor:Record<string,string>={active:"#22c55e",planning:"#3b82f6",on_hold:"#f59e0b",completed:"#94a3b8",cancelled:"#ef4444"};
-  const TABS=[{id:"overview",label:"Overview",emoji:"📋"},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"invoices",label:"Invoices",emoji:"🧾",badge:invoices.filter(i=>i.status!=="paid").length||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined},{id:"feedback",label:"Feedback",emoji:"⭐"}] as const;
+  const TABS=[{id:"overview",label:"Overview",emoji:"📋"},{id:"contracts",label:"Contracts",emoji:"📝",badge:contracts.filter((c:any)=>!c.client_signed_at).length||undefined},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"invoices",label:"Invoices",emoji:"🧾",badge:invoices.filter(i=>i.status!=="paid").length||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined},{id:"feedback",label:"Feedback",emoji:"⭐"}] as const;
 
   return <div style={{minHeight:"100vh",background:"#060b14",color:"#f1f5f9",fontFamily:"system-ui,sans-serif"}}>
     <style>{G}</style>
