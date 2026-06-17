@@ -136,6 +136,69 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
     </div>
   </div>;
 }
+
+function SignatureModal({contract,client,saving,onSign,onCancel}:{contract:any;client:any;saving:boolean;onSign:(dataUrl:string)=>void;onCancel:()=>void}){
+  const canvasRef=React.useRef<HTMLCanvasElement|null>(null);
+  const [hasDrawn,setHasDrawn]=React.useState(false);
+  const drawing=React.useRef(false);
+
+  function getPos(e:any,canvas:HTMLCanvasElement){
+    const rect=canvas.getBoundingClientRect();
+    const clientX=e.touches?e.touches[0].clientX:e.clientX;
+    const clientY=e.touches?e.touches[0].clientY:e.clientY;
+    return{x:clientX-rect.left,y:clientY-rect.top};
+  }
+  function start(e:any){
+    drawing.current=true;
+    const canvas=canvasRef.current; if(!canvas)return;
+    const ctx=canvas.getContext("2d"); if(!ctx)return;
+    const{x,y}=getPos(e,canvas);
+    ctx.beginPath();ctx.moveTo(x,y);
+  }
+  function move(e:any){
+    if(!drawing.current)return;
+    const canvas=canvasRef.current; if(!canvas)return;
+    const ctx=canvas.getContext("2d"); if(!ctx)return;
+    const{x,y}=getPos(e,canvas);
+    ctx.lineTo(x,y);ctx.strokeStyle="#1a1a1a";ctx.lineWidth=2.5;ctx.lineCap="round";ctx.stroke();
+    setHasDrawn(true);
+  }
+  function end(){drawing.current=false;}
+  function clear(){
+    const canvas=canvasRef.current; if(!canvas)return;
+    const ctx=canvas.getContext("2d"); if(!ctx)return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    setHasDrawn(false);
+  }
+  function submit(){
+    const canvas=canvasRef.current; if(!canvas||!hasDrawn)return;
+    onSign(canvas.toDataURL("image/png"));
+  }
+
+  return(
+    <div style={{background:"#0d1117",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:20,width:"100%",maxWidth:420,maxHeight:"90vh",overflowY:"auto"}}>
+      <div style={{fontWeight:700,fontSize:15,color:"#f1f5f9",marginBottom:4}}>Sign Contract</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>{contract.contract_name} · {contract.contract_number}</div>
+
+      <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:12,marginBottom:14,maxHeight:160,overflowY:"auto",fontSize:11,color:"#94a3b8",lineHeight:1.6}}>
+        By signing below, I, <strong style={{color:"#f1f5f9"}}>{client?.contact_name||client?.name}</strong>, agree to the terms, payment schedule, and scope of work outlined in this contract.
+      </div>
+
+      <div style={{fontSize:11,color:"#64748b",marginBottom:6}}>Draw your signature below:</div>
+      <canvas ref={canvasRef} width={360} height={140}
+        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+        style={{width:"100%",height:140,background:"white",borderRadius:10,border:"2px dashed rgba(255,255,255,0.15)",touchAction:"none",cursor:"crosshair"}}/>
+
+      <div style={{display:"flex",gap:8,marginTop:14}}>
+        <button onClick={clear} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Clear</button>
+        <button onClick={onCancel} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+        <button onClick={submit} disabled={!hasDrawn||saving} style={{flex:1.4,padding:"10px 0",borderRadius:10,border:"none",background:hasDrawn?"#22c55e":"rgba(255,255,255,0.06)",color:hasDrawn?"white":"#475569",fontSize:13,fontWeight:700,cursor:hasDrawn?"pointer":"not-allowed"}}>{saving?"Saving…":"Sign &amp; Submit"}</button>
+      </div>
+    </div>
+  );
+}
+
 export default function ClientPortalPage() {
   const {token}=useParams<{token:string}>();
   const [authState,setAuthState]=useState<AuthState>("loading");
