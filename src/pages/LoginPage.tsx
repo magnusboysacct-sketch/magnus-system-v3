@@ -282,11 +282,11 @@ export default function LoginPage() {
               ? "Sign In"
               : "Sign Up"}
           </button>
-
           {mode === "signin" && (
-              <button type="button" onClick={()=>{setShowForgot(true);setResetEmail(email);setErr(null);}} className="text-xs text-cyan-400 hover:text-cyan-300 underline block w-full mb-2">Forgot password?</button>
-            <div className="mt-4 pt-4 border-t border-white/10 text-center">
+            <div className="mt-4 pt-4 border-t border-white/10 text-center space-y-2">
+              <button type="button" onClick={()=>{setShowForgot(true);setResetEmail(email);setErr(null);}} className="text-xs text-cyan-400 hover:text-cyan-300 underline block w-full">Forgot password?</button>
               <p className="text-xs opacity-60">
+
                 Don't have an account?{" "}
                 <button
                   type="button"
