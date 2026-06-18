@@ -401,6 +401,125 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
   );
 }
 
+
+function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"contractor"|"client";contract:any;saving:boolean;onSign:(dataUrl:string)=>void;onCancel:()=>void}){
+  const canvasRef=React.useRef<HTMLCanvasElement|null>(null);
+  const [hasDrawn,setHasDrawn]=React.useState(false);
+  const [mode,setMode]=React.useState<"draw"|"upload">("draw");
+  const [uploadPreview,setUploadPreview]=React.useState<string|null>(null);
+  const drawing=React.useRef(false);
+
+  function getPos(e:any,canvas:HTMLCanvasElement){
+    const rect=canvas.getBoundingClientRect();
+    const clientX=e.touches?e.touches[0].clientX:e.clientX;
+    const clientY=e.touches?e.touches[0].clientY:e.clientY;
+    return{x:clientX-rect.left,y:clientY-rect.top};
+  }
+  function start(e:any){
+    drawing.current=true;
+    const canvas=canvasRef.current; if(!canvas)return;
+    const ctx=canvas.getContext("2d"); if(!ctx)return;
+    const{x,y}=getPos(e,canvas);
+    ctx.beginPath();ctx.moveTo(x,y);
+  }
+  function move(e:any){
+    if(!drawing.current)return;
+    const canvas=canvasRef.current; if(!canvas)return;
+    const ctx=canvas.getContext("2d"); if(!ctx)return;
+    const{x,y}=getPos(e,canvas);
+    ctx.lineTo(x,y);ctx.strokeStyle="#1a1a1a";ctx.lineWidth=2.5;ctx.lineCap="round";ctx.stroke();
+    setHasDrawn(true);
+  }
+  function end(){drawing.current=false;}
+  function clear(){
+    const canvas=canvasRef.current; if(!canvas)return;
+    const ctx=canvas.getContext("2d"); if(!ctx)return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    setHasDrawn(false);
+  }
+  function submit(){
+    if(mode==="upload"&&uploadPreview){onSign(uploadPreview);return;}
+    const canvas=canvasRef.current; if(!canvas||!hasDrawn)return;
+    onSign(canvas.toDataURL("image/png"));
+  }
+  function handleUpload(e:any){
+    const f=e.target.files?.[0]; if(!f)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{if(ev.target?.result)setUploadPreview(ev.target.result as string);};
+    reader.readAsDataURL(f);
+  }
+
+  const canSubmit=mode==="draw"?hasDrawn:!!uploadPreview;
+  const label=party==="contractor"?"Contractor":"Client";
+
+  return(
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-[#0d1117] border border-white/[0.1] rounded-2xl p-6 shadow-2xl">
+        <div className="text-sm font-bold text-slate-100 mb-1">Sign Contract — {label}</div>
+        <div className="text-xs text-slate-500 mb-4">{contract?.contract_name} · {contract?.contract_number}</div>
+
+        <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2.5 text-[11px] text-slate-400 leading-relaxed mb-4">
+          By signing, the {label.toLowerCase()} agrees to the terms, scope of work, and payment schedule outlined in this contract.
+        </div>
+
+        <div className="flex gap-2 mb-4">
+          <button onClick={()=>{setMode("draw");setUploadPreview(null);}}
+            className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${mode==="draw"?"bg-emerald-600 border-emerald-600 text-white":"bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+            ✍ Draw Signature
+          </button>
+          <button onClick={()=>{setMode("upload");clear();}}
+            className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${mode==="upload"?"bg-emerald-600 border-emerald-600 text-white":"bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+            📷 Upload / Camera
+          </button>
+        </div>
+
+        {mode==="draw"&&(
+          <>
+            <div className="text-[10px] text-slate-500 mb-2">Draw your signature below:</div>
+            <canvas ref={canvasRef} width={440} height={140}
+              onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+              onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+              className="w-full rounded-xl border-2 border-dashed border-white/[0.15] bg-white touch-none cursor-crosshair"
+              style={{height:140}}/>
+          </>
+        )}
+
+        {mode==="upload"&&(
+          <>
+            <div className="text-[10px] text-slate-500 mb-2">Take a photo of your signature or upload an image:</div>
+            <label className="flex flex-col items-center justify-center gap-3 p-5 rounded-xl border-2 border-dashed border-white/[0.15] bg-white/[0.02] cursor-pointer hover:border-emerald-500/40 transition" style={{minHeight:120}}>
+              {uploadPreview
+                ?<img src={uploadPreview} className="max-h-28 max-w-full rounded-lg object-contain"/>
+                :<><div className="text-3xl">📷</div><div className="text-xs text-slate-500 text-center">Tap to take photo or choose file<br/><span className="text-[10px] text-slate-700">JPG, PNG accepted</span></div></>}
+              <input type="file" accept="image/*" capture="environment" onChange={handleUpload} className="hidden"/>
+            </label>
+            {uploadPreview&&(
+              <button onClick={()=>setUploadPreview(null)} className="mt-2 w-full py-1.5 rounded-lg border border-red-500/20 text-red-400 text-xs hover:bg-red-500/10 transition">
+                Remove Photo
+              </button>
+            )}
+          </>
+        )}
+
+        <div className="flex gap-2 mt-4">
+          {mode==="draw"&&(
+            <button onClick={clear} className="flex-1 py-2 rounded-lg border border-white/[0.08] text-slate-400 text-xs font-semibold hover:bg-white/[0.05] transition">
+              Clear
+            </button>
+          )}
+          <button onClick={onCancel} className="flex-1 py-2 rounded-lg border border-white/[0.08] text-slate-400 text-xs font-semibold hover:bg-white/[0.05] transition">
+            Cancel
+          </button>
+          <button onClick={submit} disabled={!canSubmit||saving}
+            className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${canSubmit?"bg-emerald-600 hover:bg-emerald-500 text-white":"bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
+            {saving?"Saving…":"Sign & Submit"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ContractsPage() {
   const nav = useNavigate();
@@ -425,6 +544,8 @@ export default function ContractsPage() {
   // Payment schedule
   const [schedule, setSchedule] = useState<PaymentSchedule[]>([]);
   const [saving, setSaving] = useState(false);
+  const [signingParty, setSigningParty] = useState<"contractor"|"client"|null>(null);
+  const [savingSignature, setSavingSignature] = useState(false);
 
   // AI
   const [aiLoading, setAiLoading] = useState<string | null>(null);
@@ -569,10 +690,25 @@ export default function ContractsPage() {
     }
   }
 
-  async function signContract(contractId: string, party: "contractor" | "client") {
-    const field = party === "contractor" ? "contractor_signed_at" : "client_signed_at";
-    await updateContract(contractId, { [field]: new Date().toISOString() } as any);
-    showToast(`${party === "contractor" ? "Contractor" : "Client"} signature recorded!`);
+  async function signContract(contractId: string, party: "contractor" | "client", signatureDataUrl?: string) {
+    setSavingSignature(true);
+    try {
+      let sigUrl: string | null = null;
+      if (signatureDataUrl) {
+        const blob = await (await fetch(signatureDataUrl)).blob();
+        const path = `contract-signatures/${contractId}_${party}_${Date.now()}.png`;
+        const { error: ue } = await supabase.storage.from("project-files").upload(path, blob, { upsert: true, contentType: "image/png" });
+        if (!ue) { const { data: ud } = supabase.storage.from("project-files").getPublicUrl(path); sigUrl = ud.publicUrl; }
+      }
+      const field = party === "contractor" ? "contractor_signed_at" : "client_signed_at";
+      const urlField = party === "contractor" ? "contractor_signature_url" : "client_signature_url";
+      const updates: any = { [field]: new Date().toISOString() };
+      if (sigUrl) updates[urlField] = sigUrl;
+      await updateContract(contractId, updates);
+      setSigningParty(null);
+      showToast(`${party === "contractor" ? "Contractor" : "Client"} signature recorded!`);
+    } finally { setSavingSignature(false); }
+  }
   }
 
   // ─── AI Functions ───────────────────────────────────────────────────────────
@@ -839,7 +975,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                     {viewingContract.contractor_signed_at ? (
                       <div className="text-[11px] text-emerald-400 font-semibold">✓ Signed {fmtDate(viewingContract.contractor_signed_at)}</div>
                     ) : (
-                      <button onClick={() => signContract(viewingContract.id, "contractor")}
+                      <button onClick={() => setSigningParty("contractor")}
                         className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">
                         Sign Now
                       </button>
@@ -853,7 +989,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                     {viewingContract.client_signed_at ? (
                       <div className="text-[11px] text-emerald-400 font-semibold">✓ Signed {fmtDate(viewingContract.client_signed_at)}</div>
                     ) : (
-                      <button onClick={() => signContract(viewingContract.id, "client")}
+                      <button onClick={() => setSigningParty("client")}
                         className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold transition">
                         Record Signature
                       </button>
@@ -1112,6 +1248,16 @@ Adjust percentages based on the project type and value. Make sure they add up to
             </div>
           </div>
         </div>
+      )}
+
+      {signingParty && viewingContract && (
+        <ContractSignatureModal
+          party={signingParty}
+          contract={viewingContract}
+          saving={savingSignature}
+          onCancel={() => setSigningParty(null)}
+          onSign={async (dataUrl) => { await signContract(viewingContract.id, signingParty, dataUrl); }}
+        />
       )}
 
       {/* Toast */}
