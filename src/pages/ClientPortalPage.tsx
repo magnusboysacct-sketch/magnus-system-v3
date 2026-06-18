@@ -140,6 +140,8 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
 function SignatureModal({contract,client,saving,onSign,onCancel}:{contract:any;client:any;saving:boolean;onSign:(dataUrl:string)=>void;onCancel:()=>void}){
   const canvasRef=React.useRef<HTMLCanvasElement|null>(null);
   const [hasDrawn,setHasDrawn]=React.useState(false);
+  const [mode,setMode]=React.useState<"draw"|"upload">("draw");
+  const [uploadPreview,setUploadPreview]=React.useState<string|null>(null);
   const drawing=React.useRef(false);
 
   function getPos(e:any,canvas:HTMLCanvasElement){
@@ -171,29 +173,56 @@ function SignatureModal({contract,client,saving,onSign,onCancel}:{contract:any;c
     setHasDrawn(false);
   }
   function submit(){
+    if(mode==="upload"&&uploadPreview){onSign(uploadPreview);return;}
     const canvas=canvasRef.current; if(!canvas||!hasDrawn)return;
     onSign(canvas.toDataURL("image/png"));
   }
+  function handleUpload(e:any){
+    const f=e.target.files?.[0]; if(!f)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{if(ev.target?.result)setUploadPreview(ev.target.result as string);};
+    reader.readAsDataURL(f);
+  }
+
+  const canSubmit=mode==="draw"?hasDrawn:!!uploadPreview;
 
   return(
     <div style={{background:"#0d1117",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:20,width:"100%",maxWidth:420,maxHeight:"90vh",overflowY:"auto"}}>
       <div style={{fontWeight:700,fontSize:15,color:"#f1f5f9",marginBottom:4}}>Sign Contract</div>
-      <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>{contract.contract_name} � {contract.contract_number}</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>{contract.contract_name} · {contract.contract_number}</div>
 
       <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:12,marginBottom:14,maxHeight:160,overflowY:"auto",fontSize:11,color:"#94a3b8",lineHeight:1.6}}>
         By signing below, I, <strong style={{color:"#f1f5f9"}}>{client?.contact_name||client?.name}</strong>, agree to the terms, payment schedule, and scope of work outlined in this contract.
       </div>
 
-      <div style={{fontSize:11,color:"#64748b",marginBottom:6}}>Draw your signature below:</div>
-      <canvas ref={canvasRef} width={360} height={140}
-        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
-        onTouchStart={start} onTouchMove={move} onTouchEnd={end}
-        style={{width:"100%",height:140,background:"white",borderRadius:10,border:"2px dashed rgba(255,255,255,0.15)",touchAction:"none",cursor:"crosshair"}}/>
+      <div style={{display:"flex",gap:8,marginBottom:14}}>
+        <button onClick={()=>{setMode("draw");setUploadPreview(null);}} style={{flex:1,padding:"8px 0",borderRadius:10,border:"1px solid",fontSize:12,fontWeight:700,cursor:"pointer",background:mode==="draw"?"#3b82f6":"transparent",borderColor:mode==="draw"?"#3b82f6":"rgba(255,255,255,0.1)",color:mode==="draw"?"#fff":"#94a3b8"}}>✍ Draw Signature</button>
+        <button onClick={()=>{setMode("upload");clear();}} style={{flex:1,padding:"8px 0",borderRadius:10,border:"1px solid",fontSize:12,fontWeight:700,cursor:"pointer",background:mode==="upload"?"#3b82f6":"transparent",borderColor:mode==="upload"?"#3b82f6":"rgba(255,255,255,0.1)",color:mode==="upload"?"#fff":"#94a3b8"}}>📷 Upload / Camera</button>
+      </div>
+
+      {mode==="draw"&&<>
+        <div style={{fontSize:11,color:"#64748b",marginBottom:6}}>Draw your signature below:</div>
+        <canvas ref={canvasRef} width={360} height={140}
+          onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+          onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+          style={{width:"100%",height:140,background:"white",borderRadius:10,border:"2px dashed rgba(255,255,255,0.15)",touchAction:"none",cursor:"crosshair"}}/>
+      </>}
+
+      {mode==="upload"&&<>
+        <div style={{fontSize:11,color:"#64748b",marginBottom:8}}>Take a photo of your signature or upload an image:</div>
+        <label style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,padding:20,borderRadius:12,border:"2px dashed rgba(255,255,255,0.15)",cursor:"pointer",background:"rgba(255,255,255,0.02)",minHeight:120}}>
+          {uploadPreview
+            ?<img src={uploadPreview} style={{maxHeight:120,maxWidth:"100%",borderRadius:8,objectFit:"contain"}}/>
+            :<><div style={{fontSize:32}}>📷</div><div style={{fontSize:12,color:"#64748b",textAlign:"center"}}>Tap to take photo or choose file<br/><span style={{fontSize:11,color:"#334155"}}>JPG, PNG accepted</span></div></>}
+          <input type="file" accept="image/*" capture="environment" onChange={handleUpload} style={{display:"none"}}/>
+        </label>
+        {uploadPreview&&<button onClick={()=>setUploadPreview(null)} style={{marginTop:8,width:"100%",padding:"6px 0",borderRadius:8,border:"1px solid rgba(239,68,68,0.3)",background:"transparent",color:"#ef4444",fontSize:12,cursor:"pointer"}}>Remove Photo</button>}
+      </>}
 
       <div style={{display:"flex",gap:8,marginTop:14}}>
-        <button onClick={clear} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Clear</button>
+        {mode==="draw"&&<button onClick={clear} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Clear</button>}
         <button onClick={onCancel} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
-        <button onClick={submit} disabled={!hasDrawn||saving} style={{flex:1.4,padding:"10px 0",borderRadius:10,border:"none",background:hasDrawn?"#22c55e":"rgba(255,255,255,0.06)",color:hasDrawn?"white":"#475569",fontSize:13,fontWeight:700,cursor:hasDrawn?"pointer":"not-allowed"}}>{saving?"Saving�":"Sign &amp; Submit"}</button>
+        <button onClick={submit} disabled={!canSubmit||saving} style={{flex:1.4,padding:"10px 0",borderRadius:10,border:"none",background:canSubmit?"#22c55e":"rgba(255,255,255,0.06)",color:canSubmit?"white":"#475569",fontSize:13,fontWeight:700,cursor:canSubmit?"pointer":"not-allowed"}}>{saving?"Saving…":"Sign & Submit"}</button>
       </div>
     </div>
   );
