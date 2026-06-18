@@ -1,4 +1,4 @@
-// src/pages/FieldPaymentsPage.tsx ó Complete rebuild
+Ôªø// src/pages/FieldPaymentsPage.tsx ‚Äî Complete rebuild
 // Payment list + detail modal with PDF, WhatsApp, Email, New Advance, Pay Work, Final Payment
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
@@ -46,11 +46,11 @@ type Tab = "all"|"advance"|"payment"|"final";
 type FormMode = "advance"|"payment"|"final"|null;
 
 const PT_CFG: Record<string,{color:string;bg:string;border:string;label:string;icon:string}> = {
-  advance: {color:"text-amber-400",  bg:"bg-amber-500/10",  border:"border-amber-500/20",  label:"Advance",      icon:"?"},
-  payment: {color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20",label:"Work Payment", icon:"??"},
-  final:   {color:"text-cyan-400",   bg:"bg-cyan-500/10",   border:"border-cyan-500/20",   label:"Final Payment",icon:"?"},
-  draft:   {color:"text-slate-400",  bg:"bg-slate-500/10",  border:"border-slate-500/20",  label:"Draft",        icon:"??"},
-  signed:  {color:"text-violet-400", bg:"bg-violet-500/10", border:"border-violet-500/20", label:"Signed",       icon:"??"},
+  advance: {color:"text-amber-400",  bg:"bg-amber-500/10",  border:"border-amber-500/20",  label:"Advance",      icon:"‚ö°"},
+  payment: {color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20",label:"Work Payment", icon:"üí∞"},
+  final:   {color:"text-cyan-400",   bg:"bg-cyan-500/10",   border:"border-cyan-500/20",   label:"Final Payment",icon:"‚úÖ"},
+  draft:   {color:"text-slate-400",  bg:"bg-slate-500/10",  border:"border-slate-500/20",  label:"Draft",        icon:"üìù"},
+  signed:  {color:"text-violet-400", bg:"bg-violet-500/10", border:"border-violet-500/20", label:"Signed",       icon:"‚úì"},
 };
 
 function fmtJMD(n: number) {
@@ -280,7 +280,7 @@ export default function FieldPaymentsPage() {
 
 
   function sendWhatsApp(p: Payment) {
-    const msg=`*${company?.company_name||"Magnus Boys Construction"}*\n*${p.payment_type==="advance"?"? ADVANCE PAYMENT":p.payment_type==="final"?"? FINAL PAYMENT":"?? PAYMENT RECEIPT"}*\n\nReceipt #: ${p.receipt_number||""}\nWorker: ${p.worker_name}\nID: ${p.worker_id_number||"ó"}\nDate: ${fmtDate(p.work_date)}\nPayment: ${p.payment_method}\n\n*AMOUNT: ${fmtJMD(p.total_amount)}*\n\nPaid by: ${p.supervisor_name||""} ∑ ${fmtDate(p.created_at)}`;
+    const msg=`*${company?.company_name||"Magnus Boys Construction"}*\n*${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT":"PAYMENT RECEIPT"}*\n\nReceipt #: ${p.receipt_number||""}\nWorker: ${p.worker_name}\nID: ${p.worker_id_number||"‚Äî"}\nDate: ${fmtDate(p.work_date)}\nPayment: ${p.payment_method}\n\n*AMOUNT: ${fmtJMD(p.total_amount)}*\n\nPaid by: ${p.supervisor_name||""} ¬∑ ${fmtDate(p.created_at)}`;
     const phone=p.worker_phone?.replace(/\D/g,"");
     window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`,"_blank");
   }
@@ -289,9 +289,9 @@ export default function FieldPaymentsPage() {
     const subject=encodeURIComponent(`Payment Receipt - ${p.worker_name} - ${p.receipt_number}`);
     const body=encodeURIComponent(
       `${company?.company_name||"Magnus Boys Construction"}\n\n`+
-      `${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT ó PAID IN FULL":"PAYMENT RECEIPT"}\n`+
+      `${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT ‚Äî PAID IN FULL":"PAYMENT RECEIPT"}\n`+
       `Receipt #: ${p.receipt_number}\nDate: ${fmtDate(p.work_date)}\n\n`+
-      `Worker: ${p.worker_name}\nID: ${p.worker_id_number||"ó"}\n`+
+      `Worker: ${p.worker_name}\nID: ${p.worker_id_number||"‚Äî"}\n`+
       `Work: ${p.work_type||""}\nPayment: ${p.payment_method}\n\n`+
       `AMOUNT: ${fmtJMD(p.total_amount)}\n\nPaid by: ${p.supervisor_name||""}`
     );
@@ -302,7 +302,7 @@ export default function FieldPaymentsPage() {
   function continuePayment(p: Payment, type: "advance"|"payment"|"final") {
     setSelected(null);
     setShowForm(true);
-    // Store worker context for pre-fill ó handled in form
+    // Store worker context for pre-fill ‚Äî handled in form
   }
 
   const TABS: {key:Tab;label:string}[] = [
@@ -323,7 +323,7 @@ export default function FieldPaymentsPage() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-lg font-bold text-slate-100">Field Payments</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Advance ∑ Work Payment ∑ Final Settlement</p>
+            <p className="text-xs text-slate-500 mt-0.5">Advance ¬∑ Work Payment ¬∑ Final Settlement</p>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={loadPayments} className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-slate-500 hover:text-slate-300 transition">
@@ -370,13 +370,13 @@ export default function FieldPaymentsPage() {
         {/* Search */}
         <div className="relative max-w-sm">
           <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search worker, ID, receipt #Ö"
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search worker, ID, receipt #‚Ä¶"
             className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-cyan-500/50"/>
         </div>
 
         {/* List */}
         {loading?(
-          <div className="flex items-center justify-center py-16 text-xs text-slate-600 gap-2"><RefreshCw size={13} className="animate-spin"/> LoadingÖ</div>
+          <div className="flex items-center justify-center py-16 text-xs text-slate-600 gap-2"><RefreshCw size={13} className="animate-spin"/> Loading‚Ä¶</div>
         ):filtered.length===0?(
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
             <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center"><HandCoins size={22} className="text-slate-700"/></div>
@@ -402,7 +402,7 @@ export default function FieldPaymentsPage() {
                       )}
                       <div>
                         <div className="text-sm font-bold text-slate-200">{p.worker_name}</div>
-                        <div className="text-[10px] text-slate-600">{p.worker_id_number&&`ID: ${p.worker_id_number} ∑ `}{fmtDate(p.work_date)}</div>
+                        <div className="text-[10px] text-slate-600">{p.worker_id_number&&`ID: ${p.worker_id_number} ¬∑ `}{fmtDate(p.work_date)}</div>
                       </div>
                     </div>
                     <div className="text-right">
@@ -411,10 +411,10 @@ export default function FieldPaymentsPage() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[10px] text-slate-600 truncate">{p.work_type||"ó"}</div>
+                    <div className="text-[10px] text-slate-600 truncate">{p.work_type||"‚Äî"}</div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="text-[10px] text-slate-600 capitalize">{p.payment_method?.replace("_"," ")}</span>
-                      {p.signature_url&&<span className="text-[9px] text-violet-400">?? Signed</span>}
+                      {p.signature_url&&<span className="text-[9px] text-violet-400">‚úì Signed</span>}
                       {p.receipt_number&&<span className="text-[9px] text-slate-700">#{p.receipt_number.slice(-6)}</span>}
                     </div>
                   </div>
@@ -521,7 +521,7 @@ export default function FieldPaymentsPage() {
                     <span className="text-[9px] text-slate-600">{workerHistory.length} records</span>
                   </div>
                   {loadingHistory?(
-                    <div className="p-4 text-center text-xs text-slate-600">LoadingÖ</div>
+                    <div className="p-4 text-center text-xs text-slate-600">Loading‚Ä¶</div>
                   ):(
                     <div className="divide-y divide-white/[0.04] max-h-40 overflow-y-auto">
                       {workerHistory.map(h=>{
@@ -559,11 +559,11 @@ export default function FieldPaymentsPage() {
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     <button onClick={()=>setEditingPayment(selected)}
                       className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition text-sm font-semibold">
-                      ?? Edit
+                      ‚úèÔ∏è Edit
                     </button>
                     <button onClick={()=>deletePayment(selected)}
                       className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-300 transition text-sm font-semibold">
-                      ??? Delete
+                      üóëÔ∏è Delete
                     </button>
                   </div>
                 )}
