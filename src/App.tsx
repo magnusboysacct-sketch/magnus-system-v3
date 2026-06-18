@@ -1,4 +1,4 @@
-﻿// src/App.tsx — Clean rebuild router
+// src/App.tsx � Clean rebuild router
 // Same auth logic, same routes, new AppLayout replaces SidebarLayout
 
 import React, { useEffect, useState } from "react";
@@ -12,7 +12,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProjectProvider } from "./context/ProjectContext";
 import { supabase } from "./lib/supabase";
 
-// ─── Pages ───────────────────────────────────────────────────────────────────
+// --- Pages -------------------------------------------------------------------
 import LoginPage              from "./pages/LoginPage";
 import AcceptInvitePage       from "./pages/AcceptInvitePage";
 import ClientProjectPage      from "./pages/ClientProjectPage";
@@ -52,11 +52,12 @@ import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import SettingsCostCodesPage  from "./pages/SettingsCostCodesPage";
 import CompanyUsersPage       from "./pages/CompanyUsersPage";
 import BillingPage            from "./pages/BillingPage";
+import UpgradePage from "./pages/UpgradePage";
 import JamaicanPayrollMonitoringPage from "./pages/JamaicanPayrollMonitoringPage";
 import PayrollComparisonReviewPage   from "./pages/PayrollComparisonReviewPage";
 import PayrollSimulationCenterPage   from "./pages/PayrollSimulationCenterPage";
 
-// ─── Auth hash handler ────────────────────────────────────────────────────────
+// --- Auth hash handler --------------------------------------------------------
 
 function AuthHashRouter() {
   const nav = useNavigate();
@@ -71,19 +72,39 @@ function AuthHashRouter() {
   return null;
 }
 
-// ─── Auth guard ───────────────────────────────────────────────────────────────
+// --- Auth guard ---------------------------------------------------------------
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const loc = useLocation();
+  const nav = useNavigate();
   const [checking, setChecking] = useState(true);
   const [authed, setAuthed] = useState(false);
+  const [subscriptionExpired, setSubscriptionExpired] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       if (!alive) return;
-      setAuthed(!!data.session);
-      setChecking(false);
+      const authed = !!data.session;
+      setAuthed(authed);
+      if (authed) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
+            if (profile?.company_id) {
+              const { data: cs } = await supabase.from("company_settings").select("trial_expires_at,subscription_status,subscription_expires_at").eq("company_id", profile.company_id).maybeSingle();
+              if (cs) {
+                const now = new Date();
+                const trialExpired = cs.trial_expires_at ? new Date(cs.trial_expires_at) < now : false;
+                const subActive = cs.subscription_status === "active" && (!cs.subscription_expires_at || new Date(cs.subscription_expires_at) > now);
+                if (trialExpired && !subActive) { if (alive) setSubscriptionExpired(true); }
+              }
+            }
+          }
+        } catch {}
+      }
+      if (alive) setChecking(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       if (!alive) return;
@@ -100,7 +121,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.2"/>
           <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
         </svg>
-        Loading…
+        Loading�
       </div>
     </div>
   );
@@ -109,10 +130,15 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
     const next = encodeURIComponent(loc.pathname + loc.search);
     return <Navigate to={`/login?next=${next}`} replace />;
   }
+
+  if (subscriptionExpired && loc.pathname !== "/upgrade" && loc.pathname !== "/settings/company") {
+    return <Navigate to="/upgrade" replace />;
+  }
+
   return <>{children}</>;
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+// --- App ----------------------------------------------------------------------
 
 export default function App() {
   return (
@@ -179,6 +205,7 @@ export default function App() {
               {/* Reports + Settings */}
               <Route path="/reports"                       element={<ReportsPage />} />
               <Route path="/billing"                       element={<BillingPage />} />
+              <Route path="/upgrade" element={<UpgradePage />} />
               <Route path="/materials-library" element={<Navigate to="/rates" replace />} />
               <Route path="/settings"                      element={<SettingsPage />} />
               <Route path="/settings/company"              element={<SettingsCompanyPage />} />
