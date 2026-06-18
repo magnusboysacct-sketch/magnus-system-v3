@@ -1,14 +1,15 @@
-﻿// src/pages/FieldPaymentsPage.tsx — Complete rebuild
+// src/pages/FieldPaymentsPage.tsx � Complete rebuild
 // Payment list + detail modal with PDF, WhatsApp, Email, New Advance, Pay Work, Final Payment
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { FieldPaymentForm, generateReceiptHTML } from "../components/FieldPaymentForm";
 import { openPrintWindow } from "../lib/printUtils";
+import html2canvas from "html2canvas";
 import {
   Plus, Search, HandCoins, DollarSign, Users,
   Calendar, RefreshCw, FileText, X, TrendingUp,
-  CheckCircle2, Printer, Mail, Share2
+  CheckCircle2, Printer, Mail, Share2, Loader2
 } from "lucide-react";
 
 type Payment = {
@@ -45,11 +46,11 @@ type Tab = "all"|"advance"|"payment"|"final";
 type FormMode = "advance"|"payment"|"final"|null;
 
 const PT_CFG: Record<string,{color:string;bg:string;border:string;label:string;icon:string}> = {
-  advance: {color:"text-amber-400",  bg:"bg-amber-500/10",  border:"border-amber-500/20",  label:"Advance",      icon:"⚡"},
-  payment: {color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20",label:"Work Payment", icon:"💰"},
-  final:   {color:"text-cyan-400",   bg:"bg-cyan-500/10",   border:"border-cyan-500/20",   label:"Final Payment",icon:"✅"},
-  draft:   {color:"text-slate-400",  bg:"bg-slate-500/10",  border:"border-slate-500/20",  label:"Draft",        icon:"📝"},
-  signed:  {color:"text-violet-400", bg:"bg-violet-500/10", border:"border-violet-500/20", label:"Signed",       icon:"✍️"},
+  advance: {color:"text-amber-400",  bg:"bg-amber-500/10",  border:"border-amber-500/20",  label:"Advance",      icon:"?"},
+  payment: {color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20",label:"Work Payment", icon:"??"},
+  final:   {color:"text-cyan-400",   bg:"bg-cyan-500/10",   border:"border-cyan-500/20",   label:"Final Payment",icon:"?"},
+  draft:   {color:"text-slate-400",  bg:"bg-slate-500/10",  border:"border-slate-500/20",  label:"Draft",        icon:"??"},
+  signed:  {color:"text-violet-400", bg:"bg-violet-500/10", border:"border-violet-500/20", label:"Signed",       icon:"??"},
 };
 
 function fmtJMD(n: number) {
@@ -71,6 +72,7 @@ export default function FieldPaymentsPage() {
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
   const [logoBase64, setLogoBase64] = useState<string|null>(null);
+  const [sharingReceiptId, setSharingReceiptId] = useState<string|null>(null);
   const [watermark, setWatermark] = useState<{url:string;opacity:number;size?:number}|null>(null);
   const [workerHistory, setWorkerHistory] = useState<Payment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -200,9 +202,85 @@ export default function FieldPaymentsPage() {
     const html = generateReceiptHTML(paymentData, company, logo, watermark);
     if(html) openPrintWindow(html, { title: 'Receipt - ' + p.worker_name, watermark: watermark||undefined, tagline: company?.tagline||undefined });
   }
+  async function shareReceiptImage(p: Payment) {
+    setSharingReceiptId(p.id);
+    try {
+      let logo = logoBase64;
+      if (!logo && company?.logo_url) {
+        try {
+          const blob = await fetch(company.logo_url).then(r => r.blob());
+          logo = await new Promise<string>((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result as string); fr.onerror = rej; fr.readAsDataURL(blob); });
+        } catch {}
+      }
+      const paymentData = {
+        receipt_number: p.receipt_number || `FP-${p.id.slice(-6)}`,
+        worker_name: p.worker_name,
+        worker_id_number: p.worker_id_number,
+        worker_phone: p.worker_phone,
+        trade_type: null,
+        work_date: p.work_date,
+        work_type: p.work_type,
+        payment_method: p.payment_method,
+        total_amount: p.total_amount,
+        payment_type: p.payment_type || "payment",
+        previous_advances: 0,
+        notes: p.notes,
+        signature_data: p.signature_url,
+        supervisor_name: p.supervisor_name,
+        project_name: p.project_name || null,
+        milestone_name: p.milestone_name || null,
+        task_name: p.task_name || p.work_type,
+        created_at: p.created_at,
+      };
+      const html = generateReceiptHTML(paymentData, company, logo, watermark);
+      if (!html) { setSharingReceiptId(null); return; }
+
+      // Render off-screen
+      const container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.left = "-9999px";
+      container.style.top = "0";
+      container.style.width = "600px";
+      container.innerHTML = html;
+      document.body.appendChild(container);
+
+      // Wait for images inside to load
+      const imgs = Array.from(container.querySelectorAll("img"));
+      await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => { img.onload = res; img.onerror = res; })));
+
+      const canvas = await html2canvas(container, { backgroundColor: "#ffffff", scale: 2, useCORS: true });
+      document.body.removeChild(container);
+
+      const blob: Blob | null = await new Promise(res => canvas.toBlob(res, "image/png", 1));
+      if (!blob) { setSharingReceiptId(null); return; }
+
+      const fileName = `Receipt_${p.worker_name.replace(/\s+/g, "_")}_${paymentData.receipt_number}.png`;
+      const file = new File([blob], fileName, { type: "image/png" });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Payment Receipt - ${p.worker_name}`,
+          text: `Payment Receipt - ${p.worker_name} - ${fmtJMD(p.total_amount)}`,
+        });
+      } else {
+        // Fallback: download the image
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (e: any) {
+      if (e?.name !== "AbortError") console.error("Share receipt failed:", e);
+    } finally {
+      setSharingReceiptId(null);
+    }
+  }
+
 
   function sendWhatsApp(p: Payment) {
-    const msg=`*${company?.company_name||"Magnus Boys Construction"}*\n*${p.payment_type==="advance"?"⚡ ADVANCE PAYMENT":p.payment_type==="final"?"✅ FINAL PAYMENT":"💰 PAYMENT RECEIPT"}*\n\nReceipt #: ${p.receipt_number||""}\nWorker: ${p.worker_name}\nID: ${p.worker_id_number||"—"}\nDate: ${fmtDate(p.work_date)}\nPayment: ${p.payment_method}\n\n*AMOUNT: ${fmtJMD(p.total_amount)}*\n\nPaid by: ${p.supervisor_name||""} · ${fmtDate(p.created_at)}`;
+    const msg=`*${company?.company_name||"Magnus Boys Construction"}*\n*${p.payment_type==="advance"?"? ADVANCE PAYMENT":p.payment_type==="final"?"? FINAL PAYMENT":"?? PAYMENT RECEIPT"}*\n\nReceipt #: ${p.receipt_number||""}\nWorker: ${p.worker_name}\nID: ${p.worker_id_number||"�"}\nDate: ${fmtDate(p.work_date)}\nPayment: ${p.payment_method}\n\n*AMOUNT: ${fmtJMD(p.total_amount)}*\n\nPaid by: ${p.supervisor_name||""} � ${fmtDate(p.created_at)}`;
     const phone=p.worker_phone?.replace(/\D/g,"");
     window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`,"_blank");
   }
@@ -211,9 +289,9 @@ export default function FieldPaymentsPage() {
     const subject=encodeURIComponent(`Payment Receipt - ${p.worker_name} - ${p.receipt_number}`);
     const body=encodeURIComponent(
       `${company?.company_name||"Magnus Boys Construction"}\n\n`+
-      `${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT — PAID IN FULL":"PAYMENT RECEIPT"}\n`+
+      `${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT � PAID IN FULL":"PAYMENT RECEIPT"}\n`+
       `Receipt #: ${p.receipt_number}\nDate: ${fmtDate(p.work_date)}\n\n`+
-      `Worker: ${p.worker_name}\nID: ${p.worker_id_number||"—"}\n`+
+      `Worker: ${p.worker_name}\nID: ${p.worker_id_number||"�"}\n`+
       `Work: ${p.work_type||""}\nPayment: ${p.payment_method}\n\n`+
       `AMOUNT: ${fmtJMD(p.total_amount)}\n\nPaid by: ${p.supervisor_name||""}`
     );
@@ -224,7 +302,7 @@ export default function FieldPaymentsPage() {
   function continuePayment(p: Payment, type: "advance"|"payment"|"final") {
     setSelected(null);
     setShowForm(true);
-    // Store worker context for pre-fill — handled in form
+    // Store worker context for pre-fill � handled in form
   }
 
   const TABS: {key:Tab;label:string}[] = [
@@ -245,7 +323,7 @@ export default function FieldPaymentsPage() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-lg font-bold text-slate-100">Field Payments</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Advance · Work Payment · Final Settlement</p>
+            <p className="text-xs text-slate-500 mt-0.5">Advance � Work Payment � Final Settlement</p>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={loadPayments} className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-slate-500 hover:text-slate-300 transition">
@@ -292,13 +370,13 @@ export default function FieldPaymentsPage() {
         {/* Search */}
         <div className="relative max-w-sm">
           <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search worker, ID, receipt #…"
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search worker, ID, receipt #�"
             className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-cyan-500/50"/>
         </div>
 
         {/* List */}
         {loading?(
-          <div className="flex items-center justify-center py-16 text-xs text-slate-600 gap-2"><RefreshCw size={13} className="animate-spin"/> Loading…</div>
+          <div className="flex items-center justify-center py-16 text-xs text-slate-600 gap-2"><RefreshCw size={13} className="animate-spin"/> Loading�</div>
         ):filtered.length===0?(
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
             <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center"><HandCoins size={22} className="text-slate-700"/></div>
@@ -324,7 +402,7 @@ export default function FieldPaymentsPage() {
                       )}
                       <div>
                         <div className="text-sm font-bold text-slate-200">{p.worker_name}</div>
-                        <div className="text-[10px] text-slate-600">{p.worker_id_number&&`ID: ${p.worker_id_number} · `}{fmtDate(p.work_date)}</div>
+                        <div className="text-[10px] text-slate-600">{p.worker_id_number&&`ID: ${p.worker_id_number} � `}{fmtDate(p.work_date)}</div>
                       </div>
                     </div>
                     <div className="text-right">
@@ -333,10 +411,10 @@ export default function FieldPaymentsPage() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[10px] text-slate-600 truncate">{p.work_type||"—"}</div>
+                    <div className="text-[10px] text-slate-600 truncate">{p.work_type||"�"}</div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="text-[10px] text-slate-600 capitalize">{p.payment_method?.replace("_"," ")}</span>
-                      {p.signature_url&&<span className="text-[9px] text-violet-400">✍️ Signed</span>}
+                      {p.signature_url&&<span className="text-[9px] text-violet-400">?? Signed</span>}
                       {p.receipt_number&&<span className="text-[9px] text-slate-700">#{p.receipt_number.slice(-6)}</span>}
                     </div>
                   </div>
@@ -347,7 +425,7 @@ export default function FieldPaymentsPage() {
         )}
       </div>
 
-      {/* ── DETAIL MODAL ── */}
+      {/* -- DETAIL MODAL -- */}
       {selected&&(
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl max-h-[92vh] overflow-y-auto">
@@ -443,7 +521,7 @@ export default function FieldPaymentsPage() {
                     <span className="text-[9px] text-slate-600">{workerHistory.length} records</span>
                   </div>
                   {loadingHistory?(
-                    <div className="p-4 text-center text-xs text-slate-600">Loading…</div>
+                    <div className="p-4 text-center text-xs text-slate-600">Loading�</div>
                   ):(
                     <div className="divide-y divide-white/[0.04] max-h-40 overflow-y-auto">
                       {workerHistory.map(h=>{
@@ -474,18 +552,18 @@ export default function FieldPaymentsPage() {
                 </div>
               )}
 
-              {/* ── ACTION BUTTONS ── */}
+              {/* -- ACTION BUTTONS -- */}
               <div className="space-y-2 pt-1">
                 <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">Receipt Actions</div>
                 {canEditDelete&&(
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     <button onClick={()=>setEditingPayment(selected)}
                       className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition text-sm font-semibold">
-                      ✏️ Edit
+                      ?? Edit
                     </button>
                     <button onClick={()=>deletePayment(selected)}
                       className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-300 transition text-sm font-semibold">
-                      🗑️ Delete
+                      ??? Delete
                     </button>
                   </div>
                 )}
@@ -494,6 +572,12 @@ export default function FieldPaymentsPage() {
                 <button onClick={()=>generatePDF(selected)}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.1] hover:border-white/[0.2] bg-white/[0.03] hover:bg-white/[0.06] text-slate-200 font-semibold transition text-sm">
                   <Printer size={15}/> Generate & Print Receipt PDF
+                </button>
+
+                <button onClick={()=>shareReceiptImage(selected)} disabled={sharingReceiptId===selected.id}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 font-semibold transition text-sm disabled:opacity-60">
+                  {sharingReceiptId===selected.id ? <Loader2 size={15} className="animate-spin"/> : <Share2 size={15}/>}
+                  {sharingReceiptId===selected.id ? "Generating..." : "Share Receipt (with logo)"}
                 </button>
 
                 <div className="grid grid-cols-2 gap-2">
