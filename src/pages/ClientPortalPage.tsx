@@ -1,4 +1,4 @@
-﻿// src/pages/ClientPortalPage.tsx — Secure portal with password + PWA
+﻿// src/pages/ClientPortalPage.tsx � Secure portal with password + PWA
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -15,7 +15,7 @@ interface Photo { id:string; url?:string; public_url?:string; publicUrl?:string;
 interface Co { company_name:string|null; logo_url:string|null; phone:string|null; email:string|null; address_line1:string|null; }
 
 const fmt = (n:number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(n);
-const fmtDate = (d:string|null) => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—";
+const fmtDate = (d:string|null) => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "�";
 const timeAgo = (d:string) => { const s=Math.floor((Date.now()-new Date(d).getTime())/1000); if(s<60)return "just now"; if(s<3600)return `${Math.floor(s/60)}m ago`; if(s<86400)return `${Math.floor(s/3600)}h ago`; return fmtDate(d); };
 
 async function hashPassword(p:string):Promise<string> {
@@ -37,14 +37,14 @@ function ProgressRing({pct}:{pct:number}) {
 function Stars({value,onChange}:{value:number;onChange:(n:number)=>void}) {
   const [hover,setHover]=useState(0);
   return <div style={{display:"flex",gap:4,justifyContent:"center"}}>
-    {[1,2,3,4,5].map(s=><button key={s} onMouseEnter={()=>setHover(s)} onMouseLeave={()=>setHover(0)} onClick={()=>onChange(s)} style={{fontSize:34,background:"none",border:"none",cursor:"pointer",color:s<=(hover||value)?"#f59e0b":"rgba(255,255,255,0.15)",transition:"all 0.15s",transform:s<=(hover||value)?"scale(1.2)":"scale(1)"}}>★</button>)}
+    {[1,2,3,4,5].map(s=><button key={s} onMouseEnter={()=>setHover(s)} onMouseLeave={()=>setHover(0)} onClick={()=>onChange(s)} style={{fontSize:34,background:"none",border:"none",cursor:"pointer",color:s<=(hover||value)?"#f59e0b":"rgba(255,255,255,0.15)",transition:"all 0.15s",transform:s<=(hover||value)?"scale(1.2)":"scale(1)"}}>?</button>)}
   </div>;
 }
 
 function Toast({msg,type="success",onDone}:{msg:string;type?:"success"|"error";onDone:()=>void}) {
   useEffect(()=>{const t=setTimeout(onDone,3000);return()=>clearTimeout(t);},[]);
   return <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:type==="success"?"#1e293b":"#450a0a",border:`1px solid ${type==="success"?"rgba(34,197,94,0.3)":"rgba(239,68,68,0.3)"}`,borderRadius:12,padding:"12px 20px",color:type==="success"?"#4ade80":"#fca5a5",fontSize:13,fontWeight:600,zIndex:9999,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",whiteSpace:"nowrap"}}>
-    {type==="success"?"✓":"✗"} {msg}
+    {type==="success"?"?":"?"} {msg}
   </div>;
 }
 function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|null;mode:"setup"|"login";onSuccess:()=>void}) {
@@ -101,14 +101,14 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
         <p style={{fontSize:13,color:"#475569",margin:"0 0 20px",lineHeight:1.6}}>
           {mode==="setup"?`Hello ${client.contact_name||client.name}! Create a password to access your project portal.`:`Sign in to view your project updates.`}
         </p>
-        {error&&<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#fca5a5",marginBottom:14}}>✗ {error}</div>}
+        {error&&<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#fca5a5",marginBottom:14}}>? {error}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {mode==="setup"&&<div>
             <label style={S.label}>EMAIL ADDRESS</label>
             <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="your@email.com" style={S.input}/>
           </div>}
           {mode==="login"&&<div style={{background:"rgba(59,130,246,0.08)",border:"1px solid rgba(59,130,246,0.15)",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#60a5fa"}}>
-            📧 Signing in as: <strong>{client.portal_email||client.email}</strong>
+            ?? Signing in as: <strong>{client.portal_email||client.email}</strong>
           </div>}
           <div>
             <label style={S.label}>{mode==="setup"?"CREATE PASSWORD":"PASSWORD"}</label>
@@ -118,7 +118,7 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
                 onKeyDown={e=>e.key==="Enter"&&(mode==="setup"?handleSetup():handleLogin())}
                 style={{...S.input,paddingRight:44}}/>
               <button onClick={()=>setShowPass(!showPass)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:16}}>
-                {showPass?"🙈":"👁"}
+                {showPass?"??":"??"}
               </button>
             </div>
           </div>
@@ -128,11 +128,11 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
               placeholder="Repeat your password" onKeyDown={e=>e.key==="Enter"&&handleSetup()} style={S.input}/>
           </div>}
           <button onClick={mode==="setup"?handleSetup:handleLogin} disabled={loading} style={{...S.btn,opacity:loading?0.6:1}}>
-            {loading?"Please wait…":mode==="setup"?"Activate Account →":"Sign In →"}
+            {loading?"Please wait�":mode==="setup"?"Activate Account ?":"Sign In ?"}
           </button>
         </div>
       </div>
-      <div style={{textAlign:"center",marginTop:16,fontSize:11,color:"#1e293b"}}>🔒 Secured by {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
+      <div style={{textAlign:"center",marginTop:16,fontSize:11,color:"#1e293b"}}>?? Secured by {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
     </div>
   </div>;
 }
@@ -178,7 +178,7 @@ function SignatureModal({contract,client,saving,onSign,onCancel}:{contract:any;c
   return(
     <div style={{background:"#0d1117",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:20,width:"100%",maxWidth:420,maxHeight:"90vh",overflowY:"auto"}}>
       <div style={{fontWeight:700,fontSize:15,color:"#f1f5f9",marginBottom:4}}>Sign Contract</div>
-      <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>{contract.contract_name} · {contract.contract_number}</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>{contract.contract_name} � {contract.contract_number}</div>
 
       <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:12,marginBottom:14,maxHeight:160,overflowY:"auto",fontSize:11,color:"#94a3b8",lineHeight:1.6}}>
         By signing below, I, <strong style={{color:"#f1f5f9"}}>{client?.contact_name||client?.name}</strong>, agree to the terms, payment schedule, and scope of work outlined in this contract.
@@ -193,7 +193,7 @@ function SignatureModal({contract,client,saving,onSign,onCancel}:{contract:any;c
       <div style={{display:"flex",gap:8,marginTop:14}}>
         <button onClick={clear} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Clear</button>
         <button onClick={onCancel} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
-        <button onClick={submit} disabled={!hasDrawn||saving} style={{flex:1.4,padding:"10px 0",borderRadius:10,border:"none",background:hasDrawn?"#22c55e":"rgba(255,255,255,0.06)",color:hasDrawn?"white":"#475569",fontSize:13,fontWeight:700,cursor:hasDrawn?"pointer":"not-allowed"}}>{saving?"Saving…":"Sign &amp; Submit"}</button>
+        <button onClick={submit} disabled={!hasDrawn||saving} style={{flex:1.4,padding:"10px 0",borderRadius:10,border:"none",background:hasDrawn?"#22c55e":"rgba(255,255,255,0.06)",color:hasDrawn?"white":"#475569",fontSize:13,fontWeight:700,cursor:hasDrawn?"pointer":"not-allowed"}}>{saving?"Saving�":"Sign &amp; Submit"}</button>
       </div>
     </div>
   );
@@ -247,14 +247,15 @@ export default function ClientPortalPage() {
       const {data:p}=await supabase.from("projects").select("*").eq("client_id",c.id).order("created_at",{ascending:false}).limit(1);
       const proj=p?.[0]||null; setProject(proj);
       if(proj){
-        const [inv,co,cm,ph,boq]=await Promise.all([
+        const [inv,co,cm,ph,boq,ct]=await Promise.all([
           supabase.from("invoices").select("*").eq("project_id",proj.id).order("issue_date",{ascending:false}),
           supabase.from("change_orders").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
           supabase.from("client_comments").select("*").eq("project_id",proj.id).order("created_at",{ascending:true}),
           supabase.from("project_photos").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
           supabase.from("boq_items").select("status").eq("project_id",proj.id),
+          supabase.from("client_contracts").select("*").eq("project_id",proj.id).eq("client_id",c.id).order("created_at",{ascending:false}),
         ]);
-        setInvoices(inv.data||[]);setChanges(co.data||[]);setComments(cm.data||[]);setPhotos(ph.data||[]);
+        setInvoices(inv.data||[]);setChanges(co.data||[]);setComments(cm.data||[]);setPhotos(ph.data||[]);setContracts(ct.data||[]);
         const items=boq.data||[];
         setProgress(items.length?Math.round(items.filter((b:any)=>b.status==="complete").length/items.length*100):0);
       }
@@ -295,9 +296,9 @@ export default function ClientPortalPage() {
 
   const G=`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} body{margin:0} input::placeholder,textarea::placeholder{color:#334155} input:focus,textarea:focus{border-color:#3b82f6!important} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px}`;
 
-  if(authState==="loading")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{G}</style><div style={{textAlign:"center"}}><div style={{width:44,height:44,border:"3px solid #3b82f6",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 14px"}}/><p style={{color:"#64748b",fontSize:14}}>Loading portal…</p></div></div>;
+  if(authState==="loading")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{G}</style><div style={{textAlign:"center"}}><div style={{width:44,height:44,border:"3px solid #3b82f6",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 14px"}}/><p style={{color:"#64748b",fontSize:14}}>Loading portal�</p></div></div>;
 
-  if(authState==="error")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><style>{G}</style><div style={{textAlign:"center",maxWidth:360}}><div style={{fontSize:52,marginBottom:14}}>🔒</div><h2 style={{color:"#f1f5f9",fontSize:20,fontWeight:700,marginBottom:8}}>Access Denied</h2><p style={{color:"#64748b",fontSize:14,lineHeight:1.6}}>{errorMsg}</p></div></div>;
+  if(authState==="error")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><style>{G}</style><div style={{textAlign:"center",maxWidth:360}}><div style={{fontSize:52,marginBottom:14}}>??</div><h2 style={{color:"#f1f5f9",fontSize:20,fontWeight:700,marginBottom:8}}>Access Denied</h2><p style={{color:"#64748b",fontSize:14,lineHeight:1.6}}>{errorMsg}</p></div></div>;
 
   if(authState==="setup"||authState==="login")return <><style>{G}</style><AuthScreen client={client!} company={company} mode={authState} onSuccess={onAuthSuccess}/></>;
 
@@ -335,9 +336,9 @@ export default function ClientPortalPage() {
         <div style={{flex:1,minWidth:180}}>
           <div style={{fontSize:10,color:"#3b82f6",fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>Your Project</div>
           <h1 style={{fontSize:24,fontWeight:800,color:"#f1f5f9",margin:"0 0 6px"}}>{project?.name||"No project assigned"}</h1>
-          {project?.site_address&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>📍 {project.site_address}</div>}
+          {project?.site_address&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>?? {project.site_address}</div>}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            {project?.status&&<span style={{fontSize:11,padding:"4px 12px",borderRadius:20,fontWeight:700,background:`${sColor[project.status]||"#3b82f6"}18`,color:sColor[project.status]||"#3b82f6",border:`1px solid ${sColor[project.status]||"#3b82f6"}40`,textTransform:"capitalize"}}>● {project.status.replace("_"," ")}</span>}
+            {project?.status&&<span style={{fontSize:11,padding:"4px 12px",borderRadius:20,fontWeight:700,background:`${sColor[project.status]||"#3b82f6"}18`,color:sColor[project.status]||"#3b82f6",border:`1px solid ${sColor[project.status]||"#3b82f6"}40`,textTransform:"capitalize"}}>? {project.status.replace("_"," ")}</span>}
             {project?.start_date&&<span style={{fontSize:11,color:"#475569"}}>Started {fmtDate(project.start_date)}</span>}
             {project?.end_date&&<span style={{fontSize:11,color:"#475569"}}>Est. done {fmtDate(project.end_date)}</span>}
           </div>
@@ -386,14 +387,14 @@ export default function ClientPortalPage() {
           <p style={{fontSize:13,color:"#94a3b8",lineHeight:1.7,margin:0}}>{project.notes}</p>
         </div>}
         <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:14}}>💬 Messages</div>
+          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:14}}>?? Messages</div>
           {comments.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16,maxHeight:280,overflowY:"auto"}}>
             {comments.map(c=><div key={c.id} style={{background:"rgba(59,130,246,0.07)",border:"1px solid rgba(59,130,246,0.12)",borderRadius:10,padding:"10px 14px"}}>
               <p style={{fontSize:13,color:"#cbd5e1",margin:"0 0 4px",lineHeight:1.5}}>{c.message}</p>
               <span style={{fontSize:10,color:"#475569"}}>{timeAgo(c.created_at)}</span>
             </div>)}
           </div>}
-          <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="Send a message to your contractor…"
+          <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="Send a message to your contractor�"
             style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 14px",fontSize:13,color:"#f1f5f9",resize:"none",height:76,outline:"none"}}/>
           <button onClick={submitComment} disabled={!newComment.trim()}
             style={{marginTop:10,padding:"10px 20px",background:newComment.trim()?"#3b82f6":"rgba(255,255,255,0.05)",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
@@ -401,17 +402,56 @@ export default function ClientPortalPage() {
           </button>
         </div>
         <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:12}}>📞 Contact</div>
+          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:12}}>?? Contact</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {company?.phone&&<a href={`tel:${company.phone}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>📞 {company.phone}</a>}
-            {company?.email&&<a href={`mailto:${company.email}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>✉️ {company.email}</a>}
-            {company?.address_line1&&<div style={{fontSize:13,color:"#64748b"}}>📍 {company.address_line1}</div>}
+            {company?.phone&&<a href={`tel:${company.phone}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>?? {company.phone}</a>}
+            {company?.email&&<a href={`mailto:${company.email}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>?? {company.email}</a>}
+            {company?.address_line1&&<div style={{fontSize:13,color:"#64748b"}}>?? {company.address_line1}</div>}
           </div>
         </div>
       </div>}
+      {tab==="contracts"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
+        {contracts.length===0
+          ?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>??</div><p style={{color:"#475569"}}>No contracts have been sent for signing yet.</p></div>
+          :contracts.map((ct:any)=>
+            <div key={ct.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}>
+                <div>
+                  <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>{ct.contract_name}</div>
+                  <div style={{fontSize:11,color:"#475569"}}>#{ct.contract_number}</div>
+                </div>
+                <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,background:ct.client_signed_at?"rgba(34,197,94,0.15)":"rgba(245,158,11,0.15)",color:ct.client_signed_at?"#22c55e":"#f59e0b"}}>{ct.client_signed_at?"Signed":"Awaiting Signature"}</span>
+              </div>
+              {ct.scope_of_work&&<p style={{fontSize:12,color:"#64748b",margin:"0 0 14px",lineHeight:1.6}}>{ct.scope_of_work}</p>}
+              <div style={{display:"flex",gap:8,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+                <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.contractor_signed_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:ct.contractor_signed_at?"#22c55e":"#475569"}}>Contractor {ct.contractor_signed_at?"?":"Pending"}</div>
+                <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.client_signed_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:ct.client_signed_at?"#22c55e":"#475569"}}>You {ct.client_signed_at?"? Signed":"Pending"}</div>
+              </div>
+              {!ct.client_signed_at&&ct.contractor_signed_at&&<button onClick={()=>setSigningContract(ct)} style={{width:"100%",marginTop:12,padding:"12px 0",background:"#22c55e",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Sign This Contract</button>}
+              {!ct.contractor_signed_at&&<div style={{marginTop:12,padding:"10px 14px",background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:10,fontSize:12,color:"#f59e0b"}}>Waiting for contractor signature before you can sign.</div>}
+            </div>
+          )
+        }
+        {signingContract&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <SignatureModal contract={signingContract} client={client} saving={savingSignature} onCancel={()=>setSigningContract(null)} onSign={async(dataUrl)=>{
+            setSavingSignature(true);
+            try{
+              const blob=await(await fetch(dataUrl)).blob();
+              const path=`client-signatures/${signingContract.id}_${Date.now()}.png`;
+              const{error:ue}=await supabase.storage.from("project-files").upload(path,blob,{upsert:true,contentType:"image/png"});
+              const sigUrl=ue?null:supabase.storage.from("project-files").getPublicUrl(path).data.publicUrl;
+              await supabase.from("client_contracts").update({client_signed_at:new Date().toISOString(),client_signature_url:sigUrl,client_signed_ip:"portal"}).eq("id",signingContract.id);
+              setContracts(prev=>prev.map(c=>c.id===signingContract.id?{...c,client_signed_at:new Date().toISOString()}:c));
+              setSigningContract(null);
+              setToast({msg:"Contract signed successfully!",type:"success"});
+            }catch(e:any){setToast({msg:"Failed to save signature.",type:"error"});}
+            finally{setSavingSignature(false);}
+          }}/>
+        </div>}
+      </div>}
 
       {tab==="photos"&&<div style={{animation:"fadeIn 0.3s ease"}}>
-        {photos.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:60,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>📸</div><p style={{color:"#475569"}}>No site photos yet.</p></div>
+        {photos.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:60,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>??</div><p style={{color:"#475569"}}>No site photos yet.</p></div>
           :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}}>
             {photos.map(p=><div key={p.id} onClick={()=>setLightbox(p)} style={{aspectRatio:"1",borderRadius:12,overflow:"hidden",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",cursor:"zoom-in",position:"relative"}}>
               <img src={p.url||p.public_url||p.publicUrl||""} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
@@ -429,11 +469,11 @@ export default function ClientPortalPage() {
             </div>
           ))}
         </div>
-        {invoices.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🧾</div><p style={{color:"#475569"}}>No invoices yet.</p></div>
+        {invoices.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>??</div><p style={{color:"#475569"}}>No invoices yet.</p></div>
           :invoices.map(inv=><div key={inv.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <div>
               <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>Invoice #{inv.invoice_number||inv.id.slice(0,8).toUpperCase()}</div>
-              <div style={{fontSize:11,color:"#475569"}}>Issued {fmtDate(inv.issue_date)} · Due {fmtDate(inv.due_date)}</div>
+              <div style={{fontSize:11,color:"#475569"}}>Issued {fmtDate(inv.issue_date)} � Due {fmtDate(inv.due_date)}</div>
             </div>
             <div style={{textAlign:"right"}}>
               <div style={{fontSize:16,fontWeight:800,color:"#f1f5f9",marginBottom:4}}>{fmt(Number(inv.total_amount||0))}</div>
@@ -443,8 +483,8 @@ export default function ClientPortalPage() {
       </div>}
 
       {tab==="changes"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
-        <div style={{background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#f59e0b"}}>⚠️ Change orders need your approval before work begins.</div>
-        {changes.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>✅</div><p style={{color:"#475569"}}>No change orders at this time.</p></div>
+        <div style={{background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#f59e0b"}}>?? Change orders need your approval before work begins.</div>
+        {changes.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>?</div><p style={{color:"#475569"}}>No change orders at this time.</p></div>
           :changes.map(co=><div key={co.id} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${co.status==="approved"?"rgba(34,197,94,0.2)":co.status==="rejected"?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.07)"}`,borderRadius:16,padding:20}}>
             <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>{co.title}</div>
             {co.description&&<p style={{fontSize:13,color:"#64748b",margin:"0 0 10px",lineHeight:1.6}}>{co.description}</p>}
@@ -453,16 +493,16 @@ export default function ClientPortalPage() {
               <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,textTransform:"capitalize",background:co.status==="approved"?"rgba(34,197,94,0.15)":co.status==="rejected"?"rgba(239,68,68,0.15)":"rgba(245,158,11,0.15)",color:co.status==="approved"?"#22c55e":co.status==="rejected"?"#ef4444":"#f59e0b"}}>{co.status}</span>
             </div>
             {co.status==="pending"&&<div style={{display:"flex",gap:10}}>
-              <button onClick={()=>respondChange(co.id,"approved")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"#16a34a",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:respondingTo===co.id?0.6:1}}>✓ Approve</button>
-              <button onClick={()=>respondChange(co.id,"rejected")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:10,color:"#ef4444",fontSize:13,fontWeight:700,cursor:"pointer"}}>✗ Reject</button>
+              <button onClick={()=>respondChange(co.id,"approved")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"#16a34a",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:respondingTo===co.id?0.6:1}}>? Approve</button>
+              <button onClick={()=>respondChange(co.id,"rejected")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:10,color:"#ef4444",fontSize:13,fontWeight:700,cursor:"pointer"}}>? Reject</button>
             </div>}
-            {co.status==="approved"&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>✓ You approved this change</div>}
-            {co.status==="rejected"&&<div style={{fontSize:12,color:"#ef4444",fontWeight:600}}>✗ You rejected this change</div>}
+            {co.status==="approved"&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>? You approved this change</div>}
+            {co.status==="rejected"&&<div style={{fontSize:12,color:"#ef4444",fontWeight:600}}>? You rejected this change</div>}
           </div>)}
       </div>}
 
       {tab==="feedback"&&<div style={{animation:"fadeIn 0.3s ease"}}>
-        {reviewSubmitted?<div style={{background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>⭐</div><div style={{fontSize:18,fontWeight:700,color:"#22c55e",marginBottom:6}}>Thank you!</div><p style={{color:"#475569",fontSize:14}}>Your feedback means a lot to us.</p></div>
+        {reviewSubmitted?<div style={{background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>?</div><div style={{fontSize:18,fontWeight:700,color:"#22c55e",marginBottom:6}}>Thank you!</div><p style={{color:"#475569",fontSize:14}}>Your feedback means a lot to us.</p></div>
           :<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:28}}>
             <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>Rate Our Work</div>
             <p style={{fontSize:13,color:"#475569",marginBottom:20}}>How satisfied are you with the project so far?</p>
@@ -478,7 +518,7 @@ export default function ClientPortalPage() {
     </div>
 
     <div style={{borderTop:"1px solid rgba(255,255,255,0.04)",padding:"16px 0",textAlign:"center",fontSize:11,color:"#1e293b"}}>
-      {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"} · Secured Portal · Powered by Magnus ERP
+      {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"} � Secured Portal � Powered by Magnus ERP
     </div>
 
     {lightbox&&<div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.93)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
