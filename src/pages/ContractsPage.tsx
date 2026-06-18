@@ -709,7 +709,6 @@ export default function ContractsPage() {
       showToast(`${party === "contractor" ? "Contractor" : "Client"} signature recorded!`);
     } finally { setSavingSignature(false); }
   }
-  }
 
   // ─── AI Functions ───────────────────────────────────────────────────────────
   async function aiGenerateScope() {
