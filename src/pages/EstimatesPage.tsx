@@ -1,9 +1,10 @@
-﻿// src/pages/EstimatesPage.tsx — v2 Rebuild
+// src/pages/EstimatesPage.tsx � v2 Rebuild
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { magnusAI } from "../lib/magnusAI";
+import EstimateAdvisorPanel from "../components/EstimateAdvisorPanel";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
   Table, Th, Tr, Td, Empty, Modal, Alert, Textarea,
@@ -15,7 +16,7 @@ import {
   CheckCircle2, XCircle, Clock, LayoutGrid, List, X, Bot, Sparkles, Loader, Printer
 } from "lucide-react";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types --------------------------------------------------------------------
 
 type EstimateHeader = {
   id: string;
@@ -75,15 +76,16 @@ function fmtDate(d: string) {
   });
 }
 
-// ─── Estimate Card ────────────────────────────────────────────────────────────
+// --- Estimate Card ------------------------------------------------------------
 
-function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdateStatus }: {
+function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdateStatus, onAdvisor }: {
   estimate: EstimateHeader;
   total: number;
   onView: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onUpdateStatus: (status: EstimateHeader["status"]) => void;
+  onAdvisor: () => void;
 }) {
   return (
     <Card className="group hover:border-white/[0.13] transition-all cursor-pointer" onClick={onView}>
@@ -101,13 +103,17 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
             className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors" title="Delete">
             <Trash2 size={11}/>
           </button>
+          <button onClick={onAdvisor}
+            className="p-1.5 rounded-lg hover:bg-purple-500/15 text-slate-600 hover:text-purple-400 transition-colors" title="AI Advisor">
+            <Bot size={11}/>
+          </button>
         </div>
       </div>
 
       <div className="mb-3">
         <div className="text-sm font-semibold text-slate-100 truncate mb-1">{estimate.title}</div>
         <div className="text-[10px] text-slate-600">
-          {estimate.projects?.name || "No project"} · v{estimate.version}
+          {estimate.projects?.name || "No project"} � v{estimate.version}
         </div>
       </div>
 
@@ -143,7 +149,7 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
   );
 }
 
-// ─── Detail Modal ─────────────────────────────────────────────────────────────
+// --- Detail Modal -------------------------------------------------------------
 
 function EstimateDetailModal({ estimate, items, onClose }: {
   estimate: EstimateHeader;
@@ -183,7 +189,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
     <table>
       <thead><tr><th>#</th><th>Item</th><th>Type</th><th>Unit</th><th class="tr">Qty</th><th class="tr">Rate (JMD)</th><th class="tr">Amount (JMD)</th></tr></thead>
       <tbody>
-        ${items.map(i=>`<tr><td>${i.line_no}</td><td><strong>${i.item}</strong>${i.description?`<br/><span style="color:#666;font-size:11px">${i.description}</span>`:""}</td><td style="color:#666;font-size:11px;text-transform:capitalize">${i.item_type}</td><td style="color:#666">${i.unit||"—"}</td><td class="tr">${i.qty}</td><td class="tr">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.rate)}</td><td class="tr" style="font-weight:600">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.amount)}</td></tr>`).join("")}
+        ${items.map(i=>`<tr><td>${i.line_no}</td><td><strong>${i.item}</strong>${i.description?`<br/><span style="color:#666;font-size:11px">${i.description}</span>`:""}</td><td style="color:#666;font-size:11px;text-transform:capitalize">${i.item_type}</td><td style="color:#666">${i.unit||"�"}</td><td class="tr">${i.qty}</td><td class="tr">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.rate)}</td><td class="tr" style="font-weight:600">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.amount)}</td></tr>`).join("")}
         <tr class="total-row"><td colspan="6">TOTAL ESTIMATE</td><td class="tr">${fmtJMD(total)}</td></tr>
       </tbody>
     </table>
@@ -192,7 +198,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
       <div><div style="font-size:11px;color:#666;margin-bottom:50px">Client Acceptance</div><div class="sig-line">Client Signature &amp; Date</div></div>
       <div><div style="font-size:11px;color:#666;margin-bottom:50px">Authorized By</div><div class="sig-line">Company Representative &amp; Date</div></div>
     </div>
-    <div style="margin-top:24px;text-align:center;font-size:10px;color:#999">Magnus Boys Construction · This proposal is valid for 30 days from date of issue</div>
+    <div style="margin-top:24px;text-align:center;font-size:10px;color:#999">Magnus Boys Construction � This proposal is valid for 30 days from date of issue</div>
     </body></html>`;
     const w = window.open("","_blank");
     if(!w) return;
@@ -202,7 +208,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
   }
   return (
     <Modal open onClose={onClose} title={estimate.title}
-      subtitle={`v${estimate.version} · ${estimate.projects?.name || "No project"}`}
+      subtitle={`v${estimate.version} � ${estimate.projects?.name || "No project"}`}
       width="max-w-3xl">
       <div className="space-y-4">
         {/* Summary */}
@@ -244,7 +250,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
                       {item.item_type}
                     </span>
                   </Td>
-                  <Td muted>{item.unit || "—"}</Td>
+                  <Td muted>{item.unit || "�"}</Td>
                   <Td right muted>{item.qty}</Td>
                   <Td right muted>{fmt(item.rate)}</Td>
                   <Td right><span className="font-semibold text-slate-200">{fmt(item.amount)}</span></Td>
@@ -274,7 +280,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// --- Main Page ----------------------------------------------------------------
 
 export default function EstimatesPage() {
   const { projects, currentProject } = useProjectContext();
@@ -292,6 +298,7 @@ export default function EstimatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+  const [advisorEstimate, setAdvisorEstimate] = useState<EstimateHeader | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", project_id: currentProject?.id || "", notes: "", status: "draft" });
 
@@ -425,7 +432,7 @@ export default function EstimatesPage() {
     <div className="min-h-screen bg-[#080b10]">
       <PageHeader
         title="Estimates"
-        subtitle={`${stats.total} total · ${fmt(stats.totalValue)} approved`}
+        subtitle={`${stats.total} total � ${fmt(stats.totalValue)} approved`}
         actions={
           <>
             <Btn variant="ghost" size="sm"
@@ -502,6 +509,7 @@ export default function EstimatesPage() {
                 onDelete={() => deleteEstimate(e.id)}
                 onDuplicate={() => duplicateEstimate(e)}
                 onUpdateStatus={status => updateStatus(e.id, status)}
+                onAdvisor={() => setAdvisorEstimate(e)}
               />
             ))}
           </div>
@@ -523,7 +531,7 @@ export default function EstimatesPage() {
                 {filtered.map(e => (
                   <Tr key={e.id} onClick={() => setViewingEstimate(e)}>
                     <Td><span className="font-semibold text-slate-200">{e.title}</span></Td>
-                    <Td muted>{e.projects?.name || "—"}</Td>
+                    <Td muted>{e.projects?.name || "�"}</Td>
                     <Td muted>v{e.version}</Td>
                     <Td><Badge color={STATUS_COLOR[e.status]} dot>{e.status}</Badge></Td>
                     <Td muted>{fmtDate(e.updated_at)}</Td>
@@ -554,6 +562,18 @@ export default function EstimatesPage() {
           estimate={viewingEstimate}
           items={itemsByEstimate[viewingEstimate.id] || []}
           onClose={() => setViewingEstimate(null)}
+        />
+      )}
+
+      {/* AI Advisor Panel */}
+      {advisorEstimate && companyId && (
+        <EstimateAdvisorPanel
+          estimateId={advisorEstimate.id}
+          estimateTitle={advisorEstimate.title}
+          estimateTotal={getTotal(advisorEstimate.id)}
+          itemCount={(itemsByEstimate[advisorEstimate.id] || []).length}
+          companyId={companyId}
+          onClose={() => setAdvisorEstimate(null)}
         />
       )}
 
@@ -594,7 +614,7 @@ export default function EstimatesPage() {
                 <div className="flex-1">
                   <p className="text-[11px] text-slate-300 leading-relaxed">{aiSuggestion}</p>
                   <button type="button" onClick={() => setForm(f => ({ ...f, notes: aiSuggestion }))}
-                    className="mt-1 text-[10px] text-purple-400 hover:text-purple-300 font-semibold">Use this →</button>
+                    className="mt-1 text-[10px] text-purple-400 hover:text-purple-300 font-semibold">Use this ?</button>
                 </div>
                 <button type="button" onClick={() => setAiSuggestion(null)} className="text-slate-600 hover:text-slate-400"><X size={10}/></button>
               </div>
