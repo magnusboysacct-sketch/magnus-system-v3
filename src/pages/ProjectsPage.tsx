@@ -9,7 +9,7 @@ import {
 } from "../components/ui";
 import {
   FolderOpen, Plus, Search, Hammer, ArrowRight,
-  Building2, LayoutGrid, List, RefreshCw
+  Building2, LayoutGrid, List, RefreshCw, CheckSquare, TrendingUp
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -22,6 +22,21 @@ type Project = {
 };
 
 type Client = { id: string; name: string };
+
+type CloseOutForm = {
+  project_type: string;
+  client_type: string;
+  estimated_cost: string;
+  actual_cost: string;
+  estimated_duration_weeks: string;
+  actual_duration_weeks: string;
+  estimated_markup_pct: string;
+  actual_markup_pct: string;
+  was_profitable: boolean;
+  had_delays: boolean;
+  delay_reason: string;
+  cost_overrun_reason: string;
+};
 
 const STATUS_COLOR: Record<string, any> = {
   active:    "green",
@@ -39,14 +54,31 @@ const STATUS_OPTS = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+const DEFAULT_CLOSEOUT: CloseOutForm = {
+  project_type: "",
+  client_type: "",
+  estimated_cost: "",
+  actual_cost: "",
+  estimated_duration_weeks: "",
+  actual_duration_weeks: "",
+  estimated_markup_pct: "",
+  actual_markup_pct: "",
+  was_profitable: true,
+  had_delays: false,
+  delay_reason: "",
+  cost_overrun_reason: "",
+};
+
 // ─── Project Card ─────────────────────────────────────────────────────────────
 
-function ProjectCard({ project, client, onClick }: {
+function ProjectCard({ project, client, onClick, onCloseOut }: {
   project: Project;
   client?: Client;
   onClick: () => void;
+  onCloseOut: () => void;
 }) {
   const status = project.status || "active";
+  const canCloseOut = status === "active" || status === "completed";
   return (
     <div
       onClick={onClick}
@@ -74,11 +106,20 @@ function ProjectCard({ project, client, onClick }: {
       )}
 
       {/* Footer */}
-      <div className="flex items-center justify-between pt-3 border-t border-white/[0.05] mt-auto">
-        <div className="flex items-center gap-3">
-<span className="text-[10px] text-slate-700 capitalize">{project.status?.replace("_"," ") || "active"}</span>
+      <div className="flex items-center justify-between pt-3 border-t border-white/[0.05] mt-3">
+        <span className="text-[10px] text-slate-700 capitalize">{project.status?.replace("_"," ") || "active"}</span>
+        <div className="flex items-center gap-2">
+          {canCloseOut && (
+            <button
+              onClick={e => { e.stopPropagation(); onCloseOut(); }}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-[10px] text-emerald-400 font-semibold transition opacity-0 group-hover:opacity-100"
+              title="Record project actuals for AI learning"
+            >
+              <TrendingUp size={9}/> Close Out
+            </button>
+          )}
+          <ArrowRight size={13} className="text-slate-700 group-hover:text-cyan-500 group-hover:translate-x-0.5 transition-all" />
         </div>
-        <ArrowRight size={13} className="text-slate-700 group-hover:text-cyan-500 group-hover:translate-x-0.5 transition-all" />
       </div>
     </div>
   );
@@ -86,12 +127,14 @@ function ProjectCard({ project, client, onClick }: {
 
 // ─── Project Row (list view) ──────────────────────────────────────────────────
 
-function ProjectRow({ project, client, onClick }: {
+function ProjectRow({ project, client, onClick, onCloseOut }: {
   project: Project;
   client?: Client;
   onClick: () => void;
+  onCloseOut: () => void;
 }) {
   const status = project.status || "active";
+  const canCloseOut = status === "active" || status === "completed";
   return (
     <div
       onClick={onClick}
@@ -105,7 +148,14 @@ function ProjectRow({ project, client, onClick }: {
         {client && <div className="text-[10px] text-slate-600">{client.name}</div>}
       </div>
       <Badge color={STATUS_COLOR[status] || "slate"} dot>{status.replace("_", " ")}</Badge>
-
+      {canCloseOut && (
+        <button
+          onClick={e => { e.stopPropagation(); onCloseOut(); }}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-[10px] text-emerald-400 font-semibold transition opacity-0 group-hover:opacity-100"
+        >
+          <TrendingUp size={9}/> Close Out
+        </button>
+      )}
       <ArrowRight size={13} className="text-slate-700 group-hover:text-slate-400 transition-colors flex-shrink-0" />
     </div>
   );
@@ -121,14 +171,20 @@ export default function ProjectsPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [showNew, setShowNew] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [form, setForm] = useState({
-    name: "", status: "active", client_id: ""
-  });
+  const [form, setForm] = useState({ name: "", status: "active", client_id: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [companyId, setCompanyId] = useState<string | null>(null);
+
+  // Close Out state
+  const [closeOutProject, setCloseOutProject] = useState<Project | null>(null);
+  const [closeOutForm, setCloseOutForm] = useState<CloseOutForm>(DEFAULT_CLOSEOUT);
+  const [closeOutSaving, setCloseOutSaving] = useState(false);
+  const [closeOutError, setCloseOutError] = useState<string | null>(null);
+  const [closeOutSuccess, setCloseOutSuccess] = useState(false);
+
   const nav = useNavigate();
 
-  // Load clients for the dropdown
   useEffect(() => {
     async function loadClients() {
       try {
@@ -137,6 +193,7 @@ export default function ProjectsPage() {
         const { data: profile } = await supabase
           .from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
         if (!profile?.company_id) return;
+        setCompanyId(profile.company_id);
         const { data } = await supabase
           .from("clients").select("id, name")
           .eq("company_id", profile.company_id).order("name");
@@ -146,14 +203,12 @@ export default function ProjectsPage() {
     loadClients();
   }, []);
 
-  // Filter projects
   const filtered = projects.filter(p => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "all" || p.status === statusFilter;
     return matchSearch && matchStatus;
   });
 
-  // Stats
   const stats = {
     total: projects.length,
     active: projects.filter(p => p.status === "active").length,
@@ -175,7 +230,6 @@ export default function ProjectsPage() {
       const { data: profile } = await supabase
         .from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
       if (!profile?.company_id) throw new Error("No company found");
-
       const { error: e } = await supabase.from("projects").insert({
         name: form.name.trim(),
         status: form.status,
@@ -183,7 +237,6 @@ export default function ProjectsPage() {
         company_id: profile.company_id,
       });
       if (e) throw e;
-
       await refreshProjects();
       setShowNew(false);
       setForm({ name: "", status: "active", client_id: "" });
@@ -194,9 +247,57 @@ export default function ProjectsPage() {
     }
   }
 
+  async function saveCloseOut() {
+    if (!closeOutProject || !companyId) return;
+    setCloseOutSaving(true); setCloseOutError(null);
+    try {
+      const { error: e } = await supabase.from("project_actuals").insert({
+        company_id: companyId,
+        project_id: closeOutProject.id,
+        project_type: closeOutForm.project_type || null,
+        client_type: closeOutForm.client_type || null,
+        estimated_cost: parseFloat(closeOutForm.estimated_cost) || null,
+        actual_cost: parseFloat(closeOutForm.actual_cost) || null,
+        estimated_duration_weeks: parseFloat(closeOutForm.estimated_duration_weeks) || null,
+        actual_duration_weeks: parseFloat(closeOutForm.actual_duration_weeks) || null,
+        estimated_markup_pct: parseFloat(closeOutForm.estimated_markup_pct) || null,
+        actual_markup_pct: parseFloat(closeOutForm.actual_markup_pct) || null,
+        was_profitable: closeOutForm.was_profitable,
+        had_delays: closeOutForm.had_delays,
+        completed_at: new Date().toISOString(),
+      });
+      if (e) throw e;
+
+      // Mark project as completed
+      await supabase.from("projects").update({ status: "completed" }).eq("id", closeOutProject.id);
+      await refreshProjects();
+      setCloseOutSuccess(true);
+      setTimeout(() => {
+        setCloseOutProject(null);
+        setCloseOutForm(DEFAULT_CLOSEOUT);
+        setCloseOutSuccess(false);
+      }, 2000);
+    } catch (e: any) {
+      setCloseOutError(e.message);
+    } finally {
+      setCloseOutSaving(false);
+    }
+  }
+
+  function openCloseOut(project: Project) {
+    setCloseOutProject(project);
+    setCloseOutForm(DEFAULT_CLOSEOUT);
+    setCloseOutError(null);
+    setCloseOutSuccess(false);
+  }
+
   function getClient(clientId?: string | null) {
     return clients.find(c => c.id === clientId);
   }
+
+  const inputClass = "w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/40";
+  const labelClass = "text-[10px] text-slate-500 font-medium uppercase tracking-wider mb-1 block";
+  const selectClass = inputClass;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
@@ -205,16 +306,10 @@ export default function ProjectsPage() {
         subtitle={`${stats.total} total · ${stats.active} active`}
         actions={
           <>
-            <Btn
-              variant="ghost" size="sm"
+            <Btn variant="ghost" size="sm"
               icon={<RefreshCw size={13} className={refreshing ? "animate-spin" : ""} />}
-              onClick={handleRefresh}
-            />
-            <Btn
-              variant="primary" size="sm"
-              icon={<Plus size={13} />}
-              onClick={() => setShowNew(true)}
-            >
+              onClick={handleRefresh}/>
+            <Btn variant="primary" size="sm" icon={<Plus size={13} />} onClick={() => setShowNew(true)}>
               New Project
             </Btn>
           </>
@@ -222,25 +317,19 @@ export default function ProjectsPage() {
       />
 
       <div className="p-6 space-y-5">
-
         {/* Stats strip */}
         <div className="grid grid-cols-4 gap-3">
           {[
-            { label: "Total",     value: stats.total,     color: "text-slate-200" },
-            { label: "Active",    value: stats.active,    color: "text-emerald-400" },
-            { label: "On Hold",   value: stats.onHold,    color: "text-amber-400" },
-            { label: "Completed", value: stats.completed, color: "text-blue-400" },
+            { label: "Total",     value: stats.total,     color: "text-slate-200",   filter: "all" },
+            { label: "Active",    value: stats.active,    color: "text-emerald-400", filter: "active" },
+            { label: "On Hold",   value: stats.onHold,    color: "text-amber-400",   filter: "on_hold" },
+            { label: "Completed", value: stats.completed, color: "text-blue-400",    filter: "completed" },
           ].map(s => (
-            <button
-              key={s.label}
-              onClick={() => setStatusFilter(s.label === "Total" ? "all" : s.label.toLowerCase().replace(" ", "_"))}
-              className={cn(
-                "rounded-xl border p-3 text-left transition-all",
-                statusFilter === (s.label === "Total" ? "all" : s.label.toLowerCase().replace(" ", "_"))
+            <button key={s.label} onClick={() => setStatusFilter(s.filter)}
+              className={cn("rounded-xl border p-3 text-left transition-all",
+                statusFilter === s.filter
                   ? "border-cyan-500/30 bg-cyan-500/10"
-                  : "border-white/[0.07] bg-[#0c1018] hover:border-white/[0.12]"
-              )}
-            >
+                  : "border-white/[0.07] bg-[#0c1018] hover:border-white/[0.12]")}>
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">{s.label}</div>
               <div className={cn("text-xl font-bold", s.color)}>{s.value}</div>
             </button>
@@ -251,38 +340,21 @@ export default function ProjectsPage() {
         <div className="flex items-center gap-3">
           <div className="relative flex-1 max-w-sm">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700" />
-            <Input
-              className="pl-8"
-              placeholder="Search projects..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+            <Input className="pl-8" placeholder="Search projects..."
+              value={search} onChange={e => setSearch(e.target.value)}/>
           </div>
-
-          <Select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
-            className="w-36"
-          >
+          <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="w-36">
             <option value="all">All status</option>
-            {STATUS_OPTS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
+            {STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </Select>
-
-          {/* View mode toggle */}
           <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
-            <button
-              onClick={() => setViewMode("grid")}
-              className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}
-            >
-              <LayoutGrid size={13} />
+            <button onClick={() => setViewMode("grid")}
+              className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+              <LayoutGrid size={13}/>
             </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}
-            >
-              <List size={13} />
+            <button onClick={() => setViewMode("list")}
+              className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+              <List size={13}/>
             </button>
           </div>
         </div>
@@ -290,16 +362,16 @@ export default function ProjectsPage() {
         {/* Project list / grid */}
         {loadingProjects ? (
           <div className="flex items-center justify-center py-16 text-xs text-slate-600">
-            <RefreshCw size={14} className="animate-spin mr-2" /> Loading projects...
+            <RefreshCw size={14} className="animate-spin mr-2"/> Loading projects...
           </div>
         ) : filtered.length === 0 ? (
           <Empty
-            icon={<FolderOpen size={20} />}
+            icon={<FolderOpen size={20}/>}
             title={search || statusFilter !== "all" ? "No projects match your filters" : "No projects yet"}
             body={search || statusFilter !== "all" ? "Try adjusting your search or filter." : "Create your first project to get started."}
             action={
               !search && statusFilter === "all"
-                ? <Btn variant="primary" icon={<Plus size={13} />} onClick={() => setShowNew(true)}>New Project</Btn>
+                ? <Btn variant="primary" icon={<Plus size={13}/>} onClick={() => setShowNew(true)}>New Project</Btn>
                 : <Btn variant="ghost" onClick={() => { setSearch(""); setStatusFilter("all"); }}>Clear filters</Btn>
             }
           />
@@ -311,18 +383,17 @@ export default function ProjectsPage() {
                 project={p as Project}
                 client={getClient((p as any).client_id)}
                 onClick={() => nav(`/projects/${p.id}`)}
+                onCloseOut={() => openCloseOut(p as Project)}
               />
             ))}
           </div>
         ) : (
           <div className="rounded-xl border border-white/[0.07] bg-[#0c1018] overflow-hidden">
-            {/* List header */}
             <div className="flex items-center gap-4 px-4 py-2 border-b border-white/[0.06]">
-              <div className="w-8 flex-shrink-0" />
+              <div className="w-8 flex-shrink-0"/>
               <div className="flex-1 text-[9px] font-bold uppercase tracking-widest text-slate-700">Project</div>
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-700 w-20">Status</div>
-
-              <div className="w-5 flex-shrink-0" />
+              <div className="w-5 flex-shrink-0"/>
             </div>
             {filtered.map(p => (
               <ProjectRow
@@ -330,6 +401,7 @@ export default function ProjectsPage() {
                 project={p as Project}
                 client={getClient((p as any).client_id)}
                 onClick={() => nav(`/projects/${p.id}`)}
+                onCloseOut={() => openCloseOut(p as Project)}
               />
             ))}
           </div>
@@ -337,36 +409,19 @@ export default function ProjectsPage() {
       </div>
 
       {/* ── New Project Modal ── */}
-      <Modal
-        open={showNew}
-        onClose={() => { setShowNew(false); setError(null); }}
-        title="New Project"
-        subtitle="Fill in the details to create a new project"
-      >
+      <Modal open={showNew} onClose={() => { setShowNew(false); setError(null); }}
+        title="New Project" subtitle="Fill in the details to create a new project">
         <div className="space-y-4">
-          {error && (
-            <Alert type="error" onClose={() => setError(null)}>{error}</Alert>
-          )}
-
+          {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
           <Field label="Project Name" error={!form.name.trim() && saving ? "Name is required" : undefined}>
-            <Input
-              placeholder="e.g. Downtown Office Complex"
-              value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              autoFocus
-            />
+            <Input placeholder="e.g. Downtown Office Complex"
+              value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus/>
           </Field>
-
-          <div className="grid grid-cols-1 gap-4">
-            <Field label="Status">
-              <Select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
-                {STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </Select>
-            </Field>
-
-  
-          </div>
-
+          <Field label="Status">
+            <Select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+              {STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+          </Field>
           {clients.length > 0 && (
             <Field label="Client (optional)">
               <Select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}>
@@ -375,19 +430,148 @@ export default function ProjectsPage() {
               </Select>
             </Field>
           )}
-
-<div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
-            <Btn variant="ghost" onClick={() => { setShowNew(false); setError(null); }}>
-              Cancel
-            </Btn>
-            <Btn
-              variant="primary"
-              onClick={createProject}
-              disabled={!form.name.trim() || saving}
-            >
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
+            <Btn variant="ghost" onClick={() => { setShowNew(false); setError(null); }}>Cancel</Btn>
+            <Btn variant="primary" onClick={createProject} disabled={!form.name.trim() || saving}>
               {saving ? "Creating..." : "Create Project"}
             </Btn>
           </div>
+        </div>
+      </Modal>
+
+      {/* ── Close Out Modal ── */}
+      <Modal
+        open={!!closeOutProject}
+        onClose={() => { setCloseOutProject(null); setCloseOutForm(DEFAULT_CLOSEOUT); }}
+        title="Close Out Project"
+        subtitle={`Record actual results for ${closeOutProject?.name || ""} — this feeds AI learning`}
+        width="max-w-lg"
+      >
+        <div className="space-y-4">
+          {closeOutError && <Alert type="error" onClose={() => setCloseOutError(null)}>{closeOutError}</Alert>}
+
+          {closeOutSuccess ? (
+            <div className="flex flex-col items-center py-8 gap-3">
+              <div className="w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                <CheckSquare size={24} className="text-emerald-400"/>
+              </div>
+              <div className="text-sm font-semibold text-slate-200">Project closed out!</div>
+              <div className="text-xs text-slate-500 text-center">Actuals saved. AI will use this data to improve future bid recommendations.</div>
+            </div>
+          ) : (
+            <>
+              {/* AI learning notice */}
+              <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-2.5 flex gap-2">
+                <TrendingUp size={13} className="text-purple-400 flex-shrink-0 mt-0.5"/>
+                <div className="text-[11px] text-slate-400 leading-relaxed">
+                  These actuals train the AI Bid Advisor. The more projects you close out, the more accurate future markup and duration recommendations become.
+                </div>
+              </div>
+
+              {/* Project classification */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Project Type</label>
+                  <select className={selectClass}
+                    value={closeOutForm.project_type}
+                    onChange={e => setCloseOutForm(f => ({ ...f, project_type: e.target.value }))}>
+                    <option value="">Select...</option>
+                    <option value="residential">Residential</option>
+                    <option value="commercial">Commercial</option>
+                    <option value="government">Government</option>
+                    <option value="infrastructure">Infrastructure</option>
+                    <option value="renovation">Renovation</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Client Type</label>
+                  <select className={selectClass}
+                    value={closeOutForm.client_type}
+                    onChange={e => setCloseOutForm(f => ({ ...f, client_type: e.target.value }))}>
+                    <option value="">Select...</option>
+                    <option value="new">New Client</option>
+                    <option value="existing">Existing Client</option>
+                    <option value="government">Government</option>
+                    <option value="private">Private</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Cost */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Estimated Cost (JMD)</label>
+                  <input type="number" className={inputClass} placeholder="0"
+                    value={closeOutForm.estimated_cost}
+                    onChange={e => setCloseOutForm(f => ({ ...f, estimated_cost: e.target.value }))}/>
+                </div>
+                <div>
+                  <label className={labelClass}>Actual Cost (JMD)</label>
+                  <input type="number" className={inputClass} placeholder="0"
+                    value={closeOutForm.actual_cost}
+                    onChange={e => setCloseOutForm(f => ({ ...f, actual_cost: e.target.value }))}/>
+                </div>
+              </div>
+
+              {/* Duration */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Estimated Duration (weeks)</label>
+                  <input type="number" className={inputClass} placeholder="0"
+                    value={closeOutForm.estimated_duration_weeks}
+                    onChange={e => setCloseOutForm(f => ({ ...f, estimated_duration_weeks: e.target.value }))}/>
+                </div>
+                <div>
+                  <label className={labelClass}>Actual Duration (weeks)</label>
+                  <input type="number" className={inputClass} placeholder="0"
+                    value={closeOutForm.actual_duration_weeks}
+                    onChange={e => setCloseOutForm(f => ({ ...f, actual_duration_weeks: e.target.value }))}/>
+                </div>
+              </div>
+
+              {/* Markup */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Estimated Markup %</label>
+                  <input type="number" className={inputClass} placeholder="0"
+                    value={closeOutForm.estimated_markup_pct}
+                    onChange={e => setCloseOutForm(f => ({ ...f, estimated_markup_pct: e.target.value }))}/>
+                </div>
+                <div>
+                  <label className={labelClass}>Actual Markup %</label>
+                  <input type="number" className={inputClass} placeholder="0"
+                    value={closeOutForm.actual_markup_pct}
+                    onChange={e => setCloseOutForm(f => ({ ...f, actual_markup_pct: e.target.value }))}/>
+                </div>
+              </div>
+
+              {/* Outcome flags */}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                  <input type="checkbox" checked={closeOutForm.was_profitable}
+                    onChange={e => setCloseOutForm(f => ({ ...f, was_profitable: e.target.checked }))}
+                    className="accent-emerald-500 w-3.5 h-3.5"/>
+                  Was Profitable
+                </label>
+                <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                  <input type="checkbox" checked={closeOutForm.had_delays}
+                    onChange={e => setCloseOutForm(f => ({ ...f, had_delays: e.target.checked }))}
+                    className="accent-amber-500 w-3.5 h-3.5"/>
+                  Had Delays
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
+                <Btn variant="ghost" onClick={() => { setCloseOutProject(null); setCloseOutForm(DEFAULT_CLOSEOUT); }}>
+                  Cancel
+                </Btn>
+                <Btn variant="primary" onClick={saveCloseOut} disabled={closeOutSaving}
+                  icon={<TrendingUp size={13}/>}>
+                  {closeOutSaving ? "Saving..." : "Save Actuals"}
+                </Btn>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
     </div>
