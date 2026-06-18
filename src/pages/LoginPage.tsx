@@ -2,9 +2,9 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-type CompanySettings = {
-  company_name: string | null;
-  logo_url: string | null;
+const MAGNUS_BRAND = {
+  company_name: "Magnus Boys",
+  logo_url: "/app-logo-round.svg",
 };
 
 type Mode = "signin" | "signup";
@@ -12,11 +12,6 @@ type Mode = "signin" | "signup";
 export default function LoginPage() {
   const nav = useNavigate();
   const loc = useLocation();
-
-  const [company, setCompany] = useState<CompanySettings>({
-    company_name: "Magnus Boys Construction",
-    logo_url: null,
-  });
 
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -45,34 +40,6 @@ export default function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-
-    async function loadBranding() {
-      try {
-        const { data } = await supabase
-          .from("company_settings")
-          .select("company_name,logo_url")
-          .single();
-
-        if (!alive) return;
-
-        if (data) {
-          setCompany({
-            company_name: data.company_name || "Magnus Boys Construction",
-            logo_url: data.logo_url || null,
-          });
-        }
-      } catch {
-        // ignore - branding optional
-      }
-    }
-
-    loadBranding();
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   function switchMode(newMode: Mode) {
     setMode(newMode);
@@ -154,21 +121,15 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center gap-3">
-            {company.logo_url ? (
-              <img
-                src={company.logo_url}
-                alt="Company logo"
-                className="w-12 h-12 rounded-lg object-cover border border-white/10 bg-white/10"
-              />
-            ) : (
-              <div className="w-12 h-12 rounded-lg border border-white/10 bg-white/10 flex items-center justify-center text-xs opacity-70">
-                LOGO
-              </div>
-            )}
+            <img
+              src={MAGNUS_BRAND.logo_url}
+              alt="Magnus Boys Construction"
+              className="h-14 w-14 rounded-full object-cover"
+            />
 
             <div>
               <div className="text-lg font-semibold">
-                {company.company_name || "Magnus Boys Construction"}
+                {MAGNUS_BRAND.company_name}
               </div>
               <div className="text-xs opacity-70">
                 {mode === "signin" ? "Sign in to continue" : "Create your account"}

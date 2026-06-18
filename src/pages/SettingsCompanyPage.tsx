@@ -1,4 +1,4 @@
-﻿// src/pages/SettingsCompanyPage.tsx
+// src/pages/SettingsCompanyPage.tsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -41,6 +41,7 @@ export default function SettingsCompanyPage() {
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [watermarkOpacity, setWatermarkOpacity] = useState(0.15);
   const [uploadingWatermark, setUploadingWatermark] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [watermarkSize, setWatermarkSize] = useState(25);
 
   useEffect(() => { loadSettings(); }, []);
@@ -113,6 +114,7 @@ export default function SettingsCompanyPage() {
         phone:         form.phone.trim()           || null,
         email:         form.email.trim()           || null,
         website:       form.website.trim()         || null,
+                logo_url:          logoUrl || null,
                 watermark_url:     watermarkUrl || null,
         watermark_enabled: watermarkEnabled,
         watermark_opacity: watermarkOpacity,
@@ -160,7 +162,7 @@ export default function SettingsCompanyPage() {
           <Alert type={msg.type} onClose={() => setMsg(null)}>{msg.text}</Alert>
         )}
 
-        {/* Logo preview */}
+        {/* Logo upload */}
         <Card>
           <CardHeader title="Company Logo"/>
           <div className="flex items-center gap-4">
@@ -171,12 +173,37 @@ export default function SettingsCompanyPage() {
                 <Building2 size={24} className="text-slate-700"/>
               )}
             </div>
-            <div>
+            <div className="flex-1">
               <div className="text-xs text-slate-400 mb-1">
                 {logoUrl ? "Logo loaded" : "No logo uploaded"}
               </div>
-              <div className="text-[10px] text-slate-700">
-                Logo upload available in the full company settings panel.
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-white/[0.1] hover:border-cyan-500/40 cursor-pointer transition">
+                  <Upload size={13} className="text-slate-600"/>
+                  <span className="text-[11px] text-slate-500">{uploadingLogo ? "Uploading..." : "Click to upload PNG or SVG"}</span>
+                  <input type="file" accept="image/*" className="hidden" disabled={uploadingLogo} onChange={async (e) => {
+                    const f = e.target.files?.[0]; if (!f || !companyId) return;
+                    setUploadingLogo(true);
+                    try {
+                      const path = `logos/${companyId}/${Date.now()}_logo.${f.name.split(".").pop()}`;
+                      const { error: ue } = await supabase.storage.from("project-files").upload(path, f, { upsert: true });
+                      if (!ue) {
+                        const { data: ud } = supabase.storage.from("project-files").getPublicUrl(path);
+                        setLogoUrl(ud.publicUrl);
+                      } else {
+                        setMsg({ type: "error", text: ue.message });
+                      }
+                    } finally {
+                      setUploadingLogo(false);
+                    }
+                  }}/>
+                </label>
+                {logoUrl && (
+                  <button onClick={() => setLogoUrl(null)} className="text-[11px] text-red-400 hover:text-red-300">Remove</button>
+                )}
+              </div>
+              <div className="text-[10px] text-slate-700 mt-1.5">
+                This logo appears on your dashboard, reports, and client-facing documents.
               </div>
             </div>
           </div>
