@@ -37,6 +37,10 @@ export default function AccountsReceivablePage() {
   const [invoiceLineItems, setInvoiceLineItems] = useState<ClientInvoiceLineItem[]>([]);
   const [invoicePayments, setInvoicePayments] = useState<ClientPayment[]>([]);
   const [clients, setClients] = useState<any[]>([]);
+  const [companySettings, setCompanySettings] = useState<any>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [showThankYouModal, setShowThankYouModal] = useState(false);
+  const [thankYouData, setThankYouData] = useState<{client: any; amount: number; invoiceNumber: string} | null>(null);
   const [projects, setProjects] = useState<any[]>([]);
   const [contracts, setContracts] = useState<any[]>([]);
   const [companyId, setCompanyId] = useState<string>("");
@@ -149,12 +153,14 @@ export default function AccountsReceivablePage() {
 
       if (!profile?.company_id) return;
 
-      const [clientsData, projectsData] = await Promise.all([
-        supabase.from("clients").select("id, name").eq("company_id", profile.company_id).order("name"),
+      const [clientsData, projectsData, companyData] = await Promise.all([
+        supabase.from("clients").select("id, name, contact_name, email, phone").eq("company_id", profile.company_id).order("name"),
         supabase.from("projects").select("id, name, client_id").eq("company_id", profile.company_id).order("name"),
+        supabase.from("company_settings").select("company_name,logo_url,phone,email,payment_notifications_enabled").eq("company_id", profile.company_id).maybeSingle(),
       ]);
 
       if (clientsData.data) setClients(clientsData.data);
+      if (companyData.data) { setCompanySettings(companyData.data); setNotificationsEnabled(companyData.data.payment_notifications_enabled !== false); }
       if (projectsData.data) setProjects(projectsData.data);
     } catch (error) {
       console.error("Error loading clients/projects:", error);
@@ -306,6 +312,13 @@ export default function AccountsReceivablePage() {
       await updateInvoiceAfterPayment(selectedInvoice.id);
 
       setShowPaymentModal(false);
+      if (notificationsEnabled) {
+        const client = clients.find(c => c.id === selectedInvoice.client_id);
+        if (client && (client.email || client.phone)) {
+          setThankYouData({ client, amount: parseFloat(paymentData.amount), invoiceNumber: selectedInvoice.invoice_number });
+          setShowThankYouModal(true);
+        }
+      }
       loadInvoices();
 
       if (showDetailModal) {
@@ -984,6 +997,64 @@ export default function AccountsReceivablePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Thank You Notification Modal */}
+      {showThankYouModal && thankYouData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-900">Payment Received</h2>
+              <button onClick={() => { setShowThankYouModal(false); setThankYouData(null); }} className="text-slate-400 hover:text-slate-600">
+                <X size={18}/>
+              </button>
+            </div>
+            <p className="text-sm text-slate-600 mb-4">
+              Send {thankYouData.client.contact_name || thankYouData.client.name} a thank you message?
+            </p>
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 mb-4 text-sm text-slate-700 whitespace-pre-line">
+{`Hi ${thankYouData.client.contact_name || thankYouData.client.name},
+
+Thank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(thankYouData.amount)} for Invoice #${thankYouData.invoiceNumber}.
+
+We appreciate your business.
+
+${companySettings?.company_name || "Magnus Boys Construction"}`}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {thankYouData.client.phone && (
+                <button
+                  onClick={() => {
+                    const msg = `Hi ${thankYouData.client.contact_name||thankYouData.client.name},\n\nThank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(thankYouData.amount)} for Invoice #${thankYouData.invoiceNumber}.\n\nWe appreciate your business.\n\n${companySettings?.company_name||"Magnus Boys Construction"}`;
+                    const phone = thankYouData.client.phone.replace(/\D/g,"");
+                    window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`, "_blank");
+                  }}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm font-semibold transition"
+                >
+                  WhatsApp
+                </button>
+              )}
+              {thankYouData.client.email && (
+                <button
+                  onClick={() => {
+                    const subject = encodeURIComponent(`Payment Received - Invoice #${thankYouData.invoiceNumber}`);
+                    const body = encodeURIComponent(`Hi ${thankYouData.client.contact_name||thankYouData.client.name},\n\nThank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(thankYouData.amount)} for Invoice #${thankYouData.invoiceNumber}.\n\nWe appreciate your business.\n\n${companySettings?.company_name||"Magnus Boys Construction"}`);
+                    window.open(`mailto:${thankYouData.client.email}?subject=${subject}&body=${body}`, "_blank");
+                  }}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-semibold transition"
+                >
+                  Email
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => { setShowThankYouModal(false); setThankYouData(null); }}
+              className="w-full mt-3 py-2 text-sm text-slate-500 hover:text-slate-700"
+            >
+              Skip for now
+            </button>
           </div>
         </div>
       )}

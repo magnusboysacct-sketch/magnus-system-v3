@@ -39,6 +39,7 @@ export default function SettingsCompanyPage() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [watermarkUrl, setWatermarkUrl] = useState<string | null>(null);
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
+  const [paymentNotificationsEnabled, setPaymentNotificationsEnabled] = useState(true);
   const [watermarkOpacity, setWatermarkOpacity] = useState(0.15);
   const [uploadingWatermark, setUploadingWatermark] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -78,6 +79,7 @@ export default function SettingsCompanyPage() {
         setLogoUrl(settings.logo_url || null);
         setWatermarkUrl((settings as any).watermark_url || null);
         setWatermarkEnabled((settings as any).watermark_enabled || false);
+        setPaymentNotificationsEnabled((settings as any).payment_notifications_enabled !== false);
         setWatermarkOpacity((settings as any).watermark_opacity || 0.15);
         setWatermarkSize((settings as any).watermark_size || 25);
         setForm({
@@ -117,6 +119,7 @@ export default function SettingsCompanyPage() {
                 logo_url:          logoUrl || null,
                 watermark_url:     watermarkUrl || null,
         watermark_enabled: watermarkEnabled,
+        payment_notifications_enabled: paymentNotificationsEnabled,
         watermark_opacity: watermarkOpacity,
         watermark_size: watermarkSize,
         updated_at:    new Date().toISOString(),
@@ -341,6 +344,21 @@ export default function SettingsCompanyPage() {
                 <span>Small</span><span>Large</span>
               </div>
             </div>
+          </div>
+        </Card>
+
+        {/* Payment Notifications */}
+        <Card>
+          <CardHeader title="Client Payment Notifications" subtitle="Send a thank-you message when a client payment is recorded"/>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs font-semibold text-slate-300">Enable Payment Notifications</div>
+              <div className="text-[10px] text-slate-600">Show a thank-you popup with WhatsApp/Email send buttons after recording a payment</div>
+            </div>
+            <button onClick={()=>setPaymentNotificationsEnabled(!paymentNotificationsEnabled)}
+              className={`w-10 h-5 rounded-full transition-colors relative ${paymentNotificationsEnabled?"bg-cyan-600":"bg-white/[0.08]"}`}>
+              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${paymentNotificationsEnabled?"left-5":"left-0.5"}`}/>
+            </button>
           </div>
         </Card>
 
