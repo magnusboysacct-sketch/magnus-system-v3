@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { FileText, Plus, DollarSign, CircleAlert as AlertCircle, CircleCheck as CheckCircle, X, Trash2, Eye } from "lucide-react";
+import { FileText, Plus, DollarSign, CircleAlert as AlertCircle, CircleCheck as CheckCircle, X, Trash2, Eye, Bell, MessageCircle, Mail, Save } from "lucide-react";
 import {
   fetchClientInvoices,
   createClientInvoice,
@@ -41,6 +41,9 @@ export default function AccountsReceivablePage() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [showThankYouModal, setShowThankYouModal] = useState(false);
   const [thankYouData, setThankYouData] = useState<{client: any; amount: number; invoiceNumber: string} | null>(null);
+  const [reminderForm, setReminderForm] = useState({ reminder_enabled: true, reminder_days_before: 3, reminder_repeat_days: 7 });
+  const [savingReminder, setSavingReminder] = useState(false);
+  const [reminderSent, setReminderSent] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
   const [contracts, setContracts] = useState<any[]>([]);
   const [companyId, setCompanyId] = useState<string>("");
@@ -267,6 +270,7 @@ export default function AccountsReceivablePage() {
   async function openDetailModal(invoice: any) {
     try {
       setSelectedInvoice(invoice);
+      setReminderForm({ reminder_enabled: invoice.reminder_enabled !== false, reminder_days_before: invoice.reminder_days_before ?? 3, reminder_repeat_days: invoice.reminder_repeat_days ?? 7 });
       const [items, payments] = await Promise.all([
         fetchInvoiceLineItems(invoice.id),
         fetchInvoicePayments(invoice.id),
@@ -328,6 +332,57 @@ export default function AccountsReceivablePage() {
     } catch (error) {
       console.error("Error recording payment:", error);
       alert("Failed to record payment");
+    }
+  }
+
+  function buildReminderMessage(invoice: any, client: any) {
+    const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD" }).format(n);
+    const isOverdue = new Date(invoice.due_date) < new Date();
+    return `Hi ${client.contact_name || client.name},\n\n${isOverdue ? "This is a friendly reminder that" : "This is a reminder that"} Invoice #${invoice.invoice_number} for ${fmt(Number(invoice.balance_due))} ${isOverdue ? "is now overdue" : `is due on ${new Date(invoice.due_date).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}`}.\n\nPlease arrange payment at your earliest convenience. Let us know if you have any questions.\n\nThank you,\n${companySettings?.company_name || "Magnus Boys Construction"}`;
+  }
+
+  function sendReminderWhatsApp(invoice: any) {
+    const client = clients.find(c => c.id === invoice.client_id);
+    if (!client?.phone) { alert("This client has no phone number on file."); return; }
+    const msg = buildReminderMessage(invoice, client);
+    const phone = client.phone.replace(/\D/g, "");
+    window.open(`https://wa.me/${phone ? `1${phone}` : ""}?text=${encodeURIComponent(msg)}`, "_blank");
+    markReminderSent(invoice.id);
+  }
+
+  function sendReminderEmail(invoice: any) {
+    const client = clients.find(c => c.id === invoice.client_id);
+    if (!client?.email) { alert("This client has no email on file."); return; }
+    const subject = encodeURIComponent(`Payment Reminder - Invoice #${invoice.invoice_number}`);
+    const body = encodeURIComponent(buildReminderMessage(invoice, client));
+    window.open(`mailto:${client.email}?subject=${subject}&body=${body}`, "_blank");
+    markReminderSent(invoice.id);
+  }
+
+  async function markReminderSent(invoiceId: string) {
+    try {
+      const { supabase } = await import("../lib/supabase");
+      await supabase.from("client_invoices").update({ last_reminder_sent_at: new Date().toISOString() }).eq("id", invoiceId);
+      setReminderSent(true);
+      setTimeout(() => setReminderSent(false), 3000);
+    } catch {}
+  }
+
+  async function saveReminderSettings(invoiceId: string) {
+    setSavingReminder(true);
+    try {
+      const { supabase } = await import("../lib/supabase");
+      await supabase.from("client_invoices").update({
+        reminder_enabled: reminderForm.reminder_enabled,
+        reminder_days_before: reminderForm.reminder_days_before,
+        reminder_repeat_days: reminderForm.reminder_repeat_days,
+      }).eq("id", invoiceId);
+      setSelectedInvoice((prev: any) => prev ? { ...prev, ...reminderForm } : prev);
+      loadInvoices();
+    } catch (e) {
+      console.error("Error saving reminder settings:", e);
+    } finally {
+      setSavingReminder(false);
     }
   }
 
@@ -882,6 +937,58 @@ export default function AccountsReceivablePage() {
               ) : (
                 <div className="text-sm text-slate-500">No payments recorded</div>
               )}
+            </div>
+
+            <div className="border-t border-slate-200 pt-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Bell size={14} className="text-slate-500"/>
+                <h3 className="text-sm font-semibold text-slate-900">Payment Reminders</h3>
+              </div>
+              <div className="rounded-lg bg-slate-50 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-700">Enable reminders for this invoice</span>
+                  <button onClick={()=>setReminderForm(f=>({...f, reminder_enabled: !f.reminder_enabled}))}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${reminderForm.reminder_enabled?"bg-blue-600":"bg-slate-300"}`}>
+                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${reminderForm.reminder_enabled?"left-5":"left-0.5"}`}/>
+                  </button>
+                </div>
+                {reminderForm.reminder_enabled && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-slate-600 block mb-1">Remind before due (days)</label>
+                      <input type="number" min="0" value={reminderForm.reminder_days_before}
+                        onChange={e=>setReminderForm(f=>({...f, reminder_days_before: parseInt(e.target.value)||0}))}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"/>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-600 block mb-1">Repeat every (days, if unpaid)</label>
+                      <input type="number" min="0" value={reminderForm.reminder_repeat_days}
+                        onChange={e=>setReminderForm(f=>({...f, reminder_repeat_days: parseInt(e.target.value)||0}))}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"/>
+                    </div>
+                  </div>
+                )}
+                <button onClick={()=>saveReminderSettings(selectedInvoice.id)} disabled={savingReminder}
+                  className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50">
+                  <Save size={12}/> {savingReminder?"Saving...":"Save Reminder Settings"}
+                </button>
+                {selectedInvoice.last_reminder_sent_at && (
+                  <div className="text-[11px] text-slate-500">Last sent: {new Date(selectedInvoice.last_reminder_sent_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
+                )}
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200">
+                  <button onClick={()=>sendReminderWhatsApp(selectedInvoice)}
+                    className="flex items-center justify-center gap-1.5 py-2 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold transition">
+                    <MessageCircle size={13}/> Send via WhatsApp
+                  </button>
+                  <button onClick={()=>sendReminderEmail(selectedInvoice)}
+                    className="flex items-center justify-center gap-1.5 py-2 rounded-lg border border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition">
+                    <Mail size={13}/> Send via Email
+                  </button>
+                </div>
+                {reminderSent && (
+                  <div className="text-xs text-emerald-600 font-medium text-center">Reminder marked as sent ?</div>
+                )}
+              </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-6 border-t border-slate-200 mt-6">
