@@ -1,4 +1,4 @@
-﻿// src/pages/ClientPortalPage.tsx � Secure portal with password + PWA
+﻿// src/pages/ClientPortalPage.tsx … Secure portal with password + PWA
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -15,7 +15,7 @@ interface Photo { id:string; url?:string; public_url?:string; publicUrl?:string;
 interface Co { company_name:string|null; logo_url:string|null; phone:string|null; email:string|null; address_line1:string|null; }
 
 const fmt = (n:number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(n);
-const fmtDate = (d:string|null) => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "�";
+const fmtDate = (d:string|null) => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "…";
 const timeAgo = (d:string) => { const s=Math.floor((Date.now()-new Date(d).getTime())/1000); if(s<60)return "just now"; if(s<3600)return `${Math.floor(s/60)}m ago`; if(s<86400)return `${Math.floor(s/3600)}h ago`; return fmtDate(d); };
 
 async function hashPassword(p:string):Promise<string> {
@@ -108,7 +108,7 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
             <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="your@email.com" style={S.input}/>
           </div>}
           {mode==="login"&&<div style={{background:"rgba(59,130,246,0.08)",border:"1px solid rgba(59,130,246,0.15)",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#60a5fa"}}>
-            ?? Signing in as: <strong>{client.portal_email||client.email}</strong>
+            📧 Signing in as: <strong>{client.portal_email||client.email}</strong>
           </div>}
           <div>
             <label style={S.label}>{mode==="setup"?"CREATE PASSWORD":"PASSWORD"}</label>
@@ -118,7 +118,7 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
                 onKeyDown={e=>e.key==="Enter"&&(mode==="setup"?handleSetup():handleLogin())}
                 style={{...S.input,paddingRight:44}}/>
               <button onClick={()=>setShowPass(!showPass)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:16}}>
-                {showPass?"??":"??"}
+                {showPass?"🙈":"👁"}
               </button>
             </div>
           </div>
@@ -128,11 +128,11 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
               placeholder="Repeat your password" onKeyDown={e=>e.key==="Enter"&&handleSetup()} style={S.input}/>
           </div>}
           <button onClick={mode==="setup"?handleSetup:handleLogin} disabled={loading} style={{...S.btn,opacity:loading?0.6:1}}>
-            {loading?"Please wait�":mode==="setup"?"Activate Account ?":"Sign In ?"}
+            {loading?"Please wait…":mode==="setup"?"Activate Account ?":"Sign In ?"}
           </button>
         </div>
       </div>
-      <div style={{textAlign:"center",marginTop:16,fontSize:11,color:"#1e293b"}}>?? Secured by {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
+      <div style={{textAlign:"center",marginTop:16,fontSize:11,color:"#1e293b"}}>🔒 Secured by {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
     </div>
   </div>;
 }
@@ -325,9 +325,9 @@ export default function ClientPortalPage() {
 
   const G=`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} body{margin:0} input::placeholder,textarea::placeholder{color:#334155} input:focus,textarea:focus{border-color:#3b82f6!important} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px}`;
 
-  if(authState==="loading")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{G}</style><div style={{textAlign:"center"}}><div style={{width:44,height:44,border:"3px solid #3b82f6",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 14px"}}/><p style={{color:"#64748b",fontSize:14}}>Loading portal�</p></div></div>;
+  if(authState==="loading")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{G}</style><div style={{textAlign:"center"}}><div style={{width:44,height:44,border:"3px solid #3b82f6",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 14px"}}/><p style={{color:"#64748b",fontSize:14}}>Loading portal…</p></div></div>;
 
-  if(authState==="error")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><style>{G}</style><div style={{textAlign:"center",maxWidth:360}}><div style={{fontSize:52,marginBottom:14}}>??</div><h2 style={{color:"#f1f5f9",fontSize:20,fontWeight:700,marginBottom:8}}>Access Denied</h2><p style={{color:"#64748b",fontSize:14,lineHeight:1.6}}>{errorMsg}</p></div></div>;
+  if(authState==="error")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><style>{G}</style><div style={{textAlign:"center",maxWidth:360}}><div style={{fontSize:52,marginBottom:14}}>🔒</div><h2 style={{color:"#f1f5f9",fontSize:20,fontWeight:700,marginBottom:8}}>Access Denied</h2><p style={{color:"#64748b",fontSize:14,lineHeight:1.6}}>{errorMsg}</p></div></div>;
 
   if(authState==="setup"||authState==="login")return <><style>{G}</style><AuthScreen client={client!} company={company} mode={authState} onSuccess={onAuthSuccess}/></>;
 
@@ -365,7 +365,7 @@ export default function ClientPortalPage() {
         <div style={{flex:1,minWidth:180}}>
           <div style={{fontSize:10,color:"#3b82f6",fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>Your Project</div>
           <h1 style={{fontSize:24,fontWeight:800,color:"#f1f5f9",margin:"0 0 6px"}}>{project?.name||"No project assigned"}</h1>
-          {project?.site_address&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>?? {project.site_address}</div>}
+          {project?.site_address&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>📍 {project.site_address}</div>}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             {project?.status&&<span style={{fontSize:11,padding:"4px 12px",borderRadius:20,fontWeight:700,background:`${sColor[project.status]||"#3b82f6"}18`,color:sColor[project.status]||"#3b82f6",border:`1px solid ${sColor[project.status]||"#3b82f6"}40`,textTransform:"capitalize"}}>● {project.status.replace("_"," ")}</span>}
             {project?.start_date&&<span style={{fontSize:11,color:"#475569"}}>Started {fmtDate(project.start_date)}</span>}
@@ -416,14 +416,14 @@ export default function ClientPortalPage() {
           <p style={{fontSize:13,color:"#94a3b8",lineHeight:1.7,margin:0}}>{project.notes}</p>
         </div>}
         <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:14}}>?? Messages</div>
+          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:14}}>💬 Messages</div>
           {comments.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16,maxHeight:280,overflowY:"auto"}}>
             {comments.map(c=><div key={c.id} style={{background:"rgba(59,130,246,0.07)",border:"1px solid rgba(59,130,246,0.12)",borderRadius:10,padding:"10px 14px"}}>
               <p style={{fontSize:13,color:"#cbd5e1",margin:"0 0 4px",lineHeight:1.5}}>{c.message}</p>
               <span style={{fontSize:10,color:"#475569"}}>{timeAgo(c.created_at)}</span>
             </div>)}
           </div>}
-          <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="Send a message to your contractor�"
+          <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="Send a message to your contractor…"
             style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 14px",fontSize:13,color:"#f1f5f9",resize:"none",height:76,outline:"none"}}/>
           <button onClick={submitComment} disabled={!newComment.trim()}
             style={{marginTop:10,padding:"10px 20px",background:newComment.trim()?"#3b82f6":"rgba(255,255,255,0.05)",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
@@ -431,17 +431,17 @@ export default function ClientPortalPage() {
           </button>
         </div>
         <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:12}}>?? Contact</div>
+          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:12}}>📞 Contact</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {company?.phone&&<a href={`tel:${company.phone}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>?? {company.phone}</a>}
-            {company?.email&&<a href={`mailto:${company.email}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>?? {company.email}</a>}
-            {company?.address_line1&&<div style={{fontSize:13,color:"#64748b"}}>?? {company.address_line1}</div>}
+            {company?.phone&&<a href={`tel:${company.phone}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>📞 {company.phone}</a>}
+            {company?.email&&<a href={`mailto:${company.email}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>✉️ {company.email}</a>}
+            {company?.address_line1&&<div style={{fontSize:13,color:"#64748b"}}>📍 {company.address_line1}</div>}
           </div>
         </div>
       </div>}
       {tab==="contracts"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
         {contracts.length===0
-          ?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>??</div><p style={{color:"#475569"}}>No contracts have been sent for signing yet.</p></div>
+          ?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>📝</div><p style={{color:"#475569"}}>No contracts have been sent for signing yet.</p></div>
           :contracts.map((ct:any)=>
             <div key={ct.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}>
@@ -480,7 +480,7 @@ export default function ClientPortalPage() {
       </div>}
 
       {tab==="photos"&&<div style={{animation:"fadeIn 0.3s ease"}}>
-        {photos.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:60,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>??</div><p style={{color:"#475569"}}>No site photos yet.</p></div>
+        {photos.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:60,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>📸</div><p style={{color:"#475569"}}>No site photos yet.</p></div>
           :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}}>
             {photos.map(p=><div key={p.id} onClick={()=>setLightbox(p)} style={{aspectRatio:"1",borderRadius:12,overflow:"hidden",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",cursor:"zoom-in",position:"relative"}}>
               <img src={p.url||p.public_url||p.publicUrl||""} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
@@ -498,11 +498,11 @@ export default function ClientPortalPage() {
             </div>
           ))}
         </div>
-        {invoices.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>??</div><p style={{color:"#475569"}}>No invoices yet.</p></div>
+        {invoices.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🧾</div><p style={{color:"#475569"}}>No invoices yet.</p></div>
           :invoices.map(inv=><div key={inv.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <div>
               <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>Invoice #{inv.invoice_number||inv.id.slice(0,8).toUpperCase()}</div>
-              <div style={{fontSize:11,color:"#475569"}}>Issued {fmtDate(inv.issue_date)} � Due {fmtDate(inv.due_date)}</div>
+              <div style={{fontSize:11,color:"#475569"}}>Issued {fmtDate(inv.issue_date)} … Due {fmtDate(inv.due_date)}</div>
             </div>
             <div style={{textAlign:"right"}}>
               <div style={{fontSize:16,fontWeight:800,color:"#f1f5f9",marginBottom:4}}>{fmt(Number(inv.total_amount||0))}</div>
@@ -512,7 +512,7 @@ export default function ClientPortalPage() {
       </div>}
 
       {tab==="changes"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
-        <div style={{background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#f59e0b"}}>?? Change orders need your approval before work begins.</div>
+        <div style={{background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#f59e0b"}}>⚠️ Change orders need your approval before work begins.</div>
         {changes.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>?</div><p style={{color:"#475569"}}>No change orders at this time.</p></div>
           :changes.map(co=><div key={co.id} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${co.status==="approved"?"rgba(34,197,94,0.2)":co.status==="rejected"?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.07)"}`,borderRadius:16,padding:20}}>
             <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>{co.title}</div>
@@ -547,7 +547,7 @@ export default function ClientPortalPage() {
     </div>
 
     <div style={{borderTop:"1px solid rgba(255,255,255,0.04)",padding:"16px 0",textAlign:"center",fontSize:11,color:"#1e293b"}}>
-      {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"} � Secured Portal � Powered by Magnus ERP
+      {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"} … Secured Portal … Powered by Magnus ERP
     </div>
 
     {lightbox&&<div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.93)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>
