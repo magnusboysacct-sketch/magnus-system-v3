@@ -1,4 +1,4 @@
-﻿// src/pages/ContractsPage.tsx — Full Contracts & Proposals Module
+// src/pages/ContractsPage.tsx � Full Contracts & Proposals Module
 // @ts-ignore
 import { openPrintWindow } from "../lib/printUtils";
 // @ts-ignore
@@ -17,7 +17,7 @@ import {
   ArrowRight, Shield, Star, Zap
 } from "lucide-react";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types --------------------------------------------------------------------
 interface Contract {
   id: string;
   company_id: string;
@@ -37,6 +37,8 @@ interface Contract {
   scope_of_work: string | null;
   terms_and_conditions: string | null;
   contractor_signed_at: string | null;
+  contractor_signature_url: string | null;
+  client_signature_url: string | null;
   client_signed_at: string | null;
   warranty_period_months: number;
   penalty_clause: string | null;
@@ -63,12 +65,12 @@ interface PaymentSchedule {
 interface Client { id: string; name: string; contact_name: string | null; email: string | null; phone: string | null; address: string | null; }
 interface Project { id: string; name: string; status: string | null; }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 function fmtJMD(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", minimumFractionDigits: 2 }).format(n);
 }
 function fmtDate(d: string | null) {
-  if (!d) return "—";
+  if (!d) return "�";
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 function genContractNo() {
@@ -113,7 +115,7 @@ This contract shall be governed by the laws of Jamaica.
 9. ENTIRE AGREEMENT
 This contract constitutes the entire agreement between the parties and supersedes all prior negotiations and agreements.`;
 
-// ─── Contract Card ────────────────────────────────────────────────────────────
+// --- Contract Card ------------------------------------------------------------
 function ContractCard({ contract, onView, onDelete, onDuplicate }: {
   contract: Contract; onView: () => void; onDelete: () => void; onDuplicate: () => void;
 }) {
@@ -134,7 +136,7 @@ function ContractCard({ contract, onView, onDelete, onDuplicate }: {
       <div>
         <div className="text-[10px] font-mono text-slate-600 mb-1">{contract.contract_number}</div>
         <div className="text-sm font-bold text-slate-100 mb-0.5 truncate">{contract.contract_name}</div>
-        <div className="text-[10px] text-slate-600">{contract.client?.name || "No client"} · {contract.project?.name || "No project"}</div>
+        <div className="text-[10px] text-slate-600">{contract.client?.name || "No client"} � {contract.project?.name || "No project"}</div>
       </div>
 
       <div className="text-xl font-bold text-emerald-400">{fmtJMD(contract.contract_amount)}</div>
@@ -149,17 +151,17 @@ function ContractCard({ contract, onView, onDelete, onDuplicate }: {
       {/* Signature status */}
       <div className="flex gap-2">
         <div className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-semibold border ${contract.contractor_signed_at ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-white/[0.03] border-white/[0.06] text-slate-700"}`}>
-          <Shield size={9}/> Contractor {contract.contractor_signed_at ? "✓" : "Pending"}
+          <Shield size={9}/> Contractor {contract.contractor_signed_at ? "?" : "Pending"}
         </div>
         <div className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-semibold border ${contract.client_signed_at ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-white/[0.03] border-white/[0.06] text-slate-700"}`}>
-          <Users size={9}/> Client {contract.client_signed_at ? "✓" : "Pending"}
+          <Users size={9}/> Client {contract.client_signed_at ? "?" : "Pending"}
         </div>
       </div>
     </div>
   );
 }
 
-// ─── PDF Preview Modal ────────────────────────────────────────────────────────
+// --- PDF Preview Modal --------------------------------------------------------
 function ContractPDFPreview({ contract, schedule, company, onClose, watermark }: {
   contract: Contract; schedule: PaymentSchedule[]; company: any; onClose: () => void;
   watermark?: {url:string;opacity:number;size?:number}|null;
@@ -247,7 +249,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                 {company?.company_name || company?.company_name||"Magnus Boys Construction"}
               </div>
               <div style={{fontSize:11,color:"#9ca3af",marginBottom:40}}>
-                {company?.address_line1 || ""} {company?.city || ""} · {company?.phone || ""} · {company?.email || ""}
+                {company?.address_line1 || ""} {company?.city || ""} � {company?.phone || ""} � {company?.email || ""}
               </div>
               <div style={{fontSize:11,fontWeight:700,letterSpacing:6,textTransform:"uppercase",color:"#9ca3af",marginBottom:12}}>CONTRACT & PROPOSAL</div>
               <h1 style={{fontSize:36,fontWeight:900,marginBottom:16,lineHeight:1.2}}>{contract.contract_name}</h1>
@@ -277,10 +279,10 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                 <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16}}>
                   <tbody>
                     {[
-                      ["Client", contract.client?.contact_name || contract.client?.name || "—"],
-                      ["Company", contract.client?.name || "—"],
-                      ["Project", contract.project?.name || "—"],
-                      ["Site Address", contract.client?.address || "—"],
+                      ["Client", contract.client?.contact_name || contract.client?.name || "�"],
+                      ["Company", contract.client?.name || "�"],
+                      ["Project", contract.project?.name || "�"],
+                      ["Site Address", contract.client?.address || "�"],
                       ["Start Date", fmtDate(contract.start_date)],
                       ["Completion Date", fmtDate(contract.completion_date)],
                       ["Contract Value", fmtJMD(contract.contract_amount)],
@@ -368,7 +370,10 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                     <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>CONTRACTOR</div>
                     <div style={{fontSize:12,color:"#6b7280",marginBottom:32}}>{company?.company_name || company?.company_name||"Magnus Boys Construction"}</div>
                     {contract.contractor_signed_at ? (
-                      <div style={{fontSize:12,color:"#16a34a",fontWeight:700}}>✓ Signed {fmtDate(contract.contractor_signed_at)}</div>
+                      <>
+                        {contract.contractor_signature_url && <img src={contract.contractor_signature_url} alt="Contractor signature" style={{maxHeight:60,maxWidth:200,marginBottom:6,objectFit:"contain"}}/>}
+                      <div style={{fontSize:12,color:"#16a34a",fontWeight:700}}>? Signed {fmtDate(contract.contractor_signed_at)}</div>
+                      </>
                     ) : (
                       <div style={{borderTop:"2px solid #1a1a1a",paddingTop:8,fontSize:11,color:"#9ca3af"}}>Authorized Signature & Date</div>
                     )}
@@ -379,7 +384,10 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                     <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>CLIENT</div>
                     <div style={{fontSize:12,color:"#6b7280",marginBottom:32}}>{contract.client?.contact_name || contract.client?.name || "Client"}</div>
                     {contract.client_signed_at ? (
-                      <div style={{fontSize:12,color:"#16a34a",fontWeight:700}}>✓ Signed {fmtDate(contract.client_signed_at)}</div>
+                      <>
+                        {contract.client_signature_url && <img src={contract.client_signature_url} alt="Client signature" style={{maxHeight:60,maxWidth:200,marginBottom:6,objectFit:"contain"}}/>}
+                      <div style={{fontSize:12,color:"#16a34a",fontWeight:700}}>? Signed {fmtDate(contract.client_signed_at)}</div>
+                      </>
                     ) : (
                       <div style={{borderTop:"2px solid #1a1a1a",paddingTop:8,fontSize:11,color:"#9ca3af"}}>Authorized Signature & Date</div>
                     )}
@@ -391,7 +399,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
 
               {/* Footer */}
               <div style={{borderTop:"2px solid #1a1a1a",paddingTop:16,textAlign:"center",fontSize:11,color:"#9ca3af"}}>
-                {company?.company_name || company?.company_name||"Magnus Boys Construction"} · {company?.phone || ""} · {company?.email || ""} · Powered by Magnus ERP
+                {company?.company_name || company?.company_name||"Magnus Boys Construction"} � {company?.phone || ""} � {company?.email || ""} � Powered by Magnus ERP
               </div>
             </div>
           </div>
@@ -455,8 +463,8 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
   return(
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-[#0d1117] border border-white/[0.1] rounded-2xl p-6 shadow-2xl">
-        <div className="text-sm font-bold text-slate-100 mb-1">Sign Contract — {label}</div>
-        <div className="text-xs text-slate-500 mb-4">{contract?.contract_name} · {contract?.contract_number}</div>
+        <div className="text-sm font-bold text-slate-100 mb-1">Sign Contract � {label}</div>
+        <div className="text-xs text-slate-500 mb-4">{contract?.contract_name} � {contract?.contract_number}</div>
 
         <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2.5 text-[11px] text-slate-400 leading-relaxed mb-4">
           By signing, the {label.toLowerCase()} agrees to the terms, scope of work, and payment schedule outlined in this contract.
@@ -465,11 +473,11 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
         <div className="flex gap-2 mb-4">
           <button onClick={()=>{setMode("draw");setUploadPreview(null);}}
             className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${mode==="draw"?"bg-emerald-600 border-emerald-600 text-white":"bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
-            ✍ Draw Signature
+            ? Draw Signature
           </button>
           <button onClick={()=>{setMode("upload");clear();}}
             className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${mode==="upload"?"bg-emerald-600 border-emerald-600 text-white":"bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
-            📷 Upload / Camera
+            ?? Upload / Camera
           </button>
         </div>
 
@@ -490,7 +498,7 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
             <label className="flex flex-col items-center justify-center gap-3 p-5 rounded-xl border-2 border-dashed border-white/[0.15] bg-white/[0.02] cursor-pointer hover:border-emerald-500/40 transition" style={{minHeight:120}}>
               {uploadPreview
                 ?<img src={uploadPreview} className="max-h-28 max-w-full rounded-lg object-contain"/>
-                :<><div className="text-3xl">📷</div><div className="text-xs text-slate-500 text-center">Tap to take photo or choose file<br/><span className="text-[10px] text-slate-700">JPG, PNG accepted</span></div></>}
+                :<><div className="text-3xl">??</div><div className="text-xs text-slate-500 text-center">Tap to take photo or choose file<br/><span className="text-[10px] text-slate-700">JPG, PNG accepted</span></div></>}
               <input type="file" accept="image/*" capture="environment" onChange={handleUpload} className="hidden"/>
             </label>
             {uploadPreview&&(
@@ -512,7 +520,7 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
           </button>
           <button onClick={submit} disabled={!canSubmit||saving}
             className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${canSubmit?"bg-emerald-600 hover:bg-emerald-500 text-white":"bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
-            {saving?"Saving…":"Sign & Submit"}
+            {saving?"Saving�":"Sign & Submit"}
           </button>
         </div>
       </div>
@@ -520,7 +528,7 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// --- Main Page ----------------------------------------------------------------
 export default function ContractsPage() {
   const nav = useNavigate();
   const { settings: company } = useCompanySettings();
@@ -710,7 +718,7 @@ export default function ContractsPage() {
     } finally { setSavingSignature(false); }
   }
 
-  // ─── AI Functions ───────────────────────────────────────────────────────────
+  // --- AI Functions -----------------------------------------------------------
   async function aiGenerateScope() {
     if (!form.contract_name.trim()) { setError("Enter a contract name first."); return; }
     setAiLoading("scope");
@@ -803,7 +811,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
     totalValue: contracts.reduce((s, c) => s + Number(c.contract_amount || 0), 0),
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  // --- Render -----------------------------------------------------------------
   return (
     <div className="min-h-screen bg-[#080b10] text-slate-100">
 
@@ -812,7 +820,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
         <div>
           <h1 className="text-xl font-bold text-slate-100">Contracts & Proposals</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            {stats.total} contracts · <span className="text-emerald-400 font-semibold">{fmtJMD(stats.totalValue)}</span> total value
+            {stats.total} contracts � <span className="text-emerald-400 font-semibold">{fmtJMD(stats.totalValue)}</span> total value
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -848,7 +856,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-48 max-w-sm">
             <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search contracts…"
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search contracts�"
               className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50"/>
           </div>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
@@ -861,7 +869,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
         {/* Contract Grid */}
         {loading ? (
           <div className="flex items-center justify-center py-16 text-slate-600 text-sm gap-2">
-            <RefreshCw size={14} className="animate-spin"/> Loading contracts…
+            <RefreshCw size={14} className="animate-spin"/> Loading contracts�
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
@@ -887,7 +895,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
         )}
       </div>
 
-      {/* ── Contract Detail Modal ── */}
+      {/* -- Contract Detail Modal -- */}
       {viewingContract && !showPDF && (
         <div className="fixed inset-0 z-50 flex bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-3xl ml-auto bg-[#0d1117] border-l border-white/[0.08] flex flex-col h-full overflow-y-auto">
@@ -935,8 +943,8 @@ Adjust percentages based on the project type and value. Make sure they add up to
               {/* Key Details */}
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label:"Client",    value:viewingContract.client?.contact_name || viewingContract.client?.name || "—" },
-                  { label:"Project",   value:viewingContract.project?.name || "—" },
+                  { label:"Client",    value:viewingContract.client?.contact_name || viewingContract.client?.name || "�" },
+                  { label:"Project",   value:viewingContract.project?.name || "�" },
                   { label:"Value",     value:fmtJMD(viewingContract.contract_amount) },
                   { label:"Retention", value:`${viewingContract.retention_percent || 0}%` },
                   { label:"Start",     value:fmtDate(viewingContract.start_date) },
@@ -972,7 +980,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                       <span className="text-xs font-bold text-slate-300">Contractor</span>
                     </div>
                     {viewingContract.contractor_signed_at ? (
-                      <div className="text-[11px] text-emerald-400 font-semibold">✓ Signed {fmtDate(viewingContract.contractor_signed_at)}</div>
+                      <div className="text-[11px] text-emerald-400 font-semibold">? Signed {fmtDate(viewingContract.contractor_signed_at)}</div>
                     ) : (
                       <button onClick={() => setSigningParty("contractor")}
                         className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">
@@ -986,7 +994,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                       <span className="text-xs font-bold text-slate-300">Client</span>
                     </div>
                     {viewingContract.client_signed_at ? (
-                      <div className="text-[11px] text-emerald-400 font-semibold">✓ Signed {fmtDate(viewingContract.client_signed_at)}</div>
+                      <div className="text-[11px] text-emerald-400 font-semibold">? Signed {fmtDate(viewingContract.client_signed_at)}</div>
                     ) : (
                       <button onClick={() => setSigningParty("client")}
                         className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold transition">
@@ -1010,7 +1018,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                     {schedule.map((p, i) => (
                       <div key={p.id || i} className={`flex items-center gap-4 px-4 py-3 border-b border-white/[0.04] last:border-0 ${i%2===1?"bg-white/[0.01]":""}`}>
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold ${p.status==="paid"?"bg-emerald-500/20 text-emerald-400":"bg-white/[0.06] text-slate-500"}`}>
-                          {p.status === "paid" ? "✓" : i+1}
+                          {p.status === "paid" ? "?" : i+1}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-bold text-slate-200">{p.milestone_name}</div>
@@ -1056,14 +1064,14 @@ Adjust percentages based on the project type and value. Make sure they add up to
         </div>
       )}
 
-      {/* ── PDF Preview ── */}
+      {/* -- PDF Preview -- */}
       {showPDF && viewingContract && (
         <ContractPDFPreview watermark={watermark}
           contract={viewingContract} schedule={schedule} company={company}
           onClose={() => setShowPDF(false)}/>
       )}
 
-      {/* ── New Contract Modal ── */}
+      {/* -- New Contract Modal -- */}
       {showNew && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="w-full max-w-3xl rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl my-8">
@@ -1108,7 +1116,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Client</label>
                     <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}
                       className="w-full bg-[#080b10] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50">
-                      <option value="">Select client…</option>
+                      <option value="">Select client�</option>
                       {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
@@ -1116,7 +1124,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Project</label>
                     <select value={form.project_id} onChange={e => setForm(f => ({ ...f, project_id: e.target.value }))}
                       className="w-full bg-[#080b10] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50">
-                      <option value="">Select project…</option>
+                      <option value="">Select project�</option>
                       {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </div>
@@ -1156,11 +1164,11 @@ Adjust percentages based on the project type and value. Make sure they add up to
                   <button onClick={aiGenerateScope} disabled={aiLoading === "scope" || !form.contract_name.trim()}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-[10px] text-purple-400 font-semibold disabled:opacity-40 transition">
                     {aiLoading === "scope" ? <Loader size={9} className="animate-spin"/> : <Sparkles size={9}/>}
-                    {aiLoading === "scope" ? "Writing…" : "AI Write Scope"}
+                    {aiLoading === "scope" ? "Writing�" : "AI Write Scope"}
                   </button>
                 </div>
                 <textarea value={form.scope_of_work} onChange={e => setForm(f => ({ ...f, scope_of_work: e.target.value }))}
-                  rows={6} placeholder="Describe the work to be performed…"
+                  rows={6} placeholder="Describe the work to be performed�"
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
               </div>
 
@@ -1171,7 +1179,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                   <button onClick={aiGeneratePaymentSchedule} disabled={aiLoading === "schedule" || !form.contract_amount}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-[10px] text-purple-400 font-semibold disabled:opacity-40 transition">
                     {aiLoading === "schedule" ? <Loader size={9} className="animate-spin"/> : <Sparkles size={9}/>}
-                    {aiLoading === "schedule" ? "Generating…" : "AI Suggest Schedule"}
+                    {aiLoading === "schedule" ? "Generating�" : "AI Suggest Schedule"}
                   </button>
                 </div>
                 <div className="rounded-xl border border-white/[0.07] overflow-hidden">
@@ -1209,7 +1217,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
               <div className="space-y-2">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Terms & Conditions</div>
                 <textarea value={form.terms_and_conditions} onChange={e => setForm(f => ({ ...f, terms_and_conditions: e.target.value }))}
-                  rows={8} placeholder="Terms and conditions…"
+                  rows={8} placeholder="Terms and conditions�"
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-xs text-slate-400 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none font-mono leading-relaxed"/>
               </div>
 
@@ -1218,7 +1226,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                 <div>
                   <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Penalty Clause (optional)</label>
                   <textarea value={form.penalty_clause} onChange={e => setForm(f => ({ ...f, penalty_clause: e.target.value }))}
-                    rows={3} placeholder="e.g. JMD 5,000 per day for delays beyond completion date…"
+                    rows={3} placeholder="e.g. JMD 5,000 per day for delays beyond completion date�"
                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-400 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
                 </div>
                 <div>
@@ -1242,7 +1250,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                 className="px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-sm text-slate-400 hover:text-slate-200 transition">Cancel</button>
               <button onClick={createContract} disabled={!form.contract_name.trim() || saving}
                 className="flex items-center gap-1.5 px-6 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold disabled:opacity-40 transition">
-                <Plus size={13}/> {saving ? "Creating…" : "Create Contract"}
+                <Plus size={13}/> {saving ? "Creating�" : "Create Contract"}
               </button>
             </div>
           </div>
