@@ -38,6 +38,17 @@ type BankAccount = {
   is_active: boolean;
 };
 
+type TransferPair = {
+  reference_number: string;
+  date: string;
+  amount: number;
+  description: string | null;
+  fromAccountName: string;
+  toAccountName: string;
+  fromId: string;
+  toId: string;
+};
+
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency", currency: "USD", maximumFractionDigits: 2
@@ -47,6 +58,11 @@ function fmt(n: number) {
 function fmtDate(d: string | null) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function fmtDateTime(d: string | null) {
+  if (!d) return "—";
+  return new Date(d).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 const TYPE_COLOR: Record<string, any> = {
@@ -60,7 +76,7 @@ const ACCOUNT_TYPE_LABEL: Record<string, string> = {
 };
 
 export default function CashFlowPage() {
-  const [tab, setTab] = useState<"overview" | "accounts">("overview");
+  const [tab, setTab] = useState<"overview" | "accounts" | "transfers">("overview");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,6 +115,39 @@ export default function CashFlowPage() {
 
   const totalBalance = accounts.reduce((s, a) => s + (a.current_balance || 0), 0);
 
+  // Group transfer legs into paired rows by reference_number
+  const transferPairs: TransferPair[] = (() => {
+    const transferTxns = transactions.filter(t => t.transaction_type === "transfer" && t.reference_number);
+    const byRef = new Map<string, Transaction[]>();
+    for (const t of transferTxns) {
+      const ref = t.reference_number!;
+      if (!byRef.has(ref)) byRef.set(ref, []);
+      byRef.get(ref)!.push(t);
+    }
+    const pairs: TransferPair[] = [];
+    byRef.forEach((legs, ref) => {
+      const outLeg = legs.find(l => l.amount < 0);
+      const inLeg = legs.find(l => l.amount > 0);
+      if (outLeg && inLeg) {
+        pairs.push({
+          reference_number: ref,
+          date: outLeg.transaction_date || outLeg.created_at,
+          amount: Math.abs(outLeg.amount),
+          description: outLeg.description,
+          fromAccountName: outLeg.bank_accounts?.account_name || "—",
+          toAccountName: inLeg.bank_accounts?.account_name || "—",
+          fromId: outLeg.id,
+          toId: inLeg.id,
+        });
+      }
+    });
+    return pairs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  })();
+
+  const unlinkedTransferCount = transactions.filter(
+    t => t.transaction_type === "transfer" && !t.reference_number
+  ).length;
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -121,7 +170,7 @@ export default function CashFlowPage() {
           .eq("company_id", companyId!)
           .gte("created_at", since.toISOString())
           .order("created_at", { ascending: false })
-          .limit(100),
+          .limit(200),
         supabase.from("bank_accounts")
           .select("*")
           .eq("company_id", companyId!)
@@ -257,6 +306,7 @@ export default function CashFlowPage() {
           tabs={[
             { key: "overview", label: "Overview" },
             { key: "accounts", label: "Accounts", count: accounts.length },
+            { key: "transfers", label: "Transfers", count: transferPairs.length },
           ]}
           active={tab}
           onChange={setTab}
@@ -381,6 +431,56 @@ export default function CashFlowPage() {
                 })}
               </div>
             )}
+          </>
+        )}
+
+        {tab === "transfers" && (
+          <>
+            {unlinkedTransferCount > 0 && (
+              <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                {unlinkedTransferCount} older transfer record{unlinkedTransferCount !== 1 ? "s" : ""} from before this log existed {unlinkedTransferCount !== 1 ? "aren't" : "isn't"} linked and won't appear here — they're still visible in the Overview tab.
+              </div>
+            )}
+            <Card padding={false}>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                <span className="text-sm font-semibold text-slate-200">
+                  Transfer Log <span className="text-slate-600 font-normal text-xs ml-2">last {period} days</span>
+                </span>
+                <span className="text-xs text-slate-600">{transferPairs.length} transfers</span>
+              </div>
+
+              {loading ? (
+                <div className="flex items-center justify-center py-12 text-xs text-slate-600">
+                  <RefreshCw size={14} className="animate-spin mr-2"/> Loading...
+                </div>
+              ) : transferPairs.length === 0 ? (
+                <Empty icon={<ArrowLeftRight size={18}/>} title="No transfers yet"
+                  body="Transfers between your accounts will appear here, with both sides linked together."/>
+              ) : (
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Date</Th>
+                      <Th>From</Th>
+                      <Th>To</Th>
+                      <Th>Description</Th>
+                      <Th right>Amount</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transferPairs.map(p => (
+                      <Tr key={p.reference_number}>
+                        <Td muted>{fmtDateTime(p.date)}</Td>
+                        <Td><span className="font-medium text-slate-200">{p.fromAccountName}</span></Td>
+                        <Td><span className="font-medium text-slate-200">{p.toAccountName}</span></Td>
+                        <Td muted>{p.description || "—"}</Td>
+                        <Td right><span className="font-semibold text-cyan-300">{fmt(p.amount)}</span></Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </Card>
           </>
         )}
       </div>
