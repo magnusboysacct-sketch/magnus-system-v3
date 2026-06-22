@@ -1,5 +1,6 @@
 ﻿// src/pages/CashFlowPage.tsx
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
   createBankAccount, transferFunds, withdrawFunds,
@@ -11,7 +12,7 @@ import {
 import {
   TrendingUp, TrendingDown, DollarSign,
   ArrowUpRight, ArrowDownRight, RefreshCw,
-  Wallet, Building2, Plus, ArrowLeftRight, MinusCircle, CreditCard
+  Wallet, Building2, Plus, ArrowLeftRight, MinusCircle, CreditCard, Upload
 } from "lucide-react";
 
 type Transaction = {
@@ -76,6 +77,7 @@ const ACCOUNT_TYPE_LABEL: Record<string, string> = {
 };
 
 export default function CashFlowPage() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<"overview" | "accounts" | "transfers">("overview");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
@@ -293,9 +295,14 @@ export default function CashFlowPage() {
               </div>
             )}
             {tab === "accounts" && (
-              <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => { setFormError(null); setShowAddAccount(true); }}>
-                Add Account
-              </Btn>
+              <>
+                <Btn variant="secondary" size="sm" icon={<Upload size={13}/>} onClick={() => navigate("/finance/upload-statement")}>
+                  Upload Statement
+                </Btn>
+                <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => { setFormError(null); setShowAddAccount(true); }}>
+                  Add Account
+                </Btn>
+              </>
             )}
           </>
         }
