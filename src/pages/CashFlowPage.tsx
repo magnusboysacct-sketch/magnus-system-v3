@@ -101,7 +101,7 @@ export default function CashFlowPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+    <div className="min-h-screen bg-[#080b10]">
       <PageHeader
         title="Cash Flow"
         subtitle="Bank accounts and transaction history"
