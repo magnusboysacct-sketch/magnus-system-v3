@@ -41,6 +41,24 @@ export interface PaymentSuggestion {
   riskReason:     string;
 }
 
+export interface StatementTransaction {
+  date: string;
+  description: string;
+  amount: number;
+  type: "credit" | "debit";
+  balanceAfter: number | null;
+}
+
+export interface StatementScanResult {
+  accountNumberLast4: string;
+  statementPeriod: string;
+  openingBalance: number;
+  closingBalance: number;
+  transactions: StatementTransaction[];
+  confidence: number;
+  aiPowered: boolean;
+}
+
 export interface AIStatus {
   available:  boolean;
   lastCheck:  Date | null;
@@ -176,6 +194,29 @@ class MagnusAIProvider {
       paymentMethod: "",
       confidence:    data.confidence    || 0.9,
       aiPowered:     true,
+    };
+  }
+
+  // ── Scan Bank Statement ─────────────────────────────────────────────────────
+
+  async scanStatement(file: File): Promise<StatementScanResult> {
+    const imageBase64 = await this.fileToBase64(file);
+    const data = await this.call("scan_statement", { imageBase64 });
+
+    return {
+      accountNumberLast4: data.accountNumberLast4 || "",
+      statementPeriod:    data.statementPeriod    || "",
+      openingBalance:      parseFloat(data.openingBalance) || 0,
+      closingBalance:      parseFloat(data.closingBalance) || 0,
+      transactions: (data.transactions || []).map((t: any) => ({
+        date: t.date || "",
+        description: t.description || "",
+        amount: parseFloat(t.amount) || 0,
+        type: t.type === "debit" ? "debit" : "credit",
+        balanceAfter: t.balanceAfter !== undefined && t.balanceAfter !== null ? parseFloat(t.balanceAfter) : null,
+      })),
+      confidence: data.confidence || 0.9,
+      aiPowered: true,
     };
   }
 
