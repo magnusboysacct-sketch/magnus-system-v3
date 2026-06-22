@@ -1,4 +1,4 @@
-// src/App.tsx — Clean rebuild router
+ï»¿// src/App.tsx â€” Clean rebuild router
 // Same auth logic, same routes, new AppLayout replaces SidebarLayout
 
 import React, { useEffect, useState } from "react";
@@ -36,6 +36,7 @@ import JournalEntryPage from "./pages/JournalEntryPage";
 import FinancePage            from "./pages/FinancePage";
 import FinanceTransactionsPage from "./pages/FinanceTransactionsPage";
 import FinanceReportsPage     from "./pages/FinanceReportsPage";
+import UploadStatementPage    from "./pages/UploadStatementPage";
 import ExpensesPage           from "./pages/ExpensesPage";
 import CashFlowPage           from "./pages/CashFlowPage";
 import AccountsReceivablePage from "./pages/AccountsReceivablePage";
@@ -121,7 +122,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.2"/>
           <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
         </svg>
-        Loading…
+        Loadingâ€¦
       </div>
     </div>
   );
@@ -196,6 +197,7 @@ export default function App() {
               <Route path="/finance/reports"         element={<FinanceReportsPage />} />
               <Route path="/expenses"                element={<ExpensesPage />} />
               <Route path="/cash-flow"               element={<CashFlowPage />} />
+              <Route path="/finance/upload-statement" element={<UploadStatementPage />} />
               <Route path="/accounts-receivable"     element={<AccountsReceivablePage />} />
               <Route path="/field-payments"          element={<FieldPaymentsPage />} />
 
