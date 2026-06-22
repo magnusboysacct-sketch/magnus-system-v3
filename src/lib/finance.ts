@@ -1255,6 +1255,7 @@ export async function transferFunds(params: {
   const txDate = params.date || new Date().toISOString().split("T")[0];
   const desc = params.description || `Transfer to ${toAccount.account_name}`;
   const descIn = params.description || `Transfer from ${fromAccount.account_name}`;
+  const transferRef = `XFER-${Date.now()}`;
 
   const newFromBalance = Number(fromAccount.current_balance) - params.amount;
   const newToBalance = Number(toAccount.current_balance) + params.amount;
@@ -1271,6 +1272,7 @@ export async function transferFunds(params: {
         amount: -Math.abs(params.amount),
         balance_after: newFromBalance,
         description: desc,
+        reference_number: transferRef,
         created_by: user?.id,
       },
     ])
@@ -1291,6 +1293,7 @@ export async function transferFunds(params: {
         amount: Math.abs(params.amount),
         balance_after: newToBalance,
         description: descIn,
+        reference_number: transferRef,
         created_by: user?.id,
       },
     ])
