@@ -1,4 +1,5 @@
-import { supabase } from "../../lib/supabase";
+﻿import { supabase } from "../../lib/supabase";
+import { magnusAI } from "../../lib/magnusAI";
 
 // =====================================================
 // BANK PARSER TYPES
@@ -326,12 +327,16 @@ export async function updateTransactionMatch(
  */
 export async function parseBankStatement(file: File): Promise<ParseResult> {
   try {
-    // This is a basic placeholder parser
-    // In a full implementation, this would use OCR or specific bank format parsers
-    
-    const text = await extractTextFromFile(file);
-    const transactions = parseTransactionsFromText(text);
-    
+    const scanResult = await magnusAI.scanStatement(file);
+
+    const transactions: ParsedTransactionData[] = scanResult.transactions.map((t) => ({
+      date: t.date,
+      description: t.description,
+      amount: t.type === "debit" ? -Math.abs(t.amount) : Math.abs(t.amount),
+      balance: t.balanceAfter ?? undefined,
+      raw_line: `${t.date} ${t.description} ${t.type} ${t.amount}`,
+    }));
+
     return {
       success: true,
       transactions,
@@ -349,9 +354,6 @@ export async function parseBankStatement(file: File): Promise<ParseResult> {
   }
 }
 
-/**
- * Store parsed bank transactions in database
- */
 export async function storeBankTransactions(
   statementId: string,
   transactions: ParsedTransactionData[]
