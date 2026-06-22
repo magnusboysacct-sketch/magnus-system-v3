@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+﻿import { supabase } from "./supabase";
 
 export interface ClientInvoice {
   id: string;
@@ -636,6 +636,73 @@ export async function reimburseExpense(id: string) {
   return data;
 }
 
+export async function createBankAccount(account: {
+  account_name: string;
+  account_type: "checking" | "savings" | "credit" | "line_of_credit";
+  bank_name?: string;
+  account_number_last_4?: string;
+  current_balance?: number;
+  available_balance?: number;
+  is_primary?: boolean;
+}) {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("company_id")
+    .eq("id", user?.id)
+    .single();
+
+  if (!profile?.company_id) {
+    throw new Error("No company found for current user");
+  }
+
+  const { data, error } = await supabase
+    .from("bank_accounts")
+    .insert([
+      {
+        company_id: profile.company_id,
+        account_name: account.account_name,
+        account_type: account.account_type,
+        bank_name: account.bank_name || null,
+        account_number_last_4: account.account_number_last_4 || null,
+        current_balance: account.current_balance ?? 0,
+        available_balance: account.available_balance ?? account.current_balance ?? 0,
+        is_primary: account.is_primary ?? false,
+        is_active: true,
+      },
+    ])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as BankAccount;
+}
+
+export async function updateBankAccount(id: string, updates: Partial<BankAccount>) {
+  const { data, error } = await supabase
+    .from("bank_accounts")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as BankAccount;
+}
+
+export async function deactivateBankAccount(id: string) {
+  const { data, error } = await supabase
+    .from("bank_accounts")
+    .update({ is_active: false })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as BankAccount;
+}
+
 export async function fetchBankAccounts(companyId: string) {
   const { data, error } = await supabase
     .from("bank_accounts")
@@ -1160,4 +1227,145 @@ export async function createSupplierPayment(payment: Partial<SupplierPayment>) {
   }
 
   return data as SupplierPayment;
+}
+export async function transferFunds(params: {
+  fromAccountId: string;
+  toAccountId: string;
+  amount: number;
+  description?: string;
+  date?: string;
+}) {
+  if (params.fromAccountId === params.toAccountId) {
+    throw new Error("Cannot transfer to the same account");
+  }
+  if (params.amount <= 0) {
+    throw new Error("Transfer amount must be greater than zero");
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const [{ data: fromAccount, error: fromErr }, { data: toAccount, error: toErr }] = await Promise.all([
+    supabase.from("bank_accounts").select("*").eq("id", params.fromAccountId).single(),
+    supabase.from("bank_accounts").select("*").eq("id", params.toAccountId).single(),
+  ]);
+
+  if (fromErr || !fromAccount) throw new Error("Source account not found");
+  if (toErr || !toAccount) throw new Error("Destination account not found");
+
+  const txDate = params.date || new Date().toISOString().split("T")[0];
+  const desc = params.description || `Transfer to ${toAccount.account_name}`;
+  const descIn = params.description || `Transfer from ${fromAccount.account_name}`;
+
+  const newFromBalance = Number(fromAccount.current_balance) - params.amount;
+  const newToBalance = Number(toAccount.current_balance) + params.amount;
+
+  const { data: outTxn, error: outErr } = await supabase
+    .from("cash_transactions")
+    .insert([
+      {
+        company_id: fromAccount.company_id,
+        bank_account_id: params.fromAccountId,
+        transaction_date: txDate,
+        transaction_type: "transfer",
+        category: "Transfer Out",
+        amount: -Math.abs(params.amount),
+        balance_after: newFromBalance,
+        description: desc,
+        created_by: user?.id,
+      },
+    ])
+    .select()
+    .single();
+
+  if (outErr) throw outErr;
+
+  const { data: inTxn, error: inErr } = await supabase
+    .from("cash_transactions")
+    .insert([
+      {
+        company_id: toAccount.company_id,
+        bank_account_id: params.toAccountId,
+        transaction_date: txDate,
+        transaction_type: "transfer",
+        category: "Transfer In",
+        amount: Math.abs(params.amount),
+        balance_after: newToBalance,
+        description: descIn,
+        created_by: user?.id,
+      },
+    ])
+    .select()
+    .single();
+
+  if (inErr) {
+    await supabase.from("cash_transactions").delete().eq("id", outTxn.id);
+    throw inErr;
+  }
+
+  const [{ error: updFromErr }, { error: updToErr }] = await Promise.all([
+    supabase.from("bank_accounts").update({ current_balance: newFromBalance, available_balance: newFromBalance }).eq("id", params.fromAccountId),
+    supabase.from("bank_accounts").update({ current_balance: newToBalance, available_balance: newToBalance }).eq("id", params.toAccountId),
+  ]);
+
+  if (updFromErr || updToErr) {
+    throw new Error("Transfer recorded but balance update failed - check account balances manually");
+  }
+
+  return { outTxn, inTxn };
+}
+
+export async function withdrawFunds(params: {
+  accountId: string;
+  amount: number;
+  reason: string;
+  category?: string;
+  date?: string;
+}) {
+  if (params.amount <= 0) {
+    throw new Error("Withdrawal amount must be greater than zero");
+  }
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const { data: account, error: accErr } = await supabase
+    .from("bank_accounts")
+    .select("*")
+    .eq("id", params.accountId)
+    .single();
+
+  if (accErr || !account) throw new Error("Account not found");
+
+  const txDate = params.date || new Date().toISOString().split("T")[0];
+  const newBalance = Number(account.current_balance) - params.amount;
+
+  const { data: txn, error: txnErr } = await supabase
+    .from("cash_transactions")
+    .insert([
+      {
+        company_id: account.company_id,
+        bank_account_id: params.accountId,
+        transaction_date: txDate,
+        transaction_type: "expense",
+        category: params.category || "Withdrawal",
+        amount: -Math.abs(params.amount),
+        balance_after: newBalance,
+        description: params.reason,
+        created_by: user?.id,
+      },
+    ])
+    .select()
+    .single();
+
+  if (txnErr) throw txnErr;
+
+  const { error: updErr } = await supabase
+    .from("bank_accounts")
+    .update({ current_balance: newBalance, available_balance: newBalance })
+    .eq("id", params.accountId);
+
+  if (updErr) {
+    throw new Error("Withdrawal recorded but balance update failed - check account balance manually");
+  }
+
+  return txn;
 }
