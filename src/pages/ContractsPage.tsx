@@ -1,4 +1,4 @@
-// src/pages/ContractsPage.tsx — Full Contracts & Proposals Module
+ï»¿// src/pages/ContractsPage.tsx â€” Full Contracts & Proposals Module
 // @ts-ignore
 import { openPrintWindow } from "../lib/printUtils";
 // @ts-ignore
@@ -70,7 +70,7 @@ function fmtJMD(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", minimumFractionDigits: 2 }).format(n);
 }
 function fmtDate(d: string | null) {
-  if (!d) return "—";
+  if (!d) return "â€”";
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 function genContractNo() {
@@ -136,7 +136,7 @@ function ContractCard({ contract, onView, onDelete, onDuplicate }: {
       <div>
         <div className="text-[10px] font-mono text-slate-600 mb-1">{contract.contract_number}</div>
         <div className="text-sm font-bold text-slate-100 mb-0.5 truncate">{contract.contract_name}</div>
-        <div className="text-[10px] text-slate-600">{contract.client?.name || "No client"} · {contract.project?.name || "No project"}</div>
+        <div className="text-[10px] text-slate-600">{contract.client?.name || "No client"} Â· {contract.project?.name || "No project"}</div>
       </div>
 
       <div className="text-xl font-bold text-emerald-400">{fmtJMD(contract.contract_amount)}</div>
@@ -249,7 +249,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                 {company?.company_name || company?.company_name||"Magnus Boys Construction"}
               </div>
               <div style={{fontSize:11,color:"#9ca3af",marginBottom:40}}>
-                {company?.address_line1 || ""} {company?.city || ""} · {company?.phone || ""} · {company?.email || ""}
+                {company?.address_line1 || ""} {company?.city || ""} Â· {company?.phone || ""} Â· {company?.email || ""}
               </div>
               <div style={{fontSize:11,fontWeight:700,letterSpacing:6,textTransform:"uppercase",color:"#9ca3af",marginBottom:12}}>CONTRACT & PROPOSAL</div>
               <h1 style={{fontSize:36,fontWeight:900,marginBottom:16,lineHeight:1.2}}>{contract.contract_name}</h1>
@@ -279,10 +279,10 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                 <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16}}>
                   <tbody>
                     {[
-                      ["Client", contract.client?.contact_name || contract.client?.name || "—"],
-                      ["Company", contract.client?.name || "—"],
-                      ["Project", contract.project?.name || "—"],
-                      ["Site Address", contract.client?.address || "—"],
+                      ["Client", contract.client?.contact_name || contract.client?.name || "â€”"],
+                      ["Company", contract.client?.name || "â€”"],
+                      ["Project", contract.project?.name || "â€”"],
+                      ["Site Address", contract.client?.address || "â€”"],
                       ["Start Date", fmtDate(contract.start_date)],
                       ["Completion Date", fmtDate(contract.completion_date)],
                       ["Contract Value", fmtJMD(contract.contract_amount)],
@@ -399,7 +399,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
 
               {/* Footer */}
               <div style={{borderTop:"2px solid #1a1a1a",paddingTop:16,textAlign:"center",fontSize:11,color:"#9ca3af"}}>
-                {company?.company_name || company?.company_name||"Magnus Boys Construction"} · {company?.phone || ""} · {company?.email || ""} · Powered by Magnus ERP
+                {company?.company_name || company?.company_name||"Magnus Boys Construction"} Â· {company?.phone || ""} Â· {company?.email || ""} Â· Powered by Magnus ERP
               </div>
             </div>
           </div>
@@ -463,8 +463,8 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
   return(
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-[#0d1117] border border-white/[0.1] rounded-2xl p-6 shadow-2xl">
-        <div className="text-sm font-bold text-slate-100 mb-1">Sign Contract — {label}</div>
-        <div className="text-xs text-slate-500 mb-4">{contract?.contract_name} · {contract?.contract_number}</div>
+        <div className="text-sm font-bold text-slate-100 mb-1">Sign Contract Â· {label}</div>
+        <div className="text-xs text-slate-500 mb-4">{contract?.contract_name} Â· {contract?.contract_number}</div>
 
         <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2.5 text-[11px] text-slate-400 leading-relaxed mb-4">
           By signing, the {label.toLowerCase()} agrees to the terms, scope of work, and payment schedule outlined in this contract.
@@ -477,7 +477,7 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
           </button>
           <button onClick={()=>{setMode("upload");clear();}}
             className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${mode==="upload"?"bg-emerald-600 border-emerald-600 text-white":"bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
-            ?? Upload / Camera
+            ðŸ“· Upload / Camera
           </button>
         </div>
 
@@ -498,7 +498,7 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
             <label className="flex flex-col items-center justify-center gap-3 p-5 rounded-xl border-2 border-dashed border-white/[0.15] bg-white/[0.02] cursor-pointer hover:border-emerald-500/40 transition" style={{minHeight:120}}>
               {uploadPreview
                 ?<img src={uploadPreview} className="max-h-28 max-w-full rounded-lg object-contain"/>
-                :<><div className="text-3xl">??</div><div className="text-xs text-slate-500 text-center">Tap to take photo or choose file<br/><span className="text-[10px] text-slate-700">JPG, PNG accepted</span></div></>}
+                :<><div className="text-3xl">ðŸ“·</div><div className="text-xs text-slate-500 text-center">Tap to take photo or choose file<br/><span className="text-[10px] text-slate-700">JPG, PNG accepted</span></div></>}
               <input type="file" accept="image/*" capture="environment" onChange={handleUpload} className="hidden"/>
             </label>
             {uploadPreview&&(
@@ -520,7 +520,7 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
           </button>
           <button onClick={submit} disabled={!canSubmit||saving}
             className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${canSubmit?"bg-emerald-600 hover:bg-emerald-500 text-white":"bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
-            {saving?"Saving…":"Sign & Submit"}
+            {saving?"Savingâ€¦":"Sign & Submit"}
           </button>
         </div>
       </div>
@@ -820,7 +820,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
         <div>
           <h1 className="text-xl font-bold text-slate-100">Contracts & Proposals</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            {stats.total} contracts · <span className="text-emerald-400 font-semibold">{fmtJMD(stats.totalValue)}</span> total value
+            {stats.total} contracts Â· <span className="text-emerald-400 font-semibold">{fmtJMD(stats.totalValue)}</span> total value
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -856,7 +856,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-48 max-w-sm">
             <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search contracts…"
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search contractsâ€¦"
               className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50"/>
           </div>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
@@ -869,7 +869,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
         {/* Contract Grid */}
         {loading ? (
           <div className="flex items-center justify-center py-16 text-slate-600 text-sm gap-2">
-            <RefreshCw size={14} className="animate-spin"/> Loading contracts…
+            <RefreshCw size={14} className="animate-spin"/> Loading contractsâ€¦
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
@@ -943,8 +943,8 @@ Adjust percentages based on the project type and value. Make sure they add up to
               {/* Key Details */}
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label:"Client",    value:viewingContract.client?.contact_name || viewingContract.client?.name || "—" },
-                  { label:"Project",   value:viewingContract.project?.name || "—" },
+                  { label:"Client",    value:viewingContract.client?.contact_name || viewingContract.client?.name || "â€”" },
+                  { label:"Project",   value:viewingContract.project?.name || "â€”" },
                   { label:"Value",     value:fmtJMD(viewingContract.contract_amount) },
                   { label:"Retention", value:`${viewingContract.retention_percent || 0}%` },
                   { label:"Start",     value:fmtDate(viewingContract.start_date) },
@@ -1116,7 +1116,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Client</label>
                     <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}
                       className="w-full bg-[#080b10] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50">
-                      <option value="">Select client…</option>
+                      <option value="">Select clientâ€¦</option>
                       {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
@@ -1124,7 +1124,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Project</label>
                     <select value={form.project_id} onChange={e => setForm(f => ({ ...f, project_id: e.target.value }))}
                       className="w-full bg-[#080b10] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50">
-                      <option value="">Select project…</option>
+                      <option value="">Select projectâ€¦</option>
                       {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </div>
@@ -1164,11 +1164,11 @@ Adjust percentages based on the project type and value. Make sure they add up to
                   <button onClick={aiGenerateScope} disabled={aiLoading === "scope" || !form.contract_name.trim()}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-[10px] text-purple-400 font-semibold disabled:opacity-40 transition">
                     {aiLoading === "scope" ? <Loader size={9} className="animate-spin"/> : <Sparkles size={9}/>}
-                    {aiLoading === "scope" ? "Writing…" : "AI Write Scope"}
+                    {aiLoading === "scope" ? "Writingâ€¦" : "AI Write Scope"}
                   </button>
                 </div>
                 <textarea value={form.scope_of_work} onChange={e => setForm(f => ({ ...f, scope_of_work: e.target.value }))}
-                  rows={6} placeholder="Describe the work to be performed…"
+                  rows={6} placeholder="Describe the work to be performedâ€¦"
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
               </div>
 
@@ -1179,7 +1179,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                   <button onClick={aiGeneratePaymentSchedule} disabled={aiLoading === "schedule" || !form.contract_amount}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-[10px] text-purple-400 font-semibold disabled:opacity-40 transition">
                     {aiLoading === "schedule" ? <Loader size={9} className="animate-spin"/> : <Sparkles size={9}/>}
-                    {aiLoading === "schedule" ? "Generating…" : "AI Suggest Schedule"}
+                    {aiLoading === "schedule" ? "Generatingâ€”" : "AI Suggest Schedule"}
                   </button>
                 </div>
                 <div className="rounded-xl border border-white/[0.07] overflow-hidden">
@@ -1217,7 +1217,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
               <div className="space-y-2">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Terms & Conditions</div>
                 <textarea value={form.terms_and_conditions} onChange={e => setForm(f => ({ ...f, terms_and_conditions: e.target.value }))}
-                  rows={8} placeholder="Terms and conditions…"
+                  rows={8} placeholder="Terms and conditionsâ€¦"
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-xs text-slate-400 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none font-mono leading-relaxed"/>
               </div>
 
@@ -1226,7 +1226,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                 <div>
                   <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Penalty Clause (optional)</label>
                   <textarea value={form.penalty_clause} onChange={e => setForm(f => ({ ...f, penalty_clause: e.target.value }))}
-                    rows={3} placeholder="e.g. JMD 5,000 per day for delays beyond completion date…"
+                    rows={3} placeholder="e.g. JMD 5,000 per day for delays beyond completion dateâ€¦"
                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-400 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
                 </div>
                 <div>
@@ -1250,7 +1250,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                 className="px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-sm text-slate-400 hover:text-slate-200 transition">Cancel</button>
               <button onClick={createContract} disabled={!form.contract_name.trim() || saving}
                 className="flex items-center gap-1.5 px-6 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold disabled:opacity-40 transition">
-                <Plus size={13}/> {saving ? "Creating…" : "Create Contract"}
+                <Plus size={13}/> {saving ? "Creatingâ€¦" : "Create Contract"}
               </button>
             </div>
           </div>
