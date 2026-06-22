@@ -367,7 +367,7 @@ export default function ClientPortalPage() {
           <h1 style={{fontSize:24,fontWeight:800,color:"#f1f5f9",margin:"0 0 6px"}}>{project?.name||"No project assigned"}</h1>
           {project?.site_address&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>?? {project.site_address}</div>}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            {project?.status&&<span style={{fontSize:11,padding:"4px 12px",borderRadius:20,fontWeight:700,background:`${sColor[project.status]||"#3b82f6"}18`,color:sColor[project.status]||"#3b82f6",border:`1px solid ${sColor[project.status]||"#3b82f6"}40`,textTransform:"capitalize"}}>? {project.status.replace("_"," ")}</span>}
+            {project?.status&&<span style={{fontSize:11,padding:"4px 12px",borderRadius:20,fontWeight:700,background:`${sColor[project.status]||"#3b82f6"}18`,color:sColor[project.status]||"#3b82f6",border:`1px solid ${sColor[project.status]||"#3b82f6"}40`,textTransform:"capitalize"}}>● {project.status.replace("_"," ")}</span>}
             {project?.start_date&&<span style={{fontSize:11,color:"#475569"}}>Started {fmtDate(project.start_date)}</span>}
             {project?.end_date&&<span style={{fontSize:11,color:"#475569"}}>Est. done {fmtDate(project.end_date)}</span>}
           </div>
@@ -453,8 +453,8 @@ export default function ClientPortalPage() {
               </div>
               {ct.scope_of_work&&<p style={{fontSize:12,color:"#64748b",margin:"0 0 14px",lineHeight:1.6}}>{ct.scope_of_work}</p>}
               <div style={{display:"flex",gap:8,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-                <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.contractor_signed_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:ct.contractor_signed_at?"#22c55e":"#475569"}}>Contractor {ct.contractor_signed_at?"?":"Pending"}</div>
-                <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.client_signed_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:ct.client_signed_at?"#22c55e":"#475569"}}>You {ct.client_signed_at?"? Signed":"Pending"}</div>
+                <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.contractor_signed_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:ct.contractor_signed_at?"#22c55e":"#475569"}}>Contractor {ct.contractor_signed_at?"✓":"Pending"}</div>
+                <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.client_signed_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:ct.client_signed_at?"#22c55e":"#475569"}}>You {ct.client_signed_at?"✓ Signed":"Pending"}</div>
               </div>
               {!ct.client_signed_at&&ct.contractor_signed_at&&<button onClick={()=>setSigningContract(ct)} style={{width:"100%",marginTop:12,padding:"12px 0",background:"#22c55e",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Sign This Contract</button>}
               {!ct.contractor_signed_at&&<div style={{marginTop:12,padding:"10px 14px",background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:10,fontSize:12,color:"#f59e0b"}}>Waiting for contractor signature before you can sign.</div>}
