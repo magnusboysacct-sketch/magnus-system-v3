@@ -670,6 +670,7 @@ function TakeoffInner() {
     if (!sessionId || !dbReady) return;
     const tid = setTimeout(async () => {
       try {
+        console.log("AUTO-SAVE FIRING:", { sessionIdRefCurrent: sessionIdRef.current, companyIdRefCurrent: companyIdRef.current, projectId, pageNum, measurementsCount: measurements.length });
         await supabase.from("takeoff_measurements").delete().eq("session_id", sessionIdRef.current);
         if (measurements.length > 0) {
           await supabase.from("takeoff_measurements").insert(measurements.map(m => ({
