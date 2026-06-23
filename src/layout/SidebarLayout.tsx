@@ -280,6 +280,7 @@ export default function SidebarLayout() {
         };
       }
       if (section.title === "Estimating") {
+        console.log("ESTIMATING BLOCK HIT, currentProjectId =", currentProjectId);
         return {
           ...section,
           items: section.items.map((item) => {
