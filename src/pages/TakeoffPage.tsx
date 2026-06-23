@@ -609,11 +609,8 @@ function TakeoffInner() {
 
         // Restore calibration
         if (session?.calibration) {
-          console.log("RESTORING CALIBRATION ON LOAD:", session.calibration);
           const c = session.calibration;
           setCalibration(c); calibRef.current = c;
-        } else {
-          console.log("NO CALIBRATION TO RESTORE, session was:", session);
         }
 
         // Restore PDFs
@@ -673,15 +670,20 @@ function TakeoffInner() {
     if (!sessionId || !dbReady) return;
     const tid = setTimeout(async () => {
       try {
-        await supabase.from("takeoff_measurements").delete().eq("session_id", sessionId);
+        await supabase.from("takeoff_measurements").delete().eq("session_id", sessionIdRef.current);
         if (measurements.length > 0) {
           await supabase.from("takeoff_measurements").insert(measurements.map(m => ({
-            session_id: sessionId, type: m.type, points: m.points, result: m.result, unit: m.unit,
+            session_id: sessionIdRef.current, company_id: companyIdRef.current, project_id: projectId,
+            page_number: pageNum, tool_type: m.type, type: m.type, points: m.points, result: m.result, unit: m.unit,
+            closed_shape: false, multiplier: 1, waste_percent: 0, sort_order: 0, is_deleted: false,
+            capture_mode: "manual", status: "active",
+            geometry_json: m.points, anchor_points_json: m.points,
+            formula_inputs_json: {}, resolved_fields_json: {}, metadata: {}, client_visible: true,
             linked_item_id: m.linkedItemId || null, linked_assembly_id: m.linkedAssemblyId || null,
             meta: { label:m.label, color:m.color, timestamp:m.timestamp, linked_assembly_name:m.linkedAssemblyName, linked_item_name:m.linkedItemName },
           })));
         }
-        await supabase.from("takeoff_sessions").update({ last_page_number: pageNum }).eq("id", sessionId);
+        await supabase.from("takeoff_sessions").update({ last_page_number: pageNum }).eq("id", sessionIdRef.current);
       } catch (e:any) { console.warn("Auto-save failed:", e?.message); }
     }, 800);
     return () => clearTimeout(tid);
@@ -888,7 +890,6 @@ function TakeoffInner() {
 
   // ─── Calibration confirm ──────────────────────────────────────────────────────
   function confirmCalibration() {
-    console.log("CONFIRM CALIBRATION CALLED", { calibFeet, calibPts, sessionIdRefCurrent: sessionIdRef.current });
     const feet = parseFloat(calibFeet) || 0;
     if (feet <= 0 || calibPts.length < 2) return;
     const px = dist(calibPts[0], calibPts[1]);
