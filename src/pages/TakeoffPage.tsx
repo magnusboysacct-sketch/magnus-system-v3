@@ -609,8 +609,11 @@ function TakeoffInner() {
 
         // Restore calibration
         if (session?.calibration) {
+          console.log("RESTORING CALIBRATION ON LOAD:", session.calibration);
           const c = session.calibration;
           setCalibration(c); calibRef.current = c;
+        } else {
+          console.log("NO CALIBRATION TO RESTORE, session was:", session);
         }
 
         // Restore PDFs
