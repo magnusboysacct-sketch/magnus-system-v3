@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { LayoutDashboard, Users, BriefcaseBusiness, FileSpreadsheet, Layers, Ruler, ShoppingCart, Landmark, ChartBar as BarChart3, Settings, CreditCard, ChevronLeft, ChevronRight, Sun, Moon, PackageCheck, DollarSign, TrendingUp, FileText, Receipt, CircleUser as UserCircle, Shield, ChevronDown, ChevronUp, Wallet, ChartBar, Package, Library, ClipboardList, Truck, Calculator, Building2, ShieldCheck, Smartphone, HandCoins, Activity, Eye } from "lucide-react";
 import { supabase } from "../lib/supabase";
@@ -279,6 +279,20 @@ export default function SidebarLayout() {
           })
         };
       }
+      if (section.title === "Estimating") {
+        return {
+          ...section,
+          items: section.items.map((item) => {
+            if (item.label === "Takeoff") {
+              return {
+                ...item,
+                to: currentProjectId ? `/projects/${currentProjectId}/takeoff` : "/takeoff"
+              };
+            }
+            return item;
+          })
+        };
+      }
       return section;
     })
     .map((section) => ({
@@ -354,7 +368,7 @@ export default function SidebarLayout() {
                   {companyName || "Magnus System"}
                 </div>
                 <div className="text-xs text-slate-600 dark:text-slate-400">
-                  v3 � Construction ERP
+                  v3 • Construction ERP
                 </div>
               </div>
             )}
