@@ -171,6 +171,7 @@ function TakeoffInner() {
 
   // Session
   const [sessionId, setSessionId] = useState<string|null>(null);
+  const sessionIdRef = useRef<string|null>(null);
   const [dbReady, setDbReady] = useState(false);
   const [error, setError] = useState<string|null>(null);
   const [rightTab, setRightTab] = useState<"templates"|"measurements"|"stats">("templates");
@@ -597,7 +598,7 @@ function TakeoffInner() {
           const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id: projectId, page_number: 1 }).select().maybeSingle();
           sid = ns?.id;
         }
-        if (sid) setSessionId(sid);
+        if (sid) { setSessionId(sid); sessionIdRef.current = sid; }
 
         // Restore calibration
         if (session?.scale?.calibration) {
@@ -695,10 +696,10 @@ function TakeoffInner() {
       setPdfFiles(prev => [...prev, info]);
       const newIdx = pdfFiles.length;
       setActivePdfIdx(newIdx);
-      let sid = sessionId;
+      let sid = sessionIdRef.current;
       if (!sid) {
         const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id:projectId, pdf_file:info, pdf_files:[info], page_number:1 }).select().maybeSingle();
-        if (ns) { sid = ns.id; setSessionId(ns.id); }
+        if (ns) { sid = ns.id; setSessionId(ns.id); sessionIdRef.current = ns.id; }
       } else {
         const { data: es } = await supabase.from("takeoff_sessions").select("pdf_files").eq("id",sid).maybeSingle();
         const existing = Array.isArray(es?.pdf_files) ? es.pdf_files : [];
