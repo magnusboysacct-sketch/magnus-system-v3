@@ -172,6 +172,7 @@ function TakeoffInner() {
   // Session
   const [sessionId, setSessionId] = useState<string|null>(null);
   const sessionIdRef = useRef<string|null>(null);
+  const companyIdRef = useRef<string|null>(null);
   const [dbReady, setDbReady] = useState(false);
   const [error, setError] = useState<string|null>(null);
   const [rightTab, setRightTab] = useState<"templates"|"measurements"|"stats">("templates");
@@ -588,6 +589,12 @@ function TakeoffInner() {
     if (!projectId) return;
     async function init() {
       try {
+        // Get company_id for this user (needed for takeoff_sessions inserts)
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
+          if (profile?.company_id) companyIdRef.current = profile.company_id;
+        }
         // Load session
         const { data: session } = await supabase.from("takeoff_sessions")
           .select("id,calibration,pdf_file,pdf_files,last_page_number").eq("project_id", projectId)
@@ -595,7 +602,7 @@ function TakeoffInner() {
 
         let sid = session?.id;
         if (!sid) {
-          const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id: projectId, last_page_number: 1 }).select().maybeSingle();
+          const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id: projectId, company_id: companyIdRef.current, last_page_number: 1 }).select().maybeSingle();
           sid = ns?.id;
         }
         if (sid) { setSessionId(sid); sessionIdRef.current = sid; }
@@ -698,7 +705,7 @@ function TakeoffInner() {
       setActivePdfIdx(newIdx);
       let sid = sessionIdRef.current;
       if (!sid) {
-        const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id:projectId, pdf_file:info, pdf_files:[info], last_page_number:1 }).select().maybeSingle();
+        const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id:projectId, company_id: companyIdRef.current, pdf_file:info, pdf_files:[info], last_page_number:1 }).select().maybeSingle();
         if (ns) { sid = ns.id; setSessionId(ns.id); sessionIdRef.current = ns.id; }
       } else {
         const { data: es } = await supabase.from("takeoff_sessions").select("pdf_files").eq("id",sid).maybeSingle();
