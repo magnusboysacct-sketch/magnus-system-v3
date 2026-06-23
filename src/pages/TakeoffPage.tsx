@@ -892,7 +892,7 @@ function TakeoffInner() {
     setCalibration(nc); calibRef.current = nc;
     setCalibrating(false); calibratingRef.current = false; setCalibPts([]); calibPtsRef.current = [];
     setShowCalibModal(false);
-    if (sessionId) supabase.from("takeoff_sessions").update({ calibration: nc }).eq("id", sessionId);
+    if (sessionIdRef.current) supabase.from("takeoff_sessions").update({ calibration: nc }).eq("id", sessionIdRef.current);
     scheduleRender();
   }
 
