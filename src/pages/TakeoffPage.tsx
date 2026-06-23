@@ -885,6 +885,7 @@ function TakeoffInner() {
 
   // ─── Calibration confirm ──────────────────────────────────────────────────────
   function confirmCalibration() {
+    console.log("CONFIRM CALIBRATION CALLED", { calibFeet, calibPts, sessionIdRefCurrent: sessionIdRef.current });
     const feet = parseFloat(calibFeet) || 0;
     if (feet <= 0 || calibPts.length < 2) return;
     const px = dist(calibPts[0], calibPts[1]);
