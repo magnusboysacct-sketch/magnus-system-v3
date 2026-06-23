@@ -893,7 +893,7 @@ function TakeoffInner() {
     setCalibration(nc); calibRef.current = nc;
     setCalibrating(false); calibratingRef.current = false; setCalibPts([]); calibPtsRef.current = [];
     setShowCalibModal(false);
-    if (sessionIdRef.current) supabase.from("takeoff_sessions").update({ calibration: nc }).eq("id", sessionIdRef.current);
+    if (sessionIdRef.current) { supabase.from("takeoff_sessions").update({ calibration: nc }).eq("id", sessionIdRef.current).then(({error}) => { if (error) console.error("CALIBRATION SAVE ERROR:", error); else console.log("CALIBRATION SAVE SUCCESS"); }); } else { console.warn("CALIBRATION NOT SAVED - no sessionId"); }
     scheduleRender();
   }
 
