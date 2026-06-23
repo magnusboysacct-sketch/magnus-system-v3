@@ -50,6 +50,31 @@ Extract these fields and return ONLY valid JSON, no markdown:
   "lineItems": [{"description": "item", "quantity": 1, "unitPrice": 0.00, "amount": 0.00}],
   "confidence": 0.95
 }`,
+
+  scan_statement: `You are reading a bank or credit card statement image. Extract every transaction line you can clearly see.
+Return ONLY valid JSON, no markdown, no explanation:
+{
+  "accountNumberLast4": "last 4 digits of account if visible, else empty string",
+  "statementPeriod": "e.g. May 1 - May 31 2026, or empty string if not visible",
+  "openingBalance": 0.00,
+  "closingBalance": 0.00,
+  "transactions": [
+    {
+      "date": "YYYY-MM-DD",
+      "description": "transaction description exactly as printed",
+      "amount": 0.00,
+      "type": "credit or debit",
+      "balanceAfter": 0.00
+    }
+  ],
+  "confidence": 0.9
+}
+Rules:
+- amount should always be a positive number; use the "type" field to indicate credit (money in) or debit (money out)
+- if balanceAfter is not visible for a line, use null
+- extract every transaction visible on this page or image, even if there are many
+- if dates are partial, like May 5, infer the year from the statement period
+- never invent transactions that are not visible`,
 };
 
 serve(async (req) => {
@@ -78,7 +103,7 @@ serve(async (req) => {
 
     let messages: any[] = [];
 
-    if (action === "scan_id" || action === "scan_receipt" || action === "scan_invoice") {
+    if (action === "scan_id" || action === "scan_receipt" || action === "scan_invoice" || action === "scan_statement") {
       if (!imageBase64) throw new Error("imageBase64 is required for " + action);
 
       const prompt = PROMPTS[action];
@@ -139,7 +164,7 @@ User: ${data?.message || ""}`,
       },
       body: JSON.stringify({
         model: CLAUDE_MODEL,
-        max_tokens: 1024,
+        max_tokens: action === "scan_statement" ? 4096 : 1024,
         messages,
       }),
     });
