@@ -590,19 +590,19 @@ function TakeoffInner() {
       try {
         // Load session
         const { data: session } = await supabase.from("takeoff_sessions")
-          .select("id,scale,pdf_file,pdf_files,page_number").eq("project_id", projectId)
+          .select("id,calibration,pdf_file,pdf_files,last_page_number").eq("project_id", projectId)
           .order("created_at", { ascending: false }).limit(1).maybeSingle();
 
         let sid = session?.id;
         if (!sid) {
-          const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id: projectId, page_number: 1 }).select().maybeSingle();
+          const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id: projectId, last_page_number: 1 }).select().maybeSingle();
           sid = ns?.id;
         }
         if (sid) { setSessionId(sid); sessionIdRef.current = sid; }
 
         // Restore calibration
-        if (session?.scale?.calibration) {
-          const c = session.scale.calibration;
+        if (session?.calibration) {
+          const c = session.calibration;
           setCalibration(c); calibRef.current = c;
         }
 
@@ -616,7 +616,7 @@ function TakeoffInner() {
             if (sd?.signedUrl) {
               const doc = await getDocument(sd.signedUrl).promise;
               setPdfDoc(doc); setNumPages(doc.numPages);
-              setPageNum(session?.page_number || 1);
+              setPageNum(session?.last_page_number || 1);
             }
           } catch (e) { console.warn("PDF restore failed:", e); }
           finally { setLoadingPdf(false); }
@@ -671,7 +671,7 @@ function TakeoffInner() {
             meta: { label:m.label, color:m.color, timestamp:m.timestamp, linked_assembly_name:m.linkedAssemblyName, linked_item_name:m.linkedItemName },
           })));
         }
-        await supabase.from("takeoff_sessions").update({ page_number: pageNum }).eq("id", sessionId);
+        await supabase.from("takeoff_sessions").update({ last_page_number: pageNum }).eq("id", sessionId);
       } catch (e:any) { console.warn("Auto-save failed:", e?.message); }
     }, 800);
     return () => clearTimeout(tid);
@@ -698,7 +698,7 @@ function TakeoffInner() {
       setActivePdfIdx(newIdx);
       let sid = sessionIdRef.current;
       if (!sid) {
-        const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id:projectId, pdf_file:info, pdf_files:[info], page_number:1 }).select().maybeSingle();
+        const { data: ns } = await supabase.from("takeoff_sessions").insert({ project_id:projectId, pdf_file:info, pdf_files:[info], last_page_number:1 }).select().maybeSingle();
         if (ns) { sid = ns.id; setSessionId(ns.id); sessionIdRef.current = ns.id; }
       } else {
         const { data: es } = await supabase.from("takeoff_sessions").select("pdf_files").eq("id",sid).maybeSingle();
@@ -885,7 +885,7 @@ function TakeoffInner() {
     setCalibration(nc); calibRef.current = nc;
     setCalibrating(false); calibratingRef.current = false; setCalibPts([]); calibPtsRef.current = [];
     setShowCalibModal(false);
-    if (sessionId) supabase.from("takeoff_sessions").update({ scale: { calibration: nc } }).eq("id", sessionId);
+    if (sessionId) supabase.from("takeoff_sessions").update({ calibration: nc }).eq("id", sessionId);
     scheduleRender();
   }
 
