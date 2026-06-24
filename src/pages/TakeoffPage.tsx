@@ -35,6 +35,7 @@ interface Measurement {
   linkedItemId?: string;
   linkedItemName?: string;
   timestamp: number;
+  pageNumber?: number;
 }
 
 interface PdfFile {
@@ -162,6 +163,7 @@ function TakeoffInner() {
   const [tool, setTool] = useState<ToolMode>("select");
   const toolRef = useRef<ToolMode>("select");
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const pageMeasurements = useMemo(() => measurements.filter(m => (m.pageNumber ?? 1) === pageNum), [measurements, pageNum]);
   const measurementsRef = useRef<Measurement[]>([]);
   const [selectedId, setSelectedId] = useState<string|null>(null);
   const selectedIdRef = useRef<string|null>(null);
@@ -662,7 +664,7 @@ function TakeoffInner() {
         // Restore measurements
         if (sid) {
           const { data: mData } = await supabase.from("takeoff_measurements")
-            .select("id,type,points,unit,result,meta,group_id,linked_item_id,linked_assembly_id")
+            .select("id,type,points,unit,result,meta,group_id,linked_item_id,linked_assembly_id,page_number")
             .eq("session_id", sid).order("created_at", { ascending: true });
           if (mData && mData.length > 0) {
             const ms: Measurement[] = mData.map((r:any) => ({
@@ -673,6 +675,7 @@ function TakeoffInner() {
               linkedItemId: r.linked_item_id || r.meta?.linked_item_id,
               linkedItemName: r.meta?.linked_item_name,
               timestamp: r.meta?.timestamp || Date.now(),
+              pageNumber: r.page_number || 1,
             }));
             setMeasurements(ms); measurementsRef.current = ms;
           }
@@ -854,7 +857,7 @@ function TakeoffInner() {
         const col = nextColor();
         const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
         const item = costItems.find(i=>i.id===linkedItemId);
-        const nm: Measurement = { id:uid(), type:"line", points:[ip[0],snap], result, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now() };
+        const nm: Measurement = { id:uid(), type:"line", points:[ip[0],snap], result, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
         setInProgress([]); inProgressRef.current = [];
@@ -868,7 +871,7 @@ function TakeoffInner() {
         const next = measurementsRef.current.map(m=>m.id===existing.id?{...m,points:[...m.points,snap],result:m.points.length+1}:m);
         setMeasurements(next); measurementsRef.current = next;
       } else {
-        const nm: Measurement = { id:uid(), type:"count", points:[snap], result:1, unit:"ea", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now() };
+        const nm: Measurement = { id:uid(), type:"count", points:[snap], result:1, unit:"ea", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
       }
@@ -892,7 +895,7 @@ function TakeoffInner() {
         const areaPx = polyArea(ip);
         const result = calib ? areaPx * calib.feetPerPx * calib.feetPerPx : areaPx;
         const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
-        const nm: Measurement = { id:uid(), type:"area", points:[...ip], result, unit:"ft²", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now() };
+        const nm: Measurement = { id:uid(), type:"area", points:[...ip], result, unit:"ft²", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
       }
@@ -911,7 +914,7 @@ function TakeoffInner() {
     const depthFt = d / 12;
     const result = areaFt2 * depthFt;
     const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
-    const nm: Measurement = { id:uid(), type:"volume", points:[...ip], result, unit:"ft³", label:`${d}" deep`, color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now() };
+    const nm: Measurement = { id:uid(), type:"volume", points:[...ip], result, unit:"ft³", label:`${d}" deep`, color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
     const next = [...measurementsRef.current, nm];
     setMeasurements(next); measurementsRef.current = next;
     setShowDepthModal(false); setDepthInches("4"); pendingVolumeRef.current = [];
