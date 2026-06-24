@@ -211,6 +211,8 @@ function TakeoffInner() {
   useEffect(()=>{ panRef.current = pan; },[pan]);
   useEffect(()=>{ toolRef.current = tool; },[tool]);
   useEffect(()=>{ measurementsRef.current = measurements; },[measurements]);
+  const pageMeasurementsRef = useRef<Measurement[]>([]);
+  useEffect(()=>{ pageMeasurementsRef.current = pageMeasurements; },[pageMeasurements]);
   useEffect(()=>{ selectedIdRef.current = selectedId; },[selectedId]);
   useEffect(()=>{ calibRef.current = calibration; },[calibration]);
   useEffect(()=>{ calibratingRef.current = calibrating; },[calibrating]);
@@ -297,7 +299,7 @@ function TakeoffInner() {
     }
 
     // Draw measurements
-    const ms = measurementsRef.current;
+    const ms = pageMeasurementsRef.current;
     ms.forEach(m => {
       if (m.points.length === 0) return;
       const col = m.color;
@@ -424,7 +426,7 @@ function TakeoffInner() {
   }
 
   // Schedule render when deps change
-  useEffect(() => { scheduleRender(); }, [zoom, pan, measurements, selectedId, inProgress, hoverPt, calibration, calibrating, calibPts, pdfPageSize]);
+  useEffect(() => { scheduleRender(); }, [zoom, pan, pageMeasurements, selectedId, inProgress, hoverPt, calibration, calibrating, calibPts, pdfPageSize]);
 
   // ─── PDF rendering ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -503,7 +505,7 @@ function TakeoffInner() {
     }
 
     // Measurements
-    const ms = measurementsRef.current;
+    const ms = pageMeasurementsRef.current;
     ms.forEach(m => {
       if (m.points.length === 0) return;
       const col = m.color;
@@ -703,9 +705,9 @@ function TakeoffInner() {
     if (!sessionId || !dbReady) return;
     const tid = setTimeout(async () => {
       try {
-        await supabase.from("takeoff_measurements").delete().eq("session_id", sessionIdRef.current);
-        if (measurements.length > 0) {
-          await supabase.from("takeoff_measurements").insert(measurements.map(m => ({
+        await supabase.from("takeoff_measurements").delete().eq("session_id", sessionIdRef.current).eq("page_number", pageNum);
+        if (pageMeasurements.length > 0) {
+          await supabase.from("takeoff_measurements").insert(pageMeasurements.map(m => ({
             session_id: sessionIdRef.current, company_id: companyIdRef.current, project_id: projectId,
             page_number: pageNum, tool_type: m.type, type: m.type, points: m.points, result: m.result, unit: m.unit,
             closed_shape: false, multiplier: 1, waste_percent: 0, sort_order: 0, is_deleted: false,
@@ -720,7 +722,7 @@ function TakeoffInner() {
       } catch (e:any) { console.warn("Auto-save failed:", e?.message); }
     }, 800);
     return () => clearTimeout(tid);
-  }, [measurements, sessionId, dbReady, pageNum]);
+  }, [pageMeasurements, sessionId, dbReady, pageNum]);
 
 
   // Auto-save page metadata (labels, hidden pages)
