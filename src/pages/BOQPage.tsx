@@ -347,7 +347,7 @@ export default function BOQPage() {
         setSections(prev => [...prev, {
           id: safeId(), masterCategoryId: null, title: "Takeoff Import",
           scope: "Quantities imported from takeoff measurements",
-          items: groups.map((g: any) => ({ id: safeId(), pick_type: "manual", pick_category: "", pick_item: "", pick_variant: "", cost_item_id: null, item_name: g.groupName || "Imported Item", description: `${g.metric} measurement`, unit_id: null, qty: Number(g.value) || 0, rate: 0, rate_source: "" }))
+          items: groups.map((g: any) => ({ id: safeId(), pick_type: "manual", pick_category: "", pick_item: "", pick_variant: "", cost_item_id: null, item_name: g.name || g.groupName || "Imported Item", description: `${g.metric} measurement`, unit_id: null, qty: Number(g.value) || 0, rate: 0, rate_source: "" }))
         }]);
         setSearchParams({});
       }
@@ -462,6 +462,7 @@ export default function BOQPage() {
   useEffect(() => {
     const pid = activeProjectId;
     if (!pid) { setBoqId(null); setStatus("draft"); setSections([]); return; }
+    if (searchParams.get("groups")) return; // skip auto-load, takeoff import effect will handle this
     void loadLatestBoq(pid);
   }, [activeProjectId]);
 
@@ -1223,4 +1224,3 @@ Answer briefly and practically. If they ask to add items, explain they need to u
     </div>
   );
 }
-
