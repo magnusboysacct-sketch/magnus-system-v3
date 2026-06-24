@@ -1075,12 +1075,12 @@ function TakeoffInner() {
 
   // ─── Stats ─────────────────────────────────────────────────────────────────────
   const stats = useMemo(() => ({
-    total: measurements.length,
-    lines: measurements.filter(m=>m.type==="line").reduce((s,m)=>s+m.result, 0),
-    areas: measurements.filter(m=>m.type==="area").reduce((s,m)=>s+m.result, 0),
-    counts: measurements.filter(m=>m.type==="count").reduce((s,m)=>s+m.result, 0),
-    volumes: measurements.filter(m=>m.type==="volume").reduce((s,m)=>s+m.result, 0),
-  }), [measurements]);
+    total: pageMeasurements.length,
+    lines: pageMeasurements.filter(m=>m.type==="line").reduce((s,m)=>s+m.result, 0),
+    areas: pageMeasurements.filter(m=>m.type==="area").reduce((s,m)=>s+m.result, 0),
+    counts: pageMeasurements.filter(m=>m.type==="count").reduce((s,m)=>s+m.result, 0),
+    volumes: pageMeasurements.filter(m=>m.type==="volume").reduce((s,m)=>s+m.result, 0),
+  }), [pageMeasurements]);
 
   const filteredAssemblies = useMemo(() => {
     const q = searchLib.trim().toLowerCase();
@@ -1435,11 +1435,11 @@ function TakeoffInner() {
             {/* ── Measurements Tab ── */}
             {rightTab==="measurements"&&(
               <div className="p-3 space-y-2">
-                {measurements.length===0?(
+                {pageMeasurements.length===0?(
                   <div className="text-[11px] text-slate-700 text-center py-10">No measurements yet.<br/>Select a template and draw on the plan.</div>
                 ):(
                   <>
-                    {measurements.map(m=>(
+                    {pageMeasurements.map(m=>(
                       <div key={m.id} onClick={()=>{setSelectedId(m.id===selectedId?null:m.id);selectedIdRef.current=m.id===selectedId?null:m.id;scheduleRender();}}
                         className={`rounded-lg border px-3 py-2.5 cursor-pointer transition-all flex items-center gap-2.5 ${m.id===selectedId?"border-sky-500/25 bg-sky-500/[0.07]":"border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]"}`}>
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:m.color}}/>
@@ -1469,7 +1469,7 @@ function TakeoffInner() {
               <div className="p-3 space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    ["Total Items", measurements.length, "text-slate-200"],
+                    ["Total Items", stats.total, "text-slate-200"],
                     ["Linear ft", fmt2(stats.lines), "text-sky-300"],
                     ["Area ft²", fmt2(stats.areas), "text-purple-300"],
                     ["Count", stats.counts, "text-amber-300"],
@@ -1484,11 +1484,11 @@ function TakeoffInner() {
                 </div>
 
                 {/* Group by assembly */}
-                {measurements.filter(m=>m.linkedAssemblyName).length > 0 && (
+                {pageMeasurements.filter(m=>m.linkedAssemblyName).length > 0 && (
                   <div className="rounded-xl border border-white/[0.07] overflow-hidden">
                     <div className="px-3 py-2 bg-white/[0.02] border-b border-white/[0.05] text-[9px] font-bold uppercase tracking-widest text-slate-600">By Assembly</div>
                     {Object.entries(
-                      measurements.filter(m=>m.linkedAssemblyName).reduce((acc:Record<string,number>, m) => {
+                      pageMeasurements.filter(m=>m.linkedAssemblyName).reduce((acc:Record<string,number>, m) => {
                         const k = m.linkedAssemblyName!; acc[k] = (acc[k]||0) + m.result; return acc;
                       }, {})
                     ).map(([name, total]) => (
