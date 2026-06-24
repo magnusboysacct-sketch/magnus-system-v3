@@ -512,8 +512,7 @@ function TakeoffInner() {
         ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
         ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
         [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
-        console.log("DRAWING LABEL FOR MEASUREMENT:", { type: m.type, unit: m.unit, result: m.result, computedLabel: m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, cx: (a.x+b.x)/2, cy: (a.y+b.y)/2-14 });
-        drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, (a.x+b.x)/2, (a.y+b.y)/2-14, col);
+                drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, (a.x+b.x)/2, (a.y+b.y)/2-14, col);
         if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+4, "#a78bfa", true);
       } else if ((m.type==="area"||m.type==="volume") && m.points.length>=3) {
         const pts = m.points.map(pdfToCanvas);
@@ -1067,9 +1066,10 @@ function TakeoffInner() {
 
         {/* Calibrate status */}
         <button onClick={()=>{setCalibrating(true);calibratingRef.current=true;setCalibPts([]);calibPtsRef.current=[];}}
+          title={calibration ? `Calibrated: ${feetInches(dist(calibration.p1, calibration.p2) * calibration.feetPerPx)} (1px = ${calibration.feetPerPx.toFixed(5)} ft)` : "Click to set scale"}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition ${calibrating?"bg-amber-500/15 border-amber-400/30 text-amber-300":calibration?"bg-emerald-500/10 border-emerald-500/20 text-emerald-300":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
           <Crosshair size={12}/>
-          {calibrating ? "Click 2 points…" : calibration ? `Scale set ✓` : "Set Scale"}
+          {calibrating ? "Click 2 points…" : calibration ? `Scale: ${feetInches(dist(calibration.p1, calibration.p2) * calibration.feetPerPx)}` : "Set Scale"}
         </button>
         {calibration && !calibrating && (
           <button onClick={()=>{
