@@ -151,6 +151,8 @@ function TakeoffInner() {
   const [numPages, setNumPages] = useState(0);
   const [pdfFiles, setPdfFiles] = useState<PdfFile[]>([]);
   const [activePdfIdx, setActivePdfIdx] = useState(0);
+  const [pageMeta, setPageMeta] = useState<Record<string, {label?: string; hidden?: boolean}>>({});
+  const [pagesPanelCollapsed, setPagesPanelCollapsed] = useState(true);
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [pdfPageSize, setPdfPageSize] = useState<Point>({ x: 0, y: 0 }); // native page size in pts
   const renderTaskRef = useRef<any>(null);
@@ -621,7 +623,7 @@ function TakeoffInner() {
         }
         // Load session
         const { data: session } = await supabase.from("takeoff_sessions")
-          .select("id,calibration,pdf_file,pdf_files,last_page_number").eq("project_id", projectId)
+          .select("id,calibration,pdf_file,pdf_files,last_page_number,page_meta").eq("project_id", projectId)
           .order("created_at", { ascending: false }).limit(1).maybeSingle();
 
         let sid = session?.id;
@@ -637,6 +639,10 @@ function TakeoffInner() {
           setCalibration(c); calibRef.current = c;
         }
 
+        // Restore page metadata (labels, hidden pages)
+        if (session?.page_meta && typeof session.page_meta === "object") {
+          setPageMeta(session.page_meta);
+        }
         // Restore PDFs
         const files = Array.isArray(session?.pdf_files) ? session.pdf_files.filter((f:any)=>f?.storagePath) : (session?.pdf_file?.storagePath ? [session.pdf_file] : []);
         if (files.length > 0) {
@@ -694,7 +700,6 @@ function TakeoffInner() {
     if (!sessionId || !dbReady) return;
     const tid = setTimeout(async () => {
       try {
-        console.log("AUTO-SAVE FIRING:", { sessionIdRefCurrent: sessionIdRef.current, companyIdRefCurrent: companyIdRef.current, projectId, pageNum, measurementsCount: measurements.length });
         await supabase.from("takeoff_measurements").delete().eq("session_id", sessionIdRef.current);
         if (measurements.length > 0) {
           await supabase.from("takeoff_measurements").insert(measurements.map(m => ({
@@ -714,6 +719,17 @@ function TakeoffInner() {
     return () => clearTimeout(tid);
   }, [measurements, sessionId, dbReady, pageNum]);
 
+
+  // Auto-save page metadata (labels, hidden pages)
+  useEffect(() => {
+    if (!sessionIdRef.current || !dbReady) return;
+    const tid = setTimeout(async () => {
+      try {
+        await supabase.from("takeoff_sessions").update({ page_meta: pageMeta }).eq("id", sessionIdRef.current);
+      } catch (e:any) { console.warn("Page metadata auto-save failed:", e?.message); }
+    }, 800);
+    return () => clearTimeout(tid);
+  }, [pageMeta, dbReady]);
   // ─── PDF upload ───────────────────────────────────────────────────────────────
   async function onPickFile(file: File | null) {
     if (!file) return;
