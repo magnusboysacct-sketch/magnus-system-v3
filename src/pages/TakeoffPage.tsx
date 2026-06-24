@@ -1173,6 +1173,69 @@ function TakeoffInner() {
           <button onClick={fitView} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-white/[0.05] text-slate-600 hover:text-slate-300 transition" title="Fit view"><Maximize2 size={15}/></button>
         </div>
 
+
+        {/* ── Pages Panel ── */}
+        <div className={`flex-shrink-0 flex flex-col bg-[#0d1117] border-r border-white/[0.06] z-10 transition-all ${pagesPanelCollapsed ? "w-10" : "w-64"}`}>
+          <button onClick={()=>setPagesPanelCollapsed(v=>!v)}
+            className="flex items-center justify-center h-10 hover:bg-white/[0.05] text-slate-500 hover:text-slate-300 transition border-b border-white/[0.06]"
+            title={pagesPanelCollapsed ? "Show pages" : "Hide pages"}>
+            {pagesPanelCollapsed ? <ChevronRight size={14}/> : <ChevronLeft size={14}/>}
+            {!pagesPanelCollapsed && <span className="text-[10px] font-bold uppercase tracking-wider ml-1.5">Pages</span>}
+          </button>
+          {!pagesPanelCollapsed && (
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {pdfFiles.length === 0 && (
+                <div className="text-[10px] text-slate-700 text-center py-6 px-2">No PDF uploaded yet</div>
+              )}
+              {pdfFiles.map((file, fIdx) => (
+                <div key={fIdx} className="mb-3">
+                  <div className="flex items-center justify-between px-1.5 py-1 mb-1">
+                    <span className="text-[10px] font-semibold text-slate-400 truncate flex-1" title={file.name}>{file.name}</span>
+                    <button onClick={()=>deletePdfFile(fIdx)} title="Delete this PDF file"
+                      className="p-0.5 rounded text-slate-700 hover:text-red-400 transition flex-shrink-0">
+                      <Trash2 size={11}/>
+                    </button>
+                  </div>
+                  {fIdx === activePdfIdx && numPages > 0 && Array.from({length: numPages}, (_, i) => i + 1).map(pn => {
+                    const key = `${fIdx}-${pn}`;
+                    const meta = pageMeta[key] || {};
+                    const isActive = fIdx === activePdfIdx && pn === pageNum;
+                    if (meta.hidden) {
+                      return (
+                        <div key={pn} className="flex items-center gap-1 px-1.5 py-1 rounded-lg opacity-40">
+                          <span className="text-[10px] text-slate-600 flex-1 truncate">Page {pn} (hidden)</span>
+                          <button onClick={()=>setPageMeta(prev=>({...prev, [key]: {...prev[key], hidden: false}}))}
+                            title="Unhide page" className="p-0.5 rounded text-slate-600 hover:text-emerald-400 transition">
+                            <Eye size={11}/>
+                          </button>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={pn} className={`flex items-center gap-1 px-1.5 py-1 rounded-lg group transition ${isActive ? "bg-sky-500/15 border border-sky-500/30" : "hover:bg-white/[0.04]"}`}>
+                        <button onClick={()=>{setActivePdfIdx(fIdx);setPageNum(pn);}}
+                          className={`text-[11px] flex-1 text-left truncate ${isActive ? "text-sky-300 font-semibold" : "text-slate-400"}`}>
+                          {meta.label || `Page ${pn}`}
+                        </button>
+                        <button onClick={()=>{
+                            const newLabel = window.prompt("Label for this page:", meta.label || `Page ${pn}`);
+                            if (newLabel !== null) setPageMeta(prev=>({...prev, [key]: {...prev[key], label: newLabel.trim() || undefined}}));
+                          }}
+                          title="Rename page" className="p-0.5 rounded text-slate-700 hover:text-sky-400 transition opacity-0 group-hover:opacity-100 flex-shrink-0">
+                          <Edit2 size={10}/>
+                        </button>
+                        <button onClick={()=>setPageMeta(prev=>({...prev, [key]: {...prev[key], hidden: true}}))}
+                          title="Hide page" className="p-0.5 rounded text-slate-700 hover:text-amber-400 transition opacity-0 group-hover:opacity-100 flex-shrink-0">
+                          <EyeOff size={10}/>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
         {/* ── Canvas Area ── */}
         <div className="flex-1 relative min-w-0 overflow-hidden bg-[#080b10]"
           ref={containerRef}
