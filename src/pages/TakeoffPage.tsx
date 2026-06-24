@@ -1385,7 +1385,7 @@ function TakeoffInner() {
       {/* ── Calibration Modal ── */}
       {showCalibModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
+          <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
             <div>
               <div className="text-sm font-bold text-slate-100">Set Drawing Scale</div>
               <div className="text-[11px] text-slate-500 mt-0.5">What is the real-world distance between your 2 points?</div>
@@ -1400,11 +1400,11 @@ function TakeoffInner() {
                 <input type="number" value={calibFeet} onChange={e=>setCalibFeet(e.target.value)} autoFocus
                   className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
                   placeholder="10" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
-                <span className="flex items-center text-xs text-slate-600 px-1">ft</span>
+                <span className="flex items-center text-xs text-slate-600 w-5 justify-center flex-shrink-0">ft</span>
                 <input type="number" step="0.25" value={calibInches} onChange={e=>setCalibInches(e.target.value)}
                   className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
                   placeholder="0" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
-                <span className="flex items-center text-xs text-slate-600 px-1">in</span>
+                <span className="flex items-center text-xs text-slate-600 w-5 justify-center flex-shrink-0">in</span>
               </div>
               <div className="text-[10px] text-slate-600 mt-1">Inches can include fractions, e.g. 4.5 for four and a half inches</div>
             </div>
