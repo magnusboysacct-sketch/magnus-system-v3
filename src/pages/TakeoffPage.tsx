@@ -918,7 +918,7 @@ function TakeoffInner() {
     scheduleRender();
   }
 
-  function onWheel(e: React.WheelEvent) {
+  function onWheel(e: WheelEvent) {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.12 : 0.88;
     const c = containerRef.current; if (!c) return;
@@ -933,6 +933,16 @@ function TakeoffInner() {
     });
   }
 
+
+  // Attach wheel listener manually with passive:false so preventDefault actually blocks
+  // the browser/trackpad native zoom (pinch-to-zoom maps to ctrl+wheel events)
+  useEffect(() => {
+    const c = containerRef.current;
+    if (!c) return;
+    const handler = (e: WheelEvent) => onWheel(e);
+    c.addEventListener("wheel", handler, { passive: false });
+    return () => c.removeEventListener("wheel", handler);
+  }, []);
   function snapToNearby(p: Point): Point {
     const tol = 10 / zoomRef.current;
     for (const m of measurementsRef.current) for (const q of m.points) if (dist(p, q) < tol) return q;
@@ -1244,7 +1254,7 @@ function TakeoffInner() {
           onMouseDown={onMouseDown}
           onMouseUp={onMouseUp}
           onDoubleClick={onDblClick}
-          onWheel={onWheel}
+
           onContextMenu={e=>e.preventDefault()}>
 
           <canvas ref={canvasRef} className="absolute inset-0"/>
