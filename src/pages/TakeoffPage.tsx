@@ -13,7 +13,7 @@ import {
   ZoomIn, ZoomOut, Maximize2, Trash2, Hash, Square, Box,
   AlertCircle, RefreshCw, Send, MousePointer, Plus, Check,
   Crosshair, Package, Layers, BarChart2, ChevronRight as Arrow,
-  BookOpen, Wand2
+  BookOpen, Wand2, Eye, EyeOff, Edit2
 } from "lucide-react";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
@@ -731,6 +731,36 @@ function TakeoffInner() {
     return () => clearTimeout(tid);
   }, [pageMeta, dbReady]);
   // ─── PDF upload ───────────────────────────────────────────────────────────────
+  async function deletePdfFile(fileIdx: number) {
+    const file = pdfFiles[fileIdx];
+    if (!file) return;
+    if (!window.confirm(`Delete "${file.name}"? This cannot be undone.`)) return;
+    try {
+      if (file.storagePath) await supabase.storage.from("project-files").remove([file.storagePath]);
+      const newFiles = pdfFiles.filter((_, i) => i !== fileIdx);
+      setPdfFiles(newFiles);
+      if (sessionIdRef.current) {
+        await supabase.from("takeoff_sessions").update({ pdf_files: newFiles, pdf_file: newFiles[0] || null }).eq("id", sessionIdRef.current);
+      }
+      if (fileIdx === activePdfIdx) {
+        if (newFiles.length > 0) {
+          setActivePdfIdx(0);
+          const { data: sd } = newFiles[0].storagePath ? await supabase.storage.from("project-files").createSignedUrl(newFiles[0].storagePath, 3600*24*7) : { data: null };
+          if (sd?.signedUrl) {
+            const doc = await getDocument(sd.signedUrl).promise;
+            setPdfDoc(doc); setNumPages(doc.numPages); setPageNum(1);
+          }
+        } else {
+          setPdfDoc(null); setNumPages(0); setPageNum(1); setActivePdfIdx(0);
+        }
+      } else if (fileIdx < activePdfIdx) {
+        setActivePdfIdx(i => i - 1);
+      }
+    } catch (e: any) {
+      setError("Failed to delete file: " + e?.message);
+    }
+  }
+
   async function onPickFile(file: File | null) {
     if (!file) return;
     setLoadingPdf(true); setError(null);
