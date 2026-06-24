@@ -157,6 +157,7 @@ function TakeoffInner() {
   const calibPtsRef = useRef<Point[]>([]);
   const [showCalibModal, setShowCalibModal] = useState(false);
   const [calibFeet, setCalibFeet] = useState("10");
+  const [calibInches, setCalibInches] = useState("0");
 
   // Depth modal for volume
   const [showDepthModal, setShowDepthModal] = useState(false);
@@ -891,7 +892,9 @@ function TakeoffInner() {
 
   // ─── Calibration confirm ──────────────────────────────────────────────────────
   function confirmCalibration() {
-    const feet = parseFloat(calibFeet) || 0;
+    const feetPart = parseFloat(calibFeet) || 0;
+    const inchesPart = parseFloat(calibInches) || 0;
+    const feet = feetPart + (inchesPart / 12);
     if (feet <= 0 || calibPts.length < 2) return;
     const px = dist(calibPts[0], calibPts[1]);
     const nc = { p1: calibPts[0], p2: calibPts[1], feetPerPx: feet / px };
@@ -1044,6 +1047,16 @@ function TakeoffInner() {
           <Crosshair size={12}/>
           {calibrating ? "Click 2 points…" : calibration ? `Scale set ✓` : "Set Scale"}
         </button>
+        {calibration && !calibrating && (
+          <button onClick={()=>{
+              setCalibration(null); calibRef.current = null;
+              if (sessionIdRef.current) supabase.from("takeoff_sessions").update({ calibration: null }).eq("id", sessionIdRef.current);
+            }}
+            title="Clear calibration and start over"
+            className="flex items-center justify-center w-6 h-6 rounded-lg border border-white/[0.08] text-slate-500 hover:text-red-400 hover:border-red-500/30 transition">
+            <X size={11}/>
+          </button>
+        )}
 
         {/* Upload */}
         <label className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-[11px] text-slate-300 font-medium transition">
@@ -1362,13 +1375,18 @@ function TakeoffInner() {
               <span className="text-[11px] text-emerald-300">2 points placed — enter the distance below</span>
             </div>
             <div>
-              <label className="text-[11px] text-slate-500 block mb-1.5">Real distance (feet)</label>
+              <label className="text-[11px] text-slate-500 block mb-1.5">Real distance</label>
               <div className="flex gap-2">
                 <input type="number" value={calibFeet} onChange={e=>setCalibFeet(e.target.value)} autoFocus
                   className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
                   placeholder="10" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
                 <span className="flex items-center text-xs text-slate-600 px-1">ft</span>
+                <input type="number" step="0.25" value={calibInches} onChange={e=>setCalibInches(e.target.value)}
+                  className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
+                  placeholder="0" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
+                <span className="flex items-center text-xs text-slate-600 px-1">in</span>
               </div>
+              <div className="text-[10px] text-slate-600 mt-1">Inches can include fractions, e.g. 4.5 for four and a half inches</div>
             </div>
             <div className="flex gap-2">
               <button onClick={()=>{setShowCalibModal(false);setCalibrating(false);calibratingRef.current=false;setCalibPts([]);calibPtsRef.current=[];}}
