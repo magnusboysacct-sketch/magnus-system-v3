@@ -178,6 +178,9 @@ function TakeoffInner() {
   const [showCalibModal, setShowCalibModal] = useState(false);
   const [calibFeet, setCalibFeet] = useState("10");
   const [calibInches, setCalibInches] = useState("0");
+  const [calibFraction, setCalibFraction] = useState(0);
+  const FRACTION_OPTIONS = [0, 1/16, 1/8, 3/16, 1/4, 5/16, 3/8, 7/16, 1/2, 9/16, 5/8, 11/16, 3/4, 13/16, 7/8, 15/16];
+  const FRACTION_LABELS = ["0", "1/16", "1/8", "3/16", "1/4", "5/16", "3/8", "7/16", "1/2", "9/16", "5/8", "11/16", "3/4", "13/16", "7/8", "15/16"];
 
   // Depth modal for volume
   const [showDepthModal, setShowDepthModal] = useState(false);
@@ -914,7 +917,7 @@ function TakeoffInner() {
   function confirmCalibration() {
     const feetPart = parseFloat(calibFeet) || 0;
     const inchesPart = parseFloat(calibInches) || 0;
-    const feet = feetPart + (inchesPart / 12);
+    const feet = feetPart + ((inchesPart + calibFraction) / 12);
     if (feet <= 0 || calibPts.length < 2) return;
     const px = dist(calibPts[0], calibPts[1]);
     const nc = { p1: calibPts[0], p2: calibPts[1], feetPerPx: feet / px };
@@ -1385,7 +1388,7 @@ function TakeoffInner() {
       {/* ── Calibration Modal ── */}
       {showCalibModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
             <div>
               <div className="text-sm font-bold text-slate-100">Set Drawing Scale</div>
               <div className="text-[11px] text-slate-500 mt-0.5">What is the real-world distance between your 2 points?</div>
@@ -1395,18 +1398,27 @@ function TakeoffInner() {
               <span className="text-[11px] text-emerald-300">2 points placed — enter the distance below</span>
             </div>
             <div>
-              <label className="text-[11px] text-slate-500 block mb-1.5">Real distance</label>
-              <div className="flex gap-2">
-                <input type="number" value={calibFeet} onChange={e=>setCalibFeet(e.target.value)} autoFocus
-                  className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
-                  placeholder="10" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
-                <span className="flex items-center text-xs text-slate-600 w-5 justify-center flex-shrink-0">ft</span>
-                <input type="number" step="0.25" value={calibInches} onChange={e=>setCalibInches(e.target.value)}
-                  className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
-                  placeholder="0" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
-                <span className="flex items-center text-xs text-slate-600 w-5 justify-center flex-shrink-0">in</span>
+              <label className="text-[11px] text-slate-500 block mb-1.5">Feet</label>
+              <input type="number" value={calibFeet} onChange={e=>setCalibFeet(e.target.value)} autoFocus
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
+                placeholder="10" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1.5">Inches</label>
+              <input type="number" min="0" max="11" value={calibInches} onChange={e=>setCalibInches(e.target.value)}
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
+                placeholder="0" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1.5">Fraction</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {FRACTION_OPTIONS.map((f, i) => (
+                  <button key={i} type="button" onClick={()=>setCalibFraction(f)}
+                    className={`py-1.5 rounded-lg border text-[11px] font-medium transition ${calibFraction===f?"bg-sky-600 border-sky-500 text-white":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+                    {FRACTION_LABELS[i]}
+                  </button>
+                ))}
               </div>
-              <div className="text-[10px] text-slate-600 mt-1">Inches can include fractions, e.g. 4.5 for four and a half inches</div>
             </div>
             <div className="flex gap-2">
               <button onClick={()=>{setShowCalibModal(false);setCalibrating(false);calibratingRef.current=false;setCalibPts([]);calibPtsRef.current=[];}}
