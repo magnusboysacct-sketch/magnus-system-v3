@@ -512,6 +512,7 @@ function TakeoffInner() {
         ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
         ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
         [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
+        console.log("DRAWING LABEL FOR MEASUREMENT:", { type: m.type, unit: m.unit, result: m.result, computedLabel: m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, cx: (a.x+b.x)/2, cy: (a.y+b.y)/2-14 });
         drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, (a.x+b.x)/2, (a.y+b.y)/2-14, col);
         if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+4, "#a78bfa", true);
       } else if ((m.type==="area"||m.type==="volume") && m.points.length>=3) {
