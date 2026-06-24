@@ -74,6 +74,26 @@ function nextColor() { return MEASURE_COLORS[colorIdx++ % MEASURE_COLORS.length]
 
 function clamp(n: number, min: number, max: number) { return Math.min(max, Math.max(min, n)); }
 function fmt2(n: number) { return Number.isFinite(n) ? n.toFixed(2) : "0.00"; }
+function feetInches(totalFeet: number): string {
+  if (!Number.isFinite(totalFeet)) return `0' 0"`;
+  const sign = totalFeet < 0 ? "-" : "";
+  const abs = Math.abs(totalFeet);
+  let feet = Math.floor(abs);
+  let inches = (abs - feet) * 12;
+  // Round to nearest quarter inch
+  inches = Math.round(inches * 4) / 4;
+  if (inches >= 12) { inches -= 12; feet += 1; }
+  const whole = Math.floor(inches);
+  const frac = inches - whole;
+  let fracStr = "";
+  if (frac === 0.25) fracStr = " 1/4";
+  else if (frac === 0.5) fracStr = " 1/2";
+  else if (frac === 0.75) fracStr = " 3/4";
+  return `${sign}${feet}' ${whole}${fracStr}"`;
+}
+function fmtLen(n: number, unit: string): string {
+  return unit === "ft" ? feetInches(n) : `${fmt2(n)} ${unit}`;
+}
 function fmtMoney(n: number) { return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0}).format(n); }
 function uid() { try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(16).slice(2)}`; } }
 function dist(a: Point, b: Point) { return Math.sqrt((b.x-a.x)**2+(b.y-a.y)**2); }
@@ -287,7 +307,7 @@ function TakeoffInner() {
         [a, b].forEach(p => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill(); });
         // Label
         const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
-        const label = `${fmt2(m.result)} ${m.unit}`;
+        const label = m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`;
         drawLabel(ctx, label, mx, my-14, col);
         if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, mx, my+4, "#a78bfa", true);
 
@@ -299,7 +319,7 @@ function TakeoffInner() {
         // Centroid label
         const cx = pts.reduce((s,p)=>s+p.x,0)/pts.length;
         const cy = pts.reduce((s,p)=>s+p.y,0)/pts.length;
-        drawLabel(ctx, `${fmt2(m.result)} ${m.unit}`, cx, cy, col);
+        drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, cx, cy, col);
         if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, cx, cy+18, "#a78bfa", true);
 
       } else if (m.type === "count") {
@@ -342,7 +362,7 @@ function TakeoffInner() {
       ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
       ctx.fillStyle = tcol; ctx.beginPath(); ctx.arc(a.x,a.y,4,0,Math.PI*2); ctx.fill();
       const d = calibRef.current ? dist(ip[0], hp) * calibRef.current.feetPerPx : 0;
-      if (d > 0) drawLabel(ctx, `${fmt2(d)} ft`, (a.x+b.x)/2, (a.y+b.y)/2-12, tcol);
+      if (d > 0) drawLabel(ctx, feetInches(d), (a.x+b.x)/2, (a.y+b.y)/2-12, tcol);
       ctx.restore();
     }
 
@@ -489,14 +509,14 @@ function TakeoffInner() {
         ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
         ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
         [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
-        drawLabel(ctx, `${fmt2(m.result)} ${m.unit}`, (a.x+b.x)/2, (a.y+b.y)/2-14, col);
+        drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, (a.x+b.x)/2, (a.y+b.y)/2-14, col);
         if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+4, "#a78bfa", true);
       } else if ((m.type==="area"||m.type==="volume") && m.points.length>=3) {
         const pts = m.points.map(pdfToCanvas);
         ctx.strokeStyle=col; ctx.fillStyle=col+"28"; ctx.lineWidth=selected?2.5:1.5;
         ctx.beginPath(); pts.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);}); ctx.closePath(); ctx.fill(); ctx.stroke();
         const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length, cy=pts.reduce((s,p)=>s+p.y,0)/pts.length;
-        drawLabel(ctx, `${fmt2(m.result)} ${m.unit}`, cx, cy, col);
+        drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, cx, cy, col);
         if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, cx, cy+20, "#a78bfa", true);
       } else if (m.type==="count") {
         m.points.forEach((p,i)=>{
@@ -534,7 +554,7 @@ function TakeoffInner() {
       ctx.save(); ctx.strokeStyle=tcol; ctx.lineWidth=2; ctx.setLineDash([6,4]);
       ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
       ctx.fillStyle=tcol; ctx.setLineDash([]); ctx.beginPath(); ctx.arc(a.x,a.y,5,0,Math.PI*2); ctx.fill();
-      if (calibRef.current){ const d=dist(ip[0],hp)*calibRef.current.feetPerPx; drawLabel(ctx,`${fmt2(d)} ft`,(a.x+b.x)/2,(a.y+b.y)/2-14,tcol); }
+      if (calibRef.current){ const d=dist(ip[0],hp)*calibRef.current.feetPerPx; drawLabel(ctx,feetInches(d),(a.x+b.x)/2,(a.y+b.y)/2-14,tcol); }
       ctx.restore();
     }
     if ((t==="area"||t==="volume")&&ip.length>0&&hp){
@@ -971,7 +991,7 @@ function TakeoffInner() {
 
   // ─── Export & Send to BOQ ─────────────────────────────────────────────────────
   function exportCSV() {
-    const rows = measurements.map(m => [m.type, fmt2(m.result), m.unit, m.linkedAssemblyName||"", m.linkedItemName||""].join(","));
+    const rows = measurements.map(m => [m.type, m.unit === "ft" ? feetInches(m.result) : fmt2(m.result), m.unit, m.linkedAssemblyName||"", m.linkedItemName||""].join(","));
     const csv = ["Type,Result,Unit,Assembly,Item",...rows].join("\n");
     const a = document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download=`takeoff_${Date.now()}.csv`; a.click();
   }
@@ -1296,7 +1316,7 @@ function TakeoffInner() {
                         className={`rounded-lg border px-3 py-2.5 cursor-pointer transition-all flex items-center gap-2.5 ${m.id===selectedId?"border-sky-500/25 bg-sky-500/[0.07]":"border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]"}`}>
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:m.color}}/>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[11px] font-semibold text-slate-200">{fmt2(m.result)} <span className="text-slate-600 font-normal">{m.unit}</span></div>
+                          <div className="text-[11px] font-semibold text-slate-200">{m.unit === "ft" ? feetInches(m.result) : fmt2(m.result)} <span className="text-slate-600 font-normal">{m.unit === "ft" ? "" : m.unit}</span></div>
                           {m.linkedAssemblyName&&<div className="text-[9px] text-purple-400 truncate">⚡ {m.linkedAssemblyName}</div>}
                           {m.linkedItemName&&!m.linkedAssemblyName&&<div className="text-[9px] text-blue-400 truncate">{m.linkedItemName}</div>}
                           <div className="text-[9px] text-slate-700 capitalize">{m.type}</div>
