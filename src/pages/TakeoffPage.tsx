@@ -524,14 +524,27 @@ function TakeoffInner() {
       const selected = m.id === selectedIdRef.current;
       ctx.save();
       if (selected) { ctx.shadowColor = col; ctx.shadowBlur = 14; }
-      if ((m.type === "line" || m.type === "wall") && m.points.length >= 2) {
+      if (m.type === "line" && m.points.length >= 2) {
         const [a, b] = [pdfToCanvas(m.points[0]), pdfToCanvas(m.points[1])];
         ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
         ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
         [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
-        drawLabel(ctx, m.type === "wall" ? `${fmt2(m.result)} ft²` : (m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`), (a.x+b.x)/2, (a.y+b.y)/2-14, col);
-        if (m.type === "wall") drawLabel(ctx, m.label, (a.x+b.x)/2, (a.y+b.y)/2+4, "#f472b6", true);
-        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+(m.type==="wall"?22:4), "#a78bfa", true);
+        drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, (a.x+b.x)/2, (a.y+b.y)/2-14, col);
+        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+4, "#a78bfa", true);
+      } else if (m.type === "wall" && m.points.length >= 2) {
+        const pts = m.points.map(pdfToCanvas);
+        ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
+        ctx.beginPath();
+        pts.forEach((p,i) => { if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+        ctx.stroke();
+        pts.forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
+        const midIdx = Math.floor(pts.length/2);
+        const labelPt = pts.length % 2 === 0
+          ? { x:(pts[midIdx-1].x+pts[midIdx].x)/2, y:(pts[midIdx-1].y+pts[midIdx].y)/2 }
+          : pts[midIdx];
+        drawLabel(ctx, `${fmt2(m.result)} ft²`, labelPt.x, labelPt.y-14, col);
+        drawLabel(ctx, m.label, labelPt.x, labelPt.y+4, "#f472b6", true);
+        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, labelPt.x, labelPt.y+22, "#a78bfa", true);
       } else if ((m.type==="area"||m.type==="volume") && m.points.length>=3) {
         const pts = m.points.map(pdfToCanvas);
         ctx.strokeStyle=col; ctx.fillStyle=col+"28"; ctx.lineWidth=selected?2.5:1.5;
