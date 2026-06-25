@@ -20,7 +20,7 @@ GlobalWorkerOptions.workerSrc = workerSrc;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Point = { x: number; y: number };
-type ToolMode = "select" | "pan" | "line" | "area" | "count" | "volume";
+type ToolMode = "select" | "pan" | "line" | "area" | "count" | "volume" | "wall";
 
 interface Measurement {
   id: string;
@@ -67,6 +67,7 @@ const TOOL_CFG: Record<ToolMode, { label: string; shortcut: string; color: strin
   area:   { label: "Area",    shortcut: "A", color: "#a78bfa", desc: "Click corners. Double-click to close.",  icon: <Square size={16}/> },
   count:  { label: "Count",   shortcut: "C", color: "#fb923c", desc: "Click to place markers.",                icon: <Hash size={16}/> },
   volume: { label: "Volume",  shortcut: "V", color: "#34d399", desc: "Trace base. Double-click → enter depth.", icon: <Box size={16}/> },
+  wall:   { label: "Wall",    shortcut: "W", color: "#f472b6", desc: "Draw wall line, then enter height.",     icon: <Layers size={16}/> },
 };
 
 const MEASURE_COLORS = ["#38bdf8","#a78bfa","#fb923c","#34d399","#f472b6","#facc15","#60a5fa","#f87171"];
