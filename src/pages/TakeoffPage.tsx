@@ -1585,6 +1585,70 @@ function TakeoffInner() {
         </div>
       )}
 
+
+      {/* ── Wall Setup Modal ── */}
+      {showWallSetup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
+            <div>
+              <div className="text-sm font-bold text-slate-100">Wall Setup</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Choose how you'll draw, and set the wall height</div>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1.5">Drawing mode</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={()=>setWallLineMode("segment")}
+                  className={`py-2 rounded-lg border text-[11px] font-medium transition ${wallLineMode==="segment"?"bg-pink-600 border-pink-500 text-white":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+                  Segment (one straight line)
+                </button>
+                <button onClick={()=>setWallLineMode("continuous")}
+                  className={`py-2 rounded-lg border text-[11px] font-medium transition ${wallLineMode==="continuous"?"bg-pink-600 border-pink-500 text-white":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+                  Continuous (multiple points)
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1.5">Feet</label>
+              <input type="number" value={wallHeightFeet} onChange={e=>setWallHeightFeet(e.target.value)} autoFocus
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-pink-500/50"
+                placeholder="8"/>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1.5">Inches</label>
+              <input type="number" min="0" max="11" value={wallHeightInches} onChange={e=>setWallHeightInches(e.target.value)}
+                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-pink-500/50"
+                placeholder="0"/>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-500 block mb-1.5">Fraction</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {FRACTION_OPTIONS.map((f, i) => (
+                  <button key={i} type="button" onClick={()=>setWallHeightFraction(f)}
+                    className={`py-1.5 rounded-lg border text-[11px] font-medium transition ${wallHeightFraction===f?"bg-pink-600 border-pink-500 text-white":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+                    {FRACTION_LABELS[i]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={()=>setShowWallSetup(false)}
+                className="flex-1 py-2 rounded-xl border border-white/[0.07] text-xs text-slate-500 hover:text-slate-300 transition">Cancel</button>
+              <button onClick={()=>{
+                  const feetPart = parseFloat(wallHeightFeet) || 0;
+                  const inchesPart = parseFloat(wallHeightInches) || 0;
+                  const totalHeight = feetPart + ((inchesPart + wallHeightFraction) / 12);
+                  wallTotalHeightFeetRef.current = totalHeight;
+                  wallLineModeRef.current = wallLineMode;
+                  setWallHeightConfirmed(true); wallHeightConfirmedRef.current = true;
+                  setShowWallSetup(false);
+                  setTool("wall"); toolRef.current = "wall";
+                  setInProgress([]); inProgressRef.current = [];
+                }}
+                className="flex-1 py-2 rounded-xl bg-pink-600 hover:bg-pink-500 text-white text-xs font-semibold transition">Start Drawing</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ── Volume Depth Modal ── */}
       {showDepthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
