@@ -36,6 +36,8 @@ interface Measurement {
   linkedItemName?: string;
   timestamp: number;
   pageNumber?: number;
+  wallLength?: number;
+  wallHeight?: number;
 }
 
 interface PdfFile {
@@ -186,6 +188,15 @@ function TakeoffInner() {
   const [calibFraction, setCalibFraction] = useState(0);
   const FRACTION_OPTIONS = [0, 1/16, 1/8, 3/16, 1/4, 5/16, 3/8, 7/16, 1/2, 9/16, 5/8, 11/16, 3/4, 13/16, 7/8, 15/16];
   const FRACTION_LABELS = ["0", "1/16", "1/8", "3/16", "1/4", "5/16", "3/8", "7/16", "1/2", "9/16", "5/8", "11/16", "3/4", "13/16", "7/8", "15/16"];
+  const [showWallSetup, setShowWallSetup] = useState(false);
+  const [wallLineMode, setWallLineMode] = useState<"segment" | "continuous">("segment");
+  const [wallHeightFeet, setWallHeightFeet] = useState("8");
+  const [wallHeightInches, setWallHeightInches] = useState("0");
+  const [wallHeightFraction, setWallHeightFraction] = useState(0);
+  const [wallHeightConfirmed, setWallHeightConfirmed] = useState(false);
+  const wallHeightConfirmedRef = useRef(false);
+  const wallTotalHeightFeetRef = useRef(0);
+  const wallLineModeRef = useRef<"segment" | "continuous">("segment");
 
   // Depth modal for volume
   const [showDepthModal, setShowDepthModal] = useState(false);
@@ -865,6 +876,24 @@ function TakeoffInner() {
         setMeasurements(next); measurementsRef.current = next;
         setInProgress([]); inProgressRef.current = [];
       }
+    } else if (toolRef.current === "wall") {
+      const ip = inProgressRef.current;
+      if (ip.length === 0) {
+        setInProgress([snap]); inProgressRef.current = [snap];
+      } else {
+        // Complete wall: length from drawn line, height from setup popup
+        const calib = calibRef.current;
+        const lengthFt = calib ? dist(ip[0], snap) * calib.feetPerPx : dist(ip[0], snap);
+        const heightFt = wallTotalHeightFeetRef.current;
+        const result = lengthFt * heightFt;
+        const col = nextColor();
+        const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+        const item = costItems.find(i=>i.id===linkedItemId);
+        const nm: Measurement = { id:uid(), type:"wall", points:[ip[0],snap], result, unit:"ft²", label:`${feetInches(lengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:lengthFt, wallHeight:heightFt };
+        const next = [...measurementsRef.current, nm];
+        setMeasurements(next); measurementsRef.current = next;
+        setInProgress([]); inProgressRef.current = [];
+      }
     } else if (toolRef.current === "area" || toolRef.current === "volume") {
       setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
     } else if (toolRef.current === "count") {
@@ -1173,7 +1202,7 @@ function TakeoffInner() {
         {/* ── Left Tool Bar ── */}
         <div className="flex-shrink-0 w-14 flex flex-col items-center py-3 gap-1 bg-[#0d1117] border-r border-white/[0.06] z-10">
           {(Object.entries(TOOL_CFG) as [ToolMode, typeof TOOL_CFG[ToolMode]][]).map(([key, cfg]) => (
-            <button key={key} onClick={()=>{setTool(key);toolRef.current=key;setInProgress([]);inProgressRef.current=[];scheduleRender();}}
+            <button key={key} onClick={()=>{if(key==="wall"){setShowWallSetup(true);return;}setTool(key);toolRef.current=key;setInProgress([]);inProgressRef.current=[];scheduleRender();}}
               title={`${cfg.label} (${cfg.shortcut})`}
               className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center gap-0.5 border transition-all ${tool===key?"border-white/20 bg-white/10":"border-transparent hover:bg-white/[0.05] hover:border-white/[0.07]"}`}>
               <span style={{color:tool===key?cfg.color:"#475569"}}>{cfg.icon}</span>
