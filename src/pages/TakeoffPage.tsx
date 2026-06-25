@@ -524,14 +524,14 @@ function TakeoffInner() {
       const selected = m.id === selectedIdRef.current;
       ctx.save();
       if (selected) { ctx.shadowColor = col; ctx.shadowBlur = 14; }
-
-      if (m.type === "line" && m.points.length >= 2) {
+      if ((m.type === "line" || m.type === "wall") && m.points.length >= 2) {
         const [a, b] = [pdfToCanvas(m.points[0]), pdfToCanvas(m.points[1])];
         ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
         ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
         [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
-                drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, (a.x+b.x)/2, (a.y+b.y)/2-14, col);
-        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+4, "#a78bfa", true);
+        drawLabel(ctx, m.type === "wall" ? `${fmt2(m.result)} ft²` : (m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`), (a.x+b.x)/2, (a.y+b.y)/2-14, col);
+        if (m.type === "wall") drawLabel(ctx, m.label, (a.x+b.x)/2, (a.y+b.y)/2+4, "#f472b6", true);
+        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+(m.type==="wall"?22:4), "#a78bfa", true);
       } else if ((m.type==="area"||m.type==="volume") && m.points.length>=3) {
         const pts = m.points.map(pdfToCanvas);
         ctx.strokeStyle=col; ctx.fillStyle=col+"28"; ctx.lineWidth=selected?2.5:1.5;
@@ -569,13 +569,20 @@ function TakeoffInner() {
         ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.restore();
       }
     }
-
-    if (t==="line"&&ip.length===1&&hp){
+    if ((t==="line"||(t==="wall"&&wallLineModeRef.current==="segment"))&&ip.length===1&&hp){
       const a=pdfToCanvas(ip[0]),b=pdfToCanvas(hp);
       ctx.save(); ctx.strokeStyle=tcol; ctx.lineWidth=2; ctx.setLineDash([6,4]);
       ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
       ctx.fillStyle=tcol; ctx.setLineDash([]); ctx.beginPath(); ctx.arc(a.x,a.y,5,0,Math.PI*2); ctx.fill();
-      if (calibRef.current){ const d=dist(ip[0],hp)*calibRef.current.feetPerPx; drawLabel(ctx,feetInches(d),(a.x+b.x)/2,(a.y+b.y)/2-14,tcol); }
+      if (calibRef.current){
+        const d=dist(ip[0],hp)*calibRef.current.feetPerPx;
+        if (t==="wall") {
+          const wallArea = d * wallTotalHeightFeetRef.current;
+          drawLabel(ctx,`${fmt2(wallArea)} ft²`,(a.x+b.x)/2,(a.y+b.y)/2-14,tcol);
+        } else {
+          drawLabel(ctx,feetInches(d),(a.x+b.x)/2,(a.y+b.y)/2-14,tcol);
+        }
+      }
       ctx.restore();
     }
     if ((t==="area"||t==="volume")&&ip.length>0&&hp){
@@ -583,6 +590,21 @@ function TakeoffInner() {
       ctx.save(); ctx.strokeStyle=tcol; ctx.fillStyle=tcol+"18"; ctx.lineWidth=1.5; ctx.setLineDash([6,4]);
       ctx.beginPath(); allPts.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);}); ctx.closePath(); ctx.fill(); ctx.stroke();
       ip.forEach(p=>{const cp=pdfToCanvas(p);ctx.fillStyle=tcol;ctx.setLineDash([]);ctx.beginPath();ctx.arc(cp.x,cp.y,4,0,Math.PI*2);ctx.fill();});
+      ctx.restore();
+    }
+    if (t==="wall"&&wallLineModeRef.current==="continuous"&&ip.length>0&&hp){
+      const allPts=[...ip,hp].map(pdfToCanvas);
+      ctx.save(); ctx.strokeStyle=tcol; ctx.lineWidth=2; ctx.setLineDash([6,4]);
+      ctx.beginPath(); allPts.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);}); ctx.stroke();
+      ip.forEach(p=>{const cp=pdfToCanvas(p);ctx.fillStyle=tcol;ctx.setLineDash([]);ctx.beginPath();ctx.arc(cp.x,cp.y,4,0,Math.PI*2);ctx.fill();});
+      if (calibRef.current){
+        let totalLengthFt = 0;
+        for (let i = 0; i < ip.length - 1; i++) { totalLengthFt += dist(ip[i], ip[i+1]) * calibRef.current.feetPerPx; }
+        totalLengthFt += dist(ip[ip.length-1], hp) * calibRef.current.feetPerPx;
+        const wallArea = totalLengthFt * wallTotalHeightFeetRef.current;
+        const lastPt = allPts[allPts.length-1];
+        drawLabel(ctx,`${fmt2(wallArea)} ft² total`,lastPt.x,lastPt.y-18,tcol);
+      }
       ctx.restore();
     }
     if (hp&&t!=="select"&&!calibratingRef.current){
@@ -878,21 +900,29 @@ function TakeoffInner() {
       }
     } else if (toolRef.current === "wall") {
       const ip = inProgressRef.current;
-      if (ip.length === 0) {
-        setInProgress([snap]); inProgressRef.current = [snap];
+      if (wallLineModeRef.current === "continuous") {
+        if (ip.length === 0) {
+          setInProgress([snap]); inProgressRef.current = [snap];
+        } else {
+          setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
+        }
       } else {
-        // Complete wall: length from drawn line, height from setup popup
-        const calib = calibRef.current;
-        const lengthFt = calib ? dist(ip[0], snap) * calib.feetPerPx : dist(ip[0], snap);
-        const heightFt = wallTotalHeightFeetRef.current;
-        const result = lengthFt * heightFt;
-        const col = nextColor();
-        const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
-        const item = costItems.find(i=>i.id===linkedItemId);
-        const nm: Measurement = { id:uid(), type:"wall", points:[ip[0],snap], result, unit:"ft²", label:`${feetInches(lengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:lengthFt, wallHeight:heightFt };
-        const next = [...measurementsRef.current, nm];
-        setMeasurements(next); measurementsRef.current = next;
-        setInProgress([]); inProgressRef.current = [];
+        // Segment mode: two clicks, finalize immediately
+        if (ip.length === 0) {
+          setInProgress([snap]); inProgressRef.current = [snap];
+        } else {
+          const calib = calibRef.current;
+          const lengthFt = calib ? dist(ip[0], snap) * calib.feetPerPx : dist(ip[0], snap);
+          const heightFt = wallTotalHeightFeetRef.current;
+          const result = lengthFt * heightFt;
+          const col = nextColor();
+          const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+          const item = costItems.find(i=>i.id===linkedItemId);
+          const nm: Measurement = { id:uid(), type:"wall", points:[ip[0],snap], result, unit:"ft²", label:`${feetInches(lengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:lengthFt, wallHeight:heightFt };
+          const next = [...measurementsRef.current, nm];
+          setMeasurements(next); measurementsRef.current = next;
+          setInProgress([]); inProgressRef.current = [];
+        }
       }
     } else if (toolRef.current === "area" || toolRef.current === "volume") {
       setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
@@ -931,6 +961,24 @@ function TakeoffInner() {
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
       }
+      setInProgress([]); inProgressRef.current = [];
+      scheduleRender();
+    }
+    if (t==="wall" && wallLineModeRef.current==="continuous" && ip.length >= 2) {
+      const calib = calibRef.current;
+      let totalLengthFt = 0;
+      for (let i = 0; i < ip.length - 1; i++) {
+        const segPx = dist(ip[i], ip[i+1]);
+        totalLengthFt += calib ? segPx * calib.feetPerPx : segPx;
+      }
+      const heightFt = wallTotalHeightFeetRef.current;
+      const result = totalLengthFt * heightFt;
+      const col = nextColor();
+      const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+      const item = costItems.find(i=>i.id===linkedItemId);
+      const nm: Measurement = { id:uid(), type:"wall", points:[...ip], result, unit:"ft²", label:`${feetInches(totalLengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:totalLengthFt, wallHeight:heightFt };
+      const next = [...measurementsRef.current, nm];
+      setMeasurements(next); measurementsRef.current = next;
       setInProgress([]); inProgressRef.current = [];
       scheduleRender();
     }
