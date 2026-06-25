@@ -859,6 +859,7 @@ function TakeoffInner() {
         const col = nextColor();
         const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
         const item = costItems.find(i=>i.id===linkedItemId);
+        console.log("LINE CREATED:", { linkedAssemblyId, assembliesCount: assemblies.length, linkedItemId });
         const nm: Measurement = { id:uid(), type:"line", points:[ip[0],snap], result, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
