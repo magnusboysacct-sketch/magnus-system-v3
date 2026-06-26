@@ -552,6 +552,21 @@ useEffect(() => {
     finally { setPersistLoading(false); }
   }
 
+  // Flush unsaved BOQ changes on unmount (nav away, browser back, route change)
+  // so deletes/imports made in-session are not silently discarded on next load.
+  const sectionsRef = useRef(sections);
+  useEffect(() => { sectionsRef.current = sections; }, [sections]);
+  const hasUnsavedRef = useRef(false);
+  useEffect(() => { hasUnsavedRef.current = true; }, [sections]);
+  useEffect(() => {
+    return () => {
+      if (hasUnsavedRef.current && boqId !== null) {
+        saveBoq("draft");
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const pid = activeProjectId;
     if (!pid) { setBoqId(null); setStatus("draft"); setSections([]); return; }
@@ -1460,4 +1475,3 @@ Answer briefly and practically. If they ask to add items, explain they need to u
     </div>
   );
 }
-
