@@ -554,14 +554,20 @@ useEffect(() => {
 
   // Flush unsaved BOQ changes on unmount (nav away, browser back, route change)
   // so deletes/imports made in-session are not silently discarded on next load.
+  // Refs avoid stale-closure bugs: the cleanup function below is created once on
+  // mount, so it must read current values via refs, not via state/closures directly.
   const sectionsRef = useRef(sections);
   useEffect(() => { sectionsRef.current = sections; }, [sections]);
+  const boqIdRef = useRef(boqId);
+  useEffect(() => { boqIdRef.current = boqId; }, [boqId]);
+  const saveBoqRef = useRef(saveBoq);
+  useEffect(() => { saveBoqRef.current = saveBoq; }, [saveBoq]);
   const hasUnsavedRef = useRef(false);
   useEffect(() => { hasUnsavedRef.current = true; }, [sections]);
   useEffect(() => {
     return () => {
-      if (hasUnsavedRef.current && boqId !== null) {
-        saveBoq("draft");
+      if (hasUnsavedRef.current && boqIdRef.current !== null) {
+        saveBoqRef.current("draft");
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
