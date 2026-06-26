@@ -415,7 +415,7 @@ export default function JournalEntryPage() {
         {success && <Alert type="success" onClose={() => setSuccess(null)}>{success}</Alert>}
 
         {/* Settings bar */}
-        <div className="flex items-center gap-4 px-4 py-2.5 rounded-xl border border-white/[0.07] bg-[#0c1018]">
+        <div className="flex items-center gap-4 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018]">
           <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Entry Settings</span>
           <div className="flex items-center gap-4 ml-2">
             <button onClick={() => setAutoFill(v => !v)}
@@ -470,7 +470,7 @@ export default function JournalEntryPage() {
 
         {/* Entry lines */}
         <Card padding={false}>
-          <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-slate-200">Journal Lines</span>
               {autoFill && <Badge color="cyan">Auto-fill ON</Badge>}
@@ -487,7 +487,7 @@ export default function JournalEntryPage() {
           </div>
 
           {/* Column headers */}
-          <div className="grid grid-cols-12 gap-2 px-4 py-2 border-b border-white/[0.04] text-[9px] font-bold uppercase tracking-widest text-slate-700">
+          <div className="grid grid-cols-12 gap-2 px-4 py-2 border-b border-slate-100 dark:border-white/[0.04] text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-700">
             <div className="col-span-4">Account</div>
             <div className="col-span-3">Line Description</div>
             <div className="col-span-2">Project</div>
@@ -509,7 +509,7 @@ export default function JournalEntryPage() {
                   <div className="col-span-4">
                     <select value={line.account_id}
                       onChange={e => updateLine(line.id, "account_id", e.target.value)}
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-cyan-500/50 transition-colors">
+                      className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500/50 transition-colors">
                       <option value="">Select account...</option>
                       {(["asset","liability","equity","revenue","expense"] as const).map(type => (
                         <optgroup key={type} label={type.toUpperCase()}>
@@ -552,7 +552,7 @@ export default function JournalEntryPage() {
                         "w-full bg-white/[0.04] border rounded-lg px-2 py-1.5 text-xs text-right outline-none transition-colors",
                         hasDebit
                           ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 focus:border-emerald-500/60"
-                          : "border-white/[0.08] text-slate-400 focus:border-cyan-500/50"
+                          : "border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 focus:border-cyan-500/50"
                       )}/>
                   </div>
 
@@ -564,7 +564,7 @@ export default function JournalEntryPage() {
                         "w-full bg-white/[0.04] border rounded-lg px-2 py-1.5 text-xs text-right outline-none transition-colors",
                         hasCredit
                           ? "border-red-500/40 bg-red-500/10 text-red-300 focus:border-red-500/60"
-                          : "border-white/[0.08] text-slate-400 focus:border-cyan-500/50"
+                          : "border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 focus:border-cyan-500/50"
                       )}/>
                   </div>
 
@@ -646,7 +646,7 @@ export default function JournalEntryPage() {
           </button>
 
           {showScanner && (
-            <div className="border-t border-white/[0.06] p-4">
+            <div className="border-t border-slate-200 dark:border-white/[0.06] p-4">
               <div className="mb-3 rounded-lg bg-violet-500/10 border border-violet-500/20 px-3 py-2 text-[11px] text-violet-300 flex items-start gap-2">
                 <ScanLine size={12} className="flex-shrink-0 mt-0.5"/>
                 <span>Upload a receipt photo or PDF. The scanner will extract vendor, date, amount and auto-fill this journal entry.</span>
@@ -660,7 +660,7 @@ export default function JournalEntryPage() {
 
           {/* OCR result preview */}
           {scanResult && !showScanner && (
-            <div className="border-t border-white/[0.06] px-4 pb-3">
+            <div className="border-t border-slate-200 dark:border-white/[0.06] px-4 pb-3">
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-700 mt-2 mb-2">Extracted Data</div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {[
@@ -669,7 +669,7 @@ export default function JournalEntryPage() {
                   { label: "Amount",   value: scanResult.amount ? `$${scanResult.amount.toFixed(2)}` : null },
                   { label: "Receipt#", value: scanResult.receiptNumber },
                 ].map(f => f.value ? (
-                  <div key={f.label} className="rounded-lg bg-white/[0.03] border border-white/[0.05] px-2.5 py-2">
+                  <div key={f.label} className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] px-2.5 py-2">
                     <div className="text-[9px] text-slate-700 mb-0.5">{f.label}</div>
                     <div className="text-xs font-semibold text-slate-300 truncate">{f.value}</div>
                   </div>
@@ -688,7 +688,7 @@ export default function JournalEntryPage() {
           <Field label="Internal Notes (optional)">
             <textarea rows={2} placeholder="Any internal notes..."
               value={notes} onChange={e => setNotes(e.target.value)}
-              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50 resize-none transition-colors"/>
+              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-cyan-500/50 resize-none transition-colors"/>
           </Field>
         </Card>
 
