@@ -1,4 +1,4 @@
-// src/pages/BOQPage.tsx ? v3 Rebuild: staff-friendly, search-first picker, clear UX
+﻿// src/pages/BOQPage.tsx ? v3 Rebuild: staff-friendly, search-first picker, clear UX
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -380,7 +380,10 @@ useEffect(() => {
               Number(g.value) || 0,
               assemblyComponents,
               rateItems,
-              usableUnits
+                    usableUnits,
+                    (g.length != null || g.height != null || g.width != null)
+                      ? { length: Number(g.length) || undefined, height: Number(g.height) || undefined, width: Number(g.width) || undefined }
+                      : undefined
             );
 
           if (exploded.length > 0) {
@@ -627,12 +630,80 @@ useEffect(() => {
     const u = usableUnits.find((x: any) => getUnitLabel(x).toLowerCase() === unitName.toLowerCase());
     return u ? getUnitId(u) : null;
   }
-  function explodeAssembly(
+// --- Safe formula evaluator (length/height/width only, no eval/Function) ---
+type FormulaVars = { length?: number; height?: number; width?: number };
+
+function evalAssemblyFormula(formula: string, vars: FormulaVars): number | null {
+  const tokens = formula.match(/[A-Za-z_]+|\d+(\.\d+)?|[+\-*/()]/g);
+  if (!tokens) return null;
+  let pos = 0;
+
+  function peek() { return tokens![pos]; }
+  function next() { return tokens![pos++]; }
+
+  function parseExpr(): number {
+    let v = parseTerm();
+    while (peek() === "+" || peek() === "-") {
+      const op = next();
+      const rhs = parseTerm();
+      v = op === "+" ? v + rhs : v - rhs;
+    }
+    return v;
+  }
+  function parseTerm(): number {
+    let v = parseFactor();
+    while (peek() === "*" || peek() === "/") {
+      const op = next();
+      const rhs = parseFactor();
+      v = op === "*" ? v * rhs : v / rhs;
+    }
+    return v;
+  }
+  function parseFactor(): number {
+    const t = next();
+    if (t === undefined) throw new Error("Unexpected end of formula");
+    if (t === "(") {
+      const v = parseExpr();
+      if (next() !== ")") throw new Error("Missing closing paren");
+      return v;
+    }
+    if (t === "-") return -parseFactor();
+    if (/^[A-Za-z_]+$/.test(t)) {
+      const key = t.toLowerCase();
+      if (key === "length" || key === "height" || key === "width") {
+        const v = vars[key as keyof FormulaVars];
+        if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`Missing variable: ${key}`);
+        return v;
+      }
+      throw new Error(`Unknown variable: ${t}`);
+    }
+    const n = parseFloat(t);
+    if (!Number.isFinite(n)) throw new Error(`Bad token: ${t}`);
+    return n;
+  }
+
+  try {
+    const result = parseExpr();
+    if (pos < tokens.length) return null; // leftover tokens = malformed formula
+    return Number.isFinite(result) ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractFormula(notes: string | null): string | null {
+  if (!notes) return null;
+  const m = notes.match(/formula:\s*(.+)/i);
+  return m ? m[1].trim() : null;
+}
+
+function explodeAssembly(
   assemblyId: string,
   qtyBase: number,
   assemblyComponents: AssemblyComponentRow[],
   rateItems: RateItem[],
-  usableUnits: any[]
+  usableUnits: any[],
+  dims?: FormulaVars
 ): BOQItemRow[] {
   const comps = assemblyComponents
     .filter(c => c.assembly_id === assemblyId)
@@ -643,10 +714,17 @@ useEffect(() => {
       const r = rateItems.find(x => x.id === c.cost_item_id);
       if (!r) return null;
 
-      const finalQty =
-        qtyBase *
-        numOr(c.quantity_factor, 1) *
-        (1 + numOr(c.waste_percent, 0) / 100);
+      const formula = extractFormula(c.notes);
+      let rawQty: number;
+
+      if (formula && dims) {
+        const evaluated = evalAssemblyFormula(formula, dims);
+        rawQty = evaluated !== null ? evaluated : qtyBase * numOr(c.quantity_factor, 1);
+      } else {
+        rawQty = qtyBase * numOr(c.quantity_factor, 1);
+      }
+
+      const finalQty = rawQty * (1 + numOr(c.waste_percent, 0) / 100);
 
       const unitMatch = r.unit
         ? usableUnits.find((u:any)=>
@@ -662,7 +740,7 @@ useEffect(() => {
         pick_variant: (r.variant ?? "").trim(),
         cost_item_id: c.cost_item_id,
         item_name: r.item_name ?? "",
-        description: (r.description ?? "").trim() || c.notes || "",
+        description: (r.description ?? "").trim() || (formula ? "" : c.notes) || "",
         unit_id: unitMatch ? getUnitId(unitMatch) : null,
         qty: Number.isFinite(finalQty) ? finalQty : 0,
         rate: numOr(r.current_rate ?? 0, 0),
@@ -1382,7 +1460,4 @@ Answer briefly and practically. If they ask to add items, explain they need to u
     </div>
   );
 }
-
-
-
 

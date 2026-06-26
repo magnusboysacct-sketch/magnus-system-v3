@@ -1214,6 +1214,10 @@ calibRef.current =
     value:number;
     metric:string;
     assemblyId?: string;
+    length?: number;
+    height?: number;
+    width?: number;
+    heightMismatch?: boolean;
   }> = {};
 
   measurements.forEach(m => {
@@ -1232,6 +1236,15 @@ calibRef.current =
         metric: m.unit,
         assemblyId: m.linkedAssemblyId,
       };
+    }
+
+    if (m.type === "wall" && typeof m.wallLength === "number" && typeof m.wallHeight === "number") {
+      groups[key].length = (groups[key].length || 0) + m.wallLength;
+      if (groups[key].height === undefined) {
+        groups[key].height = m.wallHeight;
+      } else if (groups[key].height !== m.wallHeight) {
+        groups[key].heightMismatch = true;
+      }
     }
 
     groups[key].value += m.result;
