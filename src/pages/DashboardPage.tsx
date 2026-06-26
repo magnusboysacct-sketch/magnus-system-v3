@@ -1,4 +1,4 @@
-// src/pages/DashboardPage.tsx — Full featured dashboard
+﻿// src/pages/DashboardPage.tsx - Full featured dashboard
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const activeProjects = projects.filter(p => p.status === "active").slice(0, 6);
 
   return (
-    <div className="min-h-screen bg-[#080b10]">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader
         title="Dashboard"
         subtitle={new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
@@ -49,10 +49,10 @@ export default function DashboardPage() {
       <div className="p-6 space-y-6">
         {/* KPI row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Active Projects" value={loading ? "—" : stats.active} icon={<FolderOpen size={15}/>} color="text-cyan-300" trend={{ value: 8, label: "vs last month" }}/>
-          <StatCard label="Active Budget" value={loading ? "—" : fmt(stats.budget)} icon={<DollarSign size={15}/>} color="text-emerald-300"/>
-          <StatCard label="Open POs" value={loading ? "—" : stats.openPOs} icon={<ShoppingCart size={15}/>} color="text-amber-300"/>
-          <StatCard label="Active Workers" value={loading ? "—" : stats.workers} icon={<Users size={15}/>} color="text-violet-300"/>
+          <StatCard label="Active Projects" value={loading ? "â€”" : stats.active} icon={<FolderOpen size={15}/>} color="text-cyan-300" trend={{ value: 8, label: "vs last month" }}/>
+          <StatCard label="Active Budget" value={loading ? "â€”" : fmt(stats.budget)} icon={<DollarSign size={15}/>} color="text-emerald-300"/>
+          <StatCard label="Open POs" value={loading ? "â€”" : stats.openPOs} icon={<ShoppingCart size={15}/>} color="text-amber-300"/>
+          <StatCard label="Active Workers" value={loading ? "â€”" : stats.workers} icon={<Users size={15}/>} color="text-violet-300"/>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -64,7 +64,7 @@ export default function DashboardPage() {
                 <Btn size="xs" variant="ghost" onClick={() => nav("/projects")}>All projects <ArrowRight size={11}/></Btn>
               </div>
               {loadingProjects ? (
-                <div className="flex items-center justify-center py-12 text-xs text-slate-600">Loading…</div>
+                <div className="flex items-center justify-center py-12 text-xs text-slate-600">Loadingâ€¦</div>
               ) : activeProjects.length === 0 ? (
                 <Empty icon={<FolderOpen size={18}/>} title="No active projects" action={<Btn variant="primary" size="sm" onClick={() => nav("/projects")}>Create project</Btn>}/>
               ) : (
