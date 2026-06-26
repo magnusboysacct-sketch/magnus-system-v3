@@ -1,4 +1,4 @@
-// src/pages/EstimatesPage.tsx — v2 Rebuild
+ï»¿// src/pages/EstimatesPage.tsx â€” v2 Rebuild
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -88,7 +88,7 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
   onAdvisor: () => void;
 }) {
   return (
-    <Card className="group hover:border-white/[0.13] transition-all cursor-pointer" onClick={onView}>
+    <Card className="group hover:border-slate-300 dark:hover:border-white/[0.13] transition-all cursor-pointer" onClick={onView}>
       <div className="flex items-start justify-between mb-3">
         <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
           <FileText size={15} className="text-blue-400"/>
@@ -113,13 +113,13 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
       <div className="mb-3">
         <div className="text-sm font-semibold text-slate-100 truncate mb-1">{estimate.title}</div>
         <div className="text-[10px] text-slate-600">
-          {estimate.projects?.name || "No project"} · v{estimate.version}
+          {estimate.projects?.name || "No project"} Â· v{estimate.version}
         </div>
       </div>
 
       <div className="text-xl font-bold text-emerald-400 mb-3">{fmt(total)}</div>
 
-      <div className="flex items-center justify-between pt-3 border-t border-white/[0.05]">
+      <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/[0.05]">
         <Badge color={STATUS_COLOR[estimate.status]} dot>{estimate.status}</Badge>
         <div className="text-[9px] text-slate-700">{fmtDate(estimate.updated_at)}</div>
       </div>
@@ -189,7 +189,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
     <table>
       <thead><tr><th>#</th><th>Item</th><th>Type</th><th>Unit</th><th class="tr">Qty</th><th class="tr">Rate (JMD)</th><th class="tr">Amount (JMD)</th></tr></thead>
       <tbody>
-        ${items.map(i=>`<tr><td>${i.line_no}</td><td><strong>${i.item}</strong>${i.description?`<br/><span style="color:#666;font-size:11px">${i.description}</span>`:""}</td><td style="color:#666;font-size:11px;text-transform:capitalize">${i.item_type}</td><td style="color:#666">${i.unit||"—"}</td><td class="tr">${i.qty}</td><td class="tr">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.rate)}</td><td class="tr" style="font-weight:600">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.amount)}</td></tr>`).join("")}
+        ${items.map(i=>`<tr><td>${i.line_no}</td><td><strong>${i.item}</strong>${i.description?`<br/><span style="color:#666;font-size:11px">${i.description}</span>`:""}</td><td style="color:#666;font-size:11px;text-transform:capitalize">${i.item_type}</td><td style="color:#666">${i.unit||"â€”"}</td><td class="tr">${i.qty}</td><td class="tr">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.rate)}</td><td class="tr" style="font-weight:600">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.amount)}</td></tr>`).join("")}
         <tr class="total-row"><td colspan="6">TOTAL ESTIMATE</td><td class="tr">${fmtJMD(total)}</td></tr>
       </tbody>
     </table>
@@ -198,7 +198,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
       <div><div style="font-size:11px;color:#666;margin-bottom:50px">Client Acceptance</div><div class="sig-line">Client Signature &amp; Date</div></div>
       <div><div style="font-size:11px;color:#666;margin-bottom:50px">Authorized By</div><div class="sig-line">Company Representative &amp; Date</div></div>
     </div>
-    <div style="margin-top:24px;text-align:center;font-size:10px;color:#999">Magnus Boys Construction · This proposal is valid for 30 days from date of issue</div>
+    <div style="margin-top:24px;text-align:center;font-size:10px;color:#999">Magnus Boys Construction Â· This proposal is valid for 30 days from date of issue</div>
     </body></html>`;
     const w = window.open("","_blank");
     if(!w) return;
@@ -208,13 +208,13 @@ function EstimateDetailModal({ estimate, items, onClose }: {
   }
   return (
     <Modal open onClose={onClose} title={estimate.title}
-      subtitle={`v${estimate.version} · ${estimate.projects?.name || "No project"}`}
+      subtitle={`v${estimate.version} Â· ${estimate.projects?.name || "No project"}`}
       width="max-w-3xl">
       <div className="space-y-4">
         {/* Summary */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {Object.entries(byType).map(([type, amt]) => (
-            <div key={type} className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2.5">
+            <div key={type} className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] p-2.5">
               <div className={cn("text-[9px] font-bold uppercase tracking-widest mb-1", ITEM_TYPE_COLOR[type] || "text-slate-600")}>{type}</div>
               <div className="text-sm font-bold text-slate-200">{fmt(amt)}</div>
             </div>
@@ -222,7 +222,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
         </div>
 
         {/* Items table */}
-        <div className="rounded-xl border border-white/[0.07] overflow-hidden max-h-80 overflow-y-auto">
+        <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden max-h-80 overflow-y-auto">
           <Table>
             <thead>
               <tr>
@@ -250,7 +250,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
                       {item.item_type}
                     </span>
                   </Td>
-                  <Td muted>{item.unit || "—"}</Td>
+                  <Td muted>{item.unit || "â€”"}</Td>
                   <Td right muted>{item.qty}</Td>
                   <Td right muted>{fmt(item.rate)}</Td>
                   <Td right><span className="font-semibold text-slate-200">{fmt(item.amount)}</span></Td>
@@ -261,18 +261,18 @@ function EstimateDetailModal({ estimate, items, onClose }: {
         </div>
 
         {/* Total */}
-        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+        <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06]">
           <span className="text-sm font-semibold text-slate-300">Total Estimate</span>
           <span className="text-xl font-bold text-emerald-400">{fmt(total)}</span>
         </div>
 
         {estimate.notes && (
-          <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2.5">
+          <div className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] px-3 py-2.5">
             <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">Notes</div>
             <div className="text-xs text-slate-400">{estimate.notes}</div>
           </div>
         )}
-             <div className="flex justify-end pt-2 border-t border-white/[0.06]">
+             <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-white/[0.06]">
           <button onClick={printProposal} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition"><Printer size={14}/> Print / Export Proposal</button>
         </div>
       </div>
@@ -429,10 +429,10 @@ export default function EstimatesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#080b10]">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader
         title="Estimates"
-        subtitle={`${stats.total} total · ${fmt(stats.totalValue)} approved`}
+        subtitle={`${stats.total} total Â· ${fmt(stats.totalValue)} approved`}
         actions={
           <>
             <Btn variant="ghost" size="sm"
@@ -456,7 +456,7 @@ export default function EstimatesPage() {
           ].map(s => (
             <button key={s.key} onClick={() => setTab(s.key)}
               className={cn("rounded-xl border p-3 text-left transition-all",
-                tab === s.key ? "border-cyan-500/30 bg-cyan-500/10" : "border-white/[0.07] bg-[#0c1018] hover:border-white/[0.12]")}>
+                tab === s.key ? "border-cyan-500/30 bg-cyan-500/10" : "border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018] hover:border-slate-300 dark:hover:border-white/[0.12]")}>
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">{s.label}</div>
               <div className={cn("text-2xl font-bold", s.color)}>{s.value}</div>
             </button>
@@ -474,7 +474,7 @@ export default function EstimatesPage() {
             <option value="">All projects</option>
             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </Select>
-          <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
             <button onClick={() => setViewMode("grid")}
               className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <LayoutGrid size={13}/>
@@ -531,7 +531,7 @@ export default function EstimatesPage() {
                 {filtered.map(e => (
                   <Tr key={e.id} onClick={() => setViewingEstimate(e)}>
                     <Td><span className="font-semibold text-slate-200">{e.title}</span></Td>
-                    <Td muted>{e.projects?.name || "—"}</Td>
+                    <Td muted>{e.projects?.name || "â€”"}</Td>
                     <Td muted>v{e.version}</Td>
                     <Td><Badge color={STATUS_COLOR[e.status]} dot>{e.status}</Badge></Td>
                     <Td muted>{fmtDate(e.updated_at)}</Td>
@@ -621,9 +621,9 @@ export default function EstimatesPage() {
             )}
             <textarea rows={2} placeholder="Any notes or terms..."
               value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
+              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
           </div>
-          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
             <Btn variant="ghost" onClick={() => { setShowNew(false); setError(null); }}>Cancel</Btn>
             <Btn variant="primary" onClick={createEstimate}
               disabled={!form.title.trim() || saving}>
