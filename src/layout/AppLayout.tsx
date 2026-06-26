@@ -1,4 +1,4 @@
-﻿// src/layout/AppLayout.tsx — Main shell with sidebar + top bar
+// src/layout/AppLayout.tsx — Main shell with sidebar + top bar
 // Drop-in replacement for SidebarLayout.tsx
 
 import React, { useState, useEffect } from "react";
@@ -89,7 +89,7 @@ function NavGroup({ item, collapsed, defaultOpen }: { item: NavItem; collapsed: 
       <NavLink to={item.to!} end={item.to === "/"}
         className={({ isActive }) => cn(
           "flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors mx-2",
-          isActive ? "bg-cyan-500/15 text-cyan-300" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]"
+          isActive ? "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300" : "text-slate-500 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.04]"
         )}>
         <span className="flex-shrink-0">{item.icon}</span>
         {!collapsed && <span className="truncate">{item.label}</span>}
@@ -103,8 +103,8 @@ function NavGroup({ item, collapsed, defaultOpen }: { item: NavItem; collapsed: 
         onClick={() => setOpen(v => !v)}
         className={cn(
           "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors mx-0 text-left",
-          anyActive ? "text-slate-300" : "text-slate-600 hover:text-slate-400",
-          "hover:bg-white/[0.03]"
+          anyActive ? "text-slate-700 dark:text-slate-300" : "text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-400",
+          "hover:bg-slate-100 dark:hover:bg-white/[0.03]"
         )}
         style={{ width: "calc(100% - 8px)", marginLeft: "4px" }}
       >
@@ -117,12 +117,12 @@ function NavGroup({ item, collapsed, defaultOpen }: { item: NavItem; collapsed: 
         )}
       </button>
       {!collapsed && open && (
-        <div className="ml-5 mt-0.5 mb-1 border-l border-white/[0.06] pl-2 space-y-0.5">
+        <div className="ml-5 mt-0.5 mb-1 border-l border-slate-200 dark:border-white/[0.06] pl-2 space-y-0.5">
           {item.children.map(child => (
             <NavLink key={child.to} to={child.to!}
               className={({ isActive }) => cn(
                 "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors",
-                isActive ? "bg-cyan-500/10 text-cyan-300" : "text-slate-600 hover:text-slate-300 hover:bg-white/[0.03]"
+                isActive ? "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300" : "text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.03]"
               )}>
               <span className="flex-shrink-0 opacity-70">{child.icon}</span>
               <span className="truncate">{child.label}</span>
@@ -141,7 +141,7 @@ function ProjectPicker({ collapsed }: { collapsed: boolean }) {
   const [open, setOpen] = useState(false);
 
   if (loadingProjects) {
-    return <div className="mx-3 h-9 rounded-lg bg-white/[0.04] animate-pulse" />;
+    return <div className="mx-3 h-9 rounded-lg bg-slate-100 dark:bg-white/[0.04] animate-pulse" />;
   }
 
   return (
@@ -149,7 +149,7 @@ function ProjectPicker({ collapsed }: { collapsed: boolean }) {
       <button
         onClick={() => setOpen(v => !v)}
         className={cn(
-          "w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-white/[0.07] bg-white/[0.04] hover:bg-white/[0.07] transition-colors",
+          "w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-100 dark:hover:bg-white/[0.07] transition-colors",
           collapsed ? "justify-center" : "justify-between"
         )}
       >
@@ -158,30 +158,30 @@ function ProjectPicker({ collapsed }: { collapsed: boolean }) {
             <FolderOpen size={10} className="text-white"/>
           </div>
           {!collapsed && (
-            <span className="text-[11px] font-semibold text-slate-300 truncate">
+            <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 truncate">
               {currentProject?.name || "Select project"}
             </span>
           )}
         </div>
-        {!collapsed && <ChevronDown size={11} className="flex-shrink-0 text-slate-600"/>}
+        {!collapsed && <ChevronDown size={11} className="flex-shrink-0 text-slate-400 dark:text-slate-600"/>}
       </button>
 
       {open && !collapsed && (
-        <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-white/10 bg-[#0f1520] shadow-2xl overflow-hidden">
+        <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f1520] shadow-2xl overflow-hidden">
           <div className="p-1 max-h-64 overflow-y-auto">
             {projects.length === 0 ? (
-              <div className="px-3 py-6 text-center text-[10px] text-slate-600">No projects yet</div>
+              <div className="px-3 py-6 text-center text-[10px] text-slate-500 dark:text-slate-600">No projects yet</div>
             ) : projects.map(p => (
               <button key={p.id} onClick={() => { setCurrentProjectId(p.id); setOpen(false); }}
                 className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-left transition-colors",
-                  p.id === currentProject?.id ? "bg-cyan-500/10 text-cyan-300" : "text-slate-400 hover:bg-white/[0.05]")}>
+                  p.id === currentProject?.id ? "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.05]")}>
                 <FolderOpen size={12} className="flex-shrink-0 opacity-60"/>
                 <span className="truncate">{p.name}</span>
                 {p.status && (
                   <span className={cn("ml-auto flex-shrink-0 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase",
-                    p.status === "active" ? "bg-emerald-500/15 text-emerald-400" :
-                    p.status === "completed" ? "bg-blue-500/15 text-blue-400" :
-                    "bg-white/[0.06] text-slate-600")}>
+                    p.status === "active" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" :
+                    p.status === "completed" ? "bg-blue-500/15 text-blue-700 dark:text-blue-400" :
+                    "bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-600")}>
                     {p.status}
                   </span>
                 )}
@@ -221,29 +221,29 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-[#080b10] overflow-hidden">
+    <div className="flex h-screen bg-slate-50 dark:bg-[#080b10] overflow-hidden">
 
       {/* ── Sidebar ── */}
       <aside className={cn(
-        "flex flex-col border-r border-white/[0.06] bg-[#0a0d14] transition-all duration-200 flex-shrink-0",
+        "flex flex-col border-r border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0a0d14] transition-all duration-200 flex-shrink-0",
         collapsed ? "w-14" : "w-56"
       )}>
         {/* Logo */}
-        <div className={cn("flex items-center h-12 border-b border-white/[0.06] flex-shrink-0", collapsed ? "justify-center px-0" : "gap-2.5 px-4")}>
+        <div className={cn("flex items-center h-12 border-b border-slate-200 dark:border-white/[0.06] flex-shrink-0", collapsed ? "justify-center px-0" : "gap-2.5 px-4")}>
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
               {co?.logo_url && <img src={co.logo_url} alt="logo" className="w-full h-full object-cover" />}
             <Building2 size={14} className="text-white"/>
           </div>
           {!collapsed && (
             <div>
-              <div className="text-xs font-bold text-slate-100 tracking-tight leading-tight">{co?.company_name || "Magnus"}</div>
-              <div className="text-[8px] text-slate-600 uppercase tracking-widest leading-tight">Construction ERP</div>
+              <div className="text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-tight">{co?.company_name || "Magnus"}</div>
+              <div className="text-[8px] text-slate-500 dark:text-slate-600 uppercase tracking-widest leading-tight">Construction ERP</div>
             </div>
           )}
         </div>
 
         {/* Project picker */}
-        <div className="py-2 border-b border-white/[0.06] flex-shrink-0">
+        <div className="py-2 border-b border-slate-200 dark:border-white/[0.06] flex-shrink-0">
           <ProjectPicker collapsed={collapsed} />
         </div>
 
@@ -255,14 +255,14 @@ export default function AppLayout() {
         </nav>
 
         {/* Bottom — user + collapse */}
-        <div className="border-t border-white/[0.06] p-2 flex-shrink-0 space-y-1">
+        <div className="border-t border-slate-200 dark:border-white/[0.06] p-2 flex-shrink-0 space-y-1">
           {user && !collapsed && (
             <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg">
-              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-slate-600 to-slate-800 flex items-center justify-center text-[9px] font-bold text-slate-300 flex-shrink-0">
+              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-slate-500 to-slate-700 dark:from-slate-600 dark:to-slate-800 flex items-center justify-center text-[9px] font-bold text-white dark:text-slate-300 flex-shrink-0">
                 {(user.email?.[0] || "U").toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-semibold text-slate-400 truncate">{user.email}</div>
+                <div className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 truncate">{user.email}</div>
               </div>
             </div>
           )}
@@ -272,12 +272,12 @@ export default function AppLayout() {
             {!collapsed && <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>}
           </button>
           <button onClick={handleLogout}
-            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors", collapsed && "justify-center")}>
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors", collapsed && "justify-center")}>
             <LogOut size={13}/>
             {!collapsed && "Sign out"}
           </button>
           <button onClick={() => setCollapsed(v => !v)}
-            className={cn("w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-slate-700 hover:text-slate-400 hover:bg-white/[0.04] transition-colors", collapsed && "justify-center")}>
+            className={cn("w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-slate-400 dark:text-slate-700 hover:text-slate-600 dark:hover:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors", collapsed && "justify-center")}>
             {collapsed ? <ChevronRight size={13}/> : <><ChevronLeft size={13}/><span>Collapse</span></>}
           </button>
         </div>
@@ -285,7 +285,7 @@ export default function AppLayout() {
 
       {/* ── Main content ── */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080b10]">
           <Outlet />
         </main>
       </div>
