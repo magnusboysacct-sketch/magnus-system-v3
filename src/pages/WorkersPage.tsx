@@ -101,7 +101,7 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
     "bg-violet-500/20 text-violet-300";
 
   return (
-    <Card className="group hover:border-white/[0.13] transition-all">
+    <Card className="group hover:border-slate-300 dark:hover:border-white/[0.13] transition-all">
       <div className="flex items-start justify-between mb-4">
         <div className={cn("w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold border", TYPE_BG[worker.worker_type || "employee"], TYPE_COLOR[worker.worker_type || "employee"])}>
           {initials(worker)}
@@ -163,7 +163,7 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-3 border-t border-white/[0.05]">
+      <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/[0.05]">
         <Badge color={STATUS_COLOR[worker.status]} dot>{worker.status}</Badge>
         {worker.city && <span className="text-[9px] text-slate-700">{worker.city}</span>}
       </div>
@@ -403,7 +403,7 @@ export default function WorkersPage() {
           ].map(s => (
             <button key={s.key} onClick={() => setTab(s.key)}
               className={cn("rounded-xl border p-3 text-left transition-all",
-                tab === s.key ? "border-cyan-500/30 bg-cyan-500/10" : "border-white/[0.07] bg-[#0c1018] hover:border-white/[0.12]")}>
+                tab === s.key ? "border-cyan-500/30 bg-cyan-500/10" : "border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018] hover:border-slate-300 dark:hover:border-white/[0.12]")}>
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">{s.label}</div>
               <div className={cn("text-2xl font-bold", s.color)}>{s.value}</div>
             </button>
@@ -439,7 +439,7 @@ export default function WorkersPage() {
             <option value="subcontractor">Subcontractor</option>
             <option value="crew_lead">Crew Lead</option>
           </Select>
-          <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
             <button onClick={() => setViewMode("grid")}
               className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <LayoutGrid size={13}/>
@@ -689,7 +689,7 @@ export default function WorkersPage() {
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}/>
           </Field>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
             <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
             <Btn variant="primary" onClick={saveWorker}
               disabled={!form.first_name.trim() || !form.last_name.trim() || saving}>
@@ -703,9 +703,9 @@ export default function WorkersPage() {
       {selectedWorker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
           onClick={() => setSelectedWorker(null)}>
-          <div className="w-full max-w-sm rounded-2xl border border-white/[0.08] bg-[#0f1520] shadow-2xl"
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0f1520] shadow-2xl"
             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
               <div>
                 <div className="text-sm font-bold text-slate-100">{fullName(selectedWorker)}</div>
                 <div className="text-[10px] text-slate-600 capitalize">{selectedWorker.worker_type.replace("_"," ")}</div>
@@ -723,7 +723,7 @@ export default function WorkersPage() {
                     className="w-full rounded-xl border border-white/[0.08] object-contain max-h-48 bg-black"/>
                 </div>
               ) : (
-                <div className="rounded-xl border border-dashed border-white/[0.08] p-6 text-center">
+                <div className="rounded-xl border border-dashed border-slate-200 dark:border-white/[0.08] p-6 text-center">
                   <div className="text-[10px] text-slate-600">No ID photo stored</div>
                 </div>
               )}
@@ -739,16 +739,16 @@ export default function WorkersPage() {
                   { label:"Pay Rate",    value: selectedWorker.pay_rate ? `${selectedWorker.pay_rate}/hr` : null },
                   { label:"Hire Date",   value: selectedWorker.hire_date ? fmtDate(selectedWorker.hire_date) : null },
                 ].filter(f => f.value).map(f => (
-                  <div key={f.label} className="rounded-lg bg-white/[0.03] border border-white/[0.05] p-2.5">
+                  <div key={f.label} className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] p-2.5">
                     <div className="text-[9px] text-slate-600 mb-0.5">{f.label}</div>
                     <div className="text-xs font-semibold text-slate-300 capitalize truncate">{f.value}</div>
                   </div>
                 ))}
               </div>
               {/* Print + Delete */}
-              <div className="flex gap-2 pt-3 border-t border-white/[0.06] mt-2">
+              <div className="flex gap-2 pt-3 border-t border-slate-200 dark:border-white/[0.06] mt-2">
                 <button onClick={() => window.print()}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-white/[0.08] text-xs text-slate-400 hover:text-slate-300 transition-colors">
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">
                   🖨 Print
                 </button>
                 <button onClick={() => { setDeleteConfirm(selectedWorker!.id); setSelectedWorker(null); }}
