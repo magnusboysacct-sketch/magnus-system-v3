@@ -82,7 +82,7 @@ function ProjectCard({ project, client, onClick, onCloseOut }: {
   return (
     <div
       onClick={onClick}
-      className="group rounded-xl border border-white/[0.07] bg-[#0c1018] hover:border-white/[0.14] hover:bg-[#111820] transition-all cursor-pointer p-4"
+      className="group rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018] hover:border-slate-300 dark:hover:border-white/[0.14] hover:bg-slate-50 dark:hover:bg-[#111820] transition-all cursor-pointer p-4"
     >
       {/* Header */}
       <div className="flex items-start justify-between mb-4">
@@ -106,7 +106,7 @@ function ProjectCard({ project, client, onClick, onCloseOut }: {
       )}
 
       {/* Footer */}
-      <div className="flex items-center justify-between pt-3 border-t border-white/[0.05] mt-3">
+      <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/[0.05] mt-3">
         <span className="text-[10px] text-slate-700 capitalize">{project.status?.replace("_"," ") || "active"}</span>
         <div className="flex items-center gap-2">
           {canCloseOut && (
@@ -138,7 +138,7 @@ function ProjectRow({ project, client, onClick, onCloseOut }: {
   return (
     <div
       onClick={onClick}
-      className="flex items-center gap-4 px-4 py-3 border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer transition-colors group"
+      className="flex items-center gap-4 px-4 py-3 border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors group"
     >
       <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center flex-shrink-0">
         <Hammer size={13} className="text-cyan-400" />
@@ -295,7 +295,7 @@ export default function ProjectsPage() {
     return clients.find(c => c.id === clientId);
   }
 
-  const inputClass = "w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/40";
+  const inputClass = "w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500/40";
   const labelClass = "text-[10px] text-slate-500 font-medium uppercase tracking-wider mb-1 block";
   const selectClass = inputClass;
 
@@ -329,7 +329,7 @@ export default function ProjectsPage() {
               className={cn("rounded-xl border p-3 text-left transition-all",
                 statusFilter === s.filter
                   ? "border-cyan-500/30 bg-cyan-500/10"
-                  : "border-white/[0.07] bg-[#0c1018] hover:border-white/[0.12]")}>
+                  : "border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018] hover:border-slate-300 dark:hover:border-white/[0.12]")}>
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">{s.label}</div>
               <div className={cn("text-xl font-bold", s.color)}>{s.value}</div>
             </button>
@@ -347,7 +347,7 @@ export default function ProjectsPage() {
             <option value="all">All status</option>
             {STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </Select>
-          <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
             <button onClick={() => setViewMode("grid")}
               className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <LayoutGrid size={13}/>
@@ -388,8 +388,8 @@ export default function ProjectsPage() {
             ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-white/[0.07] bg-[#0c1018] overflow-hidden">
-            <div className="flex items-center gap-4 px-4 py-2 border-b border-white/[0.06]">
+          <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018] overflow-hidden">
+            <div className="flex items-center gap-4 px-4 py-2 border-b border-slate-200 dark:border-white/[0.06]">
               <div className="w-8 flex-shrink-0"/>
               <div className="flex-1 text-[9px] font-bold uppercase tracking-widest text-slate-700">Project</div>
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-700 w-20">Status</div>
@@ -430,7 +430,7 @@ export default function ProjectsPage() {
               </Select>
             </Field>
           )}
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
             <Btn variant="ghost" onClick={() => { setShowNew(false); setError(null); }}>Cancel</Btn>
             <Btn variant="primary" onClick={createProject} disabled={!form.name.trim() || saving}>
               {saving ? "Creating..." : "Create Project"}
@@ -561,7 +561,7 @@ export default function ProjectsPage() {
                 </label>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.06]">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
                 <Btn variant="ghost" onClick={() => { setCloseOutProject(null); setCloseOutForm(DEFAULT_CLOSEOUT); }}>
                   Cancel
                 </Btn>
