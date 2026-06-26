@@ -53,7 +53,7 @@ function ClientCard({ client, onEdit, onDelete, onPortalToggle, onResetPassword 
   onResetPassword: (c: Client) => void;
 }) {
   return (
-    <Card className="group hover:border-white/[0.13] transition-all">
+    <Card className="group hover:border-slate-300 dark:hover:border-white/[0.13] transition-all">
       <div className="flex items-start justify-between mb-4">
         <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
           <Building2 size={16} className="text-blue-400" />
@@ -108,7 +108,7 @@ function ClientCard({ client, onEdit, onDelete, onPortalToggle, onResetPassword 
         )}
       </div>
 
-      <div className="flex items-center justify-between pt-3 border-t border-white/[0.05]">
+      <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/[0.05]">
         <Badge color={client.status === "active" ? "green" : "slate"} dot>
           {client.status}
         </Badge>
@@ -297,7 +297,7 @@ export default function ClientsPage() {
           ].map(s => (
             <button key={s.key} onClick={() => setTab(s.key)}
               className={cn("rounded-xl border p-3 text-left transition-all",
-                tab === s.key ? "border-cyan-500/30 bg-cyan-500/10" : "border-white/[0.07] bg-[#0c1018] hover:border-white/[0.12]")}>
+                    tab === s.key ? "border-cyan-500/30 bg-cyan-500/10" : "border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018] hover:border-slate-300 dark:hover:border-white/[0.12]")}>
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">{s.label}</div>
               <div className={cn("text-2xl font-bold", s.color)}>{s.value}</div>
             </button>
@@ -311,7 +311,7 @@ export default function ClientsPage() {
             <Input className="pl-8" placeholder="Search clients, contacts, email..."
               value={search} onChange={e => setSearch(e.target.value)}/>
           </div>
-          <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
             <button onClick={() => setViewMode("grid")}
               className={cn("p-1.5 rounded-md transition-colors",
                 viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
@@ -463,7 +463,7 @@ export default function ClientsPage() {
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}/>
           </Field>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
             <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
             <Btn variant="primary" onClick={saveClient}
               disabled={!form.name.trim() || saving}>
