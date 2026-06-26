@@ -1,10 +1,12 @@
-// src/layout/AppLayout.tsx — Main shell with sidebar + top bar
+﻿// src/layout/AppLayout.tsx — Main shell with sidebar + top bar
 // Drop-in replacement for SidebarLayout.tsx
 
 import React, { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
 import { supabase } from "../lib/supabase";
+import { useCompanySettings } from "../hooks/useCompanySettings";
+import { useTheme } from "../hooks/useTheme";
 import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
@@ -38,6 +40,7 @@ const NAV: NavItem[] = [
     label: "Estimating", icon: <FileText size={15}/>,
     children: [
       { label: "Estimates",   icon: <ClipboardList size={14}/>, to: "/estimates" },
+      { label: "Contracts",   icon: <FileText size={14}/>, to: "/contracts" },
       { label: "BOQ Builder", icon: <Layers size={14}/>,        to: "/boq" },
       { label: "Takeoff",     icon: <Ruler size={14}/>,         to: "/takeoff" },
       { label: "Assemblies",  icon: <Wrench size={14}/>,        to: "/assemblies" },
@@ -197,6 +200,8 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
+  const { settings: co } = useCompanySettings();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
   useEffect(() => {
@@ -225,12 +230,13 @@ export default function AppLayout() {
       )}>
         {/* Logo */}
         <div className={cn("flex items-center h-12 border-b border-white/[0.06] flex-shrink-0", collapsed ? "justify-center px-0" : "gap-2.5 px-4")}>
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {co?.logo_url && <img src={co.logo_url} alt="logo" className="w-full h-full object-cover" />}
             <Building2 size={14} className="text-white"/>
           </div>
           {!collapsed && (
             <div>
-              <div className="text-xs font-bold text-slate-100 tracking-tight leading-tight">Magnus</div>
+              <div className="text-xs font-bold text-slate-100 tracking-tight leading-tight">{co?.company_name || "Magnus"}</div>
               <div className="text-[8px] text-slate-600 uppercase tracking-widest leading-tight">Construction ERP</div>
             </div>
           )}
@@ -260,6 +266,11 @@ export default function AppLayout() {
               </div>
             </div>
           )}
+          <button onClick={toggleTheme}
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+            <span style={{fontSize:13}}>{theme === "dark" ? "☀️" : "🌙"}</span>
+            {!collapsed && <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>}
+          </button>
           <button onClick={handleLogout}
             className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors", collapsed && "justify-center")}>
             <LogOut size={13}/>
