@@ -203,7 +203,7 @@ export default function FinanceDashboardPage() {
                 { label: "Accounts Recv.",   icon: <FileText size={15}/>,   to: "/accounts-receivable",  color: "bg-blue-500/10 border-blue-500/20 text-blue-400" },
               ].map(l => (
                 <button key={l.to} onClick={() => nav(l.to)}
-                  className="flex items-center gap-3 p-4 rounded-xl border border-white/[0.07] bg-[#0c1018] hover:border-white/[0.13] hover:bg-[#111820] transition-colors text-left group">
+                  className="flex items-center gap-3 p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018] hover:border-slate-300 dark:hover:border-white/[0.13] hover:bg-slate-50 dark:hover:bg-[#111820] transition-colors text-left group">
                   <div className={cn("w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0", l.color)}>{l.icon}</div>
                   <span className="text-xs font-semibold text-slate-400 group-hover:text-slate-200 transition-colors">{l.label}</span>
                   <ArrowRight size={11} className="ml-auto text-slate-700 group-hover:text-slate-400"/>
@@ -213,7 +213,7 @@ export default function FinanceDashboardPage() {
 
             {/* Recent GL Transactions */}
             <Card padding={false}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
                 <span className="text-sm font-semibold text-slate-200">Recent Journal Entries</span>
                 <Btn size="xs" variant="ghost" onClick={() => setTab("ledger")}>View all <ArrowRight size={11}/></Btn>
               </div>
@@ -264,7 +264,7 @@ export default function FinanceDashboardPage() {
               const typeTotal = typeAccounts.reduce((s: number, a: any) => s + (a.current_balance || 0), 0);
               return (
                 <Card key={type} padding={false}>
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
                     <div className="flex items-center gap-2">
                       <Badge color={ACCOUNT_TYPE_COLOR[type]}>{type}</Badge>
                       <span className="text-xs text-slate-600">{typeAccounts.length} accounts</span>
@@ -370,7 +370,7 @@ export default function FinanceDashboardPage() {
                 <Card>
                   <CardHeader title="Profit & Loss Summary" subtitle="Revenue vs Expenses"/>
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between py-2 border-b border-white/[0.05]">
+                    <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-white/[0.05]">
                       <span className="text-sm font-semibold text-slate-200">Total Revenue</span>
                       <span className="text-sm font-bold text-emerald-400">{fmt(stats.totalRevenue)}</span>
                     </div>
@@ -380,7 +380,7 @@ export default function FinanceDashboardPage() {
                         <span className="text-xs text-slate-300">{fmt(a.current_balance || 0)}</span>
                       </div>
                     ))}
-                    <div className="flex items-center justify-between py-2 border-b border-white/[0.05]">
+                    <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-white/[0.05]">
                       <span className="text-sm font-semibold text-slate-200">Total Expenses</span>
                       <span className="text-sm font-bold text-amber-400">{fmt(stats.totalExpenses)}</span>
                     </div>
@@ -415,7 +415,7 @@ export default function FinanceDashboardPage() {
                       <span className={cn("text-sm font-bold", r.color)}>{fmt(r.value)}</span>
                     </div>
                   ))}
-                  <div className="border-t border-white/[0.06] pt-3">
+                  <div className="border-t border-slate-200 dark:border-white/[0.06] pt-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-400">L + E</span>
                       <span className="text-sm font-bold text-slate-200">{fmt(stats.totalLiabilities + stats.totalEquity)}</span>
@@ -444,7 +444,7 @@ export default function FinanceDashboardPage() {
                   { label: "Cash Flow",      icon: <DollarSign size={14}/> },
                 ].map(r => (
                   <button key={r.label}
-                    className="flex items-center gap-2.5 p-3 rounded-xl border border-white/[0.07] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04] transition-colors text-left">
+                    className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] hover:border-slate-300 dark:hover:border-white/[0.12] hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors text-left">
                     <span className="text-slate-600">{r.icon}</span>
                     <span className="text-xs text-slate-400">{r.label}</span>
                   </button>
