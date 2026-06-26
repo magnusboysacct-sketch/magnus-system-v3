@@ -18,7 +18,7 @@ import {
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types --------------------------------------------------------------------
 type Point = { x: number; y: number };
 type ToolMode = "select" | "pan" | "line" | "area" | "count" | "volume" | "wall";
 
@@ -61,14 +61,14 @@ interface CostItem {
   category: string | null;
 }
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 const TOOL_CFG: Record<ToolMode, { label: string; shortcut: string; color: string; desc: string; icon: React.ReactNode }> = {
   select: { label: "Select",  shortcut: "S", color: "#94a3b8", desc: "Click to select. Space+drag to pan.",    icon: <MousePointer size={16}/> },
-  pan:    { label: "Pan",     shortcut: "P", color: "#64748b", desc: "Click and drag to pan the view.",       icon: <span style={{fontSize:16}}>✥</span> },
-  line:   { label: "Linear",  shortcut: "L", color: "#38bdf8", desc: "Click start → click end to measure.",    icon: <Ruler size={16}/> },
+  pan:    { label: "Pan",     shortcut: "P", color: "#64748b", desc: "Click and drag to pan the view.",       icon: <span style={{fontSize:16}}>?</span> },
+  line:   { label: "Linear",  shortcut: "L", color: "#38bdf8", desc: "Click start ? click end to measure.",    icon: <Ruler size={16}/> },
   area:   { label: "Area",    shortcut: "A", color: "#a78bfa", desc: "Click corners. Double-click to close.",  icon: <Square size={16}/> },
   count:  { label: "Count",   shortcut: "C", color: "#fb923c", desc: "Click to place markers.",                icon: <Hash size={16}/> },
-  volume: { label: "Volume",  shortcut: "V", color: "#34d399", desc: "Trace base. Double-click → enter depth.", icon: <Box size={16}/> },
+  volume: { label: "Volume",  shortcut: "V", color: "#34d399", desc: "Trace base. Double-click ? enter depth.", icon: <Box size={16}/> },
   wall:   { label: "Wall",    shortcut: "W", color: "#f472b6", desc: "Draw wall line, then enter height.",     icon: <Layers size={16}/> },
 };
 
@@ -113,7 +113,7 @@ function distToSeg(p: Point, a: Point, b: Point) {
   return Math.sqrt((p.x-a.x-t*C)**2+(p.y-a.y-t*D)**2);
 }
 
-// ─── Error Boundary ───────────────────────────────────────────────────────────
+// --- Error Boundary -----------------------------------------------------------
 class ErrorBoundary extends React.Component<{children:React.ReactNode},{err:any}> {
   constructor(p:any){super(p);this.state={err:null};}
   static getDerivedStateFromError(e:any){return{err:e};}
@@ -131,7 +131,7 @@ class ErrorBoundary extends React.Component<{children:React.ReactNode},{err:any}
   }
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// --- Main ---------------------------------------------------------------------
 function TakeoffInner() {
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
   const { currentProject } = useProjectContext();
@@ -176,7 +176,15 @@ function TakeoffInner() {
   const hoverRef = useRef<Point|null>(null);
 
   // Calibration
-  const [calibration, setCalibration] = useState<{p1:Point;p2:Point;feetPerPx:number}|null>(null);
+  const [calibrations, setCalibrations] =
+useState<Record<number,{
+  p1:Point;
+  p2:Point;
+  feetPerPx:number;
+}>>({});
+
+const calibration =
+  calibrations[pageNum] || null;
   const calibRef = useRef<typeof calibration>(null);
   const [calibrating, setCalibrating] = useState(false);
   const calibratingRef = useRef(false);
@@ -227,12 +235,17 @@ function TakeoffInner() {
   useEffect(()=>{ pageMeasurementsRef.current = pageMeasurements; },[pageMeasurements]);
   useEffect(()=>{ selectedIdRef.current = selectedId; },[selectedId]);
   useEffect(()=>{ calibRef.current = calibration; },[calibration]);
+useEffect(() => {
+  calibRef.current =
+    calibrations[pageNum] || null;
+}, [pageNum, calibrations]);
+
   useEffect(()=>{ calibratingRef.current = calibrating; },[calibrating]);
   useEffect(()=>{ calibPtsRef.current = calibPts; },[calibPts]);
   useEffect(()=>{ inProgressRef.current = inProgress; },[inProgress]);
   useEffect(()=>{ hoverRef.current = hoverPt; },[hoverPt]);
 
-  // ─── Coordinate helpers ──────────────────────────────────────────────────────
+  // --- Coordinate helpers ------------------------------------------------------
   // Convert screen coords to PDF-page coords
   function screenToPdf(sx: number, sy: number): Point {
     const c = containerRef.current;
@@ -254,7 +267,7 @@ function TakeoffInner() {
     };
   }
 
-  // ─── Main render loop ────────────────────────────────────────────────────────
+  // --- Main render loop --------------------------------------------------------
   const rafRef = useRef<number|null>(null);
   const needsRender = useRef(true);
 
@@ -330,7 +343,7 @@ function TakeoffInner() {
         const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
         const label = m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`;
         drawLabel(ctx, label, mx, my-14, col);
-        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, mx, my+4, "#a78bfa", true);
+        if (m.linkedAssemblyName) drawLabel(ctx, `? ${m.linkedAssemblyName}`, mx, my+4, "#a78bfa", true);
 
       } else if ((m.type === "area" || m.type === "volume") && m.points.length >= 3) {
         const pts = m.points.map(pdfToCanvas);
@@ -341,7 +354,7 @@ function TakeoffInner() {
         const cx = pts.reduce((s,p)=>s+p.x,0)/pts.length;
         const cy = pts.reduce((s,p)=>s+p.y,0)/pts.length;
         drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, cx, cy, col);
-        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, cx, cy+18, "#a78bfa", true);
+        if (m.linkedAssemblyName) drawLabel(ctx, `? ${m.linkedAssemblyName}`, cx, cy+18, "#a78bfa", true);
 
       } else if (m.type === "count") {
         m.points.forEach((p, i) => {
@@ -440,7 +453,7 @@ function TakeoffInner() {
   // Schedule render when deps change
   useEffect(() => { scheduleRender(); }, [zoom, pan, pageMeasurements, selectedId, inProgress, hoverPt, calibration, calibrating, calibPts, pdfPageSize]);
 
-  // ─── PDF rendering ───────────────────────────────────────────────────────────
+  // --- PDF rendering -----------------------------------------------------------
   useEffect(() => {
     if (!pdfDoc) return;
     let cancelled = false;
@@ -530,7 +543,7 @@ function TakeoffInner() {
         ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
         [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
         drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, (a.x+b.x)/2, (a.y+b.y)/2-14, col);
-        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+4, "#a78bfa", true);
+        if (m.linkedAssemblyName) drawLabel(ctx, `? ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+4, "#a78bfa", true);
       } else if (m.type === "wall" && m.points.length >= 2) {
         const pts = m.points.map(pdfToCanvas);
         ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
@@ -544,14 +557,14 @@ function TakeoffInner() {
           : pts[midIdx];
         drawLabel(ctx, `${fmt2(m.result)} ft²`, labelPt.x, labelPt.y-14, col);
         drawLabel(ctx, m.label, labelPt.x, labelPt.y+4, "#f472b6", true);
-        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, labelPt.x, labelPt.y+22, "#a78bfa", true);
+        if (m.linkedAssemblyName) drawLabel(ctx, `? ${m.linkedAssemblyName}`, labelPt.x, labelPt.y+22, "#a78bfa", true);
       } else if ((m.type==="area"||m.type==="volume") && m.points.length>=3) {
         const pts = m.points.map(pdfToCanvas);
         ctx.strokeStyle=col; ctx.fillStyle=col+"28"; ctx.lineWidth=selected?2.5:1.5;
         ctx.beginPath(); pts.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);}); ctx.closePath(); ctx.fill(); ctx.stroke();
         const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length, cy=pts.reduce((s,p)=>s+p.y,0)/pts.length;
         drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, cx, cy, col);
-        if (m.linkedAssemblyName) drawLabel(ctx, `⚡ ${m.linkedAssemblyName}`, cx, cy+20, "#a78bfa", true);
+        if (m.linkedAssemblyName) drawLabel(ctx, `? ${m.linkedAssemblyName}`, cx, cy+20, "#a78bfa", true);
       } else if (m.type==="count") {
         m.points.forEach((p,i)=>{
           const cp=pdfToCanvas(p);
@@ -648,7 +661,7 @@ function TakeoffInner() {
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [drawAllWithPdf]);
 
-  // ─── Fit view ────────────────────────────────────────────────────────────────
+  // --- Fit view ----------------------------------------------------------------
   function fitView() {
     const c = containerRef.current;
     if (!c || pdfPageSize.x === 0) return;
@@ -661,7 +674,7 @@ function TakeoffInner() {
   }
   useEffect(() => { if (pdfPageSize.x > 0) fitView(); }, [pdfPageSize]);
 
-  // ─── DB init ─────────────────────────────────────────────────────────────────
+  // --- DB init -----------------------------------------------------------------
   useEffect(() => {
     if (!projectId) return;
     async function init() {
@@ -687,7 +700,9 @@ function TakeoffInner() {
         // Restore calibration
         if (session?.calibration) {
           const c = session.calibration;
-          setCalibration(c); calibRef.current = c;
+          setCalibrations(c);
+calibRef.current =
+  c[pageNum] || null;
         }
 
         // Restore page metadata (labels, hidden pages)
@@ -747,29 +762,60 @@ function TakeoffInner() {
     init();
   }, [projectId]);
 
-  // Auto-save measurements
+  // Save flush (shared by debounce, unmount, beforeunload, and explicit actions)
+  const savingRef = useRef(false);
+  const pendingFlushPageRef = useRef<number | null>(null);
+
+  const flushMeasurementsSave = useCallback(async (pageToSave: number) => {
+    if (!sessionIdRef.current) return;
+    if (savingRef.current) { pendingFlushPageRef.current = pageToSave; return; }
+    savingRef.current = true;
+    try {
+      await supabase.from("takeoff_measurements").delete().eq("session_id", sessionIdRef.current).eq("page_number", pageToSave);
+      const current = measurementsRef.current.filter(m => (m.pageNumber ?? 1) === pageToSave);
+      if (current.length > 0) {
+        await supabase.from("takeoff_measurements").insert(current.map(m => ({
+          session_id: sessionIdRef.current, company_id: companyIdRef.current, project_id: projectId,
+          page_number: pageToSave, tool_type: m.type, type: m.type, points: m.points, result: m.result, unit: m.unit,
+          closed_shape: false, multiplier: 1, waste_percent: 0, sort_order: 0, is_deleted: false,
+          capture_mode: "manual", status: "active",
+          geometry_json: m.points, anchor_points_json: m.points,
+          formula_inputs_json: {}, resolved_fields_json: {}, metadata: {}, client_visible: true,
+          linked_item_id: m.linkedItemId || null, linked_assembly_id: m.linkedAssemblyId || null,
+          meta: { label:m.label, color:m.color, timestamp:m.timestamp, linked_assembly_name:m.linkedAssemblyName, linked_item_name:m.linkedItemName },
+        })));
+      }
+      await supabase.from("takeoff_sessions").update({ last_page_number: pageToSave }).eq("id", sessionIdRef.current);
+    } catch (e:any) { console.warn("Measurement save failed:", e?.message); }
+    finally {
+      savingRef.current = false;
+      if (pendingFlushPageRef.current !== null) {
+        const next = pendingFlushPageRef.current;
+        pendingFlushPageRef.current = null;
+        flushMeasurementsSave(next);
+      }
+    }
+  }, [projectId]);
+
+  // Debounced auto-save while drawing
   useEffect(() => {
     if (!sessionId || !dbReady) return;
-    const tid = setTimeout(async () => {
-      try {
-        await supabase.from("takeoff_measurements").delete().eq("session_id", sessionIdRef.current).eq("page_number", pageNum);
-        if (pageMeasurements.length > 0) {
-          await supabase.from("takeoff_measurements").insert(pageMeasurements.map(m => ({
-            session_id: sessionIdRef.current, company_id: companyIdRef.current, project_id: projectId,
-            page_number: pageNum, tool_type: m.type, type: m.type, points: m.points, result: m.result, unit: m.unit,
-            closed_shape: false, multiplier: 1, waste_percent: 0, sort_order: 0, is_deleted: false,
-            capture_mode: "manual", status: "active",
-            geometry_json: m.points, anchor_points_json: m.points,
-            formula_inputs_json: {}, resolved_fields_json: {}, metadata: {}, client_visible: true,
-            linked_item_id: m.linkedItemId || null, linked_assembly_id: m.linkedAssemblyId || null,
-            meta: { label:m.label, color:m.color, timestamp:m.timestamp, linked_assembly_name:m.linkedAssemblyName, linked_item_name:m.linkedItemName },
-          })));
-        }
-        await supabase.from("takeoff_sessions").update({ last_page_number: pageNum }).eq("id", sessionIdRef.current);
-      } catch (e:any) { console.warn("Auto-save failed:", e?.message); }
-    }, 800);
+    const tid = setTimeout(() => { flushMeasurementsSave(pageNum); }, 800);
     return () => clearTimeout(tid);
-  }, [pageMeasurements, sessionId, dbReady, pageNum]);
+  }, [pageMeasurements, sessionId, dbReady, pageNum, flushMeasurementsSave]);
+
+  // Flush on unmount (nav away, browser back, route change)
+  useEffect(() => {
+    return () => { if (sessionIdRef.current) flushMeasurementsSave(pageNum); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Flush on tab close / refresh
+  useEffect(() => {
+    function onBeforeUnload() { if (sessionIdRef.current) flushMeasurementsSave(pageNum); }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [pageNum, flushMeasurementsSave]);
 
 
   // Auto-save page metadata (labels, hidden pages)
@@ -782,7 +828,7 @@ function TakeoffInner() {
     }, 800);
     return () => clearTimeout(tid);
   }, [pageMeta, dbReady]);
-  // ─── PDF upload ───────────────────────────────────────────────────────────────
+  // --- PDF upload ---------------------------------------------------------------
   async function deletePdfFile(fileIdx: number) {
     const file = pdfFiles[fileIdx];
     if (!file) return;
@@ -844,7 +890,7 @@ function TakeoffInner() {
     finally { setLoadingPdf(false); }
   }
 
-  // ─── Canvas events ────────────────────────────────────────────────────────────
+  // --- Canvas events ------------------------------------------------------------
   function onMouseMove(e: React.MouseEvent) {
     const p = screenToPdf(e.clientX, e.clientY);
     setHoverPt(p); hoverRef.current = p;
@@ -1065,7 +1111,7 @@ function TakeoffInner() {
     return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); };
   }, []);
 
-  // ─── Calibration confirm ──────────────────────────────────────────────────────
+  // --- Calibration confirm ------------------------------------------------------
   function confirmCalibration() {
     const feetPart = parseFloat(calibFeet) || 0;
     const inchesPart = parseFloat(calibInches) || 0;
@@ -1073,14 +1119,22 @@ function TakeoffInner() {
     if (feet <= 0 || calibPts.length < 2) return;
     const px = dist(calibPts[0], calibPts[1]);
     const nc = { p1: calibPts[0], p2: calibPts[1], feetPerPx: feet / px };
-    setCalibration(nc); calibRef.current = nc;
+    const next = {
+  ...calibrations,
+  [pageNum]: nc,
+};
+
+setCalibrations(next);
+
+calibRef.current =
+  next[pageNum];
     setCalibrating(false); calibratingRef.current = false; setCalibPts([]); calibPtsRef.current = [];
     setShowCalibModal(false);
-    if (sessionIdRef.current) { supabase.from("takeoff_sessions").update({ calibration: nc }).eq("id", sessionIdRef.current).then(({error}) => { if (error) console.error("CALIBRATION SAVE ERROR:", error); else console.log("CALIBRATION SAVE SUCCESS"); }); } else { console.warn("CALIBRATION NOT SAVED - no sessionId"); }
+    if (sessionIdRef.current) { supabase.from("takeoff_sessions").update({ calibration: next }).eq("id", sessionIdRef.current).then(({error}) => { if (error) console.error("CALIBRATION SAVE ERROR:", error); else console.log("CALIBRATION SAVE SUCCESS"); }); } else { console.warn("CALIBRATION NOT SAVED - no sessionId"); }
     scheduleRender();
   }
 
-  // ─── Generate Milestones from Takeoff ────────────────────────────────────────
+  // --- Generate Milestones from Takeoff ----------------------------------------
   const [generatingMilestones, setGeneratingMilestones] = useState(false);
   const [milestoneMsg, setMilestoneMsg] = useState<string|null>(null);
 
@@ -1089,6 +1143,7 @@ function TakeoffInner() {
     if(!pid || measurements.length===0) return;
     setGeneratingMilestones(true); setMilestoneMsg(null);
     try {
+      await flushMeasurementsSave(pageNum);
       // Get company_id
       const {data:{user}} = await supabase.auth.getUser();
       if(!user) throw new Error("Not authenticated");
@@ -1096,7 +1151,7 @@ function TakeoffInner() {
       const companyId = profile?.company_id;
       if(!companyId) throw new Error("No company");
 
-      // Group measurements by assembly/category → milestones
+      // Group measurements by assembly/category ? milestones
       const groups: Record<string, {name:string; measurements: typeof measurements}> = {};
       measurements.forEach(m => {
         const key = m.linkedAssemblyName || "General Works";
@@ -1135,36 +1190,65 @@ function TakeoffInner() {
           tasksCreated++;
         }
       }
-      setMilestoneMsg(`✅ Created ${milestonesCreated} milestones and ${tasksCreated} tasks`);
+      setMilestoneMsg(`? Created ${milestonesCreated} milestones and ${tasksCreated} tasks`);
       setTimeout(()=>setMilestoneMsg(null), 4000);
     } catch(e:any) {
-      setMilestoneMsg(`❌ ${e.message}`);
+      setMilestoneMsg(`? ${e.message}`);
     } finally {
       setGeneratingMilestones(false);
     }
   }
 
-  // ─── Export & Send to BOQ ─────────────────────────────────────────────────────
+  // --- Export & Send to BOQ -----------------------------------------------------
   function exportCSV() {
     const rows = measurements.map(m => [m.type, m.unit === "ft" ? feetInches(m.result) : fmt2(m.result), m.unit, m.linkedAssemblyName||"", m.linkedItemName||""].join(","));
     const csv = ["Type,Result,Unit,Assembly,Item",...rows].join("\n");
     const a = document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download=`takeoff_${Date.now()}.csv`; a.click();
   }
 
-  function sendToBOQ() {
-    const groups: Record<string, {name:string;value:number;metric:string}> = {};
-    measurements.forEach(m => {
-      const key = m.linkedAssemblyName || m.linkedItemName || m.type;
-      if (!groups[key]) groups[key] = { name:key, value:0, metric:m.unit };
-      groups[key].value += m.result;
-    });
-    const data = Object.values(groups);
-    const pid = routeProjectId || currentProject?.id;
-    if (pid) nav(`/projects/${pid}/boq?groups=${encodeURIComponent(JSON.stringify(data))}`);
-    else nav(`/boq?groups=${encodeURIComponent(JSON.stringify(data))}`);
-  }
+  async function sendToBOQ() {
+    await flushMeasurementsSave(pageNum);
 
-  // ─── Stats ─────────────────────────────────────────────────────────────────────
+  const groups: Record<string, {
+    name:string;
+    value:number;
+    metric:string;
+    assemblyId?: string;
+  }> = {};
+
+  measurements.forEach(m => {
+    const key =
+      m.linkedAssemblyId ||
+      m.linkedItemName ||
+      m.type;
+
+    if (!groups[key]) {
+      groups[key] = {
+        name:
+          m.linkedAssemblyName ||
+          m.linkedItemName ||
+          m.type,
+        value: 0,
+        metric: m.unit,
+        assemblyId: m.linkedAssemblyId,
+      };
+    }
+
+    groups[key].value += m.result;
+  });
+
+  const data = Object.values(groups);
+
+  const pid =
+    routeProjectId ||
+    currentProject?.id;
+
+  if (pid)
+    nav(`/projects/${pid}/boq?groups=${encodeURIComponent(JSON.stringify(data))}`);
+  else
+    nav(`/boq?groups=${encodeURIComponent(JSON.stringify(data))}`);
+}
+// --- Stats ---------------------------------------------------------------------
   const stats = useMemo(() => ({
     total: pageMeasurements.length,
     lines: pageMeasurements.filter(m=>m.type==="line").reduce((s,m)=>s+m.result, 0),
@@ -1189,11 +1273,11 @@ function TakeoffInner() {
 
   const curTool = TOOL_CFG[tool];
 
-  // ─── Render ───────────────────────────────────────────────────────────────────
+  // --- Render -------------------------------------------------------------------
   return (
     <div className="flex h-screen flex-col bg-[#080b10] text-slate-100 select-none overflow-hidden">
 
-      {/* ── Top Bar ── */}
+      {/* -- Top Bar -- */}
       <header className="flex-shrink-0 h-12 flex items-center gap-3 px-4 bg-[#0d1117] border-b border-white/[0.06] z-20">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-sky-500 to-blue-700 flex items-center justify-center flex-shrink-0">
@@ -1225,8 +1309,14 @@ function TakeoffInner() {
         </button>
         {calibration && !calibrating && (
           <button onClick={()=>{
-              setCalibration(null); calibRef.current = null;
-              if (sessionIdRef.current) supabase.from("takeoff_sessions").update({ calibration: null }).eq("id", sessionIdRef.current);
+              setCalibrations(prev => {
+  const next = { ...prev };
+  delete next[pageNum];
+  return next;
+});
+
+calibRef.current = null;
+              if (sessionIdRef.current) supabase.from("takeoff_sessions").update({ calibration: calibrations }).eq("id", sessionIdRef.current);
             }}
             title="Clear calibration and start over"
             className="flex items-center justify-center w-6 h-6 rounded-lg border border-white/[0.08] text-slate-500 hover:text-red-400 hover:border-red-500/30 transition">
@@ -1252,15 +1342,15 @@ function TakeoffInner() {
         </button>
         <button onClick={generateMilestones} disabled={measurements.length===0||generatingMilestones}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold disabled:opacity-40 transition shadow-sm">
-          <Layers size={12}/> {generatingMilestones?"Generating...":"→ Milestones"}
+          <Layers size={12}/> {generatingMilestones?"Generating...":"? Milestones"}
         </button>
         {milestoneMsg&&<div className="text-[10px] text-emerald-400 font-semibold">{milestoneMsg}</div>}
       </header>
 
-      {/* ── Main layout ── */}
+      {/* -- Main layout -- */}
       <div className="flex flex-1 min-h-0">
 
-        {/* ── Left Tool Bar ── */}
+        {/* -- Left Tool Bar -- */}
         <div className="flex-shrink-0 w-14 flex flex-col items-center py-3 gap-1 bg-[#0d1117] border-r border-white/[0.06] z-10">
           {(Object.entries(TOOL_CFG) as [ToolMode, typeof TOOL_CFG[ToolMode]][]).map(([key, cfg]) => (
             <button key={key} onClick={()=>{if(key==="wall"){setShowWallSetup(true);return;}setTool(key);toolRef.current=key;setInProgress([]);inProgressRef.current=[];scheduleRender();}}
@@ -1280,7 +1370,7 @@ function TakeoffInner() {
         </div>
 
 
-        {/* ── Pages Panel ── */}
+        {/* -- Pages Panel -- */}
         <div className={`flex-shrink-0 flex flex-col bg-[#0d1117] border-r border-white/[0.06] z-10 transition-all ${pagesPanelCollapsed ? "w-10" : "w-64"}`}>
           <button onClick={()=>setPagesPanelCollapsed(v=>!v)}
             className="flex items-center justify-center h-10 hover:bg-white/[0.05] text-slate-500 hover:text-slate-300 transition border-b border-white/[0.06]"
@@ -1342,7 +1432,7 @@ function TakeoffInner() {
             </div>
           )}
         </div>
-        {/* ── Canvas Area ── */}
+        {/* -- Canvas Area -- */}
         <div className="flex-1 relative min-w-0 overflow-hidden bg-[#080b10]"
           ref={containerRef}
           style={{ cursor: panningRef.current ? "grabbing" : (spaceRef.current || tool==="pan") ? "grab" : tool==="select" ? "default" : "crosshair" }}
@@ -1422,7 +1512,7 @@ function TakeoffInner() {
           )}
         </div>
 
-        {/* ── Right Panel ── */}
+        {/* -- Right Panel -- */}
         <div className="flex-shrink-0 w-72 flex flex-col bg-[#0d1117] border-l border-white/[0.06] z-10">
 
           {/* Tabs */}
@@ -1437,7 +1527,7 @@ function TakeoffInner() {
 
           <div className="flex-1 overflow-y-auto">
 
-            {/* ── Templates Tab ── */}
+            {/* -- Templates Tab -- */}
             {rightTab==="templates"&&(
               <div className="p-3 space-y-3">
                 {/* Search */}
@@ -1523,7 +1613,7 @@ function TakeoffInner() {
               </div>
             )}
 
-            {/* ── Measurements Tab ── */}
+            {/* -- Measurements Tab -- */}
             {rightTab==="measurements"&&(
               <div className="p-3 space-y-2">
                 {pageMeasurements.length===0?(
@@ -1536,7 +1626,7 @@ function TakeoffInner() {
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:m.color}}/>
                         <div className="flex-1 min-w-0">
                           <div className="text-[11px] font-semibold text-slate-200">{m.unit === "ft" ? feetInches(m.result) : fmt2(m.result)} <span className="text-slate-600 font-normal">{m.unit === "ft" ? "" : m.unit}</span></div>
-                          {m.linkedAssemblyName&&<div className="text-[9px] text-purple-400 truncate">⚡ {m.linkedAssemblyName}</div>}
+                          {m.linkedAssemblyName&&<div className="text-[9px] text-purple-400 truncate">? {m.linkedAssemblyName}</div>}
                           {m.linkedItemName&&!m.linkedAssemblyName&&<div className="text-[9px] text-blue-400 truncate">{m.linkedItemName}</div>}
                           <div className="text-[9px] text-slate-700 capitalize">{m.type}</div>
                         </div>
@@ -1555,7 +1645,7 @@ function TakeoffInner() {
               </div>
             )}
 
-            {/* ── Stats Tab ── */}
+            {/* -- Stats Tab -- */}
             {rightTab==="stats"&&(
               <div className="p-3 space-y-3">
                 <div className="grid grid-cols-2 gap-2">
@@ -1565,7 +1655,7 @@ function TakeoffInner() {
                     ["Area ft²", fmt2(stats.areas), "text-purple-300"],
                     ["Count", stats.counts, "text-amber-300"],
                     ["Volume ft³", fmt2(stats.volumes), "text-emerald-300"],
-                    ["Scale", calibration ? "Set ✓" : "Not set", calibration?"text-emerald-400":"text-amber-400"],
+                    ["Scale", calibration ? "Set ?" : "Not set", calibration?"text-emerald-400":"text-amber-400"],
                   ].map(([l,v,c])=>(
                     <div key={l as string} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-3">
                       <div className="text-[9px] text-slate-700 uppercase tracking-widest mb-1">{l}</div>
@@ -1601,7 +1691,7 @@ function TakeoffInner() {
         </div>
       </div>
 
-      {/* ── Calibration Modal ── */}
+      {/* -- Calibration Modal -- */}
       {showCalibModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
@@ -1647,7 +1737,7 @@ function TakeoffInner() {
       )}
 
 
-      {/* ── Wall Setup Modal ── */}
+      {/* -- Wall Setup Modal -- */}
       {showWallSetup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
           <div className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
@@ -1710,7 +1800,7 @@ function TakeoffInner() {
           </div>
         </div>
       )}
-      {/* ── Volume Depth Modal ── */}
+      {/* -- Volume Depth Modal -- */}
       {showDepthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
           <div className="w-full max-w-xs rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
