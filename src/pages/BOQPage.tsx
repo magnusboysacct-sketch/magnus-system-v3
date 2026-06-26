@@ -1,5 +1,5 @@
-﻿// src/pages/BOQPage.tsx � v3 Rebuild: staff-friendly, search-first picker, clear UX
-import React, { useEffect, useMemo, useState } from "react";
+// src/pages/BOQPage.tsx ? v3 Rebuild: staff-friendly, search-first picker, clear UX
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Plus, Trash2, ChevronRight, ChevronDown, Save, CheckCircle,
@@ -152,7 +152,7 @@ function FindItemModal({
             </div>
             <div>
               <div className="text-sm font-bold text-slate-100">Find Item from Rate Library</div>
-              <div className="text-[11px] text-slate-500">{rateItems.length} items available � rate auto-fills</div>
+              <div className="text-[11px] text-slate-500">{rateItems.length} items available ? rate auto-fills</div>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">
@@ -165,7 +165,7 @@ function FindItemModal({
           <div className="relative">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
             <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search by name, category, or description�"
+              placeholder="Search by name, category, or description?"
               className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-9 pr-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
           </div>
           <div className="flex gap-1.5 flex-wrap">
@@ -207,8 +207,8 @@ function FindItemModal({
                   <div className="text-sm font-semibold text-slate-200 group-hover:text-white transition truncate">{item.item_name}</div>
                   <div className="flex items-center gap-2 mt-0.5">
                     {item.category && <span className="text-[10px] text-slate-600">{item.category}</span>}
-                    {item.variant && <span className="text-[10px] text-slate-700">� {item.variant}</span>}
-                    {item.description && <span className="text-[10px] text-slate-700 truncate">� {item.description}</span>}
+                    {item.variant && <span className="text-[10px] text-slate-700">? {item.variant}</span>}
+                    {item.description && <span className="text-[10px] text-slate-700 truncate">? {item.description}</span>}
                   </div>
                 </div>
                 <div className="flex-shrink-0 text-right">
@@ -226,7 +226,7 @@ function FindItemModal({
             );
           })}
           {filtered.length === 80 && (
-            <div className="px-5 py-3 text-[11px] text-slate-600 text-center">Showing first 80 results � refine your search to see more</div>
+            <div className="px-5 py-3 text-[11px] text-slate-600 text-center">Showing first 80 results ? refine your search to see more</div>
           )}
         </div>
       </div>
@@ -338,21 +338,111 @@ export default function BOQPage() {
   }, []);
 
   // --- Takeoff import --------------------------------------------------------
-  useEffect(() => {
-    const groupsParam = searchParams.get("groups");
-    if (!groupsParam) return;
-    try {
-      const groups = JSON.parse(groupsParam);
-      if (Array.isArray(groups) && groups.length > 0) {
-        setSections(prev => [...prev, {
-          id: safeId(), masterCategoryId: null, title: "Takeoff Import",
-          scope: "Quantities imported from takeoff measurements",
-          items: groups.map((g: any) => ({ id: safeId(), pick_type: "manual", pick_category: "", pick_item: "", pick_variant: "", cost_item_id: null, item_name: g.name || g.groupName || "Imported Item", description: `${g.metric} measurement`, unit_id: null, qty: Number(g.value) || 0, rate: 0, rate_source: "" }))
-        }]);
-        setSearchParams({});
+  const lastImportedParamRef = useRef<string>("");
+
+useEffect(() => {
+  const groupsParam = searchParams.get("groups");
+
+  if (!groupsParam) return;
+
+  if (lastImportedParamRef.current === groupsParam)
+    return;
+
+  const needsExplosion =
+    groupsParam.includes('"assemblyId"');
+
+  if (
+    needsExplosion &&
+    (
+      assemblyComponents.length === 0 ||
+      rateItems.length === 0
+    )
+  ) {
+    return;
+  }
+
+  try {
+    const groups = JSON.parse(groupsParam);
+
+    if (
+      Array.isArray(groups) &&
+      groups.length > 0
+    ) {
+      const importedItems: BOQItemRow[] = [];
+
+      for (const g of groups) {
+
+        if (g.assemblyId) {
+
+          const exploded =
+            explodeAssembly(
+              g.assemblyId,
+              Number(g.value) || 0,
+              assemblyComponents,
+              rateItems,
+              usableUnits
+            );
+
+          if (exploded.length > 0) {
+            importedItems.push(...exploded);
+            continue;
+          }
+        }
+
+        importedItems.push({
+          id: safeId(),
+          pick_type: "manual",
+          pick_category: "",
+          pick_item: "",
+          pick_variant: "",
+          cost_item_id: null,
+          item_name:
+            g.name ||
+            g.groupName ||
+            "Imported Item",
+          description:
+            `${g.metric} measurement`,
+          unit_id: null,
+          qty:
+            Number(g.value) || 0,
+          rate: 0,
+          rate_source: "",
+        });
       }
-    } catch (e) { console.error("Takeoff parse error:", e); }
-  }, [searchParams, setSearchParams]);
+
+      lastImportedParamRef.current =
+        groupsParam;
+
+      setSections(prev => [
+        ...prev,
+        {
+          id: safeId(),
+          masterCategoryId: null,
+          title: "Takeoff Import",
+          scope:
+            "Quantities imported from takeoff measurements",
+          items: importedItems,
+        }
+      ]);
+
+      setSearchParams({});
+    }
+
+  } catch (e) {
+    console.error(
+      "Takeoff parse error:",
+      e
+    );
+  }
+
+}, [
+  searchParams,
+  setSearchParams,
+  assemblies,
+  assemblyComponents,
+  rateItems,
+  usableUnits
+]);
 
   // --- BOQ Persistence -------------------------------------------------------
   async function loadLatestBoq(projectId: string) {
@@ -537,21 +627,89 @@ export default function BOQPage() {
     const u = usableUnits.find((x: any) => getUnitLabel(x).toLowerCase() === unitName.toLowerCase());
     return u ? getUnitId(u) : null;
   }
-  function addAssembly(sectionId: string, assemblyId: string, qtyStr: string) {
-    const qtyBase = numOr(qtyStr, 0);
-    if (!sectionId || !assemblyId || qtyBase <= 0) { alert("Pick an assembly and enter qty > 0."); return; }
-    const comps = assemblyComponents.filter(c => c.assembly_id === assemblyId).sort((a, b) => a.sort_order - b.sort_order);
-    if (comps.length === 0) { alert("This assembly has no components yet."); return; }
-    const newRows: BOQItemRow[] = comps.map(c => {
-      const r = rateItems.find(x => x.id === c.cost_item_id) ?? null;
-      const finalQty = qtyBase * numOr(c.quantity_factor, 1) * (1 + numOr(c.waste_percent, 0) / 100);
-      return { id: safeId(), pick_type: mapLineType(c.line_type), pick_category: (r?.category ?? "").trim(), pick_item: (r?.item_name ?? "").trim(), pick_variant: (r?.variant ?? "").trim(), cost_item_id: c.cost_item_id, item_name: r?.item_name ?? "", description: (r?.description ?? "").trim() || c.notes || "", unit_id: matchUnitId(r?.unit ?? null), qty: Number.isFinite(finalQty) ? finalQty : 0, rate: numOr(r?.current_rate ?? 0, 0), rate_source: "assembly" };
-    });
-    setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: [...s.items, ...newRows] }));
-    setAsmModal({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" });
+  function explodeAssembly(
+  assemblyId: string,
+  qtyBase: number,
+  assemblyComponents: AssemblyComponentRow[],
+  rateItems: RateItem[],
+  usableUnits: any[]
+): BOQItemRow[] {
+  const comps = assemblyComponents
+    .filter(c => c.assembly_id === assemblyId)
+    .sort((a, b) => a.sort_order - b.sort_order);
+
+  return comps
+    .map(c => {
+      const r = rateItems.find(x => x.id === c.cost_item_id);
+      if (!r) return null;
+
+      const finalQty =
+        qtyBase *
+        numOr(c.quantity_factor, 1) *
+        (1 + numOr(c.waste_percent, 0) / 100);
+
+      const unitMatch = r.unit
+        ? usableUnits.find((u:any)=>
+            getUnitLabel(u).toLowerCase() === (r.unit || "").toLowerCase()
+          )
+        : null;
+
+      return {
+        id: safeId(),
+        pick_type: mapLineType(c.line_type),
+        pick_category: (r.category ?? "").trim(),
+        pick_item: (r.item_name ?? "").trim(),
+        pick_variant: (r.variant ?? "").trim(),
+        cost_item_id: c.cost_item_id,
+        item_name: r.item_name ?? "",
+        description: (r.description ?? "").trim() || c.notes || "",
+        unit_id: unitMatch ? getUnitId(unitMatch) : null,
+        qty: Number.isFinite(finalQty) ? finalQty : 0,
+        rate: numOr(r.current_rate ?? 0, 0),
+        rate_source: "assembly",
+      };
+    })
+    .filter(Boolean) as BOQItemRow[];
+}
+
+function addAssembly(sectionId: string, assemblyId: string, qtyStr: string) {
+  const qtyBase = numOr(qtyStr, 0);
+
+  if (!sectionId || !assemblyId || qtyBase <= 0) {
+    alert("Pick an assembly and enter qty > 0.");
+    return;
   }
 
-  // --- Generate Actions ------------------------------------------------------
+  const newRows = explodeAssembly(
+    assemblyId,
+    qtyBase,
+    assemblyComponents,
+    rateItems,
+    usableUnits
+  );
+
+  if (newRows.length === 0) {
+    alert("This assembly has no components yet.");
+    return;
+  }
+
+  setSections(prev =>
+    prev.map(s =>
+      s.id !== sectionId
+        ? s
+        : { ...s, items: [...s.items, ...newRows] }
+    )
+  );
+
+  setAsmModal({
+    open: false,
+    sectionId: null,
+    search: "",
+    selectedId: "",
+    qty: "1"
+  });
+}
+// --- Generate Actions ------------------------------------------------------
   async function generateEstimate() {
     if (status !== "approved") { setPersistError("Approve the BOQ first."); return; }
     if (!routeProjectId || !boqId) { setPersistError("Save the BOQ first."); return; }
@@ -667,7 +825,7 @@ Respond in plain English, section by section. Keep it brief and actionable. Max 
         }
       } catch {}
     }
-    addAiMessage(`? Filled rates for ${filled} item${filled>1?"s":""}${noRate.length>5?` (first 5 of ${noRate.length} � run again for more)`:""}.`);
+    addAiMessage(`? Filled rates for ${filled} item${filled>1?"s":""}${noRate.length>5?` (first 5 of ${noRate.length} ? run again for more)`:""}.`);
     setAiPanelLoading(false);
   }
 
@@ -723,9 +881,9 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             </div>
           </div>
 
-          {/* Right � action buttons */}
+          {/* Right ? action buttons */}
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {persistLoading && <span className="text-[11px] text-slate-500 flex items-center gap-1"><RefreshCw size={11} className="animate-spin"/>Saving�</span>}
+            {persistLoading && <span className="text-[11px] text-slate-500 flex items-center gap-1"><RefreshCw size={11} className="animate-spin"/>Saving?</span>}
             {saveSuccess && !persistLoading && <span className="text-[11px] text-emerald-400 flex items-center gap-1"><CheckCircle size={11}/>Saved</span>}
             {persistError && <span className="text-[11px] text-red-400 flex items-center gap-1 max-w-[160px] truncate"><AlertCircle size={11}/>{persistError}</span>}
 
@@ -803,7 +961,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               <FileSpreadsheet size={24} className="text-slate-600"/>
             </div>
             <h3 className="text-sm font-semibold text-slate-300 mb-1.5">No sections yet</h3>
-            <p className="text-xs text-slate-600 mb-5 max-w-xs">Start by adding a section. Each section groups related items � e.g. "Foundations", "Blockwork", "Roofing".</p>
+            <p className="text-xs text-slate-600 mb-5 max-w-xs">Start by adding a section. Each section groups related items ? e.g. "Foundations", "Blockwork", "Roofing".</p>
             <button onClick={addSection} disabled={!canEdit || !activeProjectId}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/25 text-cyan-300 text-xs font-semibold disabled:opacity-40 transition">
               <Plus size={13}/> Add First Section
@@ -826,13 +984,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
 
                 <select value={section.masterCategoryId ?? ""} disabled={!canEdit} onChange={e => onPickCategory(section.id, e.target.value)}
                   className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1 text-[11px] text-slate-400 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50 max-w-[160px] flex-shrink-0">
-                  <option value="">Category�</option>
+                  <option value="">Category?</option>
                   {usableCategories.map((c: any) => <option key={getCategoryId(c)} value={getCategoryId(c)}>{getCategoryLabel(c)}</option>)}
                 </select>
 
                 <input value={section.title} disabled={!canEdit} onChange={e => updateSection(section.id, { title: e.target.value })}
                   className="flex-1 bg-transparent text-sm font-bold text-slate-100 placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
-                  placeholder="Section title�"/>
+                  placeholder="Section title?"/>
 
                 <div className="flex items-center gap-3 flex-shrink-0 ml-auto">
                   {sectionWarnings > 0 && (
@@ -863,7 +1021,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 <div className="px-4 py-1.5 bg-white/[0.01] border-b border-white/[0.04]">
                   <input value={section.scope} disabled={!canEdit} onChange={e => updateSection(section.id, { scope: e.target.value })}
                     className="w-full bg-transparent text-[11px] text-slate-600 placeholder-slate-800 focus:outline-none focus:text-slate-400 disabled:opacity-50"
-                    placeholder="Section scope / description (e.g. All 6&quot; block walls including mortar and ties)�"/>
+                    placeholder="Section scope / description (e.g. All 6&quot; block walls including mortar and ties)?"/>
                 </div>
               )}
 
@@ -907,7 +1065,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             <div>
                               {item.pick_type
                                 ? <TypeChip type={item.pick_type}/>
-                                : <span className="text-[10px] text-slate-800">�</span>}
+                                : <span className="text-[10px] text-slate-800">?</span>}
                             </div>
 
                             {/* Item name + description */}
@@ -916,13 +1074,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                 <input value={item.item_name} disabled={!canEdit}
                                   onChange={e => updateItem(section.id, item.id, { item_name: e.target.value, rate_source: "manual" })}
                                   className="flex-1 bg-transparent text-xs font-semibold text-slate-200 placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
-                                  placeholder="Item name�"/>
-                                {isMissingRate && <span title="Missing rate � qty set but no rate"><AlertTriangle size={10} className="text-amber-500 flex-shrink-0" /></span>}
+                                  placeholder="Item name?"/>
+                                {isMissingRate && <span title="Missing rate ? qty set but no rate"><AlertTriangle size={10} className="text-amber-500 flex-shrink-0" /></span>}
                               </div>
                               <input value={item.description} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { description: e.target.value })}
                                 className="w-full bg-transparent text-[10px] text-slate-600 placeholder-slate-800 focus:outline-none disabled:opacity-60"
-                                placeholder="Description�"/>
+                                placeholder="Description?"/>
                               {item.rate_source === "library" && (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/15 font-medium">Library</span>
                               )}
@@ -962,7 +1120,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                               <select value={item.unit_id ?? ""} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { unit_id: e.target.value || null })}
                                 className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg px-1.5 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50">
-                                <option value="">�</option>
+                                <option value="">?</option>
                                 {usableUnits.map((u: any) => <option key={getUnitId(u)} value={getUnitId(u)}>{getUnitLabel(u)}</option>)}
                               </select>
                             </div>
@@ -1048,7 +1206,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 <div className="relative flex-1">
                   <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
                   <input autoFocus value={asmModal.search} onChange={e => setAsmModal(p => ({ ...p, search: e.target.value }))}
-                    placeholder="Search assemblies�"
+                    placeholder="Search assemblies?"
                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50"/>
                 </div>
                 <input value={asmModal.qty} onChange={e => setAsmModal(p => ({ ...p, qty: e.target.value }))} type="number"
@@ -1067,7 +1225,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                       className={`w-full text-left px-4 py-3 border-b border-white/[0.04] last:border-0 flex items-center justify-between transition ${selected ? "bg-cyan-500/10" : "hover:bg-white/[0.03]"}`}>
                       <div>
                         <div className="text-sm font-semibold text-slate-200">{a.name}</div>
-                        <div className="text-[10px] text-slate-600 mt-0.5">{a.category && `${a.category} � `}{cc} component{cc !== 1 ? "s" : ""}{a.unit && ` � ${a.unit}`}</div>
+                        <div className="text-[10px] text-slate-600 mt-0.5">{a.category && `${a.category} ? `}{cc} component{cc !== 1 ? "s" : ""}{a.unit && ` ? ${a.unit}`}</div>
                       </div>
                       {selected && <Check size={14} className="text-cyan-400 flex-shrink-0"/>}
                     </button>
@@ -1188,7 +1346,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               <div className="flex justify-start">
                 <div className="bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2.5 flex items-center gap-2">
                   <Loader size={12} className="text-purple-400 animate-spin"/>
-                  <span className="text-[11px] text-slate-500">Thinking�</span>
+                  <span className="text-[11px] text-slate-500">Thinking?</span>
                 </div>
               </div>
             )}
@@ -1199,14 +1357,14 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             <div className="flex gap-2">
               <input value={aiInput} onChange={e=>setAiInput(e.target.value)}
                 onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&aiChat(aiInput)}
-                placeholder="Ask anything about your BOQ�"
+                placeholder="Ask anything about your BOQ?"
                 className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-purple-500/50"/>
               <button onClick={()=>aiChat(aiInput)} disabled={!aiInput.trim()||aiPanelLoading}
                 className="p-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-40 transition">
                 <MessageSquare size={14}/>
               </button>
             </div>
-            <p className="text-[9px] text-slate-700 mt-1.5 text-center">Press Enter to send � AI uses Jamaica construction knowledge</p>
+            <p className="text-[9px] text-slate-700 mt-1.5 text-center">Press Enter to send ? AI uses Jamaica construction knowledge</p>
           </div>
         </div>
       )}
@@ -1224,3 +1382,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
     </div>
   );
 }
+
+
+
+
