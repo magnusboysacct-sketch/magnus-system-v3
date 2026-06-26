@@ -1,4 +1,4 @@
-// src/pages/SettingsCompanyPage.tsx
+﻿// src/pages/SettingsCompanyPage.tsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
@@ -169,7 +169,7 @@ export default function SettingsCompanyPage() {
         <Card>
           <CardHeader title="Company Logo"/>
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-xl border border-white/[0.08] bg-white/[0.04] flex items-center justify-center flex-shrink-0 overflow-hidden">
+            <div className="w-16 h-16 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] flex items-center justify-center flex-shrink-0 overflow-hidden">
               {logoUrl ? (
                 <img src={logoUrl} alt="Logo" className="w-full h-full object-contain"/>
               ) : (
@@ -181,7 +181,7 @@ export default function SettingsCompanyPage() {
                 {logoUrl ? "Logo loaded" : "No logo uploaded"}
               </div>
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-white/[0.1] hover:border-cyan-500/40 cursor-pointer transition">
+                <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-slate-300 dark:border-white/[0.1] hover:border-cyan-500/40 cursor-pointer transition">
                   <Upload size={13} className="text-slate-600"/>
                   <span className="text-[11px] text-slate-500">{uploadingLogo ? "Uploading..." : "Click to upload PNG or SVG"}</span>
                   <input type="file" accept="image/*" className="hidden" disabled={uploadingLogo} onChange={async (e) => {
@@ -299,8 +299,8 @@ export default function SettingsCompanyPage() {
               </button>
             </div>
             {watermarkUrl&&(
-              <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.07] bg-white/[0.02]">
-                <img src={watermarkUrl} className="w-16 h-16 object-contain rounded-lg border border-white/[0.08] bg-white/[0.04]"/>
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02]">
+                <img src={watermarkUrl} className="w-16 h-16 object-contain rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04]"/>
                 <div className="flex-1">
                   <div className="text-xs text-slate-300 font-semibold mb-1">Watermark Image</div>
                   <div className="text-[10px] text-slate-600">Current watermark uploaded</div>
@@ -310,7 +310,7 @@ export default function SettingsCompanyPage() {
             )}
             <div>
               <div className="text-xs text-slate-500 mb-2">Upload Watermark Image</div>
-              <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-white/[0.1] hover:border-cyan-500/40 cursor-pointer transition">
+              <label className="flex items-center gap-2 px-4 py-3 rounded-xl border border-dashed border-slate-300 dark:border-white/[0.1] hover:border-cyan-500/40 cursor-pointer transition">
                 <Upload size={14} className="text-slate-600"/>
                 <span className="text-xs text-slate-500">{uploadingWatermark?"Uploading...":"Click to upload PNG or SVG"}</span>
                 <input type="file" accept="image/*" className="hidden" onChange={async(e)=>{
