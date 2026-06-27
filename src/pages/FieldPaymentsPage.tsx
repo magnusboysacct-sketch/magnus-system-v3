@@ -49,7 +49,7 @@ const PT_CFG: Record<string,{color:string;bg:string;border:string;label:string;i
   advance: {color:"text-amber-400",  bg:"bg-amber-500/10",  border:"border-amber-500/20",  label:"Advance",      icon:"⚡"},
   payment: {color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20",label:"Work Payment", icon:"💰"},
   final:   {color:"text-cyan-400",   bg:"bg-cyan-500/10",   border:"border-cyan-500/20",   label:"Final Payment",icon:"✅"},
-  draft:   {color:"text-slate-400",  bg:"bg-slate-500/10",  border:"border-slate-500/20",  label:"Draft",        icon:"📝"},
+  draft:   {color:"text-slate-600 dark:text-slate-400",  bg:"bg-slate-500/10",  border:"border-slate-500/20",  label:"Draft",        icon:"📝"},
   signed:  {color:"text-violet-400", bg:"bg-violet-500/10", border:"border-violet-500/20", label:"Signed",       icon:"✓"},
 };
 
@@ -317,16 +317,16 @@ export default function FieldPaymentsPage() {
   }
 
   return(
-    <div className="min-h-screen bg-[#080b10] text-slate-100">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] text-slate-900 dark:text-slate-100">
       {/* Header */}
-      <div className="border-b border-white/[0.06] bg-[#0d1117] px-4 md:px-6 py-4">
+      <div className="border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d1117] px-4 md:px-6 py-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-lg font-bold text-slate-100">Field Payments</h1>
+            <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">Field Payments</h1>
             <p className="text-xs text-slate-500 mt-0.5">Advance · Work Payment · Final Settlement</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={loadPayments} className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-slate-500 hover:text-slate-300 transition">
+            <button onClick={loadPayments} className="p-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">
               <RefreshCw size={13} className={loading?"animate-spin":""}/>
             </button>
             <button onClick={()=>setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold transition">
@@ -343,12 +343,12 @@ export default function FieldPaymentsPage() {
             {label:"Total Paid",    value:fmtJMD(stats.totalPaid),     color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20",icon:<DollarSign size={14}/>},
             {label:"Total Advances",value:fmtJMD(stats.totalAdvances), color:"text-amber-400",  bg:"bg-amber-500/10",  border:"border-amber-500/20",  icon:<TrendingUp size={14}/>},
             {label:"Workers",       value:stats.workers,                color:"text-violet-400", bg:"bg-violet-500/10", border:"border-violet-500/20", icon:<Users size={14}/>},
-            {label:"Records",       value:stats.total,                  color:"text-slate-300",  bg:"bg-white/[0.04]",  border:"border-white/[0.07]",  icon:<FileText size={14}/>},
+            {label:"Records",       value:stats.total,                  color:"text-slate-700 dark:text-slate-300",  bg:"bg-slate-50 dark:bg-white/[0.04]",  border:"border-slate-200 dark:border-white/[0.07]",  icon:<FileText size={14}/>},
           ].map(s=>(
             <div key={s.label} className={`rounded-xl border ${s.border} ${s.bg} p-4`}>
               <div className={`${s.color} mb-2`}>{s.icon}</div>
               <div className={`text-xl font-bold ${s.color}`}>{s.value}</div>
-              <div className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold mt-0.5">{s.label}</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-600 uppercase tracking-wider font-semibold mt-0.5">{s.label}</div>
             </div>
           ))}
         </div>
@@ -359,9 +359,9 @@ export default function FieldPaymentsPage() {
             const count=t.key==="all"?payments.length:payments.filter(p=>(p.payment_type||"payment")===t.key).length;
             return(
               <button key={t.key} onClick={()=>setTab(t.key)}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition border ${tab===t.key?"bg-cyan-600 border-cyan-500 text-white":"bg-white/[0.04] border-white/[0.08] text-slate-500 hover:text-slate-300"}`}>
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition border ${tab===t.key?"bg-cyan-600 border-cyan-500 text-white":"bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-500 hover:text-slate-700 dark:text-slate-300"}`}>
                 {t.label}
-                {count>0&&<span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${tab===t.key?"bg-white/20 text-white":"bg-white/[0.08] text-slate-600"}`}>{count}</span>}
+                {count>0&&<span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${tab===t.key?"bg-white/20 text-white":"bg-white/[0.08] text-slate-500 dark:text-slate-600"}`}>{count}</span>}
               </button>
             );
           })}
@@ -369,18 +369,18 @@ export default function FieldPaymentsPage() {
 
         {/* Search */}
         <div className="relative max-w-sm">
-          <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+          <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search worker, ID, receipt #…"
-            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-cyan-500/50"/>
+            className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-cyan-500/50"/>
         </div>
 
         {/* List */}
         {loading?(
-          <div className="flex items-center justify-center py-16 text-xs text-slate-600 gap-2"><RefreshCw size={13} className="animate-spin"/> Loading…</div>
+          <div className="flex items-center justify-center py-16 text-xs text-slate-500 dark:text-slate-600 gap-2"><RefreshCw size={13} className="animate-spin"/> Loading…</div>
         ):filtered.length===0?(
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center"><HandCoins size={22} className="text-slate-700"/></div>
-            <p className="text-slate-400 text-sm font-medium">{search?"No payments match":"No payments yet"}</p>
+            <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] flex items-center justify-center"><HandCoins size={22} className="text-slate-400 dark:text-slate-700"/></div>
+            <p className="text-slate-600 dark:text-slate-400 text-sm font-medium">{search?"No payments match":"No payments yet"}</p>
             <button onClick={()=>setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition mt-1"><Plus size={12}/> New Payment</button>
           </div>
         ):(
@@ -390,7 +390,7 @@ export default function FieldPaymentsPage() {
               const st=PT_CFG[p.status]||PT_CFG.draft;
               return(
                 <button key={p.id} onClick={()=>openDetail(p)}
-                  className="w-full rounded-xl border border-white/[0.07] bg-[#0d1117] p-4 text-left hover:border-white/[0.13] transition">
+                  className="w-full rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] p-4 text-left hover:border-white/[0.13] transition">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2.5">
                       {p.id_photo_url?(
@@ -401,8 +401,8 @@ export default function FieldPaymentsPage() {
                         </div>
                       )}
                       <div>
-                        <div className="text-sm font-bold text-slate-200">{p.worker_name}</div>
-                        <div className="text-[10px] text-slate-600">{p.worker_id_number&&`ID: ${p.worker_id_number} · `}{fmtDate(p.work_date)}</div>
+                        <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{p.worker_name}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-600">{p.worker_id_number&&`ID: ${p.worker_id_number} · `}{fmtDate(p.work_date)}</div>
                       </div>
                     </div>
                     <div className="text-right">
@@ -411,11 +411,11 @@ export default function FieldPaymentsPage() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-[10px] text-slate-600 truncate">{p.work_type||"—"}</div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-600 truncate">{p.work_type||"—"}</div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-[10px] text-slate-600 capitalize">{p.payment_method?.replace("_"," ")}</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-600 capitalize">{p.payment_method?.replace("_"," ")}</span>
                       {p.signature_url&&<span className="text-[9px] text-violet-400">✓ Signed</span>}
-                      {p.receipt_number&&<span className="text-[9px] text-slate-700">#{p.receipt_number.slice(-6)}</span>}
+                      {p.receipt_number&&<span className="text-[9px] text-slate-400 dark:text-slate-700">#{p.receipt_number.slice(-6)}</span>}
                     </div>
                   </div>
                 </button>
@@ -428,15 +428,15 @@ export default function FieldPaymentsPage() {
       {/* -- DETAIL MODAL -- */}
       {selected&&(
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl max-h-[92vh] overflow-y-auto">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl max-h-[92vh] overflow-y-auto">
 
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07] sticky top-0 bg-[#0d1117] z-10">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07] sticky top-0 bg-white dark:bg-[#0d1117] z-10">
               <div>
-                <div className="text-sm font-bold text-slate-100">{selected.worker_name}</div>
-                <div className="text-[10px] text-slate-600">{fmtDate(selected.created_at)}</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100">{selected.worker_name}</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-600">{fmtDate(selected.created_at)}</div>
               </div>
-              <button onClick={()=>setSelected(null)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-600 hover:text-slate-300 transition"><X size={15}/></button>
+              <button onClick={()=>setSelected(null)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
             </div>
 
             <div className="p-5 space-y-4">
@@ -448,7 +448,7 @@ export default function FieldPaymentsPage() {
                   <div className={`flex items-center justify-between rounded-xl border ${pt.border} ${pt.bg} px-4 py-3`}>
                     <div>
                       <div className={`text-xs font-bold uppercase tracking-widest ${pt.color}`}>{pt.icon} {pt.label}</div>
-                      {selected.receipt_number&&<div className="text-[10px] text-slate-600 mt-0.5">Receipt #{selected.receipt_number}</div>}
+                      {selected.receipt_number&&<div className="text-[10px] text-slate-500 dark:text-slate-600 mt-0.5">Receipt #{selected.receipt_number}</div>}
                     </div>
                     <div className={`text-2xl font-black ${pt.color}`}>{fmtJMD(selected.total_amount)}</div>
                   </div>
@@ -456,13 +456,13 @@ export default function FieldPaymentsPage() {
               })()}
 
               {/* Worker Info */}
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-                <div className="px-4 py-2 border-b border-white/[0.05]">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Worker Details</span>
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+                <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05]">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Worker Details</span>
                 </div>
                 {selected.id_photo_url&&(
-                  <div className="p-4 border-b border-white/[0.05]">
-                    <img src={selected.id_photo_url} className="w-full max-h-36 object-contain rounded-lg border border-white/[0.08]"/>
+                  <div className="p-4 border-b border-slate-100 dark:border-white/[0.05]">
+                    <img src={selected.id_photo_url} className="w-full max-h-36 object-contain rounded-lg border border-slate-200 dark:border-white/[0.08]"/>
                   </div>
                 )}
                 <div className="divide-y divide-white/[0.04]">
@@ -473,17 +473,17 @@ export default function FieldPaymentsPage() {
                     {label:"Address",      value:selected.worker_address},
                   ].filter(r=>r.value).map(r=>(
                     <div key={r.label} className="flex items-center justify-between px-4 py-2.5">
-                      <span className="text-[10px] text-slate-600 uppercase tracking-wider">{r.label}</span>
-                      <span className="text-xs text-slate-300 font-semibold">{r.value}</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-600 uppercase tracking-wider">{r.label}</span>
+                      <span className="text-xs text-slate-700 dark:text-slate-300 font-semibold">{r.value}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* Payment Info */}
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-                <div className="px-4 py-2 border-b border-white/[0.05]">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Payment Details</span>
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+                <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05]">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Payment Details</span>
                 </div>
                 <div className="divide-y divide-white/[0.04]">
                   {[
@@ -497,8 +497,8 @@ export default function FieldPaymentsPage() {
                     {label:"Notes",        value:selected.notes},
                   ].filter(r=>r.value).map(r=>(
                     <div key={r.label} className="flex items-center justify-between px-4 py-2.5">
-                      <span className="text-[10px] text-slate-600 uppercase tracking-wider">{r.label}</span>
-                      <span className="text-xs text-slate-300 font-semibold capitalize">{r.value}</span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-600 uppercase tracking-wider">{r.label}</span>
+                      <span className="text-xs text-slate-700 dark:text-slate-300 font-semibold capitalize">{r.value}</span>
                     </div>
                   ))}
                 </div>
@@ -506,22 +506,22 @@ export default function FieldPaymentsPage() {
 
               {/* Signature */}
               {selected.signature_url&&(
-                <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
-                  <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-3">Worker Signature</div>
-                  <img src={selected.signature_url} className="h-16 object-contain bg-white rounded-lg p-2 border border-white/[0.08]"/>
-                  <div className="text-[10px] text-slate-600 mt-1">{selected.worker_name}</div>
+                <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-3">Worker Signature</div>
+                  <img src={selected.signature_url} className="h-16 object-contain bg-white rounded-lg p-2 border border-slate-200 dark:border-white/[0.08]"/>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-600 mt-1">{selected.worker_name}</div>
                 </div>
               )}
 
               {/* Worker Payment History */}
               {workerHistory.length>1&&(
-                <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-                  <div className="px-4 py-2 border-b border-white/[0.05] flex items-center justify-between">
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Worker Payment History</span>
-                    <span className="text-[9px] text-slate-600">{workerHistory.length} records</span>
+                <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+                  <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05] flex items-center justify-between">
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Worker Payment History</span>
+                    <span className="text-[9px] text-slate-500 dark:text-slate-600">{workerHistory.length} records</span>
                   </div>
                   {loadingHistory?(
-                    <div className="p-4 text-center text-xs text-slate-600">Loading…</div>
+                    <div className="p-4 text-center text-xs text-slate-500 dark:text-slate-600">Loading…</div>
                   ):(
                     <div className="divide-y divide-white/[0.04] max-h-40 overflow-y-auto">
                       {workerHistory.map(h=>{
@@ -529,8 +529,8 @@ export default function FieldPaymentsPage() {
                         return(
                           <div key={h.id} className="flex items-center justify-between px-4 py-2.5">
                             <div>
-                              <div className="text-[10px] text-slate-400">{hpt.icon} {hpt.label}</div>
-                              <div className="text-[9px] text-slate-600">{fmtDate(h.created_at)}</div>
+                              <div className="text-[10px] text-slate-600 dark:text-slate-400">{hpt.icon} {hpt.label}</div>
+                              <div className="text-[9px] text-slate-500 dark:text-slate-600">{fmtDate(h.created_at)}</div>
                             </div>
                             <span className={`text-xs font-bold ${hpt.color}`}>{fmtJMD(h.total_amount)}</span>
                           </div>
@@ -539,7 +539,7 @@ export default function FieldPaymentsPage() {
                     </div>
                   )}
                   {/* Total summary */}
-                  <div className="px-4 py-3 border-t border-white/[0.06] bg-white/[0.02] space-y-1">
+                  <div className="px-4 py-3 border-t border-slate-200 dark:border-white/[0.06] bg-slate-50 dark:bg-white/[0.02] space-y-1">
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-500">Total Advances</span>
                       <span className="text-amber-400 font-bold">{fmtJMD(workerHistory.filter(h=>h.payment_type==="advance").reduce((s,h)=>s+h.total_amount,0))}</span>
@@ -554,7 +554,7 @@ export default function FieldPaymentsPage() {
 
               {/* -- ACTION BUTTONS -- */}
               <div className="space-y-2 pt-1">
-                <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">Receipt Actions</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-2">Receipt Actions</div>
                 {canEditDelete&&(
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     <button onClick={()=>setEditingPayment(selected)}
@@ -570,7 +570,7 @@ export default function FieldPaymentsPage() {
 
                 {/* Generate PDF */}
                 <button onClick={()=>generatePDF(selected)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.1] hover:border-white/[0.2] bg-white/[0.03] hover:bg-white/[0.06] text-slate-200 font-semibold transition text-sm">
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.1] hover:border-white/[0.2] bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-200 dark:bg-white/[0.06] text-slate-800 dark:text-slate-200 font-semibold transition text-sm">
                   <Printer size={15}/> Generate & Print Receipt PDF
                 </button>
 
@@ -591,7 +591,7 @@ export default function FieldPaymentsPage() {
                   </button>
                 </div>
 
-                <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2 mt-3">Continue with this Worker</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-2 mt-3">Continue with this Worker</div>
 
                 <div className="grid grid-cols-3 gap-2">
                   <button onClick={()=>{const w=selected;setSelected(null);setPrefillWorker({name:w?.worker_name||"",id_number:w?.worker_id_number||"",phone:w?.worker_phone||"",payment_type:"advance"});setShowForm(true);}}
@@ -610,7 +610,7 @@ export default function FieldPaymentsPage() {
                     <span className="text-[10px] font-bold">Final Pay</span>
                   </button>
                 </div>
-                <div className="text-[9px] text-slate-700 text-center">Tapping above starts a new payment for {selected.worker_name}</div>
+                <div className="text-[9px] text-slate-400 dark:text-slate-700 text-center">Tapping above starts a new payment for {selected.worker_name}</div>
               </div>
             </div>
           </div>
@@ -619,36 +619,36 @@ export default function FieldPaymentsPage() {
     {/* Edit Payment Modal */}
       {editingPayment&&(
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
-              <div className="text-sm font-bold text-slate-100">Edit Payment</div>
-              <button onClick={()=>setEditingPayment(null)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-600 hover:text-slate-300 transition"><X size={15}/></button>
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Edit Payment</div>
+              <button onClick={()=>setEditingPayment(null)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
             </div>
             <div className="p-5 space-y-3">
               <div>
                 <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Worker Name</label>
                 <input value={editingPayment.worker_name} onChange={e=>setEditingPayment({...editingPayment,worker_name:e.target.value})}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500/50"/>
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Total Amount</label>
                 <input type="number" value={editingPayment.total_amount} onChange={e=>setEditingPayment({...editingPayment,total_amount:Number(e.target.value)})}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500/50"/>
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Work Type</label>
                 <input value={editingPayment.work_type||""} onChange={e=>setEditingPayment({...editingPayment,work_type:e.target.value})}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500/50"/>
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Work Date</label>
                 <input type="date" value={editingPayment.work_date} onChange={e=>setEditingPayment({...editingPayment,work_date:e.target.value})}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500/50"/>
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Payment Method</label>
                 <select value={editingPayment.payment_method} onChange={e=>setEditingPayment({...editingPayment,payment_method:e.target.value})}
-                  className="w-full bg-[#080b10] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50">
+                  className="w-full bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500/50">
                   <option value="cash">Cash</option>
                   <option value="bank_transfer">Bank Transfer</option>
                   <option value="cheque">Cheque</option>
@@ -658,11 +658,11 @@ export default function FieldPaymentsPage() {
               <div>
                 <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">Notes</label>
                 <textarea value={editingPayment.notes||""} onChange={e=>setEditingPayment({...editingPayment,notes:e.target.value})}
-                  rows={2} className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50 resize-none"/>
+                  rows={2} className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-cyan-500/50 resize-none"/>
               </div>
               <div className="flex gap-2 pt-2">
                 <button onClick={()=>setEditingPayment(null)}
-                  className="flex-1 py-2.5 rounded-xl border border-white/[0.08] text-slate-400 hover:text-slate-200 transition text-sm">Cancel</button>
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200 transition text-sm">Cancel</button>
                 <button onClick={()=>saveEdit(editingPayment, {
                   worker_name:editingPayment.worker_name,
                   total_amount:editingPayment.total_amount,
