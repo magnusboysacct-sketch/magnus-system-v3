@@ -311,8 +311,8 @@ export default function ExpensesPage() {
               const [year, month] = key.split("-");
               const monthName = new Date(Number(year), Number(month)-1).toLocaleString("en-US",{month:"long"});
               return (
-                <div key={key} className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-                  <div className="px-4 py-2 border-b border-white/[0.05] flex items-center gap-2">
+                <div key={key} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+                  <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05] flex items-center gap-2">
                     <span>📁</span>
                     <span className="text-xs font-bold text-slate-300">{monthName} {year}</span>
                     <span className="text-[10px] text-slate-600 ml-auto">{items.length} receipt{items.length!==1?"s":""}</span>
@@ -320,7 +320,7 @@ export default function ExpensesPage() {
                   <div className="divide-y divide-white/[0.04]">
                     {items.map(e=>(
                       <div key={e.id} className="flex items-center gap-3 px-4 py-3">
-                        <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/[0.08] bg-white/[0.04] flex-shrink-0 cursor-pointer"
+                        <div className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] flex-shrink-0 cursor-pointer"
                           onClick={()=>window.open(e.receipt_url!,"_blank")}>
                           <img src={e.receipt_url!} className="w-full h-full object-cover"/>
                         </div>
@@ -412,7 +412,7 @@ export default function ExpensesPage() {
               <option value="rejected">Rejected</option>
             </Select>
           </Field>
-          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
             <Btn variant="ghost" onClick={() => { setShowNew(false); setError(null); }}>Cancel</Btn>
             <Btn variant="primary" onClick={createExpense}
               disabled={!form.description.trim() || !form.amount || saving}>
