@@ -326,7 +326,7 @@ export default function FieldOpsPage() {
                       {log.work_performed && <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">{log.work_performed}</div>}
                     </div>
                   </div>
-                  <ChevronRight size={14} className="text-slate-300"/>
+                  <ChevronRight size={14} className="text-slate-600 dark:text-slate-300"/>
                 </div>
               ))}
             </div>
