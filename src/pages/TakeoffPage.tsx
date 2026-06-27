@@ -119,10 +119,10 @@ class ErrorBoundary extends React.Component<{children:React.ReactNode},{err:any}
   static getDerivedStateFromError(e:any){return{err:e};}
   render(){
     if(this.state.err) return(
-      <div className="min-h-screen bg-[#080b10] flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] flex items-center justify-center">
         <div className="text-center gap-3 flex flex-col items-center">
           <AlertCircle size={32} className="text-red-400"/>
-          <p className="text-slate-300 text-sm">Takeoff crashed.</p>
+          <p className="text-slate-700 dark:text-slate-300 text-sm">Takeoff crashed.</p>
           <button onClick={()=>window.location.reload()} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs">Reload</button>
         </div>
       </div>
@@ -1288,26 +1288,26 @@ calibRef.current =
 
   // --- Render -------------------------------------------------------------------
   return (
-    <div className="flex h-screen flex-col bg-[#080b10] text-slate-100 select-none overflow-hidden">
+    <div className="flex h-screen flex-col bg-slate-50 dark:bg-[#080b10] text-slate-900 dark:text-slate-100 select-none overflow-hidden">
 
       {/* -- Top Bar -- */}
-      <header className="flex-shrink-0 h-12 flex items-center gap-3 px-4 bg-[#0d1117] border-b border-white/[0.06] z-20">
+      <header className="flex-shrink-0 h-12 flex items-center gap-3 px-4 bg-white dark:bg-[#0d1117] border-b border-slate-200 dark:border-white/[0.06] z-20">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-sky-500 to-blue-700 flex items-center justify-center flex-shrink-0">
             <Ruler size={14} className="text-white"/>
           </div>
-          <span className="text-sm font-bold text-slate-100">Takeoff</span>
+          <span className="text-sm font-bold text-slate-900 dark:text-slate-100">Takeoff</span>
           {currentProject && <><span className="text-white/20 text-xs">·</span><span className="text-xs text-slate-500 truncate max-w-[140px]">{currentProject.name}</span></>}
         </div>
 
         {/* Page nav */}
         {pdfDoc && (
-          <div className="flex items-center gap-1 bg-white/[0.04] border border-white/[0.07] rounded-lg px-1.5 py-1">
+          <div className="flex items-center gap-1 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-1.5 py-1">
             <button onClick={()=>setPageNum(v=>Math.max(1,v-1))} disabled={pageNum<=1}
-              className="p-0.5 rounded hover:bg-white/10 text-slate-600 hover:text-slate-300 disabled:opacity-30 transition"><ChevronLeft size={13}/></button>
+              className="p-0.5 rounded hover:bg-white/10 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 disabled:opacity-30 transition"><ChevronLeft size={13}/></button>
             <span className="text-[10px] text-slate-500 px-1">{pageNum}/{numPages}</span>
             <button onClick={()=>setPageNum(v=>Math.min(numPages,v+1))} disabled={pageNum>=numPages}
-              className="p-0.5 rounded hover:bg-white/10 text-slate-600 hover:text-slate-300 disabled:opacity-30 transition"><ChevronRight size={13}/></button>
+              className="p-0.5 rounded hover:bg-white/10 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 disabled:opacity-30 transition"><ChevronRight size={13}/></button>
           </div>
         )}
 
@@ -1316,7 +1316,7 @@ calibRef.current =
         {/* Calibrate status */}
         <button onClick={()=>{setCalibrating(true);calibratingRef.current=true;setCalibPts([]);calibPtsRef.current=[];}}
           title={calibration ? `Calibrated: ${feetInches(dist(calibration.p1, calibration.p2) * calibration.feetPerPx)} (1px = ${calibration.feetPerPx.toFixed(5)} ft)` : "Click to set scale"}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition ${calibrating?"bg-amber-500/15 border-amber-400/30 text-amber-300":calibration?"bg-emerald-500/10 border-emerald-500/20 text-emerald-300":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition ${calibrating?"bg-amber-500/15 border-amber-400/30 text-amber-300":calibration?"bg-emerald-500/10 border-emerald-500/20 text-emerald-300":"bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
           <Crosshair size={12}/>
           {calibrating ? "Click 2 points…" : calibration ? `Scale: ${feetInches(dist(calibration.p1, calibration.p2) * calibration.feetPerPx)}` : "Set Scale"}
         </button>
@@ -1332,19 +1332,19 @@ calibRef.current = null;
               if (sessionIdRef.current) supabase.from("takeoff_sessions").update({ calibration: calibrations }).eq("id", sessionIdRef.current);
             }}
             title="Clear calibration and start over"
-            className="flex items-center justify-center w-6 h-6 rounded-lg border border-white/[0.08] text-slate-500 hover:text-red-400 hover:border-red-500/30 transition">
+            className="flex items-center justify-center w-6 h-6 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-500 hover:text-red-400 hover:border-red-500/30 transition">
             <X size={11}/>
           </button>
         )}
 
         {/* Upload */}
-        <label className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-[11px] text-slate-300 font-medium transition">
+        <label className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium transition">
           <Upload size={12}/> Upload PDF
           <input type="file" accept=".pdf" className="hidden" onChange={e=>onPickFile(e.target.files?.[0]||null)}/>
         </label>
 
         {/* Export */}
-        <button onClick={exportCSV} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-[11px] text-slate-400 transition">
+        <button onClick={exportCSV} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-600 dark:text-slate-400 transition">
           <Download size={12}/> Export
         </button>
 
@@ -1364,29 +1364,29 @@ calibRef.current = null;
       <div className="flex flex-1 min-h-0">
 
         {/* -- Left Tool Bar -- */}
-        <div className="flex-shrink-0 w-14 flex flex-col items-center py-3 gap-1 bg-[#0d1117] border-r border-white/[0.06] z-10">
+        <div className="flex-shrink-0 w-14 flex flex-col items-center py-3 gap-1 bg-white dark:bg-[#0d1117] border-r border-slate-200 dark:border-white/[0.06] z-10">
           {(Object.entries(TOOL_CFG) as [ToolMode, typeof TOOL_CFG[ToolMode]][]).map(([key, cfg]) => (
             <button key={key} onClick={()=>{if(key==="wall"){setShowWallSetup(true);return;}setTool(key);toolRef.current=key;setInProgress([]);inProgressRef.current=[];scheduleRender();}}
               title={`${cfg.label} (${cfg.shortcut})`}
-              className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center gap-0.5 border transition-all ${tool===key?"border-white/20 bg-white/10":"border-transparent hover:bg-white/[0.05] hover:border-white/[0.07]"}`}>
+              className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center gap-0.5 border transition-all ${tool===key?"border-white/20 bg-white/10":"border-transparent hover:bg-slate-100 dark:bg-white/[0.05] hover:border-slate-200 dark:border-white/[0.07]"}`}>
               <span style={{color:tool===key?cfg.color:"#475569"}}>{cfg.icon}</span>
-              <span className={`text-[7px] font-bold uppercase tracking-wider ${tool===key?"text-slate-300":"text-slate-700"}`}>{cfg.label.slice(0,3)}</span>
+              <span className={`text-[7px] font-bold uppercase tracking-wider ${tool===key?"text-slate-700 dark:text-slate-300":"text-slate-400 dark:text-slate-700"}`}>{cfg.label.slice(0,3)}</span>
             </button>
           ))}
 
           <div className="flex-1"/>
 
           {/* Zoom controls */}
-          <button onClick={()=>{setZoom(v=>clamp(v*1.2,0.05,12));scheduleRender();}} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-white/[0.05] text-slate-600 hover:text-slate-300 transition"><ZoomIn size={15}/></button>
-          <button onClick={()=>{setZoom(v=>clamp(v*0.8,0.05,12));scheduleRender();}} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-white/[0.05] text-slate-600 hover:text-slate-300 transition"><ZoomOut size={15}/></button>
-          <button onClick={fitView} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-white/[0.05] text-slate-600 hover:text-slate-300 transition" title="Fit view"><Maximize2 size={15}/></button>
+          <button onClick={()=>{setZoom(v=>clamp(v*1.2,0.05,12));scheduleRender();}} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-slate-100 dark:bg-white/[0.05] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition"><ZoomIn size={15}/></button>
+          <button onClick={()=>{setZoom(v=>clamp(v*0.8,0.05,12));scheduleRender();}} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-slate-100 dark:bg-white/[0.05] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition"><ZoomOut size={15}/></button>
+          <button onClick={fitView} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-slate-100 dark:bg-white/[0.05] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition" title="Fit view"><Maximize2 size={15}/></button>
         </div>
 
 
         {/* -- Pages Panel -- */}
-        <div className={`flex-shrink-0 flex flex-col bg-[#0d1117] border-r border-white/[0.06] z-10 transition-all ${pagesPanelCollapsed ? "w-10" : "w-64"}`}>
+        <div className={`flex-shrink-0 flex flex-col bg-white dark:bg-[#0d1117] border-r border-slate-200 dark:border-white/[0.06] z-10 transition-all ${pagesPanelCollapsed ? "w-10" : "w-64"}`}>
           <button onClick={()=>setPagesPanelCollapsed(v=>!v)}
-            className="flex items-center justify-center h-10 hover:bg-white/[0.05] text-slate-500 hover:text-slate-300 transition border-b border-white/[0.06]"
+            className="flex items-center justify-center h-10 hover:bg-slate-100 dark:bg-white/[0.05] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition border-b border-slate-200 dark:border-white/[0.06]"
             title={pagesPanelCollapsed ? "Show pages" : "Hide pages"}>
             {pagesPanelCollapsed ? <ChevronRight size={14}/> : <ChevronLeft size={14}/>}
             {!pagesPanelCollapsed && <span className="text-[10px] font-bold uppercase tracking-wider ml-1.5">Pages</span>}
@@ -1394,14 +1394,14 @@ calibRef.current = null;
           {!pagesPanelCollapsed && (
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
               {pdfFiles.length === 0 && (
-                <div className="text-[10px] text-slate-700 text-center py-6 px-2">No PDF uploaded yet</div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-700 text-center py-6 px-2">No PDF uploaded yet</div>
               )}
               {pdfFiles.map((file, fIdx) => (
                 <div key={fIdx} className="mb-3">
                   <div className="flex items-center justify-between px-1.5 py-1 mb-1">
-                    <span className="text-[10px] font-semibold text-slate-400 truncate flex-1" title={file.name}>{file.name}</span>
+                    <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 truncate flex-1" title={file.name}>{file.name}</span>
                     <button onClick={()=>deletePdfFile(fIdx)} title="Delete this PDF file"
-                      className="p-0.5 rounded text-slate-700 hover:text-red-400 transition flex-shrink-0">
+                      className="p-0.5 rounded text-slate-400 dark:text-slate-700 hover:text-red-400 transition flex-shrink-0">
                       <Trash2 size={11}/>
                     </button>
                   </div>
@@ -1412,29 +1412,29 @@ calibRef.current = null;
                     if (meta.hidden) {
                       return (
                         <div key={pn} className="flex items-center gap-1 px-1.5 py-1 rounded-lg opacity-40">
-                          <span className="text-[10px] text-slate-600 flex-1 truncate">Page {pn} (hidden)</span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-600 flex-1 truncate">Page {pn} (hidden)</span>
                           <button onClick={()=>setPageMeta(prev=>({...prev, [key]: {...prev[key], hidden: false}}))}
-                            title="Unhide page" className="p-0.5 rounded text-slate-600 hover:text-emerald-400 transition">
+                            title="Unhide page" className="p-0.5 rounded text-slate-500 dark:text-slate-600 hover:text-emerald-400 transition">
                             <Eye size={11}/>
                           </button>
                         </div>
                       );
                     }
                     return (
-                      <div key={pn} className={`flex items-center gap-1 px-1.5 py-1 rounded-lg group transition ${isActive ? "bg-sky-500/15 border border-sky-500/30" : "hover:bg-white/[0.04]"}`}>
+                      <div key={pn} className={`flex items-center gap-1 px-1.5 py-1 rounded-lg group transition ${isActive ? "bg-sky-500/15 border border-sky-500/30" : "hover:bg-slate-50 dark:bg-white/[0.04]"}`}>
                         <button onClick={()=>{setActivePdfIdx(fIdx);setPageNum(pn);}}
-                          className={`text-[11px] flex-1 text-left truncate ${isActive ? "text-sky-300 font-semibold" : "text-slate-400"}`}>
+                          className={`text-[11px] flex-1 text-left truncate ${isActive ? "text-sky-300 font-semibold" : "text-slate-600 dark:text-slate-400"}`}>
                           {meta.label || `Page ${pn}`}
                         </button>
                         <button onClick={()=>{
                             const newLabel = window.prompt("Label for this page:", meta.label || `Page ${pn}`);
                             if (newLabel !== null) setPageMeta(prev=>({...prev, [key]: {...prev[key], label: newLabel.trim() || undefined}}));
                           }}
-                          title="Rename page" className="p-0.5 rounded text-slate-700 hover:text-sky-400 transition opacity-0 group-hover:opacity-100 flex-shrink-0">
+                          title="Rename page" className="p-0.5 rounded text-slate-400 dark:text-slate-700 hover:text-sky-400 transition opacity-0 group-hover:opacity-100 flex-shrink-0">
                           <Edit2 size={10}/>
                         </button>
                         <button onClick={()=>setPageMeta(prev=>({...prev, [key]: {...prev[key], hidden: true}}))}
-                          title="Hide page" className="p-0.5 rounded text-slate-700 hover:text-amber-400 transition opacity-0 group-hover:opacity-100 flex-shrink-0">
+                          title="Hide page" className="p-0.5 rounded text-slate-400 dark:text-slate-700 hover:text-amber-400 transition opacity-0 group-hover:opacity-100 flex-shrink-0">
                           <EyeOff size={10}/>
                         </button>
                       </div>
@@ -1446,7 +1446,7 @@ calibRef.current = null;
           )}
         </div>
         {/* -- Canvas Area -- */}
-        <div className="flex-1 relative min-w-0 overflow-hidden bg-[#080b10]"
+        <div className="flex-1 relative min-w-0 overflow-hidden bg-slate-50 dark:bg-[#080b10]"
           ref={containerRef}
           style={{ cursor: panningRef.current ? "grabbing" : (spaceRef.current || tool==="pan") ? "grab" : tool==="select" ? "default" : "crosshair" }}
           onMouseMove={onMouseMove}
@@ -1461,18 +1461,18 @@ calibRef.current = null;
           {/* Empty state */}
           {!pdfDoc && !loadingPdf && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 pointer-events-none">
-              <div className="w-20 h-20 rounded-3xl border border-white/[0.07] bg-white/[0.02] flex items-center justify-center">
-                <FileText size={36} className="text-slate-800"/>
+              <div className="w-20 h-20 rounded-3xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] flex items-center justify-center">
+                <FileText size={36} className="text-slate-300 dark:text-slate-800"/>
               </div>
               <div className="text-center">
-                <div className="text-base font-semibold text-slate-400 mb-1">No drawing loaded</div>
-                <div className="text-xs text-slate-700">Upload a PDF plan to start measuring</div>
+                <div className="text-base font-semibold text-slate-600 dark:text-slate-400 mb-1">No drawing loaded</div>
+                <div className="text-xs text-slate-400 dark:text-slate-700">Upload a PDF plan to start measuring</div>
               </div>
               <div className="flex items-center gap-8 mt-2">
                 {(Object.entries(TOOL_CFG) as [ToolMode, typeof TOOL_CFG[ToolMode]][]).filter(([k])=>k!=="select").map(([k,cfg])=>(
                   <div key={k} className="flex flex-col items-center gap-1.5">
-                    <div className="w-9 h-9 rounded-xl border border-white/[0.06] bg-white/[0.03] flex items-center justify-center" style={{color:cfg.color}}>{cfg.icon}</div>
-                    <span className="text-[9px] text-slate-700 uppercase tracking-wider">{cfg.label}</span>
+                    <div className="w-9 h-9 rounded-xl border border-slate-200 dark:border-white/[0.06] bg-slate-50 dark:bg-white/[0.03] flex items-center justify-center" style={{color:cfg.color}}>{cfg.icon}</div>
+                    <span className="text-[9px] text-slate-400 dark:text-slate-700 uppercase tracking-wider">{cfg.label}</span>
                   </div>
                 ))}
               </div>
@@ -1481,58 +1481,58 @@ calibRef.current = null;
 
           {/* Loading */}
           {loadingPdf && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#080b10]/70 backdrop-blur-sm pointer-events-none">
-              <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.08] bg-[#0d1117] px-4 py-3 shadow-xl">
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-50 dark:bg-[#080b10]/70 backdrop-blur-sm pointer-events-none">
+              <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] px-4 py-3 shadow-xl">
                 <RefreshCw size={14} className="animate-spin text-sky-400"/>
-                <span className="text-xs text-slate-400">Loading drawing…</span>
+                <span className="text-xs text-slate-600 dark:text-slate-400">Loading drawing…</span>
               </div>
             </div>
           )}
 
           {/* Calibration banner */}
           {calibrating && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 rounded-xl border border-amber-500/25 bg-[#0d1117]/95 backdrop-blur px-4 py-2.5 shadow-xl pointer-events-auto">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 rounded-xl border border-amber-500/25 bg-white dark:bg-[#0d1117]/95 backdrop-blur px-4 py-2.5 shadow-xl pointer-events-auto">
               <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0"/>
               <span className="text-xs text-amber-300 font-medium">Click 2 known points on the drawing · <kbd className="bg-white/10 px-1 rounded text-[10px]">Esc</kbd> to cancel</span>
               <span className="text-xs text-amber-500 ml-1">{calibPts.length}/2 placed</span>
-              <button onClick={()=>{setCalibrating(false);calibratingRef.current=false;setCalibPts([]);calibPtsRef.current=[];}} className="ml-1 text-slate-600 hover:text-slate-300"><X size={13}/></button>
+              <button onClick={()=>{setCalibrating(false);calibratingRef.current=false;setCalibPts([]);calibPtsRef.current=[];}} className="ml-1 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300"><X size={13}/></button>
             </div>
           )}
 
           {/* Tool hint */}
           {tool!=="select"&&!calibrating&&(
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-xl border border-white/[0.07] bg-[#0d1117]/90 backdrop-blur px-3.5 py-2 shadow-xl pointer-events-none">
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117]/90 backdrop-blur px-3.5 py-2 shadow-xl pointer-events-none">
               <span style={{color:curTool.color}}>{curTool.icon}</span>
-              <span className="text-[11px] font-semibold text-slate-300">{curTool.label}</span>
-              <span className="text-[10px] text-slate-600">— {curTool.desc}</span>
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">{curTool.label}</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-600">— {curTool.desc}</span>
               {tool==="line"&&inProgress.length===1&&<span className="text-[10px] text-sky-400 ml-1">· Click endpoint to finish</span>}
               {(tool==="area"||tool==="volume")&&inProgress.length>0&&<span className="text-[10px] text-violet-400 ml-1">· {inProgress.length} pts · double-click to close</span>}
             </div>
           )}
 
           {/* Zoom indicator */}
-          <div className="absolute bottom-4 left-4 z-10 rounded-lg border border-white/[0.07] bg-[#0d1117]/90 px-2.5 py-1 pointer-events-none">
-            <span className="text-[10px] font-mono text-slate-600">{Math.round(zoom*100)}%</span>
+          <div className="absolute bottom-4 left-4 z-10 rounded-lg border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117]/90 px-2.5 py-1 pointer-events-none">
+            <span className="text-[10px] font-mono text-slate-500 dark:text-slate-600">{Math.round(zoom*100)}%</span>
           </div>
 
           {/* Error */}
           {error && (
-            <div className="absolute top-4 right-4 z-20 flex items-center gap-2 rounded-xl border border-red-500/20 bg-[#0d1117]/95 px-3 py-2.5 shadow-xl max-w-72">
+            <div className="absolute top-4 right-4 z-20 flex items-center gap-2 rounded-xl border border-red-500/20 bg-white dark:bg-[#0d1117]/95 px-3 py-2.5 shadow-xl max-w-72">
               <AlertCircle size={13} className="text-red-400 flex-shrink-0"/>
               <span className="text-[11px] text-red-300">{error}</span>
-              <button onClick={()=>setError(null)} className="ml-auto text-slate-700 hover:text-slate-400"><X size={12}/></button>
+              <button onClick={()=>setError(null)} className="ml-auto text-slate-400 dark:text-slate-700 hover:text-slate-600 dark:text-slate-400"><X size={12}/></button>
             </div>
           )}
         </div>
 
         {/* -- Right Panel -- */}
-        <div className="flex-shrink-0 w-72 flex flex-col bg-[#0d1117] border-l border-white/[0.06] z-10">
+        <div className="flex-shrink-0 w-72 flex flex-col bg-white dark:bg-[#0d1117] border-l border-slate-200 dark:border-white/[0.06] z-10">
 
           {/* Tabs */}
-          <div className="flex border-b border-white/[0.06]">
+          <div className="flex border-b border-slate-200 dark:border-white/[0.06]">
             {([["templates","Templates"],["measurements","Taken"],["stats","Summary"]] as const).map(([k,label])=>(
               <button key={k} onClick={()=>setRightTab(k)}
-                className={`flex-1 py-2.5 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-colors ${rightTab===k?"border-sky-500 text-sky-300":"border-transparent text-slate-700 hover:text-slate-500"}`}>
+                className={`flex-1 py-2.5 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-colors ${rightTab===k?"border-sky-500 text-sky-300":"border-transparent text-slate-400 dark:text-slate-700 hover:text-slate-500"}`}>
                 {label}
               </button>
             ))}
@@ -1545,10 +1545,10 @@ calibRef.current = null;
               <div className="p-3 space-y-3">
                 {/* Search */}
                 <div className="relative">
-                  <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+                  <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
                   <input value={searchLib} onChange={e=>setSearchLib(e.target.value)}
                     placeholder="Search templates & items…"
-                    className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-300 placeholder:text-slate-700 outline-none focus:border-sky-500/40"/>
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:text-slate-700 outline-none focus:border-sky-500/40"/>
                 </div>
 
                 {/* Active link */}
@@ -1556,13 +1556,13 @@ calibRef.current = null;
                   <div className="flex items-center gap-2 rounded-lg bg-sky-500/10 border border-sky-500/20 px-3 py-2">
                     <div className="w-2 h-2 rounded-full bg-sky-400 flex-shrink-0 animate-pulse"/>
                     <span className="text-[11px] text-sky-300 font-semibold truncate flex-1">{activeLinkedName}</span>
-                    <button onClick={()=>{setLinkedAssemblyId("");setLinkedItemId("");}} className="text-slate-600 hover:text-slate-400"><X size={11}/></button>
+                    <button onClick={()=>{setLinkedAssemblyId("");setLinkedItemId("");}} className="text-slate-500 dark:text-slate-600 hover:text-slate-600 dark:text-slate-400"><X size={11}/></button>
                   </div>
                 )}
 
                 {/* Instruction */}
                 {!activeLinkedName && (
-                  <div className="text-[10px] text-slate-700 bg-white/[0.02] border border-white/[0.05] rounded-lg px-3 py-2 leading-relaxed">
+                  <div className="text-[10px] text-slate-400 dark:text-slate-700 bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.05] rounded-lg px-3 py-2 leading-relaxed">
                     Select a template or item below, then draw on the plan. Each measurement will be linked to it automatically.
                   </div>
                 )}
@@ -1572,20 +1572,20 @@ calibRef.current = null;
                   <div>
                     <div className="flex items-center gap-1.5 px-1 mb-2">
                       <Wand2 size={10} className="text-purple-400"/>
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Assemblies (Templates)</span>
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Assemblies (Templates)</span>
                     </div>
                     <div className="space-y-1">
                       {filteredAssemblies.map(a => {
                         const active = linkedAssemblyId === a.id;
                         return (
                           <button key={a.id} onClick={()=>{setLinkedAssemblyId(active?"":a.id);setLinkedItemId("");}}
-                            className={`w-full text-left rounded-lg px-3 py-2.5 border transition-all flex items-center gap-2.5 ${active?"border-purple-500/30 bg-purple-500/10":"border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.09]"}`}>
-                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${active?"bg-purple-500/20":"bg-white/[0.04]"}`}>
-                              <Layers size={12} className={active?"text-purple-400":"text-slate-600"}/>
+                            className={`w-full text-left rounded-lg px-3 py-2.5 border transition-all flex items-center gap-2.5 ${active?"border-purple-500/30 bg-purple-500/10":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04] hover:border-white/[0.09]"}`}>
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${active?"bg-purple-500/20":"bg-slate-50 dark:bg-white/[0.04]"}`}>
+                              <Layers size={12} className={active?"text-purple-400":"text-slate-500 dark:text-slate-600"}/>
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className={`text-[11px] font-semibold truncate ${active?"text-purple-200":"text-slate-300"}`}>{a.name}</div>
-                              <div className="text-[9px] text-slate-700">{a.category||"General"} · {a.componentCount} component{a.componentCount!==1?"s":""}{a.unit?` · ${a.unit}`:""}</div>
+                              <div className={`text-[11px] font-semibold truncate ${active?"text-purple-200":"text-slate-700 dark:text-slate-300"}`}>{a.name}</div>
+                              <div className="text-[9px] text-slate-400 dark:text-slate-700">{a.category||"General"} · {a.componentCount} component{a.componentCount!==1?"s":""}{a.unit?` · ${a.unit}`:""}</div>
                             </div>
                             {active && <Check size={12} className="text-purple-400 flex-shrink-0"/>}
                           </button>
@@ -1600,17 +1600,17 @@ calibRef.current = null;
                   <div>
                     <div className="flex items-center gap-1.5 px-1 mb-2 mt-1">
                       <Package size={10} className="text-blue-400"/>
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Rate Library Items</span>
+                      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Rate Library Items</span>
                     </div>
                     <div className="space-y-1">
                       {filteredItems.map(i => {
                         const active = linkedItemId === i.id;
                         return (
                           <button key={i.id} onClick={()=>{setLinkedItemId(active?"":i.id);setLinkedAssemblyId("");}}
-                            className={`w-full text-left rounded-lg px-3 py-2 border transition-all flex items-center gap-2 ${active?"border-blue-500/30 bg-blue-500/10":"border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]"}`}>
+                            className={`w-full text-left rounded-lg px-3 py-2 border transition-all flex items-center gap-2 ${active?"border-blue-500/30 bg-blue-500/10":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04]"}`}>
                             <div className="flex-1 min-w-0">
-                              <div className={`text-[11px] font-medium truncate ${active?"text-blue-200":"text-slate-400"}`}>{i.item_name}</div>
-                              <div className="text-[9px] text-slate-700">{i.category||"—"}{i.unit?` · ${i.unit}`:""}</div>
+                              <div className={`text-[11px] font-medium truncate ${active?"text-blue-200":"text-slate-600 dark:text-slate-400"}`}>{i.item_name}</div>
+                              <div className="text-[9px] text-slate-400 dark:text-slate-700">{i.category||"—"}{i.unit?` · ${i.unit}`:""}</div>
                             </div>
                             {active && <Check size={11} className="text-blue-400 flex-shrink-0"/>}
                           </button>
@@ -1621,7 +1621,7 @@ calibRef.current = null;
                 )}
 
                 {assemblies.length===0&&costItems.length===0&&(
-                  <div className="text-[11px] text-slate-700 text-center py-6">No templates or items found.<br/>Build assemblies in the Assemblies page.</div>
+                  <div className="text-[11px] text-slate-400 dark:text-slate-700 text-center py-6">No templates or items found.<br/>Build assemblies in the Assemblies page.</div>
                 )}
               </div>
             )}
@@ -1630,21 +1630,21 @@ calibRef.current = null;
             {rightTab==="measurements"&&(
               <div className="p-3 space-y-2">
                 {pageMeasurements.length===0?(
-                  <div className="text-[11px] text-slate-700 text-center py-10">No measurements yet.<br/>Select a template and draw on the plan.</div>
+                  <div className="text-[11px] text-slate-400 dark:text-slate-700 text-center py-10">No measurements yet.<br/>Select a template and draw on the plan.</div>
                 ):(
                   <>
                     {pageMeasurements.map(m=>(
                       <div key={m.id} onClick={()=>{setSelectedId(m.id===selectedId?null:m.id);selectedIdRef.current=m.id===selectedId?null:m.id;scheduleRender();}}
-                        className={`rounded-lg border px-3 py-2.5 cursor-pointer transition-all flex items-center gap-2.5 ${m.id===selectedId?"border-sky-500/25 bg-sky-500/[0.07]":"border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04]"}`}>
+                        className={`rounded-lg border px-3 py-2.5 cursor-pointer transition-all flex items-center gap-2.5 ${m.id===selectedId?"border-sky-500/25 bg-sky-500/[0.07]":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04]"}`}>
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:m.color}}/>
                         <div className="flex-1 min-w-0">
-                          <div className="text-[11px] font-semibold text-slate-200">{m.unit === "ft" ? feetInches(m.result) : fmt2(m.result)} <span className="text-slate-600 font-normal">{m.unit === "ft" ? "" : m.unit}</span></div>
+                          <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{m.unit === "ft" ? feetInches(m.result) : fmt2(m.result)} <span className="text-slate-500 dark:text-slate-600 font-normal">{m.unit === "ft" ? "" : m.unit}</span></div>
                           {m.linkedAssemblyName&&<div className="text-[9px] text-purple-400 truncate">? {m.linkedAssemblyName}</div>}
                           {m.linkedItemName&&!m.linkedAssemblyName&&<div className="text-[9px] text-blue-400 truncate">{m.linkedItemName}</div>}
-                          <div className="text-[9px] text-slate-700 capitalize">{m.type}</div>
+                          <div className="text-[9px] text-slate-400 dark:text-slate-700 capitalize">{m.type}</div>
                         </div>
                         <button onClick={e=>{e.stopPropagation();const next=measurementsRef.current.filter(x=>x.id!==m.id);setMeasurements(next);measurementsRef.current=next;if(selectedId===m.id){setSelectedId(null);selectedIdRef.current=null;}scheduleRender();}}
-                          className="p-1 rounded hover:bg-red-500/15 text-slate-700 hover:text-red-400 transition">
+                          className="p-1 rounded hover:bg-red-500/15 text-slate-400 dark:text-slate-700 hover:text-red-400 transition">
                           <X size={11}/>
                         </button>
                       </div>
@@ -1663,15 +1663,15 @@ calibRef.current = null;
               <div className="p-3 space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   {[
-                    ["Total Items", stats.total, "text-slate-200"],
+                    ["Total Items", stats.total, "text-slate-800 dark:text-slate-200"],
                     ["Linear ft", fmt2(stats.lines), "text-sky-300"],
                     ["Area ft²", fmt2(stats.areas), "text-purple-300"],
                     ["Count", stats.counts, "text-amber-300"],
                     ["Volume ft³", fmt2(stats.volumes), "text-emerald-300"],
                     ["Scale", calibration ? "Set ?" : "Not set", calibration?"text-emerald-400":"text-amber-400"],
                   ].map(([l,v,c])=>(
-                    <div key={l as string} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-3">
-                      <div className="text-[9px] text-slate-700 uppercase tracking-widest mb-1">{l}</div>
+                    <div key={l as string} className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-slate-50 dark:bg-white/[0.02] px-3 py-3">
+                      <div className="text-[9px] text-slate-400 dark:text-slate-700 uppercase tracking-widest mb-1">{l}</div>
                       <div className={`text-lg font-bold ${c}`}>{v}</div>
                     </div>
                   ))}
@@ -1679,15 +1679,15 @@ calibRef.current = null;
 
                 {/* Group by assembly */}
                 {pageMeasurements.filter(m=>m.linkedAssemblyName).length > 0 && (
-                  <div className="rounded-xl border border-white/[0.07] overflow-hidden">
-                    <div className="px-3 py-2 bg-white/[0.02] border-b border-white/[0.05] text-[9px] font-bold uppercase tracking-widest text-slate-600">By Assembly</div>
+                  <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden">
+                    <div className="px-3 py-2 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.05] text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">By Assembly</div>
                     {Object.entries(
                       pageMeasurements.filter(m=>m.linkedAssemblyName).reduce((acc:Record<string,number>, m) => {
                         const k = m.linkedAssemblyName!; acc[k] = (acc[k]||0) + m.result; return acc;
                       }, {})
                     ).map(([name, total]) => (
-                      <div key={name} className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.04] last:border-0">
-                        <div className="flex items-center gap-2"><Layers size={10} className="text-purple-400"/><span className="text-[11px] text-slate-300 truncate">{name}</span></div>
+                      <div key={name} className="flex items-center justify-between px-3 py-2.5 border-b border-slate-100 dark:border-white/[0.04] last:border-0">
+                        <div className="flex items-center gap-2"><Layers size={10} className="text-purple-400"/><span className="text-[11px] text-slate-700 dark:text-slate-300 truncate">{name}</span></div>
                         <span className="text-[11px] font-bold text-purple-300 flex-shrink-0 ml-2">{fmt2(total)}</span>
                       </div>
                     ))}
@@ -1707,9 +1707,9 @@ calibRef.current = null;
       {/* -- Calibration Modal -- */}
       {showCalibModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl p-5 space-y-4">
             <div>
-              <div className="text-sm font-bold text-slate-100">Set Drawing Scale</div>
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Set Drawing Scale</div>
               <div className="text-[11px] text-slate-500 mt-0.5">What is the real-world distance between your 2 points?</div>
             </div>
             <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
@@ -1719,13 +1719,13 @@ calibRef.current = null;
             <div>
               <label className="text-[11px] text-slate-500 block mb-1.5">Feet</label>
               <input type="number" value={calibFeet} onChange={e=>setCalibFeet(e.target.value)} autoFocus
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
+                className="w-full rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-sky-500/50"
                 placeholder="10" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
             </div>
             <div>
               <label className="text-[11px] text-slate-500 block mb-1.5">Inches</label>
               <input type="number" min="0" max="11" value={calibInches} onChange={e=>setCalibInches(e.target.value)}
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/50"
+                className="w-full rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-sky-500/50"
                 placeholder="0" onKeyDown={e=>{if(e.key==="Enter")confirmCalibration();}}/>
             </div>
             <div>
@@ -1733,7 +1733,7 @@ calibRef.current = null;
               <div className="grid grid-cols-4 gap-1.5">
                 {FRACTION_OPTIONS.map((f, i) => (
                   <button key={i} type="button" onClick={()=>setCalibFraction(f)}
-                    className={`py-1.5 rounded-lg border text-[11px] font-medium transition ${calibFraction===f?"bg-sky-600 border-sky-500 text-white":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+                    className={`py-1.5 rounded-lg border text-[11px] font-medium transition ${calibFraction===f?"bg-sky-600 border-sky-500 text-white":"bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
                     {FRACTION_LABELS[i]}
                   </button>
                 ))}
@@ -1741,7 +1741,7 @@ calibRef.current = null;
             </div>
             <div className="flex gap-2">
               <button onClick={()=>{setShowCalibModal(false);setCalibrating(false);calibratingRef.current=false;setCalibPts([]);calibPtsRef.current=[];}}
-                className="flex-1 py-2 rounded-xl border border-white/[0.07] text-xs text-slate-500 hover:text-slate-300 transition">Cancel</button>
+                className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-white/[0.07] text-xs text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">Cancel</button>
               <button onClick={confirmCalibration}
                 className="flex-1 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition">Confirm Scale</button>
             </div>
@@ -1753,20 +1753,20 @@ calibRef.current = null;
       {/* -- Wall Setup Modal -- */}
       {showWallSetup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl p-5 space-y-4">
             <div>
-              <div className="text-sm font-bold text-slate-100">Wall Setup</div>
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Wall Setup</div>
               <div className="text-[11px] text-slate-500 mt-0.5">Choose how you'll draw, and set the wall height</div>
             </div>
             <div>
               <label className="text-[11px] text-slate-500 block mb-1.5">Drawing mode</label>
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={()=>setWallLineMode("segment")}
-                  className={`py-2 rounded-lg border text-[11px] font-medium transition ${wallLineMode==="segment"?"bg-pink-600 border-pink-500 text-white":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+                  className={`py-2 rounded-lg border text-[11px] font-medium transition ${wallLineMode==="segment"?"bg-pink-600 border-pink-500 text-white":"bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
                   Segment (one straight line)
                 </button>
                 <button onClick={()=>setWallLineMode("continuous")}
-                  className={`py-2 rounded-lg border text-[11px] font-medium transition ${wallLineMode==="continuous"?"bg-pink-600 border-pink-500 text-white":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+                  className={`py-2 rounded-lg border text-[11px] font-medium transition ${wallLineMode==="continuous"?"bg-pink-600 border-pink-500 text-white":"bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
                   Continuous (multiple points)
                 </button>
               </div>
@@ -1774,13 +1774,13 @@ calibRef.current = null;
             <div>
               <label className="text-[11px] text-slate-500 block mb-1.5">Feet</label>
               <input type="number" value={wallHeightFeet} onChange={e=>setWallHeightFeet(e.target.value)} autoFocus
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-pink-500/50"
+                className="w-full rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-pink-500/50"
                 placeholder="8"/>
             </div>
             <div>
               <label className="text-[11px] text-slate-500 block mb-1.5">Inches</label>
               <input type="number" min="0" max="11" value={wallHeightInches} onChange={e=>setWallHeightInches(e.target.value)}
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-pink-500/50"
+                className="w-full rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-pink-500/50"
                 placeholder="0"/>
             </div>
             <div>
@@ -1788,7 +1788,7 @@ calibRef.current = null;
               <div className="grid grid-cols-4 gap-1.5">
                 {FRACTION_OPTIONS.map((f, i) => (
                   <button key={i} type="button" onClick={()=>setWallHeightFraction(f)}
-                    className={`py-1.5 rounded-lg border text-[11px] font-medium transition ${wallHeightFraction===f?"bg-pink-600 border-pink-500 text-white":"bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+                    className={`py-1.5 rounded-lg border text-[11px] font-medium transition ${wallHeightFraction===f?"bg-pink-600 border-pink-500 text-white":"bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
                     {FRACTION_LABELS[i]}
                   </button>
                 ))}
@@ -1796,7 +1796,7 @@ calibRef.current = null;
             </div>
             <div className="flex gap-2">
               <button onClick={()=>setShowWallSetup(false)}
-                className="flex-1 py-2 rounded-xl border border-white/[0.07] text-xs text-slate-500 hover:text-slate-300 transition">Cancel</button>
+                className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-white/[0.07] text-xs text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">Cancel</button>
               <button onClick={()=>{
                   const feetPart = parseFloat(wallHeightFeet) || 0;
                   const inchesPart = parseFloat(wallHeightInches) || 0;
@@ -1816,20 +1816,20 @@ calibRef.current = null;
       {/* -- Volume Depth Modal -- */}
       {showDepthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xs rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl p-5 space-y-4">
+          <div className="w-full max-w-xs rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl p-5 space-y-4">
             <div>
-              <div className="text-sm font-bold text-slate-100">Volume Depth</div>
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Volume Depth</div>
               <div className="text-[11px] text-slate-500 mt-0.5">Enter the depth of the slab or excavation</div>
             </div>
             <div>
               <label className="text-[11px] text-slate-500 block mb-1.5">Depth (inches)</label>
               <input type="number" value={depthInches} onChange={e=>setDepthInches(e.target.value)} autoFocus
-                className="w-full rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-sm text-slate-200 outline-none focus:border-emerald-500/50"
+                className="w-full rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500/50"
                 placeholder="4" onKeyDown={e=>{if(e.key==="Enter")confirmDepth();}}/>
             </div>
             <div className="flex gap-2">
               <button onClick={()=>{setShowDepthModal(false);pendingVolumeRef.current=[];setInProgress([]);inProgressRef.current=[];}}
-                className="flex-1 py-2 rounded-xl border border-white/[0.07] text-xs text-slate-500 hover:text-slate-300 transition">Cancel</button>
+                className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-white/[0.07] text-xs text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">Cancel</button>
               <button onClick={confirmDepth}
                 className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">Confirm</button>
             </div>
