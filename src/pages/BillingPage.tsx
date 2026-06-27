@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { Check, X } from "lucide-react";
 import { usePlan } from "../hooks/usePlan";
 import type { Plan } from "../lib/plans";
@@ -14,7 +14,7 @@ export default function BillingPage() {
   if (financeAccess.loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="text-slate-600">Loading...</div>
+        <div className="text-slate-500 dark:text-slate-600">Loading...</div>
       </div>
     );
   }
@@ -25,7 +25,7 @@ export default function BillingPage() {
 
   const features = [
     { key: "takeoffExport", label: "Export Takeoff to CSV" },
-    { key: "boqTakeoffLinking", label: "BOQ ↔ Takeoff Linking" },
+    { key: "boqTakeoffLinking", label: "BOQ â†” Takeoff Linking" },
     { key: "maxTakeoffGroups", label: "Takeoff Groups", getValue: (p: Plan) => PLAN_FEATURES[p].maxTakeoffGroups === null ? "Unlimited" : PLAN_FEATURES[p].maxTakeoffGroups },
     { key: "maxUsers", label: "Team Users", getValue: (p: Plan) => PLAN_FEATURES[p].maxUsers === null ? "Unlimited" : PLAN_FEATURES[p].maxUsers },
     { key: "advancedReports", label: "Advanced Reports" },
