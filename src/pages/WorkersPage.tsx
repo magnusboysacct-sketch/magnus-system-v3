@@ -543,7 +543,7 @@ export default function WorkersPage() {
       <Modal open={showNew} onClose={closeModal}
         title={editWorker ? "Edit Worker" : "Add Worker"}
         subtitle={editWorker ? fullName(editWorker) : "Add a new worker to your team"}
-        width="max-w-2xl">
+        width="max-w-4xl">
         <div className="space-y-4">
           {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
 
@@ -600,7 +600,7 @@ export default function WorkersPage() {
               </label>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <Field label="First Name">
               <Input placeholder="John" value={form.first_name}
                 onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))} autoFocus/>
@@ -609,9 +609,6 @@ export default function WorkersPage() {
               <Input placeholder="Smith" value={form.last_name}
                 onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}/>
             </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <Field label="Worker Type">
               <Select value={form.worker_type}
                 onChange={e => setForm(f => ({ ...f, worker_type: e.target.value as WorkerType }))}>
@@ -620,6 +617,9 @@ export default function WorkersPage() {
                 <option value="crew_lead">Crew Lead</option>
               </Select>
             </Field>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
             <Field label="Status">
               <Select value={form.status}
                 onChange={e => setForm(f => ({ ...f, status: e.target.value as WorkerStatus }))}>
@@ -628,9 +628,6 @@ export default function WorkersPage() {
                 <option value="terminated">Terminated</option>
               </Select>
             </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <Field label="Phone">
               <Input placeholder="876-555-0100" value={form.phone}
                 onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}/>
@@ -641,7 +638,7 @@ export default function WorkersPage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <Field label="City">
               <Input placeholder="Kingston" value={form.city}
                 onChange={e => setForm(f => ({ ...f, city: e.target.value }))}/>
@@ -650,11 +647,15 @@ export default function WorkersPage() {
               <Input type="date" value={form.hire_date}
                 onChange={e => setForm(f => ({ ...f, hire_date: e.target.value }))}/>
             </Field>
+            <Field label="Employee ID (optional)">
+              <Input placeholder="EMP-001" value={form.employee_id}
+                onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))}/>
+            </Field>
           </div>
 
           <Divider label="Pay Information"/>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             <Field label="Pay Type">
               <Select value={form.pay_type}
                 onChange={e => setForm(f => ({ ...f, pay_type: e.target.value as PayType }))}>
@@ -670,13 +671,6 @@ export default function WorkersPage() {
             <Field label="Overtime Rate ($)">
               <Input type="number" placeholder="0.00" value={form.overtime_rate}
                 onChange={e => setForm(f => ({ ...f, overtime_rate: e.target.value }))}/>
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Employee ID (optional)">
-              <Input placeholder="EMP-001" value={form.employee_id}
-                onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))}/>
             </Field>
             <Field label="Address">
               <Input placeholder="123 Main St" value={form.address}
