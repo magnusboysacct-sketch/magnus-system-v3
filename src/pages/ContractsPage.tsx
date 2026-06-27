@@ -80,7 +80,7 @@ function genContractNo() {
 }
 
 const STATUS_CFG: Record<string, { color: string; bg: string; border: string; label: string; icon: React.ReactNode }> = {
-  draft:     { color:"text-slate-300",   bg:"bg-slate-500/10",   border:"border-slate-500/20",   label:"Draft",     icon:<Clock size={10}/> },
+  draft:     { color:"text-slate-700 dark:text-slate-300",   bg:"bg-slate-500/10",   border:"border-slate-500/20",   label:"Draft",     icon:<Clock size={10}/> },
   sent:      { color:"text-blue-300",    bg:"bg-blue-500/10",    border:"border-blue-500/20",    label:"Sent",      icon:<Send size={10}/> },
   signed:    { color:"text-emerald-300", bg:"bg-emerald-500/10", border:"border-emerald-500/20", label:"Signed",    icon:<CheckCircle2 size={10}/> },
   active:    { color:"text-cyan-300",    bg:"bg-cyan-500/10",    border:"border-cyan-500/20",    label:"Active",    icon:<Zap size={10}/> },
@@ -122,38 +122,38 @@ function ContractCard({ contract, onView, onDelete, onDuplicate }: {
   const cfg = STATUS_CFG[contract.status] || STATUS_CFG.draft;
   return (
     <div onClick={onView}
-      className="group rounded-xl border border-white/[0.07] bg-[#0d1117] hover:border-white/[0.13] hover:bg-white/[0.02] transition-all cursor-pointer p-5 flex flex-col gap-4">
+      className="group rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] hover:border-white/[0.13] hover:bg-slate-50 dark:bg-white/[0.02] transition-all cursor-pointer p-5 flex flex-col gap-4">
       <div className="flex items-start justify-between">
         <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
           <FileText size={16} className="text-blue-400"/>
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition" onClick={e=>e.stopPropagation()}>
-          <button onClick={onDuplicate} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition" title="Duplicate"><Copy size={11}/></button>
-          <button onClick={onDelete} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition" title="Delete"><Trash2 size={11}/></button>
+          <button onClick={onDuplicate} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition" title="Duplicate"><Copy size={11}/></button>
+          <button onClick={onDelete} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400 transition" title="Delete"><Trash2 size={11}/></button>
         </div>
       </div>
 
       <div>
-        <div className="text-[10px] font-mono text-slate-600 mb-1">{contract.contract_number}</div>
-        <div className="text-sm font-bold text-slate-100 mb-0.5 truncate">{contract.contract_name}</div>
-        <div className="text-[10px] text-slate-600">{contract.client?.name || "No client"} · {contract.project?.name || "No project"}</div>
+        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-600 mb-1">{contract.contract_number}</div>
+        <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-0.5 truncate">{contract.contract_name}</div>
+        <div className="text-[10px] text-slate-500 dark:text-slate-600">{contract.client?.name || "No client"} · {contract.project?.name || "No project"}</div>
       </div>
 
       <div className="text-xl font-bold text-emerald-400">{fmtJMD(contract.contract_amount)}</div>
 
-      <div className="flex items-center justify-between pt-3 border-t border-white/[0.05]">
+      <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-white/[0.05]">
         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${cfg.color} ${cfg.bg} ${cfg.border}`}>
           {cfg.icon} {cfg.label}
         </span>
-        <span className="text-[9px] text-slate-700">{fmtDate(contract.contract_date)}</span>
+        <span className="text-[9px] text-slate-400 dark:text-slate-700">{fmtDate(contract.contract_date)}</span>
       </div>
 
       {/* Signature status */}
       <div className="flex gap-2">
-        <div className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-semibold border ${contract.contractor_signed_at ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-white/[0.03] border-white/[0.06] text-slate-700"}`}>
+        <div className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-semibold border ${contract.contractor_signed_at ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.06] text-slate-400 dark:text-slate-700"}`}>
           <Shield size={9}/> Contractor {contract.contractor_signed_at ? "?" : "Pending"}
         </div>
-        <div className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-semibold border ${contract.client_signed_at ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-white/[0.03] border-white/[0.06] text-slate-700"}`}>
+        <div className={`flex-1 flex items-center gap-1.5 px-2 py-1 rounded-lg text-[9px] font-semibold border ${contract.client_signed_at ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.06] text-slate-400 dark:text-slate-700"}`}>
           <Users size={9}/> Client {contract.client_signed_at ? "?" : "Pending"}
         </div>
       </div>
@@ -212,11 +212,11 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col">
       {/* Header */}
-      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 bg-[#0d1117] border-b border-white/[0.07]">
+      <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 bg-white dark:bg-[#0d1117] border-b border-slate-200 dark:border-white/[0.07]">
         <div className="flex items-center gap-2">
           <FileText size={14} className="text-blue-400"/>
-          <span className="text-sm font-bold text-slate-100">{contract.contract_name}</span>
-          <span className="text-xs text-slate-600 font-mono">{contract.contract_number}</span>
+          <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{contract.contract_name}</span>
+          <span className="text-xs text-slate-500 dark:text-slate-600 font-mono">{contract.contract_number}</span>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={downloadPDF}
@@ -227,7 +227,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition">
             <Printer size={12}/> Print
           </button>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">
             <X size={15}/>
           </button>
         </div>
@@ -462,21 +462,21 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
 
   return(
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-[#0d1117] border border-white/[0.1] rounded-2xl p-6 shadow-2xl">
-        <div className="text-sm font-bold text-slate-100 mb-1">Sign Contract · {label}</div>
+      <div className="w-full max-w-md bg-white dark:bg-[#0d1117] border border-slate-300 dark:border-white/[0.1] rounded-2xl p-6 shadow-2xl">
+        <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Sign Contract · {label}</div>
         <div className="text-xs text-slate-500 mb-4">{contract?.contract_name} · {contract?.contract_number}</div>
 
-        <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2.5 text-[11px] text-slate-400 leading-relaxed mb-4">
+        <div className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] px-3 py-2.5 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
           By signing, the {label.toLowerCase()} agrees to the terms, scope of work, and payment schedule outlined in this contract.
         </div>
 
         <div className="flex gap-2 mb-4">
           <button onClick={()=>{setMode("draw");setUploadPreview(null);}}
-            className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${mode==="draw"?"bg-emerald-600 border-emerald-600 text-white":"bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+            className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${mode==="draw"?"bg-emerald-600 border-emerald-600 text-white":"bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
             ? Draw Signature
           </button>
           <button onClick={()=>{setMode("upload");clear();}}
-            className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${mode==="upload"?"bg-emerald-600 border-emerald-600 text-white":"bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-slate-200"}`}>
+            className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${mode==="upload"?"bg-emerald-600 border-emerald-600 text-white":"bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
             📷 Upload / Camera
           </button>
         </div>
@@ -495,10 +495,10 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
         {mode==="upload"&&(
           <>
             <div className="text-[10px] text-slate-500 mb-2">Take a photo of your signature or upload an image:</div>
-            <label className="flex flex-col items-center justify-center gap-3 p-5 rounded-xl border-2 border-dashed border-white/[0.15] bg-white/[0.02] cursor-pointer hover:border-emerald-500/40 transition" style={{minHeight:120}}>
+            <label className="flex flex-col items-center justify-center gap-3 p-5 rounded-xl border-2 border-dashed border-white/[0.15] bg-slate-50 dark:bg-white/[0.02] cursor-pointer hover:border-emerald-500/40 transition" style={{minHeight:120}}>
               {uploadPreview
                 ?<img src={uploadPreview} className="max-h-28 max-w-full rounded-lg object-contain"/>
-                :<><div className="text-3xl">📷</div><div className="text-xs text-slate-500 text-center">Tap to take photo or choose file<br/><span className="text-[10px] text-slate-700">JPG, PNG accepted</span></div></>}
+                :<><div className="text-3xl">📷</div><div className="text-xs text-slate-500 text-center">Tap to take photo or choose file<br/><span className="text-[10px] text-slate-400 dark:text-slate-700">JPG, PNG accepted</span></div></>}
               <input type="file" accept="image/*" capture="environment" onChange={handleUpload} className="hidden"/>
             </label>
             {uploadPreview&&(
@@ -511,15 +511,15 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
 
         <div className="flex gap-2 mt-4">
           {mode==="draw"&&(
-            <button onClick={clear} className="flex-1 py-2 rounded-lg border border-white/[0.08] text-slate-400 text-xs font-semibold hover:bg-white/[0.05] transition">
+            <button onClick={clear} className="flex-1 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 text-xs font-semibold hover:bg-slate-100 dark:bg-white/[0.05] transition">
               Clear
             </button>
           )}
-          <button onClick={onCancel} className="flex-1 py-2 rounded-lg border border-white/[0.08] text-slate-400 text-xs font-semibold hover:bg-white/[0.05] transition">
+          <button onClick={onCancel} className="flex-1 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 text-xs font-semibold hover:bg-slate-100 dark:bg-white/[0.05] transition">
             Cancel
           </button>
           <button onClick={submit} disabled={!canSubmit||saving}
-            className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${canSubmit?"bg-emerald-600 hover:bg-emerald-500 text-white":"bg-white/[0.05] text-slate-600 cursor-not-allowed"}`}>
+            className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${canSubmit?"bg-emerald-600 hover:bg-emerald-500 text-white":"bg-slate-100 dark:bg-white/[0.05] text-slate-500 dark:text-slate-600 cursor-not-allowed"}`}>
             {saving?"Saving…":"Sign & Submit"}
           </button>
         </div>
@@ -813,18 +813,18 @@ Adjust percentages based on the project type and value. Make sure they add up to
 
   // --- Render -----------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-[#080b10] text-slate-100">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] text-slate-900 dark:text-slate-100">
 
       {/* Header */}
-      <div className="border-b border-white/[0.06] bg-[#0d1117] px-6 py-5 flex items-center justify-between">
+      <div className="border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d1117] px-6 py-5 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-100">Contracts & Proposals</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Contracts & Proposals</h1>
           <p className="text-xs text-slate-500 mt-0.5">
             {stats.total} contracts · <span className="text-emerald-400 font-semibold">{fmtJMD(stats.totalValue)}</span> total value
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => loadAll(companyId)} className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-slate-500 hover:text-slate-300 transition">
+          <button onClick={() => loadAll(companyId)} className="p-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">
             <RefreshCw size={13} className={loading ? "animate-spin" : ""}/>
           </button>
           <button onClick={() => { setForm({...form, contract_number: genContractNo()}); setNewSchedule(defaultSchedule); setShowNew(true); }}
@@ -839,14 +839,14 @@ Adjust percentages based on the project type and value. Make sure they add up to
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label:"Total Contracts", value:stats.total,              color:"text-slate-200",   key:"" },
-            { label:"Draft",           value:stats.draft,              color:"text-slate-400",   key:"draft" },
+            { label:"Total Contracts", value:stats.total,              color:"text-slate-800 dark:text-slate-200",   key:"" },
+            { label:"Draft",           value:stats.draft,              color:"text-slate-600 dark:text-slate-400",   key:"draft" },
             { label:"Active/Signed",   value:stats.active,             color:"text-emerald-400", key:"active" },
             { label:"Total Value",     value:fmtJMD(stats.totalValue), color:"text-blue-400",    key:"" },
           ].map(s => (
             <button key={s.label} onClick={() => s.key && setStatusFilter(sf => sf === s.key ? "" : s.key)}
-              className={`rounded-xl border p-4 text-left transition-all ${statusFilter === s.key && s.key ? "border-blue-500/30 bg-blue-500/10" : "border-white/[0.07] bg-[#0d1117] hover:border-white/[0.12]"}`}>
-              <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">{s.label}</div>
+              className={`rounded-xl border p-4 text-left transition-all ${statusFilter === s.key && s.key ? "border-blue-500/30 bg-blue-500/10" : "border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] hover:border-white/[0.12]"}`}>
+              <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-1">{s.label}</div>
               <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
             </button>
           ))}
@@ -855,12 +855,12 @@ Adjust percentages based on the project type and value. Make sure they add up to
         {/* Filters */}
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative flex-1 min-w-48 max-w-sm">
-            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search contracts…"
-              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50"/>
+              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50"/>
           </div>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-400 outline-none w-40">
+            className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-600 dark:text-slate-400 outline-none w-40">
             <option value="">All statuses</option>
             {Object.entries(STATUS_CFG).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
@@ -868,16 +868,16 @@ Adjust percentages based on the project type and value. Make sure they add up to
 
         {/* Contract Grid */}
         {loading ? (
-          <div className="flex items-center justify-center py-16 text-slate-600 text-sm gap-2">
+          <div className="flex items-center justify-center py-16 text-slate-500 dark:text-slate-600 text-sm gap-2">
             <RefreshCw size={14} className="animate-spin"/> Loading contracts…
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
-              <FileText size={22} className="text-slate-700"/>
+            <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] flex items-center justify-center">
+              <FileText size={22} className="text-slate-400 dark:text-slate-700"/>
             </div>
-            <p className="text-slate-400 text-sm font-medium">{search ? "No contracts match" : "No contracts yet"}</p>
-            <p className="text-slate-700 text-xs">Create your first professional contract</p>
+            <p className="text-slate-600 dark:text-slate-400 text-sm font-medium">{search ? "No contracts match" : "No contracts yet"}</p>
+            <p className="text-slate-400 dark:text-slate-700 text-xs">Create your first professional contract</p>
             <button onClick={() => setShowNew(true)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition mt-1">
               <Plus size={12}/> New Contract
@@ -898,19 +898,19 @@ Adjust percentages based on the project type and value. Make sure they add up to
       {/* -- Contract Detail Modal -- */}
       {viewingContract && !showPDF && (
         <div className="fixed inset-0 z-50 flex bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-3xl ml-auto bg-[#0d1117] border-l border-white/[0.08] flex flex-col h-full overflow-y-auto">
+          <div className="w-full max-w-3xl ml-auto bg-white dark:bg-[#0d1117] border-l border-slate-200 dark:border-white/[0.08] flex flex-col h-full overflow-y-auto">
             {/* Header */}
-            <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-white/[0.07] bg-[#080b10]/50 sticky top-0 z-10">
+            <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-[#080b10]/50 sticky top-0 z-10">
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-base font-bold text-slate-100">{viewingContract.contract_name}</span>
+                  <span className="text-base font-bold text-slate-900 dark:text-slate-100">{viewingContract.contract_name}</span>
                   {(() => { const cfg = STATUS_CFG[viewingContract.status] || STATUS_CFG.draft; return (
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${cfg.color} ${cfg.bg} ${cfg.border}`}>
                       {cfg.icon} {cfg.label}
                     </span>
                   ); })()}
                 </div>
-                <p className="text-[11px] text-slate-600 font-mono">{viewingContract.contract_number}</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-600 font-mono">{viewingContract.contract_number}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => {
@@ -930,10 +930,10 @@ Adjust percentages based on the project type and value. Make sure they add up to
                   <Send size={12}/> Email
                 </button>
                 <button onClick={() => setShowPDF(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-white text-xs font-bold transition">
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-white/[0.06] hover:bg-white/[0.1] border border-slate-200 dark:border-white/[0.08] text-white text-xs font-bold transition">
                   <Eye size={12}/> Preview & Print
                 </button>
-                <button onClick={() => setViewingContract(null)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">
+                <button onClick={() => setViewingContract(null)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">
                   <X size={15}/>
                 </button>
               </div>
@@ -950,20 +950,20 @@ Adjust percentages based on the project type and value. Make sure they add up to
                   { label:"Start",     value:fmtDate(viewingContract.start_date) },
                   { label:"Complete",  value:fmtDate(viewingContract.completion_date) },
                 ].map(d => (
-                  <div key={d.label} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                    <div className="text-[9px] font-bold uppercase tracking-widest text-slate-700 mb-1">{d.label}</div>
-                    <div className="text-sm font-bold text-slate-200">{d.value}</div>
+                  <div key={d.label} className="rounded-xl border border-slate-200 dark:border-white/[0.06] bg-slate-50 dark:bg-white/[0.02] px-4 py-3">
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-700 mb-1">{d.label}</div>
+                    <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{d.value}</div>
                   </div>
                 ))}
               </div>
 
               {/* Status Actions */}
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-3">Update Status</div>
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-3">Update Status</div>
                 <div className="flex flex-wrap gap-2">
                   {Object.entries(STATUS_CFG).map(([k, cfg]) => (
                     <button key={k} onClick={() => updateContract(viewingContract.id, { status: k } as any)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition ${viewingContract.status === k ? `${cfg.bg} ${cfg.border} ${cfg.color}` : "border-white/[0.07] text-slate-600 hover:text-slate-300"}`}>
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition ${viewingContract.status === k ? `${cfg.bg} ${cfg.border} ${cfg.color}` : "border-slate-200 dark:border-white/[0.07] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300"}`}>
                       {cfg.icon} {cfg.label}
                     </button>
                   ))}
@@ -971,13 +971,13 @@ Adjust percentages based on the project type and value. Make sure they add up to
               </div>
 
               {/* Signatures */}
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-3">Digital Signatures</div>
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-3">Digital Signatures</div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className={`rounded-xl border p-3 ${viewingContract.contractor_signed_at ? "border-emerald-500/20 bg-emerald-500/[0.06]" : "border-white/[0.06]"}`}>
+                  <div className={`rounded-xl border p-3 ${viewingContract.contractor_signed_at ? "border-emerald-500/20 bg-emerald-500/[0.06]" : "border-slate-200 dark:border-white/[0.06]"}`}>
                     <div className="flex items-center gap-2 mb-2">
-                      <Shield size={12} className={viewingContract.contractor_signed_at ? "text-emerald-400" : "text-slate-600"}/>
-                      <span className="text-xs font-bold text-slate-300">Contractor</span>
+                      <Shield size={12} className={viewingContract.contractor_signed_at ? "text-emerald-400" : "text-slate-500 dark:text-slate-600"}/>
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Contractor</span>
                     </div>
                     {viewingContract.contractor_signed_at ? (
                       <div className="text-[11px] text-emerald-400 font-semibold">? Signed {fmtDate(viewingContract.contractor_signed_at)}</div>
@@ -988,10 +988,10 @@ Adjust percentages based on the project type and value. Make sure they add up to
                       </button>
                     )}
                   </div>
-                  <div className={`rounded-xl border p-3 ${viewingContract.client_signed_at ? "border-emerald-500/20 bg-emerald-500/[0.06]" : "border-white/[0.06]"}`}>
+                  <div className={`rounded-xl border p-3 ${viewingContract.client_signed_at ? "border-emerald-500/20 bg-emerald-500/[0.06]" : "border-slate-200 dark:border-white/[0.06]"}`}>
                     <div className="flex items-center gap-2 mb-2">
-                      <Users size={12} className={viewingContract.client_signed_at ? "text-emerald-400" : "text-slate-600"}/>
-                      <span className="text-xs font-bold text-slate-300">Client</span>
+                      <Users size={12} className={viewingContract.client_signed_at ? "text-emerald-400" : "text-slate-500 dark:text-slate-600"}/>
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Client</span>
                     </div>
                     {viewingContract.client_signed_at ? (
                       <div className="text-[11px] text-emerald-400 font-semibold">? Signed {fmtDate(viewingContract.client_signed_at)}</div>
@@ -1006,34 +1006,34 @@ Adjust percentages based on the project type and value. Make sure they add up to
               </div>
 
               {/* Payment Schedule */}
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-                <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Payment Schedule</span>
-                  <span className="text-xs text-slate-600">{schedule.length} milestones</span>
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200 dark:border-white/[0.06] flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Payment Schedule</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-600">{schedule.length} milestones</span>
                 </div>
                 {schedule.length === 0 ? (
-                  <div className="text-center py-6 text-xs text-slate-600">No payment schedule set</div>
+                  <div className="text-center py-6 text-xs text-slate-500 dark:text-slate-600">No payment schedule set</div>
                 ) : (
                   <div>
                     {schedule.map((p, i) => (
-                      <div key={p.id || i} className={`flex items-center gap-4 px-4 py-3 border-b border-white/[0.04] last:border-0 ${i%2===1?"bg-white/[0.01]":""}`}>
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold ${p.status==="paid"?"bg-emerald-500/20 text-emerald-400":"bg-white/[0.06] text-slate-500"}`}>
+                      <div key={p.id || i} className={`flex items-center gap-4 px-4 py-3 border-b border-slate-100 dark:border-white/[0.04] last:border-0 ${i%2===1?"bg-slate-50 dark:bg-white/[0.01]":""}`}>
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold ${p.status==="paid"?"bg-emerald-500/20 text-emerald-400":"bg-slate-200 dark:bg-white/[0.06] text-slate-500"}`}>
                           {p.status === "paid" ? "?" : i+1}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-bold text-slate-200">{p.milestone_name}</div>
-                          <div className="text-[10px] text-slate-600">{p.milestone_description}</div>
+                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{p.milestone_name}</div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-600">{p.milestone_description}</div>
                         </div>
                         <div className="text-right flex-shrink-0">
                           <div className="text-sm font-bold text-emerald-400">{fmtJMD(Number(p.amount))}</div>
-                          <div className="text-[9px] text-slate-700">{fmtDate(p.due_date)}</div>
+                          <div className="text-[9px] text-slate-400 dark:text-slate-700">{fmtDate(p.due_date)}</div>
                         </div>
                         <select value={p.status}
                           onChange={async e => {
                             await supabase.from("contract_payment_schedules").update({ status: e.target.value }).eq("id", p.id!);
                             await loadSchedule(viewingContract.id);
                           }}
-                          className="text-[10px] bg-[#080b10] border border-white/[0.07] rounded px-1.5 py-1 text-slate-400 outline-none w-20">
+                          className="text-[10px] bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.07] rounded px-1.5 py-1 text-slate-600 dark:text-slate-400 outline-none w-20">
                           <option value="pending">Pending</option>
                           <option value="invoiced">Invoiced</option>
                           <option value="paid">Paid</option>
@@ -1046,17 +1046,17 @@ Adjust percentages based on the project type and value. Make sure they add up to
 
               {/* Scope */}
               {viewingContract.scope_of_work && (
-                <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-3">Scope of Work</div>
-                  <div className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">{viewingContract.scope_of_work}</div>
+                <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-3">Scope of Work</div>
+                  <div className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto">{viewingContract.scope_of_work}</div>
                 </div>
               )}
 
               {/* Notes */}
               {viewingContract.notes && (
-                <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-2">Notes</div>
-                  <div className="text-xs text-slate-400 leading-relaxed">{viewingContract.notes}</div>
+                <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-2">Notes</div>
+                  <div className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">{viewingContract.notes}</div>
                 </div>
               )}
             </div>
@@ -1074,13 +1074,13 @@ Adjust percentages based on the project type and value. Make sure they add up to
       {/* -- New Contract Modal -- */}
       {showNew && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-3xl rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl my-8">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07]">
+          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl my-8">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/[0.07]">
               <div>
-                <div className="text-sm font-bold text-slate-100">New Contract & Proposal</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100">New Contract & Proposal</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">Create a professional contract for your client</div>
               </div>
-              <button onClick={() => { setShowNew(false); setError(null); }} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition"><X size={15}/></button>
+              <button onClick={() => { setShowNew(false); setError(null); }} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
             </div>
 
             <div className="p-6 space-y-5">
@@ -1088,34 +1088,34 @@ Adjust percentages based on the project type and value. Make sure they add up to
                 <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
                   <AlertCircle size={11} className="text-red-400"/>
                   <span className="text-[11px] text-red-300">{error}</span>
-                  <button onClick={() => setError(null)} className="ml-auto"><X size={11} className="text-slate-600 hover:text-slate-400"/></button>
+                  <button onClick={() => setError(null)} className="ml-auto"><X size={11} className="text-slate-500 dark:text-slate-600 hover:text-slate-600 dark:text-slate-400"/></button>
                 </div>
               )}
 
               {/* Section 1: Basic Info */}
               <div className="space-y-3">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Contract Details</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Contract Details</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Contract Name *</label>
                     <input value={form.contract_name} onChange={e => setForm(f => ({ ...f, contract_name: e.target.value }))} autoFocus
                       placeholder="e.g. Residential Construction - Smith Residence"
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+                      className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Contract Number</label>
                     <input value={form.contract_number} onChange={e => setForm(f => ({ ...f, contract_number: e.target.value }))}
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 font-mono outline-none focus:border-blue-500/50"/>
+                      className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 font-mono outline-none focus:border-blue-500/50"/>
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Contract Date</label>
                     <input type="date" value={form.contract_date} onChange={e => setForm(f => ({ ...f, contract_date: e.target.value }))}
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+                      className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Client</label>
                     <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}
-                      className="w-full bg-[#080b10] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50">
+                      className="w-full bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50">
                       <option value="">Select client…</option>
                       {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
@@ -1123,7 +1123,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                   <div>
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Project</label>
                     <select value={form.project_id} onChange={e => setForm(f => ({ ...f, project_id: e.target.value }))}
-                      className="w-full bg-[#080b10] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50">
+                      className="w-full bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50">
                       <option value="">Select project…</option>
                       {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
@@ -1132,27 +1132,27 @@ Adjust percentages based on the project type and value. Make sure they add up to
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Contract Value (JMD)</label>
                     <input type="number" value={form.contract_amount} onChange={e => setForm(f => ({ ...f, contract_amount: e.target.value }))}
                       placeholder="0.00"
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+                      className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Retention %</label>
                     <input type="number" value={form.retention_percent} onChange={e => setForm(f => ({ ...f, retention_percent: e.target.value }))}
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+                      className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Start Date</label>
                     <input type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+                      className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Completion Date</label>
                     <input type="date" value={form.completion_date} onChange={e => setForm(f => ({ ...f, completion_date: e.target.value }))}
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+                      className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Warranty Period (months)</label>
                     <input type="number" value={form.warranty_period_months} onChange={e => setForm(f => ({ ...f, warranty_period_months: e.target.value }))}
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+                      className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
                   </div>
                 </div>
               </div>
@@ -1160,7 +1160,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
               {/* Section 2: Scope of Work */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Scope of Work</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Scope of Work</div>
                   <button onClick={aiGenerateScope} disabled={aiLoading === "scope" || !form.contract_name.trim()}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-[10px] text-purple-400 font-semibold disabled:opacity-40 transition">
                     {aiLoading === "scope" ? <Loader size={9} className="animate-spin"/> : <Sparkles size={9}/>}
@@ -1169,44 +1169,44 @@ Adjust percentages based on the project type and value. Make sure they add up to
                 </div>
                 <textarea value={form.scope_of_work} onChange={e => setForm(f => ({ ...f, scope_of_work: e.target.value }))}
                   rows={6} placeholder="Describe the work to be performed…"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
               </div>
 
               {/* Section 3: Payment Schedule */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Payment Schedule</div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Payment Schedule</div>
                   <button onClick={aiGeneratePaymentSchedule} disabled={aiLoading === "schedule" || !form.contract_amount}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 text-[10px] text-purple-400 font-semibold disabled:opacity-40 transition">
                     {aiLoading === "schedule" ? <Loader size={9} className="animate-spin"/> : <Sparkles size={9}/>}
                     {aiLoading === "schedule" ? "Generating—" : "AI Suggest Schedule"}
                   </button>
                 </div>
-                <div className="rounded-xl border border-white/[0.07] overflow-hidden">
-                  <div className="grid text-[9px] font-bold uppercase tracking-widest text-slate-700 px-4 py-2 bg-white/[0.02] border-b border-white/[0.05]"
+                <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden">
+                  <div className="grid text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-700 px-4 py-2 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.05]"
                     style={{gridTemplateColumns:"2fr 2fr 120px 120px 24px"}}>
                     <span>Milestone</span><span>Description</span><span>Amount (JMD)</span><span>Due Date</span><span/>
                   </div>
                   {newSchedule.map((p, i) => (
-                    <div key={i} className={`grid items-center px-4 py-2 gap-2 border-b border-white/[0.04] last:border-0 ${i%2===1?"bg-white/[0.01]":""}`}
+                    <div key={i} className={`grid items-center px-4 py-2 gap-2 border-b border-slate-100 dark:border-white/[0.04] last:border-0 ${i%2===1?"bg-slate-50 dark:bg-white/[0.01]":""}`}
                       style={{gridTemplateColumns:"2fr 2fr 120px 120px 24px"}}>
                       <input value={p.milestone_name} onChange={e => setNewSchedule(s => s.map((x,j)=>j===i?{...x,milestone_name:e.target.value}:x))}
-                        className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-[11px] text-slate-200 outline-none focus:border-blue-500/40"/>
+                        className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded px-2 py-1.5 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/40"/>
                       <input value={p.milestone_description} onChange={e => setNewSchedule(s => s.map((x,j)=>j===i?{...x,milestone_description:e.target.value}:x))}
-                        className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-[11px] text-slate-400 outline-none focus:border-blue-500/40"/>
+                        className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded px-2 py-1.5 text-[11px] text-slate-600 dark:text-slate-400 outline-none focus:border-blue-500/40"/>
                       <input type="number" value={p.amount} onChange={e => setNewSchedule(s => s.map((x,j)=>j===i?{...x,amount:Number(e.target.value)}:x))}
-                        className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-[11px] text-slate-200 outline-none focus:border-blue-500/40 text-right"/>
+                        className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded px-2 py-1.5 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/40 text-right"/>
                       <input type="date" value={p.due_date} onChange={e => setNewSchedule(s => s.map((x,j)=>j===i?{...x,due_date:e.target.value}:x))}
-                        className="bg-white/[0.04] border border-white/[0.07] rounded px-2 py-1.5 text-[11px] text-slate-200 outline-none focus:border-blue-500/40"/>
-                      <button onClick={() => setNewSchedule(s => s.filter((_,j)=>j!==i))} className="text-slate-700 hover:text-red-400 transition"><X size={12}/></button>
+                        className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded px-2 py-1.5 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/40"/>
+                      <button onClick={() => setNewSchedule(s => s.filter((_,j)=>j!==i))} className="text-slate-400 dark:text-slate-700 hover:text-red-400 transition"><X size={12}/></button>
                     </div>
                   ))}
-                  <div className="px-4 py-2 border-t border-white/[0.05] flex items-center justify-between">
+                  <div className="px-4 py-2 border-t border-slate-100 dark:border-white/[0.05] flex items-center justify-between">
                     <button onClick={() => setNewSchedule(s => [...s, { milestone_name:"", milestone_description:"", due_date:"", amount:0, percent_complete:0, status:"pending", sort_order:s.length+1 }])}
-                      className="flex items-center gap-1 text-[10px] text-slate-600 hover:text-slate-300 transition">
+                      className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition">
                       <Plus size={10}/> Add milestone
                     </button>
-                    <span className="text-[10px] text-slate-600 font-mono">
+                    <span className="text-[10px] text-slate-500 dark:text-slate-600 font-mono">
                       Total: {fmtJMD(newSchedule.reduce((s,p)=>s+Number(p.amount||0),0))}
                     </span>
                   </div>
@@ -1215,10 +1215,10 @@ Adjust percentages based on the project type and value. Make sure they add up to
 
               {/* Section 4: Terms */}
               <div className="space-y-2">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Terms & Conditions</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Terms & Conditions</div>
                 <textarea value={form.terms_and_conditions} onChange={e => setForm(f => ({ ...f, terms_and_conditions: e.target.value }))}
                   rows={8} placeholder="Terms and conditions…"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-xs text-slate-400 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none font-mono leading-relaxed"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-xs text-slate-600 dark:text-slate-400 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50 resize-none font-mono leading-relaxed"/>
               </div>
 
               {/* Section 5: Optional */}
@@ -1227,13 +1227,13 @@ Adjust percentages based on the project type and value. Make sure they add up to
                   <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Penalty Clause (optional)</label>
                   <textarea value={form.penalty_clause} onChange={e => setForm(f => ({ ...f, penalty_clause: e.target.value }))}
                     rows={3} placeholder="e.g. JMD 5,000 per day for delays beyond completion date…"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-400 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-600 dark:text-slate-400 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
                 </div>
                 <div>
                   <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Payment Terms</label>
                   <textarea value={form.payment_terms} onChange={e => setForm(f => ({ ...f, payment_terms: e.target.value }))}
                     rows={3} placeholder="e.g. Payment due within 14 days of invoice."
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-400 placeholder:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-600 dark:text-slate-400 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50 resize-none"/>
                 </div>
               </div>
 
@@ -1241,13 +1241,13 @@ Adjust percentages based on the project type and value. Make sure they add up to
                 <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Internal Notes</label>
                 <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                   placeholder="Internal notes (not shown on contract)"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50"/>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 px-6 py-4 border-t border-white/[0.07]">
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 dark:border-white/[0.07]">
               <button onClick={() => { setShowNew(false); setError(null); }}
-                className="px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-sm text-slate-400 hover:text-slate-200 transition">Cancel</button>
+                className="px-4 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200 transition">Cancel</button>
               <button onClick={createContract} disabled={!form.contract_name.trim() || saving}
                 className="flex items-center gap-1.5 px-6 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold disabled:opacity-40 transition">
                 <Plus size={13}/> {saving ? "Creating…" : "Create Contract"}
@@ -1270,7 +1270,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] pointer-events-none">
-          <div className="bg-[#0d1117] border border-emerald-500/25 text-emerald-400 text-sm font-semibold px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2">
+          <div className="bg-white dark:bg-[#0d1117] border border-emerald-500/25 text-emerald-400 text-sm font-semibold px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>
             {toast}
           </div>
