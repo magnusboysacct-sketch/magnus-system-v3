@@ -294,8 +294,8 @@ export default function SettingsCompanyPage() {
                 <div className="text-[10px] text-slate-600">Show watermark on all printed documents</div>
               </div>
               <button onClick={()=>setWatermarkEnabled(!watermarkEnabled)}
-                className={`w-10 h-5 rounded-full transition-colors relative ${watermarkEnabled?"bg-cyan-600":"bg-white/[0.08]"}`}>
-                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${watermarkEnabled?"left-5":"left-0.5"}`}/>
+                className={`w-10 h-5 rounded-full transition-colors relative ${watermarkEnabled?"bg-cyan-600":"bg-slate-300 dark:bg-white/[0.08]"}`}>
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${watermarkEnabled?"left-5":"left-0.5"}`}/>
               </button>
             </div>
             {watermarkUrl&&(
@@ -356,8 +356,8 @@ export default function SettingsCompanyPage() {
               <div className="text-[10px] text-slate-600">Show a thank-you popup with WhatsApp/Email send buttons after recording a payment</div>
             </div>
             <button onClick={()=>setPaymentNotificationsEnabled(!paymentNotificationsEnabled)}
-              className={`w-10 h-5 rounded-full transition-colors relative ${paymentNotificationsEnabled?"bg-cyan-600":"bg-white/[0.08]"}`}>
-              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${paymentNotificationsEnabled?"left-5":"left-0.5"}`}/>
+              className={`w-10 h-5 rounded-full transition-colors relative ${paymentNotificationsEnabled?"bg-cyan-600":"bg-slate-300 dark:bg-white/[0.08]"}`}>
+              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${paymentNotificationsEnabled?"left-5":"left-0.5"}`}/>
             </button>
           </div>
         </Card>
