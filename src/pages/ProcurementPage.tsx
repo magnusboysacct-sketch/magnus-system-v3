@@ -386,13 +386,13 @@ export default function ProcurementPage() {
   if (!projectId) {
     return (
       <div className="p-6">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
-          <p className="text-slate-400">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-600 dark:text-slate-400">
             Please select a project to view procurement
           </p>
           <button
             onClick={() => nav("/projects")}
-            className="mt-4 px-4 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+            className="mt-4 px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm"
           >
             Go to Projects
           </button>
@@ -511,7 +511,7 @@ function ListView({
             </div>
           )}
 
-          <p className="text-slate-400 mt-1">
+          <p className="text-slate-600 dark:text-slate-400 mt-1">
             Saved procurement lists and materials orders
           </p>
         </div>
@@ -519,21 +519,21 @@ function ListView({
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => onNavigate(`/projects/${projectId}/boq`)}
-            className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+            className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm"
           >
             Go to BOQ
           </button>
         </div>
       </div>
 
-      <div className="flex gap-2 mb-6 border-b border-slate-800">
+      <div className="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-800">
         <button
           onClick={() => onSwitchSection("procurement")}
           className={
             "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
             (currentSection === "procurement"
               ? "border-blue-400 text-blue-400"
-              : "border-transparent text-slate-400 hover:text-slate-300")
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300")
           }
         >
           Procurement Documents
@@ -544,7 +544,7 @@ function ListView({
             "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
             (currentSection === "purchase-orders"
               ? "border-blue-400 text-blue-400"
-              : "border-transparent text-slate-400 hover:text-slate-300")
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300")
           }
         >
           Purchase Orders
@@ -552,18 +552,18 @@ function ListView({
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="text-xs text-slate-400">Total Documents</div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-600 dark:text-slate-400">Total Documents</div>
           <div className="text-2xl font-semibold mt-1">{totalDocs}</div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="text-xs text-slate-400">Draft</div>
-          <div className="text-2xl font-semibold mt-1 text-slate-300">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-600 dark:text-slate-400">Draft</div>
+          <div className="text-2xl font-semibold mt-1 text-slate-700 dark:text-slate-300">
             {draftCount}
           </div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="text-xs text-slate-400">Approved</div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-600 dark:text-slate-400">Approved</div>
           <div className="text-2xl font-semibold mt-1 text-emerald-400">
             {approvedCount}
           </div>
@@ -571,12 +571,12 @@ function ListView({
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
-          <p className="text-slate-400">Loading procurement documents...</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-600 dark:text-slate-400">Loading procurement documents...</p>
         </div>
       ) : headers.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
-          <p className="text-slate-400 mb-2">No procurement documents found</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-600 dark:text-slate-400 mb-2">No procurement documents found</p>
           <p className="text-xs text-slate-500">
             Generate a procurement list from the BOQ page
           </p>
@@ -586,7 +586,7 @@ function ListView({
           {headers.map((header) => (
             <div
               key={header.id}
-              className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 hover:bg-slate-900/50 transition-colors"
+              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -601,7 +601,7 @@ function ListView({
                       className={
                         "px-2 py-0.5 rounded text-xs " +
                         (header.status === "draft"
-                          ? "bg-slate-700/50 text-slate-300"
+                          ? "bg-slate-700/50 text-slate-700 dark:text-slate-300"
                           : header.status === "approved"
                           ? "bg-emerald-900/30 border border-emerald-900/50 text-emerald-300"
                           : header.status === "sent"
@@ -610,7 +610,7 @@ function ListView({
                           ? "bg-green-900/30 border border-green-900/50 text-green-300"
                           : header.status === "cancelled"
                           ? "bg-red-900/30 border border-red-900/50 text-red-300"
-                          : "bg-slate-700/50 text-slate-300")
+                          : "bg-slate-700/50 text-slate-700 dark:text-slate-300")
                       }
                     >
                       {getHeaderStatusLabel(header.status as ProcurementHeaderStatus)}
@@ -618,7 +618,7 @@ function ListView({
                   </div>
 
                   {header.notes && (
-                    <p className="text-sm text-slate-400 mt-1">{header.notes}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{header.notes}</p>
                   )}
 
                   <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
@@ -632,13 +632,13 @@ function ListView({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => onOpenDocument(header.id)}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-xs"
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs"
                   >
                     View
                   </button>
                   <button
                     onClick={() => onCreateReceiving(header.id)}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-xs"
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs"
                   >
                     Create Receiving
                   </button>
@@ -1247,14 +1247,14 @@ function DocumentView({
 
   return (
     <div className="p-6">
-      <div className="flex gap-2 mb-6 border-b border-slate-800">
+      <div className="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-800">
         <button
           onClick={() => onSwitchSection("procurement")}
           className={
             "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
             (currentSection === "procurement"
               ? "border-blue-400 text-blue-400"
-              : "border-transparent text-slate-400 hover:text-slate-300")
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300")
           }
         >
           Procurement Documents
@@ -1265,7 +1265,7 @@ function DocumentView({
             "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
             (currentSection === "purchase-orders"
               ? "border-blue-400 text-blue-400"
-              : "border-transparent text-slate-400 hover:text-slate-300")
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300")
           }
         >
           Purchase Orders
@@ -1277,7 +1277,7 @@ function DocumentView({
           <div className="flex items-center gap-3">
             <button
               onClick={onBack}
-              className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+              className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm"
             >
               â† Back to List
             </button>
@@ -1296,12 +1296,12 @@ function DocumentView({
                     }
                   }}
                   autoFocus
-                  className="px-3 py-1.5 rounded-lg bg-slate-900/50 border border-slate-700 text-lg font-semibold focus:outline-none focus:border-slate-600"
+                  className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-lg font-semibold focus:outline-none focus:border-slate-600"
                 />
               </div>
             ) : (
               <h1
-                className="text-2xl font-semibold cursor-pointer hover:text-slate-300"
+                className="text-2xl font-semibold cursor-pointer hover:text-slate-700 dark:text-slate-300"
                 onClick={() => setEditingTitle(true)}
               >
                 {document.title}
@@ -1336,7 +1336,7 @@ function DocumentView({
               {getDocumentApproval()?.status === 'rejected' && (
                 <button
                   onClick={resetApproval}
-                  className="px-3 py-2 rounded-xl text-sm bg-slate-700/30 hover:bg-slate-800/50 border border-slate-700/50 text-slate-300"
+                  className="px-3 py-2 rounded-xl text-sm bg-slate-700/30 hover:bg-slate-800/50 border border-slate-700/50 text-slate-700 dark:text-slate-300"
                 >
                   Reset Status
                 </button>
@@ -1348,7 +1348,7 @@ function DocumentView({
               className={
                 "px-3 py-2 rounded-xl text-sm transition-colors " +
                 (selectedItems.size === 0
-                  ? "bg-slate-800/30 border border-slate-700/50 text-slate-500 cursor-not-allowed"
+                  ? "bg-slate-50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700/50 text-slate-500 cursor-not-allowed"
                   : "bg-green-900/30 hover:bg-green-900/50 border border-green-900/50 text-green-300 disabled:opacity-50")
               }
             >
@@ -1361,7 +1361,7 @@ function DocumentView({
               onChange={(e) =>
                 handleStatusUpdate(e.target.value as ProcurementHeaderStatus)
               }
-              className="px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700 text-sm"
+              className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm"
             >
               {PROCUREMENT_HEADER_STATUSES.map((status) => (
                 <option key={status} value={status}>
@@ -1379,24 +1379,24 @@ function DocumentView({
         </div>
 
         {/* Procurement Optimization Dashboard */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-4">
-          <div className="text-sm font-medium text-slate-300 mb-3">Procurement Optimization Dashboard</div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4 mb-4">
+          <div className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Procurement Optimization Dashboard</div>
           <div className="grid grid-cols-4 gap-3 mb-3">
-            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-              <div className="text-xs text-slate-400">Current Cost</div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">Current Cost</div>
               <div className="text-lg font-semibold mt-1">
                 ${optimizationMetrics.currentSelectedCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </div>
             </div>
-            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-              <div className="text-xs text-slate-400">Optimized Cost</div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">Optimized Cost</div>
               <div className="text-lg font-semibold mt-1 text-emerald-400">
                 ${optimizationMetrics.optimizedCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </div>
             </div>
-            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-              <div className="text-xs text-slate-400">Potential Savings</div>
-              <div className={`text-lg font-semibold mt-1 ${optimizationMetrics.potentialSavings > 0 ? 'text-green-400' : 'text-slate-400'}`}>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">Potential Savings</div>
+              <div className={`text-lg font-semibold mt-1 ${optimizationMetrics.potentialSavings > 0 ? 'text-green-400' : 'text-slate-600 dark:text-slate-400'}`}>
                 ${Math.abs(optimizationMetrics.potentialSavings).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 {optimizationMetrics.potentialSavings > 0 && (
                   <div className="text-xs mt-1">
@@ -1405,14 +1405,14 @@ function DocumentView({
                 )}
               </div>
             </div>
-            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-              <div className="text-xs text-slate-400">Improvable Items</div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">Improvable Items</div>
               <div className="text-lg font-semibold mt-1 text-yellow-400">
                 {optimizationMetrics.improvableItemsCount}
               </div>
             </div>
           </div>
-          <div className="text-xs text-slate-400">
+          <div className="text-xs text-slate-600 dark:text-slate-400">
             {optimizationMetrics.potentialSavings > 0 
               ? `Optimization found savings opportunities across ${optimizationMetrics.improvableItemsCount} items.`
               : "Current supplier selections are already near optimal."}
@@ -1420,14 +1420,14 @@ function DocumentView({
         </div>
 
         {/* Procurement Intelligence Panel */}
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-4">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-medium text-slate-300">Procurement Intelligence</div>
+            <div className="text-sm font-medium text-slate-700 dark:text-slate-300">Procurement Intelligence</div>
             {documentWorkflow && (
               <div className="flex items-center gap-3">
                 {/* Workflow Progress */}
                 <div className="flex items-center gap-2">
-                  <div className="text-xs text-slate-400">
+                  <div className="text-xs text-slate-600 dark:text-slate-400">
                     Step {documentWorkflow?.current_approval_step || 0} of {workflowSteps.length}
                   </div>
                   {workflowSteps.map((step, index) => (
@@ -1469,7 +1469,7 @@ function DocumentView({
                         : getDocumentApproval()?.status
                       }
                     </div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs text-slate-600 dark:text-slate-400">
                       {getDocumentApproval()?.approvedBy ? `by ${getDocumentApproval()?.approvedBy}` : ''}
                       {getDocumentApproval()?.approvedAt ? ` on ${new Date(getDocumentApproval()!.approvedAt as string).toLocaleDateString()}` : ""}
                     </div>
@@ -1505,32 +1505,32 @@ function DocumentView({
               </div>
             )}
             <div className="grid grid-cols-5 gap-3 mb-3">
-              <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-                <div className="text-xs text-slate-400">Risky Items</div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+                <div className="text-xs text-slate-600 dark:text-slate-400">Risky Items</div>
                 <div className="text-lg font-semibold mt-1 text-red-400">
                   {intelligenceMetrics.riskyItemsCount}
                 </div>
               </div>
-              <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-                <div className="text-xs text-slate-400">Low Confidence</div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+                <div className="text-xs text-slate-600 dark:text-slate-400">Low Confidence</div>
                 <div className="text-lg font-semibold mt-1 text-amber-400">
                   {intelligenceMetrics.lowConfidenceCount}
                 </div>
               </div>
-              <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-                <div className="text-xs text-slate-400">No Competition</div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+                <div className="text-xs text-slate-600 dark:text-slate-400">No Competition</div>
                 <div className="text-lg font-semibold mt-1 text-orange-400">
                   {intelligenceMetrics.noCompetitionCount}
                 </div>
               </div>
-              <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-                <div className="text-xs text-slate-400">Manual Suppliers</div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+                <div className="text-xs text-slate-600 dark:text-slate-400">Manual Suppliers</div>
                 <div className="text-lg font-semibold mt-1 text-yellow-400">
                   {intelligenceMetrics.manualSupplierCount}
                 </div>
               </div>
-              <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-                <div className="text-xs text-slate-400">Price Spread Alerts</div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+                <div className="text-xs text-slate-600 dark:text-slate-400">Price Spread Alerts</div>
                 <div className="text-lg font-semibold mt-1 text-emerald-400">
                   {intelligenceMetrics.highSpreadCount}
                 </div>
@@ -1538,56 +1538,56 @@ function DocumentView({
             </div>
           </div>
           <div className="grid grid-cols-5 gap-3 mb-3">
-            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-              <div className="text-xs text-slate-400">Risky Items</div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">Risky Items</div>
               <div className="text-lg font-semibold mt-1 text-red-400">
                 {intelligenceMetrics.riskyItemsCount}
               </div>
             </div>
-            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-              <div className="text-xs text-slate-400">Low Confidence</div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">Low Confidence</div>
               <div className="text-lg font-semibold mt-1 text-amber-400">
                 {intelligenceMetrics.lowConfidenceCount}
               </div>
             </div>
-            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-              <div className="text-xs text-slate-400">No Competition</div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">No Competition</div>
               <div className="text-lg font-semibold mt-1 text-orange-400">
                 {intelligenceMetrics.noCompetitionCount}
               </div>
             </div>
-            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-              <div className="text-xs text-slate-400">Manual Suppliers</div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">Manual Suppliers</div>
               <div className="text-lg font-semibold mt-1 text-yellow-400">
                 {intelligenceMetrics.manualSupplierCount}
               </div>
             </div>
-            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-              <div className="text-xs text-slate-400 mb-2">Approval Status</div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400 mb-2">Approval Status</div>
               <div className="text-lg font-semibold">
                 {getDocumentApproval()?.status || 'Not Started'}
               </div>
               {getDocumentApproval()?.approvedBy && (
-                <div className="text-sm text-slate-400 mt-1">
+                <div className="text-sm text-slate-600 dark:text-slate-400 mt-1">
                   Approved by: {getDocumentApproval()?.approvedBy}
                 </div>
               )}
               {getDocumentApproval()?.approvedAt && (
-                <div className="text-sm text-slate-400 mt-1">
+                <div className="text-sm text-slate-600 dark:text-slate-400 mt-1">
                   Approved on: {getDocumentApproval()?.approvedAt ? new Date(getDocumentApproval()!.approvedAt as string).toLocaleDateString() : "-"}
                 </div>
               )}
               {showHistory && approvalHistory.length > 0 && (
-                <div className="mt-4 p-3 rounded-lg border border-slate-700/50 bg-slate-800/30">
-                  <div className="text-sm font-medium text-slate-300 mb-2">Approval History</div>
+                <div className="mt-4 p-3 rounded-lg border border-slate-200 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/30">
+                  <div className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Approval History</div>
                   <div className="space-y-2">
                     {approvalHistory.map((approval, index) => (
-                      <div key={approval.id} className="text-xs text-slate-400 p-2 rounded border border-slate-700/30">
+                      <div key={approval.id} className="text-xs text-slate-600 dark:text-slate-400 p-2 rounded border border-slate-700/30">
                         <div className="flex items-center justify-between">
                           <span className="font-medium flex items-center gap-2">
                             {approval.status} #{approval.sequence_number}
                             {approval.user_profiles?.role && (
-                              <span className="px-1 py-0.5 rounded bg-slate-700/50 text-slate-300">
+                              <span className="px-1 py-0.5 rounded bg-slate-700/50 text-slate-700 dark:text-slate-300">
                                 {approval.user_profiles.role}
                               </span>
                             )}
@@ -1620,7 +1620,7 @@ function DocumentView({
                   onChange={(e) => updateApproval(getDocumentApproval()?.status || 'pending', e.target.value)}
                   placeholder="Add approval notes..."
                   disabled={!canApprove && !documentWorkflow?.is_fully_approved}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-slate-200 placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   rows={3}
                 />
                 <div className="flex gap-2 mt-3">
@@ -1635,7 +1635,7 @@ function DocumentView({
                   {getDocumentApproval()?.status !== 'pending' && canApprove && (
                     <button
                       onClick={() => updateApproval('pending', 'Status reset for re-evaluation')}
-                      className="px-3 py-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700 text-slate-300 text-sm"
+                      className="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-700 text-slate-700 dark:text-slate-300 text-sm"
                     >
                       Reset
                     </button>
@@ -1649,21 +1649,21 @@ function DocumentView({
                     </button>
                   )}
                   {!canApprove && !documentWorkflow?.is_fully_approved && (
-                    <div className="px-3 py-2 rounded-lg bg-slate-800/30 border border-slate-700 text-slate-500 text-sm">
+                    <div className="px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700 text-slate-500 text-sm">
                       {workflowSteps[Math.max(0, (documentWorkflow?.current_approval_step || 1) - 1)]?.required_role} approval required
                     </div>
                   )}
                 </div>
               </div>
             </div>
-            <div className="rounded-lg border border-slate-800/50 bg-slate-900/50 p-3">
-              <div className="text-xs text-slate-400">Price Spread Alerts</div>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
+              <div className="text-xs text-slate-600 dark:text-slate-400">Price Spread Alerts</div>
               <div className="text-lg font-semibold mt-1 text-emerald-400">
                 {intelligenceMetrics.highSpreadCount}
               </div>
             </div>
           </div>
-          <div className="text-xs text-slate-400 space-y-1">
+          <div className="text-xs text-slate-600 dark:text-slate-400 space-y-1">
             {intelligenceMetrics.riskyItemsCount > 0 && (
               <div>âš ï¸ Some selected suppliers may need review before ordering.</div>
             )}
@@ -1677,42 +1677,42 @@ function DocumentView({
         </div>
 
         <div className="grid grid-cols-7 gap-3 mb-6">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-            <div className="text-xs text-slate-400">Total Items</div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">Total Items</div>
             <div className="text-xl font-semibold mt-1">{summaryCounts.totalItems}</div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-            <div className="text-xs text-slate-400">Pending</div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">Pending</div>
             <div className="text-xl font-semibold mt-1 text-yellow-400">
               {summaryCounts.pendingCount}
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-            <div className="text-xs text-slate-400">Ordered</div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">Ordered</div>
             <div className="text-xl font-semibold mt-1 text-blue-400">
               {summaryCounts.orderedCount}
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-            <div className="text-xs text-slate-400">Part Del.</div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">Part Del.</div>
             <div className="text-xl font-semibold mt-1 text-orange-400">
               {summaryCounts.partDeliveredCount}
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-            <div className="text-xs text-slate-400">Received</div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">Received</div>
             <div className="text-xl font-semibold mt-1 text-emerald-400">
               {summaryCounts.receivedCount}
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-            <div className="text-xs text-slate-400">Urgent</div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">Urgent</div>
             <div className="text-xl font-semibold mt-1 text-red-400">
               {summaryCounts.urgentCount}
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-            <div className="text-xs text-slate-400">Total Value</div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">Total Value</div>
             <div className="text-xl font-semibold mt-1">
               ${summaryCounts.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </div>
@@ -1726,17 +1726,17 @@ function DocumentView({
               placeholder="Search materials..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="flex-1 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700 text-sm focus:outline-none focus:border-slate-600"
+              className="flex-1 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 text-sm focus:outline-none focus:border-slate-600"
             />
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="text-sm text-slate-400">Filters:</div>
+            <div className="text-sm text-slate-600 dark:text-slate-400">Filters:</div>
 
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700 text-xs"
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs"
             >
               <option value="all">All Status</option>
               {PROCUREMENT_ITEM_STATUSES.map((status) => (
@@ -1749,7 +1749,7 @@ function DocumentView({
             <select
               value={filterPriority}
               onChange={(e) => setFilterPriority(e.target.value)}
-              className="px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700 text-xs"
+              className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs"
             >
               <option value="all">All Priority</option>
               {PROCUREMENT_PRIORITIES.map((priority) => (
@@ -1763,7 +1763,7 @@ function DocumentView({
               <select
                 value={filterSupplier}
                 onChange={(e) => setFilterSupplier(e.target.value)}
-                className="px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700 text-xs"
+                className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs"
               >
                 <option value="all">All Suppliers</option>
                 {itemSuppliers.map((supplier) => (
@@ -1782,7 +1782,7 @@ function DocumentView({
                   setFilterPriority("all");
                   setFilterSupplier("all");
                 }}
-                className="px-3 py-1.5 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 text-xs text-slate-400"
+                className="px-3 py-1.5 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 text-xs text-slate-600 dark:text-slate-400"
               >
                 Clear Filters
               </button>
@@ -1792,17 +1792,17 @@ function DocumentView({
       </div>
 
       {filteredItems.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
-          <p className="text-slate-400">No items match the current filters</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-600 dark:text-slate-400">No items match the current filters</p>
         </div>
       ) : (
         <div className="space-y-6">
           {Object.entries(groupedItems).map(([category, categoryItems]) => (
             <div key={category}>
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/30 overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/50">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
                   <h3 className="font-semibold text-sm">{category}</h3>
-                  <div className="text-xs text-slate-400 mt-0.5">
+                  <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                     {categoryItems.length} items
                   </div>
                 </div>
@@ -1810,7 +1810,7 @@ function DocumentView({
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-slate-800 text-left text-xs text-slate-400">
+                      <tr className="border-b border-slate-800 text-left text-xs text-slate-600 dark:text-slate-400">
                         <th className="px-4 py-3 font-medium w-8">
                           <input
                             type="checkbox"
@@ -1819,7 +1819,7 @@ function DocumentView({
                               selectedItems.size === filteredItems.length
                             }
                             onChange={toggleSelectAll}
-                            className="rounded border-slate-700 bg-slate-800"
+                            className="rounded border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
                           />
                         </th>
                         <th className="px-4 py-3 font-medium">Material</th>
@@ -1964,19 +1964,19 @@ function ItemRow({
   }
 
   return (
-    <tr className="border-b border-slate-800/50 hover:bg-slate-900/50">
+    <tr className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-900/50">
       <td className="px-4 py-3">
         <input
           type="checkbox"
           checked={selected}
           onChange={onToggleSelect}
-          className="w-4 h-4 text-blue-400 rounded border-slate-700 focus:ring-2 focus:ring-blue-500"
+          className="w-4 h-4 text-blue-400 rounded border-slate-300 dark:border-slate-700 focus:ring-2 focus:ring-blue-500"
         />
       </td>
       <td className="px-4 py-3">{item.material_name || item.description || "Item"}</td>
 
       <td className="px-4 py-3">
-        <div className="space-y-1 text-xs text-slate-400">
+        <div className="space-y-1 text-xs text-slate-600 dark:text-slate-400">
           {item.supplier || "No supplier"}
           {recommendedSupplier && (
             <div className="text-blue-400">
@@ -1984,7 +1984,7 @@ function ItemRow({
             </div>
           )}
           {recommendedSupplier && recommendedSupplier.id && supplierScores.has(recommendedSupplier.id) && (
-            <div className="text-slate-300">
+            <div className="text-slate-700 dark:text-slate-300">
               Score {supplierScores.get(recommendedSupplier.id)!.score} Â· {supplierScores.get(recommendedSupplier.id)!.scoreLabel}
             </div>
           )}
@@ -2055,20 +2055,20 @@ function PurchaseOrdersListView({
               </span>
             </div>
           )}
-          <p className="text-slate-400 mt-1">
+          <p className="text-slate-600 dark:text-slate-400 mt-1">
             Manage purchase orders for materials and supplies
           </p>
         </div>
       </div>
 
-      <div className="flex gap-2 mb-6 border-b border-slate-800">
+      <div className="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-800">
         <button
           onClick={() => onSwitchSection("procurement")}
           className={
             "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
             (currentSection === "procurement"
               ? "border-blue-400 text-blue-400"
-              : "border-transparent text-slate-400 hover:text-slate-300")
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300")
           }
         >
           Procurement Documents
@@ -2079,7 +2079,7 @@ function PurchaseOrdersListView({
             "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
             (currentSection === "purchase-orders"
               ? "border-blue-400 text-blue-400"
-              : "border-transparent text-slate-400 hover:text-slate-300")
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300")
           }
         >
           Purchase Orders
@@ -2087,24 +2087,24 @@ function PurchaseOrdersListView({
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="text-xs text-slate-400">Total POs</div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-600 dark:text-slate-400">Total POs</div>
           <div className="text-2xl font-semibold mt-1">{totalPOs}</div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="text-xs text-slate-400">Draft</div>
-          <div className="text-2xl font-semibold mt-1 text-slate-300">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-600 dark:text-slate-400">Draft</div>
+          <div className="text-2xl font-semibold mt-1 text-slate-700 dark:text-slate-300">
             {draftCount}
           </div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="text-xs text-slate-400">Issued</div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-600 dark:text-slate-400">Issued</div>
           <div className="text-2xl font-semibold mt-1 text-blue-400">
             {issuedCount}
           </div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4">
-          <div className="text-xs text-slate-400">Delivered</div>
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
+          <div className="text-xs text-slate-600 dark:text-slate-400">Delivered</div>
           <div className="text-2xl font-semibold mt-1 text-emerald-400">
             {deliveredCount}
           </div>
@@ -2112,12 +2112,12 @@ function PurchaseOrdersListView({
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
-          <p className="text-slate-400">Loading purchase orders...</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-600 dark:text-slate-400">Loading purchase orders...</p>
         </div>
       ) : purchaseOrders.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
-          <p className="text-slate-400 mb-2">No purchase orders found</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-600 dark:text-slate-400 mb-2">No purchase orders found</p>
           <p className="text-xs text-slate-500">
             Create purchase orders from procurement documents
           </p>
@@ -2127,7 +2127,7 @@ function PurchaseOrdersListView({
           {purchaseOrders.map((po) => (
             <div
               key={po.id}
-              className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 hover:bg-slate-900/50 transition-colors"
+              className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -2142,7 +2142,7 @@ function PurchaseOrdersListView({
                       className={
                         "px-2 py-0.5 rounded text-xs " +
                         (po.status === "draft"
-                          ? "bg-slate-700/50 text-slate-300"
+                          ? "bg-slate-700/50 text-slate-700 dark:text-slate-300"
                           : po.status === "issued"
                           ? "bg-blue-900/30 border border-blue-900/50 text-blue-300"
                           : po.status === "part_delivered"
@@ -2151,16 +2151,16 @@ function PurchaseOrdersListView({
                           ? "bg-emerald-900/30 border border-emerald-900/50 text-emerald-300"
                           : po.status === "cancelled"
                           ? "bg-red-900/30 border border-red-900/50 text-red-300"
-                          : "bg-slate-700/50 text-slate-300")
+                          : "bg-slate-700/50 text-slate-700 dark:text-slate-300")
                       }
                     >
                       {getStatusLabel(po.status)}
                     </span>
                   </div>
 
-                  <p className="text-sm text-slate-300 mt-1">{po.supplier_name}</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 mt-1">{po.supplier_name}</p>
                   {po.title && (
-                    <p className="text-sm text-slate-400 mt-0.5">{po.title}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-0.5">{po.title}</p>
                   )}
 
                   <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
@@ -2174,7 +2174,7 @@ function PurchaseOrdersListView({
                     {po.itemCount > 0 && (
                       <>
                         <span>â€¢</span>
-                        <span className="text-slate-400 font-medium">
+                        <span className="text-slate-600 dark:text-slate-400 font-medium">
                           Total: ${po.totalValue.toLocaleString(undefined, {
                             maximumFractionDigits: 2,
                           })}
@@ -2187,7 +2187,7 @@ function PurchaseOrdersListView({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => onOpenPO(po.id)}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-xs"
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs"
                   >
                     View
                   </button>
@@ -2314,7 +2314,7 @@ function PurchaseOrderDocumentView({
             <div className="flex items-center gap-3">
               <button
                 onClick={onBack}
-                className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+                className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm"
               >
                 â† Back to List
               </button>
@@ -2342,7 +2342,7 @@ function PurchaseOrderDocumentView({
                 </button>
                 <button
                   onClick={cancelReceiving}
-                  className="px-3 py-2 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-sm"
+                  className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm"
                 >
                   Cancel
                 </button>
@@ -2366,7 +2366,7 @@ function PurchaseOrderDocumentView({
                   onChange={(e) =>
                     onUpdate({ status: e.target.value as PurchaseOrderStatus })
                   }
-                  className="px-3 py-2 rounded-xl bg-slate-800/60 border border-slate-700 text-sm"
+                  className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm"
                 >
                   {PO_STATUSES.map((status) => (
                     <option key={status} value={status}>
@@ -2379,20 +2379,20 @@ function PurchaseOrderDocumentView({
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-4 mb-6">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4 mb-6">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <div className="text-xs text-slate-400 mb-1">Supplier</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Supplier</div>
               <div className="font-medium">{purchaseOrder.supplier_name}</div>
             </div>
 
             <div>
-              <div className="text-xs text-slate-400 mb-1">Title</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Title</div>
               <div className="text-sm">{purchaseOrder.title}</div>
             </div>
 
             <div>
-              <div className="text-xs text-slate-400 mb-1">Issue Date</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Issue Date</div>
               {editingField === "issue_date" ? (
                 <input
                   type="date"
@@ -2404,7 +2404,7 @@ function PurchaseOrderDocumentView({
                     if (e.key === "Escape") cancelEdit();
                   }}
                   autoFocus
-                  className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-sm focus:outline-none focus:border-slate-600"
+                  className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-sm focus:outline-none focus:border-slate-600"
                 />
               ) : (
                 <div
@@ -2416,19 +2416,19 @@ function PurchaseOrderDocumentView({
                         : ""
                     )
                   }
-                  className="text-sm cursor-pointer hover:text-slate-300"
+                  className="text-sm cursor-pointer hover:text-slate-700 dark:text-slate-300"
                 >
                   {purchaseOrder.issue_date ? (
                     new Date(purchaseOrder.issue_date).toLocaleDateString()
                   ) : (
-                    <span className="text-slate-600">Not set</span>
+                    <span className="text-slate-500 dark:text-slate-600">Not set</span>
                   )}
                 </div>
               )}
             </div>
 
             <div>
-              <div className="text-xs text-slate-400 mb-1">Expected Date</div>
+              <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Expected Date</div>
               {editingField === "expected_date" ? (
                 <input
                   type="date"
@@ -2440,7 +2440,7 @@ function PurchaseOrderDocumentView({
                     if (e.key === "Escape") cancelEdit();
                   }}
                   autoFocus
-                  className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-sm focus:outline-none focus:border-slate-600"
+                  className="px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-sm focus:outline-none focus:border-slate-600"
                 />
               ) : (
                 <div
@@ -2452,12 +2452,12 @@ function PurchaseOrderDocumentView({
                         : ""
                     )
                   }
-                  className="text-sm cursor-pointer hover:text-slate-300"
+                  className="text-sm cursor-pointer hover:text-slate-700 dark:text-slate-300"
                 >
                   {purchaseOrder.expected_date ? (
                     new Date(purchaseOrder.expected_date).toLocaleDateString()
                   ) : (
-                    <span className="text-slate-600">Not set</span>
+                    <span className="text-slate-500 dark:text-slate-600">Not set</span>
                   )}
                 </div>
               )}
@@ -2465,30 +2465,30 @@ function PurchaseOrderDocumentView({
           </div>
 
           {purchaseOrder.notes && (
-            <div className="mt-4 pt-4 border-t border-slate-800">
-              <div className="text-xs text-slate-400 mb-1">Notes</div>
-              <div className="text-sm text-slate-300">{purchaseOrder.notes}</div>
+            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+              <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Notes</div>
+              <div className="text-sm text-slate-700 dark:text-slate-300">{purchaseOrder.notes}</div>
             </div>
           )}
         </div>
 
         <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-            <div className="text-xs text-slate-400">Total Items</div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">Total Items</div>
             <div className="text-xl font-semibold mt-1">
               {purchaseOrder.itemCount}
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-            <div className="text-xs text-slate-400">Total Value</div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">Total Value</div>
             <div className="text-xl font-semibold mt-1">
               ${purchaseOrder.totalValue.toLocaleString(undefined, {
                 maximumFractionDigits: 2,
               })}
             </div>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-            <div className="text-xs text-slate-400">Status</div>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-600 dark:text-slate-400">Status</div>
             <div className="text-xl font-semibold mt-1">
               {getStatusLabel(purchaseOrder.status)}
             </div>
@@ -2497,19 +2497,19 @@ function PurchaseOrderDocumentView({
       </div>
 
       {purchaseOrder.items.length === 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
-          <p className="text-slate-400">No items in this purchase order</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-600 dark:text-slate-400">No items in this purchase order</p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/50">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
             <h3 className="font-semibold text-sm">Purchase Order Items</h3>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-800 text-left text-xs text-slate-400">
+                <tr className="border-b border-slate-800 text-left text-xs text-slate-600 dark:text-slate-400">
                   <th className="px-4 py-3 font-medium">Material</th>
                   <th className="px-4 py-3 font-medium">Ordered</th>
                   {receivingMode && (
@@ -2536,7 +2536,7 @@ function PurchaseOrderDocumentView({
                   return (
                     <tr
                       key={item.id}
-                      className="border-b border-slate-800/50 hover:bg-slate-900/50"
+                      className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-900/50"
                     >
                       <td className="px-4 py-3">
                         <div className="font-medium text-sm">{item.material_name}</div>
@@ -2563,7 +2563,7 @@ function PurchaseOrderDocumentView({
                             onChange={(e) =>
                               updateDeliveryQty(item.id, Number(e.target.value))
                             }
-                            className="w-24 px-2 py-1 rounded bg-slate-800 border border-slate-700 text-sm focus:outline-none focus:border-slate-600"
+                            className="w-24 px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-sm focus:outline-none focus:border-slate-600"
                           />
                         </td>
                       ) : (
@@ -2606,11 +2606,11 @@ function PurchaseOrderDocumentView({
                 })}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-slate-700 bg-slate-900/50">
+                <tr className="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                   <td className="px-4 py-3" colSpan={receivingMode ? 4 : 5}>
                     <div className="grid grid-cols-3 gap-6 text-sm">
                       <div>
-                        <div className="text-slate-400 mb-1">PO Total</div>
+                        <div className="text-slate-600 dark:text-slate-400 mb-1">PO Total</div>
                         <div className="font-semibold text-base">
                           ${purchaseOrder.totalValue.toLocaleString(undefined, {
                             maximumFractionDigits: 2,
@@ -2618,7 +2618,7 @@ function PurchaseOrderDocumentView({
                         </div>
                       </div>
                       <div>
-                        <div className="text-slate-400 mb-1">Delivered Value</div>
+                        <div className="text-slate-600 dark:text-slate-400 mb-1">Delivered Value</div>
                         <div className="font-semibold text-base text-emerald-400">
                           ${(() => {
                             const deliveredValue = purchaseOrder.items.reduce((sum, item) => {
@@ -2633,7 +2633,7 @@ function PurchaseOrderDocumentView({
                         </div>
                       </div>
                       <div>
-                        <div className="text-slate-400 mb-1">Remaining Value</div>
+                        <div className="text-slate-600 dark:text-slate-400 mb-1">Remaining Value</div>
                         <div className="font-semibold text-base">
                           ${(() => {
                             const remainingValue = purchaseOrder.items.reduce((sum, item) => {
