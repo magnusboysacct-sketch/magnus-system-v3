@@ -101,7 +101,7 @@ const TYPE_COLORS: Record<string,string> = {
   labor:"bg-amber-500/10 text-amber-400 border-amber-500/20",
   equipment:"bg-purple-500/10 text-purple-400 border-purple-500/20",
   subcontract:"bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  other:"bg-slate-500/10 text-slate-400 border-slate-500/20",
+  other:"bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
 };
 
 // ─── Formula hints per measurement type ───────────────────────────────────────
@@ -410,16 +410,16 @@ export default function AssembliesPage() {
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#080b10] text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] text-slate-900 dark:text-slate-100 flex flex-col">
 
       {/* Header */}
-      <div className="border-b border-white/[0.06] bg-[#0d1117] px-6 py-4 flex items-center justify-between">
+      <div className="border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d1117] px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-600 to-blue-700 flex items-center justify-center shadow-lg shadow-purple-900/30">
             <Layers size={18} className="text-white"/>
           </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-100">Assembly Builder</h1>
+            <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">Assembly Builder</h1>
             <p className="text-xs text-slate-500">{assemblies.length} assemblies · Formula-driven material calculator</p>
           </div>
         </div>
@@ -432,16 +432,16 @@ export default function AssembliesPage() {
       <div className="flex flex-1 min-h-0">
 
         {/* ── Left: Assembly List ── */}
-        <div className="w-72 flex-shrink-0 border-r border-white/[0.06] bg-[#0d1117] flex flex-col">
-          <div className="p-3 border-b border-white/[0.06] space-y-2">
+        <div className="w-72 flex-shrink-0 border-r border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d1117] flex flex-col">
+          <div className="p-3 border-b border-slate-200 dark:border-white/[0.06] space-y-2">
             <div className="relative">
-              <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+              <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
               <input value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Search assemblies…"
-                className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-300 placeholder:text-slate-700 outline-none focus:border-purple-500/40"/>
+                className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:text-slate-700 outline-none focus:border-purple-500/40"/>
             </div>
             <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
-              className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg px-2 py-1.5 text-[11px] text-slate-400 outline-none">
+              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-2 py-1.5 text-[11px] text-slate-600 dark:text-slate-400 outline-none">
               <option value="">All categories</option>
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -449,13 +449,13 @@ export default function AssembliesPage() {
 
           <div className="flex-1 overflow-y-auto">
             {loading ? (
-              <div className="flex items-center justify-center py-10 gap-2 text-slate-600 text-xs">
+              <div className="flex items-center justify-center py-10 gap-2 text-slate-500 dark:text-slate-600 text-xs">
                 <RefreshCw size={12} className="animate-spin"/> Loading…
               </div>
             ) : filtered.length === 0 ? (
               <div className="text-center py-10">
                 <Layers size={20} className="text-slate-800 mx-auto mb-2"/>
-                <p className="text-xs text-slate-700">No assemblies yet</p>
+                <p className="text-xs text-slate-400 dark:text-slate-700">No assemblies yet</p>
                 <button onClick={() => setShowNewForm(true)} className="mt-3 text-xs text-purple-400 hover:text-purple-300">+ Create first</button>
               </div>
             ) : filtered.map(a => {
@@ -463,26 +463,26 @@ export default function AssembliesPage() {
               const active = a.id === activeId;
               return (
                 <div key={a.id} onClick={() => setActiveId(a.id)}
-                  className={`group px-3 py-3 border-b border-white/[0.04] cursor-pointer transition-all ${active ? "bg-purple-500/10 border-l-2 border-l-purple-500" : "hover:bg-white/[0.02]"}`}>
+                  className={`group px-3 py-3 border-b border-slate-100 dark:border-white/[0.04] cursor-pointer transition-all ${active ? "bg-purple-500/10 border-l-2 border-l-purple-500" : "hover:bg-slate-50 dark:bg-white/[0.02]"}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <span style={{ color: cfg.color }}>{cfg.icon}</span>
-                        <span className={`text-[11px] font-bold truncate ${active ? "text-slate-100" : "text-slate-300"}`}>{a.name}</span>
+                        <span className={`text-[11px] font-bold truncate ${active ? "text-slate-900 dark:text-slate-100" : "text-slate-700 dark:text-slate-300"}`}>{a.name}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        {a.category && <span className="text-[9px] text-slate-600">{a.category}</span>}
-                        <span className="text-[9px] text-slate-700">·</span>
-                        <span className="text-[9px] text-slate-600">{a.componentCount} component{a.componentCount !== 1 ? "s" : ""}</span>
+                        {a.category && <span className="text-[9px] text-slate-500 dark:text-slate-600">{a.category}</span>}
+                        <span className="text-[9px] text-slate-400 dark:text-slate-700">·</span>
+                        <span className="text-[9px] text-slate-500 dark:text-slate-600">{a.componentCount} component{a.componentCount !== 1 ? "s" : ""}</span>
                       </div>
                     </div>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition flex-shrink-0">
                       <button onClick={e => { e.stopPropagation(); duplicateAssembly(a); }}
-                        className="p-1 rounded hover:bg-white/10 text-slate-600 hover:text-slate-300" title="Duplicate">
+                        className="p-1 rounded hover:bg-white/10 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300" title="Duplicate">
                         <Copy size={11}/>
                       </button>
                       <button onClick={e => { e.stopPropagation(); deleteAssembly(a.id); }}
-                        className="p-1 rounded hover:bg-red-500/10 text-slate-600 hover:text-red-400" title="Delete">
+                        className="p-1 rounded hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400" title="Delete">
                         <Trash2 size={11}/>
                       </button>
                     </div>
@@ -497,12 +497,12 @@ export default function AssembliesPage() {
         <div className="flex-1 overflow-y-auto">
           {!activeAssembly ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
-                <Layers size={28} className="text-slate-700"/>
+              <div className="w-16 h-16 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] flex items-center justify-center">
+                <Layers size={28} className="text-slate-400 dark:text-slate-700"/>
               </div>
               <div>
-                <p className="text-slate-400 text-sm font-medium mb-1">No assembly selected</p>
-                <p className="text-slate-700 text-xs">Select from the list or create a new one</p>
+                <p className="text-slate-600 dark:text-slate-400 text-sm font-medium mb-1">No assembly selected</p>
+                <p className="text-slate-400 dark:text-slate-700 text-xs">Select from the list or create a new one</p>
               </div>
               <button onClick={() => setShowNewForm(true)}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition">
@@ -513,8 +513,8 @@ export default function AssembliesPage() {
             <div className="p-6 space-y-5 max-w-4xl">
 
               {/* Assembly header card */}
-              <div className="rounded-xl border border-white/[0.07] bg-[#0d1117] overflow-hidden">
-                <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.06] flex items-center justify-between">
                   {!editingAssembly ? (
                     <>
                       <div className="flex items-center gap-3">
@@ -523,25 +523,25 @@ export default function AssembliesPage() {
                           <span style={{ color: measureCfg!.color }}>{measureCfg!.icon}</span>
                         </div>
                         <div>
-                          <h2 className="text-base font-bold text-slate-100">{activeAssembly.name}</h2>
+                          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{activeAssembly.name}</h2>
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="text-[10px] px-2 py-0.5 rounded-md border font-semibold"
                               style={{ backgroundColor: measureCfg!.color + "15", borderColor: measureCfg!.color + "25", color: measureCfg!.color }}>
                               {measureCfg!.label}
                             </span>
-                            {activeAssembly.category && <span className="text-[10px] text-slate-600">{activeAssembly.category}</span>}
-                            {activeAssembly.assembly_code && <span className="text-[10px] text-slate-700 font-mono">{activeAssembly.assembly_code}</span>}
+                            {activeAssembly.category && <span className="text-[10px] text-slate-500 dark:text-slate-600">{activeAssembly.category}</span>}
+                            {activeAssembly.assembly_code && <span className="text-[10px] text-slate-400 dark:text-slate-700 font-mono">{activeAssembly.assembly_code}</span>}
                             {activeAssembly.default_waste_percent > 0 && <span className="text-[10px] text-amber-500">{activeAssembly.default_waste_percent}% default waste</span>}
                           </div>
                         </div>
                       </div>
                       <div className="flex gap-2">
                         <button onClick={() => setShowPreview(v => !v)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition ${showPreview ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" : "bg-white/[0.04] border-white/[0.07] text-slate-400 hover:text-slate-200"}`}>
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition ${showPreview ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" : "bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.07] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
                           <Play size={11}/> {showPreview ? "Hide Preview" : "Live Preview"}
                         </button>
                         <button onClick={() => setEditingAssembly(true)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.07] text-[11px] text-slate-400 transition">
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.07] text-[11px] text-slate-600 dark:text-slate-400 transition">
                           <Edit2 size={11}/> Edit
                         </button>
                       </div>
@@ -552,12 +552,12 @@ export default function AssembliesPage() {
                         <div className="col-span-2">
                           <label className="text-[10px] text-slate-500 block mb-1 font-medium uppercase tracking-wider">Assembly Name</label>
                           <input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500/50"/>
+                            className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50"/>
                         </div>
                         <div>
                           <label className="text-[10px] text-slate-500 block mb-1 font-medium uppercase tracking-wider">Category</label>
                           <select value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))}
-                            className="w-full bg-[#080b10] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500/50">
+                            className="w-full bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50">
                             <option value="">None</option>
                             {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
@@ -569,7 +569,7 @@ export default function AssembliesPage() {
                               <button key={k} onClick={() => setEditForm(f => ({ ...f, measure_type: k }))}
                                 className={[
                                   "flex flex-col items-center gap-1 py-2 rounded-lg border text-[10px] font-bold transition",
-                                  editForm.measure_type === k ? "border-white/20 bg-white/10 text-slate-100" : "border-white/[0.06] text-slate-600 hover:text-slate-400"
+                                  editForm.measure_type === k ? "border-white/20 bg-white/10 text-slate-900 dark:text-slate-100" : "border-slate-200 dark:border-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-600 dark:text-slate-400"
                                 ].join(" ")}>
                                 <span style={{ color: editForm.measure_type === k ? cfg.color : undefined }}>{cfg.icon}</span>
                                 {cfg.label}
@@ -580,21 +580,21 @@ export default function AssembliesPage() {
                         <div>
                           <label className="text-[10px] text-slate-500 block mb-1 font-medium uppercase tracking-wider">Code</label>
                           <input value={editForm.assembly_code} onChange={e => setEditForm(f => ({ ...f, assembly_code: e.target.value }))} placeholder="e.g. BLK-6-STD"
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none font-mono focus:border-purple-500/50"/>
+                            className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none font-mono focus:border-purple-500/50"/>
                         </div>
                         <div>
                           <label className="text-[10px] text-slate-500 block mb-1 font-medium uppercase tracking-wider">Default Waste %</label>
                           <input type="number" value={editForm.default_waste_percent} onChange={e => setEditForm(f => ({ ...f, default_waste_percent: e.target.value }))}
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500/50"/>
+                            className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50"/>
                         </div>
                         <div>
                           <label className="text-[10px] text-slate-500 block mb-1 font-medium uppercase tracking-wider">Output Unit</label>
                           <input value={editForm.output_unit} onChange={e => setEditForm(f => ({ ...f, output_unit: e.target.value }))} placeholder="e.g. m², ft, each"
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500/50"/>
+                            className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50"/>
                         </div>
                       </div>
-                      <div className="flex gap-2 justify-end border-t border-white/[0.06] pt-3">
-                        <button onClick={() => setEditingAssembly(false)} className="px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-sm text-slate-400 transition hover:text-slate-200">Cancel</button>
+                      <div className="flex gap-2 justify-end border-t border-slate-200 dark:border-white/[0.06] pt-3">
+                        <button onClick={() => setEditingAssembly(false)} className="px-4 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-sm text-slate-600 dark:text-slate-400 transition hover:text-slate-800 dark:text-slate-200">Cancel</button>
                         <button onClick={updateAssembly} disabled={saving}
                           className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold disabled:opacity-40 transition">
                           <Save size={13}/> {saving ? "Saving…" : "Save Changes"}
@@ -606,8 +606,8 @@ export default function AssembliesPage() {
 
                 {/* Variable hint */}
                 <div className="px-5 py-2.5 bg-white/[0.015] flex items-center gap-2">
-                  <Info size={11} className="text-slate-600 flex-shrink-0"/>
-                  <span className="text-[10px] text-slate-600">{measureCfg!.hint} — use these in your formulas below</span>
+                  <Info size={11} className="text-slate-500 dark:text-slate-600 flex-shrink-0"/>
+                  <span className="text-[10px] text-slate-500 dark:text-slate-600">{measureCfg!.hint} — use these in your formulas below</span>
                 </div>
               </div>
 
@@ -617,7 +617,7 @@ export default function AssembliesPage() {
                   <div className="px-5 py-3 border-b border-emerald-500/15 flex items-center gap-2">
                     <Play size={12} className="text-emerald-400"/>
                     <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider">Live Preview</span>
-                    <span className="text-[10px] text-slate-600 ml-2">Enter test values to see calculated quantities</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-600 ml-2">Enter test values to see calculated quantities</span>
                   </div>
                   <div className="p-4 space-y-4">
                     {/* Test inputs */}
@@ -626,29 +626,29 @@ export default function AssembliesPage() {
                         <div key={v}>
                           <label className="text-[10px] text-slate-500 block mb-1 uppercase tracking-wider">{v}</label>
                           <input type="number" value={previewVars[v] || ""} onChange={e => setPreviewVars(prev => ({ ...prev, [v]: e.target.value }))}
-                            className="w-24 bg-white/[0.04] border border-emerald-500/20 rounded-lg px-2.5 py-1.5 text-sm text-slate-200 outline-none focus:border-emerald-500/40"/>
+                            className="w-24 bg-slate-50 dark:bg-white/[0.04] border border-emerald-500/20 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500/40"/>
                         </div>
                       ))}
                     </div>
                     {/* Results */}
                     {previewResults.length > 0 && (
-                      <div className="rounded-lg border border-white/[0.06] overflow-hidden">
-                        <div className="grid text-[9px] font-bold uppercase tracking-widest text-slate-700 px-4 py-2 bg-white/[0.02] border-b border-white/[0.05]"
+                      <div className="rounded-lg border border-slate-200 dark:border-white/[0.06] overflow-hidden">
+                        <div className="grid text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-700 px-4 py-2 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.05]"
                           style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr" }}>
                           <span>Item</span><span>Formula</span><span>Base Qty</span><span>+Waste</span><span>Unit</span>
                         </div>
                         {previewResults.map((r, i) => (
-                          <div key={r.id} className={`grid items-center px-4 py-2.5 border-b border-white/[0.03] last:border-0 ${i % 2 === 0 ? "" : "bg-white/[0.01]"}`}
+                          <div key={r.id} className={`grid items-center px-4 py-2.5 border-b border-white/[0.03] last:border-0 ${i % 2 === 0 ? "" : "bg-slate-50 dark:bg-white/[0.01]"}`}
                             style={{ gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr" }}>
-                            <span className="text-xs font-semibold text-slate-200 truncate">{r.item?.item_name || "—"}</span>
-                            <span className="text-[10px] text-slate-600 font-mono truncate">{components[i]?.formula}</span>
+                            <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{r.item?.item_name || "—"}</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-600 font-mono truncate">{components[i]?.formula}</span>
                             <span className={`text-sm font-bold ${r.base !== null ? "text-emerald-400" : "text-red-500"}`}>
                               {r.base !== null ? r.base.toFixed(2) : "Error"}
                             </span>
-                            <span className={`text-sm font-bold ${r.withWaste !== null ? "text-sky-400" : "text-slate-700"}`}>
+                            <span className={`text-sm font-bold ${r.withWaste !== null ? "text-sky-400" : "text-slate-400 dark:text-slate-700"}`}>
                               {r.withWaste !== null ? r.withWaste.toFixed(2) : "—"}
                             </span>
-                            <span className="text-[10px] text-slate-600">{r.item?.unit || "—"}</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-600">{r.item?.unit || "—"}</span>
                           </div>
                         ))}
                       </div>
@@ -658,28 +658,28 @@ export default function AssembliesPage() {
               )}
 
               {/* Components */}
-              <div className="rounded-xl border border-white/[0.07] bg-[#0d1117] overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center justify-between">
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-200 dark:border-white/[0.06] flex items-center justify-between">
                   <div>
-                    <span className="text-sm font-bold text-slate-100">Components</span>
-                    <span className="text-[10px] text-slate-600 ml-2">{components.length} lines</span>
+                    <span className="text-sm font-bold text-slate-900 dark:text-slate-100">Components</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-600 ml-2">{components.length} lines</span>
                   </div>
                 </div>
 
                 {/* Column headers */}
-                <div className="grid text-[9px] font-bold uppercase tracking-widest text-slate-700 px-5 py-2 bg-white/[0.02] border-b border-white/[0.05]"
+                <div className="grid text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-700 px-5 py-2 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.05]"
                   style={{ gridTemplateColumns: "2fr 1fr 2fr 80px 60px 72px" }}>
                   <span>Item</span><span>Type</span><span>Formula</span><span className="text-right">Waste %</span><span className="text-right">Preview</span><span/>
                 </div>
 
                 {compLoading ? (
-                  <div className="flex items-center justify-center py-8 gap-2 text-slate-600 text-xs">
+                  <div className="flex items-center justify-center py-8 gap-2 text-slate-500 dark:text-slate-600 text-xs">
                     <RefreshCw size={12} className="animate-spin"/> Loading…
                   </div>
                 ) : components.length === 0 ? (
                   <div className="text-center py-10">
-                    <Package size={18} className="text-slate-700 mx-auto mb-2"/>
-                    <p className="text-xs text-slate-700">No components yet. Add one below.</p>
+                    <Package size={18} className="text-slate-400 dark:text-slate-700 mx-auto mb-2"/>
+                    <p className="text-xs text-slate-400 dark:text-slate-700">No components yet. Add one below.</p>
                   </div>
                 ) : components.map((c, idx) => {
                   const tcol = TYPE_COLORS[c.line_type] || TYPE_COLORS.other;
@@ -696,9 +696,9 @@ export default function AssembliesPage() {
                 })}
 
                 {/* Add component form */}
-                <div className="px-5 py-4 bg-white/[0.015] border-t border-white/[0.06] space-y-3">
+                <div className="px-5 py-4 bg-white/[0.015] border-t border-slate-200 dark:border-white/[0.06] space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Add Component</div>
+                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-600 uppercase tracking-widest">Add Component</div>
                     <span className="text-[9px] text-purple-400 flex items-center gap-1"><Bot size={9}/> AI Formula Assistant enabled</span>
                   </div>
 
@@ -706,7 +706,7 @@ export default function AssembliesPage() {
                     <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2">
                       <AlertCircle size={11} className="text-red-400"/>
                       <span className="text-[11px] text-red-300">{error}</span>
-                      <button onClick={() => setError(null)} className="ml-auto text-slate-600 hover:text-slate-400"><X size={11}/></button>
+                      <button onClick={() => setError(null)} className="ml-auto text-slate-500 dark:text-slate-600 hover:text-slate-600 dark:text-slate-400"><X size={11}/></button>
                     </div>
                   )}
 
@@ -720,40 +720,40 @@ export default function AssembliesPage() {
                   <div className="grid gap-3" style={{ gridTemplateColumns: "2fr 1fr 2fr 80px 80px auto" }}>
                     {/* Item picker */}
                     <div>
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Item</label>
+                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Item</label>
                       <button onClick={() => setShowItemSearch(true)}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-[11px] text-left hover:bg-white/[0.07] transition">
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-[11px] text-left hover:bg-slate-200 dark:bg-white/[0.07] transition">
                         {newComp.cost_item_id ? (
-                          <span className="text-slate-200 truncate">{costItems.find(i => i.id === newComp.cost_item_id)?.item_name || "Selected"}</span>
+                          <span className="text-slate-800 dark:text-slate-200 truncate">{costItems.find(i => i.id === newComp.cost_item_id)?.item_name || "Selected"}</span>
                         ) : (
-                          <span className="text-slate-600">Select item from Rate Library…</span>
+                          <span className="text-slate-500 dark:text-slate-600">Select item from Rate Library…</span>
                         )}
                       </button>
                     </div>
 
                     {/* Line type */}
                     <div>
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Type</label>
+                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Type</label>
                       <select value={newComp.line_type} onChange={e => setNewComp(p => ({ ...p, line_type: e.target.value }))}
-                        className="w-full bg-[#080b10] border border-white/[0.07] rounded-lg px-2 py-2 text-[11px] text-slate-300 outline-none focus:border-purple-500/40">
+                        className="w-full bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.07] rounded-lg px-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 outline-none focus:border-purple-500/40">
                         {LINE_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
                       </select>
                     </div>
 
                     {/* Formula */}
                     <div className="relative">
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Formula (qty per unit)</label>
+                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Formula (qty per unit)</label>
                       <input value={newComp.formula} onChange={e => setNewComp(p => ({ ...p, formula: e.target.value }))}
                         placeholder="Formula e.g. length * 2.5"
-                        className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg px-3 py-2 text-[11px] text-slate-200 font-mono placeholder:text-slate-700 outline-none focus:border-purple-500/50"/>
+                        className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-3 py-2 text-[11px] text-slate-800 dark:text-slate-200 font-mono placeholder:text-slate-400 dark:text-slate-700 outline-none focus:border-purple-500/50"/>
                     </div>
 
                     {/* Waste % */}
                     <div>
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-600 mb-1">Waste %</label>
+                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Waste %</label>
                       <input type="number" value={newComp.waste_percent} onChange={e => setNewComp(p => ({ ...p, waste_percent: e.target.value }))}
                         placeholder="0"
-                        className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg px-2 py-2 text-[11px] text-slate-200 outline-none focus:border-purple-500/50 text-right"/>
+                        className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-2 py-2 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50 text-right"/>
                     </div>
 
                     {/* Preview of formula */}
@@ -780,11 +780,11 @@ export default function AssembliesPage() {
                   {/* Formula hints */}
                   {activeAssembly && FORMULA_HINTS[activeAssembly.measure_type].length > 0 && (
                     <div>
-                      <div className="text-[9px] text-slate-700 uppercase tracking-wider mb-1.5">Quick formula examples:</div>
+                      <div className="text-[9px] text-slate-400 dark:text-slate-700 uppercase tracking-wider mb-1.5">Quick formula examples:</div>
                       <div className="flex flex-wrap gap-1.5">
                         {FORMULA_HINTS[activeAssembly.measure_type].map(h => (
                           <button key={h.formula} onClick={() => setNewComp(p => ({ ...p, formula: h.formula }))}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] text-[10px] text-slate-500 hover:text-slate-300 font-mono transition">
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-200 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.06] text-[10px] text-slate-500 hover:text-slate-700 dark:text-slate-300 font-mono transition">
                             <Wand2 size={9}/> {h.label}
                           </button>
                         ))}
@@ -793,13 +793,13 @@ export default function AssembliesPage() {
                   )}
 
                   {/* Variable reference */}
-                  <div className="flex items-center gap-2 rounded-lg bg-white/[0.02] border border-white/[0.05] px-3 py-2">
-                    <Info size={10} className="text-slate-600 flex-shrink-0"/>
-                    <span className="text-[10px] text-slate-600">Available variables: </span>
+                  <div className="flex items-center gap-2 rounded-lg bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.05] px-3 py-2">
+                    <Info size={10} className="text-slate-500 dark:text-slate-600 flex-shrink-0"/>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-600">Available variables: </span>
                     {measureVars.map(v => (
                       <code key={v} className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 font-mono">{v}</code>
                     ))}
-                    <span className="text-[10px] text-slate-700 ml-1">· Math ops: + - * / ( )</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-700 ml-1">· Math ops: + - * / ( )</span>
                   </div>
                 </div>
               </div>
@@ -811,13 +811,13 @@ export default function AssembliesPage() {
       {/* ── New Assembly Modal ── */}
       {showNewForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07]">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/[0.07]">
               <div>
-                <div className="text-sm font-bold text-slate-100">New Assembly</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100">New Assembly</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">Create a reusable material template</div>
               </div>
-              <button onClick={() => setShowNewForm(false)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition"><X size={15}/></button>
+              <button onClick={() => setShowNewForm(false)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
             </div>
             <div className="p-6 space-y-4">
               {error && <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-[11px] text-red-300"><AlertCircle size={11}/>{error}</div>}
@@ -826,7 +826,7 @@ export default function AssembliesPage() {
                 <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Assembly Name *</label>
                 <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus
                   placeholder="e.g. 6 inch Concrete Block Wall"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-purple-500/50"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50"/>
               </div>
 
               <div>
@@ -836,21 +836,21 @@ export default function AssembliesPage() {
                     <button key={k} onClick={() => setForm(f => ({ ...f, measure_type: k }))}
                       className={[
                         "flex flex-col items-center gap-1.5 py-3 rounded-xl border text-[11px] font-bold transition",
-                        form.measure_type === k ? "border-white/20 bg-white/10 text-slate-100" : "border-white/[0.06] text-slate-600 hover:text-slate-400 hover:border-white/10"
+                        form.measure_type === k ? "border-white/20 bg-white/10 text-slate-900 dark:text-slate-100" : "border-slate-200 dark:border-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-600 dark:text-slate-400 hover:border-white/10"
                       ].join(" ")}>
                       <span style={{ color: form.measure_type === k ? cfg.color : undefined }}>{cfg.icon}</span>
                       {cfg.label}
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-slate-600 mt-1.5">{MEASURE_CFG[form.measure_type].hint}</p>
+                <p className="text-[10px] text-slate-500 dark:text-slate-600 mt-1.5">{MEASURE_CFG[form.measure_type].hint}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Category</label>
                   <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                    className="w-full bg-[#080b10] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-purple-500/50">
+                    className="w-full bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50">
                     <option value="">Select…</option>
                     {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
@@ -858,29 +858,29 @@ export default function AssembliesPage() {
                 <div>
                   <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Default Waste %</label>
                   <input type="number" value={form.default_waste_percent} onChange={e => setForm(f => ({ ...f, default_waste_percent: e.target.value }))} placeholder="0"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-purple-500/50"/>
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50"/>
                 </div>
                 <div>
                   <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Code (optional)</label>
                   <input value={form.assembly_code} onChange={e => setForm(f => ({ ...f, assembly_code: e.target.value }))} placeholder="e.g. BLK-6-STD"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 font-mono outline-none focus:border-purple-500/50"/>
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 font-mono outline-none focus:border-purple-500/50"/>
                 </div>
                 <div>
                   <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Output Unit</label>
                   <input value={form.output_unit} onChange={e => setForm(f => ({ ...f, output_unit: e.target.value }))} placeholder="e.g. m², ft, each"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-purple-500/50"/>
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50"/>
                 </div>
               </div>
 
               <div>
                 <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Description</label>
                 <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Optional description"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-purple-500/50"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50"/>
               </div>
             </div>
-            <div className="flex justify-end gap-2 px-6 py-4 border-t border-white/[0.07]">
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-200 dark:border-white/[0.07]">
               <button onClick={() => { setShowNewForm(false); setError(null); }}
-                className="px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-sm text-slate-400 hover:text-slate-200 transition">Cancel</button>
+                className="px-4 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200 transition">Cancel</button>
               <button onClick={createAssembly} disabled={saving || !form.name.trim()}
                 className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold disabled:opacity-40 transition">
                 <Plus size={13}/> {saving ? "Creating…" : "Create Assembly"}
@@ -893,38 +893,38 @@ export default function AssembliesPage() {
       {/* ── Item Search Modal ── */}
       {showItemSearch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xl rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
               <div>
-                <div className="text-sm font-bold text-slate-100">Select Item from Rate Library</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Select Item from Rate Library</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">{costItems.length} items available</div>
               </div>
-              <button onClick={() => setShowItemSearch(false)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition"><X size={15}/></button>
+              <button onClick={() => setShowItemSearch(false)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
             </div>
-            <div className="px-5 pt-4 pb-3 border-b border-white/[0.06]">
+            <div className="px-5 pt-4 pb-3 border-b border-slate-200 dark:border-white/[0.06]">
               <div className="relative">
-                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
                 <input autoFocus value={itemSearch} onChange={e => setItemSearch(e.target.value)}
                   placeholder="Search items…"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-purple-500/50"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg pl-8 pr-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-purple-500/50"/>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto">
               {filteredItems.map(i => (
                 <button key={i.id} onClick={() => { setNewComp(p => ({ ...p, cost_item_id: i.id })); setShowItemSearch(false); setItemSearch(""); }}
-                  className="w-full text-left px-5 py-3 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.04] transition flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-white/[0.04] border border-white/[0.07] flex items-center justify-center flex-shrink-0">
-                    <Package size={12} className="text-slate-600"/>
+                  className="w-full text-left px-5 py-3 border-b border-slate-100 dark:border-white/[0.04] last:border-0 hover:bg-slate-50 dark:bg-white/[0.04] transition flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] flex items-center justify-center flex-shrink-0">
+                    <Package size={12} className="text-slate-500 dark:text-slate-600"/>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-slate-200 truncate">{i.item_name}</div>
-                    <div className="text-[10px] text-slate-600">{i.category || "—"}{i.unit ? ` · ${i.unit}` : ""}{i.variant ? ` · ${i.variant}` : ""}</div>
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{i.item_name}</div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-600">{i.category || "—"}{i.unit ? ` · ${i.unit}` : ""}{i.variant ? ` · ${i.variant}` : ""}</div>
                   </div>
-                  <ChevronRight size={13} className="text-slate-700 flex-shrink-0"/>
+                  <ChevronRight size={13} className="text-slate-400 dark:text-slate-700 flex-shrink-0"/>
                 </button>
               ))}
               {filteredItems.length === 0 && (
-                <div className="text-center py-10 text-slate-600 text-sm">No items match your search</div>
+                <div className="text-center py-10 text-slate-500 dark:text-slate-600 text-sm">No items match your search</div>
               )}
             </div>
           </div>
@@ -934,7 +934,7 @@ export default function AssembliesPage() {
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] pointer-events-none">
-          <div className="bg-[#0d1117] border border-green-500/25 text-green-400 text-sm font-semibold px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2">
+          <div className="bg-white dark:bg-[#0d1117] border border-green-500/25 text-green-400 text-sm font-semibold px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
             {toast}
           </div>
@@ -1041,10 +1041,10 @@ Important rules:
         </div>
         <div className="flex-1 text-left">
           <div className="text-[11px] font-semibold text-purple-300">AI Formula Assistant</div>
-          <div className="text-[9px] text-slate-600">Describe what you want to calculate — AI writes the formula for you</div>
+          <div className="text-[9px] text-slate-500 dark:text-slate-600">Describe what you want to calculate — AI writes the formula for you</div>
         </div>
         {speechSupported && (
-          <div className="flex items-center gap-1 text-[9px] text-slate-700">
+          <div className="flex items-center gap-1 text-[9px] text-slate-400 dark:text-slate-700">
             <Mic size={9}/> Voice enabled
           </div>
         )}
@@ -1060,12 +1060,12 @@ Important rules:
         <div className="flex items-center gap-2">
           <Bot size={14} className="text-purple-400"/>
           <span className="text-xs font-bold text-purple-300">AI Formula Assistant</span>
-          <span className="text-[9px] text-slate-600 bg-white/[0.04] border border-white/[0.06] rounded px-1.5 py-0.5">
+          <span className="text-[9px] text-slate-500 dark:text-slate-600 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06] rounded px-1.5 py-0.5">
             Variables: {measureVars.join(", ")}
           </span>
         </div>
         <button onClick={() => { setOpen(false); setDescription(""); setResult(null); }}
-          className="p-1 rounded hover:bg-white/[0.06] text-slate-600 hover:text-slate-300 transition">
+          className="p-1 rounded hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition">
           <X size={13}/>
         </button>
       </div>
@@ -1091,7 +1091,7 @@ Important rules:
                     : "e.g. cubic yards of concrete for a slab"
                 }
                 rows={2}
-                className="w-full bg-white/[0.04] border border-purple-500/20 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder:text-slate-700 outline-none focus:border-purple-500/50 resize-none"/>
+                className="w-full bg-slate-50 dark:bg-white/[0.04] border border-purple-500/20 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:text-slate-700 outline-none focus:border-purple-500/50 resize-none"/>
               {listening && (
                 <div className="absolute right-2 top-2 flex items-center gap-1">
                   <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse"/>
@@ -1105,7 +1105,7 @@ Important rules:
                 className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center border transition ${
                   listening
                     ? "bg-red-500/20 border-red-500/40 text-red-400 animate-pulse"
-                    : "bg-white/[0.04] border-white/[0.08] text-slate-500 hover:text-purple-400 hover:border-purple-500/30 hover:bg-purple-500/10"
+                    : "bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-500 hover:text-purple-400 hover:border-purple-500/30 hover:bg-purple-500/10"
                 }`}
                 title={listening ? "Stop listening" : "Speak your description"}>
                 {listening ? <MicOff size={16}/> : <Mic size={16}/>}
@@ -1113,7 +1113,7 @@ Important rules:
             )}
           </div>
           {speechSupported && !listening && (
-            <div className="text-[9px] text-slate-700 mt-1 flex items-center gap-1">
+            <div className="text-[9px] text-slate-400 dark:text-slate-700 mt-1 flex items-center gap-1">
               <Mic size={8}/> Click the mic to speak instead of typing
             </div>
           )}
@@ -1137,17 +1137,17 @@ Important rules:
                   <Check size={12} className="text-emerald-400 flex-shrink-0"/>
                   <span className="text-[10px] text-emerald-300 font-semibold uppercase tracking-wider">Formula generated</span>
                 </div>
-                <div className="bg-[#080b10] rounded-lg px-3 py-2 font-mono text-sm text-purple-300 border border-purple-500/20">
+                <div className="bg-slate-50 dark:bg-[#080b10] rounded-lg px-3 py-2 font-mono text-sm text-purple-300 border border-purple-500/20">
                   {result.formula}
                 </div>
-                <div className="text-[11px] text-slate-400">{result.explanation}</div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-400">{result.explanation}</div>
                 <div className="flex gap-2 pt-1">
                   <button onClick={applyFormula}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">
                     <Check size={11}/> Use This Formula
                   </button>
                   <button onClick={() => setResult(null)}
-                    className="px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-xs text-slate-400 hover:text-slate-200 transition">
+                    className="px-4 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200 transition">
                     Try Again
                   </button>
                 </div>
@@ -1177,13 +1177,13 @@ function ComponentRow({ component, idx, total, typeColor, preview, onDelete, onU
   function save() { onUpdate(formula, parseFloat(waste) || 0); setEditing(false); }
 
   return (
-    <div className={`group border-b border-white/[0.03] last:border-0 ${idx % 2 === 1 ? "bg-white/[0.01]" : ""}`}>
+    <div className={`group border-b border-white/[0.03] last:border-0 ${idx % 2 === 1 ? "bg-slate-50 dark:bg-white/[0.01]" : ""}`}>
       {!editing ? (
-        <div className="grid items-center px-5 py-3 gap-2 hover:bg-white/[0.02] transition"
+        <div className="grid items-center px-5 py-3 gap-2 hover:bg-slate-50 dark:bg-white/[0.02] transition"
           style={{ gridTemplateColumns: "2fr 1fr 2fr 80px 60px 72px" }}>
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-slate-200 truncate">{component.cost_item?.item_name || "—"}</div>
-            <div className="text-[10px] text-slate-600">{component.cost_item?.category || "—"}{component.cost_item?.unit ? ` · ${component.cost_item.unit}` : ""}</div>
+            <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{component.cost_item?.item_name || "—"}</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-600">{component.cost_item?.category || "—"}{component.cost_item?.unit ? ` · ${component.cost_item.unit}` : ""}</div>
           </div>
           <span className={`text-[10px] font-bold px-2 py-1 rounded-md border w-fit ${typeColor}`}>
             {component.line_type}
@@ -1193,44 +1193,44 @@ function ComponentRow({ component, idx, total, typeColor, preview, onDelete, onU
           <div className="text-right">
             {preview?.withWaste != null ? (
               <span className="text-sm font-bold text-sky-400">{preview.withWaste.toFixed(2)}</span>
-            ) : <span className="text-slate-700 text-xs">—</span>}
+            ) : <span className="text-slate-400 dark:text-slate-700 text-xs">—</span>}
           </div>
           <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
             <button onClick={() => onMove("up")} disabled={idx === 0}
-              className="p-1 rounded hover:bg-white/10 text-slate-700 hover:text-slate-300 disabled:opacity-20 transition text-xs">↑</button>
+              className="p-1 rounded hover:bg-white/10 text-slate-400 dark:text-slate-700 hover:text-slate-700 dark:text-slate-300 disabled:opacity-20 transition text-xs">↑</button>
             <button onClick={() => onMove("down")} disabled={idx === total - 1}
-              className="p-1 rounded hover:bg-white/10 text-slate-700 hover:text-slate-300 disabled:opacity-20 transition text-xs">↓</button>
+              className="p-1 rounded hover:bg-white/10 text-slate-400 dark:text-slate-700 hover:text-slate-700 dark:text-slate-300 disabled:opacity-20 transition text-xs">↓</button>
             <button onClick={() => setEditing(true)}
-              className="p-1 rounded hover:bg-blue-500/10 text-slate-600 hover:text-blue-400 transition"><Edit2 size={11}/></button>
+              className="p-1 rounded hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition"><Edit2 size={11}/></button>
             <button onClick={onDelete}
-              className="p-1 rounded hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition"><Trash2 size={11}/></button>
+              className="p-1 rounded hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400 transition"><Trash2 size={11}/></button>
           </div>
         </div>
       ) : (
         <div className="px-5 py-3 bg-purple-500/[0.04] border-l-2 border-purple-500 space-y-2">
-          <div className="text-xs font-semibold text-slate-300 mb-1">Editing: {component.cost_item?.item_name}</div>
+          <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Editing: {component.cost_item?.item_name}</div>
           <div className="flex gap-3 items-end">
             <div className="flex-1">
               <label className="text-[10px] text-slate-500 block mb-1">Formula</label>
               <input value={formula} onChange={e => setFormula(e.target.value)}
-                className="w-full bg-white/[0.04] border border-purple-500/30 rounded-lg px-3 py-2 text-sm text-slate-200 font-mono outline-none focus:border-purple-500/60"/>
+                className="w-full bg-slate-50 dark:bg-white/[0.04] border border-purple-500/30 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 font-mono outline-none focus:border-purple-500/60"/>
             </div>
             <div className="w-24">
               <label className="text-[10px] text-slate-500 block mb-1">Waste %</label>
               <input type="number" value={waste} onChange={e => setWaste(e.target.value)}
-                className="w-full bg-white/[0.04] border border-purple-500/30 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500/60"/>
+                className="w-full bg-slate-50 dark:bg-white/[0.04] border border-purple-500/30 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/60"/>
             </div>
             <button onClick={save}
               className="flex items-center gap-1 px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition">
               <Check size={11}/> Save
             </button>
             <button onClick={() => setEditing(false)}
-              className="px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.07] text-xs text-slate-400 hover:text-slate-200 transition">Cancel</button>
+              className="px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200 transition">Cancel</button>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {formulaHints.map(h => (
               <button key={h.formula} onClick={() => setFormula(h.formula)}
-                className="text-[9px] px-2 py-0.5 rounded bg-white/[0.03] border border-white/[0.06] text-slate-600 hover:text-slate-300 font-mono transition">
+                className="text-[9px] px-2 py-0.5 rounded bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 font-mono transition">
                 {h.label}
               </button>
             ))}
