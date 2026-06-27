@@ -140,17 +140,17 @@ export default function ReportsPage() {
   });
   const taskRows = Object.values(byTask).sort((a,b)=>b.total-a.total);
 
-  const tabClass = (t: ReportTab) => `px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition ${tab===t?"bg-cyan-600 text-white":"text-slate-500 hover:text-slate-300"}`;
+  const tabClass = (t: ReportTab) => `px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition ${tab===t?"bg-cyan-600 text-white":"text-slate-500 hover:text-slate-700 dark:text-slate-300"}`;
 
   return (
     <div className="p-4 md:p-6 space-y-5 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-100">Reports</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Reports</h1>
           <p className="text-xs text-slate-500 mt-0.5">Field payment analytics across all projects</p>
         </div>
-        <button onClick={loadData} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-slate-400 hover:text-slate-200 text-xs transition">
+        <button onClick={loadData} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200 text-xs transition">
           <RefreshCw size={12}/> Refresh
         </button>
       </div>
@@ -158,11 +158,11 @@ export default function ReportsPage() {
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
         <select value={dateRange} onChange={e=>setDateRange(e.target.value as DateRange)}
-          className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-300 outline-none [&>option]:bg-[#111820]">
+          className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 outline-none [&>option]:bg-white dark:[&>option]:bg-[#111820]">
           {DATE_RANGES.map(r=><option key={r.key} value={r.key}>{r.label}</option>)}
         </select>
         <select value={projectFilter} onChange={e=>setProjectFilter(e.target.value)}
-          className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-300 outline-none [&>option]:bg-[#111820]">
+          className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 outline-none [&>option]:bg-white dark:[&>option]:bg-[#111820]">
           <option value="all">All Projects</option>
           {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
@@ -186,8 +186,8 @@ export default function ReportsPage() {
       </div>
 
       {/* Payment Type Breakdown */}
-      <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-3">Payment Breakdown</div>
+      <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-3">Payment Breakdown</div>
         <div className="space-y-2">
           {[
             {label:"⚡ Advances",amount:totalAdvances,color:"bg-amber-500"},
@@ -196,10 +196,10 @@ export default function ReportsPage() {
           ].map(r=>(
             <div key={r.label}>
               <div className="flex justify-between text-xs mb-1">
-                <span className="text-slate-400">{r.label}</span>
-                <span className="text-slate-300 font-semibold">{fmtJMD(r.amount)}</span>
+                <span className="text-slate-600 dark:text-slate-400">{r.label}</span>
+                <span className="text-slate-700 dark:text-slate-300 font-semibold">{fmtJMD(r.amount)}</span>
               </div>
-              <div className="h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+              <div className="h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
                 <div className={`h-full rounded-full ${r.color}`} style={{width:`${pct(r.amount,totalPaid)}%`}}/>
               </div>
             </div>
@@ -215,7 +215,7 @@ export default function ReportsPage() {
       </div>
 
       {loading?(
-        <div className="flex items-center justify-center py-16 text-slate-600 text-sm">
+        <div className="flex items-center justify-center py-16 text-slate-500 dark:text-slate-600 text-sm">
           <RefreshCw size={16} className="animate-spin mr-2"/> Loading...
         </div>
       ):(
@@ -225,9 +225,9 @@ export default function ReportsPage() {
             <div className="space-y-4">
               <div className="text-xs text-slate-500">{payments.length} payments found in selected period</div>
               {/* Recent payments */}
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-                <div className="px-4 py-2 border-b border-white/[0.05]">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Recent Payments</span>
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+                <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05]">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Recent Payments</span>
                 </div>
                 <div className="divide-y divide-white/[0.04]">
                   {payments.slice(0,10).map(p=>{
@@ -235,9 +235,9 @@ export default function ReportsPage() {
                     return(
                       <div key={p.id} className="flex items-center justify-between px-4 py-3">
                         <div>
-                          <div className="text-xs font-semibold text-slate-200">{p.worker_name}</div>
-                          <div className="text-[10px] text-slate-600">{p.project_name||"No project"}{p.milestone_name?` · ${p.milestone_name}`:""}</div>
-                          <div className="text-[9px] text-slate-700">{fmtDate(p.created_at)}</div>
+                          <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">{p.worker_name}</div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-600">{p.project_name||"No project"}{p.milestone_name?` · ${p.milestone_name}`:""}</div>
+                          <div className="text-[9px] text-slate-400 dark:text-slate-700">{fmtDate(p.created_at)}</div>
                         </div>
                         <div className="text-right">
                           <div className={`text-sm font-bold ${ptColor}`}>{fmtJMD(p.total_amount)}</div>
@@ -246,7 +246,7 @@ export default function ReportsPage() {
                       </div>
                     );
                   })}
-                  {payments.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-600">No payments in selected period</div>}
+                  {payments.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-500 dark:text-slate-600">No payments in selected period</div>}
                 </div>
               </div>
             </div>
@@ -255,26 +255,26 @@ export default function ReportsPage() {
           {/* PROJECTS TAB */}
           {tab==="projects"&&(
             <div className="space-y-3">
-              {projectRows.length===0&&<div className="text-center py-8 text-xs text-slate-600">No project data in selected period</div>}
+              {projectRows.length===0&&<div className="text-center py-8 text-xs text-slate-500 dark:text-slate-600">No project data in selected period</div>}
               {projectRows.map(r=>(
-                <div key={r.name} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+                <div key={r.name} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <div className="text-sm font-bold text-slate-200">{r.name}</div>
-                      <div className="text-[10px] text-slate-600">{r.count} payments</div>
+                      <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{r.name}</div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-600">{r.count} payments</div>
                     </div>
                     <div className="text-right">
                       <div className="text-base font-bold text-emerald-400">{fmtJMD(r.total)}</div>
-                      {r.budget>0&&<div className="text-[10px] text-slate-600">Budget: {fmtJMD(r.budget)}</div>}
+                      {r.budget>0&&<div className="text-[10px] text-slate-500 dark:text-slate-600">Budget: {fmtJMD(r.budget)}</div>}
                     </div>
                   </div>
                   {r.budget>0&&(
                     <div>
-                      <div className="flex justify-between text-[10px] text-slate-600 mb-1">
+                      <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-600 mb-1">
                         <span>Spent: {pct(r.total,r.budget)}%</span>
                         <span>{fmtJMD(r.budget-r.total)} remaining</span>
                       </div>
-                      <div className="h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+                      <div className="h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
                         <div className={`h-full rounded-full ${pct(r.total,r.budget)>90?"bg-red-500":pct(r.total,r.budget)>70?"bg-amber-500":"bg-emerald-500"}`}
                           style={{width:`${Math.min(100,pct(r.total,r.budget))}%`}}/>
                       </div>
@@ -290,17 +290,17 @@ export default function ReportsPage() {
 
           {/* WORKERS TAB */}
           {tab==="workers"&&(
-            <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-              <div className="px-4 py-2 border-b border-white/[0.05] flex justify-between">
-                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Worker Summary</span>
-                <span className="text-[9px] text-slate-600">{workerRows.length} workers</span>
+            <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+              <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05] flex justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Worker Summary</span>
+                <span className="text-[9px] text-slate-500 dark:text-slate-600">{workerRows.length} workers</span>
               </div>
-              {workerRows.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-600">No worker data in selected period</div>}
+              {workerRows.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-500 dark:text-slate-600">No worker data in selected period</div>}
               <div className="divide-y divide-white/[0.04]">
                 {workerRows.map(r=>(
                   <div key={r.name} className="px-4 py-3">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="text-sm font-bold text-slate-200">{r.name}</div>
+                      <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{r.name}</div>
                       <div className="text-sm font-bold text-emerald-400">{fmtJMD(r.total)}</div>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
@@ -327,31 +327,31 @@ export default function ReportsPage() {
           {tab==="milestones"&&(
             <div className="space-y-4">
               {/* By Milestone */}
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-                <div className="px-4 py-2 border-b border-white/[0.05]">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Cost by Milestone</span>
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+                <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05]">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Cost by Milestone</span>
                 </div>
-                {milestoneRows.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-600">No milestone data — select project/milestone when creating payments</div>}
+                {milestoneRows.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-500 dark:text-slate-600">No milestone data — select project/milestone when creating payments</div>}
                 <div className="divide-y divide-white/[0.04]">
                   {milestoneRows.map(r=>(
                     <div key={r.name} className="px-4 py-3">
                       <div className="flex items-center justify-between mb-1">
                         <div>
-                          <div className="text-xs font-bold text-slate-200">🚩 {r.name}</div>
-                          <div className="text-[10px] text-slate-600">{r.project} · {r.count} payments</div>
+                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200">🚩 {r.name}</div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-600">{r.project} · {r.count} payments</div>
                         </div>
                         <div className="text-right">
                           <div className="text-sm font-bold text-emerald-400">{fmtJMD(r.total)}</div>
-                          {r.planned>0&&<div className="text-[10px] text-slate-600">Planned: {fmtJMD(r.planned)}</div>}
+                          {r.planned>0&&<div className="text-[10px] text-slate-500 dark:text-slate-600">Planned: {fmtJMD(r.planned)}</div>}
                         </div>
                       </div>
                       {r.planned>0&&(
                         <div className="mt-1.5">
-                          <div className="h-1 rounded-full bg-white/[0.05] overflow-hidden">
+                          <div className="h-1 rounded-full bg-slate-100 dark:bg-white/[0.05] overflow-hidden">
                             <div className={`h-full rounded-full ${pct(r.total,r.planned)>100?"bg-red-500":pct(r.total,r.planned)>80?"bg-amber-500":"bg-emerald-500"}`}
                               style={{width:`${Math.min(100,pct(r.total,r.planned))}%`}}/>
                           </div>
-                          <div className="text-[9px] text-slate-600 mt-0.5">{pct(r.total,r.planned)}% of planned budget used</div>
+                          <div className="text-[9px] text-slate-500 dark:text-slate-600 mt-0.5">{pct(r.total,r.planned)}% of planned budget used</div>
                         </div>
                       )}
                     </div>
@@ -359,17 +359,17 @@ export default function ReportsPage() {
                 </div>
               </div>
               {/* By Task */}
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-                <div className="px-4 py-2 border-b border-white/[0.05]">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Cost by Task</span>
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+                <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05]">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Cost by Task</span>
                 </div>
-                {taskRows.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-600">No task data in selected period</div>}
+                {taskRows.length===0&&<div className="px-4 py-8 text-center text-xs text-slate-500 dark:text-slate-600">No task data in selected period</div>}
                 <div className="divide-y divide-white/[0.04]">
                   {taskRows.map(r=>(
                     <div key={r.name} className="flex items-center justify-between px-4 py-3">
                       <div>
-                        <div className="text-xs font-semibold text-slate-200">✅ {r.name}</div>
-                        <div className="text-[10px] text-slate-600">{r.milestone||"No milestone"} · {r.count} payments</div>
+                        <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">✅ {r.name}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-600">{r.milestone||"No milestone"} · {r.count} payments</div>
                       </div>
                       <div className="text-sm font-bold text-emerald-400">{fmtJMD(r.total)}</div>
                     </div>
