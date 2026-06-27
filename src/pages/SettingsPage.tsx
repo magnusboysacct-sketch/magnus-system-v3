@@ -22,11 +22,11 @@ export default function SettingsPage() {
       <div className="p-6 max-w-3xl">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {SETTINGS_SECTIONS.map(s => (
-            <Card key={s.to} onClick={() => nav(s.to)} className="cursor-pointer hover:border-white/[0.13] transition-colors">
+            <Card key={s.to} onClick={() => nav(s.to)} className="cursor-pointer hover:border-slate-300 dark:hover:border-white/[0.13] transition-colors">
               <div className="flex items-start gap-4">
                 <div className={cn("w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0", s.color)}>{s.icon}</div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-slate-200 mb-0.5">{s.title}</div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-0.5">{s.title}</div>
                   <div className="text-xs text-slate-600">{s.desc}</div>
                 </div>
                 <ArrowRight size={14} className="text-slate-700 flex-shrink-0 mt-1"/>

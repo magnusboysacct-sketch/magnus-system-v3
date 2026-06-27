@@ -135,7 +135,7 @@ export default function SettingsMasterListsPage() {
                 <tr><Td colSpan={5}><Empty icon={<BookOpen size={18}/>} title="No units found" action={<Btn variant="primary" size="sm" icon={<Plus size={12}/>} onClick={() => setShowNew(true)}>Add Unit</Btn>}/></Td></tr>
               ) : filtered.map(u => (
                 <Tr key={u.id}>
-                  <Td><span className="font-semibold text-slate-200">{u.name}</span></Td>
+                  <Td><span className="font-semibold text-slate-800 dark:text-slate-200">{u.name}</span></Td>
                   <Td><Badge color="slate">{u.unit_type || "—"}</Badge></Td>
                   <Td muted>{u.sort_order ?? "—"}</Td>
                   <Td>
@@ -147,7 +147,7 @@ export default function SettingsMasterListsPage() {
                   </Td>
                   <Td>
                     <div className="flex gap-1">
-                      <button onClick={() => openEdit(u)} className="p-1.5 rounded hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors"><Edit2 size={12}/></button>
+                      <button onClick={() => openEdit(u)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"><Edit2 size={12}/></button>
                       <button onClick={() => deleteUnit(u.id)} className="p-1.5 rounded hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={12}/></button>
                     </div>
                   </Td>
@@ -165,7 +165,7 @@ export default function SettingsMasterListsPage() {
             <Field label="Type"><Select value={form.unit_type} onChange={e => setForm(f => ({ ...f, unit_type: e.target.value }))}>{UNIT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</Select></Field>
             <Field label="Sort Order"><Input type="number" placeholder="0" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))}/></Field>
           </div>
-          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
             <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
             <Btn variant="primary" onClick={saveUnit} disabled={!form.name.trim() || saving}>{saving ? "Saving..." : editUnit ? "Save" : "Add Unit"}</Btn>
           </div>
