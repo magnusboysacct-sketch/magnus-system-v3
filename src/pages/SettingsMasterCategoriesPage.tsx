@@ -118,7 +118,7 @@ export default function SettingsMasterCategoriesPage() {
                 <tr><Td colSpan={4}><Empty icon={<Tag size={18}/>} title="No categories found" action={<Btn variant="primary" size="sm" icon={<Plus size={12}/>} onClick={() => setShowNew(true)}>Add Category</Btn>}/></Td></tr>
               ) : filtered.map(c => (
                 <Tr key={c.id}>
-                  <Td><span className="font-semibold text-slate-200">{c.name}</span></Td>
+                  <Td><span className="font-semibold text-slate-800 dark:text-slate-200">{c.name}</span></Td>
                   <Td muted className="max-w-xs truncate">{c.scope_of_work || "—"}</Td>
                   <Td>
                     <button onClick={() => toggleActive(c)} className="flex items-center gap-1.5 text-xs transition-colors"
@@ -129,7 +129,7 @@ export default function SettingsMasterCategoriesPage() {
                   </Td>
                   <Td>
                     <div className="flex gap-1">
-                      <button onClick={() => openEdit(c)} className="p-1.5 rounded hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors"><Edit2 size={12}/></button>
+                      <button onClick={() => openEdit(c)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"><Edit2 size={12}/></button>
                       <button onClick={() => deleteCat(c.id)} className="p-1.5 rounded hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={12}/></button>
                     </div>
                   </Td>
@@ -145,7 +145,7 @@ export default function SettingsMasterCategoriesPage() {
           <Field label="Category Name"><Input placeholder="e.g. Concrete Works" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus/></Field>
           <Field label="Scope of Work (optional)"><Textarea rows={2} placeholder="Brief description of this category..." value={form.scope_of_work} onChange={e => setForm(f => ({ ...f, scope_of_work: e.target.value }))}/></Field>
           <Field label="Sort Order"><Input type="number" placeholder="0" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))}/></Field>
-          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
             <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
             <Btn variant="primary" onClick={saveCat} disabled={!form.name.trim() || saving}>{saving ? "Saving..." : editCat ? "Save" : "Add Category"}</Btn>
           </div>
