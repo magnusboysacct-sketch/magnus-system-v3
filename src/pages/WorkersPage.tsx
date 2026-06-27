@@ -103,8 +103,12 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
   return (
     <Card className="group hover:border-slate-300 dark:hover:border-white/[0.13] transition-all">
       <div className="flex items-start justify-between mb-4">
-        <div className={cn("w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold border", TYPE_BG[worker.worker_type || "employee"], TYPE_COLOR[worker.worker_type || "employee"])}>
-          {initials(worker)}
+        <div className={cn("w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold border overflow-hidden", TYPE_BG[worker.worker_type || "employee"], TYPE_COLOR[worker.worker_type || "employee"])}>
+          {worker.passport_photo_url ? (
+            <img src={worker.passport_photo_url} alt={fullName(worker)} className="w-full h-full object-cover" />
+          ) : (
+            initials(worker)
+          )}
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button onClick={() => onIdCard(worker)}
@@ -495,8 +499,12 @@ export default function WorkersPage() {
                   <Tr key={w.id}>
                     <Td>
                       <div className="flex items-center gap-2.5">
-                        <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold border flex-shrink-0", TYPE_BG[w.worker_type], TYPE_COLOR[w.worker_type])}>
-                          {initials(w)}
+                        <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold border flex-shrink-0 overflow-hidden", TYPE_BG[w.worker_type], TYPE_COLOR[w.worker_type])}>
+                          {w.passport_photo_url ? (
+                            <img src={w.passport_photo_url} alt={fullName(w)} className="w-full h-full object-cover" />
+                          ) : (
+                            initials(w)
+                          )}
                         </div>
                         <div>
                           <button onClick={() => setSelectedWorker(w)} className="font-semibold text-slate-200 text-xs hover:text-cyan-400 transition-colors text-left">{fullName(w)}</button>
