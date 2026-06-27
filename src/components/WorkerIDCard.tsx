@@ -103,7 +103,7 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     if (watermarkEnabled && watermarkImg) {
       ctx.save();
       ctx.beginPath(); ctx.roundRect(0, 0, W, H, 10 * S); ctx.clip();
-      drawWatermark(ctx, W, H, S, watermarkImg, watermarkOpacity * 1.6); // slightly stronger on dark navy
+      drawWatermark(ctx, W, H, S, watermarkImg, watermarkOpacity * 1.6, -0.14); // slightly stronger on dark navy, nudged left of QR
       ctx.restore();
     }
 
@@ -413,7 +413,7 @@ img{width:${W/S}px;height:${H/S}px}
         {/* Front preview */}
         <div style={{ width:CARD_W, height:CARD_H, borderRadius:10, overflow:"hidden", background:NAVY_BASE, color:"#fff", display:"flex", flexDirection:"column", boxShadow:"0 4px 20px rgba(0,0,0,0.4)", margin:"0 auto", position:"relative" }}>
           {watermarkEnabled && watermarkUrl && (
-            <div style={{ position:"absolute", inset:0, backgroundImage:`url(${watermarkUrl})`, backgroundSize:"75% auto", backgroundPosition:"center", backgroundRepeat:"no-repeat", opacity:watermarkOpacity * 1.6, transform:"rotate(-18deg) scale(1.3)", pointerEvents:"none" }} />
+            <div style={{ position:"absolute", inset:0, backgroundImage:`url(${watermarkUrl})`, backgroundSize:"38% auto", backgroundPosition:"38% center", backgroundRepeat:"no-repeat", opacity:watermarkOpacity * 1.6, pointerEvents:"none" }} />
           )}
           <div style={{ background:NAVY_PANEL, borderBottom:`2.5px solid ${AMBER}`, padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
             <div style={{ width:26, height:26, borderRadius:"50%", overflow:"hidden", background:"#fff", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -459,7 +459,7 @@ img{width:${W/S}px;height:${H/S}px}
         {/* Back preview */}
         <div style={{ width:CARD_W, height:CARD_H, borderRadius:10, overflow:"hidden", background:NAVY_TINT, color:INK, display:"flex", flexDirection:"column", boxShadow:"0 4px 20px rgba(0,0,0,0.25)", margin:"14px auto 0", position:"relative" }}>
           {watermarkEnabled && watermarkUrl && (
-            <div style={{ position:"absolute", inset:0, backgroundImage:`url(${watermarkUrl})`, backgroundSize:"75% auto", backgroundPosition:"center", backgroundRepeat:"no-repeat", opacity:watermarkOpacity, transform:"rotate(-18deg) scale(1.3)", pointerEvents:"none" }} />
+            <div style={{ position:"absolute", inset:0, backgroundImage:`url(${watermarkUrl})`, backgroundSize:"38% auto", backgroundPosition:"center", backgroundRepeat:"no-repeat", opacity:watermarkOpacity, pointerEvents:"none" }} />
           )}
           <div style={{ background:AMBER, color:NAVY_BASE, fontSize:8, fontWeight:700, textAlign:"center", padding:"4px 8px", letterSpacing:0.5 }}>
             IF FOUND, RETURN TO ISSUING COMPANY BELOW
@@ -515,13 +515,12 @@ img{width:${W/S}px;height:${H/S}px}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, S: number, img?: HTMLImageElement, opacity = 0.08) {
+function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, S: number, img?: HTMLImageElement, opacity = 0.08, xOffsetFrac = 0) {
   if (!img) return;
   ctx.save();
   ctx.globalAlpha = opacity;
-  const size = Math.max(w, h) * 0.75;
-  ctx.translate(w / 2, h / 2);
-  ctx.rotate(-18 * Math.PI / 180);
+  const size = Math.max(w, h) * 0.38;
+  ctx.translate(w / 2 + w * xOffsetFrac, h / 2);
   ctx.drawImage(img, -size / 2, -size / 2, size, size);
   ctx.restore();
 }
