@@ -48,6 +48,7 @@ import ContractsPage          from "./pages/ContractsPage";
 import SettingsPage           from "./pages/SettingsPage";
 import SettingsRecordsPage     from "./pages/SettingsRecordsPage";
 import SettingsCompanyPage      from "./pages/SettingsCompanyPage";
+import WorkerVerifyPage         from "./pages/WorkerVerifyPage";
 import SettingsMasterListsPage      from "./pages/SettingsMasterListsPage";
 import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import SettingsCostCodesPage  from "./pages/SettingsCostCodesPage";
@@ -149,6 +150,7 @@ export default function App() {
           <AuthHashRouter />
           <Routes>
             {/* Public */}
+            <Route path="/verify/:workerId" element={<WorkerVerifyPage />} />
             <Route path="/login"          element={<LoginPage />} />
             <Route path="/accept-invite"  element={<AcceptInvitePage />} />
 
