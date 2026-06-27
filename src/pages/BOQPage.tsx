@@ -101,7 +101,7 @@ const TYPE_CFG: Record<string, { pill: string; icon: React.ReactNode; short: str
   labour:      { pill: "bg-amber-500/15 text-amber-300 border-amber-500/25",  icon: <Users size={9}/>,    short: "LAB" },
   equipment:   { pill: "bg-purple-500/15 text-purple-300 border-purple-500/25",icon: <Wrench size={9}/>,  short: "EQP" },
   subcontract: { pill: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25",icon:<Layers size={9}/>,short: "SUB" },
-  other:       { pill: "bg-slate-500/15 text-slate-400 border-slate-500/25",  icon: <Boxes size={9}/>,    short: "OTH" },
+  other:       { pill: "bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/25",  icon: <Boxes size={9}/>,    short: "OTH" },
 };
 function TypeChip({ type }: { type: string }) {
   const cfg = TYPE_CFG[type.toLowerCase()] ?? TYPE_CFG.other;
@@ -143,34 +143,34 @@ function FindItemModal({
 
   return (
     <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-[#0d1117] rounded-2xl border border-white/[0.08] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+      <div className="bg-white dark:bg-[#0d1117] rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
               <BookOpen size={14} className="text-blue-400"/>
             </div>
             <div>
-              <div className="text-sm font-bold text-slate-100">Find Item from Rate Library</div>
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Find Item from Rate Library</div>
               <div className="text-[11px] text-slate-500">{rateItems.length} items available ? rate auto-fills</div>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">
             <X size={15}/>
           </button>
         </div>
 
         {/* Search + type filter */}
-        <div className="px-5 pt-4 pb-3 space-y-3 border-b border-white/[0.06]">
+        <div className="px-5 pt-4 pb-3 space-y-3 border-b border-slate-200 dark:border-white/[0.06]">
           <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
             <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search by name, category, or description?"
-              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-9 pr-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
+              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg pl-9 pr-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
           </div>
           <div className="flex gap-1.5 flex-wrap">
             <button onClick={() => setTypeFilter("")}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition ${!typeFilter ? "bg-blue-600 text-white border-blue-500" : "bg-white/[0.04] text-slate-500 border-white/[0.07] hover:text-slate-300"}`}>
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition ${!typeFilter ? "bg-blue-600 text-white border-blue-500" : "bg-slate-50 dark:bg-white/[0.04] text-slate-500 border-slate-200 dark:border-white/[0.07] hover:text-slate-700 dark:text-slate-300"}`}>
               All ({rateItems.length})
             </button>
             {types.map(t => {
@@ -178,7 +178,7 @@ function FindItemModal({
               const count = rateItems.filter(r => (r.item_type||"").toLowerCase() === t.toLowerCase()).length;
               return (
                 <button key={t} onClick={() => setTypeFilter(typeFilter === t ? "" : t)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition ${typeFilter === t ? cfg.pill : "bg-white/[0.04] text-slate-500 border-white/[0.07] hover:text-slate-300"}`}>
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition ${typeFilter === t ? cfg.pill : "bg-slate-50 dark:bg-white/[0.04] text-slate-500 border-slate-200 dark:border-white/[0.07] hover:text-slate-700 dark:text-slate-300"}`}>
                   {t} ({count})
                 </button>
               );
@@ -190,43 +190,43 @@ function FindItemModal({
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 gap-2">
-              <Package size={20} className="text-slate-700"/>
+              <Package size={20} className="text-slate-400 dark:text-slate-700"/>
               <p className="text-slate-500 text-sm">No items match your search</p>
-              <p className="text-slate-700 text-xs">Try a different keyword or clear filters</p>
+              <p className="text-slate-400 dark:text-slate-700 text-xs">Try a different keyword or clear filters</p>
             </div>
           ) : filtered.map((item, idx) => {
             const cfg = TYPE_CFG[(item.item_type||"").toLowerCase()] ?? TYPE_CFG.other;
             const hasRate = item.current_rate != null && item.current_rate > 0;
             return (
               <button key={item.id} onClick={() => onSelect(item)}
-                className={`w-full text-left px-5 py-3 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.04] transition group flex items-center gap-4 ${idx === 0 ? "" : ""}`}>
+                className={`w-full text-left px-5 py-3 border-b border-slate-100 dark:border-white/[0.04] last:border-0 hover:bg-slate-50 dark:bg-white/[0.04] transition group flex items-center gap-4 ${idx === 0 ? "" : ""}`}>
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase flex-shrink-0 ${cfg.pill}`}>
                   {cfg.icon}{cfg.short}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-slate-200 group-hover:text-white transition truncate">{item.item_name}</div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 group-hover:text-white transition truncate">{item.item_name}</div>
                   <div className="flex items-center gap-2 mt-0.5">
-                    {item.category && <span className="text-[10px] text-slate-600">{item.category}</span>}
-                    {item.variant && <span className="text-[10px] text-slate-700">? {item.variant}</span>}
-                    {item.description && <span className="text-[10px] text-slate-700 truncate">? {item.description}</span>}
+                    {item.category && <span className="text-[10px] text-slate-500 dark:text-slate-600">{item.category}</span>}
+                    {item.variant && <span className="text-[10px] text-slate-400 dark:text-slate-700">? {item.variant}</span>}
+                    {item.description && <span className="text-[10px] text-slate-400 dark:text-slate-700 truncate">? {item.description}</span>}
                   </div>
                 </div>
                 <div className="flex-shrink-0 text-right">
                   {hasRate ? (
                     <div>
                       <div className="text-sm font-bold text-green-400">{fmtMoney(item.current_rate!)}</div>
-                      <div className="text-[10px] text-slate-600">per {item.unit || "unit"}</div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-600">per {item.unit || "unit"}</div>
                     </div>
                   ) : (
-                    <div className="text-[11px] text-slate-700 italic">No rate</div>
+                    <div className="text-[11px] text-slate-400 dark:text-slate-700 italic">No rate</div>
                   )}
                 </div>
-                <ChevronRight size={13} className="text-slate-700 group-hover:text-slate-400 transition flex-shrink-0"/>
+                <ChevronRight size={13} className="text-slate-400 dark:text-slate-700 group-hover:text-slate-600 dark:text-slate-400 transition flex-shrink-0"/>
               </button>
             );
           })}
           {filtered.length === 80 && (
-            <div className="px-5 py-3 text-[11px] text-slate-600 text-center">Showing first 80 results ? refine your search to see more</div>
+            <div className="px-5 py-3 text-[11px] text-slate-500 dark:text-slate-600 text-center">Showing first 80 results ? refine your search to see more</div>
           )}
         </div>
       </div>
@@ -949,11 +949,11 @@ Answer briefly and practically. If they ask to add items, explain they need to u
   // --- No project guard ------------------------------------------------------
   if (!currentProjectId && !routeProjectId) {
     return (
-      <div className="min-h-screen bg-[#080b10] flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] flex items-center justify-center">
         <div className="text-center space-y-4">
-          <FolderOpen className="w-12 h-12 text-slate-600 mx-auto" />
-          <h2 className="text-xl font-semibold text-slate-200">No Project Selected</h2>
-          <p className="text-slate-400 text-sm">Select a project from the top bar to open the BOQ Builder.</p>
+          <FolderOpen className="w-12 h-12 text-slate-500 dark:text-slate-600 mx-auto" />
+          <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-200">No Project Selected</h2>
+          <p className="text-slate-600 dark:text-slate-400 text-sm">Select a project from the top bar to open the BOQ Builder.</p>
         </div>
       </div>
     );
@@ -961,10 +961,10 @@ Answer briefly and practically. If they ask to add items, explain they need to u
 
   // --- Render ----------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-[#080b10] text-slate-100">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] text-slate-900 dark:text-slate-100">
 
       {/* -- Sticky Header -- */}
-      <div className="sticky top-0 z-30 bg-[#0d1117]/95 backdrop-blur-md border-b border-white/[0.06]">
+      <div className="sticky top-0 z-30 bg-white dark:bg-[#0d1117]/95 backdrop-blur-md border-b border-slate-200 dark:border-white/[0.06]">
         <div className="px-5 py-3 flex items-center justify-between gap-4">
           {/* Left */}
           <div className="flex items-center gap-3 min-w-0">
@@ -973,7 +973,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-sm font-bold text-slate-100">BOQ Builder</h1>
+                <h1 className="text-sm font-bold text-slate-900 dark:text-slate-100">BOQ Builder</h1>
                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ${status === "approved" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/25" : "bg-amber-500/15 text-amber-300 border-amber-500/25"}`}>{status}</span>
               </div>
               {selectedProject && <div className="text-[11px] text-slate-500 truncate">{selectedProject.name}</div>}
@@ -987,11 +987,11 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             {persistError && <span className="text-[11px] text-red-400 flex items-center gap-1 max-w-[160px] truncate"><AlertCircle size={11}/>{persistError}</span>}
 
             <button onClick={() => activeProjectId && loadLatestBoq(activeProjectId)} disabled={!activeProjectId || persistLoading}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.08] text-[11px] text-slate-300 font-medium disabled:opacity-40 transition">
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium disabled:opacity-40 transition">
               <RefreshCw size={12}/> Load
             </button>
             <button onClick={() => void saveBoq("draft")} disabled={!activeProjectId || persistLoading}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 border border-white/[0.08] text-[11px] text-white font-semibold disabled:opacity-40 transition">
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-200 dark:border-white/[0.08] text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <Save size={12}/> Save Draft
             </button>
             <button onClick={() => void saveBoq("approved")} disabled={!activeProjectId || persistLoading}
@@ -1020,13 +1020,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         {/* Stats strip */}
         <div className="px-5 pb-2.5 flex items-center gap-5 flex-wrap">
           {[
-            { icon: <Layers size={11}/>, label: "Sections", value: sections.length, color: "text-slate-400" },
-            { icon: <Package size={11}/>, label: "Items", value: totalItems, color: "text-slate-400" },
+            { icon: <Layers size={11}/>, label: "Sections", value: sections.length, color: "text-slate-600 dark:text-slate-400" },
+            { icon: <Package size={11}/>, label: "Items", value: totalItems, color: "text-slate-600 dark:text-slate-400" },
             { icon: <DollarSign size={11}/>, label: "Total", value: fmtMoney(totals.subtotal), color: "text-cyan-300" },
           ].map(({ icon, label, value, color }) => (
             <div key={label} className="flex items-center gap-1.5">
-              <span className="text-slate-700">{icon}</span>
-              <span className="text-[10px] text-slate-600">{label}</span>
+              <span className="text-slate-400 dark:text-slate-700">{icon}</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-600">{label}</span>
               <span className={`text-[10px] font-bold ${color}`}>{value}</span>
             </div>
           ))}
@@ -1035,7 +1035,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               <AlertTriangle size={10}/> {missingRates} item{missingRates > 1 ? "s" : ""} missing rate
             </div>
           )}
-          {lastAutoSaveAt && <span className="text-[10px] text-slate-700 ml-auto">Last saved {lastAutoSaveAt}</span>}
+          {lastAutoSaveAt && <span className="text-[10px] text-slate-400 dark:text-slate-700 ml-auto">Last saved {lastAutoSaveAt}</span>}
         </div>
       </div>
 
@@ -1048,7 +1048,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/25 text-cyan-300 text-xs font-semibold disabled:opacity-40 transition">
             <Plus size={13}/> Add Section
           </button>
-          <button onClick={() => nav("/settings/master-lists")} className="text-[11px] text-slate-600 hover:text-slate-400 transition">
+          <button onClick={() => nav("/settings/master-lists")} className="text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-600 dark:text-slate-400 transition">
             Edit Categories ?
           </button>
         </div>
@@ -1056,11 +1056,11 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         {/* Empty state */}
         {sections.length === 0 && !persistLoading && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/[0.07] flex items-center justify-center mb-4">
-              <FileSpreadsheet size={24} className="text-slate-600"/>
+            <div className="w-16 h-16 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] flex items-center justify-center mb-4">
+              <FileSpreadsheet size={24} className="text-slate-500 dark:text-slate-600"/>
             </div>
-            <h3 className="text-sm font-semibold text-slate-300 mb-1.5">No sections yet</h3>
-            <p className="text-xs text-slate-600 mb-5 max-w-xs">Start by adding a section. Each section groups related items ? e.g. "Foundations", "Blockwork", "Roofing".</p>
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">No sections yet</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-600 mb-5 max-w-xs">Start by adding a section. Each section groups related items ? e.g. "Foundations", "Blockwork", "Roofing".</p>
             <button onClick={addSection} disabled={!canEdit || !activeProjectId}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/25 text-cyan-300 text-xs font-semibold disabled:opacity-40 transition">
               <Plus size={13}/> Add First Section
@@ -1073,30 +1073,30 @@ Answer briefly and practically. If they ask to add items, explain they need to u
           const sectionTotal = section.items.reduce((sum, it) => sum + numOr(it.qty) * numOr(it.rate), 0);
           const sectionWarnings = section.items.filter(it => it.qty > 0 && it.rate === 0).length;
           return (
-            <div key={section.id} className="rounded-xl border border-white/[0.07] bg-[#0d1117] overflow-hidden">
+            <div key={section.id} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] overflow-hidden">
               {/* Section header */}
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.06]">
-                <button onClick={() => toggleCollapse(section.id)} className="text-slate-600 hover:text-slate-300 transition flex-shrink-0">
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/[0.06]">
+                <button onClick={() => toggleCollapse(section.id)} className="text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition flex-shrink-0">
                   {section.collapsed ? <ChevronRight size={14}/> : <ChevronDown size={14}/>}
                 </button>
-                <span className="text-[10px] font-bold text-slate-700 w-5 text-center flex-shrink-0">{sIdx + 1}</span>
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-700 w-5 text-center flex-shrink-0">{sIdx + 1}</span>
 
                 <select value={section.masterCategoryId ?? ""} disabled={!canEdit} onChange={e => onPickCategory(section.id, e.target.value)}
-                  className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1 text-[11px] text-slate-400 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50 max-w-[160px] flex-shrink-0">
+                  className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1 text-[11px] text-slate-600 dark:text-slate-400 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50 max-w-[160px] flex-shrink-0">
                   <option value="">Category?</option>
                   {usableCategories.map((c: any) => <option key={getCategoryId(c)} value={getCategoryId(c)}>{getCategoryLabel(c)}</option>)}
                 </select>
 
                 <input value={section.title} disabled={!canEdit} onChange={e => updateSection(section.id, { title: e.target.value })}
-                  className="flex-1 bg-transparent text-sm font-bold text-slate-100 placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
+                  className="flex-1 bg-transparent text-sm font-bold text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
                   placeholder="Section title?"/>
 
                 <div className="flex items-center gap-3 flex-shrink-0 ml-auto">
                   {sectionWarnings > 0 && (
                     <span className="flex items-center gap-1 text-[10px] text-amber-400"><AlertTriangle size={10}/>{sectionWarnings} missing rate</span>
                   )}
-                  <span className="text-[11px] text-slate-600">{section.items.length} item{section.items.length !== 1 ? "s" : ""}</span>
-                  <span className="text-sm font-bold text-slate-200">{fmtMoney(sectionTotal)}</span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-600">{section.items.length} item{section.items.length !== 1 ? "s" : ""}</span>
+                  <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{fmtMoney(sectionTotal)}</span>
                   {canEdit && (
                     <div className="flex items-center gap-1">
                       <button onClick={() => addItem(section.id)}
@@ -1104,10 +1104,10 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                         <Plus size={10}/> Item
                       </button>
                       <button onClick={() => setAsmModal({ open: true, sectionId: section.id, search: "", selectedId: "", qty: "1" })}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.07] text-[10px] text-slate-400 transition">
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-white/[0.07] border border-slate-200 dark:border-white/[0.07] text-[10px] text-slate-600 dark:text-slate-400 transition">
                         <Boxes size={10}/> Assembly
                       </button>
-                      <button onClick={() => deleteSection(section.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-700 hover:text-red-400 transition">
+                      <button onClick={() => deleteSection(section.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-400 dark:text-slate-700 hover:text-red-400 transition">
                         <Trash2 size={12}/>
                       </button>
                     </div>
@@ -1117,9 +1117,9 @@ Answer briefly and practically. If they ask to add items, explain they need to u
 
               {/* Scope */}
               {!section.collapsed && (
-                <div className="px-4 py-1.5 bg-white/[0.01] border-b border-white/[0.04]">
+                <div className="px-4 py-1.5 bg-slate-50 dark:bg-white/[0.01] border-b border-slate-100 dark:border-white/[0.04]">
                   <input value={section.scope} disabled={!canEdit} onChange={e => updateSection(section.id, { scope: e.target.value })}
-                    className="w-full bg-transparent text-[11px] text-slate-600 placeholder-slate-800 focus:outline-none focus:text-slate-400 disabled:opacity-50"
+                    className="w-full bg-transparent text-[11px] text-slate-500 dark:text-slate-600 placeholder-slate-800 focus:outline-none focus:text-slate-600 dark:text-slate-400 disabled:opacity-50"
                     placeholder="Section scope / description (e.g. All 6&quot; block walls including mortar and ties)?"/>
                 </div>
               )}
@@ -1129,7 +1129,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 <div>
                   {section.items.length === 0 ? (
                     <div className="px-4 py-6 text-center">
-                      <p className="text-xs text-slate-700 mb-3">No items yet in this section</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-700 mb-3">No items yet in this section</p>
                       <button onClick={() => addItem(section.id)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-xs text-cyan-400 font-semibold transition">
                         <Plus size={11}/> Add Item
@@ -1138,7 +1138,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                   ) : (
                     <>
                       {/* Column headers */}
-                      <div className="grid px-4 py-2 border-b border-white/[0.04] text-[9px] font-bold uppercase tracking-widest text-slate-700"
+                      <div className="grid px-4 py-2 border-b border-slate-100 dark:border-white/[0.04] text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-700"
                         style={{ gridTemplateColumns: "44px 1fr 160px 80px 80px 90px 90px 32px" }}>
                         <span>Type</span>
                         <span>Item / Description</span>
@@ -1157,7 +1157,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                         const linkedItem = item.pick_item || item.cost_item_id;
                         return (
                           <div key={item.id}
-                            className={`grid px-4 py-2 border-b border-white/[0.03] hover:bg-white/[0.02] transition group items-center ${isMissingRate ? "bg-amber-500/[0.02]" : ""}`}
+                            className={`grid px-4 py-2 border-b border-white/[0.03] hover:bg-slate-50 dark:bg-white/[0.02] transition group items-center ${isMissingRate ? "bg-amber-500/[0.02]" : ""}`}
                             style={{ gridTemplateColumns: "44px 1fr 160px 80px 80px 90px 90px 32px" }}>
 
                             {/* Type chip */}
@@ -1172,13 +1172,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                               <div className="flex items-center gap-1.5">
                                 <input value={item.item_name} disabled={!canEdit}
                                   onChange={e => updateItem(section.id, item.id, { item_name: e.target.value, rate_source: "manual" })}
-                                  className="flex-1 bg-transparent text-xs font-semibold text-slate-200 placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
+                                  className="flex-1 bg-transparent text-xs font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
                                   placeholder="Item name?"/>
                                 {isMissingRate && <span title="Missing rate ? qty set but no rate"><AlertTriangle size={10} className="text-amber-500 flex-shrink-0" /></span>}
                               </div>
                               <input value={item.description} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { description: e.target.value })}
-                                className="w-full bg-transparent text-[10px] text-slate-600 placeholder-slate-800 focus:outline-none disabled:opacity-60"
+                                className="w-full bg-transparent text-[10px] text-slate-500 dark:text-slate-600 placeholder-slate-800 focus:outline-none disabled:opacity-60"
                                 placeholder="Description?"/>
                               {item.rate_source === "library" && (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/15 font-medium">Library</span>
@@ -1194,7 +1194,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             {/* Library picker */}
                             <div className="pr-2 space-y-1">
                               {linkedItem && (
-                                <div className="text-[9px] text-slate-600 truncate" title={item.pick_item || ""}>
+                                <div className="text-[9px] text-slate-500 dark:text-slate-600 truncate" title={item.pick_item || ""}>
                                   {item.pick_item || "Linked"}
                                 </div>
                               )}
@@ -1218,7 +1218,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             <div className="pr-1">
                               <select value={item.unit_id ?? ""} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { unit_id: e.target.value || null })}
-                                className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg px-1.5 py-1 text-[10px] text-slate-300 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50">
+                                className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-1.5 py-1 text-[10px] text-slate-700 dark:text-slate-300 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50">
                                 <option value="">?</option>
                                 {usableUnits.map((u: any) => <option key={getUnitId(u)} value={getUnitId(u)}>{getUnitLabel(u)}</option>)}
                               </select>
@@ -1228,10 +1228,10 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             <div className="flex items-center gap-0.5 pr-1">
                               <input type="number" value={Number.isFinite(item.qty) ? item.qty : 0} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { qty: numOr(e.target.value, 0) })}
-                                className="w-full bg-white/[0.04] border border-white/[0.07] rounded-lg px-1.5 py-1 text-[10px] text-right text-slate-200 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50"/>
+                                className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-1.5 py-1 text-[10px] text-right text-slate-800 dark:text-slate-200 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50"/>
                               {canEdit && routeProjectId && (
                                 <button onClick={() => setImportTakeoffModal({ open: true, sectionId: section.id, itemId: item.id })}
-                                  className="p-0.5 rounded hover:bg-emerald-500/15 text-slate-700 hover:text-emerald-400 transition flex-shrink-0" title="Import from Takeoff">
+                                  className="p-0.5 rounded hover:bg-emerald-500/15 text-slate-400 dark:text-slate-700 hover:text-emerald-400 transition flex-shrink-0" title="Import from Takeoff">
                                   <Download size={10}/>
                                 </button>
                               )}
@@ -1241,18 +1241,18 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             <div className="pr-1">
                               <input type="number" value={Number.isFinite(item.rate) ? item.rate : 0} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { rate: numOr(e.target.value, 0), rate_source: "manual" })}
-                                className={`w-full bg-white/[0.04] border rounded-lg px-1.5 py-1 text-[10px] text-right font-semibold focus:outline-none disabled:opacity-50 transition ${isMissingRate ? "border-amber-500/40 text-amber-500" : "border-white/[0.07] text-green-400 focus:border-cyan-500/40"}`}/>
+                                className={`w-full bg-slate-50 dark:bg-white/[0.04] border rounded-lg px-1.5 py-1 text-[10px] text-right font-semibold focus:outline-none disabled:opacity-50 transition ${isMissingRate ? "border-amber-500/40 text-amber-500" : "border-slate-200 dark:border-white/[0.07] text-green-400 focus:border-cyan-500/40"}`}/>
                             </div>
 
                             {/* Amount */}
-                            <div className="text-right text-xs font-bold text-slate-200 pr-1">
+                            <div className="text-right text-xs font-bold text-slate-800 dark:text-slate-200 pr-1">
                               {fmtMoney(amount)}
                             </div>
 
                             {/* Delete */}
                             <div className="flex justify-center">
                               <button onClick={() => deleteItem(section.id, item.id)} disabled={!canEdit}
-                                className="p-1 rounded-lg text-transparent group-hover:text-slate-700 hover:!text-red-400 hover:bg-red-500/10 transition disabled:hidden">
+                                className="p-1 rounded-lg text-transparent group-hover:text-slate-400 dark:text-slate-700 hover:!text-red-400 hover:bg-red-500/10 transition disabled:hidden">
                                 <X size={12}/>
                               </button>
                             </div>
@@ -1261,9 +1261,9 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                       })}
 
                       {/* Section total */}
-                      <div className="flex items-center justify-end gap-3 px-4 py-2.5 bg-white/[0.01] border-t border-white/[0.04]">
-                        <span className="text-[10px] text-slate-600 uppercase tracking-wider font-semibold">Section Total</span>
-                        <span className="text-sm font-bold text-slate-300">{fmtMoney(sectionTotal)}</span>
+                      <div className="flex items-center justify-end gap-3 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.01] border-t border-slate-100 dark:border-white/[0.04]">
+                        <span className="text-[10px] text-slate-500 dark:text-slate-600 uppercase tracking-wider font-semibold">Section Total</span>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{fmtMoney(sectionTotal)}</span>
                       </div>
                     </>
                   )}
@@ -1292,27 +1292,27 @@ Answer briefly and practically. If they ask to add items, explain they need to u
       {/* -- Assembly Modal -- */}
       {asmModal.open && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0d1117] rounded-2xl border border-white/[0.08] shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+          <div className="bg-white dark:bg-[#0d1117] rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
               <div>
-                <div className="text-sm font-bold text-slate-100">Add From Assembly</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Add From Assembly</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">Explodes an assembly into individual line items</div>
               </div>
-              <button onClick={() => setAsmModal({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" })} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition"><X size={15}/></button>
+              <button onClick={() => setAsmModal({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" })} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
             </div>
             <div className="p-5 space-y-3 flex-1 overflow-y-auto">
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+                  <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
                   <input autoFocus value={asmModal.search} onChange={e => setAsmModal(p => ({ ...p, search: e.target.value }))}
                     placeholder="Search assemblies?"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50"/>
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50"/>
                 </div>
                 <input value={asmModal.qty} onChange={e => setAsmModal(p => ({ ...p, qty: e.target.value }))} type="number"
-                  className="w-20 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 text-right"
+                  className="w-20 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 text-right"
                   placeholder="Qty"/>
               </div>
-              <div className="rounded-xl border border-white/[0.07] overflow-hidden max-h-72 overflow-y-auto">
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden max-h-72 overflow-y-auto">
                 {assemblies.filter(a => {
                   const q = asmModal.search.trim().toLowerCase();
                   return !q || (a.name||"").toLowerCase().includes(q) || (a.category||"").toLowerCase().includes(q);
@@ -1321,10 +1321,10 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                   const cc = assemblyComponents.filter(c => c.assembly_id === a.id).length;
                   return (
                     <button key={a.id} onClick={() => setAsmModal(p => ({ ...p, selectedId: a.id }))}
-                      className={`w-full text-left px-4 py-3 border-b border-white/[0.04] last:border-0 flex items-center justify-between transition ${selected ? "bg-cyan-500/10" : "hover:bg-white/[0.03]"}`}>
+                      className={`w-full text-left px-4 py-3 border-b border-slate-100 dark:border-white/[0.04] last:border-0 flex items-center justify-between transition ${selected ? "bg-cyan-500/10" : "hover:bg-slate-50 dark:bg-white/[0.03]"}`}>
                       <div>
-                        <div className="text-sm font-semibold text-slate-200">{a.name}</div>
-                        <div className="text-[10px] text-slate-600 mt-0.5">{a.category && `${a.category} ? `}{cc} component{cc !== 1 ? "s" : ""}{a.unit && ` ? ${a.unit}`}</div>
+                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{a.name}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-600 mt-0.5">{a.category && `${a.category} ? `}{cc} component{cc !== 1 ? "s" : ""}{a.unit && ` ? ${a.unit}`}</div>
                       </div>
                       {selected && <Check size={14} className="text-cyan-400 flex-shrink-0"/>}
                     </button>
@@ -1332,8 +1332,8 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 })}
               </div>
             </div>
-            <div className="flex items-center justify-between px-5 py-4 border-t border-white/[0.07]">
-              <span className="text-[11px] text-slate-600">{asmModal.selectedId ? "Ready to add" : "Select an assembly"}</span>
+            <div className="flex items-center justify-between px-5 py-4 border-t border-slate-200 dark:border-white/[0.07]">
+              <span className="text-[11px] text-slate-500 dark:text-slate-600">{asmModal.selectedId ? "Ready to add" : "Select an assembly"}</span>
               <button onClick={() => asmModal.sectionId && asmModal.selectedId && addAssembly(asmModal.sectionId, asmModal.selectedId, asmModal.qty)}
                 disabled={!asmModal.sectionId || !asmModal.selectedId}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold disabled:opacity-40 transition">
@@ -1347,18 +1347,18 @@ Answer briefly and practically. If they ask to add items, explain they need to u
       {/* -- AI Suggestions Modal -- */}
       {aiSuggestionsModal.open && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0d1117] rounded-2xl border border-white/[0.08] shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b border-white/[0.07]">
+          <div className="bg-white dark:bg-[#0d1117] rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-white/[0.07]">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
                   <Sparkles size={16} className="text-white"/>
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-slate-100">AI BOQ Suggestions</div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-slate-100">AI BOQ Suggestions</div>
                   <div className="text-[11px] text-slate-500">{aiSuggestionsModal.suggestions.filter(s => !ignoredSuggestions.has(s.id)).length} items recommended</div>
                 </div>
               </div>
-              <button onClick={() => setAiSuggestionsModal({ open: false, suggestions: [] })} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition"><X size={15}/></button>
+              <button onClick={() => setAiSuggestionsModal({ open: false, suggestions: [] })} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
             </div>
             <div className="flex-1 overflow-y-auto p-5">
               {aiSuggestionsModal.suggestions.filter(s => !ignoredSuggestions.has(s.id)).length === 0 ? (
@@ -1384,34 +1384,34 @@ Answer briefly and practically. If they ask to add items, explain they need to u
 
       {/* -- BOQ AI Panel -- */}
       {showAIPanel && (
-        <div className="fixed right-0 top-0 h-full w-96 bg-[#0d1117] border-l border-white/[0.08] shadow-2xl z-50 flex flex-col">
+        <div className="fixed right-0 top-0 h-full w-96 bg-white dark:bg-[#0d1117] border-l border-slate-200 dark:border-white/[0.08] shadow-2xl z-50 flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07] bg-gradient-to-r from-purple-900/40 to-blue-900/40">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07] bg-gradient-to-r from-purple-900/40 to-blue-900/40">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
                 <Bot size={15} className="text-white"/>
               </div>
               <div>
-                <div className="text-sm font-bold text-slate-100">BOQ AI Assistant</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100">BOQ AI Assistant</div>
                 <div className="text-[10px] text-slate-500">Powered by Magnus AI</div>
               </div>
             </div>
-            <button onClick={() => setShowAIPanel(false)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">
+            <button onClick={() => setShowAIPanel(false)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">
               <X size={15}/>
             </button>
           </div>
 
           {/* Quick Actions */}
-          <div className="px-4 py-3 border-b border-white/[0.06] grid grid-cols-3 gap-2">
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-white/[0.06] grid grid-cols-3 gap-2">
             {[
               {label:"Check BOQ",icon:<Zap size={11}/>,color:"text-amber-400",action:aiCheckBOQ},
               {label:"Suggest Items",icon:<Star size={11}/>,color:"text-purple-400",action:aiSuggestMissingItems},
               {label:"Fill Rates",icon:<Sparkles size={11}/>,color:"text-emerald-400",action:aiFillMissingRates},
             ].map(({label,icon,color,action})=>(
               <button key={label} onClick={()=>{action();}}
-                className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] transition">
+                className="flex flex-col items-center gap-1 py-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.04] hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.07] transition">
                 <span className={color}>{icon}</span>
-                <span className="text-[9px] text-slate-400 font-semibold text-center leading-tight">{label}</span>
+                <span className="text-[9px] text-slate-600 dark:text-slate-400 font-semibold text-center leading-tight">{label}</span>
               </button>
             ))}
           </div>
@@ -1420,13 +1420,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {aiMessages.length === 0 && (
               <div className="text-center py-8">
-                <Bot size={24} className="text-slate-700 mx-auto mb-2"/>
-                <p className="text-xs text-slate-600">Click a quick action above or type a question below</p>
+                <Bot size={24} className="text-slate-400 dark:text-slate-700 mx-auto mb-2"/>
+                <p className="text-xs text-slate-500 dark:text-slate-600">Click a quick action above or type a question below</p>
               </div>
             )}
             {aiMessages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role==="user"?"justify-end":"justify-start"}`}>
-                <div className={`max-w-[85%] rounded-xl px-3 py-2.5 text-[12px] leading-relaxed ${msg.role==="user"?"bg-blue-600 text-white":"bg-white/[0.06] border border-white/[0.08] text-slate-200"}`}>
+                <div className={`max-w-[85%] rounded-xl px-3 py-2.5 text-[12px] leading-relaxed ${msg.role==="user"?"bg-blue-600 text-white":"bg-slate-200 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-800 dark:text-slate-200"}`}>
                   <div className="whitespace-pre-wrap">{msg.text}</div>
                   {msg.actions && msg.actions.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2.5 pt-2.5 border-t border-white/[0.1]">
@@ -1443,7 +1443,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             ))}
             {aiPanelLoading && (
               <div className="flex justify-start">
-                <div className="bg-white/[0.06] border border-white/[0.08] rounded-xl px-3 py-2.5 flex items-center gap-2">
+                <div className="bg-slate-200 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] rounded-xl px-3 py-2.5 flex items-center gap-2">
                   <Loader size={12} className="text-purple-400 animate-spin"/>
                   <span className="text-[11px] text-slate-500">Thinking?</span>
                 </div>
@@ -1452,18 +1452,18 @@ Answer briefly and practically. If they ask to add items, explain they need to u
           </div>
 
           {/* Input */}
-          <div className="px-4 py-3 border-t border-white/[0.07]">
+          <div className="px-4 py-3 border-t border-slate-200 dark:border-white/[0.07]">
             <div className="flex gap-2">
               <input value={aiInput} onChange={e=>setAiInput(e.target.value)}
                 onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&aiChat(aiInput)}
                 placeholder="Ask anything about your BOQ?"
-                className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-purple-500/50"/>
+                className="flex-1 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-purple-500/50"/>
               <button onClick={()=>aiChat(aiInput)} disabled={!aiInput.trim()||aiPanelLoading}
                 className="p-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-40 transition">
                 <MessageSquare size={14}/>
               </button>
             </div>
-            <p className="text-[9px] text-slate-700 mt-1.5 text-center">Press Enter to send ? AI uses Jamaica construction knowledge</p>
+            <p className="text-[9px] text-slate-400 dark:text-slate-700 mt-1.5 text-center">Press Enter to send ? AI uses Jamaica construction knowledge</p>
           </div>
         </div>
       )}
