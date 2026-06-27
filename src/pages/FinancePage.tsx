@@ -154,7 +154,7 @@ export default function FinancePage() {
                 { label: "Accounts Recv.",    icon: <FileText size={15}/>,    to: "/accounts-receivable",    color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/20" },
               ].map(l => (
                 <button key={l.to} onClick={() => nav(l.to)}
-                  className="flex items-center gap-3 p-4 rounded-xl border border-white/[0.07] bg-[#0c1018] hover:border-white/[0.13] hover:bg-[#111820] transition-colors text-left group">
+                  className="flex items-center gap-3 p-4 rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018] hover:border-slate-300 dark:hover:border-white/[0.13] hover:bg-slate-50 dark:hover:bg-[#111820] transition-colors text-left group">
                   <div className={cn("w-9 h-9 rounded-lg border flex items-center justify-center flex-shrink-0", l.bg)}>
                     <span className={l.color}>{l.icon}</span>
                   </div>
@@ -166,7 +166,7 @@ export default function FinancePage() {
 
             {/* Recent expenses */}
             <Card padding={false}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
                 <span className="text-sm font-semibold text-slate-200">Recent Expenses</span>
                 <Btn size="xs" variant="ghost" onClick={() => nav("/expenses")}>View all <ArrowRight size={11}/></Btn>
               </div>
@@ -196,7 +196,7 @@ export default function FinancePage() {
         {/* ── Receivable Tab ── */}
         {tab === "receivable" && (
           <Card padding={false}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
               <span className="text-sm font-semibold text-slate-200">Client Invoices</span>
               <Btn size="xs" variant="ghost" onClick={() => nav("/accounts-receivable")}>Full view <ArrowRight size={11}/></Btn>
             </div>
@@ -228,7 +228,7 @@ export default function FinancePage() {
         {/* ── Payable Tab ── */}
         {tab === "payable" && (
           <Card padding={false}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
               <span className="text-sm font-semibold text-slate-200">Supplier Invoices</span>
             </div>
             {stats.supplierInvoices.length === 0 ? (
