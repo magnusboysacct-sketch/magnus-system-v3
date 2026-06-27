@@ -284,7 +284,7 @@ export default function CashFlowPage() {
           <>
             <Btn variant="ghost" size="sm" icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>} onClick={loadData}/>
             {tab === "overview" && (
-              <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.04] p-1">
+              <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
                 {(["30","90","365"] as const).map(p => (
                   <button key={p} onClick={() => setPeriod(p)}
                     className={cn("px-2.5 py-1 rounded-md text-[10px] font-bold transition-colors",
@@ -339,7 +339,7 @@ export default function CashFlowPage() {
 
             {/* Transactions table */}
             <Card padding={false}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
                 <span className="text-sm font-semibold text-slate-200">
                   Transactions <span className="text-slate-600 font-normal text-xs ml-2">last {period} days</span>
                 </span>
@@ -449,7 +449,7 @@ export default function CashFlowPage() {
               </div>
             )}
             <Card padding={false}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
                 <span className="text-sm font-semibold text-slate-200">
                   Transfer Log <span className="text-slate-600 font-normal text-xs ml-2">last {period} days</span>
                 </span>
