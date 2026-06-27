@@ -121,7 +121,7 @@ export default function CompanyUsersPage() {
         {/* Role breakdown */}
         <div className="flex flex-wrap gap-2">
           {stats.byRole.map(r => (
-            <div key={r.role} className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-[#0c1018] px-3 py-2">
+            <div key={r.role} className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018] px-3 py-2">
               <Badge color={ROLE_COLOR[r.role] || "slate"}>{r.role}</Badge>
               <span className="text-xs font-semibold text-slate-400">{r.count}</span>
             </div>
@@ -204,7 +204,7 @@ export default function CompanyUsersPage() {
               { role: "field",     desc: "Field ops, time entries only" },
               { role: "viewer",    desc: "Read-only access" },
             ].map(r => (
-              <div key={r.role} className="rounded-lg bg-white/[0.02] border border-white/[0.05] p-2.5">
+              <div key={r.role} className="rounded-lg bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.05] p-2.5">
                 <Badge color={ROLE_COLOR[r.role] || "slate"} dot>{r.role}</Badge>
                 <div className="text-[10px] text-slate-600 mt-1.5">{r.desc}</div>
               </div>
@@ -228,7 +228,7 @@ export default function CompanyUsersPage() {
               {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
             </Select>
           </Field>
-          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
             <Btn variant="ghost" onClick={() => setShowInvite(false)}>Cancel</Btn>
             <Btn variant="primary" icon={<Mail size={13}/>} onClick={sendInvite}
               disabled={!inviteEmail.trim() || saving}>
