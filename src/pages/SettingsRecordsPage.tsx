@@ -323,9 +323,9 @@ export default function SettingsRecordsPage() {
   if(allowed===false) return (
     <div className="p-8 text-center">
       <Shield size={40} className="text-red-400 mx-auto mb-4"/>
-      <div className="text-slate-300 font-bold text-lg">Access Restricted</div>
+      <div className="text-slate-700 dark:text-slate-300 font-bold text-lg">Access Restricted</div>
       <div className="text-slate-500 text-sm mt-2">This section is for Directors and Administrators only.</div>
-      <button onClick={()=>navigate("/settings")} className="mt-4 px-4 py-2 rounded-lg bg-white/[0.06] text-slate-400 text-sm">← Back to Settings</button>
+      <button onClick={()=>navigate("/settings")} className="mt-4 px-4 py-2 rounded-lg bg-slate-200 dark:bg-white/[0.06] text-slate-600 dark:text-slate-400 text-sm">← Back to Settings</button>
     </div>
   );
 
@@ -355,17 +355,17 @@ export default function SettingsRecordsPage() {
 
       {/* Search */}
       <div className="relative">
-        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600"/>
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600"/>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search workers..."
-          className="w-full pl-8 pr-4 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-slate-300 placeholder-slate-600 outline-none focus:border-cyan-500/50"/>
+          className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm text-slate-700 dark:text-slate-300 placeholder-slate-400 dark:placeholder-slate-600 outline-none focus:border-cyan-500/50"/>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1">
-        <button onClick={()=>setTab("company")} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition ${tab==="company"?"bg-cyan-600 text-white":"text-slate-500 hover:text-slate-300"}`}>
+        <button onClick={()=>setTab("company")} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition ${tab==="company"?"bg-cyan-600 text-white":"text-slate-600 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"}`}>
           <Briefcase size={12}/> Company Workers ({filteredCompany.length})
         </button>
-        <button onClick={()=>setTab("field")} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition ${tab==="field"?"bg-cyan-600 text-white":"text-slate-500 hover:text-slate-300"}`}>
+        <button onClick={()=>setTab("field")} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition ${tab==="field"?"bg-cyan-600 text-white":"text-slate-600 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"}`}>
           <User size={12}/> Field Workers ({filteredField.length})
         </button>
       </div>
@@ -373,18 +373,18 @@ export default function SettingsRecordsPage() {
       {/* Company Workers */}
       {tab==="company"&&(
         <div className="space-y-3">
-          {filteredCompany.length===0&&<div className="text-center py-8 text-xs text-slate-600">No company workers found</div>}
+          {filteredCompany.length===0&&<div className="text-center py-8 text-xs text-slate-500 dark:text-slate-600">No company workers found</div>}
           {filteredCompany.map(w=>(
-            <div key={w.id} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 flex items-center gap-4">
+            <div key={w.id} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4 flex items-center gap-4">
               {w.passport_photo_url?(
-                <img src={w.passport_photo_url} className="w-12 h-12 rounded-full object-cover border border-white/[0.1]"/>
+                <img src={w.passport_photo_url} className="w-12 h-12 rounded-full object-cover border border-slate-300 dark:border-white/[0.1]"/>
               ):(
                 <div className="w-12 h-12 rounded-full bg-cyan-500/20 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold text-sm">
                   {(w.first_name?.[0]||"")+( w.last_name?.[0]||"")}
                 </div>
               )}
               <div className="flex-1">
-                <div className="text-sm font-bold text-slate-200">{w.first_name} {w.last_name}</div>
+                <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{w.first_name} {w.last_name}</div>
                 <div className="text-[10px] text-slate-500">{w.worker_type||w.role||"Staff"}{w.id_number?` · ID: ${w.id_number}`:""}</div>
               </div>
               <div className="flex gap-2">
@@ -405,23 +405,23 @@ export default function SettingsRecordsPage() {
       {/* Field Workers */}
       {tab==="field"&&(
         <div className="space-y-3">
-          {filteredField.length===0&&<div className="text-center py-8 text-xs text-slate-600">No field workers found</div>}
+          {filteredField.length===0&&<div className="text-center py-8 text-xs text-slate-500 dark:text-slate-600">No field workers found</div>}
           {filteredField.map((w,i)=>(
-            <div key={i} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 flex items-center gap-4">
+            <div key={i} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4 flex items-center gap-4">
               {w.id_photo_url?(
-                <img src={w.id_photo_url} className="w-12 h-12 rounded-lg object-cover border border-white/[0.1]"/>
+                <img src={w.id_photo_url} className="w-12 h-12 rounded-lg object-cover border border-slate-300 dark:border-white/[0.1]"/>
               ):(
                 <div className="w-12 h-12 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold text-sm">
                   {w.name?.[0]?.toUpperCase()||"?"}
                 </div>
               )}
               <div className="flex-1">
-                <div className="text-sm font-bold text-slate-200">{w.name}</div>
+                <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{w.name}</div>
                 <div className="text-[10px] text-slate-500">
                   {w.id_number?`ID: ${w.id_number} · `:""}
                   {w.phone||""}
                 </div>
-                <div className="text-[10px] text-slate-600">{w.payments.length} payments · Total: {fmtJMD(w.total)}</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-600">{w.payments.length} payments · Total: {fmtJMD(w.total)}</div>
               </div>
               <button onClick={()=>printFieldWorkerFile(w)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/20 transition">
