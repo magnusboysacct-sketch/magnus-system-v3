@@ -35,7 +35,7 @@ const TYPE_STYLE: Record<string,{pill:string;icon:React.ReactNode}> = {
   Labor:      {pill:"bg-emerald-500/10 text-emerald-400 border-emerald-500/20", icon:<Users size={10}/>},
   Equipment:  {pill:"bg-amber-500/10 text-amber-400 border-amber-500/20", icon:<Wrench size={10}/>},
   Subcontract:{pill:"bg-purple-500/10 text-purple-400 border-purple-500/20",icon:<Layers size={10}/>},
-  Other:      {pill:"bg-slate-500/10 text-slate-400 border-slate-500/20", icon:<MoreHorizontal size={10}/>},
+  Other:      {pill:"bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20", icon:<MoreHorizontal size={10}/>},
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -159,27 +159,27 @@ function CategoryCombobox(props:{value:string;options:string[];onChange:(v:strin
   return(
     <div ref={wrapRef} className="relative w-[240px]">
       <button type="button" onClick={()=>{setOpen(v=>!v);setTimeout(()=>inputRef.current?.focus(),0);}}
-        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-left hover:bg-white/[0.07] transition flex items-center justify-between text-slate-300">
+        className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-left hover:bg-slate-200 dark:bg-white/[0.07] transition flex items-center justify-between text-slate-700 dark:text-slate-300">
         <span className="truncate">{label}</span>
         <ChevronDown size={13} className="opacity-50 flex-shrink-0"/>
       </button>
       {open&&(
-        <div className="absolute z-50 mt-1.5 w-full rounded-xl border border-white/[0.08] bg-[#0d1117] shadow-2xl overflow-hidden">
-          <div className="p-2 border-b border-white/[0.06]">
+        <div className="absolute z-50 mt-1.5 w-full rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl overflow-hidden">
+          <div className="p-2 border-b border-slate-200 dark:border-white/[0.06]">
             <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…"
-              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-blue-500/50 text-slate-200 placeholder:text-slate-600"/>
+              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-blue-500/50 text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600"/>
           </div>
           <div className="max-h-64 overflow-auto">
             <button type="button" onClick={()=>{onChange("__ALL__");setOpen(false);setQ("");}}
-              className={`w-full text-left px-3 py-2 text-sm hover:bg-white/[0.06] transition ${value==="__ALL__"?"bg-white/[0.06] text-blue-400":"text-slate-400"}`}>
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-200 dark:bg-white/[0.06] transition ${value==="__ALL__"?"bg-slate-200 dark:bg-white/[0.06] text-blue-400":"text-slate-600 dark:text-slate-400"}`}>
               {allLabel}
             </button>
             {filtered.map(opt=>(
               <button key={opt} type="button" onClick={()=>{onChange(opt);setOpen(false);setQ("");}}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-white/[0.06] transition truncate ${value===opt?"bg-white/[0.06] text-blue-400":"text-slate-300"}`}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-200 dark:bg-white/[0.06] transition truncate ${value===opt?"bg-slate-200 dark:bg-white/[0.06] text-blue-400":"text-slate-700 dark:text-slate-300"}`}
                 title={opt}>{opt}</button>
             ))}
-            {filtered.length===0&&<div className="px-3 py-3 text-sm text-slate-600">No matches.</div>}
+            {filtered.length===0&&<div className="px-3 py-3 text-sm text-slate-500 dark:text-slate-600">No matches.</div>}
           </div>
         </div>
       )}
@@ -203,23 +203,23 @@ function SmartCombobox(props:{value:string;options:string[];onChange:(v:string)=
   return(
     <div ref={wrapRef} className={`relative ${widthClassName}`}>
       <button type="button" onClick={()=>{setOpen(v=>!v);setTimeout(()=>inputRef.current?.focus(),0);}}
-        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-left hover:bg-white/[0.07] transition flex items-center justify-between text-slate-300">
+        className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-left hover:bg-slate-200 dark:bg-white/[0.07] transition flex items-center justify-between text-slate-700 dark:text-slate-300">
         <span className="truncate">{value||"Select…"}</span>
         <ChevronDown size={13} className="opacity-50 flex-shrink-0"/>
       </button>
       {open&&(
-        <div className="absolute z-50 mt-1.5 w-full rounded-xl border border-white/[0.08] bg-[#0d1117] shadow-2xl overflow-hidden">
-          <div className="p-2 border-b border-white/[0.06]">
+        <div className="absolute z-50 mt-1.5 w-full rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl overflow-hidden">
+          <div className="p-2 border-b border-slate-200 dark:border-white/[0.06]">
             <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} placeholder={placeholder}
-              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-blue-500/50 text-slate-200 placeholder:text-slate-600"/>
+              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-blue-500/50 text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600"/>
           </div>
           <div className="max-h-64 overflow-auto">
             {filtered.map(opt=>(
               <button key={opt} type="button" onClick={()=>{onChange(opt);setOpen(false);setQ("");}}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-white/[0.06] transition ${value===opt?"bg-white/[0.06] text-blue-400":"text-slate-300"}`}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-200 dark:bg-white/[0.06] transition ${value===opt?"bg-slate-200 dark:bg-white/[0.06] text-blue-400":"text-slate-700 dark:text-slate-300"}`}
                 title={opt}>{opt}</button>
             ))}
-            {filtered.length===0&&<div className="px-3 py-3 text-sm text-slate-600">No matches.</div>}
+            {filtered.length===0&&<div className="px-3 py-3 text-sm text-slate-500 dark:text-slate-600">No matches.</div>}
           </div>
         </div>
       )}
@@ -605,13 +605,13 @@ export default function RatesPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#080b10]">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
 
       {/* Header */}
-      <div className="border-b border-white/[0.06] bg-[#0d1117]">
+      <div className="border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d1117]">
         <div className="px-6 py-5 flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-slate-100 tracking-tight">Rate Library</h1>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">Rate Library</h1>
             <p className="text-xs text-slate-500 mt-0.5">
               {total} items &nbsp;·&nbsp; {priced} priced &nbsp;·&nbsp;
               <span className={coverage>=80?"text-green-400":coverage>=50?"text-amber-400":"text-red-400"}>
@@ -619,8 +619,8 @@ export default function RatesPage() {
               </span>
               &nbsp;·&nbsp;
               {ITEM_TYPES.map(t=>(
-                <span key={t} className="mr-2 text-slate-600">
-                  {t}: <span className="text-slate-400">{typeCounts[t]||0}</span>
+                <span key={t} className="mr-2 text-slate-500 dark:text-slate-600">
+                  {t}: <span className="text-slate-600 dark:text-slate-400">{typeCounts[t]||0}</span>
                 </span>
               ))}
             </p>
@@ -632,12 +632,12 @@ export default function RatesPage() {
             </button>
             <div className="relative" data-export-menu>
               <button onClick={()=>setExportOpen(v=>!v)} disabled={busy||loading||filteredItems.length===0}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] text-slate-300 text-xs font-medium border border-white/[0.08] transition disabled:opacity-40">
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-white/[0.08] transition disabled:opacity-40">
                 <Download size={12}/> Export <ChevronDown size={11} className="opacity-60"/>
               </button>
               {exportOpen&&(
-                <div className="absolute right-0 mt-1.5 w-[240px] rounded-xl border border-white/[0.08] bg-[#0d1117] shadow-2xl overflow-hidden z-50">
-                  <div className="px-3 py-2 text-[10px] text-slate-600 border-b border-white/[0.06] uppercase tracking-wider">Export Options</div>
+                <div className="absolute right-0 mt-1.5 w-[240px] rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl overflow-hidden z-50">
+                  <div className="px-3 py-2 text-[10px] text-slate-500 dark:text-slate-600 border-b border-slate-200 dark:border-white/[0.06] uppercase tracking-wider">Export Options</div>
                   {[
                     {label:"Import CSV (preview)",action:()=>{setExportOpen(false);setImportOpen(true);setImportTitle("CSV import");setImportReason("");setImportCsvName("");setImportRows([]);setImportMatched([]);setImportUnmatched([]);setTimeout(()=>fileInputRef.current?.click(),0);}},
                     {label:"Download Template",action:()=>{downloadTemplateCurrentView();setExportOpen(false);}},
@@ -648,17 +648,17 @@ export default function RatesPage() {
                     {label:"Subcontract only",action:()=>{exportByTypeCsv("Subcontract","SubcontractOnly");setExportOpen(false);}},
                   ].map(({label,action})=>(
                     <button key={label} type="button" onClick={action}
-                      className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-white/[0.05] transition">{label}</button>
+                      className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:bg-white/[0.05] transition">{label}</button>
                   ))}
                 </div>
               )}
             </div>
             <button onClick={()=>{setBulkTitle("Bulk rate update");setBulkReason("");setBulkValue("");setBulkOpen(true);}} disabled={busy}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] text-slate-300 text-xs font-medium border border-white/[0.08] transition disabled:opacity-40">
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-white/[0.08] transition disabled:opacity-40">
               <Zap size={12}/> Bulk Update
             </button>
             <button onClick={undoLastBulk} disabled={busy||lastBulkBatches.length===0}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] text-slate-400 text-xs font-medium border border-white/[0.08] transition disabled:opacity-30"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-white/[0.08] text-slate-600 dark:text-slate-400 text-xs font-medium border border-slate-200 dark:border-white/[0.08] transition disabled:opacity-30"
               title={lastBulkBatches.length?`Last: ${lastBulkBatches[0]}`:"No bulk batch yet"}>
               <RotateCcw size={12}/> Undo Bulk
             </button>
@@ -667,11 +667,11 @@ export default function RatesPage() {
         {/* Coverage bar */}
         <div className="px-6 pb-4">
           <div className="flex items-center gap-3">
-            <div className="flex-1 h-1 bg-white/[0.04] rounded-full overflow-hidden">
+            <div className="flex-1 h-1 bg-slate-50 dark:bg-white/[0.04] rounded-full overflow-hidden">
               <div className="h-1 rounded-full transition-all duration-700"
                 style={{width:`${coverage}%`,background:coverage>=80?"linear-gradient(90deg,#22c55e,#16a34a)":coverage>=50?"linear-gradient(90deg,#f59e0b,#d97706)":"linear-gradient(90deg,#ef4444,#dc2626)"}}/>
             </div>
-            <span className="text-[10px] text-slate-600 font-medium">{priced}/{total} priced</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-600 font-medium">{priced}/{total} priced</span>
           </div>
         </div>
       </div>
@@ -681,44 +681,44 @@ export default function RatesPage() {
         <div className="flex flex-wrap items-center gap-3">
           <CategoryCombobox value={categoryFilter} options={categoryOptions} onChange={setCategoryFilter}/>
           <div className="relative flex-1 min-w-52 max-w-sm">
-            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none"/>
+            <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
             <input value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Search item, category, code, rate…"
-              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
+              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
           </div>
           <button onClick={()=>companyId&&reload()}
-            className="p-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-slate-500 hover:text-slate-300 transition">
+            className="p-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">
             <RefreshCw size={13} className={loading?"animate-spin":""}/>
           </button>
-          <span className="text-xs text-slate-600 ml-auto">{filteredItems.length} item{filteredItems.length===1?"":"s"}</span>
+          <span className="text-xs text-slate-500 dark:text-slate-600 ml-auto">{filteredItems.length} item{filteredItems.length===1?"":"s"}</span>
         </div>
 
         {/* Type pills */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs text-slate-600 mr-1">Type</span>
+          <span className="text-xs text-slate-500 dark:text-slate-600 mr-1">Type</span>
           <button onClick={()=>setAllTypes(true)}
-            className="px-2.5 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.07] text-xs text-slate-500 transition">All</button>
+            className="px-2.5 py-1 rounded-md bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.07] text-xs text-slate-500 transition">All</button>
           <button onClick={()=>setAllTypes(false)}
-            className="px-2.5 py-1 rounded-md bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.07] text-xs text-slate-500 transition">None</button>
+            className="px-2.5 py-1 rounded-md bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.07] text-xs text-slate-500 transition">None</button>
           {ITEM_TYPES.map(t=>{
             const on=!!typeFilter[t];
             const s=TYPE_STYLE[t]||TYPE_STYLE.Other;
             return(
               <button key={t} onClick={()=>toggleType(t)} onDoubleClick={()=>setOnlyType(t)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold border transition ${on?s.pill:"bg-white/[0.03] text-slate-600 border-white/[0.06] opacity-60 hover:opacity-100"}`}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold border transition ${on?s.pill:"bg-slate-50 dark:bg-white/[0.03] text-slate-500 dark:text-slate-600 border-slate-200 dark:border-white/[0.06] opacity-60 hover:opacity-100"}`}
                 title="Click toggle · Double-click isolate">
                 {s.icon}{t}
                 <span className="opacity-60">({typeCounts[t]||0})</span>
               </button>
             );
           })}
-          <span className="text-[10px] text-slate-700 ml-auto">{selectedTypeCount} selected</span>
+          <span className="text-[10px] text-slate-400 dark:text-slate-700 ml-auto">{selectedTypeCount} selected</span>
         </div>
 
         {/* Table */}
-        <div className="rounded-xl border border-white/[0.07] overflow-hidden bg-[#0d1117]">
+        <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden bg-white dark:bg-[#0d1117]">
           {/* Header */}
-          <div className="grid text-[10px] font-semibold text-slate-600 uppercase tracking-wider px-4 py-2.5 border-b border-white/[0.05] bg-white/[0.02]"
+          <div className="grid text-[10px] font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider px-4 py-2.5 border-b border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02]"
             style={{gridTemplateColumns:"2fr 1.2fr 0.7fr 1fr 1fr 0.7fr 1fr 0.9fr 96px"}}>
             <span>Item</span><span>Description</span><span>Code</span>
             <span>Category</span><span>Type</span><span>Unit</span>
@@ -726,12 +726,12 @@ export default function RatesPage() {
           </div>
 
           {loading?(
-            <div className="flex items-center justify-center py-16 text-slate-600 text-sm gap-2">
+            <div className="flex items-center justify-center py-16 text-slate-500 dark:text-slate-600 text-sm gap-2">
               <RefreshCw size={14} className="animate-spin"/> Loading rates…
             </div>
           ):filteredItems.length===0?(
             <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <Package size={20} className="text-slate-700"/>
+              <Package size={20} className="text-slate-400 dark:text-slate-700"/>
               <span className="text-slate-500 text-sm">No items match your filters</span>
               {!search&&categoryFilter==="__ALL__"&&(
                 <button onClick={openAdd} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition mt-1">
@@ -757,15 +757,15 @@ export default function RatesPage() {
             const ts=TYPE_STYLE[item.item_type||"Other"]||TYPE_STYLE.Other;
             return(
               <div key={item.id}
-                className={`grid items-center px-4 py-3 gap-2 border-b border-white/[0.04] hover:bg-white/[0.02] transition group ${idx===filteredItems.length-1?"border-b-0":""}`}
+                className={`grid items-center px-4 py-3 gap-2 border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:bg-white/[0.02] transition group ${idx===filteredItems.length-1?"border-b-0":""}`}
                 style={{gridTemplateColumns:"2fr 1.2fr 0.7fr 1fr 1fr 0.7fr 1fr 0.9fr 96px"}}>
 
                 {/* Item */}
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-slate-200 truncate">{item.item_name}</div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{item.item_name}</div>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    {formulaBadge||<span className="text-[9px] text-slate-700">No formula</span>}
-                    {item.variant&&<span className="text-[9px] text-slate-600 truncate">{item.variant}</span>}
+                    {formulaBadge||<span className="text-[9px] text-slate-400 dark:text-slate-700">No formula</span>}
+                    {item.variant&&<span className="text-[9px] text-slate-500 dark:text-slate-600 truncate">{item.variant}</span>}
                   </div>
                 </div>
 
@@ -775,13 +775,13 @@ export default function RatesPage() {
                     <input autoFocus value={editingDescValue} onChange={e=>setEditingDescValue(e.target.value)}
                       onBlur={()=>setEditingDescId(null)}
                       onKeyDown={async e=>{if(e.key==="Escape")return setEditingDescId(null);if(e.key==="Enter"){await saveDescription(item.id,editingDescValue);setEditingDescId(null);}}}
-                      className="w-full bg-white/[0.06] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-200 outline-none"/>
+                      className="w-full bg-slate-200 dark:bg-white/[0.06] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-800 dark:text-slate-200 outline-none"/>
                   ):(
                     <button type="button" disabled={busy}
                       onClick={()=>{setEditingDescId(item.id);setEditingDescValue(item.description||"");}}
-                      className="text-left text-xs text-slate-500 hover:text-slate-300 truncate w-full transition disabled:opacity-50"
+                      className="text-left text-xs text-slate-500 hover:text-slate-700 dark:text-slate-300 truncate w-full transition disabled:opacity-50"
                       title={item.description||"Click to add description"}>
-                      {item.description||<span className="text-slate-700 italic">—</span>}
+                      {item.description||<span className="text-slate-400 dark:text-slate-700 italic">—</span>}
                     </button>
                   )}
                 </div>
@@ -792,12 +792,12 @@ export default function RatesPage() {
                     <input autoFocus value={editingCodeValue} onChange={e=>setEditingCodeValue(e.target.value)}
                       onBlur={()=>setEditingCodeId(null)}
                       onKeyDown={async e=>{if(e.key==="Escape")return setEditingCodeId(null);if(e.key==="Enter"){await saveCostCode(item.id,editingCodeValue.trim());setEditingCodeId(null);}}}
-                      className="w-full bg-white/[0.06] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-200 outline-none font-mono"/>
+                      className="w-full bg-slate-200 dark:bg-white/[0.06] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-800 dark:text-slate-200 outline-none font-mono"/>
                   ):(
                     <button type="button" disabled={busy}
                       onClick={()=>{setEditingCodeId(item.id);setEditingCodeValue(item.cost_code||"");}}
-                      className="text-xs text-slate-500 hover:text-slate-300 font-mono transition disabled:opacity-50">
-                      {item.cost_code||<span className="text-slate-700 italic">—</span>}
+                      className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-300 font-mono transition disabled:opacity-50">
+                      {item.cost_code||<span className="text-slate-400 dark:text-slate-700 italic">—</span>}
                     </button>
                   )}
                 </div>
@@ -808,13 +808,13 @@ export default function RatesPage() {
                     <select autoFocus value={editingCatValue} onChange={e=>setEditingCatValue(e.target.value)}
                       onBlur={()=>setEditingCatId(null)}
                       onKeyDown={async e=>{if(e.key==="Escape")setEditingCatId(null);if(e.key==="Enter"){await saveCategory(item.id,(editingCatValue||"Uncategorized").trim());setEditingCatId(null);}}}
-                      className="bg-[#0b1220] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-200 outline-none w-full">
+                      className="bg-[#0b1220] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-800 dark:text-slate-200 outline-none w-full">
                       {categoryOptions.map(c=><option key={c} value={c}>{c}</option>)}
                     </select>
                   ):(
                     <button type="button" disabled={busy}
                       onClick={()=>{setEditingCatId(item.id);setEditingCatValue(normCategory(item.category));}}
-                      className="text-xs text-slate-400 hover:text-slate-200 transition truncate disabled:opacity-50">
+                      className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200 transition truncate disabled:opacity-50">
                       {normCategory(item.category)}
                     </button>
                   )}
@@ -826,7 +826,7 @@ export default function RatesPage() {
                     <select autoFocus value={editingTypeValue} onChange={e=>setEditingTypeValue(e.target.value)}
                       onBlur={()=>setEditingTypeId(null)}
                       onKeyDown={async e=>{if(e.key==="Escape")setEditingTypeId(null);if(e.key==="Enter"){await saveItemType(item.id,editingTypeValue||"Other");setEditingTypeId(null);}}}
-                      className="bg-[#0b1220] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-200 outline-none">
+                      className="bg-[#0b1220] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-800 dark:text-slate-200 outline-none">
                       {ITEM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
                     </select>
                   ):(
@@ -840,7 +840,7 @@ export default function RatesPage() {
 
                 {/* Unit */}
                 <div>
-                  <span className="text-xs text-slate-400 bg-white/[0.04] border border-white/[0.07] rounded-md px-2 py-0.5">{item.unit||"—"}</span>
+                  <span className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-md px-2 py-0.5">{item.unit||"—"}</span>
                 </div>
 
                 {/* Rate */}
@@ -852,23 +852,23 @@ export default function RatesPage() {
                         if(e.key==="Escape")return setEditingId(null);
                         if(e.key==="Enter"){const n=Number(editingRate);if(isFinite(n)&&n>0){await saveRate(item.id,n);}setEditingId(null);}
                       }}
-                      className="bg-white/[0.06] border border-blue-500/40 rounded-md px-2 py-1 text-sm text-green-400 font-bold w-32 outline-none"/>
+                      className="bg-slate-200 dark:bg-white/[0.06] border border-blue-500/40 rounded-md px-2 py-1 text-sm text-green-400 font-bold w-32 outline-none"/>
                   ):(
                     <button type="button" disabled={busy}
                       onClick={()=>{setEditingId(item.id);setEditingRate(item.current_rate==null?"":String(item.current_rate));}}
                       className="text-sm font-bold text-green-400 hover:text-green-300 transition disabled:opacity-50">
-                      {item.current_rate!=null?formatMoney(item.current_rate):<span className="text-slate-700 text-xs font-normal italic">Set rate</span>}
+                      {item.current_rate!=null?formatMoney(item.current_rate):<span className="text-slate-400 dark:text-slate-700 text-xs font-normal italic">Set rate</span>}
                     </button>
                   )}
                 </div>
 
                 {/* Updated */}
-                <div className="text-[11px] text-slate-700">{formatDate(item.updated_at)}</div>
+                <div className="text-[11px] text-slate-400 dark:text-slate-700">{formatDate(item.updated_at)}</div>
 
                 {/* Actions */}
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
                   <button type="button" onClick={()=>openEdit(item)} disabled={busy}
-                    className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-600 hover:text-blue-400 transition" title="Edit">
+                    className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition" title="Edit">
                     <Edit2 size={13}/>
                   </button>
                   <button type="button" disabled={busy}
@@ -881,7 +881,7 @@ export default function RatesPage() {
                         setItems(prev=>prev.filter(r=>r.id!==item.id));
                       }finally{setBusy(false);}
                     }}
-                    className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition" title="Delete">
+                    className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400 transition" title="Delete">
                     <Trash2 size={13}/>
                   </button>
                 </div>
@@ -891,7 +891,7 @@ export default function RatesPage() {
         </div>
 
         {!loading&&filteredItems.length>0&&(
-          <div className="text-xs text-slate-700 text-right pr-1">
+          <div className="text-xs text-slate-400 dark:text-slate-700 text-right pr-1">
             {filteredItems.length} of {total} items · Click any cell to edit inline
           </div>
         )}
@@ -900,17 +900,17 @@ export default function RatesPage() {
       {/* ── Add/Edit Modal ──────────────────────────────────────────────────── */}
       {isModalOpen&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07]">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/[0.07]">
               <div>
-                <div className="text-base font-bold text-slate-100">{mode==="add"?"Add Rate":"Edit Rate"}</div>
+                <div className="text-base font-bold text-slate-900 dark:text-slate-100">{mode==="add"?"Add Rate":"Edit Rate"}</div>
                 <div className="text-xs text-slate-500 mt-0.5">{mode==="add"?"Add a new item to your rate library":"Update item details and rate"}</div>
               </div>
-              <button type="button" onClick={closeModal} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">✕</button>
+              <button type="button" onClick={closeModal} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">✕</button>
             </div>
             <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
               {mode==="add"&&companyId&&(
-                <div className="pb-4 border-b border-white/[0.07]">
+                <div className="pb-4 border-b border-slate-200 dark:border-white/[0.07]">
                   <SmartItemSelectorButton companyId={companyId}
                     onSelect={sel=>{
                       if(sel.itemName) setFName(sel.itemName);
@@ -926,70 +926,70 @@ export default function RatesPage() {
                 <div className="col-span-2">
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Item Name</div>
                   <input value={fName} onChange={e=>setFName(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-600"
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-500 dark:text-slate-600"
                     placeholder="e.g. Ready Mix Concrete"/>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Variant</div>
                   <input value={fVariant} onChange={e=>setFVariant(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-600"
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-500 dark:text-slate-600"
                     placeholder='e.g. 6" Standard Grey'/>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Cost Code</div>
                   <input value={fCode} onChange={e=>setFCode(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 font-mono outline-none focus:border-blue-500/50 transition"
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 font-mono outline-none focus:border-blue-500/50 transition"
                     placeholder="e.g. MAT-CON-001"/>
                   <label className="flex items-center gap-2 mt-1.5 cursor-pointer">
                     <input type="checkbox" checked={autoCode} onChange={e=>setAutoCode(e.target.checked)} className="rounded"/>
-                    <span className="text-[11px] text-slate-600">Auto-generate from Type + Category</span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-600">Auto-generate from Type + Category</span>
                   </label>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Category</div>
                   <select value={fCategory} onChange={e=>setFCategory(e.target.value)}
-                    className="w-full bg-[#0b1220] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition">
+                    className="w-full bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition">
                     {STANDARD_CATEGORIES.map(cat=><option key={cat} value={cat}>{cat}</option>)}
                   </select>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Type</div>
                   <select value={fType} onChange={e=>setFType(e.target.value)}
-                    className="w-full bg-[#0b1220] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition">
+                    className="w-full bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition">
                     {ITEM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Unit</div>
                   <select value={fUnit} onChange={e=>setFUnit(e.target.value)}
-                    className="w-full bg-[#0b1220] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition">
+                    className="w-full bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition">
                     {unitOptions.map(u=><option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
                 <div className="col-span-2">
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Rate (JMD)</div>
                   <input value={fRate} onChange={e=>setFRate(e.target.value)} type="number" step="0.01"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-green-400 font-bold outline-none focus:border-blue-500/50 transition"
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-green-400 font-bold outline-none focus:border-blue-500/50 transition"
                     placeholder="e.g. 18500"/>
                 </div>
               </div>
 
               {/* Advanced: Calculator */}
-              <div className="rounded-xl border border-white/[0.07] overflow-hidden">
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden">
                 <button type="button" onClick={()=>setShowAdvanced(v=>!v)}
-                  className="w-full px-4 py-3 flex items-center justify-between bg-white/[0.02] hover:bg-white/[0.04] transition">
-                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Advanced · Calculator Engine</span>
-                  <ChevronDown size={13} className={`text-slate-600 transition-transform ${showAdvanced?"rotate-180":""}`}/>
+                  className="w-full px-4 py-3 flex items-center justify-between bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04] transition">
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Advanced · Calculator Engine</span>
+                  <ChevronDown size={13} className={`text-slate-500 dark:text-slate-600 transition-transform ${showAdvanced?"rotate-180":""}`}/>
                 </button>
                 {showAdvanced&&(
-                  <div className="p-4 bg-[#080b10] space-y-3 border-t border-white/[0.06]">
+                  <div className="p-4 bg-slate-50 dark:bg-[#080b10] space-y-3 border-t border-slate-200 dark:border-white/[0.06]">
                     <div>
                       <div className="text-xs text-slate-500 mb-1.5">Formula Type</div>
                       <select value={formulaType} onChange={e=>{
                         const t=e.target.value;setFormulaType(t);
                         const def={length:"length",area:"area",volume:"length * width * height",count:"count"}[t]||"";
                         setFormulaInput(def);previewFormula(t,def);
-                      }} className="w-full bg-[#0b1220] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50">
+                      }} className="w-full bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50">
                         <option value="">No formula</option>
                         <option value="length">Length</option>
                         <option value="area">Area</option>
@@ -1002,8 +1002,8 @@ export default function RatesPage() {
                         <div className="text-xs text-slate-500 mb-1.5">Formula Expression</div>
                         <input value={formulaInput} onChange={e=>{setFormulaInput(e.target.value);previewFormula(formulaType,e.target.value);}}
                           placeholder="Enter formula…"
-                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 font-mono outline-none focus:border-blue-500/50"/>
-                        <div className="text-[11px] text-slate-600 mt-1">Variables: {formulaType==="volume"?"length, width, height":formulaType}</div>
+                          className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 font-mono outline-none focus:border-blue-500/50"/>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-600 mt-1">Variables: {formulaType==="volume"?"length, width, height":formulaType}</div>
                       </div>
                     )}
                     {formulaPreview!=null&&(
@@ -1019,13 +1019,13 @@ export default function RatesPage() {
               <div>
                 <div className="text-xs text-slate-500 mb-1.5 font-medium">Description</div>
                 <input value={fDesc} onChange={e=>setFDesc(e.target.value)}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50 transition"
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition"
                   placeholder="Optional description"/>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/[0.07]">
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-200 dark:border-white/[0.07]">
               <button type="button" onClick={closeModal} disabled={busy}
-                className="px-4 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-sm text-slate-300 transition disabled:opacity-50">Cancel</button>
+                className="px-4 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-sm text-slate-700 dark:text-slate-300 transition disabled:opacity-50">Cancel</button>
               <button type="button" disabled={busy||!fName.trim()} onClick={async()=>{
                 const name=fName.trim();if(!name) return;
                 const payload:any={
@@ -1065,32 +1065,32 @@ export default function RatesPage() {
       {/* ── Bulk Update Modal ───────────────────────────────────────────────── */}
       {bulkOpen&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07]">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/[0.07]">
               <div>
-                <div className="text-base font-bold text-slate-100">Bulk Update Rates</div>
+                <div className="text-base font-bold text-slate-900 dark:text-slate-100">Bulk Update Rates</div>
                 <div className="text-xs text-slate-500 mt-0.5">Will update <span className="text-amber-400 font-semibold">{bulkTargetCount}</span> items in current view</div>
               </div>
-              <button type="button" onClick={()=>setBulkOpen(false)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">✕</button>
+              <button type="button" onClick={()=>setBulkOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">✕</button>
             </div>
             <div className="p-6 space-y-4">
               <div>
                 <div className="text-xs text-slate-500 mb-1.5 font-medium">Batch Name</div>
                 <input value={bulkTitle} onChange={e=>setBulkTitle(e.target.value)}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
                   placeholder="e.g. Materials +8% March 2026"/>
               </div>
               <div>
                 <div className="text-xs text-slate-500 mb-1.5 font-medium">Reason (optional)</div>
                 <input value={bulkReason} onChange={e=>setBulkReason(e.target.value)}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
                   placeholder="e.g. Supplier price increase"/>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Mode</div>
                   <select value={bulkMode} onChange={e=>setBulkMode(e.target.value as any)}
-                    className="w-full bg-[#0b1220] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50">
+                    className="w-full bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50">
                     <option value="percent">Percent (+/- %)</option>
                     <option value="add">Add amount (+/-)</option>
                     <option value="set">Set value</option>
@@ -1099,20 +1099,20 @@ export default function RatesPage() {
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Value</div>
                   <input value={bulkValue} onChange={e=>setBulkValue(e.target.value)} type="number" step="0.01"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
                     placeholder={bulkMode==="percent"?"8":bulkMode==="add"?"250":"18500"}/>
                 </div>
               </div>
               <div>
                 <div className="text-xs text-slate-500 mb-1.5 font-medium">Effective Date</div>
                 <input type="date" value={bulkEffectiveDate} onChange={e=>setBulkEffectiveDate(e.target.value)}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+                  className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
               </div>
-              <div className="text-xs text-slate-600">Scope: current Category filter + selected Type toggles</div>
+              <div className="text-xs text-slate-500 dark:text-slate-600">Scope: current Category filter + selected Type toggles</div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/[0.07]">
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-200 dark:border-white/[0.07]">
               <button type="button" onClick={()=>setBulkOpen(false)} disabled={busy}
-                className="px-4 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-sm text-slate-300 transition disabled:opacity-50">Cancel</button>
+                className="px-4 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-sm text-slate-700 dark:text-slate-300 transition disabled:opacity-50">Cancel</button>
               <button type="button" disabled={busy||!bulkValue.trim()||bulkTargetCount===0} onClick={applyBulk}
                 className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold transition disabled:opacity-40">
                 {busy?"Applying…":"Apply Bulk Update"}
@@ -1125,13 +1125,13 @@ export default function RatesPage() {
       {/* ── Import Modal ────────────────────────────────────────────────────── */}
       {importOpen&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-4xl rounded-2xl border border-white/[0.08] bg-[#0d1117] shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.07]">
+          <div className="w-full max-w-4xl rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/[0.07]">
               <div>
-                <div className="text-base font-bold text-slate-100">Import CSV</div>
+                <div className="text-base font-bold text-slate-900 dark:text-slate-100">Import CSV</div>
                 <div className="text-xs text-slate-500 mt-0.5">Preview matches before applying · {importMatched.length} matched · {importUnmatched.length} unmatched</div>
               </div>
-              <button type="button" onClick={()=>setImportOpen(false)} className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-500 hover:text-slate-300 transition">✕</button>
+              <button type="button" onClick={()=>setImportOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">✕</button>
             </div>
             <div className="p-6 space-y-4">
               <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden"
@@ -1140,45 +1140,45 @@ export default function RatesPage() {
                 <div className="flex-1 min-w-[220px]">
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Batch Title</div>
                   <input value={importTitle} onChange={e=>setImportTitle(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
                     placeholder="e.g. Rapid True Value price update"/>
                 </div>
                 <div className="flex-1 min-w-[220px]">
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Reason</div>
                   <input value={importReason} onChange={e=>setImportReason(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
                     placeholder="Optional note"/>
                 </div>
                 <div className="min-w-[160px]">
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Effective Date</div>
                   <input type="date" value={importEffectiveDate} onChange={e=>setImportEffectiveDate(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500/50"/>
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
                 </div>
                 <button type="button" onClick={()=>fileInputRef.current?.click()} disabled={busy}
-                  className="px-4 py-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.09] border border-white/[0.08] text-sm text-slate-300 transition flex items-center gap-1.5">
+                  className="px-4 py-2 rounded-lg bg-slate-200 dark:bg-white/[0.06] hover:bg-white/[0.09] border border-slate-200 dark:border-white/[0.08] text-sm text-slate-700 dark:text-slate-300 transition flex items-center gap-1.5">
                   <Upload size={13}/> Choose CSV
                 </button>
               </div>
-              {importCsvName&&<div className="text-xs text-slate-600">File: <span className="text-slate-400">{importCsvName}</span> · {importRows.length} rows parsed</div>}
+              {importCsvName&&<div className="text-xs text-slate-500 dark:text-slate-600">File: <span className="text-slate-600 dark:text-slate-400">{importCsvName}</span> · {importRows.length} rows parsed</div>}
               <div className="grid grid-cols-2 gap-4">
                 {[
                   {title:`Matched — will update (${importMatched.length})`,color:"text-green-400",rows:importMatched.map(m=>({row:m.src.rowNum,code:m.src.cost_code||"—",name:m.src.item_name||"—",match:m.matchName,rate:m.src.rate,cur:m.src.currency})),cols:["Row","Code","CSV Item","Match","Rate","Cur"]},
                   {title:`Unmatched — not applied (${importUnmatched.length})`,color:"text-slate-500",rows:importUnmatched.map(r=>({row:r.rowNum,code:r.cost_code||"—",name:r.item_name||"—",match:"",rate:r.rate,cur:""})),cols:["Row","Code","Item","","Rate",""]},
                 ].map(({title,color,rows,cols})=>(
-                  <div key={title} className="rounded-xl border border-white/[0.07] overflow-hidden">
-                    <div className={`px-3 py-2 text-xs font-semibold ${color} border-b border-white/[0.06] bg-white/[0.02]`}>{title}</div>
+                  <div key={title} className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden">
+                    <div className={`px-3 py-2 text-xs font-semibold ${color} border-b border-slate-200 dark:border-white/[0.06] bg-slate-50 dark:bg-white/[0.02]`}>{title}</div>
                     <div className="max-h-56 overflow-auto">
                       <table className="w-full text-xs">
-                        <thead><tr className="border-b border-white/[0.05]">{cols.map((c,i)=><th key={i} className="py-2 px-3 text-left text-slate-600 font-medium">{c}</th>)}</tr></thead>
+                        <thead><tr className="border-b border-slate-100 dark:border-white/[0.05]">{cols.map((c,i)=><th key={i} className="py-2 px-3 text-left text-slate-500 dark:text-slate-600 font-medium">{c}</th>)}</tr></thead>
                         <tbody>
                           {(rows as any[]).slice(0,100).map((r:any)=>(
-                            <tr key={r.row} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
-                              <td className="py-1.5 px-3 text-slate-700">{r.row}</td>
+                            <tr key={r.row} className="border-b border-white/[0.03] hover:bg-slate-50 dark:bg-white/[0.02]">
+                              <td className="py-1.5 px-3 text-slate-400 dark:text-slate-700">{r.row}</td>
                               <td className="py-1.5 px-3 text-slate-500 font-mono">{r.code}</td>
-                              <td className="py-1.5 px-3 text-slate-400">{r.name}</td>
+                              <td className="py-1.5 px-3 text-slate-600 dark:text-slate-400">{r.name}</td>
                               <td className="py-1.5 px-3 text-slate-500">{r.match}</td>
                               <td className="py-1.5 px-3 text-green-400 font-semibold">{r.rate??""}</td>
-                              <td className="py-1.5 px-3 text-slate-600">{r.cur}</td>
+                              <td className="py-1.5 px-3 text-slate-500 dark:text-slate-600">{r.cur}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1187,11 +1187,11 @@ export default function RatesPage() {
                   </div>
                 ))}
               </div>
-              <div className="text-xs text-slate-700">Columns: cost_code, item_name, rate, currency, unit, category, type/item_type · cost_code is best match; item_name is fallback</div>
+              <div className="text-xs text-slate-400 dark:text-slate-700">Columns: cost_code, item_name, rate, currency, unit, category, type/item_type · cost_code is best match; item_name is fallback</div>
             </div>
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-white/[0.07]">
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-200 dark:border-white/[0.07]">
               <button type="button" onClick={()=>setImportOpen(false)} disabled={busy}
-                className="px-4 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-sm text-slate-300 transition disabled:opacity-50">Cancel</button>
+                className="px-4 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-sm text-slate-700 dark:text-slate-300 transition disabled:opacity-50">Cancel</button>
               <button type="button" disabled={busy||importMatched.length===0} onClick={applyImport}
                 className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition disabled:opacity-40">
                 {busy?"Applying…":`Apply ${importMatched.length} Updates`}
