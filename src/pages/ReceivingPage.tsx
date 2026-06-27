@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
@@ -171,7 +171,7 @@ function getHistoryBadge(qty: number): {
   return {
     text: "Log Entry",
     className:
-      "border-slate-600/40 bg-slate-800/70 text-slate-300",
+      "border-slate-300/40 bg-slate-100 dark:bg-slate-800/70 text-slate-700 dark:text-slate-300",
   };
 }
 
@@ -688,7 +688,7 @@ export default function ReceivingPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <button
             onClick={() => loadAll(currentProjectId)}
-            className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm hover:bg-slate-800"
+            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             Refresh
           </button>
@@ -708,23 +708,23 @@ export default function ReceivingPage() {
       ) : null}
 
       {!currentProjectId ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-10 text-center text-sm text-slate-400">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-10 text-center text-sm text-slate-600 dark:text-slate-400">
           Select a project from the global Project Context to view receiving.
         </div>
       ) : (
         <>
           <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-4">
               <div className="text-xs uppercase tracking-wide text-slate-400">Pending POs</div>
               <div className="mt-2 text-3xl font-semibold">{loading ? "—" : totalPendingPOs}</div>
             </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-4">
               <div className="text-xs uppercase tracking-wide text-slate-400">Pending Items</div>
               <div className="mt-2 text-3xl font-semibold">{loading ? "—" : totalPendingItems}</div>
             </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 p-4">
               <div className="text-xs uppercase tracking-wide text-slate-400">Balance Qty</div>
               <div className="mt-2 text-3xl font-semibold">
                 {loading ? "—" : formatQty(totalPendingBalanceQty)}
@@ -733,8 +733,8 @@ export default function ReceivingPage() {
           </div>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-            <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
-              <div className="border-b border-slate-800 px-5 py-4">
+            <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70">
+              <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4">
                 <h2 className="text-lg font-semibold">Pending Deliveries</h2>
                 <p className="mt-1 text-sm text-slate-400">
                   Includes draft, issued, and part-delivered purchase orders with remaining balance.
@@ -751,8 +751,8 @@ export default function ReceivingPage() {
                 ) : (
                   <div className="space-y-5">
                     {pendingGroups.map((group) => (
-                      <div key={group.supplierName} className="rounded-2xl border border-slate-800 bg-slate-950/50">
-                        <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+                      <div key={group.supplierName} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
+                        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 px-4 py-3">
                           <div>
                             <div className="font-medium">{group.supplierName}</div>
                             <div className="text-xs text-slate-400">
@@ -767,8 +767,8 @@ export default function ReceivingPage() {
                               key={po.header.id}
                               type="button"
                               onClick={() => openPO(po.header.id)}
-                              className={`w-full px-4 py-4 text-left transition hover:bg-slate-800/40 ${
-                                selectedPOId === po.header.id ? "bg-slate-800/40" : ""
+                              className={`w-full px-4 py-4 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800/40 ${
+                                selectedPOId === po.header.id ? "bg-slate-100 dark:bg-slate-800/40" : ""
                               }`}
                             >
                               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -777,7 +777,7 @@ export default function ReceivingPage() {
                                     <span className="text-sm font-semibold">
                                       {po.header.po_number || "Unnamed PO"}
                                     </span>
-                                    <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
+                                    <span className="rounded-full border border-slate-300 dark:border-slate-700 px-2 py-0.5 text-[11px] text-slate-700 dark:text-slate-300">
                                       {getHeaderStatusLabel(po.header.status)}
                                     </span>
                                   </div>
@@ -807,7 +807,7 @@ export default function ReceivingPage() {
                                   <span>Progress</span>
                                   <span>{po.progressPct.toFixed(0)}%</span>
                                 </div>
-                                <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+                                <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                                   <div
                                     className="h-full rounded-full bg-cyan-500"
                                     style={{ width: `${po.progressPct}%` }}
@@ -824,8 +824,8 @@ export default function ReceivingPage() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-800 bg-slate-900/70">
-              <div className="border-b border-slate-800 px-5 py-4">
+            <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70">
+              <div className="border-b border-slate-200 dark:border-slate-800 px-5 py-4">
                 <h2 className="text-lg font-semibold">Receiving History</h2>
                 <p className="mt-1 text-sm text-slate-400">
                   Most recent receiving activity from existing receiving records.
@@ -857,7 +857,7 @@ export default function ReceivingPage() {
                           onClick={() => {
                             if (record.purchase_order_id) openPO(record.purchase_order_id);
                           }}
-                          className="w-full rounded-2xl border border-slate-800 bg-slate-950/50 p-4 text-left transition hover:bg-slate-800/40"
+                          className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 p-4 text-left transition hover:bg-slate-100 dark:hover:bg-slate-800/40"
                         >
                           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div className="min-w-0 flex-1">
@@ -895,7 +895,7 @@ export default function ReceivingPage() {
                               </div>
 
                               {notes ? (
-                                <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/50 px-3 py-2">
+                                <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 px-3 py-2">
                                   <div className="text-[11px] uppercase tracking-wide text-slate-500">
                                     Notes / Reference
                                   </div>
@@ -936,16 +936,16 @@ export default function ReceivingPage() {
           onClick={closeModal}
         >
           <div
-            className="mt-4 flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl"
+            className="mt-4 flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-5 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 dark:border-slate-800 px-5 py-4">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-lg font-semibold">
                     {selectedPO.po_number || "Unnamed PO"}
                   </h2>
-                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300">
+                  <span className="rounded-full border border-slate-300 dark:border-slate-700 px-2 py-0.5 text-[11px] text-slate-700 dark:text-slate-300">
                     {getHeaderStatusLabel(selectedPO.status)}
                   </span>
                 </div>
@@ -960,13 +960,13 @@ export default function ReceivingPage() {
               <div className="flex shrink-0 gap-2">
                 <button
                   onClick={() => navigate(`/purchase-orders?poId=${selectedPO.id}`)}
-                  className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm hover:bg-slate-800"
+                  className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
                 >
                   Open PO
                 </button>
                 <button
                   onClick={closeModal}
-                  className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm hover:bg-slate-800"
+                  className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
                 >
                   Close
                 </button>
@@ -981,7 +981,7 @@ export default function ReceivingPage() {
                   </div>
                 ) : null}
 
-                <div className="overflow-hidden rounded-2xl border border-slate-800">
+                <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
                       <thead className="bg-slate-950/70 text-left text-slate-400">
@@ -1011,7 +1011,7 @@ export default function ReceivingPage() {
                             };
 
                             return (
-                              <tr key={item.id} className="bg-slate-900/30">
+                              <tr key={item.id} className="bg-slate-50 dark:bg-slate-900/30">
                                 <td className="px-4 py-3 align-top">
                                   <div className="font-medium text-slate-100">
                                     {item.material_name || "Unnamed Material"}
@@ -1051,7 +1051,7 @@ export default function ReceivingPage() {
                                       className={`w-32 rounded-xl border bg-slate-950 px-3 py-2 text-sm outline-none ${
                                         meta.isOver
                                           ? "border-amber-500/70 text-amber-100"
-                                          : "border-slate-700"
+                                          : "border-slate-300 dark:border-slate-700"
                                       }`}
                                     />
 
@@ -1086,14 +1086,14 @@ export default function ReceivingPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 p-4">
                   <label className="mb-2 block text-sm font-medium text-slate-300">Receiving Notes</label>
                   <textarea
                     value={receiveNotes}
                     onChange={(e) => setReceiveNotes(e.target.value)}
                     rows={3}
                     placeholder="Optional note, delivery note number, truck info, or remarks..."
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none"
+                    className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-sm outline-none"
                   />
 
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1115,7 +1115,7 @@ export default function ReceivingPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 p-4">
                   <div className="mb-3 text-sm font-medium text-slate-300">PO Receiving History</div>
                   {selectedPOHistory.length === 0 ? (
                     <div className="text-sm text-slate-400">No receiving records yet for this PO.</div>
@@ -1130,7 +1130,7 @@ export default function ReceivingPage() {
                         const notes = getRecordNotes(record);
 
                         return (
-                          <div key={record.id} className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+                          <div key={record.id} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-3">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-2">
