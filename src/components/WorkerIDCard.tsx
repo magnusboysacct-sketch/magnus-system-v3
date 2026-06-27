@@ -261,29 +261,29 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.fillText("IF FOUND, RETURN TO ISSUING COMPANY BELOW", W/2, 8 * S);
 
     // Logo + company block
-    let cy = 30 * S;
+    const cy = 30; // unscaled baseline y — scaled consistently at each use below
     ctx.fillStyle = NAVY_BASE;
-    ctx.beginPath(); ctx.arc(22 * S, cy + 8 * S, 11 * S, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(22 * S, (cy + 8) * S, 11 * S, 0, Math.PI * 2); ctx.fill();
     if (logoImage) {
       ctx.save();
-      ctx.beginPath(); ctx.arc(22 * S, cy + 8 * S, 10 * S, 0, Math.PI * 2); ctx.clip();
+      ctx.beginPath(); ctx.arc(22 * S, (cy + 8) * S, 10 * S, 0, Math.PI * 2); ctx.clip();
       ctx.drawImage(logoImage, 12 * S, (cy - 2) * S, 20 * S, 20 * S);
       ctx.restore();
     } else {
       ctx.fillStyle = "#fff";
       ctx.font = `bold ${7 * S}px sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("MB", 22 * S, cy + 8 * S);
+      ctx.fillText("MB", 22 * S, (cy + 8) * S);
     }
 
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
     ctx.fillStyle = INK;
     ctx.font = `bold ${10 * S}px sans-serif`;
-    ctx.fillText(companyName.toUpperCase(), 40 * S, cy + 5 * S);
+    ctx.fillText(companyName.toUpperCase(), 40 * S, (cy + 5) * S);
     ctx.fillStyle = "rgba(28,26,20,0.55)";
     ctx.font = `${6 * S}px sans-serif`;
     const tagline = companySettings?.tagline || "Building With Integrity";
-    ctx.fillText(tagline, 40 * S, cy + 14 * S);
+    ctx.fillText(tagline, 40 * S, (cy + 14) * S);
 
     // Divider
     ctx.strokeStyle = NAVY_TINT_LINE; ctx.lineWidth = 1;
