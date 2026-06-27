@@ -208,7 +208,7 @@ export default function UploadStatementPage() {
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelected(f); }}
                 />
                 <Upload size={28} className="mx-auto mb-3 text-slate-600"/>
-                <div className="text-sm font-medium text-slate-300 mb-1">
+                <div className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                   {accountId ? "Click to choose a statement" : "Choose an account above first"}
                 </div>
                 <div className="text-xs text-slate-600">PDF, JPG, or PNG — multi-page PDFs are supported</div>
@@ -221,7 +221,7 @@ export default function UploadStatementPage() {
           <Card>
             <div className="flex flex-col items-center justify-center py-10 gap-3">
               <RefreshCw size={24} className="animate-spin text-cyan-400"/>
-              <div className="text-sm text-slate-300 font-medium">Reading statement with AI...</div>
+              <div className="text-sm text-slate-700 dark:text-slate-300 font-medium">Reading statement with AI...</div>
               {progress.total > 0 && (
                 <div className="text-xs text-slate-600">Page {progress.current} of {progress.total}</div>
               )}
@@ -237,7 +237,7 @@ export default function UploadStatementPage() {
             <div className="grid grid-cols-3 gap-4">
               <Card>
                 <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1">Transactions Found</div>
-                <div className="text-xl font-bold text-slate-200">{extracted.length}</div>
+                <div className="text-xl font-bold text-slate-800 dark:text-slate-200">{extracted.length}</div>
               </Card>
               <Card>
                 <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1">Total Credits</div>
@@ -261,8 +261,8 @@ export default function UploadStatementPage() {
             )}
 
             <Card padding={false}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-                <span className="text-sm font-semibold text-slate-200">Review before saving</span>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Review before saving</span>
                 <span className="text-xs text-slate-600">Check this looks right — these will be added as unmatched transactions</span>
               </div>
               <div className="max-h-96 overflow-y-auto">
@@ -280,7 +280,7 @@ export default function UploadStatementPage() {
                     {extracted.map((t, i) => (
                       <Tr key={i}>
                         <Td muted>{t.date}</Td>
-                        <Td><span className="text-slate-200">{t.description}</span></Td>
+                        <Td><span className="text-slate-800 dark:text-slate-200">{t.description}</span></Td>
                         <Td>
                           <Badge color={t.type === "credit" ? "green" : "red"} dot>
                             {t.type === "credit" ? <ArrowUpRight size={10}/> : <ArrowDownRight size={10}/>}
@@ -313,7 +313,7 @@ export default function UploadStatementPage() {
           <Card>
             <div className="flex flex-col items-center justify-center py-10 gap-3">
               <RefreshCw size={24} className="animate-spin text-cyan-400"/>
-              <div className="text-sm text-slate-300 font-medium">Saving transactions...</div>
+              <div className="text-sm text-slate-700 dark:text-slate-300 font-medium">Saving transactions...</div>
             </div>
           </Card>
         )}
