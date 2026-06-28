@@ -17,11 +17,13 @@ type UserProfile = {
 };
 
 const ROLE_COLOR: Record<string, any> = {
-  owner: "cyan", admin: "violet", manager: "blue",
-  estimator: "amber", viewer: "slate", field: "green",
+  director: "cyan", admin: "violet", project_manager: "blue",
+  site_supervisor: "green", estimator: "amber", procurement: "orange",
+  accounts: "purple", viewer: "slate",
 };
 
-const ROLES = ["owner", "admin", "manager", "estimator", "field", "viewer"];
+// Roles must match user_profiles.role CHECK constraint and edge function allowedRoles
+const ROLES = ["director", "admin", "project_manager", "site_supervisor", "estimator", "procurement", "accounts", "viewer"];
 
 export default function CompanyUsersPage() {
   const nav = useNavigate();
@@ -70,19 +72,20 @@ export default function CompanyUsersPage() {
   }
 
   async function sendInvite() {
+    if (!inviteEmail.trim()) { setError("Email is required."); return; }
     setSaving(true); setError(null); setSuccess(null);
     try {
-      const { error: e } = await supabase.auth.admin.inviteUserByEmail(inviteEmail);
-      if (e) throw e;
+      const { data, error: e } = await supabase.functions.invoke("admin-invite-user", {
+        body: { email: inviteEmail.trim().toLowerCase(), role: inviteRole },
+      });
+      if (e) throw new Error(e.message);
+      if (data?.error) throw new Error(data.error);
       setSuccess(`Invite sent to ${inviteEmail}`);
       setInviteEmail(""); setInviteRole("viewer");
       setTimeout(() => setShowInvite(false), 2000);
     } catch (e: any) {
-      // Fallback message since admin API may not be available client-side
-      setSuccess(`Invite queued for ${inviteEmail}. They will receive an email shortly.`);
-      setTimeout(() => setShowInvite(false), 2000);
-    }
-    finally { setSaving(false); }
+      setError(e.message || "Failed to send invite. Make sure you have director access.");
+    } finally { setSaving(false); }
   }
 
   function initials(u: UserProfile) {
