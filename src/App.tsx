@@ -68,7 +68,10 @@ function AuthHashRouter() {
     const hash = window.location.hash || "";
     if (!hash) return;
     const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
-    if (params.get("type") === "invite" || params.get("access_token") || params.get("error_code")) {
+    const type = params.get("type");
+    if (type === "recovery") {
+      nav(`/reset-password${window.location.hash}`, { replace: true });
+    } else if (type === "invite" || params.get("access_token") || params.get("error_code")) {
       nav(`/accept-invite${window.location.hash}`, { replace: true });
     }
   }, [nav]);
