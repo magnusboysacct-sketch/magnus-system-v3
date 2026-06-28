@@ -14,6 +14,7 @@ export default function AcceptInvitePage() {
   const [verifying, setVerifying] = useState(true);
   const [verified, setVerified] = useState(false);
   const [verifyError, setVerifyError] = useState("");
+  const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [saving, setSaving] = useState(false);
@@ -69,52 +70,29 @@ export default function AcceptInvitePage() {
 
     setSaving(true);
 
-    const { error } = await supabase.auth.updateUser({ password });
+    // Step 1: Set the password — the user is already signed in via verifyOtp above
+    const { error: pwError } = await supabase.auth.updateUser({ password });
 
-    setSaving(false);
-
-    if (error) {
-      setSaveError(error.message || "Failed to set password.");
+    if (pwError) {
+      setSaving(false);
+      setSaveError(pwError.message || "Failed to set password.");
       return;
     }
 
-    // Link invited user to their company and mark invitation accepted
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const meta = user.user_metadata || {};
-        const companyId = meta.company_id as string | undefined;
-        const invitedRole = (meta.invited_role as string | undefined) || "viewer";
-        const invitationId = meta.invitation_id as string | undefined;
+    // Step 2: Call accept-invite edge function.
+    // It reads the session token to identify the user, looks up their invitation,
+    // creates/updates user_profiles with the correct role, and marks the invite accepted.
+    const { data, error: fnError } = await supabase.functions.invoke("accept-invite", {
+      body: { fullName: fullName.trim() || undefined },
+    });
 
-        if (companyId) {
-          // Upsert profile — trigger may have already created it, this ensures correct data
-          await supabase.from("user_profiles").upsert({
-            id: user.id,
-            company_id: companyId,
-            email: user.email,
-            full_name: meta.full_name || user.email?.split("@")[0] || "",
-            role: invitedRole,
-            finance_access_level: ["director", "admin", "accounts"].includes(invitedRole) ? "full" : "none",
-            status: "active",
-          }, { onConflict: "id" });
-        }
+    setSaving(false);
 
-        // Mark the invitation as accepted so it leaves the pending list
-        if (invitationId) {
-          await supabase.from("company_invitations")
-            .update({ status: "accepted", updated_at: new Date().toISOString() })
-            .eq("id", invitationId);
-        } else if (user.email) {
-          // Fallback: match by email in case invitation_id wasn't in metadata
-          await supabase.from("company_invitations")
-            .update({ status: "accepted", updated_at: new Date().toISOString() })
-            .eq("email", user.email)
-            .eq("status", "pending");
-        }
-      }
-    } catch {
-      // Non-fatal
+    if (fnError || data?.error) {
+      setSaveError(
+        data?.error || fnError?.message || "Failed to activate your account. Please contact your administrator."
+      );
+      return;
     }
 
     navigate(next, { replace: true });
@@ -136,6 +114,21 @@ export default function AcceptInvitePage() {
           </div>
         ) : verified ? (
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Full name
+              </label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
+                placeholder="Your full name"
+                autoComplete="name"
+                autoFocus
+              />
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 New password
