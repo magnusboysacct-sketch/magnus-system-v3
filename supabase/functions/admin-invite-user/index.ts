@@ -245,8 +245,8 @@ Deno.serve(async (req) => {
           </div>
 
           <div style="padding:32px;color:#222;">
-            <h2 style="margin-top:0;">You’ve been invited</h2>
-            <p>You’ve been invited to join <strong>${esc(companyName)}</strong> on the Magnus construction management platform.</p>
+            <h2 style="margin-top:0;">You've been invited</h2>
+            <p>You've been invited to join <strong>${esc(companyName)}</strong> on the Magnus construction management platform.</p>
             <p>Click the button below to accept your invitation and activate your account.</p>
 
             <div style="text-align:center;margin:32px 0;">
