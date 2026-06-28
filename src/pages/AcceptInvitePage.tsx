@@ -78,27 +78,43 @@ export default function AcceptInvitePage() {
       return;
     }
 
-    // Create user_profile for invited user using metadata set by the invite function
+    // Link invited user to their company and mark invitation accepted
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const meta = user.user_metadata || {};
         const companyId = meta.company_id as string | undefined;
         const invitedRole = (meta.invited_role as string | undefined) || "viewer";
+        const invitationId = meta.invitation_id as string | undefined;
+
         if (companyId) {
+          // Upsert profile — trigger may have already created it, this ensures correct data
           await supabase.from("user_profiles").upsert({
             id: user.id,
             company_id: companyId,
             email: user.email,
             full_name: meta.full_name || user.email?.split("@")[0] || "",
             role: invitedRole,
-            finance_access_level: invitedRole === "accounts" ? "full" : invitedRole === "director" ? "full" : "none",
+            finance_access_level: ["director", "admin", "accounts"].includes(invitedRole) ? "full" : "none",
             status: "active",
           }, { onConflict: "id" });
         }
+
+        // Mark the invitation as accepted so it leaves the pending list
+        if (invitationId) {
+          await supabase.from("company_invitations")
+            .update({ status: "accepted", updated_at: new Date().toISOString() })
+            .eq("id", invitationId);
+        } else if (user.email) {
+          // Fallback: match by email in case invitation_id wasn't in metadata
+          await supabase.from("company_invitations")
+            .update({ status: "accepted", updated_at: new Date().toISOString() })
+            .eq("email", user.email)
+            .eq("status", "pending");
+        }
       }
     } catch {
-      // Non-fatal — user can still log in; admin can fix profile later
+      // Non-fatal
     }
 
     navigate(next, { replace: true });

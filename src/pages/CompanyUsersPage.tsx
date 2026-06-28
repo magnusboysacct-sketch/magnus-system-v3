@@ -101,11 +101,10 @@ export default function CompanyUsersPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const { data, error: e } = await supabase.functions.invoke("admin-remove-user", {
-        body: { userId: deleteTarget.id },
+      const { error: e } = await supabase.rpc("admin_delete_user", {
+        target_user_id: deleteTarget.id,
       });
-      const msg = data?.error || (e ? e.message : null);
-      if (msg) throw new Error(msg);
+      if (e) throw new Error(e.message);
       setUsers(prev => prev.filter(u => u.id !== deleteTarget.id));
       setDeleteTarget(null);
       setSuccess(`${deleteTarget.full_name || "User"} has been removed.`);
