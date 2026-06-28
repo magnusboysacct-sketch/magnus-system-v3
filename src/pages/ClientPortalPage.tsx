@@ -81,33 +81,33 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
   }
 
   const S={
-    page:{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center",padding:20} as React.CSSProperties,
-    card:{width:"100%",maxWidth:400,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:20,padding:28} as React.CSSProperties,
-    input:{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 14px",fontSize:14,color:"#f1f5f9",boxSizing:"border-box" as "border-box",outline:"none"},
+    page:{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:20} as React.CSSProperties,
+    card:{width:"100%",maxWidth:400,background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:20,padding:28,boxShadow:"0 10px 30px rgba(0,0,0,0.08)"} as React.CSSProperties,
+    input:{width:"100%",background:"#ffffff",border:"1px solid #cbd5e1",borderRadius:10,padding:"11px 14px",fontSize:14,color:"#0f172a",boxSizing:"border-box" as "border-box",outline:"none"},
     label:{fontSize:12,color:"#64748b",fontWeight:600,display:"block",marginBottom:6} as React.CSSProperties,
-    btn:{width:"100%",padding:"13px 0",background:"#3b82f6",border:"none",borderRadius:12,color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",marginTop:4} as React.CSSProperties,
+    btn:{width:"100%",padding:"13px 0",background:"#0891b2",border:"none",borderRadius:12,color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",marginTop:4} as React.CSSProperties,
   };
 
   return <div style={S.page}>
     <div style={{width:"100%",maxWidth:400}}>
       <div style={{textAlign:"center",marginBottom:28}}>
         {company?.logo_url?<img src={company.logo_url} style={{width:52,height:52,borderRadius:12,objectFit:"cover",margin:"0 auto 10px",display:"block"}}/>
-          :<div style={{width:52,height:52,borderRadius:12,background:"linear-gradient(135deg,#3b82f6,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:18,margin:"0 auto 10px",color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
-        <div style={{fontSize:17,fontWeight:800,color:"#f1f5f9",marginBottom:3}}>{company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
-        <div style={{fontSize:12,color:"#475569"}}>Client Portal</div>
+          :<div style={{width:52,height:52,borderRadius:12,background:"linear-gradient(135deg,#0891b2,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:18,margin:"0 auto 10px",color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
+        <div style={{fontSize:17,fontWeight:800,color:"#0f172a",marginBottom:3}}>{company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
+        <div style={{fontSize:12,color:"#64748b"}}>Client Portal</div>
       </div>
       <div style={S.card}>
-        <h2 style={{fontSize:19,fontWeight:800,color:"#f1f5f9",margin:"0 0 6px"}}>{mode==="setup"?"Activate Your Account":"Welcome Back"}</h2>
+        <h2 style={{fontSize:19,fontWeight:800,color:"#0f172a",margin:"0 0 6px"}}>{mode==="setup"?"Activate Your Account":"Welcome Back"}</h2>
         <p style={{fontSize:13,color:"#475569",margin:"0 0 20px",lineHeight:1.6}}>
           {mode==="setup"?`Hello ${client.contact_name||client.name}! Create a password to access your project portal.`:`Sign in to view your project updates.`}
         </p>
-        {error&&<div style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#fca5a5",marginBottom:14}}>? {error}</div>}
+        {error&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#dc2626",marginBottom:14}}>⚠ {error}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {mode==="setup"&&<div>
             <label style={S.label}>EMAIL ADDRESS</label>
             <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="your@email.com" style={S.input}/>
           </div>}
-          {mode==="login"&&<div style={{background:"rgba(59,130,246,0.08)",border:"1px solid rgba(59,130,246,0.15)",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#60a5fa"}}>
+          {mode==="login"&&<div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#1d4ed8"}}>
             📧 Signing in as: <strong>{client.portal_email||client.email}</strong>
           </div>}
           <div>
