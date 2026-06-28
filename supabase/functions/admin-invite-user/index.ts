@@ -71,16 +71,19 @@ Deno.serve(async (req) => {
       body.email || body.inviteEmail || body.userEmail || body.to || ""
     ).trim().toLowerCase();
 
-    const rawRole = String(body.role || "estimator").trim();
+    const rawRole = String(body.role || "viewer").trim();
+    // Must match user_profiles.role CHECK constraint exactly
     const allowedRoles = [
       "director",
-      "manager",
+      "admin",
+      "project_manager",
+      "site_supervisor",
       "estimator",
-      "supervisor",
-      "office_user",
-      "site_user",
+      "procurement",
+      "accounts",
+      "viewer",
     ];
-    const role = allowedRoles.includes(rawRole) ? rawRole : "estimator";
+    const role = allowedRoles.includes(rawRole) ? rawRole : "viewer";
 
     if (!email) {
       return jsonResponse({ error: "Email is required", receivedBody: body }, 400);
