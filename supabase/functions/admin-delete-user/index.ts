@@ -178,16 +178,15 @@ Deno.serve(async (req) => {
         );
       }
 
-      const { error: authDeleteError } =
-        await supabaseAdmin.auth.admin.deleteUser(userId);
+      const { error: authDeleteError } = await supabaseAdmin.rpc(
+        "admin_delete_auth_user",
+        { target_user_id: userId }
+      );
 
       if (authDeleteError) {
-        console.error("authDeleteError full object:", JSON.stringify(authDeleteError, null, 2));
         return jsonResponse({
-          error: authDeleteError.message || "Unknown auth delete error",
-          status: (authDeleteError as any).status ?? null,
-          code: (authDeleteError as any).code ?? null,
-          raw: JSON.stringify(authDeleteError),
+          error: authDeleteError.message || "Failed to delete auth user via SQL",
+          details: authDeleteError,
         }, 500);
       }
 
@@ -207,15 +206,15 @@ Deno.serve(async (req) => {
     }
 
     // Delete auth login first — if this fails, the profile stays intact (no false-success state).
-    const { error: authDeleteError } =
-      await supabaseAdmin.auth.admin.deleteUser(userId as string);
+    const { error: authDeleteError } = await supabaseAdmin.rpc(
+      "admin_delete_auth_user",
+      { target_user_id: userId }
+    );
 
     if (authDeleteError) {
       return jsonResponse({
-        error: authDeleteError.message || "Failed to delete auth login.",
-        status: (authDeleteError as any).status ?? null,
-        code: (authDeleteError as any).code ?? null,
-        raw: JSON.stringify(authDeleteError),
+        error: authDeleteError.message || "Failed to delete auth user via SQL",
+        details: authDeleteError,
       }, 500);
     }
 
