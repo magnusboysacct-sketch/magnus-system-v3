@@ -13,7 +13,7 @@ import {
   ZoomIn, ZoomOut, Maximize2, Trash2, Hash, Square, Box,
   AlertCircle, RefreshCw, Send, MousePointer, Plus, Check,
   Crosshair, Package, Layers, BarChart2, ChevronRight as Arrow,
-  BookOpen, Wand2, Eye, EyeOff, Edit2
+  BookOpen, Wand2, Eye, EyeOff, Edit2, Flag
 } from "lucide-react";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
@@ -59,6 +59,8 @@ interface CostItem {
   item_name: string;
   unit: string | null;
   category: string | null;
+  coverage_factor?: number | null;
+  coverage_unit?: string | null;
 }
 
 // --- Constants ----------------------------------------------------------------
@@ -217,6 +219,15 @@ const calibration =
   const [linkedAssemblyId, setLinkedAssemblyId] = useState<string>("");
   const [linkedItemId, setLinkedItemId] = useState<string>("");
 
+  // Milestone picker
+  const [projectMilestones, setProjectMilestones] = useState<{id:string; milestone_name:string}[]>([]);
+  const [activeMilestoneId, setActiveMilestoneId] = useState<string>("");
+  const activeMilestoneIdRef = useRef<string>("");
+  const [activeMilestoneName, setActiveMilestoneName] = useState<string>("");
+  const [showNewMsInput, setShowNewMsInput] = useState(false);
+  const [newMsName, setNewMsName] = useState("");
+  const [creatingMs, setCreatingMs] = useState(false);
+
   // Session
   const [sessionId, setSessionId] = useState<string|null>(null);
   const sessionIdRef = useRef<string|null>(null);
@@ -244,6 +255,7 @@ useEffect(() => {
   useEffect(()=>{ calibPtsRef.current = calibPts; },[calibPts]);
   useEffect(()=>{ inProgressRef.current = inProgress; },[inProgress]);
   useEffect(()=>{ hoverRef.current = hoverPt; },[hoverPt]);
+  useEffect(()=>{ activeMilestoneIdRef.current = activeMilestoneId; },[activeMilestoneId]);
 
   // --- Coordinate helpers ------------------------------------------------------
   // Convert screen coords to PDF-page coords
@@ -752,9 +764,16 @@ calibRef.current =
         (acomps||[]).forEach((c:any) => { compCounts[c.assembly_id] = (compCounts[c.assembly_id]||0)+1; });
         setAssemblies((asmbs||[]).map((a:any) => ({ id:a.id, name:a.name, category:a.category, unit:a.unit, componentCount:compCounts[a.id]||0 })));
 
-        // Load cost items
-        const { data: items } = await supabase.from("cost_items").select("id,item_name,unit,category").eq("is_active",true).order("item_name");
+        // Load cost items (include coverage fields for unit conversion)
+        const { data: items } = await supabase.from("cost_items").select("id,item_name,unit,category,coverage_factor,coverage_unit").eq("is_active",true).order("item_name");
         setCostItems(items||[]);
+
+        // Load project milestones for picker
+        if (projectId) {
+          const { data: msData } = await supabase.from("project_milestones")
+            .select("id,milestone_name").eq("project_id", projectId).order("milestone_no",{ascending:true});
+          setProjectMilestones(msData||[]);
+        }
 
       } catch (e:any) { setError("Load failed: "+e?.message); }
       setDbReady(true);
@@ -956,6 +975,7 @@ calibRef.current =
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
         setInProgress([]); inProgressRef.current = [];
+        upsertMeasurementTask(nm);
       }
     } else if (toolRef.current === "wall") {
       const ip = inProgressRef.current;
@@ -981,6 +1001,7 @@ calibRef.current =
           const next = [...measurementsRef.current, nm];
           setMeasurements(next); measurementsRef.current = next;
           setInProgress([]); inProgressRef.current = [];
+          upsertMeasurementTask(nm);
         }
       }
     } else if (toolRef.current === "area" || toolRef.current === "volume") {
@@ -995,6 +1016,7 @@ calibRef.current =
         const nm: Measurement = { id:uid(), type:"count", points:[snap], result:1, unit:"ea", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
+        upsertMeasurementTask(nm);
       }
     }
     scheduleRender();
@@ -1019,6 +1041,7 @@ calibRef.current =
         const nm: Measurement = { id:uid(), type:"area", points:[...ip], result, unit:"ft²", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
+        upsertMeasurementTask(nm);
       }
       setInProgress([]); inProgressRef.current = [];
       scheduleRender();
@@ -1039,6 +1062,7 @@ calibRef.current =
       const next = [...measurementsRef.current, nm];
       setMeasurements(next); measurementsRef.current = next;
       setInProgress([]); inProgressRef.current = [];
+      upsertMeasurementTask(nm);
       scheduleRender();
     }
   }
@@ -1056,6 +1080,7 @@ calibRef.current =
     const nm: Measurement = { id:uid(), type:"volume", points:[...ip], result, unit:"ft³", label:`${d}" deep`, color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
     const next = [...measurementsRef.current, nm];
     setMeasurements(next); measurementsRef.current = next;
+    upsertMeasurementTask(nm);
     setShowDepthModal(false); setDepthInches("4"); pendingVolumeRef.current = [];
     scheduleRender();
   }
@@ -1134,69 +1159,77 @@ calibRef.current =
     scheduleRender();
   }
 
-  // --- Generate Milestones from Takeoff ----------------------------------------
-  const [generatingMilestones, setGeneratingMilestones] = useState(false);
-  const [milestoneMsg, setMilestoneMsg] = useState<string|null>(null);
-
-  async function generateMilestones() {
-    const pid = routeProjectId || currentProject?.id;
-    if(!pid || measurements.length===0) return;
-    setGeneratingMilestones(true); setMilestoneMsg(null);
+  // --- Milestone-linked task upsert (fires on each completed measurement) ------
+  async function upsertMeasurementTask(nm: Measurement) {
+    const pid = projectId;
+    const msId = activeMilestoneIdRef.current;
+    if (!msId || !pid) return;
+    if (!nm.linkedAssemblyId && !nm.linkedItemId) return;
     try {
-      await flushMeasurementsSave(pageNum);
-      // Get company_id
-      const {data:{user}} = await supabase.auth.getUser();
-      if(!user) throw new Error("Not authenticated");
-      const {data:profile} = await supabase.from("user_profiles").select("company_id").eq("id",user.id).maybeSingle();
-      const companyId = profile?.company_id;
-      if(!companyId) throw new Error("No company");
+      // Apply coverage conversion for rate-library items that have a factor
+      const item = nm.linkedItemId ? costItems.find(i => i.id === nm.linkedItemId) : null;
+      const cf = item?.coverage_factor;
+      const convertedQty = (cf && cf > 0) ? Math.ceil(nm.result / cf) : nm.result;
+      const sellUnit = (cf && cf > 0 && item?.unit) ? item.unit : nm.unit;
 
-      // Group measurements by assembly/category ? milestones
-      const groups: Record<string, {name:string; measurements: typeof measurements}> = {};
-      measurements.forEach(m => {
-        const key = m.linkedAssemblyName || "General Works";
-        if(!groups[key]) groups[key] = {name:key, measurements:[]};
-        groups[key].measurements.push(m);
-      });
-
-      let milestonesCreated = 0;
-      let tasksCreated = 0;
-
-      for(const [key, group] of Object.entries(groups)) {
-        // Create milestone
-        const totalCost = group.measurements.reduce((s,m)=>s+m.result,0);
-        const {data:ms, error:me} = await supabase.from("project_milestones").insert({
-          company_id: companyId,
-          project_id: pid,
-          milestone_name: group.name,
-          status: "planned",
-        }).select().maybeSingle();
-        if(me) { console.error("Milestone insert error:", me); continue; }
-        if(me) continue;
-        milestonesCreated++;
-
-        // Create tasks under milestone
-        for(const m of group.measurements) {
-          await supabase.from("project_tasks").insert({
-            project_id: pid,
-            milestone_id: ms?.id,
-            task_name: m.linkedItemName || m.label || (m.type==="line"?`Line ${m.result.toFixed(2)} ${m.unit}`:m.type==="area"?`Area ${m.result.toFixed(2)} ${m.unit}`:m.type==="count"?`Count ${m.result} items`:`${m.type} ${m.result.toFixed(2)} ${m.unit}`),
-            trade_type: "General Labour",
-            quantity: m.result,
-            unit: m.unit,
-            rate_per_unit: 0,
-            status: "planned",
-          });
-          tasksCreated++;
-        }
+      const q = supabase.from("project_tasks")
+        .select("id,quantity")
+        .eq("milestone_id", msId)
+        .eq("project_id", pid);
+      if (nm.linkedAssemblyId) {
+        q.eq("linked_assembly_id", nm.linkedAssemblyId);
+      } else {
+        q.eq("linked_item_id", nm.linkedItemId!).is("linked_assembly_id", null);
       }
-      setMilestoneMsg(`? Created ${milestonesCreated} milestones and ${tasksCreated} tasks`);
-      setTimeout(()=>setMilestoneMsg(null), 4000);
-    } catch(e:any) {
-      setMilestoneMsg(`? ${e.message}`);
-    } finally {
-      setGeneratingMilestones(false);
-    }
+      const { data: existing } = await q.maybeSingle();
+      if (existing) {
+        await supabase.from("project_tasks")
+          .update({ quantity: (existing.quantity || 0) + convertedQty, updated_at: new Date().toISOString() })
+          .eq("id", existing.id);
+      } else {
+        await supabase.from("project_tasks").insert({
+          project_id: pid,
+          milestone_id: msId,
+          task_name: nm.linkedAssemblyName || nm.linkedItemName || nm.label || nm.type,
+          linked_assembly_id: nm.linkedAssemblyId || null,
+          linked_item_id: nm.linkedItemId || null,
+          linked_assembly_name: nm.linkedAssemblyName || null,
+          linked_item_name: nm.linkedItemName || null,
+          quantity: convertedQty,
+          unit: sellUnit,
+          trade_type: "General Labour",
+          rate_per_unit: 0,
+          status: "planned",
+        });
+      }
+    } catch(e) { console.error("upsertMeasurementTask:", e); }
+  }
+
+  async function createMilestoneAndActivate(name: string) {
+    const pid = projectId;
+    if (!name.trim() || !pid) return;
+    setCreatingMs(true);
+    try {
+      const companyId = companyIdRef.current;
+      if (!companyId) throw new Error("No company");
+      const { data: ms, error } = await supabase.from("project_milestones").insert({
+        company_id: companyId,
+        project_id: pid,
+        milestone_name: name.trim(),
+        status: "planned",
+        milestone_no: projectMilestones.length + 1,
+      }).select("id,milestone_name").maybeSingle();
+      if (error) throw error;
+      if (ms) {
+        setProjectMilestones(prev => [...prev, ms]);
+        setActiveMilestoneId(ms.id);
+        activeMilestoneIdRef.current = ms.id;
+        setActiveMilestoneName(ms.milestone_name);
+      }
+    } catch(e:any) { setError("Could not create milestone: "+e.message); }
+    setCreatingMs(false);
+    setShowNewMsInput(false);
+    setNewMsName("");
   }
 
   // --- Export & Send to BOQ -----------------------------------------------------
@@ -1226,6 +1259,12 @@ calibRef.current =
       m.linkedItemName ||
       m.type;
 
+    // Apply coverage conversion for rate-library items with a coverage factor
+    const item = m.linkedItemId ? costItems.find(i => i.id === m.linkedItemId) : null;
+    const cf = item?.coverage_factor;
+    const convertedVal = (cf && cf > 0) ? Math.ceil(m.result / cf) : m.result;
+    const sellUnit = (cf && cf > 0 && item?.unit) ? item.unit : m.unit;
+
     if (!groups[key]) {
       groups[key] = {
         name:
@@ -1233,7 +1272,7 @@ calibRef.current =
           m.linkedItemName ||
           m.type,
         value: 0,
-        metric: m.unit,
+        metric: sellUnit,
         assemblyId: m.linkedAssemblyId,
       };
     }
@@ -1247,7 +1286,7 @@ calibRef.current =
       }
     }
 
-    groups[key].value += m.result;
+    groups[key].value += convertedVal;
   });
 
   const data = Object.values(groups);
@@ -1353,11 +1392,6 @@ calibRef.current = null;
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold disabled:opacity-40 transition shadow-sm">
           <Send size={12}/> Send to BOQ
         </button>
-        <button onClick={generateMilestones} disabled={measurements.length===0||generatingMilestones}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold disabled:opacity-40 transition shadow-sm">
-          <Layers size={12}/> {generatingMilestones?"Generating...":"? Milestones"}
-        </button>
-        {milestoneMsg&&<div className="text-[10px] text-emerald-400 font-semibold">{milestoneMsg}</div>}
       </header>
 
       {/* -- Main layout -- */}
@@ -1543,6 +1577,57 @@ calibRef.current = null;
             {/* -- Templates Tab -- */}
             {rightTab==="templates"&&(
               <div className="p-3 space-y-3">
+
+                {/* ── Milestone picker ── */}
+                <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden">
+                  <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.05]">
+                    <Flag size={10} className="text-emerald-400"/>
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 flex-1">Milestone</span>
+                    {activeMilestoneId && (
+                      <button onClick={()=>{setActiveMilestoneId("");activeMilestoneIdRef.current="";setActiveMilestoneName("");}} className="text-slate-400 hover:text-red-400 transition"><X size={10}/></button>
+                    )}
+                  </div>
+                  <div className="p-2 space-y-1.5">
+                    {activeMilestoneId ? (
+                      <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse"/>
+                        <span className="text-[11px] text-emerald-300 font-semibold truncate flex-1">{activeMilestoneName}</span>
+                      </div>
+                    ) : (
+                      <>
+                        {projectMilestones.length > 0 && (
+                          <select value="" onChange={e=>{
+                            const ms = projectMilestones.find(m=>m.id===e.target.value);
+                            if(ms){setActiveMilestoneId(ms.id);activeMilestoneIdRef.current=ms.id;setActiveMilestoneName(ms.milestone_name);}
+                          }} className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-2 py-1.5 text-[11px] text-slate-700 dark:text-slate-300 outline-none focus:border-emerald-500/40">
+                            <option value="">Pick a milestone…</option>
+                            {projectMilestones.map(m=>(
+                              <option key={m.id} value={m.id}>{m.milestone_name}</option>
+                            ))}
+                          </select>
+                        )}
+                        {!showNewMsInput ? (
+                          <button onClick={()=>setShowNewMsInput(true)}
+                            className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-dashed border-emerald-500/30 text-[10px] text-emerald-500/70 hover:text-emerald-400 hover:border-emerald-500/50 transition">
+                            <Plus size={10}/> New milestone
+                          </button>
+                        ) : (
+                          <div className="flex gap-1">
+                            <input autoFocus value={newMsName} onChange={e=>setNewMsName(e.target.value)}
+                              onKeyDown={e=>{if(e.key==="Enter")createMilestoneAndActivate(newMsName);if(e.key==="Escape"){setShowNewMsInput(false);setNewMsName("");}}}
+                              placeholder="Milestone name…"
+                              className="flex-1 bg-slate-50 dark:bg-white/[0.04] border border-emerald-500/30 rounded-lg px-2 py-1 text-[11px] text-slate-700 dark:text-slate-300 outline-none focus:border-emerald-500/60"/>
+                            <button onClick={()=>createMilestoneAndActivate(newMsName)} disabled={creatingMs||!newMsName.trim()}
+                              className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold disabled:opacity-40 transition">
+                              {creatingMs?"…":"Add"}
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
                 {/* Search */}
                 <div className="relative">
                   <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
@@ -1563,7 +1648,7 @@ calibRef.current = null;
                 {/* Instruction */}
                 {!activeLinkedName && (
                   <div className="text-[10px] text-slate-400 dark:text-slate-700 bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.05] rounded-lg px-3 py-2 leading-relaxed">
-                    Select a template or item below, then draw on the plan. Each measurement will be linked to it automatically.
+                    {activeMilestoneId ? "Select a template or item, then draw on the plan." : "Pick a milestone above, then select a template and draw."}
                   </div>
                 )}
 
