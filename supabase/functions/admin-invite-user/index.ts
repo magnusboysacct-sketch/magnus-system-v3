@@ -123,8 +123,8 @@ Deno.serve(async (req) => {
       }, 403);
     }
 
-    if (profile.role !== "director") {
-      return jsonResponse({ error: "Only directors can invite staff" }, 403);
+    if (!["director", "admin"].includes(profile.role)) {
+      return jsonResponse({ error: "Only directors and admins can invite staff" }, 403);
     }
 
     if (profile.status && profile.status !== "active") {

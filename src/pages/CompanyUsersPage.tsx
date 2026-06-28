@@ -125,8 +125,8 @@ export default function CompanyUsersPage() {
       const { data, error: e } = await supabase.functions.invoke("admin-invite-user", {
         body: { email: inv.email, role: inv.role },
       });
-      if (e) throw new Error(e.message);
-      if (data?.error) throw new Error(data.error);
+      const resendMsg = data?.error || (e ? e.message : null);
+      if (resendMsg) throw new Error(resendMsg);
       setSuccess(`Invite resent to ${inv.email}`);
       await loadAll();
     } catch (e: any) {
@@ -141,8 +141,8 @@ export default function CompanyUsersPage() {
       const { data, error: e } = await supabase.functions.invoke("admin-invite-user", {
         body: { email: inviteEmail.trim().toLowerCase(), role: inviteRole },
       });
-      if (e) throw new Error(e.message);
-      if (data?.error) throw new Error(data.error);
+      const sendMsg = data?.error || (e ? e.message : null);
+      if (sendMsg) throw new Error(sendMsg);
       setSuccess(`Invite sent to ${inviteEmail}`);
       setInviteEmail(""); setInviteRole("viewer");
       await loadAll();
