@@ -37,7 +37,7 @@ function ProgressRing({pct}:{pct:number}) {
 function Stars({value,onChange}:{value:number;onChange:(n:number)=>void}) {
   const [hover,setHover]=useState(0);
   return <div style={{display:"flex",gap:4,justifyContent:"center"}}>
-    {[1,2,3,4,5].map(s=><button key={s} onMouseEnter={()=>setHover(s)} onMouseLeave={()=>setHover(0)} onClick={()=>onChange(s)} style={{fontSize:34,background:"none",border:"none",cursor:"pointer",color:s<=(hover||value)?"#f59e0b":"rgba(255,255,255,0.15)",transition:"all 0.15s",transform:s<=(hover||value)?"scale(1.2)":"scale(1)"}}>?</button>)}
+    {[1,2,3,4,5].map(s=><button key={s} onMouseEnter={()=>setHover(s)} onMouseLeave={()=>setHover(0)} onClick={()=>onChange(s)} style={{fontSize:34,background:"none",border:"none",cursor:"pointer",color:s<=(hover||value)?"#f59e0b":"#cbd5e1",transition:"all 0.15s",transform:s<=(hover||value)?"scale(1.2)":"scale(1)"}}>★</button>)}
   </div>;
 }
 
