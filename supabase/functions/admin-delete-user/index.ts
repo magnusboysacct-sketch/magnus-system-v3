@@ -206,7 +206,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Remove the profile row first.
+    // Delete auth login first — if this fails, the profile stays intact (no false-success state).
+    const { error: authDeleteError } =
+      await supabaseAdmin.auth.admin.deleteUser(userId as string);
+
+    if (authDeleteError) {
+      return jsonResponse({
+        error: authDeleteError.message || "Failed to delete auth login.",
+        status: (authDeleteError as any).status ?? null,
+        code: (authDeleteError as any).code ?? null,
+        raw: JSON.stringify(authDeleteError),
+      }, 500);
+    }
+
+    // Auth login gone — now remove the profile row.
     const { error: profileDeleteError } = await supabaseAdmin
       .from("user_profiles")
       .delete()
@@ -217,17 +230,6 @@ Deno.serve(async (req) => {
         { error: profileDeleteError.message, details: profileDeleteError },
         500
       );
-    }
-
-    // Then remove the actual auth login so they can no longer sign in.
-    const { error: authDeleteError } =
-      await supabaseAdmin.auth.admin.deleteUser(userId as string);
-
-    if (authDeleteError) {
-      return jsonResponse({
-        error: "Profile deleted, but failed to delete auth login.",
-        details: authDeleteError.message,
-      }, 500);
     }
 
     return jsonResponse({
