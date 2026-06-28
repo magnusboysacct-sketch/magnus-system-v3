@@ -159,7 +159,44 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
     if (targetProfileError || !targetProfile) {
-      return jsonResponse({ error: "User profile not found" }, 404);
+      // If no profile found, this may be an orphaned auth user (invited but
+      // never completed signup). Allow deletion only if the auth user's own
+      // invite metadata shows they belong to the caller's company.
+      const { data: orphanedUser, error: orphanFetchError } =
+        await supabaseAdmin.auth.admin.getUserById(userId);
+
+      if (orphanFetchError || !orphanedUser?.user) {
+        return jsonResponse({ error: "User not found in auth system either." }, 404);
+      }
+
+      const orphanCompanyId = orphanedUser.user.user_metadata?.company_id;
+
+      if (orphanCompanyId && orphanCompanyId !== callerProfile.company_id) {
+        return jsonResponse(
+          { error: "This orphaned account does not belong to your company." },
+          403
+        );
+      }
+
+      const { error: authDeleteError } =
+        await supabaseAdmin.auth.admin.deleteUser(userId);
+
+      if (authDeleteError) {
+        console.error("authDeleteError full object:", JSON.stringify(authDeleteError, null, 2));
+        return jsonResponse({
+          error: authDeleteError.message || "Unknown auth delete error",
+          status: (authDeleteError as any).status ?? null,
+          code: (authDeleteError as any).code ?? null,
+          raw: JSON.stringify(authDeleteError),
+        }, 500);
+      }
+
+      return jsonResponse({
+        success: true,
+        message: "Orphaned auth account deleted.",
+        type: "user",
+        id: userId,
+      });
     }
 
     if (targetProfile.company_id !== callerProfile.company_id) {
