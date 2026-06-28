@@ -15,6 +15,7 @@ import { supabase } from "./lib/supabase";
 // --- Pages -------------------------------------------------------------------
 import LoginPage              from "./pages/LoginPage";
 import AcceptInvitePage       from "./pages/AcceptInvitePage";
+import ResetPasswordPage      from "./pages/ResetPasswordPage";
 import ClientProjectPage      from "./pages/ClientProjectPage";
 import WorkerPortalPage       from "./pages/WorkerPortalPage";
 import FieldOpsPage           from "./pages/FieldOpsPage";
@@ -153,6 +154,7 @@ export default function App() {
             <Route path="/verify/:workerId" element={<WorkerVerifyPage />} />
             <Route path="/login"          element={<LoginPage />} />
             <Route path="/accept-invite"  element={<AcceptInvitePage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* Standalone portals */}
             <Route path="/client/projects/:projectId" element={<RequireAuth><ClientProjectPage /></RequireAuth>} />

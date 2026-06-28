@@ -72,7 +72,6 @@ CREATE POLICY "Users can update own company settings"
     company_id IN (
       SELECT company_id FROM user_profiles WHERE id = auth.uid()
     )
-  );
   )
   WITH CHECK (
     company_id IN (
