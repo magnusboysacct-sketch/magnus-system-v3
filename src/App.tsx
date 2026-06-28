@@ -53,7 +53,7 @@ import WorkerVerifyPage         from "./pages/WorkerVerifyPage";
 import SettingsMasterListsPage      from "./pages/SettingsMasterListsPage";
 import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import SettingsCostCodesPage  from "./pages/SettingsCostCodesPage";
-import CompanyUsersPage       from "./pages/CompanyUsersPage";
+import SettingsUsersPage      from "./pages/SettingsUsersPage";
 import BillingPage            from "./pages/BillingPage";
 import UpgradePage from "./pages/UpgradePage";
 import JamaicanPayrollMonitoringPage from "./pages/JamaicanPayrollMonitoringPage";
@@ -221,7 +221,7 @@ export default function App() {
               <Route path="/settings/master-lists"         element={<SettingsMasterListsPage />} />
               <Route path="/settings/master-categories"    element={<SettingsMasterCategoriesPage />} />
               <Route path="/settings/cost-codes"           element={<SettingsCostCodesPage />} />
-              <Route path="/settings/users"                element={<CompanyUsersPage />} />
+              <Route path="/settings/users"                element={<SettingsUsersPage />} />
               <Route path="/settings/records"              element={<SettingsRecordsPage />} />
               <Route path="/settings/company"              element={<Navigate to="/settings" replace />} />
 

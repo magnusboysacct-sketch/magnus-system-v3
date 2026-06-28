@@ -292,43 +292,24 @@ export default function SettingsUsersPage() {
   }
 
   async function doDelete(r: ProfileRow) {
-    if (!confirm("Delete this user profile row? (Auth user deletion is a later upgrade)")) {
-      return;
-    }
+    if (!confirm(`Permanently delete ${r.email ?? r.id}? This cannot be undone.`)) return;
 
     setBusy(true);
     setErr("");
     setMsg("");
 
     try {
-      const candidates = ["user_profiles", "profiles"];
-      let ok = false;
-
-      for (const name of candidates) {
-        const resp = await supabase
-          // @ts-ignore
-          .from(name)
-          .delete()
-          .eq("id", r.id);
-
-        if (!resp.error) {
-          ok = true;
-          break;
-        }
+      const { data, error } = await supabase.functions.invoke("admin-delete-user", {
+        body: { userId: r.id },
+      });
+      if (error || data?.error) {
+        throw new Error(data?.error ?? error?.message ?? "Delete failed.");
       }
-
-      if (!ok) {
-        setErr(
-          "Could not delete yet (profiles table not deleteable). We can add a server-side delete later."
-        );
-        return;
-      }
-
       setRows((prev) => prev.filter((x) => x.id !== r.id));
-      setMsg("Deleted.");
+      setMsg("User permanently deleted.");
     } catch (e: any) {
       console.error("Delete failed:", e);
-      setErr(e?.message || "Delete failed.");
+      setErr(e.message || "Delete failed.");
     } finally {
       setBusy(false);
     }
