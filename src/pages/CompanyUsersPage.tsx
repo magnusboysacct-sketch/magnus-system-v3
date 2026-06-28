@@ -100,10 +100,14 @@ export default function CompanyUsersPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const { error: e } = await supabase.from("user_profiles").delete().eq("id", deleteTarget.id);
-      if (e) throw e;
+      const { data, error: e } = await supabase.functions.invoke("admin-remove-user", {
+        body: { userId: deleteTarget.id },
+      });
+      const msg = data?.error || (e ? e.message : null);
+      if (msg) throw new Error(msg);
       setUsers(prev => prev.filter(u => u.id !== deleteTarget.id));
       setDeleteTarget(null);
+      setSuccess(`${deleteTarget.full_name || "User"} has been removed.`);
     } catch (e: any) { setError(e.message); }
     finally { setDeleting(false); }
   }
