@@ -69,15 +69,36 @@ export default function AcceptInvitePage() {
 
     setSaving(true);
 
-    const { error } = await supabase.auth.updateUser({
-      password,
-    });
+    const { error } = await supabase.auth.updateUser({ password });
 
     setSaving(false);
 
     if (error) {
       setSaveError(error.message || "Failed to set password.");
       return;
+    }
+
+    // Create user_profile for invited user using metadata set by the invite function
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const meta = user.user_metadata || {};
+        const companyId = meta.company_id as string | undefined;
+        const invitedRole = (meta.invited_role as string | undefined) || "viewer";
+        if (companyId) {
+          await supabase.from("user_profiles").upsert({
+            id: user.id,
+            company_id: companyId,
+            email: user.email,
+            full_name: meta.full_name || user.email?.split("@")[0] || "",
+            role: invitedRole,
+            finance_access_level: invitedRole === "accounts" ? "full" : invitedRole === "director" ? "full" : "none",
+            status: "active",
+          }, { onConflict: "id" });
+        }
+      }
+    } catch {
+      // Non-fatal — user can still log in; admin can fix profile later
     }
 
     navigate(next, { replace: true });
