@@ -83,7 +83,8 @@ export default function CompanyUsersPage() {
       ]);
       if (usersRes.error) throw usersRes.error;
       setUsers(usersRes.data || []);
-      setInvitations(invitesRes.data || []);
+      // Invitations table may not exist yet — don't crash the page
+      if (!invitesRes.error) setInvitations(invitesRes.data || []);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   }
