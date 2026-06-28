@@ -260,8 +260,10 @@ export default function ClientPortalPage() {
       const {data:c}=await supabase.from("clients").select("*").eq("portal_token",token).eq("portal_enabled",true).single();
       if(!c){setErrorMsg("This portal link is invalid or has been disabled.");setAuthState("error");return;}
       setClient(c);
-      const {data:cs}=await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").eq("company_id", c.company_id||"").maybeSingle();
-      setCompany(cs);
+      if(c.company_id){
+        const {data:cs}=await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").eq("company_id",c.company_id).maybeSingle();
+        setCompany(cs);
+      }
       const sess=localStorage.getItem(`portal_${c.id}`);
       if(sess){
         const {data:s}=await supabase.from("client_portal_sessions").select("id").eq("session_token",sess).eq("client_id",c.id).gt("expires_at",new Date().toISOString()).maybeSingle();
@@ -323,11 +325,11 @@ export default function ClientPortalPage() {
   const balanceDue=totalInvoiced-totalPaid;
   const pendingChanges=changes.filter(c=>c.status==="pending").length;
 
-  const G=`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} body{margin:0} input::placeholder,textarea::placeholder{color:#334155} input:focus,textarea:focus{border-color:#3b82f6!important} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px}`;
+  const G=`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} body{margin:0} input::placeholder,textarea::placeholder{color:#94a3b8} input:focus,textarea:focus{border-color:#0891b2!important} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}`;
 
-  if(authState==="loading")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{G}</style><div style={{textAlign:"center"}}><div style={{width:44,height:44,border:"3px solid #3b82f6",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 14px"}}/><p style={{color:"#64748b",fontSize:14}}>Loading portal…</p></div></div>;
+  if(authState==="loading")return <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center"}}><style>{G}</style><div style={{textAlign:"center"}}><div style={{width:44,height:44,border:"3px solid #0891b2",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite",margin:"0 auto 14px"}}/><p style={{color:"#64748b",fontSize:14}}>Loading portal…</p></div></div>;
 
-  if(authState==="error")return <div style={{minHeight:"100vh",background:"#060b14",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><style>{G}</style><div style={{textAlign:"center",maxWidth:360}}><div style={{fontSize:52,marginBottom:14}}>🔒</div><h2 style={{color:"#f1f5f9",fontSize:20,fontWeight:700,marginBottom:8}}>Access Denied</h2><p style={{color:"#64748b",fontSize:14,lineHeight:1.6}}>{errorMsg}</p></div></div>;
+  if(authState==="error")return <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><style>{G}</style><div style={{textAlign:"center",maxWidth:360}}><div style={{fontSize:52,marginBottom:14}}>🔒</div><h2 style={{color:"#0f172a",fontSize:20,fontWeight:700,marginBottom:8}}>Access Denied</h2><p style={{color:"#64748b",fontSize:14,lineHeight:1.6}}>{errorMsg}</p></div></div>;
 
   if(authState==="setup"||authState==="login")return <><style>{G}</style><AuthScreen client={client!} company={company} mode={authState} onSuccess={onAuthSuccess}/></>;
 
@@ -336,35 +338,35 @@ export default function ClientPortalPage() {
   const sColor:Record<string,string>={active:"#22c55e",planning:"#3b82f6",on_hold:"#f59e0b",completed:"#94a3b8",cancelled:"#ef4444"};
   const TABS=[{id:"overview",label:"Overview",emoji:"📋"},{id:"contracts",label:"Contracts",emoji:"📝",badge:contracts.filter((c:any)=>!c.client_signed_at).length||undefined},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"invoices",label:"Invoices",emoji:"🧾",badge:invoices.filter(i=>i.status!=="paid").length||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined},{id:"feedback",label:"Feedback",emoji:"⭐"}] as const;
 
-  return <div style={{minHeight:"100vh",background:"#060b14",color:"#f1f5f9",fontFamily:"system-ui,sans-serif"}}>
+  return <div style={{minHeight:"100vh",background:"#f8fafc",color:"#0f172a",fontFamily:"system-ui,sans-serif"}}>
     <style>{G}</style>
 
-    <div style={{position:"sticky",top:0,zIndex:100,background:"rgba(6,11,20,0.95)",backdropFilter:"blur(16px)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+    <div style={{position:"sticky",top:0,zIndex:100,background:"rgba(248,250,252,0.95)",backdropFilter:"blur(16px)",borderBottom:"1px solid #e2e8f0"}}>
       <div style={{maxWidth:860,margin:"0 auto",padding:"12px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           {company?.logo_url?<img src={company.logo_url} style={{width:34,height:34,borderRadius:8,objectFit:"cover"}}/>
-            :<div style={{width:34,height:34,borderRadius:8,background:"linear-gradient(135deg,#3b82f6,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
+            :<div style={{width:34,height:34,borderRadius:8,background:"linear-gradient(135deg,#0891b2,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
           <div>
-            <div style={{fontWeight:700,fontSize:13,color:"#f1f5f9"}}>{company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
-            <div style={{fontSize:10,color:"#475569"}}>Client Portal</div>
+            <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
+            <div style={{fontSize:10,color:"#64748b"}}>Client Portal</div>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{textAlign:"right"}}>
-            <div style={{fontSize:12,fontWeight:600,color:"#cbd5e1"}}>{client.contact_name||client.name}</div>
-            <div style={{fontSize:10,color:"#475569"}}>{client.portal_email||client.email}</div>
+            <div style={{fontSize:12,fontWeight:600,color:"#0f172a"}}>{client.contact_name||client.name}</div>
+            <div style={{fontSize:10,color:"#64748b"}}>{client.portal_email||client.email}</div>
           </div>
-          <button onClick={()=>{localStorage.removeItem(`portal_${client.id}`);setAuthState("login");}} style={{padding:"6px 12px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#64748b",fontSize:11,cursor:"pointer",fontWeight:600}}>Sign Out</button>
+          <button onClick={()=>{localStorage.removeItem(`portal_${client.id}`);setAuthState("login");}} style={{padding:"6px 12px",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",fontSize:11,cursor:"pointer",fontWeight:600}}>Sign Out</button>
         </div>
       </div>
     </div>
 
     <div style={{maxWidth:860,margin:"0 auto",padding:"20px 20px 60px",display:"flex",flexDirection:"column",gap:16}}>
 
-      <div style={{background:"linear-gradient(135deg,rgba(59,130,246,0.12),rgba(6,182,212,0.06))",border:"1px solid rgba(59,130,246,0.18)",borderRadius:20,padding:"22px 24px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",animation:"fadeIn 0.4s ease"}}>
+      <div style={{background:"linear-gradient(135deg,#eff6ff,#ecfeff)",border:"1px solid #bae6fd",borderRadius:20,padding:"22px 24px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",animation:"fadeIn 0.4s ease"}}>
         <div style={{flex:1,minWidth:180}}>
-          <div style={{fontSize:10,color:"#3b82f6",fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>Your Project</div>
-          <h1 style={{fontSize:24,fontWeight:800,color:"#f1f5f9",margin:"0 0 6px"}}>{project?.name||"No project assigned"}</h1>
+          <div style={{fontSize:10,color:"#0284c7",fontWeight:700,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>Your Project</div>
+          <h1 style={{fontSize:24,fontWeight:800,color:"#0f172a",margin:"0 0 6px"}}>{project?.name||"No project assigned"}</h1>
           {project?.site_address&&<div style={{fontSize:12,color:"#64748b",marginBottom:10}}>📍 {project.site_address}</div>}
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             {project?.status&&<span style={{fontSize:11,padding:"4px 12px",borderRadius:20,fontWeight:700,background:`${sColor[project.status]||"#3b82f6"}18`,color:sColor[project.status]||"#3b82f6",border:`1px solid ${sColor[project.status]||"#3b82f6"}40`,textTransform:"capitalize"}}>● {project.status.replace("_"," ")}</span>}
@@ -375,7 +377,7 @@ export default function ClientPortalPage() {
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
           <div style={{position:"relative",width:72,height:72}}>
             <ProgressRing pct={progress}/>
-            <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:"#f1f5f9"}}>{progress}%</div>
+            <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:"#0f172a"}}>{progress}%</div>
           </div>
           <div style={{fontSize:10,color:"#475569"}}>Complete</div>
         </div>
@@ -383,7 +385,7 @@ export default function ClientPortalPage() {
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
         {[{l:"Paid",v:fmt(totalPaid),c:"#22c55e"},{l:"Balance Due",v:fmt(balanceDue),c:balanceDue>0?"#ef4444":"#22c55e"},{l:"Pending",v:`${pendingChanges}`,c:pendingChanges>0?"#f59e0b":"#64748b"}].map((s,i)=>(
-          <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"14px 16px",textAlign:"center"}}>
+          <div key={i} style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px",textAlign:"center"}}>
             <div style={{fontSize:18,fontWeight:800,color:s.c}}>{s.v}</div>
             <div style={{fontSize:10,color:"#475569",marginTop:3}}>{s.l}</div>
           </div>
@@ -393,68 +395,68 @@ export default function ClientPortalPage() {
       <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
         {TABS.map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id as Tab)}
-            style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",borderRadius:12,border:"1px solid",fontSize:13,fontWeight:600,whiteSpace:"nowrap",cursor:"pointer",transition:"all 0.2s",background:tab===t.id?"#3b82f6":"rgba(255,255,255,0.04)",borderColor:tab===t.id?"#3b82f6":"rgba(255,255,255,0.08)",color:tab===t.id?"#fff":"#94a3b8"}}>
+            style={{display:"flex",alignItems:"center",gap:6,padding:"8px 16px",borderRadius:12,border:"1px solid",fontSize:13,fontWeight:600,whiteSpace:"nowrap",cursor:"pointer",transition:"all 0.2s",background:tab===t.id?"#0891b2":"#f1f5f9",borderColor:tab===t.id?"#0891b2":"#e2e8f0",color:tab===t.id?"#fff":"#64748b"}}>
             {t.emoji} {t.label}
-            {"badge" in t && t.badge?<span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:tab===t.id?"rgba(255,255,255,0.25)":"rgba(59,130,246,0.3)",color:tab===t.id?"#fff":"#60a5fa",fontWeight:700}}>{t.badge}</span>:null}
+            {"badge" in t && t.badge?<span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:tab===t.id?"rgba(255,255,255,0.25)":"#dbeafe",color:tab===t.id?"#fff":"#1d4ed8",fontWeight:700}}>{t.badge}</span>:null}
           </button>
         ))}
       </div>
 
       {tab==="overview"&&<div style={{display:"flex",flexDirection:"column",gap:14,animation:"fadeIn 0.3s ease"}}>
-        <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
+        <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-            <span style={{fontSize:13,fontWeight:700,color:"#cbd5e1"}}>Project Progress</span>
+            <span style={{fontSize:13,fontWeight:700,color:"#374151"}}>Project Progress</span>
             <span style={{fontSize:14,fontWeight:800,color:"#3b82f6"}}>{progress}%</span>
           </div>
-          <div style={{height:8,background:"rgba(255,255,255,0.08)",borderRadius:8,overflow:"hidden"}}>
+          <div style={{height:8,background:"#e2e8f0",borderRadius:8,overflow:"hidden"}}>
             <div style={{height:"100%",width:`${progress}%`,background:"linear-gradient(90deg,#3b82f6,#06b6d4)",borderRadius:8,transition:"width 1.5s ease"}}/>
           </div>
           {project?.budget&&<div style={{marginTop:8,fontSize:11,color:"#475569"}}>Budget: <span style={{color:"#94a3b8",fontWeight:600}}>{fmt(project.budget)}</span></div>}
         </div>
-        {project?.notes&&<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
+        {project?.notes&&<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
           <div style={{fontSize:10,color:"#475569",fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",marginBottom:8}}>Project Notes</div>
-          <p style={{fontSize:13,color:"#94a3b8",lineHeight:1.7,margin:0}}>{project.notes}</p>
+          <p style={{fontSize:13,color:"#475569",lineHeight:1.7,margin:0}}>{project.notes}</p>
         </div>}
-        <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:14}}>💬 Messages</div>
+        <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:14}}>💬 Messages</div>
           {comments.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16,maxHeight:280,overflowY:"auto"}}>
-            {comments.map(c=><div key={c.id} style={{background:"rgba(59,130,246,0.07)",border:"1px solid rgba(59,130,246,0.12)",borderRadius:10,padding:"10px 14px"}}>
-              <p style={{fontSize:13,color:"#cbd5e1",margin:"0 0 4px",lineHeight:1.5}}>{c.message}</p>
+            {comments.map(c=><div key={c.id} style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 14px"}}>
+              <p style={{fontSize:13,color:"#1e3a5f",margin:"0 0 4px",lineHeight:1.5}}>{c.message}</p>
               <span style={{fontSize:10,color:"#475569"}}>{timeAgo(c.created_at)}</span>
             </div>)}
           </div>}
           <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="Send a message to your contractor…"
-            style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 14px",fontSize:13,color:"#f1f5f9",resize:"none",height:76,outline:"none"}}/>
+            style={{width:"100%",background:"#ffffff",border:"1px solid #cbd5e1",borderRadius:10,padding:"11px 14px",fontSize:13,color:"#0f172a",resize:"none",height:76,outline:"none"}}/>
           <button onClick={submitComment} disabled={!newComment.trim()}
-            style={{marginTop:10,padding:"10px 20px",background:newComment.trim()?"#3b82f6":"rgba(255,255,255,0.05)",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+            style={{marginTop:10,padding:"10px 20px",background:newComment.trim()?"#0891b2":"#f1f5f9",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             Send Message
           </button>
         </div>
-        <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#cbd5e1",marginBottom:12}}>📞 Contact</div>
+        <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:12}}>📞 Contact</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {company?.phone&&<a href={`tel:${company.phone}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>📞 {company.phone}</a>}
-            {company?.email&&<a href={`mailto:${company.email}`} style={{fontSize:13,color:"#60a5fa",textDecoration:"none"}}>✉️ {company.email}</a>}
+            {company?.phone&&<a href={`tel:${company.phone}`} style={{fontSize:13,color:"#0284c7",textDecoration:"none"}}>📞 {company.phone}</a>}
+            {company?.email&&<a href={`mailto:${company.email}`} style={{fontSize:13,color:"#0284c7",textDecoration:"none"}}>✉️ {company.email}</a>}
             {company?.address_line1&&<div style={{fontSize:13,color:"#64748b"}}>📍 {company.address_line1}</div>}
           </div>
         </div>
       </div>}
       {tab==="contracts"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
         {contracts.length===0
-          ?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>📝</div><p style={{color:"#475569"}}>No contracts have been sent for signing yet.</p></div>
+          ?<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>📝</div><p style={{color:"#64748b"}}>No contracts have been sent for signing yet.</p></div>
           :contracts.map((ct:any)=>
-            <div key={ct.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:20}}>
+            <div key={ct.id} style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}>
                 <div>
-                  <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>{ct.contract_name}</div>
-                  <div style={{fontSize:11,color:"#475569"}}>#{ct.contract_number}</div>
+                  <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:4}}>{ct.contract_name}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>#{ct.contract_number}</div>
                 </div>
                 <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,background:ct.client_signed_at?"rgba(34,197,94,0.15)":"rgba(245,158,11,0.15)",color:ct.client_signed_at?"#22c55e":"#f59e0b"}}>{ct.client_signed_at?"Signed":"Awaiting Signature"}</span>
               </div>
               {ct.scope_of_work&&<p style={{fontSize:12,color:"#64748b",margin:"0 0 14px",lineHeight:1.6}}>{ct.scope_of_work}</p>}
-              <div style={{display:"flex",gap:8,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-                <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.contractor_signed_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:ct.contractor_signed_at?"#22c55e":"#475569"}}>Contractor {ct.contractor_signed_at?"✓":"Pending"}</div>
-                <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.client_signed_at?"rgba(34,197,94,0.1)":"rgba(255,255,255,0.03)",color:ct.client_signed_at?"#22c55e":"#475569"}}>You {ct.client_signed_at?"✓ Signed":"Pending"}</div>
+              <div style={{display:"flex",gap:8,paddingTop:12,borderTop:"1px solid #f1f5f9"}}>
+                <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.contractor_signed_at?"rgba(34,197,94,0.1)":"#f8fafc",color:ct.contractor_signed_at?"#22c55e":"#475569"}}>Contractor {ct.contractor_signed_at?"✓":"Pending"}</div>
+                <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.client_signed_at?"rgba(34,197,94,0.1)":"#f8fafc",color:ct.client_signed_at?"#22c55e":"#475569"}}>You {ct.client_signed_at?"✓ Signed":"Pending"}</div>
               </div>
               {!ct.client_signed_at&&ct.contractor_signed_at&&<button onClick={()=>setSigningContract(ct)} style={{width:"100%",marginTop:12,padding:"12px 0",background:"#22c55e",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Sign This Contract</button>}
               {!ct.contractor_signed_at&&<div style={{marginTop:12,padding:"10px 14px",background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:10,fontSize:12,color:"#f59e0b"}}>Waiting for contractor signature before you can sign.</div>}
@@ -480,9 +482,9 @@ export default function ClientPortalPage() {
       </div>}
 
       {tab==="photos"&&<div style={{animation:"fadeIn 0.3s ease"}}>
-        {photos.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:60,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>📸</div><p style={{color:"#475569"}}>No site photos yet.</p></div>
+        {photos.length===0?<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:60,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>📸</div><p style={{color:"#64748b"}}>No site photos yet.</p></div>
           :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}}>
-            {photos.map(p=><div key={p.id} onClick={()=>setLightbox(p)} style={{aspectRatio:"1",borderRadius:12,overflow:"hidden",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",cursor:"zoom-in",position:"relative"}}>
+            {photos.map(p=><div key={p.id} onClick={()=>setLightbox(p)} style={{aspectRatio:"1",borderRadius:12,overflow:"hidden",background:"#f1f5f9",border:"1px solid #e2e8f0",cursor:"zoom-in",position:"relative"}}>
               <img src={p.url||p.public_url||p.publicUrl||""} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               {p.caption&&<div style={{position:"absolute",bottom:0,left:0,right:0,background:"linear-gradient(transparent,rgba(0,0,0,0.75))",padding:"16px 8px 8px",fontSize:11,color:"#e2e8f0"}}>{p.caption}</div>}
             </div>)}
@@ -491,21 +493,21 @@ export default function ClientPortalPage() {
 
       {tab==="invoices"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
-          {[{l:"Total",v:fmt(totalInvoiced),c:"#f1f5f9"},{l:"Paid",v:fmt(totalPaid),c:"#22c55e"},{l:"Balance Due",v:fmt(balanceDue),c:balanceDue>0?"#ef4444":"#22c55e"}].map((s,i)=>(
-            <div key={i} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:14,textAlign:"center"}}>
+          {[{l:"Total",v:fmt(totalInvoiced),c:"#0f172a"},{l:"Paid",v:fmt(totalPaid),c:"#22c55e"},{l:"Balance Due",v:fmt(balanceDue),c:balanceDue>0?"#ef4444":"#22c55e"}].map((s,i)=>(
+            <div key={i} style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:12,padding:14,textAlign:"center"}}>
               <div style={{fontSize:16,fontWeight:800,color:s.c}}>{s.v}</div>
-              <div style={{fontSize:10,color:"#475569",marginTop:3}}>{s.l}</div>
+              <div style={{fontSize:10,color:"#64748b",marginTop:3}}>{s.l}</div>
             </div>
           ))}
         </div>
-        {invoices.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🧾</div><p style={{color:"#475569"}}>No invoices yet.</p></div>
-          :invoices.map(inv=><div key={inv.id} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        {invoices.length===0?<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🧾</div><p style={{color:"#64748b"}}>No invoices yet.</p></div>
+          :invoices.map(inv=><div key={inv.id} style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:14,padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <div>
-              <div style={{fontSize:14,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>Invoice #{inv.invoice_number||inv.id.slice(0,8).toUpperCase()}</div>
-              <div style={{fontSize:11,color:"#475569"}}>Issued {fmtDate(inv.issue_date)} … Due {fmtDate(inv.due_date)}</div>
+              <div style={{fontSize:14,fontWeight:700,color:"#0f172a",marginBottom:4}}>Invoice #{inv.invoice_number||inv.id.slice(0,8).toUpperCase()}</div>
+              <div style={{fontSize:11,color:"#64748b"}}>Issued {fmtDate(inv.issue_date)} … Due {fmtDate(inv.due_date)}</div>
             </div>
             <div style={{textAlign:"right"}}>
-              <div style={{fontSize:16,fontWeight:800,color:"#f1f5f9",marginBottom:4}}>{fmt(Number(inv.total_amount||0))}</div>
+              <div style={{fontSize:16,fontWeight:800,color:"#0f172a",marginBottom:4}}>{fmt(Number(inv.total_amount||0))}</div>
               <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,textTransform:"capitalize",background:inv.status==="paid"?"rgba(34,197,94,0.15)":inv.status==="overdue"?"rgba(239,68,68,0.15)":"rgba(245,158,11,0.15)",color:inv.status==="paid"?"#22c55e":inv.status==="overdue"?"#ef4444":"#f59e0b",border:`1px solid ${inv.status==="paid"?"rgba(34,197,94,0.3)":inv.status==="overdue"?"rgba(239,68,68,0.3)":"rgba(245,158,11,0.3)"}`}}>{inv.status}</span>
             </div>
           </div>)}
@@ -513,12 +515,12 @@ export default function ClientPortalPage() {
 
       {tab==="changes"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
         <div style={{background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#f59e0b"}}>⚠️ Change orders need your approval before work begins.</div>
-        {changes.length===0?<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>?</div><p style={{color:"#475569"}}>No change orders at this time.</p></div>
-          :changes.map(co=><div key={co.id} style={{background:"rgba(255,255,255,0.04)",border:`1px solid ${co.status==="approved"?"rgba(34,197,94,0.2)":co.status==="rejected"?"rgba(239,68,68,0.2)":"rgba(255,255,255,0.07)"}`,borderRadius:16,padding:20}}>
-            <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>{co.title}</div>
-            {co.description&&<p style={{fontSize:13,color:"#64748b",margin:"0 0 10px",lineHeight:1.6}}>{co.description}</p>}
+        {changes.length===0?<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>?</div><p style={{color:"#64748b"}}>No change orders at this time.</p></div>
+          :changes.map(co=><div key={co.id} style={{background:"#ffffff",border:`1px solid ${co.status==="approved"?"rgba(34,197,94,0.3)":co.status==="rejected"?"rgba(239,68,68,0.2)":"#e2e8f0"}`,borderRadius:16,padding:20}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:4}}>{co.title}</div>
+            {co.description&&<p style={{fontSize:13,color:"#475569",margin:"0 0 10px",lineHeight:1.6}}>{co.description}</p>}
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:co.status==="pending"?14:6}}>
-              <span style={{fontSize:17,fontWeight:800,color:"#f1f5f9"}}>{fmt(Number(co.amount||0))}</span>
+              <span style={{fontSize:17,fontWeight:800,color:"#0f172a"}}>{fmt(Number(co.amount||0))}</span>
               <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,textTransform:"capitalize",background:co.status==="approved"?"rgba(34,197,94,0.15)":co.status==="rejected"?"rgba(239,68,68,0.15)":"rgba(245,158,11,0.15)",color:co.status==="approved"?"#22c55e":co.status==="rejected"?"#ef4444":"#f59e0b"}}>{co.status}</span>
             </div>
             {co.status==="pending"&&<div style={{display:"flex",gap:10}}>
@@ -532,21 +534,21 @@ export default function ClientPortalPage() {
 
       {tab==="feedback"&&<div style={{animation:"fadeIn 0.3s ease"}}>
         {reviewSubmitted?<div style={{background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>?</div><div style={{fontSize:18,fontWeight:700,color:"#22c55e",marginBottom:6}}>Thank you!</div><p style={{color:"#475569",fontSize:14}}>Your feedback means a lot to us.</p></div>
-          :<div style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:28}}>
-            <div style={{fontSize:15,fontWeight:700,color:"#f1f5f9",marginBottom:4}}>Rate Our Work</div>
+          :<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:28}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:4}}>Rate Our Work</div>
             <p style={{fontSize:13,color:"#475569",marginBottom:20}}>How satisfied are you with the project so far?</p>
             <Stars value={rating} onChange={setRating}/>
             {rating>0&&<div style={{marginTop:20}}>
               <div style={{fontSize:12,color:"#475569",marginBottom:6}}>Tell us more (optional)</div>
               <textarea value={reviewText} onChange={e=>setReviewText(e.target.value)} placeholder="What went well? What could be improved?"
-                style={{width:"100%",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"11px 14px",fontSize:13,color:"#f1f5f9",resize:"none",height:90,outline:"none"}}/>
-              <button onClick={submitReview} style={{width:"100%",marginTop:12,padding:"13px 0",background:"#3b82f6",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Submit Review</button>
+                style={{width:"100%",background:"#ffffff",border:"1px solid #cbd5e1",borderRadius:10,padding:"11px 14px",fontSize:13,color:"#0f172a",resize:"none",height:90,outline:"none"}}/>
+              <button onClick={submitReview} style={{width:"100%",marginTop:12,padding:"13px 0",background:"#0891b2",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Submit Review</button>
             </div>}
           </div>}
       </div>}
     </div>
 
-    <div style={{borderTop:"1px solid rgba(255,255,255,0.04)",padding:"16px 0",textAlign:"center",fontSize:11,color:"#1e293b"}}>
+    <div style={{borderTop:"1px solid #e2e8f0",padding:"16px 0",textAlign:"center",fontSize:11,color:"#94a3b8"}}>
       {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"} … Secured Portal … Powered by Magnus ERP
     </div>
 
