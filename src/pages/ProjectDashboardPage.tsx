@@ -439,7 +439,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
               className={`flex items-center gap-1.5 px-4 py-3 text-[11px] font-bold uppercase tracking-widest border-b-2 transition whitespace-nowrap ${tab===t.key?"border-cyan-500 text-cyan-300":"border-transparent text-slate-400 dark:text-slate-700 hover:text-slate-500"}`}>
               {t.label}
               {t.count!==undefined&&t.count>0&&(
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${tab===t.key?"bg-cyan-500/20 text-cyan-400":"bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-600"}`}>{t.count}</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${tab===t.key?"bg-cyan-500/20 text-cyan-400":t.key==="messages"?"bg-red-500 text-white":"bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-600"}`}>{t.count}</span>
               )}
             </button>
           ))}
