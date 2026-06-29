@@ -54,6 +54,9 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
   const [showPass,setShowPass]=useState(false);
+  const [view,setView]=useState<"auth"|"forgot"|"resetSent">("auth");
+  const [forgotLoading,setForgotLoading]=useState(false);
+  const [forgotError,setForgotError]=useState("");
 
   async function handleSetup() {
     if(!email.trim()){setError("Please enter your email address.");return;}
@@ -67,6 +70,31 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
     await supabase.from("client_portal_sessions").insert({client_id:client.id,session_token:tok,device_info:navigator.userAgent.slice(0,200)});
     localStorage.setItem(`portal_${client.id}`,tok);
     onSuccess();setLoading(false);
+  }
+
+  async function handleForgotPassword() {
+    setForgotLoading(true);
+    setForgotError("");
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "client-password-reset",
+        { body: { action: "request", email: email.trim() } }
+      );
+      if (invokeError) {
+        setForgotError(invokeError.message || "Failed to send reset email.");
+        setForgotLoading(false);
+        return;
+      }
+      if (data?.error) {
+        setForgotError(String(data.error));
+        setForgotLoading(false);
+        return;
+      }
+      setView("resetSent");
+    } catch {
+      setForgotError("Something went wrong. Please try again.");
+    }
+    setForgotLoading(false);
   }
 
   async function handleLogin() {
@@ -130,6 +158,45 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
           <button onClick={mode==="setup"?handleSetup:handleLogin} disabled={loading} style={{...S.btn,opacity:loading?0.6:1}}>
             {loading?"Please wait…":mode==="setup"?"Activate Account ?":"Sign In ?"}
           </button>
+          {mode==="login"&&view==="auth"&&(
+            <button onClick={()=>{setView("forgot");setForgotError("");}}
+              style={{width:"100%",marginTop:12,background:"transparent",border:"none",color:"#0284c7",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+              Forgot password?
+            </button>
+          )}
+          {view==="forgot"&&(
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:8}}>Reset your password</div>
+              <div style={{fontSize:13,color:"#475569",marginBottom:16}}>
+                We'll send a reset link to <strong>{email}</strong>
+              </div>
+              {forgotError&&(
+                <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#dc2626",marginBottom:12}}>
+                  {forgotError}
+                </div>
+              )}
+              <button onClick={handleForgotPassword} disabled={forgotLoading}
+                style={{width:"100%",padding:"13px 0",background:"#d97706",border:"none",borderRadius:12,color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer"}}>
+                {forgotLoading?"Sending...":"Send Reset Link"}
+              </button>
+              <button onClick={()=>setView("auth")}
+                style={{width:"100%",marginTop:10,background:"transparent",border:"none",color:"#64748b",fontSize:13,cursor:"pointer"}}>
+                Back to login
+              </button>
+            </div>
+          )}
+          {view==="resetSent"&&(
+            <div style={{textAlign:"center"}}>
+              <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:8}}>Check your email</div>
+              <div style={{fontSize:13,color:"#475569",marginBottom:16}}>
+                If an account exists for <strong>{email}</strong>, a reset link is on its way.
+              </div>
+              <button onClick={()=>setView("auth")}
+                style={{width:"100%",padding:"13px 0",background:"#0891b2",border:"none",borderRadius:12,color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer"}}>
+                Back to login
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <div style={{textAlign:"center",marginTop:16,fontSize:11,color:"#1e293b"}}>🔒 Secured by {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
