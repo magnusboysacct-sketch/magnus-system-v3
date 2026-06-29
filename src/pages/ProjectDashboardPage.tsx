@@ -126,6 +126,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
 
   useEffect(() => {
     if (tab === "messages" && messages.some(m => m.sender_type === "client" && !m.read_at)) {
+      setUnreadCount(0);
       supabase.from("client_comments")
         .update({ read_at: new Date().toISOString() })
         .eq("project_id", projectId!)
@@ -133,7 +134,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
         .is("read_at", null)
         .then(() => loadMessages());
     }
-  }, [tab]);
+  }, [tab, messages]);
 
   async function loadAll() {
     setLoading(true); setError(null);
