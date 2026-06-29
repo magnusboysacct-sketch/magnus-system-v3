@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import VerifyWorkerPage from './pages/VerifyWorkerPage';
 import ClientPortalPage from './pages/ClientPortalPage';
 import ClientLoginPage from './pages/ClientLoginPage';
+import ClientResetPasswordPage from './pages/ClientResetPasswordPage';
 import AccessLogPage from './pages/AccessLogPage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
@@ -232,12 +233,13 @@ export default function App() {
               <Route path="/projects/:currentProjectId/admin/payroll-simulation-center" element={<PayrollSimulationCenterPage />} />
             </Route>
 
-            <Route path="*" element={<Navigate to="/" replace />} />
             <Route path="/verify/:workerId" element={<VerifyWorkerPage />} />
             <Route path="/portal/:token" element={<ClientPortalPage />} />
-              <Route path="/client-login" element={<ClientLoginPage />} />
-              <Route path="/client-portal/:clientId" element={<ClientPortalPage />} />
+            <Route path="/client-login" element={<ClientLoginPage />} />
+            <Route path="/client-reset-password" element={<ClientResetPasswordPage />} />
+            <Route path="/client-portal/:clientId" element={<ClientPortalPage />} />
             <Route path="/access-log" element={<AccessLogPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </BrowserRouter>
       </ProjectProvider>
