@@ -301,9 +301,22 @@ export default function ClientPortalPage() {
   }
 
   async function submitComment(){
-    if(!newComment.trim()||!client||!project)return;
-    await supabase.from("client_comments").insert({client_id:client.id,project_id:project.id,message:newComment});
-    setNewComment("");setToast({msg:"Message sent!",type:"success"});
+    if(!newComment.trim()||!client) return;
+
+    const { error } = await supabase.from("client_comments").insert({
+      client_id: client.id,
+      project_id: project?.id || null,
+      message: newComment,
+    });
+
+    if (error) {
+      setToast({ msg: "Failed to send message. Please try again.", type: "error" });
+      console.error("submitComment insert error:", error);
+      return;
+    }
+
+    setNewComment("");
+    setToast({ msg: "Message sent!", type: "success" });
     loadData(client);
   }
 
