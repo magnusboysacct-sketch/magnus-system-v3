@@ -10,7 +10,7 @@ interface Client { id:string; name:string; contact_name:string|null; email:strin
 interface Project { id:string; name:string; status:string; start_date:string|null; end_date:string|null; site_address:string|null; notes:string|null; budget:number|null; }
 interface Invoice { id:string; invoice_number:string|null; total_amount:number; status:string; issue_date:string|null; due_date:string|null; }
 interface ChangeOrder { id:string; title:string; description:string|null; amount:number; status:string; created_at:string; }
-interface Comment { id:string; message:string; created_at:string; }
+interface Comment { id:string; message:string; created_at:string; sender_type?:string; }
 interface Photo { id:string; url?:string; public_url?:string; publicUrl?:string; caption?:string; created_at:string; }
 interface Co { company_name:string|null; logo_url:string|null; phone:string|null; email:string|null; address_line1:string|null; }
 
@@ -308,6 +308,7 @@ export default function ClientPortalPage() {
       client_id: client.id,
       project_id: project?.id || null,
       message: newComment,
+      sender_type: "client",
     });
 
     if (error) {
@@ -434,10 +435,15 @@ export default function ClientPortalPage() {
         <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
           <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:14}}>💬 Messages</div>
           {comments.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16,maxHeight:280,overflowY:"auto"}}>
-            {comments.map(c=><div key={c.id} style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 14px"}}>
-              <p style={{fontSize:13,color:"#1e3a5f",margin:"0 0 4px",lineHeight:1.5}}>{c.message}</p>
-              <span style={{fontSize:10,color:"#475569"}}>{timeAgo(c.created_at)}</span>
-            </div>)}
+            {comments.map(c=>{
+              const isStaff=c.sender_type==="staff";
+              return <div key={c.id} style={{display:"flex",justifyContent:isStaff?"flex-end":"flex-start"}}>
+                <div style={{maxWidth:"75%",background:isStaff?"#0891b2":"#eff6ff",border:isStaff?"none":"1px solid #bfdbfe",borderRadius:10,padding:"10px 14px"}}>
+                  <p style={{fontSize:13,color:isStaff?"#fff":"#1e3a5f",margin:"0 0 4px",lineHeight:1.5}}>{c.message}</p>
+                  <span style={{fontSize:10,color:isStaff?"#e0f2fe":"#475569"}}>{isStaff?"Contractor":"You"} · {timeAgo(c.created_at)}</span>
+                </div>
+              </div>;
+            })}
           </div>}
           <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="Send a message to your contractor…"
             style={{width:"100%",background:"#ffffff",border:"1px solid #cbd5e1",borderRadius:10,padding:"11px 14px",fontSize:13,color:"#0f172a",resize:"none",height:76,outline:"none"}}/>

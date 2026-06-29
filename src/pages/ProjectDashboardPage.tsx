@@ -38,7 +38,7 @@ function daysFromNow(d: string) {
   return `${days} days left`;
 }
 
-type Tab = "overview"|"milestones"|"tasks"|"financials"|"team"|"activity";
+type Tab = "overview"|"milestones"|"tasks"|"financials"|"team"|"activity"|"messages";
 
 const STATUS_CFG: Record<string,{color:string;bg:string;border:string}> = {
   active:   {color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20"},
@@ -107,7 +107,33 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   });
   const [savingTask, setSavingTask] = useState(false);
 
+  const [messages, setMessages] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [newReply, setNewReply] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{id:string; full_name?:string} | null>(null);
+
   useEffect(()=>{ if(projectId) loadAll(); },[projectId]);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        supabase.from("user_profiles").select("id, full_name").eq("id", data.user.id).maybeSingle()
+          .then(({ data: profile }) => setCurrentUser(profile));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (tab === "messages" && messages.some(m => m.sender_type === "client" && !m.read_at)) {
+      supabase.from("client_comments")
+        .update({ read_at: new Date().toISOString() })
+        .eq("project_id", projectId!)
+        .eq("sender_type", "client")
+        .is("read_at", null)
+        .then(() => loadMessages());
+    }
+  }, [tab]);
 
   async function loadAll() {
     setLoading(true); setError(null);
@@ -126,12 +152,13 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
         setClient(cl);
       }
 
-      const [expRes,poRes,workerRes,msRes,taskRes]=await Promise.allSettled([
+      const [expRes,poRes,workerRes,msRes,taskRes,msgRes]=await Promise.allSettled([
         supabase.from("expenses").select("amount,description,created_at").eq("project_id",projectId!),
         supabase.from("purchase_orders").select("id,status,created_at,supplier_name").eq("project_id",projectId!),
         supabase.from("workers").select("id,first_name,last_name,worker_type,status").eq("company_id",proj.company_id||"").eq("status","active").limit(30),
         supabase.from("project_milestones").select("*").eq("project_id",projectId!).order("milestone_no",{ascending:true}),
         supabase.from("project_tasks").select("id,task_name,task_description,trade_type,quantity,unit,rate_per_unit,start_date,end_date,status,percent_complete,milestone_id").eq("project_id",projectId!).order("created_at",{ascending:true}),
+        supabase.from("client_comments").select("*").eq("project_id",projectId!).order("created_at",{ascending:true}),
       ]);
 
       const expenses=expRes.status==="fulfilled"?expRes.value.data||[]:[];
@@ -139,10 +166,13 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
       const workerList=workerRes.status==="fulfilled"?workerRes.value.data||[]:[];
       const msList=msRes.status==="fulfilled"?msRes.value.data||[]:[];
       const taskList=taskRes.status==="fulfilled"?taskRes.value.data||[]:[];
+      const msgList=msgRes.status==="fulfilled"?msgRes.value.data||[]:[];
 
       setWorkers(workerList);
       setMilestones(msList);
       setTasks(taskList);
+      setMessages(msgList);
+      setUnreadCount(msgList.filter((m:any)=>m.sender_type==="client"&&!m.read_at).length);
 
       setStats({
         totalExpenses:expenses.reduce((s:number,e:any)=>s+(Number(e.amount)||0),0),
@@ -168,6 +198,30 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   async function loadTasks() {
     const {data}=await supabase.from("project_tasks").select("id,task_name,task_description,trade_type,quantity,unit,rate_per_unit,start_date,end_date,status,percent_complete,milestone_id").eq("project_id",projectId!).order("created_at",{ascending:true});
     setTasks(data||[]);
+  }
+
+  async function loadMessages() {
+    const { data } = await supabase
+      .from("client_comments")
+      .select("*")
+      .eq("project_id", projectId!)
+      .order("created_at", { ascending: true });
+    setMessages(data || []);
+    setUnreadCount((data || []).filter((m:any) => m.sender_type === "client" && !m.read_at).length);
+  }
+
+  async function sendReply() {
+    if (!newReply.trim() || !currentUser) return;
+    setSendingReply(true);
+    const { error } = await supabase.from("client_comments").insert({
+      project_id: projectId,
+      client_id: project?.client_id || null,
+      message: newReply,
+      sender_type: "staff",
+      sender_id: currentUser.id,
+    });
+    if (!error) { setNewReply(""); await loadMessages(); }
+    setSendingReply(false);
   }
 
   // ── Milestone functions ──
@@ -329,6 +383,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
     {key:"financials",label:"Financials"},
     {key:"team",label:"Team",count:stats.activeWorkers},
     {key:"activity",label:"Activity",count:activity.length},
+    {key:"messages",label:"Messages",count:unreadCount},
   ] as any;
 
   return(
@@ -1079,6 +1134,37 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {tab==="messages"&&(
+          <div className="space-y-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 max-h-96 overflow-y-auto space-y-3">
+              {messages.length===0&&(
+                <div className="text-sm text-slate-400 text-center py-8">No messages yet.</div>
+              )}
+              {messages.map((m:any)=>(
+                <div key={m.id} className={`flex ${m.sender_type==="staff"?"justify-end":"justify-start"}`}>
+                  <div className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
+                    m.sender_type==="staff"?"bg-cyan-600 text-white":"bg-slate-100 text-slate-800"
+                  }`}>
+                    <div>{m.message}</div>
+                    <div className={`text-[10px] mt-1 ${m.sender_type==="staff"?"text-cyan-100":"text-slate-400"}`}>
+                      {m.sender_type==="staff"?"You":"Client"} · {new Date(m.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <textarea value={newReply} onChange={(e)=>setNewReply(e.target.value)}
+                placeholder="Reply to client..." rows={2}
+                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-cyan-400"/>
+              <button onClick={sendReply} disabled={!newReply.trim()||sendingReply}
+                className="px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm font-semibold disabled:opacity-50 self-end">
+                {sendingReply?"Sending...":"Send"}
+              </button>
+            </div>
           </div>
         )}
       </div>
