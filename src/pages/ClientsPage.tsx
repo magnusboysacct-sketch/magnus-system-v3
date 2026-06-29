@@ -176,6 +176,10 @@ export default function ClientsPage() {
         const { data: profile } = await supabase
           .from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
 
+        if (!profile?.company_id) {
+          throw new Error("Could not determine your company. Please contact support.");
+        }
+
         const { error: e } = await supabase.from("clients").insert({
           name: form.name.trim(),
           contact_name: form.contact_name.trim() || null,
