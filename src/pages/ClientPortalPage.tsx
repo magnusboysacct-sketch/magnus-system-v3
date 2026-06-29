@@ -277,16 +277,17 @@ export default function ClientPortalPage() {
     try {
       const {data:p}=await supabase.from("projects").select("*").eq("client_id",c.id).order("created_at",{ascending:false}).limit(1);
       const proj=p?.[0]||null; setProject(proj);
+      const {data:cm}=await supabase.from("client_comments").select("*").eq("client_id",c.id).order("created_at",{ascending:true});
+      setComments(cm||[]);
       if(proj){
-        const [inv,co,cm,ph,boq,ct]=await Promise.all([
+        const [inv,co,ph,boq,ct]=await Promise.all([
           supabase.from("invoices").select("*").eq("project_id",proj.id).order("issue_date",{ascending:false}),
           supabase.from("change_orders").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
-          supabase.from("client_comments").select("*").eq("project_id",proj.id).order("created_at",{ascending:true}),
           supabase.from("project_photos").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
           supabase.from("boq_items").select("status").eq("project_id",proj.id),
           supabase.from("client_contracts").select("*").eq("project_id",proj.id).eq("client_id",c.id).order("created_at",{ascending:false}),
         ]);
-        setInvoices(inv.data||[]);setChanges(co.data||[]);setComments(cm.data||[]);setPhotos(ph.data||[]);setContracts(ct.data||[]);
+        setInvoices(inv.data||[]);setChanges(co.data||[]);setPhotos(ph.data||[]);setContracts(ct.data||[]);
         const items=boq.data||[];
         setProgress(items.length?Math.round(items.filter((b:any)=>b.status==="complete").length/items.length*100):0);
       }
