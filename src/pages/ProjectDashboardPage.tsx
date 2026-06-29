@@ -1,5 +1,5 @@
 ﻿// src/pages/ProjectDashboardPage.tsx — v4: Milestones + Tasks + full project management
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
@@ -107,6 +107,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   });
   const [savingTask, setSavingTask] = useState(false);
 
+  const hasMarkedRead = useRef(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [newReply, setNewReply] = useState("");
@@ -125,15 +126,22 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   }, []);
 
   useEffect(() => {
-    if (tab === "messages" && messages.some(m => m.sender_type === "client" && !m.read_at)) {
-      setUnreadCount(0);
-      supabase.from("client_comments")
-        .update({ read_at: new Date().toISOString() })
-        .eq("project_id", projectId!)
-        .eq("sender_type", "client")
-        .is("read_at", null)
-        .then(() => loadMessages());
+    if (tab !== "messages") {
+      hasMarkedRead.current = false;
+      return;
     }
+    if (hasMarkedRead.current) return;
+    const hasUnread = messages.some(m => m.sender_type === "client" && !m.read_at);
+    if (!hasUnread) return;
+    hasMarkedRead.current = true;
+    setUnreadCount(0);
+    supabase
+      .from("client_comments")
+      .update({ read_at: new Date().toISOString() })
+      .eq("project_id", projectId!)
+      .eq("sender_type", "client")
+      .is("read_at", null)
+      .then(() => loadMessages());
   }, [tab, messages]);
 
   async function loadAll() {
