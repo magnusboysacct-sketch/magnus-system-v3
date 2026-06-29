@@ -515,7 +515,7 @@ export default function ClientPortalPage() {
 
       {tab==="changes"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
         <div style={{background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#f59e0b"}}>⚠️ Change orders need your approval before work begins.</div>
-        {changes.length===0?<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>?</div><p style={{color:"#64748b"}}>No change orders at this time.</p></div>
+        {changes.length===0?<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>⚠️</div><p style={{color:"#64748b"}}>No change orders at this time.</p></div>
           :changes.map(co=><div key={co.id} style={{background:"#ffffff",border:`1px solid ${co.status==="approved"?"rgba(34,197,94,0.3)":co.status==="rejected"?"rgba(239,68,68,0.2)":"#e2e8f0"}`,borderRadius:16,padding:20}}>
             <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:4}}>{co.title}</div>
             {co.description&&<p style={{fontSize:13,color:"#475569",margin:"0 0 10px",lineHeight:1.6}}>{co.description}</p>}
@@ -524,16 +524,16 @@ export default function ClientPortalPage() {
               <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,textTransform:"capitalize",background:co.status==="approved"?"rgba(34,197,94,0.15)":co.status==="rejected"?"rgba(239,68,68,0.15)":"rgba(245,158,11,0.15)",color:co.status==="approved"?"#22c55e":co.status==="rejected"?"#ef4444":"#f59e0b"}}>{co.status}</span>
             </div>
             {co.status==="pending"&&<div style={{display:"flex",gap:10}}>
-              <button onClick={()=>respondChange(co.id,"approved")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"#16a34a",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:respondingTo===co.id?0.6:1}}>? Approve</button>
-              <button onClick={()=>respondChange(co.id,"rejected")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:10,color:"#ef4444",fontSize:13,fontWeight:700,cursor:"pointer"}}>? Reject</button>
+              <button onClick={()=>respondChange(co.id,"approved")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"#16a34a",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:respondingTo===co.id?0.6:1}}>✅ Approve</button>
+              <button onClick={()=>respondChange(co.id,"rejected")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:10,color:"#ef4444",fontSize:13,fontWeight:700,cursor:"pointer"}}>✗ Reject</button>
             </div>}
-            {co.status==="approved"&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>? You approved this change</div>}
-            {co.status==="rejected"&&<div style={{fontSize:12,color:"#ef4444",fontWeight:600}}>? You rejected this change</div>}
+            {co.status==="approved"&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>✅ You approved this change</div>}
+            {co.status==="rejected"&&<div style={{fontSize:12,color:"#ef4444",fontWeight:600}}>✗ You rejected this change</div>}
           </div>)}
       </div>}
 
       {tab==="feedback"&&<div style={{animation:"fadeIn 0.3s ease"}}>
-        {reviewSubmitted?<div style={{background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>?</div><div style={{fontSize:18,fontWeight:700,color:"#22c55e",marginBottom:6}}>Thank you!</div><p style={{color:"#475569",fontSize:14}}>Your feedback means a lot to us.</p></div>
+        {reviewSubmitted?<div style={{background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>🌟</div><div style={{fontSize:18,fontWeight:700,color:"#22c55e",marginBottom:6}}>Thank you!</div><p style={{color:"#475569",fontSize:14}}>Your feedback means a lot to us.</p></div>
           :<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:28}}>
             <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:4}}>Rate Our Work</div>
             <p style={{fontSize:13,color:"#475569",marginBottom:20}}>How satisfied are you with the project so far?</p>
