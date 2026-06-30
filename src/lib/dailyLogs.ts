@@ -69,14 +69,28 @@ export async function createDailyLog(logData: CreateDailyLogData) {
     const { data: profile } = await supabase
       .from("user_profiles").select("company_id").eq("id", user.id).single();
 
-    const { data, error } = await supabase
+    const { data: existing } = await supabase
       .from("project_daily_logs")
-      .upsert(
-        { ...logData, company_id: profile?.company_id, created_by: user.id },
-        { onConflict: "project_id,log_date" }
-      )
-      .select()
-      .single();
+      .select("id")
+      .eq("project_id", logData.project_id)
+      .eq("log_date", logData.log_date)
+      .maybeSingle();
+
+    let data, error;
+    if (existing) {
+      ({ data, error } = await supabase
+        .from("project_daily_logs")
+        .update({ ...logData, company_id: profile?.company_id })
+        .eq("id", existing.id)
+        .select()
+        .single());
+    } else {
+      ({ data, error } = await supabase
+        .from("project_daily_logs")
+        .insert({ ...logData, company_id: profile?.company_id, created_by: user.id })
+        .select()
+        .single());
+    }
 
     if (error) {
       console.error("Error creating daily log:", error);
