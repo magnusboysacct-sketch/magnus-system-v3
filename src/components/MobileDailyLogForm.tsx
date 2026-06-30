@@ -6,6 +6,7 @@ import type { DailyLogEnhancement } from "../lib/aiEnhancer";
 
 interface MobileDailyLogFormProps {
   projectId: string;
+  projectName?: string;
   onSuccess?: () => void;
   onCancel?: () => void;
   prefillDate?: string;
@@ -21,6 +22,7 @@ const weatherOptions = [
 
 export default function MobileDailyLogForm({
   projectId,
+  projectName,
   onSuccess,
   onCancel,
   prefillDate,
@@ -89,6 +91,14 @@ export default function MobileDailyLogForm({
   return (
     <>
       <form onSubmit={handleSubmit} className="space-y-4">
+        {projectName && (
+          <div className="px-5 pt-4 pb-1">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20">
+              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">Project:</span>
+              <span className="text-xs text-blue-700 dark:text-blue-300 font-medium">{projectName}</span>
+            </div>
+          </div>
+        )}
         <div className="bg-blue-500/10 rounded-xl p-4 border border-blue-500/30 mb-4">
           <div className="flex items-start gap-3">
             <Sparkles className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />

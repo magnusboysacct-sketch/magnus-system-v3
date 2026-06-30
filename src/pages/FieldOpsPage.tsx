@@ -397,8 +397,8 @@ export default function FieldOpsPage() {
       )}
 
       {currentProject && (
-        <BaseModal isOpen={showLogModal} onClose={() => setShowLogModal(false)} title="Daily Log">
-          <MobileDailyLogForm projectId={currentProject.id} onSuccess={() => {setShowLogModal(false);loadData();}} onCancel={() => setShowLogModal(false)} prefillDate={todayLog?.log_date}/>
+        <BaseModal isOpen={showLogModal} onClose={() => setShowLogModal(false)} title="Daily Log" size="lg">
+          <MobileDailyLogForm projectId={currentProject.id} projectName={currentProject.name} onSuccess={() => {setShowLogModal(false);loadData();}} onCancel={() => setShowLogModal(false)} prefillDate={todayLog?.log_date}/>
         </BaseModal>
       )}
 
