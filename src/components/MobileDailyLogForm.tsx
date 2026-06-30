@@ -99,7 +99,7 @@ export default function MobileDailyLogForm({
                 onChange={(e) => setQuickNotes(e.target.value)}
                 placeholder="Type rough notes... AI will organize them into proper sections"
                 rows={3}
-                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               />
               <button
                 type="button"
@@ -116,7 +116,7 @@ export default function MobileDailyLogForm({
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
             Date
           </label>
           <input
@@ -125,12 +125,12 @@ export default function MobileDailyLogForm({
             onChange={(e) => setLogDate(e.target.value)}
             required
             max={today}
-            className="w-full px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-4 py-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
             Weather
           </label>
           <div className="grid grid-cols-5 gap-2">
@@ -142,7 +142,7 @@ export default function MobileDailyLogForm({
                 className={`p-3 rounded-xl border-2 transition-all text-2xl ${
                   weather === option.value
                     ? "border-blue-500 bg-blue-500/20"
-                    : "border-slate-700 bg-slate-900 hover:border-slate-600"
+                    : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-slate-400 dark:hover:border-slate-600"
                 }`}
               >
                 {option.icon}
@@ -152,7 +152,7 @@ export default function MobileDailyLogForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
             Workers on Site
           </label>
           <input
@@ -161,12 +161,12 @@ export default function MobileDailyLogForm({
             onChange={(e) => setWorkersCount(e.target.value)}
             min="0"
             placeholder="Enter number of workers"
-            className="w-full px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 text-base placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-4 py-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-base placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
             Work Performed
           </label>
           <textarea
@@ -174,12 +174,12 @@ export default function MobileDailyLogForm({
             onChange={(e) => setWorkPerformed(e.target.value)}
             placeholder="What work was completed today?"
             rows={3}
-            className="w-full px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 text-base placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            className="w-full px-4 py-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-base placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
             Deliveries
           </label>
           <textarea
@@ -187,12 +187,12 @@ export default function MobileDailyLogForm({
             onChange={(e) => setDeliveries(e.target.value)}
             placeholder="Materials delivered today..."
             rows={2}
-            className="w-full px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 text-base placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            className="w-full px-4 py-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-base placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
             Issues / Concerns
           </label>
           <textarea
@@ -200,12 +200,12 @@ export default function MobileDailyLogForm({
             onChange={(e) => setIssues(e.target.value)}
             placeholder="Any problems or delays..."
             rows={2}
-            className="w-full px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 text-base placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            className="w-full px-4 py-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-base placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">
             Additional Notes
           </label>
           <textarea
@@ -213,7 +213,7 @@ export default function MobileDailyLogForm({
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Any other observations..."
             rows={2}
-            className="w-full px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 text-base placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            className="w-full px-4 py-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-base placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
           />
         </div>
       </div>
@@ -229,7 +229,7 @@ export default function MobileDailyLogForm({
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 px-6 py-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-base transition-colors"
+            className="flex-1 px-6 py-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-medium text-base transition-colors"
           >
             Cancel
           </button>
@@ -237,7 +237,7 @@ export default function MobileDailyLogForm({
         <button
           type="submit"
           disabled={submitting || !logDate}
-          className="flex-1 px-6 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white font-medium text-base transition-colors"
+          className="flex-1 px-6 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-400 dark:disabled:text-slate-500 text-white font-medium text-base transition-colors"
         >
           {submitting ? "Saving..." : "Save Log"}
         </button>
