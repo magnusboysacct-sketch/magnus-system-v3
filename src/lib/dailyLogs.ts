@@ -66,12 +66,15 @@ export async function createDailyLog(logData: CreateDailyLogData) {
       return { success: false, error: new Error("User not authenticated") };
     }
 
+    const { data: profile } = await supabase
+      .from("user_profiles").select("company_id").eq("id", user.id).single();
+
     const { data, error } = await supabase
       .from("project_daily_logs")
-      .insert({
-        ...logData,
-        created_by: user.id,
-      })
+      .upsert(
+        { ...logData, company_id: profile?.company_id, created_by: user.id },
+        { onConflict: "project_id,log_date" }
+      )
       .select()
       .single();
 

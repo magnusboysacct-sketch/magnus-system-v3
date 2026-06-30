@@ -25,6 +25,9 @@ export async function uploadProjectPhoto(file: File, data: UploadPhotoData) {
       return { success: false, error: new Error("User not authenticated") };
     }
 
+    const { data: profile } = await supabase
+      .from("user_profiles").select("company_id").eq("id", user.id).single();
+
     const fileExt = file.name.split('.').pop();
     const fileName = `${data.project_id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
@@ -50,6 +53,7 @@ export async function uploadProjectPhoto(file: File, data: UploadPhotoData) {
       .from("project_photos")
       .insert({
         project_id: data.project_id,
+        company_id: profile?.company_id,
         photo_url: fileName,
         caption: data.caption || '',
         uploaded_by: user.id,
