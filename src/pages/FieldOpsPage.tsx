@@ -92,13 +92,19 @@ export default function FieldOpsPage() {
 
   async function submitIssue() {
     if (!issueText.trim() || !currentProject) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data: profile } = await supabase
+      .from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
+    if (!profile?.company_id) return;
     await supabase.from("project_issues").insert({
       project_id: currentProject.id,
+      company_id: profile.company_id,
       description: issueText,
       severity: issueSeverity,
       reported_at: new Date().toISOString(),
       status: "open",
-    }).maybeSingle();
+    });
     setIssueText(""); setShowIssueModal(false);
     alert("Issue logged successfully.");
   }
@@ -390,13 +396,17 @@ export default function FieldOpsPage() {
         </div>
       )}
 
-      <BaseModal isOpen={showLogModal} onClose={() => setShowLogModal(false)} title="Daily Log">
-        <MobileDailyLogForm projectId={currentProject.id} onSuccess={() => {setShowLogModal(false);loadData();}} onCancel={() => setShowLogModal(false)} prefillDate={todayLog?.log_date}/>
-      </BaseModal>
+      {currentProject && (
+        <BaseModal isOpen={showLogModal} onClose={() => setShowLogModal(false)} title="Daily Log">
+          <MobileDailyLogForm projectId={currentProject.id} onSuccess={() => {setShowLogModal(false);loadData();}} onCancel={() => setShowLogModal(false)} prefillDate={todayLog?.log_date}/>
+        </BaseModal>
+      )}
 
-      <BaseModal isOpen={showPhotoModal} onClose={() => setShowPhotoModal(false)} title="Add Photos">
-        <MobilePhotoCapture projectId={currentProject.id} onSuccess={() => {setShowPhotoModal(false);loadData();}} onCancel={() => setShowPhotoModal(false)}/>
-      </BaseModal>
+      {currentProject && (
+        <BaseModal isOpen={showPhotoModal} onClose={() => setShowPhotoModal(false)} title="Add Photos">
+          <MobilePhotoCapture projectId={currentProject.id} onSuccess={() => {setShowPhotoModal(false);loadData();}} onCancel={() => setShowPhotoModal(false)}/>
+        </BaseModal>
+      )}
 
       {currentProject && (
         <AIAssistantPanel context="daily_log" currentData={{hasLogToday:!!todayLog,consecutiveDaysWithoutLog:recentLogs.length===0?7:0,weatherConditions:"good",hasDelays:false}} projectId={currentProject.id}
