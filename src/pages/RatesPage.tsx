@@ -918,16 +918,13 @@ export default function RatesPage() {
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Type</div>
                   <select value={fType} onChange={e=>setFType(e.target.value)}
-                    className="w-full bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition">
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500">
                     {ITEM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Unit</div>
-                  <select value={fUnit} onChange={e=>setFUnit(e.target.value)}
-                    className="w-full bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition">
-                    {unitOptions.map(u=><option key={u} value={u}>{u}</option>)}
-                  </select>
+                  <MasterUnitSelect value={fUnit} onChange={setFUnit} placeholder="Select unit..."/>
                 </div>
                 <div className="col-span-2">
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Rate (JMD)</div>
