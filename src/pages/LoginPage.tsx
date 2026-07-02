@@ -29,10 +29,17 @@ export default function LoginPage() {
   async function handleForgotPassword() {
     if (!resetEmail.trim()) { setErr("Please enter your email address."); return; }
     setResetLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
-      redirectTo: "https://app.magnusboys.com/reset-password"
+    setErr(null);
+    const { data, error } = await supabase.functions.invoke("request-password-reset", {
+      body: { email: resetEmail.trim() },
     });
-    if (error) { setErr(error.message); } else { setResetSent(true); }
+    if (error) {
+      setErr(error.message || "Failed to send reset email.");
+    } else if (data?.error) {
+      setErr(String(data.error));
+    } else {
+      setResetSent(true);
+    }
     setResetLoading(false);
   }
   const [companyName, setCompanyName] = useState("");
