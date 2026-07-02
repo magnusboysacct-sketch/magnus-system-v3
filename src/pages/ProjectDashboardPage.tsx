@@ -378,6 +378,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   const overallProgress=milestones.length>0?Math.round((msComplete/milestones.length)*100):0;
 
   const MODULES=[
+    {label:"Site Visit",icon:<Layers size={15}/>,to:`/projects/${projectId}/site-visit`,color:"text-purple-400",bg:"bg-purple-500/10",border:"border-purple-500/20",desc:"Voice notes, photos, sketch"},
     {label:"BOQ Builder",icon:<FileText size={15}/>,to:`/projects/${projectId}/boq`,color:"text-blue-400",bg:"bg-blue-500/10",border:"border-blue-500/20",desc:"Bills of quantities"},
     {label:"Takeoff",icon:<Ruler size={15}/>,to:`/projects/${projectId}/takeoff`,color:"text-cyan-400",bg:"bg-cyan-500/10",border:"border-cyan-500/20",desc:"PDF measurements"},
     {label:"Procurement",icon:<ShoppingCart size={15}/>,to:`/projects/${projectId}/procurement`,color:"text-amber-400",bg:"bg-amber-500/10",border:"border-amber-500/20",desc:"Purchase orders"},
