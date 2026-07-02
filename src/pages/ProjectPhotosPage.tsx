@@ -1,3 +1,4 @@
+import React from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
@@ -45,12 +46,26 @@ export default function ProjectPhotosPage() {
     loadPhotos();
   }
 
-  async function downloadPhoto(photo: any) {
-    const a = document.createElement("a");
-    a.href = photo.publicUrl;
-    a.download = `site-photo-${photo.id}.jpg`;
-    a.target = "_blank";
-    a.click();
+  async function downloadPhoto(photo: any, e: React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      const { data, error } = await supabase.storage
+        .from("project-photos")
+        .download(photo.photo_url);
+      if (error || !data) { alert("Failed to download photo."); return; }
+      const url = URL.createObjectURL(data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = photo.caption
+        ? `${photo.caption.replace(/\s+/g, "-")}.jpg`
+        : `site-photo-${photo.id}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Failed to download photo.");
+    }
   }
 
   return (
@@ -96,7 +111,7 @@ export default function ProjectPhotosPage() {
               )}
               {/* Action buttons */}
               <div className="flex border-t border-slate-100 dark:border-slate-800">
-                <button onClick={() => downloadPhoto(photo)}
+                <button onClick={(e) => downloadPhoto(photo, e)}
                   className="flex-1 flex items-center justify-center gap-1 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 hover:text-green-500 transition-colors text-xs font-medium">
                   <Download size={13}/> Save
                 </button>
@@ -122,7 +137,7 @@ export default function ProjectPhotosPage() {
           </button>
           {/* Action buttons */}
           <div className="absolute top-4 left-4 flex gap-2" onClick={e => e.stopPropagation()}>
-            <button onClick={() => downloadPhoto(selectedPhoto)}
+            <button onClick={(e) => downloadPhoto(selectedPhoto, e)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors">
               <Download size={14}/> Download
             </button>
