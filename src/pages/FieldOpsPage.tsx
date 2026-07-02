@@ -321,7 +321,7 @@ export default function FieldOpsPage() {
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Recent Logs</h2>
-            <button onClick={() => navigate(`/projects/${currentProject.id}`)} className="text-xs text-blue-500 font-medium flex items-center gap-1">
+            <button onClick={() => navigate(`/projects/${currentProject.id}/logs`)} className="text-xs text-blue-500 font-medium flex items-center gap-1">
               View All <ChevronRight size={12}/>
             </button>
           </div>
@@ -357,7 +357,7 @@ export default function FieldOpsPage() {
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Recent Photos</h2>
-              <button onClick={() => navigate(`/projects/${currentProject.id}`)} className="text-xs text-blue-500 font-medium flex items-center gap-1">
+              <button onClick={() => navigate(`/projects/${currentProject.id}/photos`)} className="text-xs text-blue-500 font-medium flex items-center gap-1">
                 View All <ChevronRight size={12}/>
               </button>
             </div>
