@@ -7,6 +7,22 @@ import {
 import { supabase } from "../lib/supabase";
 import { magnusAI } from "../lib/magnusAI";
 
+// ─── Sketch Types ─────────────────────────────────────────────────────────────
+interface SketchStroke {
+  tool: "pen" | "line" | "rect" | "circle" | "text" | "dimension" | "eraser";
+  color: string;
+  lineWidth: number;
+  points: { x: number; y: number }[];
+  text?: string;
+  label?: string;
+}
+
+interface SketchPage {
+  id: string;
+  name: string;
+  strokes: SketchStroke[];
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SiteVisit {
   id: string;
@@ -225,6 +241,373 @@ function PhotoAnnotator({
   );
 }
 
+// ─── SketchBoard ──────────────────────────────────────────────────────────────
+function SketchBoard({
+  pages,
+  activePage,
+  onPagesChange,
+  onActivePageChange,
+}: {
+  pages: SketchPage[];
+  activePage: number;
+  onPagesChange: (pages: SketchPage[]) => void;
+  onActivePageChange: (idx: number) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const strokesRef = useRef<SketchStroke[]>(pages[activePage]?.strokes ?? []);
+  const [tool, setTool] = useState<SketchStroke["tool"]>("pen");
+  const [color, setColor] = useState("#1e293b");
+  const [lineWidth, setLineWidth] = useState(2);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const currentStroke = useRef<SketchStroke | null>(null);
+  const [textPrompt, setTextPrompt] = useState<{ x: number; y: number } | null>(null);
+  const [textValue, setTextValue] = useState("");
+  const [dimStroke, setDimStroke] = useState<SketchStroke | null>(null);
+  const [dimLabel, setDimLabel] = useState("");
+  const [renamingPage, setRenamingPage] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  // Sync strokesRef when page changes
+  useEffect(() => {
+    strokesRef.current = pages[activePage]?.strokes ?? [];
+    redraw();
+  }, [activePage, pages]);
+
+  function redraw() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    strokesRef.current.forEach(s => drawStroke(ctx, s));
+  }
+
+  function drawStroke(ctx: CanvasRenderingContext2D, s: SketchStroke, preview?: boolean) {
+    ctx.save();
+    ctx.strokeStyle = s.tool === "eraser" ? "#f8fafc" : s.color;
+    ctx.fillStyle = s.color;
+    ctx.lineWidth = s.tool === "eraser" ? 20 : s.lineWidth;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const pts = s.points;
+    if (!pts || pts.length === 0) { ctx.restore(); return; }
+
+    if (s.tool === "pen" || s.tool === "eraser") {
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      pts.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+    } else if (s.tool === "line") {
+      if (pts.length < 2) { ctx.restore(); return; }
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y); ctx.lineTo(pts[1].x, pts[1].y); ctx.stroke();
+    } else if (s.tool === "rect") {
+      if (pts.length < 2) { ctx.restore(); return; }
+      ctx.strokeRect(pts[0].x, pts[0].y, pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    } else if (s.tool === "circle") {
+      if (pts.length < 2) { ctx.restore(); return; }
+      const rx = Math.abs(pts[1].x - pts[0].x) / 2;
+      const ry = Math.abs(pts[1].y - pts[0].y) / 2;
+      const cx = pts[0].x + (pts[1].x - pts[0].x) / 2;
+      const cy = pts[0].y + (pts[1].y - pts[0].y) / 2;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+    } else if (s.tool === "text" && s.text) {
+      ctx.font = `bold ${s.lineWidth * 6 + 10}px sans-serif`;
+      ctx.fillText(s.text, pts[0].x, pts[0].y);
+    } else if (s.tool === "dimension") {
+      if (pts.length < 2) { ctx.restore(); return; }
+      const from = pts[0]; const to = pts[1];
+      const angle = Math.atan2(to.y - from.y, to.x - from.x);
+      const headLen = 12;
+      ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+      // arrowheads
+      [[from, angle + Math.PI], [to, angle]].forEach(([p, a]) => {
+        const { x, y } = p as { x: number; y: number };
+        const ang = a as number;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + headLen * Math.cos(ang - 0.4), y + headLen * Math.sin(ang - 0.4));
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + headLen * Math.cos(ang + 0.4), y + headLen * Math.sin(ang + 0.4));
+        ctx.stroke();
+      });
+      if (s.label) {
+        const mx = (from.x + to.x) / 2;
+        const my = (from.y + to.y) / 2 - 8;
+        ctx.font = `bold ${s.lineWidth * 4 + 10}px sans-serif`;
+        ctx.fillStyle = s.color;
+        ctx.textAlign = "center";
+        ctx.fillText(s.label, mx, my);
+        ctx.textAlign = "left";
+      }
+    }
+    ctx.restore();
+  }
+
+  function getPos(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+  }
+
+  function commitStroke(stroke: SketchStroke) {
+    const updated = pages.map((pg, i) =>
+      i === activePage ? { ...pg, strokes: [...pg.strokes, stroke] } : pg
+    );
+    strokesRef.current = updated[activePage].strokes;
+    onPagesChange(updated);
+  }
+
+  function pointerDown(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
+    const pos = getPos(e);
+    if (tool === "text") { setTextPrompt(pos); return; }
+    setIsDrawing(true);
+    const stroke: SketchStroke = { tool, color, lineWidth, points: [pos] };
+    currentStroke.current = stroke;
+  }
+
+  function pointerMove(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
+    if (!isDrawing || !currentStroke.current) return;
+    const pos = getPos(e);
+    const s = currentStroke.current;
+    if (tool === "pen" || tool === "eraser") {
+      s.points.push(pos);
+    } else {
+      s.points = [s.points[0], pos];
+    }
+    const canvas = canvasRef.current!;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#f8fafc"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    strokesRef.current.forEach(st => drawStroke(ctx, st));
+    drawStroke(ctx, s, true);
+  }
+
+  function pointerUp() {
+    if (!isDrawing || !currentStroke.current) return;
+    setIsDrawing(false);
+    const s = currentStroke.current;
+    if (s.tool === "dimension") {
+      setDimStroke(s);
+    } else {
+      commitStroke(s);
+      redraw();
+    }
+    currentStroke.current = null;
+  }
+
+  function commitText() {
+    if (!textValue.trim() || !textPrompt) return;
+    const stroke: SketchStroke = { tool: "text", color, lineWidth, points: [textPrompt], text: textValue };
+    commitStroke(stroke);
+    redraw();
+    setTextPrompt(null); setTextValue("");
+  }
+
+  function commitDim() {
+    if (!dimStroke) return;
+    const s = { ...dimStroke, label: dimLabel || "?" };
+    commitStroke(s);
+    redraw();
+    setDimStroke(null); setDimLabel("");
+  }
+
+  function undo() {
+    const updated = pages.map((pg, i) =>
+      i === activePage ? { ...pg, strokes: pg.strokes.slice(0, -1) } : pg
+    );
+    strokesRef.current = updated[activePage].strokes;
+    onPagesChange(updated);
+    setTimeout(() => redraw(), 0);
+  }
+
+  function clearPage() {
+    const updated = pages.map((pg, i) =>
+      i === activePage ? { ...pg, strokes: [] } : pg
+    );
+    strokesRef.current = [];
+    onPagesChange(updated);
+    setTimeout(() => redraw(), 0);
+  }
+
+  function exportPNG() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const a = document.createElement("a");
+    a.download = `sketch-${pages[activePage]?.name ?? "page"}.png`;
+    a.href = canvas.toDataURL("image/png");
+    a.click();
+  }
+
+  function addPage() {
+    const newPage: SketchPage = { id: Date.now().toString(), name: `Page ${pages.length + 1}`, strokes: [] };
+    onPagesChange([...pages, newPage]);
+    onActivePageChange(pages.length);
+  }
+
+  function deletePage(idx: number) {
+    if (pages.length <= 1) return;
+    const updated = pages.filter((_, i) => i !== idx);
+    onPagesChange(updated);
+    onActivePageChange(Math.min(activePage, updated.length - 1));
+  }
+
+  function startRename(idx: number) {
+    setRenamingPage(idx);
+    setRenameValue(pages[idx].name);
+  }
+
+  function commitRename() {
+    if (renamingPage === null) return;
+    const updated = pages.map((pg, i) => i === renamingPage ? { ...pg, name: renameValue || pg.name } : pg);
+    onPagesChange(updated);
+    setRenamingPage(null);
+  }
+
+  const TOOLS: { key: SketchStroke["tool"]; label: string }[] = [
+    { key: "pen", label: "✏️" },
+    { key: "line", label: "—" },
+    { key: "rect", label: "▭" },
+    { key: "circle", label: "◯" },
+    { key: "text", label: "T" },
+    { key: "dimension", label: "↔" },
+    { key: "eraser", label: "⌫" },
+  ];
+  const COLORS = ["#1e293b","#ef4444","#f97316","#eab308","#22c55e","#3b82f6","#8b5cf6","#ec4899"];
+  const WIDTHS = [1, 2, 4, 8];
+
+  return (
+    <div className="space-y-3">
+      {/* Toolbar */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-3 space-y-2">
+        {/* Tools */}
+        <div className="flex items-center gap-1 flex-wrap">
+          {TOOLS.map(t => (
+            <button key={t.key} onClick={() => setTool(t.key)}
+              title={t.key}
+              className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${
+                tool === t.key
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+              }`}>
+              {t.label}
+            </button>
+          ))}
+          <div className="flex-1"/>
+          <button onClick={undo} className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Undo</button>
+          <button onClick={clearPage} className="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Clear</button>
+          <button onClick={exportPNG} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors">Export</button>
+        </div>
+        {/* Colors + width */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {COLORS.map(c => (
+            <button key={c} onClick={() => setColor(c)}
+              className={`w-6 h-6 rounded-full border-2 transition-transform ${color === c ? "border-slate-400 scale-125" : "border-transparent"}`}
+              style={{ background: c }}/>
+          ))}
+          <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1"/>
+          {WIDTHS.map(w => (
+            <button key={w} onClick={() => setLineWidth(w)}
+              className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-colors ${
+                lineWidth === w ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400" : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700"
+              }`}>
+              {w}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Canvas */}
+      <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative">
+        <canvas
+          ref={canvasRef} width={800} height={550}
+          className="w-full cursor-crosshair"
+          style={{ touchAction: "none", background: "#f8fafc" }}
+          onMouseDown={pointerDown} onMouseMove={pointerMove} onMouseUp={pointerUp} onMouseLeave={pointerUp}
+          onTouchStart={pointerDown} onTouchMove={pointerMove} onTouchEnd={pointerUp}
+        />
+        {/* Text input overlay */}
+        {textPrompt && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-10">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-2xl flex flex-col gap-3 w-64">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Add text label</p>
+              <input
+                value={textValue} onChange={e => setTextValue(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && commitText()}
+                autoFocus placeholder="Type label..."
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              />
+              <div className="flex gap-2">
+                <button onClick={commitText} className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold">Add</button>
+                <button onClick={() => { setTextPrompt(null); setTextValue(""); }} className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Dimension label overlay */}
+        {dimStroke && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-10">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-2xl flex flex-col gap-3 w-64">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Dimension label (e.g. "24 ft")</p>
+              <input
+                value={dimLabel} onChange={e => setDimLabel(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && commitDim()}
+                autoFocus placeholder='e.g. 24 ft'
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              />
+              <div className="flex gap-2">
+                <button onClick={commitDim} className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold">Add</button>
+                <button onClick={() => { setDimStroke(null); setDimLabel(""); }} className="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm">Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Page tabs */}
+      <div className="flex items-center gap-1 overflow-x-auto pb-1">
+        {pages.map((pg, idx) => (
+          <div key={pg.id} className="flex items-center">
+            {renamingPage === idx ? (
+              <input
+                value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                onBlur={commitRename} onKeyDown={e => e.key === "Enter" && commitRename()}
+                autoFocus
+                className="px-2 py-1 rounded-lg border border-blue-400 text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 w-24 focus:outline-none"
+              />
+            ) : (
+              <button
+                onClick={() => onActivePageChange(idx)}
+                onDoubleClick={() => startRename(idx)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${
+                  activePage === idx
+                    ? "bg-blue-600 text-white"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                }`}>
+                {pg.name}
+              </button>
+            )}
+            {pages.length > 1 && (
+              <button onClick={() => deletePage(idx)}
+                className="ml-0.5 p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors">
+                <X size={10}/>
+              </button>
+            )}
+          </div>
+        ))}
+        <button onClick={addPage}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 whitespace-nowrap transition-colors">
+          + Add Page
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SiteVisitPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -257,10 +640,10 @@ export default function SiteVisitPage() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Sketch
-  const sketchCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [sketchDrawing, setSketchDrawing] = useState(false);
-  const [sketchColor, setSketchColor] = useState("#1e293b");
-  const sketchLastPos = useRef<{ x: number; y: number } | null>(null);
+  const [sketchPages, setSketchPages] = useState<SketchPage[]>([
+    { id: "1", name: "Page 1", strokes: [] },
+  ]);
+  const [activeSketchPage, setActiveSketchPage] = useState(0);
 
   useEffect(() => { if (projectId) { loadProject(); loadVisit(); } }, [projectId]);
 
@@ -407,42 +790,6 @@ Respond in a clear, structured format that a construction estimator can use.`;
     await supabase.from("site_visit_photos").delete().eq("id", photo.id);
     await supabase.storage.from("project-files").remove([photo.photo_url]);
     if (visit?.id) await loadPhotos(visit.id);
-  }
-
-  // ─── Sketch ───────────────────────────────────────────────────────────────
-  function getSketchPos(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
-    const rect = sketchCanvasRef.current!.getBoundingClientRect();
-    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
-    return { x: clientX - rect.left, y: clientY - rect.top };
-  }
-
-  function sketchStart(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
-    setSketchDrawing(true);
-    const pos = getSketchPos(e);
-    sketchLastPos.current = pos;
-    const ctx = sketchCanvasRef.current?.getContext("2d");
-    if (ctx) { ctx.beginPath(); ctx.moveTo(pos.x, pos.y); }
-  }
-
-  function sketchDraw(e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) {
-    if (!sketchDrawing) return;
-    const pos = getSketchPos(e);
-    const ctx = sketchCanvasRef.current?.getContext("2d");
-    if (ctx) {
-      ctx.strokeStyle = sketchColor; ctx.lineWidth = 2; ctx.lineCap = "round";
-      ctx.lineTo(pos.x, pos.y); ctx.stroke();
-    }
-    sketchLastPos.current = pos;
-  }
-
-  function sketchEnd() { setSketchDrawing(false); sketchLastPos.current = null; }
-
-  function clearSketch() {
-    const canvas = sketchCanvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (ctx) { ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.fillStyle = "#f8fafc"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -615,29 +962,12 @@ Respond in a clear, structured format that a construction estimator can use.`;
 
         {/* ── SKETCH TAB ── */}
         {activeTab === "sketch" && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              {["#1e293b","#ef4444","#3b82f6","#22c55e","#f97316","#eab308"].map(c => (
-                <button key={c} onClick={() => setSketchColor(c)}
-                  className={`w-7 h-7 rounded-full border-2 transition-transform ${sketchColor === c ? "border-slate-400 scale-125" : "border-transparent"}`}
-                  style={{ background: c }}/>
-              ))}
-              <button onClick={clearSketch}
-                className="ml-auto px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-medium hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
-                Clear
-              </button>
-            </div>
-            <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800">
-              <canvas
-                ref={sketchCanvasRef} width={600} height={450}
-                className="w-full bg-slate-50 dark:bg-slate-900 cursor-crosshair"
-                style={{ touchAction: "none" }}
-                onMouseDown={sketchStart} onMouseMove={sketchDraw} onMouseUp={sketchEnd} onMouseLeave={sketchEnd}
-                onTouchStart={sketchStart} onTouchMove={sketchDraw} onTouchEnd={sketchEnd}
-              />
-            </div>
-            <p className="text-xs text-slate-400 text-center">Draw a rough sketch of the site. Use colors to mark different areas.</p>
-          </div>
+          <SketchBoard
+            pages={sketchPages}
+            activePage={activeSketchPage}
+            onPagesChange={setSketchPages}
+            onActivePageChange={setActiveSketchPage}
+          />
         )}
 
       </div>
