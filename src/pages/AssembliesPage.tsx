@@ -3,6 +3,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useMasterLists } from "../hooks/useMasterLists";
+import EditableDropdown from "../components/common/EditableDropdown";
 import { magnusAI } from "../lib/magnusAI";
 import {
   Plus, Trash2, Edit2, Save, X, Search, ChevronRight,
@@ -89,11 +91,6 @@ const MEASURE_CFG: Record<MeasureType, { label: string; icon: React.ReactNode; c
   volume: { label: "Volume",  icon: <Box size={14}/>,    color: "#34d399", hint: "Variables: volume, length, width, height" },
 };
 
-const CATEGORIES = [
-  "Masonry","Concrete","Structural Steel","Timber & Lumber","Roofing",
-  "Plumbing","Electrical","Finishes","Earthworks","General","Other"
-];
-
 const LINE_TYPES = ["material","labor","equipment","subcontract","other"];
 
 const TYPE_COLORS: Record<string,string> = {
@@ -145,6 +142,20 @@ export default function AssembliesPage() {
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const { categories, refresh: refreshCategories } = useMasterLists();
+  const categoryOptions = categories.map(c => c.name);
+
+  async function addCategory(name: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user!.id).single();
+    await supabase.from("master_categories").insert({ name, company_id: profile?.company_id, is_active: true, sort_order: categories.length + 1 });
+    await refreshCategories();
+  }
+  async function deleteCategory(name: string) {
+    await supabase.from("master_categories").delete().eq("name", name);
+    await refreshCategories();
+  }
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -440,11 +451,15 @@ export default function AssembliesPage() {
                 placeholder="Search assemblies…"
                 className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:text-slate-700 outline-none focus:border-purple-500/40"/>
             </div>
-            <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-2 py-1.5 text-[11px] text-slate-600 dark:text-slate-400 outline-none">
-              <option value="">All categories</option>
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <EditableDropdown
+              value={catFilter}
+              onChange={setCatFilter}
+              options={categoryOptions}
+              onAddOption={addCategory}
+              onDeleteOption={deleteCategory}
+              placeholder="All categories"
+              className="w-full"
+            />
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -556,11 +571,14 @@ export default function AssembliesPage() {
                         </div>
                         <div>
                           <label className="text-[10px] text-slate-500 block mb-1 font-medium uppercase tracking-wider">Category</label>
-                          <select value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))}
-                            className="w-full bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50">
-                            <option value="">None</option>
-                            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
+                          <EditableDropdown
+                            value={editForm.category}
+                            onChange={val => setEditForm(f => ({ ...f, category: val }))}
+                            options={categoryOptions}
+                            onAddOption={addCategory}
+                            onDeleteOption={deleteCategory}
+                            placeholder="Select category..."
+                          />
                         </div>
                         <div>
                           <label className="text-[10px] text-slate-500 block mb-1 font-medium uppercase tracking-wider">Measurement Type</label>
@@ -849,11 +867,14 @@ export default function AssembliesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Category</label>
-                  <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                    className="w-full bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50">
-                    <option value="">Select…</option>
-                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <EditableDropdown
+                    value={form.category}
+                    onChange={val => setForm(f => ({ ...f, category: val }))}
+                    options={categoryOptions}
+                    onAddOption={addCategory}
+                    onDeleteOption={deleteCategory}
+                    placeholder="Select category..."
+                  />
                 </div>
                 <div>
                   <label className="text-[10px] text-slate-500 block mb-1.5 font-medium uppercase tracking-wider">Default Waste %</label>
