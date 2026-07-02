@@ -29,26 +29,26 @@ export default function MobilePhotoCapture({
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const newPhotos: PhotoPreview[] = [];
+    const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
 
-    Array.from(files).forEach((file) => {
-      if (file.type.startsWith("image/")) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          if (event.target?.result) {
-            newPhotos.push({
+    const readers = imageFiles.map(
+      (file) =>
+        new Promise<PhotoPreview>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            resolve({
               file,
-              preview: event.target.result as string,
+              preview: event.target?.result as string,
               caption: "",
             });
+          };
+          reader.readAsDataURL(file);
+        })
+    );
 
-            if (newPhotos.length === files.length) {
-              setPhotos((prev) => [...prev, ...newPhotos]);
-            }
-          }
-        };
-        reader.readAsDataURL(file);
-      }
+    Promise.all(readers).then((newPhotos) => {
+      setPhotos((prev) => [...prev, ...newPhotos]);
     });
 
     if (fileInputRef.current) fileInputRef.current.value = "";
