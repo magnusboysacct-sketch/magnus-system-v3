@@ -220,8 +220,12 @@ export default function RatesPage() {
   const [fDesc,setFDesc]=useState("");
   const [fCode,setFCode]=useState("");
   const [fVariant,setFVariant]=useState("");
+  const [itemTypes,setItemTypes]=useState<string[]>(()=>{
+    try{const s=localStorage.getItem("magnus_item_types");return s?JSON.parse(s):["Material","Labor","Equipment","Subcontract","Other"];}
+    catch{return ["Material","Labor","Equipment","Subcontract","Other"];}
+  });
   const [fCategory,setFCategory]=useState<string>(categories[0]?.name??"Uncategorized");
-  const [fType,setFType]=useState<string>(ITEM_TYPES[0]);
+  const [fType,setFType]=useState<string>(itemTypes[0]??"Material");
   const [fUnit,setFUnit]=useState<string>("each");
   const [fRate,setFRate]=useState<string>("");
   const [showAdvanced,setShowAdvanced]=useState<boolean>(false);
@@ -233,6 +237,17 @@ export default function RatesPage() {
   function setOnlyType(t:string){setTypeFilter({Material:false,Labor:false,Equipment:false,Subcontract:false,Other:false,[t]:true});}
   function setAllTypes(on:boolean){setTypeFilter({Material:on,Labor:on,Equipment:on,Subcontract:on,Other:on});}
   const selectedTypeCount=useMemo(()=>Object.values(typeFilter).filter(Boolean).length,[typeFilter]);
+
+  async function addItemType(name:string){
+    const updated=[...itemTypes,name];
+    setItemTypes(updated);
+    localStorage.setItem("magnus_item_types",JSON.stringify(updated));
+  }
+  async function deleteItemType(name:string){
+    const updated=itemTypes.filter(t=>t!==name);
+    setItemTypes(updated);
+    localStorage.setItem("magnus_item_types",JSON.stringify(updated));
+  }
 
   useEffect(()=>{
     let alive=true;
@@ -917,10 +932,14 @@ export default function RatesPage() {
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Type</div>
-                  <select value={fType} onChange={e=>setFType(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    {ITEM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <EditableDropdown
+                    value={fType}
+                    onChange={setFType}
+                    options={itemTypes}
+                    onAddOption={addItemType}
+                    onDeleteOption={deleteItemType}
+                    placeholder="Select type..."
+                  />
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Unit</div>
