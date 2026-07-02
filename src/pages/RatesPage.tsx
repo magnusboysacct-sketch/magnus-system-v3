@@ -2,6 +2,8 @@
 import { supabase } from "../lib/supabase";
 import MasterCategorySelect from "../components/master/MasterCategorySelect.tsx";
 import MasterUnitSelect from "../components/master/MasterUnitSelect.tsx";
+import EditableDropdown from "../components/common/EditableDropdown.tsx";
+import { useMasterLists } from "../hooks/useMasterLists";
 import { buildDefaultVars, computeQuantity } from "../lib/calculatorEngine";
 import { SmartItemSelectorButton } from "../components/SmartItemSelectorButton";
 import AIPriceLookup from "../components/AIPriceLookup";
@@ -12,16 +14,6 @@ import {
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const STANDARD_CATEGORIES = [
-  "Cement & Concrete Products","Blocks & Bricks","Timber & Lumber",
-  "Plywood / Boards","Reinforcement","General Hardware","Doors & Windows",
-  "Plumbing Materials","Electrical Materials","Paints & Coatings",
-  "Tools & Equipment","Adhesives & Sealants","Tiles & Flooring",
-  "Finishes / Interior","Aggregates & Sand","Roofing Materials",
-  "Safety Gear / Site Accessories","Fencing / Outdoor","Cleaning Supplies",
-  "Gypsum Material","Fasteners","Miscellaneous","Uncategorized",
-] as const;
-
 const ITEM_TYPES = ["Material","Labor","Equipment","Subcontract","Other"] as const;
 
 const STANDARD_UNITS = [
@@ -142,51 +134,6 @@ function parseCsvText(text: string):{headers:string[];rows:string[][]}{
 function normalizeHeader(h:string){return h.trim().toLowerCase().replace(/\s+/g,"_");}
 function toNum(v:string){const n=Number(String(v||"").replace(/,/g,"").trim());return isFinite(n)?n:null;}
 
-// ─── CategoryCombobox ─────────────────────────────────────────────────────────
-function CategoryCombobox(props:{value:string;options:string[];onChange:(v:string)=>void;allLabel?:string}){
-  const{value,options,onChange,allLabel="All Categories"}=props;
-  const[open,setOpen]=useState(false);
-  const[q,setQ]=useState("");
-  const wrapRef=useRef<HTMLDivElement|null>(null);
-  const inputRef=useRef<HTMLInputElement|null>(null);
-  useEffect(()=>{
-    function onDoc(e:MouseEvent){if(wrapRef.current&&!wrapRef.current.contains(e.target as Node))setOpen(false);}
-    document.addEventListener("mousedown",onDoc);
-    return()=>document.removeEventListener("mousedown",onDoc);
-  },[]);
-  const filtered=useMemo(()=>{const qq=q.trim().toLowerCase();return qq?options.filter(o=>o.toLowerCase().includes(qq)):options;},[options,q]);
-  const label=value==="__ALL__"?allLabel:value;
-  return(
-    <div ref={wrapRef} className="relative w-[240px]">
-      <button type="button" onClick={()=>{setOpen(v=>!v);setTimeout(()=>inputRef.current?.focus(),0);}}
-        className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-left hover:bg-slate-200 dark:bg-white/[0.07] transition flex items-center justify-between text-slate-700 dark:text-slate-300">
-        <span className="truncate">{label}</span>
-        <ChevronDown size={13} className="opacity-50 flex-shrink-0"/>
-      </button>
-      {open&&(
-        <div className="absolute z-50 mt-1.5 w-full rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl overflow-hidden">
-          <div className="p-2 border-b border-slate-200 dark:border-white/[0.06]">
-            <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} placeholder="Search…"
-              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1.5 text-sm outline-none focus:border-blue-500/50 text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600"/>
-          </div>
-          <div className="max-h-64 overflow-auto">
-            <button type="button" onClick={()=>{onChange("__ALL__");setOpen(false);setQ("");}}
-              className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-200 dark:bg-white/[0.06] transition ${value==="__ALL__"?"bg-slate-200 dark:bg-white/[0.06] text-blue-400":"text-slate-600 dark:text-slate-400"}`}>
-              {allLabel}
-            </button>
-            {filtered.map(opt=>(
-              <button key={opt} type="button" onClick={()=>{onChange(opt);setOpen(false);setQ("");}}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-200 dark:bg-white/[0.06] transition truncate ${value===opt?"bg-slate-200 dark:bg-white/[0.06] text-blue-400":"text-slate-700 dark:text-slate-300"}`}
-                title={opt}>{opt}</button>
-            ))}
-            {filtered.length===0&&<div className="px-3 py-3 text-sm text-slate-500 dark:text-slate-600">No matches.</div>}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── SmartCombobox ────────────────────────────────────────────────────────────
 function SmartCombobox(props:{value:string;options:string[];onChange:(v:string)=>void;placeholder?:string;widthClassName?:string}){
   const{value,options,onChange,placeholder="Search…",widthClassName="w-full"}=props;
@@ -229,6 +176,7 @@ function SmartCombobox(props:{value:string;options:string[];onChange:(v:string)=
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function RatesPage() {
+  const { categories, refresh: refreshCategories } = useMasterLists();
   const [items,setItems]=useState<CostItem[]>([]);
   const [loading,setLoading]=useState(true);
   const [companyId,setCompanyId]=useState<string>("");
@@ -272,7 +220,7 @@ export default function RatesPage() {
   const [fDesc,setFDesc]=useState("");
   const [fCode,setFCode]=useState("");
   const [fVariant,setFVariant]=useState("");
-  const [fCategory,setFCategory]=useState<string>(STANDARD_CATEGORIES[0]??"Uncategorized");
+  const [fCategory,setFCategory]=useState<string>(categories[0]?.name??"Uncategorized");
   const [fType,setFType]=useState<string>(ITEM_TYPES[0]);
   const [fUnit,setFUnit]=useState<string>("each");
   const [fRate,setFRate]=useState<string>("");
@@ -347,12 +295,12 @@ export default function RatesPage() {
   },[exportOpen]);
 
   const categoryOptions=useMemo(()=>{
-    const base=[...STANDARD_CATEGORIES];
+    const base=categories.map(c=>c.name);
     const baseSet=new Set<string>(base);
     const extras:string[]=[];
     for(const it of items){const c=normCategory(it.category);if(!baseSet.has(c))extras.push(c);}
     return [...base,...Array.from(new Set(extras)).sort((a,b)=>a.localeCompare(b))];
-  },[items]);
+  },[items,categories]);
 
   const unitOptions=useMemo(()=>{
     const base=Array.from(new Set(STANDARD_UNITS as unknown as string[]));
@@ -396,7 +344,7 @@ export default function RatesPage() {
 
   function openAdd(){
     setMode("add");setActiveId(null);setFName("");setFDesc("");setFVariant("");
-    setFCategory(STANDARD_CATEGORIES[0]??"Uncategorized");setFType(ITEM_TYPES[0]);
+    setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit(unitOptions[0]??"each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
     setIsModalOpen(true);
   }
@@ -423,7 +371,7 @@ export default function RatesPage() {
   }
   function closeModal(){
     setIsModalOpen(false);setFName("");setFDesc("");setFCode("");setFVariant("");
-    setFCategory(STANDARD_CATEGORIES[0]??"Uncategorized");setFType(ITEM_TYPES[0]);
+    setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit("each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
     setActiveId(null);setMode("add");
   }
@@ -679,7 +627,25 @@ export default function RatesPage() {
       <div className="px-6 py-4 space-y-3">
         {/* Filters row */}
         <div className="flex flex-wrap items-center gap-3">
-          <CategoryCombobox value={categoryFilter} options={categoryOptions} onChange={setCategoryFilter}/>
+          <div className="w-[240px]">
+            <EditableDropdown
+              value={categoryFilter==="__ALL__"?"":categoryFilter}
+              onChange={val=>setCategoryFilter(val||"__ALL__")}
+              options={categoryOptions}
+              placeholder="All Categories"
+              onAddOption={async(name)=>{
+                const{data:{user}}=await supabase.auth.getUser();
+                const{data:profile}=await supabase.from("user_profiles").select("company_id").eq("id",user!.id).single();
+                await supabase.from("master_categories").insert({name,company_id:profile?.company_id,is_active:true,sort_order:categories.length+1});
+                await refreshCategories();
+              }}
+              onDeleteOption={async(name)=>{
+                await supabase.from("master_categories").delete().eq("name",name);
+                await refreshCategories();
+                if(categoryFilter===name) setCategoryFilter("__ALL__");
+              }}
+            />
+          </div>
           <div className="relative flex-1 min-w-52 max-w-sm">
             <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
             <input value={search} onChange={e=>setSearch(e.target.value)}
@@ -947,10 +913,7 @@ export default function RatesPage() {
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Category</div>
-                  <select value={fCategory} onChange={e=>setFCategory(e.target.value)}
-                    className="w-full bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition">
-                    {STANDARD_CATEGORIES.map(cat=><option key={cat} value={cat}>{cat}</option>)}
-                  </select>
+                  <MasterCategorySelect value={fCategory} onChange={setFCategory}/>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Type</div>
