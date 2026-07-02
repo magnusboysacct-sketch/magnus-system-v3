@@ -359,7 +359,11 @@ export default function ClientPortalPage() {
           supabase.from("boq_items").select("status").eq("project_id",proj.id),
           supabase.from("client_contracts").select("*").eq("project_id",proj.id).eq("client_id",c.id).order("created_at",{ascending:false}),
         ]);
-        setInvoices(inv.data||[]);setChanges(co.data||[]);setPhotos(ph.data||[]);setContracts(ct.data||[]);
+        const photosWithUrls=(ph.data||[]).map((photo:any)=>{
+          const{data:urlData}=supabase.storage.from("project-photos").getPublicUrl(photo.photo_url);
+          return{...photo,url:urlData.publicUrl};
+        });
+        setInvoices(inv.data||[]);setChanges(co.data||[]);setPhotos(photosWithUrls);setContracts(ct.data||[]);
         const items=boq.data||[];
         setProgress(items.length?Math.round(items.filter((b:any)=>b.status==="complete").length/items.length*100):0);
         await Promise.all([loadDailyLogs(proj.id),loadSitePhotos(proj.id)]);
