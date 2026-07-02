@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useProjectContext } from '../context/ProjectContext';
 import { Search, Filter, CheckCircle, AlertCircle, Link as LinkIcon } from 'lucide-react';
 import { listSuppliers, getCurrentCompanyId, type Supplier } from '../lib/suppliers';
 import { getUnmatchedSupplierItems, updateUnmatchedSupplierItem, importSupplierPrices, type SupplierPriceImportRow } from '../lib/supplierPriceImport';
@@ -22,7 +23,9 @@ interface SupplierCostItemWithStatus extends SupplierCostItem {
 }
 
 export default function SupplierPriceSyncPage() {
-  const { projectId } = useParams<{ projectId?: string }>();
+  const { projectId: paramProjectId } = useParams<{ projectId?: string }>();
+  const { currentProject } = useProjectContext();
+  const projectId = paramProjectId || currentProject?.id;
   const nav = useNavigate();
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
