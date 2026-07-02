@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Calendar, Camera, FileText, ChevronRight, Plus, AlertTriangle,
+  ArrowLeft, Calendar, Camera, FileText, ChevronRight, Plus, AlertTriangle,
   DollarSign, Package, ShieldCheck, Users, Clock, CloudSun,
   CheckCircle2, Circle, RefreshCw, TrendingUp, Zap
 } from "lucide-react";
@@ -155,9 +155,15 @@ export default function FieldOpsPage() {
       {/* Header */}
       <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 px-4 py-4 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">Field Operations</h1>
-            <p className="text-sm text-slate-500">{currentProject.name}</p>
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate("/")}
+              className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
+              <ArrowLeft size={18} className="text-slate-600 dark:text-slate-300"/>
+            </button>
+            <div>
+              <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">Field Operations</h1>
+              <p className="text-sm text-slate-500">{currentProject.name}</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {/* Site status toggle */}

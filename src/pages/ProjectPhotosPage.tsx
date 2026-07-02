@@ -82,16 +82,30 @@ export default function ProjectPhotosPage() {
       ) : (
         <div className="grid grid-cols-2 gap-3">
           {photos.map(photo => (
-            <div key={photo.id}
-              onClick={() => setSelectedPhoto(photo)}
-              className="relative aspect-square rounded-2xl overflow-hidden bg-slate-200 dark:bg-slate-800 cursor-pointer group">
-              <img src={photo.publicUrl} alt={photo.caption || "Site photo"}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"/>
+            <div key={photo.id} className="relative rounded-2xl overflow-hidden bg-slate-200 dark:bg-slate-800 group">
+              {/* Photo */}
+              <div onClick={() => setSelectedPhoto(photo)} className="aspect-square cursor-pointer">
+                <img src={photo.publicUrl} alt={photo.caption || "Site photo"}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"/>
+              </div>
+              {/* Caption */}
               {photo.caption && (
-                <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-2 py-1">
-                  <p className="text-white text-xs truncate">{photo.caption}</p>
+                <div className="px-2 py-1 bg-white dark:bg-slate-900">
+                  <p className="text-xs text-slate-500 truncate">{photo.caption}</p>
                 </div>
               )}
+              {/* Action buttons */}
+              <div className="flex border-t border-slate-100 dark:border-slate-800">
+                <button onClick={() => downloadPhoto(photo)}
+                  className="flex-1 flex items-center justify-center gap-1 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 hover:text-green-500 transition-colors text-xs font-medium">
+                  <Download size={13}/> Save
+                </button>
+                <div className="w-px bg-slate-100 dark:bg-slate-800"/>
+                <button onClick={() => deletePhoto(photo)}
+                  className="flex-1 flex items-center justify-center gap-1 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 hover:text-red-500 transition-colors text-xs font-medium">
+                  <Trash2 size={13}/> Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>
