@@ -7,6 +7,7 @@ import ClientPortalPage from './pages/ClientPortalPage';
 import ClientLoginPage from './pages/ClientLoginPage';
 import ClientResetPasswordPage from './pages/ClientResetPasswordPage';
 import AccessLogPage from './pages/AccessLogPage';
+import ProjectIssuesPage from './pages/ProjectIssuesPage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -238,6 +239,7 @@ export default function App() {
             <Route path="/client-login" element={<ClientLoginPage />} />
             <Route path="/client-reset-password" element={<ClientResetPasswordPage />} />
             <Route path="/client-portal/:clientId" element={<ClientPortalPage />} />
+            <Route path="/projects/:projectId/issues" element={<ProjectIssuesPage />} />
             <Route path="/access-log" element={<AccessLogPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

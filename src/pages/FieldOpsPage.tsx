@@ -32,6 +32,7 @@ export default function FieldOpsPage() {
 
   const [recentLogs, setRecentLogs] = useState<DailyLog[]>([]);
   const [recentPhotos, setRecentPhotos] = useState<any[]>([]);
+  const [recentIssues, setRecentIssues] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showLogModal, setShowLogModal] = useState(false);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
@@ -50,7 +51,7 @@ export default function FieldOpsPage() {
 
   async function loadData() {
     setLoading(true);
-    await Promise.all([loadLogs(), loadPhotos(), loadFieldPayments()]);
+    await Promise.all([loadLogs(), loadPhotos(), loadFieldPayments(), loadIssues()]);
     setLoading(false);
     // Simple weather fetch
     try {
@@ -71,6 +72,18 @@ export default function FieldOpsPage() {
     if (!currentProject) return;
     const r = await fetchProjectPhotos(currentProject.id);
     if (r.success && r.data) setRecentPhotos(r.data.slice(0, 6));
+  }
+
+  async function loadIssues() {
+    if (!currentProject) return;
+    const { data } = await supabase
+      .from("project_issues")
+      .select("*")
+      .eq("project_id", currentProject.id)
+      .eq("status", "open")
+      .order("reported_at", { ascending: false })
+      .limit(3);
+    setRecentIssues(data || []);
   }
 
   async function loadFieldPayments() {
@@ -352,6 +365,35 @@ export default function FieldOpsPage() {
               {recentPhotos.map(photo => (
                 <div key={photo.id} className="aspect-square rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-950">
                   <img src={photo.publicUrl} alt={photo.caption||"Photo"} className="w-full h-full object-cover"/>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recent Issues */}
+        {recentIssues.length > 0 && (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Open Issues</h3>
+              <button onClick={() => navigate(`/projects/${currentProject?.id}/issues`)}
+                className="text-xs text-blue-500 hover:text-blue-600 font-medium flex items-center gap-1">
+                View All <ChevronRight size={14}/>
+              </button>
+            </div>
+            <div className="space-y-2">
+              {recentIssues.map(issue => (
+                <div key={issue.id} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800">
+                  <span className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${
+                    issue.severity === "high" ? "bg-red-500" :
+                    issue.severity === "medium" ? "bg-yellow-500" : "bg-blue-500"
+                  }`}/>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-slate-700 dark:text-slate-300 truncate">{issue.description}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {new Date(issue.reported_at).toLocaleDateString()} · {issue.severity}
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>
