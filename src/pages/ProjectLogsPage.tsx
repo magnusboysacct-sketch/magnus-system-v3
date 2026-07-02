@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { ArrowLeft, FileText, Plus } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Pencil, Trash2, Download } from "lucide-react";
 import MobileDailyLogForm from "../components/MobileDailyLogForm";
 import { BaseModal } from "../components/common/BaseModal";
 
@@ -12,6 +12,7 @@ export default function ProjectLogsPage() {
   const [loading, setLoading] = useState(true);
   const [projectName, setProjectName] = useState("");
   const [showNewLogModal, setShowNewLogModal] = useState(false);
+  const [editingLog, setEditingLog] = useState<any | null>(null);
 
   useEffect(() => { loadLogs(); loadProject(); }, [projectId]);
 
@@ -29,6 +30,32 @@ export default function ProjectLogsPage() {
       .order("log_date", { ascending: false });
     setLogs(data || []);
     setLoading(false);
+  }
+
+  async function deleteLog(id: string) {
+    if (!confirm("Delete this daily log? This cannot be undone.")) return;
+    await supabase.from("project_daily_logs").delete().eq("id", id);
+    loadLogs();
+  }
+
+  function exportLog(log: any) {
+    const lines = [
+      `Daily Log — ${projectName}`,
+      `Date: ${new Date(log.log_date).toLocaleDateString()}`,
+      `Weather: ${log.weather || log.weather_condition || "—"}`,
+      `Workers on Site: ${log.workers_count ?? "—"}`,
+      `Work Performed: ${log.work_performed || "—"}`,
+      `Deliveries: ${log.deliveries || "—"}`,
+      `Issues: ${log.issues || "—"}`,
+      `Notes: ${log.notes || "—"}`,
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `daily-log-${log.log_date}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function getWeatherEmoji(desc: string) {
@@ -95,6 +122,21 @@ export default function ProjectLogsPage() {
                     )}
                   </div>
                 </div>
+                {/* Action buttons */}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button onClick={() => setEditingLog(log)}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-blue-500 transition-colors">
+                    <Pencil size={14}/>
+                  </button>
+                  <button onClick={() => exportLog(log)}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-green-500 transition-colors">
+                    <Download size={14}/>
+                  </button>
+                  <button onClick={() => deleteLog(log.id)}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-colors">
+                    <Trash2 size={14}/>
+                  </button>
+                </div>
               </div>
               {log.issues && (
                 <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
@@ -114,6 +156,19 @@ export default function ProjectLogsPage() {
             projectName={projectName}
             onSuccess={() => { setShowNewLogModal(false); loadLogs(); }}
             onCancel={() => setShowNewLogModal(false)}
+          />
+        </BaseModal>
+      )}
+
+      {/* Edit Log Modal */}
+      {projectId && editingLog && (
+        <BaseModal isOpen={!!editingLog} onClose={() => setEditingLog(null)} title="Edit Log" size="lg">
+          <MobileDailyLogForm
+            projectId={projectId}
+            projectName={projectName}
+            onSuccess={() => { setEditingLog(null); loadLogs(); }}
+            onCancel={() => setEditingLog(null)}
+            prefillDate={editingLog.log_date}
           />
         </BaseModal>
       )}

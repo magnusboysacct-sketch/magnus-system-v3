@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { ArrowLeft, Camera, Plus, X } from "lucide-react";
+import { ArrowLeft, Camera, Plus, X, Trash2, Download } from "lucide-react";
 import MobilePhotoCapture from "../components/MobilePhotoCapture";
 import { BaseModal } from "../components/common/BaseModal";
 
@@ -35,6 +35,22 @@ export default function ProjectPhotosPage() {
     });
     setPhotos(photosWithUrls);
     setLoading(false);
+  }
+
+  async function deletePhoto(photo: any) {
+    if (!confirm("Delete this photo? This cannot be undone.")) return;
+    await supabase.from("project_photos").delete().eq("id", photo.id);
+    await supabase.storage.from("project-photos").remove([photo.photo_url]);
+    setSelectedPhoto(null);
+    loadPhotos();
+  }
+
+  async function downloadPhoto(photo: any) {
+    const a = document.createElement("a");
+    a.href = photo.publicUrl;
+    a.download = `site-photo-${photo.id}.jpg`;
+    a.target = "_blank";
+    a.click();
   }
 
   return (
@@ -85,14 +101,29 @@ export default function ProjectPhotosPage() {
       {selectedPhoto && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedPhoto(null)}>
-          <button className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+          {/* Close */}
+          <button onClick={() => setSelectedPhoto(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
             <X size={20} className="text-white"/>
           </button>
+          {/* Action buttons */}
+          <div className="absolute top-4 left-4 flex gap-2" onClick={e => e.stopPropagation()}>
+            <button onClick={() => downloadPhoto(selectedPhoto)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors">
+              <Download size={14}/> Download
+            </button>
+            <button onClick={() => deletePhoto(selectedPhoto)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/80 hover:bg-red-600 text-white text-xs font-medium transition-colors">
+              <Trash2 size={14}/> Delete
+            </button>
+          </div>
           <img src={selectedPhoto.publicUrl} alt={selectedPhoto.caption || "Site photo"}
             className="max-w-full max-h-full rounded-xl object-contain"/>
           {selectedPhoto.caption && (
             <div className="absolute bottom-6 left-0 right-0 text-center">
-              <p className="text-white text-sm bg-black/50 inline-block px-4 py-2 rounded-full">{selectedPhoto.caption}</p>
+              <p className="text-white text-sm bg-black/50 inline-block px-4 py-2 rounded-full">
+                {selectedPhoto.caption}
+              </p>
             </div>
           )}
         </div>

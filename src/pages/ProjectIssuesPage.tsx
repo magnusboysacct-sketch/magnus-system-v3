@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { ArrowLeft, AlertTriangle, CheckCircle2, Plus } from "lucide-react";
+import { ArrowLeft, AlertTriangle, CheckCircle2, Plus, Pencil, Trash2, Download } from "lucide-react";
 
 export default function ProjectIssuesPage() {
   const { projectId } = useParams();
@@ -14,6 +14,9 @@ export default function ProjectIssuesPage() {
   const [showNewIssueModal, setShowNewIssueModal] = useState(false);
   const [issueText, setIssueText] = useState("");
   const [issueSeverity, setIssueSeverity] = useState<"low"|"medium"|"high">("medium");
+  const [editingIssue, setEditingIssue] = useState<any | null>(null);
+  const [editText, setEditText] = useState("");
+  const [editSeverity, setEditSeverity] = useState<"low"|"medium"|"high">("medium");
 
   useEffect(() => { loadIssues(); loadProject(); }, [projectId]);
 
@@ -36,6 +39,40 @@ export default function ProjectIssuesPage() {
   async function markResolved(id: string) {
     await supabase.from("project_issues").update({ status: "resolved" }).eq("id", id);
     loadIssues();
+  }
+
+  async function deleteIssue(id: string) {
+    if (!confirm("Delete this issue? This cannot be undone.")) return;
+    await supabase.from("project_issues").delete().eq("id", id);
+    loadIssues();
+  }
+
+  async function saveEditIssue() {
+    if (!editText.trim() || !editingIssue) return;
+    await supabase.from("project_issues").update({
+      description: editText,
+      severity: editSeverity,
+    }).eq("id", editingIssue.id);
+    setEditingIssue(null);
+    loadIssues();
+  }
+
+  function exportIssues() {
+    const lines = [
+      `Issues Report — ${projectName}`,
+      `Exported: ${new Date().toLocaleDateString()}`,
+      "",
+      ...issues.map((i, idx) =>
+        `${idx + 1}. [${i.severity.toUpperCase()}] [${i.status.toUpperCase()}] ${i.description} — ${new Date(i.reported_at).toLocaleDateString()}`
+      ),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `issues-${projectName.replace(/\s+/g, "-").toLowerCase()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   async function submitIssue() {
@@ -75,10 +112,16 @@ export default function ProjectIssuesPage() {
           <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">Issues & Delays</h1>
           <p className="text-xs text-slate-500">{projectName}</p>
         </div>
-        <button onClick={() => setShowNewIssueModal(true)}
-          className="ml-auto flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-xl transition-colors">
-          <Plus size={16}/> Log Issue
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={exportIssues}
+            className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-sm font-semibold rounded-xl transition-colors">
+            <Download size={16}/> Export
+          </button>
+          <button onClick={() => setShowNewIssueModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-xl transition-colors">
+            <Plus size={16}/> Log Issue
+          </button>
+        </div>
       </div>
 
       {/* Status filter tabs */}
@@ -142,9 +185,25 @@ export default function ProjectIssuesPage() {
                   </div>
                 </div>
                 {issue.status === "open" && (
-                  <button onClick={() => markResolved(issue.id)}
-                    className="flex-shrink-0 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors">
-                    Resolve
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => { setEditingIssue(issue); setEditText(issue.description); setEditSeverity(issue.severity); }}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-blue-500 transition-colors">
+                      <Pencil size={14}/>
+                    </button>
+                    <button onClick={() => markResolved(issue.id)}
+                      className="flex-shrink-0 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors">
+                      Resolve
+                    </button>
+                    <button onClick={() => deleteIssue(issue.id)}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-colors">
+                      <Trash2 size={14}/>
+                    </button>
+                  </div>
+                )}
+                {issue.status === "resolved" && (
+                  <button onClick={() => deleteIssue(issue.id)}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-colors">
+                    <Trash2 size={14}/>
                   </button>
                 )}
               </div>
@@ -189,6 +248,46 @@ export default function ProjectIssuesPage() {
                 className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-500">Cancel</button>
               <button onClick={submitIssue}
                 className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors">Submit Issue</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Issue Modal */}
+      {editingIssue && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center gap-2 mb-4">
+              <Pencil size={18} className="text-blue-500"/>
+              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">Edit Issue</h2>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-2 block">Severity</label>
+                <div className="flex gap-2">
+                  {(["low","medium","high"] as const).map(s => (
+                    <button key={s} onClick={() => setEditSeverity(s)}
+                      className={`flex-1 py-2 rounded-lg text-xs font-semibold capitalize transition-colors ${
+                        editSeverity === s
+                          ? s === "high" ? "bg-red-500 text-white"
+                            : s === "medium" ? "bg-yellow-500 text-white"
+                            : "bg-blue-500 text-white"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                      }`}>{s}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">Description</label>
+                <textarea value={editText} onChange={e => setEditText(e.target.value)}
+                  className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-800 dark:text-slate-200 resize-none h-28 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setEditingIssue(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-500">Cancel</button>
+              <button onClick={saveEditIssue}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">Save Changes</button>
             </div>
           </div>
         </div>
