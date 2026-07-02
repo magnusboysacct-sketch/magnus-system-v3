@@ -1,8 +1,8 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useProjectContext } from '../context/ProjectContext';
-import { Search, Filter, CheckCircle, AlertCircle, Link as LinkIcon } from 'lucide-react';
-import { listSuppliers, getCurrentCompanyId, type Supplier } from '../lib/suppliers';
+import { Search, Filter, CheckCircle, AlertCircle, Link as LinkIcon, Plus } from 'lucide-react';
+import { listSuppliers, createSupplier, getCurrentCompanyId, type Supplier } from '../lib/suppliers';
 import { getUnmatchedSupplierItems, updateUnmatchedSupplierItem, importSupplierPrices, type SupplierPriceImportRow } from '../lib/supplierPriceImport';
 import { getBestSupplierPrices, getBestRateForCostItem, type BestPriceResult, type SupplierPriceInfo } from '../lib/supplierPriceComparison';
 import { getRecentPriceChanges, logPriceChangeAlert, getChangeDescription, getChangeColorClass, type PriceChange } from '../lib/supplierPriceAlerts';
@@ -44,6 +44,12 @@ export default function SupplierPriceSyncPage() {
   const [priceComparisonData, setPriceComparisonData] = useState<BestPriceResult | null>(null);
   const [showPriceAlerts, setShowPriceAlerts] = useState(false);
   const [priceAlerts, setPriceAlerts] = useState<(PriceChange & { supplier_name?: string })[]>([]);
+  const [showNewSupplier, setShowNewSupplier] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierContact, setNewSupplierContact] = useState("");
+  const [newSupplierPhone, setNewSupplierPhone] = useState("");
+  const [newSupplierEmail, setNewSupplierEmail] = useState("");
+  const [savingSupplier, setSavingSupplier] = useState(false);
 
   // Load suppliers
   useEffect(() => {
@@ -394,6 +400,27 @@ export default function SupplierPriceSyncPage() {
     }
   }
 
+  async function handleCreateSupplier() {
+    if (!newSupplierName.trim()) return;
+    setSavingSupplier(true);
+    try {
+      await createSupplier({
+        supplier_name: newSupplierName.trim(),
+        contact_name: newSupplierContact.trim() || null,
+        phone: newSupplierPhone.trim() || null,
+        email: newSupplierEmail.trim() || null,
+      });
+      setNewSupplierName(""); setNewSupplierContact(""); setNewSupplierPhone(""); setNewSupplierEmail("");
+      setShowNewSupplier(false);
+      const updated = await listSuppliers();
+      setSuppliers(updated);
+    } catch (e: any) {
+      alert(e.message || "Failed to create supplier");
+    } finally {
+      setSavingSupplier(false);
+    }
+  }
+
   if (!projectId) {
     return (
       <div className="p-6 text-sm text-slate-500">
@@ -403,12 +430,12 @@ export default function SupplierPriceSyncPage() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-white">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white">
       {/* Header */}
       <div className="border-b border-slate-200 dark:border-slate-700 p-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-white">Supplier Price Sync</h1>
-          <div className="text-sm text-slate-400">
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Supplier Price Sync</h1>
+          <div className="text-sm text-slate-500 dark:text-slate-400">
             Project: {projectId}
           </div>
         </div>
@@ -419,7 +446,7 @@ export default function SupplierPriceSyncPage() {
         <div className="flex items-center gap-4">
           {/* Supplier Dropdown */}
           <div className="flex-1 max-w-xs">
-            <label className="block text-sm font-medium text-slate-300 mb-1">
+            <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
               Supplier
             </label>
             <select
@@ -434,6 +461,15 @@ export default function SupplierPriceSyncPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* New Supplier Button */}
+          <div className="flex items-end">
+            <button
+              onClick={() => setShowNewSupplier(true)}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2">
+              <Plus size={14}/> New Supplier
+            </button>
           </div>
 
           {/* Load Button */}
@@ -480,15 +516,15 @@ export default function SupplierPriceSyncPage() {
           <div className="flex items-center gap-6 text-sm">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
-              <span className="text-slate-300">Matched: {stats.matched}</span>
+              <span className="text-slate-600 dark:text-slate-300">Matched: {stats.matched}</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-amber-500 rounded-full"></div>
-              <span className="text-slate-300">Unmatched: {stats.unmatched}</span>
+              <span className="text-slate-600 dark:text-slate-300">Unmatched: {stats.unmatched}</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-slate-500 rounded-full"></div>
-              <span className="text-slate-300">Total: {stats.total}</span>
+              <span className="text-slate-600 dark:text-slate-300">Total: {stats.total}</span>
             </div>
           </div>
         )}
@@ -531,13 +567,13 @@ export default function SupplierPriceSyncPage() {
       <div className="flex-1 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <div className="text-slate-400">Loading supplier items...</div>
+            <div className="text-slate-500 dark:text-slate-400">Loading supplier items...</div>
           </div>
         ) : items.length === 0 && selectedSupplierId ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <div className="text-slate-400 mb-2">No imported items found for this supplier</div>
-              <div className="text-sm text-slate-500">
+              <div className="text-slate-500 dark:text-slate-400 mb-2">No imported items found for this supplier</div>
+              <div className="text-sm text-slate-400 dark:text-slate-500">
                 Import supplier prices first, then return to review and match items.
               </div>
             </div>
@@ -545,8 +581,8 @@ export default function SupplierPriceSyncPage() {
         ) : items.length === 0 && !selectedSupplierId ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <div className="text-slate-400 mb-2">Select a supplier to view imported items</div>
-              <div className="text-sm text-slate-500">
+              <div className="text-slate-500 dark:text-slate-400 mb-2">Select a supplier to view imported items</div>
+              <div className="text-sm text-slate-400 dark:text-slate-500">
                 Choose a supplier from the dropdown above and click "Load Imported Items".
               </div>
             </div>
@@ -582,22 +618,22 @@ export default function SupplierPriceSyncPage() {
               <tbody>
                 {filteredItems.map((item, index) => (
                   <tr key={item.id} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
-                    <td className="px-4 py-3 text-slate-200">
+                    <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
                       {item.supplier_sku || '-'}
                     </td>
-                    <td className="px-4 py-3 text-slate-200">
+                    <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
                       {item.supplier_item_name || '-'}
                     </td>
-                    <td className="px-4 py-3 text-slate-200">
+                    <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
                       {item.supplier_description || '-'}
                     </td>
-                    <td className="px-4 py-3 text-slate-200">
+                    <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
                       {item.unit || '-'}
                     </td>
                     <td className="px-4 py-3">
                       {item.matchedCostItem ? (
                         <div>
-                          <div className="text-slate-200 font-medium">
+                          <div className="text-slate-700 dark:text-slate-200 font-medium">
                             {item.matchedCostItem.item_name}
                           </div>
                           {item.matchedCostItem.description && (
@@ -668,11 +704,11 @@ export default function SupplierPriceSyncPage() {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-white">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                     Match Cost Item
                   </h3>
-                  <div className="text-sm text-slate-400 mt-1">
-                    Select a cost item to match with: <span className="text-amber-400 font-medium">{selectedItemForMatch.supplier_item_name}</span>
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Select a cost item to match with: <span className="text-amber-500 dark:text-amber-400 font-medium">{selectedItemForMatch.supplier_item_name}</span>
                   </div>
                 </div>
                 <button
@@ -710,10 +746,10 @@ export default function SupplierPriceSyncPage() {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-white">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                     Price Comparison
                   </h3>
-                  <div className="text-sm text-slate-400 mt-1">
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                     {selectedItemForComparison.supplier_item_name} - {selectedItemForComparison.supplier_description}
                   </div>
                   {priceComparisonData.suppliers.length > 1 && (
@@ -739,7 +775,7 @@ export default function SupplierPriceSyncPage() {
             </div>
             <div className="flex-1 overflow-auto">
               <div className="p-6">
-                <h4 className="text-md font-semibold text-white mb-4">Supplier Prices</h4>
+                <h4 className="text-md font-semibold text-slate-900 dark:text-white mb-4">Supplier Prices</h4>
                 
                 <div className="space-y-3">
                   {priceComparisonData.suppliers.map((supplier, index) => {
@@ -756,7 +792,7 @@ export default function SupplierPriceSyncPage() {
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-3">
-                            <div className="font-medium text-white">
+                            <div className="font-medium text-slate-900 dark:text-white">
                               {supplier.supplier_name}
                             </div>
                             {isBestPrice && (
@@ -767,16 +803,16 @@ export default function SupplierPriceSyncPage() {
                             )}
                           </div>
                           <div className="text-right">
-                            <div className="text-2xl font-bold text-white">
+                            <div className="text-2xl font-bold text-slate-900 dark:text-white">
                               ${supplier.rate.toFixed(2)}
                             </div>
-                            <div className="text-sm text-slate-400">
+                            <div className="text-sm text-slate-500 dark:text-slate-400">
                               per {selectedItemForComparison.unit || 'unit'}
                             </div>
                           </div>
                         </div>
                         
-                        <div className="text-sm text-slate-300">
+                        <div className="text-sm text-slate-600 dark:text-slate-300">
                           Effective: {new Date(supplier.effective_date).toLocaleDateString()}
                         </div>
                       </div>
@@ -802,10 +838,10 @@ export default function SupplierPriceSyncPage() {
             <div className="p-6 border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-white">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                     Price Alerts - Recent Changes
                   </h3>
-                  <div className="text-sm text-slate-400 mt-1">
+                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                     Last 7 days of price changes across all suppliers
                   </div>
                 </div>
@@ -837,22 +873,22 @@ export default function SupplierPriceSyncPage() {
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex-1">
-                            <div className="font-medium text-white mb-1">
+                            <div className="font-medium text-slate-900 dark:text-white mb-1">
                               {alert.supplier_name || `Supplier ${alert.supplier_id}`}
                             </div>
-                            <div className="text-sm text-slate-300">
+                            <div className="text-sm text-slate-600 dark:text-slate-300">
                               Item: {alert.cost_item_id}
                             </div>
-                            <div className="text-sm text-slate-300">
+                            <div className="text-sm text-slate-600 dark:text-slate-300">
                               {getChangeDescription(alert)}
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className="text-2xl font-bold text-white">
+                            <div className="text-2xl font-bold text-slate-900 dark:text-white">
                               ${alert.new_rate.toFixed(2)}
                             </div>
                             {alert.old_rate && (
-                              <div className="text-sm text-slate-300 line-through">
+                              <div className="text-sm text-slate-600 dark:text-slate-300 line-through">
                                 ${alert.old_rate.toFixed(2)}
                               </div>
                             )}
@@ -860,7 +896,7 @@ export default function SupplierPriceSyncPage() {
                         </div>
                         
                         {alert.difference && alert.old_rate && (
-                          <div className="text-sm text-slate-300">
+                          <div className="text-sm text-slate-600 dark:text-slate-300">
                             Change: {alert.difference > 0 ? '+' : ''}${alert.difference.toFixed(2)} 
                             ({((alert.difference / alert.old_rate) * 100).toFixed(1)}%)
                           </div>
@@ -876,6 +912,50 @@ export default function SupplierPriceSyncPage() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* New Supplier Modal */}
+      {showNewSupplier && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 mb-4">Add New Supplier</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">Supplier Name *</label>
+                <input value={newSupplierName} onChange={e => setNewSupplierName(e.target.value)}
+                  placeholder="e.g. National Hardware"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"/>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">Contact Name</label>
+                <input value={newSupplierContact} onChange={e => setNewSupplierContact(e.target.value)}
+                  placeholder="e.g. John Smith"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"/>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">Phone</label>
+                <input value={newSupplierPhone} onChange={e => setNewSupplierPhone(e.target.value)}
+                  placeholder="e.g. 876-555-0000"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"/>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">Email</label>
+                <input value={newSupplierEmail} onChange={e => setNewSupplierEmail(e.target.value)}
+                  placeholder="e.g. supplier@example.com"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"/>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setShowNewSupplier(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-500">
+                Cancel
+              </button>
+              <button onClick={handleCreateSupplier} disabled={!newSupplierName.trim() || savingSupplier}
+                className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+                {savingSupplier ? "Saving..." : "Add Supplier"}
+              </button>
             </div>
           </div>
         </div>
