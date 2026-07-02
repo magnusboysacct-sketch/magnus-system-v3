@@ -93,19 +93,19 @@ export default function FieldOpsPage() {
   async function submitIssue() {
     if (!issueText.trim() || !currentProject) return;
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { data: profile } = await supabase
-      .from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
-    if (!profile?.company_id) return;
-    await supabase.from("project_issues").insert({
+    const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user!.id).single();
+    const { error } = await supabase.from("project_issues").insert({
       project_id: currentProject.id,
-      company_id: profile.company_id,
+      company_id: profile?.company_id,
       description: issueText,
       severity: issueSeverity,
       reported_at: new Date().toISOString(),
       status: "open",
     });
-    setIssueText(""); setShowIssueModal(false);
+    if (error) { alert("Failed to log issue. Please try again."); console.error(error); return; }
+    setIssueText("");
+    setIssueSeverity("medium");
+    setShowIssueModal(false);
     alert("Issue logged successfully.");
   }
 
