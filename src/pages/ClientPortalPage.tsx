@@ -318,6 +318,11 @@ export default function ClientPortalPage() {
   const [lightbox,setLightbox]=useState<Photo|null>(null);
   const [respondingTo,setRespondingTo]=useState<string|null>(null);
   const [errorMsg,setErrorMsg]=useState("");
+  const [dailyLogs,setDailyLogs]=useState<any[]>([]);
+  const [logsLoading,setLogsLoading]=useState(true);
+  const [sitePhotos,setSitePhotos]=useState<any[]>([]);
+  const [photosLoading,setPhotosLoading]=useState(true);
+  const [selectedPhoto,setSelectedPhoto]=useState<any|null>(null);
 
   useEffect(()=>{if(token)checkAuth();},[token]);
 
@@ -357,6 +362,7 @@ export default function ClientPortalPage() {
         setInvoices(inv.data||[]);setChanges(co.data||[]);setPhotos(ph.data||[]);setContracts(ct.data||[]);
         const items=boq.data||[];
         setProgress(items.length?Math.round(items.filter((b:any)=>b.status==="complete").length/items.length*100):0);
+        await Promise.all([loadDailyLogs(proj.id),loadSitePhotos(proj.id)]);
       }
     } catch(e){console.error(e);}
   }
@@ -393,6 +399,50 @@ export default function ClientPortalPage() {
     if(!rating||!client||!project)return;
     await supabase.from("client_reviews").insert({client_id:client.id,project_id:project.id,rating,comment:reviewText});
     setReviewSubmitted(true);setToast({msg:"Thank you for your review!",type:"success"});
+  }
+
+  function getWeatherEmoji(desc:string) {
+    if(!desc)return"🌤️";
+    const d=desc.toLowerCase();
+    if(d.includes("sun")||d.includes("clear"))return"☀️";
+    if(d.includes("cloud"))return"⛅";
+    if(d.includes("rain")||d.includes("shower"))return"🌧️";
+    if(d.includes("storm")||d.includes("thunder"))return"⛈️";
+    if(d.includes("wind"))return"💨";
+    if(d.includes("fog")||d.includes("mist"))return"🌫️";
+    return"🌤️";
+  }
+
+  async function loadDailyLogs(projectId:string) {
+    setLogsLoading(true);
+    const{data}=await supabase.from("project_daily_logs").select("*").eq("project_id",projectId).order("log_date",{ascending:false}).limit(10);
+    setDailyLogs(data||[]);
+    setLogsLoading(false);
+  }
+
+  async function loadSitePhotos(projectId:string) {
+    setPhotosLoading(true);
+    const{data}=await supabase.from("project_photos").select("*").eq("project_id",projectId).order("created_at",{ascending:false}).limit(20);
+    const photosWithUrls=(data||[]).map(photo=>{
+      const{data:urlData}=supabase.storage.from("project-photos").getPublicUrl(photo.photo_url);
+      return{...photo,publicUrl:urlData.publicUrl};
+    });
+    setSitePhotos(photosWithUrls);
+    setPhotosLoading(false);
+  }
+
+  async function downloadPhoto(photo:any,e:React.MouseEvent) {
+    e.stopPropagation();
+    try {
+      const{data,error}=await supabase.storage.from("project-photos").download(photo.photo_url);
+      if(error||!data){alert("Failed to download photo.");return;}
+      const url=URL.createObjectURL(data);
+      const a=document.createElement("a");
+      a.href=url;
+      a.download=photo.caption?`${photo.caption.replace(/\s+/g,"-")}.jpg`:`site-photo-${photo.id}.jpg`;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {alert("Failed to download photo.");}
   }
 
   async function respondChange(id:string,resp:"approved"|"rejected"){
@@ -499,6 +549,78 @@ export default function ClientPortalPage() {
           <div style={{fontSize:10,color:"#475569",fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",marginBottom:8}}>Project Notes</div>
           <p style={{fontSize:13,color:"#475569",lineHeight:1.7,margin:0}}>{project.notes}</p>
         </div>}
+        {/* Daily Logs */}
+        <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:14}}>📋 Site Updates</div>
+          {logsLoading?(
+            <div style={{textAlign:"center",padding:"24px 0",color:"#94a3b8",fontSize:13}}>Loading...</div>
+          ):dailyLogs.length===0?(
+            <div style={{textAlign:"center",padding:"24px 0",color:"#94a3b8",fontSize:13}}>No site updates yet</div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {dailyLogs.map(log=>(
+                <div key={log.id} style={{padding:"14px 16px",borderRadius:12,background:"#f8fafc",border:"1px solid #f1f5f9"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:16}}>{getWeatherEmoji(log.weather||log.weather_condition||"")}</span>
+                      <span style={{fontSize:13,fontWeight:700,color:"#374151"}}>
+                        {new Date(log.log_date).toLocaleDateString("en-JM",{weekday:"short",month:"short",day:"numeric"})}
+                      </span>
+                    </div>
+                    <span style={{fontSize:11,color:"#64748b"}}>👷 {log.workers_count??0} workers</span>
+                  </div>
+                  {log.work_performed&&<p style={{fontSize:13,color:"#475569",margin:"0 0 4px",lineHeight:1.6}}>{log.work_performed}</p>}
+                  {log.deliveries&&<p style={{fontSize:11,color:"#94a3b8",margin:0}}>📦 {log.deliveries}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Site Photos */}
+        <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:14}}>📸 Site Photos</div>
+          {photosLoading?(
+            <div style={{textAlign:"center",padding:"24px 0",color:"#94a3b8",fontSize:13}}>Loading...</div>
+          ):sitePhotos.length===0?(
+            <div style={{textAlign:"center",padding:"24px 0",color:"#94a3b8",fontSize:13}}>No photos yet</div>
+          ):(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
+              {sitePhotos.map(photo=>(
+                <div key={photo.id} style={{borderRadius:16,overflow:"hidden",border:"1px solid #e2e8f0",background:"#ffffff"}}>
+                  <div onClick={()=>setSelectedPhoto(photo)} style={{aspectRatio:"1",overflow:"hidden",background:"#f1f5f9",cursor:"zoom-in"}}>
+                    <img src={photo.publicUrl} alt={photo.caption||"Site photo"} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                  </div>
+                  {photo.caption&&<div style={{padding:"4px 8px",borderTop:"1px solid #f1f5f9"}}><p style={{fontSize:11,color:"#64748b",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{photo.caption}</p></div>}
+                  <div style={{borderTop:"1px solid #f1f5f9"}}>
+                    <button onClick={(e)=>downloadPhoto(photo,e)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 0",background:"transparent",border:"none",fontSize:11,fontWeight:600,color:"#64748b",cursor:"pointer"}}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      Download
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Photo Lightbox */}
+        {selectedPhoto&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.90)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setSelectedPhoto(null)}>
+            <button onClick={()=>setSelectedPhoto(null)} style={{position:"absolute",top:16,right:16,padding:8,borderRadius:"50%",background:"rgba(255,255,255,0.1)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <div style={{position:"absolute",top:16,left:16}} onClick={e=>e.stopPropagation()}>
+              <button onClick={(e)=>downloadPhoto(selectedPhoto,e)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,background:"rgba(255,255,255,0.1)",border:"none",color:"#ffffff",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download
+              </button>
+            </div>
+            <img src={selectedPhoto.publicUrl} alt={selectedPhoto.caption||"Site photo"} style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:12,objectFit:"contain"}}/>
+            {selectedPhoto.caption&&<div style={{position:"absolute",bottom:24,left:0,right:0,textAlign:"center"}}><span style={{fontSize:13,color:"#ffffff",background:"rgba(0,0,0,0.5)",padding:"6px 16px",borderRadius:20}}>{selectedPhoto.caption}</span></div>}
+          </div>
+        )}
+
         <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
           <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:14}}>💬 Messages</div>
           {comments.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16,maxHeight:280,overflowY:"auto"}}>
