@@ -37,6 +37,7 @@ import ProcurementPage        from "./pages/ProcurementPage";
 import ReceivingPage          from "./pages/ReceivingPage";
 import SupplierPriceSyncPage  from "./pages/SupplierPriceSyncPage";
 import SiteVisitPage          from "./pages/SiteVisitPage";
+import ProjectPlansPage       from "./pages/ProjectPlansPage";
 import FinanceDashboardPage from "./pages/FinanceDashboardPage";
 import JournalEntryPage from "./pages/JournalEntryPage";
 import FinancePage            from "./pages/FinancePage";
@@ -243,6 +244,7 @@ export default function App() {
             <Route path="/client-reset-password" element={<ClientResetPasswordPage />} />
             <Route path="/client-portal/:clientId" element={<ClientPortalPage />} />
             <Route path="/projects/:projectId/site-visit" element={<SiteVisitPage />} />
+            <Route path="/projects/:projectId/plans" element={<ProjectPlansPage />} />
             <Route path="/projects/:projectId/issues" element={<ProjectIssuesPage />} />
             <Route path="/projects/:projectId/logs" element={<ProjectLogsPage />} />
             <Route path="/projects/:projectId/photos" element={<ProjectPhotosPage />} />

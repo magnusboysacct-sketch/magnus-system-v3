@@ -8,7 +8,7 @@ import {
   Clock, CheckCircle2, AlertCircle, TrendingUp,
   TrendingDown, Building2, RefreshCw, ChevronLeft,
   Plus, X, Save, ListTodo, Trash2, Edit2, Flag,
-  Calendar, Target, Layers
+  Calendar, Target, Layers, Map
 } from "lucide-react";
 
 function fmtJMD(n: number) {
@@ -379,6 +379,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
 
   const MODULES=[
     {label:"Site Visit",icon:<Layers size={15}/>,to:`/projects/${projectId}/site-visit`,color:"text-purple-400",bg:"bg-purple-500/10",border:"border-purple-500/20",desc:"Voice notes, photos, sketch"},
+    {label:"Plans & Drawings",icon:<Map size={15}/>,to:`/projects/${projectId}/plans`,color:"text-cyan-400",bg:"bg-cyan-500/10",border:"border-cyan-500/20",desc:"Upload and view drawings"},
     {label:"BOQ Builder",icon:<FileText size={15}/>,to:`/projects/${projectId}/boq`,color:"text-blue-400",bg:"bg-blue-500/10",border:"border-blue-500/20",desc:"Bills of quantities"},
     {label:"Takeoff",icon:<Ruler size={15}/>,to:`/projects/${projectId}/takeoff`,color:"text-cyan-400",bg:"bg-cyan-500/10",border:"border-cyan-500/20",desc:"PDF measurements"},
     {label:"Procurement",icon:<ShoppingCart size={15}/>,to:`/projects/${projectId}/procurement`,color:"text-amber-400",bg:"bg-amber-500/10",border:"border-amber-500/20",desc:"Purchase orders"},
