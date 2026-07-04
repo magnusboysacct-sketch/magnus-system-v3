@@ -149,10 +149,10 @@ function PlanViewer({
   const isMeasuring = useRef(false);
   const [pendingMeas, setPendingMeas] = useState<Omit<Measurement, "id"> | null>(null);
 
-  // Calibration
+  // Calibration — two-click approach
   const [calibration, setCalibration] = useState<CalibrationData | null>(plan.calibration_data ?? null);
-  const calibStart = useRef<{ x: number; y: number } | null>(null);
-  const isCalibrating = useRef(false);
+  const [calibStep, setCalibStep] = useState<"idle" | "drawing" | "input">("idle");
+  const [calibPoints, setCalibPoints] = useState<{ x: number; y: number }[]>([]);
   const [pendingCalib, setPendingCalib] = useState<{ from: { x: number; y: number }; to: { x: number; y: number }; px: number } | null>(null);
   const [calibLength, setCalibLength] = useState("");
   const [calibUnit, setCalibUnit] = useState("ft");
@@ -282,8 +282,45 @@ function PlanViewer({
       measStart.current = pos; return;
     }
     if (activeTool === "calibrate") {
-      isCalibrating.current = true;
-      calibStart.current = pos; return;
+      if (calibStep === "idle" || calibStep === "drawing") {
+        const newPoints = calibStep === "idle" ? [pos] : [...calibPoints, pos];
+        setCalibPoints(newPoints);
+        // Visual feedback on overlay canvas
+        const ann = annotCanvasRef.current;
+        if (ann) {
+          const ctx = ann.getContext("2d")!;
+          // Dot at click point
+          ctx.fillStyle = "#f59e0b";
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          // Line between points on second click
+          if (calibStep === "drawing" && calibPoints.length === 1) {
+            ctx.strokeStyle = "#f59e0b";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 3]);
+            ctx.beginPath();
+            ctx.moveTo(calibPoints[0].x, calibPoints[0].y);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        }
+        if (calibStep === "drawing" && calibPoints.length === 1) {
+          // Second click — compute pixel distance and open input dialog
+          const dx = pos.x - calibPoints[0].x;
+          const dy = pos.y - calibPoints[0].y;
+          const px = Math.sqrt(dx * dx + dy * dy);
+          setPendingCalib({ from: calibPoints[0], to: pos, px });
+          setCalibStep("input");
+        } else {
+          setCalibStep("drawing");
+        }
+      }
+      return;
     }
   }
 
@@ -303,16 +340,40 @@ function PlanViewer({
       measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
       drawAnnot(ctx, drawingAnnot.current);
     }
-    if ((activeTool === "measure" || activeTool === "calibrate") && (isMeasuring.current || isCalibrating.current)) {
+    if (activeTool === "calibrate" && calibStep === "drawing" && calibPoints.length === 1) {
       const pos = getCanvasPos(e);
-      const start = measStart.current ?? calibStart.current;
+      const ann = annotCanvasRef.current;
+      if (!ann) return;
+      const ctx = ann.getContext("2d")!;
+      ctx.clearRect(0, 0, ann.width, ann.height);
+      annotations.forEach(a => drawAnnot(ctx, a));
+      measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
+      // First-point dot
+      ctx.fillStyle = "#f59e0b";
+      ctx.beginPath();
+      ctx.arc(calibPoints[0].x, calibPoints[0].y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.stroke();
+      // Live dashed line to cursor
+      ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 2;
+      ctx.setLineDash([6, 3]);
+      ctx.beginPath();
+      ctx.moveTo(calibPoints[0].x, calibPoints[0].y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      return;
+    }
+    if (activeTool === "measure" && isMeasuring.current) {
+      const pos = getCanvasPos(e);
+      const start = measStart.current;
       if (!start) return;
       const ann = annotCanvasRef.current!;
       const ctx = ann.getContext("2d")!;
       ctx.clearRect(0, 0, ann.width, ann.height);
       annotations.forEach(a => drawAnnot(ctx, a));
       measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
-      drawMeasLine(ctx, start, pos, "", activeTool === "calibrate" ? "#8b5cf6" : "#f97316");
+      drawMeasLine(ctx, start, pos, "", "#f97316");
     }
   }
 
@@ -342,14 +403,7 @@ function PlanViewer({
       measStart.current = null;
       return;
     }
-    if (activeTool === "calibrate" && isCalibrating.current && calibStart.current) {
-      isCalibrating.current = false;
-      const pos = getCanvasPos(e);
-      const dx = pos.x - calibStart.current.x; const dy = pos.y - calibStart.current.y;
-      const px = Math.sqrt(dx * dx + dy * dy);
-      setPendingCalib({ from: calibStart.current, to: pos, px });
-      calibStart.current = null;
-    }
+    // Calibrate is two-click; nothing to do on mouseUp
   }
 
   function commitText() {
@@ -372,6 +426,8 @@ function PlanViewer({
     setCalibration(data);
     onCalibrationSave(data);
     setPendingCalib(null); setCalibLength("");
+    setCalibStep("idle"); setCalibPoints([]);
+    redrawAnnotations(annotations);
   }
 
   function addBookmark() {
@@ -612,7 +668,7 @@ function PlanViewer({
               </div>
               <div className="flex gap-2">
                 <button onClick={commitCalibration} className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold">Save calibration</button>
-                <button onClick={() => setPendingCalib(null)} className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">Cancel</button>
+                <button onClick={() => { setPendingCalib(null); setCalibStep("idle"); setCalibPoints([]); redrawAnnotations(annotations); }} className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">Cancel</button>
               </div>
             </div>
           )}
