@@ -118,6 +118,7 @@ function PlanViewer({
   // Render state
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const annotCanvasRef = useRef<HTMLCanvasElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pageNum, setPageNum] = useState(1);
   const [totalPages, setTotalPages] = useState(isPdf ? (plan.page_count ?? 1) : 1);
@@ -178,13 +179,21 @@ function PlanViewer({
       .catch(() => setRendering(false));
   }, [pageNum, scale, plan.publicUrl, isPdf]);
 
-  // Sync annotation canvas size to pdf canvas
+  // Sync annotation canvas size to the underlying PDF canvas or image
   function syncAnnotCanvas() {
-    const base = canvasRef.current;
     const ann = annotCanvasRef.current;
-    if (!base || !ann) return;
-    ann.width = base.width;
-    ann.height = base.height;
+    if (!ann) return;
+    if (isPdf) {
+      const base = canvasRef.current;
+      if (!base) return;
+      ann.width = base.width;
+      ann.height = base.height;
+    } else {
+      const img = imgRef.current;
+      if (!img) return;
+      ann.width = img.naturalWidth;
+      ann.height = img.naturalHeight;
+    }
     redrawAnnotations(annotations);
   }
 
@@ -602,7 +611,7 @@ function PlanViewer({
             {isPdf ? (
               <canvas ref={canvasRef} className="block shadow-2xl"/>
             ) : (
-              <img src={plan.publicUrl} alt={plan.file_name} className="block shadow-2xl max-w-none" style={{ width: `${scale * 100}%`, transform: "none" }}/>
+              <img ref={imgRef} src={plan.publicUrl} alt={plan.file_name} className="block shadow-2xl max-w-none" style={{ width: `${scale * 100}%`, transform: "none" }} onLoad={syncAnnotCanvas}/>
             )}
             <canvas ref={annotCanvasRef}
               className="absolute inset-0 w-full h-full"
