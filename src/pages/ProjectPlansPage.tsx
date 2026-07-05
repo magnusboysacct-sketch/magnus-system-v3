@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ChevronLeft, Upload, Search, Plus, X, ZoomIn, ZoomOut,
@@ -70,6 +70,29 @@ function fmtSize(bytes: number | null) {
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// Parses construction-style lengths: "10", "10.25", "1/4", "10 1/4", "10-1/4"
+function parseFraction(input: string): number | null {
+  const s = input.trim();
+  if (!s) return null;
+  const mixed = s.match(/^(\d+(?:\.\d+)?)[\s-]+(\d+)\/(\d+)$/);
+  if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
+  const frac = s.match(/^(\d+)\/(\d+)$/);
+  if (frac) return Number(frac[1]) / Number(frac[2]);
+  const dec = Number(s);
+  return Number.isFinite(dec) ? dec : null;
+}
+
+// Formats a decimal inch value as a mixed number rounded to the nearest 1/16"
+function formatInches(value: number): string {
+  const whole = Math.floor(value);
+  let num = Math.round((value - whole) * 16);
+  let den = 16;
+  if (num === 16) return `${whole + 1}"`;
+  if (num === 0) return `${whole}"`;
+  while (num % 2 === 0) { num /= 2; den /= 2; }
+  return whole > 0 ? `${whole} ${num}/${den}"` : `${num}/${den}"`;
 }
 
 // ─── PDF Renderer ─────────────────────────────────────────────────────────────
@@ -216,6 +239,49 @@ function PlanViewer({
     ctx.clearRect(0, 0, ann.width, ann.height);
     anns.forEach(a => drawAnnot(ctx, a));
     measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
+    drawCalibOverlay(ctx);
+  }
+
+  // Locked calibration dot(s)/line — kept in sync with calibPoints so it
+  // survives any redraw instead of being a one-off imperative paint.
+  function drawCalibOverlay(ctx: CanvasRenderingContext2D) {
+    if (calibPoints.length === 0) return;
+    drawCalibDot(ctx, calibPoints[0]);
+    if (calibPoints.length >= 2) {
+      drawCalibDot(ctx, calibPoints[1]);
+      drawCalibLine(ctx, calibPoints[0], calibPoints[1]);
+    }
+  }
+
+  function drawCalibDot(ctx: CanvasRenderingContext2D, pt: { x: number; y: number }) {
+    ctx.save();
+    ctx.fillStyle = "#f59e0b";
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCalibLine(ctx: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }) {
+    ctx.save();
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const px = Math.hypot(to.x - from.x, to.y - from.y);
+    ctx.fillStyle = "#f59e0b";
+    ctx.font = "bold 13px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(`${px.toFixed(0)} px`, (from.x + to.x) / 2, (from.y + to.y) / 2 - 10);
+    ctx.textAlign = "left";
+    ctx.restore();
   }
 
   function drawAnnot(ctx: CanvasRenderingContext2D, a: Annotation) {
@@ -259,7 +325,12 @@ function PlanViewer({
     ctx.restore();
   }
 
-  useEffect(() => { redrawAnnotations(annotations); }, [annotations, measurements]);
+  function formatMeasurement(px: number, calib: CalibrationData): string {
+    const real = px / calib.pixelsPerUnit;
+    return calib.unit === "in" ? formatInches(real) : `${real.toFixed(2)} ${calib.unit}`;
+  }
+
+  useLayoutEffect(() => { redrawAnnotations(annotations); }, [annotations, measurements, calibPoints]);
 
   // ── Pointer events ────────────────────────────────────────────────────────
   function getCanvasPos(e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } {
@@ -287,47 +358,41 @@ function PlanViewer({
       setTextPos(pos); return;
     }
     if (activeTool === "measure") {
-      isMeasuring.current = true;
-      measStart.current = pos; return;
+      if (!isMeasuring.current) {
+        isMeasuring.current = true;
+        measStart.current = pos;
+      } else {
+        // Second click — finalize the measurement and open the save popup.
+        const start = measStart.current!;
+        const dx = pos.x - start.x; const dy = pos.y - start.y;
+        const px = Math.sqrt(dx * dx + dy * dy);
+        const real = calibration ? px / calibration.pixelsPerUnit : null;
+        const label = real != null
+          ? (calibration!.unit === "in" ? formatInches(real) : `${real.toFixed(2)} ${calibration!.unit}`)
+          : `${px.toFixed(0)} px`;
+        const m: Measurement = {
+          id: crypto.randomUUID(), from: start, to: pos,
+          label, pixelLength: px, realLength: real, unit: calibration?.unit ?? null,
+        };
+        setPendingMeas(m);
+        isMeasuring.current = false;
+        measStart.current = null;
+      }
+      return;
     }
     if (activeTool === "calibrate") {
-      if (calibStep === "idle" || calibStep === "drawing") {
-        const newPoints = calibStep === "idle" ? [pos] : [...calibPoints, pos];
-        setCalibPoints(newPoints);
-        // Visual feedback on overlay canvas
-        const ann = annotCanvasRef.current;
-        if (ann) {
-          const ctx = ann.getContext("2d")!;
-          // Dot at click point
-          ctx.fillStyle = "#f59e0b";
-          ctx.beginPath();
-          ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          // Line between points on second click
-          if (calibStep === "drawing" && calibPoints.length === 1) {
-            ctx.strokeStyle = "#f59e0b";
-            ctx.lineWidth = 2;
-            ctx.setLineDash([6, 3]);
-            ctx.beginPath();
-            ctx.moveTo(calibPoints[0].x, calibPoints[0].y);
-            ctx.lineTo(pos.x, pos.y);
-            ctx.stroke();
-            ctx.setLineDash([]);
-          }
-        }
-        if (calibStep === "drawing" && calibPoints.length === 1) {
-          // Second click — compute pixel distance and open input dialog
-          const dx = pos.x - calibPoints[0].x;
-          const dy = pos.y - calibPoints[0].y;
-          const px = Math.sqrt(dx * dx + dy * dy);
-          setPendingCalib({ from: calibPoints[0], to: pos, px });
-          setCalibStep("input");
-        } else {
-          setCalibStep("drawing");
-        }
+      if (calibStep === "idle") {
+        setCalibPoints([pos]);
+        setCalibStep("drawing");
+      } else if (calibStep === "drawing" && calibPoints.length === 1) {
+        // Second click — compute pixel distance and open input dialog.
+        // The locked dot/line stays visible via the calibPoints-driven redraw effect.
+        const dx = pos.x - calibPoints[0].x;
+        const dy = pos.y - calibPoints[0].y;
+        const px = Math.sqrt(dx * dx + dy * dy);
+        setCalibPoints([calibPoints[0], pos]);
+        setPendingCalib({ from: calibPoints[0], to: pos, px });
+        setCalibStep("input");
       }
       return;
     }
@@ -357,20 +422,8 @@ function PlanViewer({
       ctx.clearRect(0, 0, ann.width, ann.height);
       annotations.forEach(a => drawAnnot(ctx, a));
       measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
-      // First-point dot
-      ctx.fillStyle = "#f59e0b";
-      ctx.beginPath();
-      ctx.arc(calibPoints[0].x, calibPoints[0].y, 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2; ctx.stroke();
-      // Live dashed line to cursor
-      ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 2;
-      ctx.setLineDash([6, 3]);
-      ctx.beginPath();
-      ctx.moveTo(calibPoints[0].x, calibPoints[0].y);
-      ctx.lineTo(pos.x, pos.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      drawCalibDot(ctx, calibPoints[0]);
+      drawCalibLine(ctx, calibPoints[0], pos);
       return;
     }
     if (activeTool === "measure" && isMeasuring.current) {
@@ -382,7 +435,11 @@ function PlanViewer({
       ctx.clearRect(0, 0, ann.width, ann.height);
       annotations.forEach(a => drawAnnot(ctx, a));
       measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
-      drawMeasLine(ctx, start, pos, "", "#f97316");
+      const px = Math.hypot(pos.x - start.x, pos.y - start.y);
+      const liveLabel = calibration
+        ? formatMeasurement(px, calibration)
+        : `${px.toFixed(0)} px`;
+      drawMeasLine(ctx, start, pos, liveLabel, "#f97316");
     }
   }
 
@@ -395,24 +452,7 @@ function PlanViewer({
       drawingAnnot.current = null;
       return;
     }
-    if (activeTool === "measure" && isMeasuring.current && measStart.current) {
-      isMeasuring.current = false;
-      const pos = getCanvasPos(e);
-      const dx = pos.x - measStart.current.x; const dy = pos.y - measStart.current.y;
-      const px = Math.sqrt(dx * dx + dy * dy);
-      const real = calibration ? px / calibration.pixelsPerUnit * calibration.knownLength : null;
-      const label = real != null
-        ? `${real.toFixed(2)} ${calibration!.unit}`
-        : `${px.toFixed(0)} px`;
-      const m: Measurement = {
-        id: crypto.randomUUID(), from: measStart.current, to: pos,
-        label, pixelLength: px, realLength: real, unit: calibration?.unit ?? null,
-      };
-      setPendingMeas(m);
-      measStart.current = null;
-      return;
-    }
-    // Calibrate is two-click; nothing to do on mouseUp
+    // Measure and calibrate are both two-click tools; nothing to do on mouseUp
   }
 
   function commitText() {
@@ -429,14 +469,14 @@ function PlanViewer({
   }
 
   function commitCalibration() {
-    if (!pendingCalib || !calibLength || isNaN(Number(calibLength))) return;
-    const ppu = pendingCalib.px / Number(calibLength);
-    const data: CalibrationData = { pixelsPerUnit: ppu, unit: calibUnit, knownLength: Number(calibLength) };
+    const realLength = parseFraction(calibLength);
+    if (!pendingCalib || realLength == null || realLength <= 0) return;
+    const ppu = pendingCalib.px / realLength;
+    const data: CalibrationData = { pixelsPerUnit: ppu, unit: calibUnit, knownLength: realLength };
     setCalibration(data);
     onCalibrationSave(data);
     setPendingCalib(null); setCalibLength("");
     setCalibStep("idle"); setCalibPoints([]);
-    redrawAnnotations(annotations);
   }
 
   function addBookmark() {
@@ -668,16 +708,19 @@ function PlanViewer({
               <div className="flex items-center gap-2 mb-3">
                 <input value={calibLength} onChange={e => setCalibLength(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && commitCalibration()}
-                  placeholder="e.g. 10" autoFocus
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white w-24 focus:outline-none"/>
+                  placeholder={calibUnit === "in" ? `e.g. 10 or 10 1/4` : "e.g. 10"} autoFocus
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white w-28 focus:outline-none"/>
                 <select value={calibUnit} onChange={e => setCalibUnit(e.target.value)}
                   className="px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none">
                   {["ft","m","in","mm","cm","yd"].map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
+              {calibUnit === "in" && (
+                <div className="text-[10px] text-slate-500 mb-3 -mt-2">Accepts fractions, e.g. "10 1/4" or "10-1/4"</div>
+              )}
               <div className="flex gap-2">
                 <button onClick={commitCalibration} className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold">Save calibration</button>
-                <button onClick={() => { setPendingCalib(null); setCalibStep("idle"); setCalibPoints([]); redrawAnnotations(annotations); }} className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">Cancel</button>
+                <button onClick={() => { setPendingCalib(null); setCalibStep("idle"); setCalibPoints([]); }} className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs">Cancel</button>
               </div>
             </div>
           )}
