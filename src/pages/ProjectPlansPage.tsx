@@ -27,6 +27,11 @@ interface CalibrationData {
   pixelsPerUnit: number;
   unit: string;
   knownLength: number;
+  // Zoom `scale` at the moment of calibration. Canvas pixel density scales
+  // with zoom, so a measurement taken at a different zoom must be
+  // compensated by (calibratedAtScale / currentScale) before dividing by
+  // pixelsPerUnit, or it will be off by the zoom ratio.
+  calibratedAtScale?: number;
 }
 
 interface Annotation {
@@ -103,6 +108,15 @@ function formatInches(value: number): string {
   if (num === 0) return `${whole}"`;
   while (num % 2 === 0) { num /= 2; den /= 2; }
   return whole > 0 ? `${whole} ${num}/${den}"` : `${num}/${den}"`;
+}
+
+// Shortest distance from point p to the segment a-b (for hit-testing a click near a line)
+function distToSegment(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }): number {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq === 0 ? 0 : ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
 // ─── PDF Renderer ─────────────────────────────────────────────────────────────
@@ -182,6 +196,13 @@ function PlanViewer({
   const measStart = useRef<{ x: number; y: number } | null>(null);
   const isMeasuring = useRef(false);
   const [pendingMeas, setPendingMeas] = useState<Omit<Measurement, "id"> | null>(null);
+  const [draggingMeasId, setDraggingMeasId] = useState<string | null>(null);
+  const dragOffset = useRef<{ x: number; y: number } | null>(null);
+
+  // Edge-detection snap (calibrate/measure tools only)
+  const snapPoints = useRef<{ x: number; y: number }[]>([]);
+  const [snapIndicator, setSnapIndicator] = useState<{ x: number; y: number } | null>(null);
+  const SNAP_RADIUS = 15;
 
   // Calibration — two-click approach
   const [calibration, setCalibration] = useState<CalibrationData | null>(plan.calibration_data ?? null);
@@ -217,7 +238,7 @@ function PlanViewer({
     if (!canvas) return;
     setRendering(true);
     renderPdfPage(plan.publicUrl, pageNum, canvas, scale)
-      .then(total => { setTotalPages(total); setRendering(false); syncAnnotCanvas(); })
+      .then(total => { setTotalPages(total); setRendering(false); syncAnnotCanvas(); detectEdges(); })
       .catch(() => setRendering(false));
   }, [pageNum, scale, plan.publicUrl, isPdf]);
 
@@ -237,6 +258,93 @@ function PlanViewer({
       ann.height = img.naturalHeight;
     }
     redrawAnnotations(annotations);
+  }
+
+  // Scans the rendered plan for dark-line corners/intersections so the
+  // calibrate/measure tools can snap to them. Runs on a background-drawn
+  // offscreen canvas for images (there's no visible <canvas> for those),
+  // and directly on the PDF canvas for PDFs. Best-effort: silently disables
+  // snapping for this render if pixel access is blocked (e.g. a
+  // cross-origin image without permissive CORS headers).
+  function detectEdges() {
+    let source: HTMLCanvasElement | null = null;
+    if (isPdf) {
+      source = canvasRef.current;
+    } else if (imgRef.current) {
+      const img = imgRef.current;
+      const temp = document.createElement("canvas");
+      temp.width = img.naturalWidth;
+      temp.height = img.naturalHeight;
+      const tctx = temp.getContext("2d");
+      if (!tctx) return;
+      try {
+        tctx.drawImage(img, 0, 0);
+      } catch {
+        snapPoints.current = [];
+        return;
+      }
+      source = temp;
+    }
+    if (!source) return;
+
+    const ctx = source.getContext("2d");
+    if (!ctx) return;
+    let data: Uint8ClampedArray, w: number, h: number;
+    try {
+      const imageData = ctx.getImageData(0, 0, source.width, source.height);
+      data = imageData.data; w = imageData.width; h = imageData.height;
+    } catch {
+      // Tainted canvas (cross-origin without CORS) — snapping unavailable.
+      snapPoints.current = [];
+      return;
+    }
+
+    const points: { x: number; y: number }[] = [];
+    const THRESHOLD = 80; // darkness threshold
+    const GRID = 8; // sample every 8px for performance
+    const dirs = [[0, -GRID], [GRID, 0], [0, GRID], [-GRID, 0]]; // up, right, down, left
+
+    for (let y = GRID; y < h - GRID; y += GRID) {
+      for (let x = GRID; x < w - GRID; x += GRID) {
+        const idx = (y * w + x) * 4;
+        const brightness = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+        if (brightness > THRESHOLD) continue;
+
+        const darkDirs: number[] = [];
+        dirs.forEach(([dx, dy], i) => {
+          const ni = ((y + dy) * w + (x + dx)) * 4;
+          if (ni >= 0 && ni < data.length) {
+            const nb = (data[ni] + data[ni + 1] + data[ni + 2]) / 3;
+            if (nb < THRESHOLD) darkDirs.push(i);
+          }
+        });
+
+        // A point with exactly 2 dark neighbors that are directly opposite
+        // (up+down, or left+right) just sits on a straight line, not a
+        // corner — skip those to avoid flagging every pixel of every wall.
+        const isStraightLine = darkDirs.length === 2 &&
+          ((darkDirs.includes(0) && darkDirs.includes(2)) || (darkDirs.includes(1) && darkDirs.includes(3)));
+        if (darkDirs.length >= 2 && darkDirs.length <= 3 && !isStraightLine) {
+          const tooClose = points.some(p => Math.abs(p.x - x) < GRID * 2 && Math.abs(p.y - y) < GRID * 2);
+          if (!tooClose) points.push({ x, y });
+        }
+      }
+    }
+    snapPoints.current = points;
+  }
+
+  // Snaps a click/hover position to the nearest detected edge point within
+  // SNAP_RADIUS, and updates the visual snap indicator. Returns the
+  // original position unchanged if nothing is close enough.
+  function snapToPoint(pos: { x: number; y: number }): { x: number; y: number } {
+    let closest: { x: number; y: number } | null = null;
+    let closestDist = SNAP_RADIUS;
+    for (const pt of snapPoints.current) {
+      const d = Math.hypot(pos.x - pt.x, pos.y - pt.y);
+      if (d < closestDist) { closestDist = d; closest = pt; }
+    }
+    setSnapIndicator(closest);
+    return closest ?? pos;
   }
 
   // ── Thumbnails ───────────────────────────────────────────────────────────
@@ -357,8 +465,15 @@ function PlanViewer({
     ctx.restore();
   }
 
+  // Compensates for the canvas being rendered at a different zoom level
+  // than when the calibration was originally captured.
+  function realFromPixels(px: number, calib: CalibrationData): number {
+    const scaleFactor = calib.calibratedAtScale ? calib.calibratedAtScale / scale : 1;
+    return (px * scaleFactor) / calib.pixelsPerUnit;
+  }
+
   function formatMeasurement(px: number, calib: CalibrationData): string {
-    const real = px / calib.pixelsPerUnit;
+    const real = realFromPixels(px, calib);
     return calib.unit === "in" ? formatInches(real) : `${real.toFixed(2)} ${calib.unit}`;
   }
 
@@ -376,6 +491,15 @@ function PlanViewer({
   function onMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
     const pos = getCanvasPos(e);
     if (activeTool === "pan") {
+      // Grab an existing measurement line if the click lands near it,
+      // instead of panning the view.
+      const hit = measurements.find(m => distToSegment(pos, m.from, m.to) < 10);
+      if (hit) {
+        setDraggingMeasId(hit.id);
+        const mx = (hit.from.x + hit.to.x) / 2, my = (hit.from.y + hit.to.y) / 2;
+        dragOffset.current = { x: pos.x - mx, y: pos.y - my };
+        return;
+      }
       isPanning.current = true;
       panStart.current = { mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y };
       return;
@@ -390,20 +514,21 @@ function PlanViewer({
       setTextPos(pos); return;
     }
     if (activeTool === "measure") {
+      const snapped = snapToPoint(pos);
       if (!isMeasuring.current) {
         isMeasuring.current = true;
-        measStart.current = pos;
+        measStart.current = snapped;
       } else {
         // Second click — finalize the measurement and open the save popup.
         const start = measStart.current!;
-        const dx = pos.x - start.x; const dy = pos.y - start.y;
+        const dx = snapped.x - start.x; const dy = snapped.y - start.y;
         const px = Math.sqrt(dx * dx + dy * dy);
-        const real = calibration ? px / calibration.pixelsPerUnit : null;
+        const real = calibration ? realFromPixels(px, calibration) : null;
         const label = real != null
           ? (calibration!.unit === "in" ? formatInches(real) : `${real.toFixed(2)} ${calibration!.unit}`)
           : `${px.toFixed(0)} px`;
         const m: Measurement = {
-          id: crypto.randomUUID(), from: start, to: pos,
+          id: crypto.randomUUID(), from: start, to: snapped,
           label, pixelLength: px, realLength: real, unit: calibration?.unit ?? null,
         };
         setPendingMeas(m);
@@ -413,17 +538,18 @@ function PlanViewer({
       return;
     }
     if (activeTool === "calibrate") {
+      const snapped = snapToPoint(pos);
       if (calibStep === "idle") {
-        setCalibPoints([pos]);
+        setCalibPoints([snapped]);
         setCalibStep("drawing");
       } else if (calibStep === "drawing" && calibPoints.length === 1) {
         // Second click — compute pixel distance and open input dialog.
         // The locked dot/line stays visible via the calibPoints-driven redraw effect.
-        const dx = pos.x - calibPoints[0].x;
-        const dy = pos.y - calibPoints[0].y;
+        const dx = snapped.x - calibPoints[0].x;
+        const dy = snapped.y - calibPoints[0].y;
         const px = Math.sqrt(dx * dx + dy * dy);
-        setCalibPoints([calibPoints[0], pos]);
-        setPendingCalib({ from: calibPoints[0], to: pos, px });
+        setCalibPoints([calibPoints[0], snapped]);
+        setPendingCalib({ from: calibPoints[0], to: snapped, px });
         setCalibStep("input");
       }
       return;
@@ -431,6 +557,20 @@ function PlanViewer({
   }
 
   function onMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (draggingMeasId) {
+      const pos = getCanvasPos(e);
+      const dragged = measurements.find(m => m.id === draggingMeasId);
+      if (dragged && dragOffset.current) {
+        const newMx = pos.x - dragOffset.current.x;
+        const newMy = pos.y - dragOffset.current.y;
+        const halfX = (dragged.to.x - dragged.from.x) / 2;
+        const halfY = (dragged.to.y - dragged.from.y) / 2;
+        setMeasurements(prev => prev.map(m => m.id === draggingMeasId
+          ? { ...m, from: { x: newMx - halfX, y: newMy - halfY }, to: { x: newMx + halfX, y: newMy + halfY } }
+          : m));
+      }
+      return;
+    }
     if (activeTool === "pan" && isPanning.current && panStart.current) {
       setPan({ x: panStart.current.px + e.clientX - panStart.current.mx, y: panStart.current.py + e.clientY - panStart.current.my });
       return;
@@ -448,7 +588,7 @@ function PlanViewer({
       drawAnnot(ctx, drawingAnnot.current);
     }
     if (activeTool === "calibrate" && calibStep === "drawing" && calibPoints.length === 1) {
-      const pos = getCanvasPos(e);
+      const snapped = snapToPoint(getCanvasPos(e));
       const ann = annotCanvasRef.current;
       if (!ann) return;
       const ctx = ann.getContext("2d")!;
@@ -456,11 +596,11 @@ function PlanViewer({
       annotations.forEach(a => drawAnnot(ctx, a));
       measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
       drawCalibDot(ctx, calibPoints[0]);
-      drawCalibLine(ctx, calibPoints[0], pos);
+      drawCalibLine(ctx, calibPoints[0], snapped);
       return;
     }
     if (activeTool === "measure" && isMeasuring.current) {
-      const pos = getCanvasPos(e);
+      const snapped = snapToPoint(getCanvasPos(e));
       const start = measStart.current;
       if (!start) return;
       const ann = annotCanvasRef.current!;
@@ -469,16 +609,21 @@ function PlanViewer({
       annotations.forEach(a => drawAnnot(ctx, a));
       measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
       drawCalibOverlay(ctx);
-      const px = Math.hypot(pos.x - start.x, pos.y - start.y);
+      const px = Math.hypot(snapped.x - start.x, snapped.y - start.y);
       const liveLabel = calibration
         ? formatMeasurement(px, calibration)
         : `${px.toFixed(0)} px`;
-      drawMeasLine(ctx, start, pos, liveLabel, "#f97316");
+      drawMeasLine(ctx, start, snapped, liveLabel, "#f97316");
     }
   }
 
   function onMouseUp(e: React.MouseEvent<HTMLCanvasElement>) {
     isPanning.current = false;
+    if (draggingMeasId) {
+      setDraggingMeasId(null);
+      dragOffset.current = null;
+      return;
+    }
     if ((activeTool === "pen" || activeTool === "arrow") && isAnnotDrawing.current && drawingAnnot.current) {
       isAnnotDrawing.current = false;
       const next = [...annotations, drawingAnnot.current];
@@ -509,7 +654,7 @@ function PlanViewer({
       : parseFraction(calibLength);
     if (realLength == null || realLength <= 0) return;
     const ppu = pendingCalib.px / realLength;
-    const data: CalibrationData = { pixelsPerUnit: ppu, unit: calibUnit, knownLength: realLength };
+    const data: CalibrationData = { pixelsPerUnit: ppu, unit: calibUnit, knownLength: realLength, calibratedAtScale: scale };
     setCalibration(data);
     onCalibrationSave(data);
     showToast(`✅ Calibrated: 1 ${data.unit} = ${ppu.toFixed(1)} px`);
@@ -549,11 +694,23 @@ function PlanViewer({
 
   // Escape backs out of the measure/calibrate tools without losing a
   // previously committed calibration line (that has calibStep "idle").
+  // Also handles zoom shortcuts, guarded so typing in a text field (e.g.
+  // the calibration length input, which can contain "-" and "+") never
+  // triggers a zoom change.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
-      if (activeTool === "measure") cancelMeasure();
-      else if (activeTool === "calibrate") cancelCalibration();
+      const target = e.target as HTMLElement;
+      const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
+      if (e.key === "Escape") {
+        if (activeTool === "measure") cancelMeasure();
+        else if (activeTool === "calibrate") cancelCalibration();
+        return;
+      }
+      if (isTyping) return;
+      if (e.key === "+" || e.key === "=") setScale(s => Math.min(s + 0.25, 5));
+      else if (e.key === "-") setScale(s => Math.max(s - 0.25, 0.25));
+      else if (e.key === "m" || e.key === "M") setScale(2);
+      else if (e.key === "f" || e.key === "F") setScale(1);
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -759,13 +916,23 @@ function PlanViewer({
             {isPdf ? (
               <canvas ref={canvasRef} className="block shadow-2xl"/>
             ) : (
-              <img ref={imgRef} src={plan.publicUrl} alt={plan.file_name} className="block shadow-2xl max-w-none" style={{ width: `${scale * 100}%`, transform: "none" }} onLoad={syncAnnotCanvas}/>
+              <img ref={imgRef} src={plan.publicUrl} alt={plan.file_name} crossOrigin="anonymous" className="block shadow-2xl max-w-none" style={{ width: `${scale * 100}%`, transform: "none" }} onLoad={() => { syncAnnotCanvas(); detectEdges(); }}/>
             )}
             <canvas ref={annotCanvasRef}
               className="absolute inset-0 w-full h-full"
               style={{ cursor: activeTool === "pan" ? "grab" : "crosshair", touchAction: "none" }}
               onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
             />
+            {(activeTool === "calibrate" || activeTool === "measure") && snapIndicator && annotCanvasRef.current && (
+              <div className="absolute pointer-events-none rounded-full border-2 border-emerald-400 bg-emerald-400/20"
+                style={{
+                  left: (snapIndicator.x / annotCanvasRef.current.width) * 100 + "%",
+                  top: (snapIndicator.y / annotCanvasRef.current.height) * 100 + "%",
+                  width: 16, height: 16,
+                  transform: "translate(-50%, -50%)",
+                }}
+              />
+            )}
           </div>
 
           {/* Text input overlay */}
