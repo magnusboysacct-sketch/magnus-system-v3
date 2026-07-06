@@ -444,6 +444,7 @@ function PlanViewer({
       ctx.clearRect(0, 0, ann.width, ann.height);
       annotations.forEach(a => drawAnnot(ctx, a));
       measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
+      drawCalibOverlay(ctx);
       drawAnnot(ctx, drawingAnnot.current);
     }
     if (activeTool === "calibrate" && calibStep === "drawing" && calibPoints.length === 1) {
@@ -467,6 +468,7 @@ function PlanViewer({
       ctx.clearRect(0, 0, ann.width, ann.height);
       annotations.forEach(a => drawAnnot(ctx, a));
       measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
+      drawCalibOverlay(ctx);
       const px = Math.hypot(pos.x - start.x, pos.y - start.y);
       const liveLabel = calibration
         ? formatMeasurement(px, calibration)
@@ -524,6 +526,39 @@ function PlanViewer({
     setCalibPoints([]);
   }
 
+  function cancelMeasure() {
+    if (isMeasuring.current) {
+      isMeasuring.current = false;
+      measStart.current = null;
+      redrawAnnotations(annotations);
+    }
+    setActiveTool("pan");
+  }
+
+  function cancelCalibration() {
+    // Only an in-progress (uncommitted) attempt exists while calibStep !== "idle";
+    // discard it entirely. A previously committed line has calibStep "idle" and
+    // is left untouched.
+    if (calibStep !== "idle") {
+      setCalibStep("idle");
+      setCalibPoints([]);
+      setPendingCalib(null);
+    }
+    setActiveTool("pan");
+  }
+
+  // Escape backs out of the measure/calibrate tools without losing a
+  // previously committed calibration line (that has calibStep "idle").
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (activeTool === "measure") cancelMeasure();
+      else if (activeTool === "calibrate") cancelCalibration();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeTool, annotations, calibStep]);
+
   function addBookmark() {
     const b: BookmarkItem = { id: crypto.randomUUID(), page: pageNum, label: bookmarkLabel || `Page ${pageNum}`, note: "" };
     setBookmarks(prev => [...prev, b]);
@@ -571,6 +606,13 @@ function PlanViewer({
             </button>
           ))}
         </div>
+
+        {activeTool === "measure" && (
+          <button onClick={cancelMeasure}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 text-xs font-semibold hover:bg-red-500/30 transition-colors">
+            <X size={12}/> Cancel Measure (Esc)
+          </button>
+        )}
 
         {/* Color + width (pen/arrow/text) */}
         {(activeTool === "pen" || activeTool === "arrow" || activeTool === "text") && (
