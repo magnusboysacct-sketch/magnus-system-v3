@@ -72,15 +72,25 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-// Parses construction-style lengths: "10", "10.25", "1/4", "10 1/4", "10-1/4"
+// Parses construction-style lengths: "10", "10.25", "1/4", "10 1/4", "10-1/4",
+// and feet+inches like 1'6", 1' 6", 1'6.5", 1'6 1/2", 5'
 function parseFraction(input: string): number | null {
   const s = input.trim();
   if (!s) return null;
+
+  const feetInches = s.match(/^(\d+(?:\.\d+)?)'(?:\s*(\d+(?:\.\d+)?)(?:\s+(\d+)\/(\d+))?"?)?$/);
+  if (feetInches) {
+    const feet = Number(feetInches[1]);
+    let inches = feetInches[2] ? Number(feetInches[2]) : 0;
+    if (feetInches[3] && feetInches[4]) inches += Number(feetInches[3]) / Number(feetInches[4]);
+    return feet + inches / 12;
+  }
+
   const mixed = s.match(/^(\d+(?:\.\d+)?)[\s-]+(\d+)\/(\d+)$/);
   if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
   const frac = s.match(/^(\d+)\/(\d+)$/);
   if (frac) return Number(frac[1]) / Number(frac[2]);
-  const dec = Number(s);
+  const dec = Number(s.replace(/["']/g, ""));
   return Number.isFinite(dec) ? dec : null;
 }
 
@@ -708,15 +718,17 @@ function PlanViewer({
               <div className="flex items-center gap-2 mb-3">
                 <input value={calibLength} onChange={e => setCalibLength(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && commitCalibration()}
-                  placeholder={calibUnit === "in" ? `e.g. 10 or 10 1/4` : "e.g. 10"} autoFocus
+                  placeholder={calibUnit === "ft" ? `e.g. 10 or 1'6"` : calibUnit === "in" ? `e.g. 10 or 10 1/4` : "e.g. 10"} autoFocus
                   className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white w-28 focus:outline-none"/>
                 <select value={calibUnit} onChange={e => setCalibUnit(e.target.value)}
                   className="px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none">
                   {["ft","m","in","mm","cm","yd"].map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
-              {calibUnit === "in" && (
-                <div className="text-[10px] text-slate-500 mb-3 -mt-2">Accepts fractions, e.g. "10 1/4" or "10-1/4"</div>
+              {(calibUnit === "in" || calibUnit === "ft") && (
+                <div className="text-[10px] text-slate-500 mb-3 -mt-2">
+                  {calibUnit === "ft" ? `Accepts: 10, 1.5, 1'6", 1'6.5"` : `Accepts: 10, 10 1/4, 10-1/4`}
+                </div>
               )}
               <div className="flex gap-2">
                 <button onClick={commitCalibration} className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold">Save calibration</button>
