@@ -144,7 +144,7 @@ function PlanViewer({
 }: {
   plan: Plan;
   onClose: () => void;
-  onCalibrationSave: (data: CalibrationData) => void;
+  onCalibrationSave: (data: CalibrationData | null) => void;
 }) {
   const isPdf = plan.file_type === "application/pdf" || plan.file_url.toLowerCase().endsWith(".pdf");
 
@@ -193,6 +193,12 @@ function PlanViewer({
   const [calibFeet, setCalibFeet] = useState("");
   const [calibInches, setCalibInches] = useState("");
   const [calibFraction, setCalibFraction] = useState("0");
+  const [toast, setToast] = useState<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  }
 
   // Bookmarks
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
@@ -262,7 +268,12 @@ function PlanViewer({
     drawCalibDot(ctx, calibPoints[0]);
     if (calibPoints.length >= 2) {
       drawCalibDot(ctx, calibPoints[1]);
-      drawCalibLine(ctx, calibPoints[0], calibPoints[1]);
+      // Once a calibration has been committed (calibStep back to "idle"),
+      // label the locked line with its real-world length instead of raw px.
+      const committedLabel = calibStep === "idle" && calibration
+        ? `CAL: ${calibration.knownLength.toFixed(3)} ${calibration.unit}`
+        : undefined;
+      drawCalibLine(ctx, calibPoints[0], calibPoints[1], committedLabel);
     }
   }
 
@@ -278,7 +289,7 @@ function PlanViewer({
     ctx.restore();
   }
 
-  function drawCalibLine(ctx: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }) {
+  function drawCalibLine(ctx: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }, labelOverride?: string) {
     ctx.save();
     ctx.strokeStyle = "#f59e0b";
     ctx.lineWidth = 2;
@@ -289,10 +300,18 @@ function PlanViewer({
     ctx.stroke();
     ctx.setLineDash([]);
     const px = Math.hypot(to.x - from.x, to.y - from.y);
-    ctx.fillStyle = "#f59e0b";
+    const label = labelOverride ?? `${px.toFixed(0)} px`;
+    const mx = (from.x + to.x) / 2;
+    const my = (from.y + to.y) / 2 - 10;
     ctx.font = "bold 13px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(`${px.toFixed(0)} px`, (from.x + to.x) / 2, (from.y + to.y) / 2 - 10);
+    if (labelOverride) {
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(mx - tw / 2 - 4, my - 13, tw + 8, 18);
+    }
+    ctx.fillStyle = "#f59e0b";
+    ctx.fillText(label, mx, my);
     ctx.textAlign = "left";
     ctx.restore();
   }
@@ -343,7 +362,7 @@ function PlanViewer({
     return calib.unit === "in" ? formatInches(real) : `${real.toFixed(2)} ${calib.unit}`;
   }
 
-  useLayoutEffect(() => { redrawAnnotations(annotations); }, [annotations, measurements, calibPoints]);
+  useLayoutEffect(() => { redrawAnnotations(annotations); }, [annotations, measurements, calibPoints, calibStep, calibration]);
 
   // ── Pointer events ────────────────────────────────────────────────────────
   function getCanvasPos(e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } {
@@ -491,9 +510,18 @@ function PlanViewer({
     const data: CalibrationData = { pixelsPerUnit: ppu, unit: calibUnit, knownLength: realLength };
     setCalibration(data);
     onCalibrationSave(data);
+    showToast(`✅ Calibrated: 1 ${data.unit} = ${ppu.toFixed(1)} px`);
     setPendingCalib(null); setCalibLength("");
     setCalibFeet(""); setCalibInches(""); setCalibFraction("0");
-    setCalibStep("idle"); setCalibPoints([]);
+    // Keep calibStep "idle" but leave calibPoints so the locked line
+    // stays visible on the plan with its real-world length label.
+    setCalibStep("idle");
+  }
+
+  function clearCalibration() {
+    setCalibration(null);
+    onCalibrationSave(null);
+    setCalibPoints([]);
   }
 
   function addBookmark() {
@@ -561,6 +589,21 @@ function PlanViewer({
           </div>
         )}
 
+        {calibration ? (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+            <span>📏</span>
+            <span>Calibrated · 1 {calibration.unit} = {calibration.pixelsPerUnit.toFixed(1)} px</span>
+            <button onClick={clearCalibration} className="ml-1 text-emerald-300 hover:text-red-400 transition-colors" title="Clear calibration">
+              <X size={12}/>
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700/50 border border-slate-600/30 text-slate-500 text-xs">
+            <span>📏</span>
+            <span>Not calibrated</span>
+          </div>
+        )}
+
         <div className="flex-1"/>
 
         {/* Page nav */}
@@ -608,6 +651,12 @@ function PlanViewer({
         </button>
       </div>
 
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-semibold shadow-2xl">
+          {toast}
+        </div>
+      )}
+
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
         {/* Thumbnail strip */}
@@ -651,7 +700,7 @@ function PlanViewer({
               <div className="mt-3 pt-3 border-t border-slate-800">
                 <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Calibration</div>
                 <div className="text-xs text-slate-300">{calibration.pixelsPerUnit.toFixed(1)} px/{calibration.unit}</div>
-                <button onClick={() => setCalibration(null)} className="text-[10px] text-red-400 hover:text-red-300 mt-1">Clear</button>
+                <button onClick={clearCalibration} className="text-[10px] text-red-400 hover:text-red-300 mt-1">Clear</button>
               </div>
             )}
           </div>
@@ -989,7 +1038,7 @@ export default function ProjectPlansPage() {
     await loadPlans();
   }
 
-  async function handleCalibrationSave(planId: string, data: CalibrationData) {
+  async function handleCalibrationSave(planId: string, data: CalibrationData | null) {
     await supabase.from("project_plans").update({ calibration_data: data }).eq("id", planId);
     setPlans(prev => prev.map(p => p.id === planId ? { ...p, calibration_data: data } : p));
     if (viewingPlan?.id === planId) setViewingPlan(prev => prev ? { ...prev, calibration_data: data } : prev);
