@@ -190,6 +190,9 @@ function PlanViewer({
   const [pendingCalib, setPendingCalib] = useState<{ from: { x: number; y: number }; to: { x: number; y: number }; px: number } | null>(null);
   const [calibLength, setCalibLength] = useState("");
   const [calibUnit, setCalibUnit] = useState("ft");
+  const [calibFeet, setCalibFeet] = useState("");
+  const [calibInches, setCalibInches] = useState("");
+  const [calibFraction, setCalibFraction] = useState("0");
 
   // Bookmarks
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
@@ -479,13 +482,17 @@ function PlanViewer({
   }
 
   function commitCalibration() {
-    const realLength = parseFraction(calibLength);
-    if (!pendingCalib || realLength == null || realLength <= 0) return;
+    if (!pendingCalib) return;
+    const realLength = calibUnit === "ft"
+      ? (parseFloat(calibFeet || "0") + (parseFloat(calibInches || "0") + parseFloat(calibFraction || "0")) / 12)
+      : parseFraction(calibLength);
+    if (realLength == null || realLength <= 0) return;
     const ppu = pendingCalib.px / realLength;
     const data: CalibrationData = { pixelsPerUnit: ppu, unit: calibUnit, knownLength: realLength };
     setCalibration(data);
     onCalibrationSave(data);
     setPendingCalib(null); setCalibLength("");
+    setCalibFeet(""); setCalibInches(""); setCalibFraction("0");
     setCalibStep("idle"); setCalibPoints([]);
   }
 
@@ -715,20 +722,58 @@ function PlanViewer({
             <div className="absolute z-20 bg-slate-900/95 border border-slate-700 rounded-xl p-4 shadow-2xl" style={{ top: "20%", left: "50%", transform: "translateX(-50%)" }}>
               <div className="text-sm font-semibold text-slate-200 mb-1">Set calibration</div>
               <div className="text-xs text-slate-400 mb-3">Line = {pendingCalib.px.toFixed(0)} px. What is the real length?</div>
-              <div className="flex items-center gap-2 mb-3">
-                <input value={calibLength} onChange={e => setCalibLength(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && commitCalibration()}
-                  placeholder={calibUnit === "ft" ? `e.g. 10 or 1'6"` : calibUnit === "in" ? `e.g. 10 or 10 1/4` : "e.g. 10"} autoFocus
-                  className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white w-28 focus:outline-none"/>
+              <div className="flex items-end gap-2 mb-3">
+                {calibUnit === "ft" ? (
+                  <>
+                    <div className="flex flex-col items-center gap-1">
+                      <input type="number" min="0" value={calibFeet} onChange={e => setCalibFeet(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && commitCalibration()}
+                        placeholder="0" autoFocus
+                        className="w-16 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white text-center focus:outline-none focus:border-blue-500"/>
+                      <span className="text-[10px] text-slate-500">ft</span>
+                    </div>
+                    <span className="text-slate-500 text-sm mb-4">—</span>
+                    <div className="flex flex-col items-center gap-1">
+                      <input type="number" min="0" max="11" value={calibInches} onChange={e => setCalibInches(e.target.value)}
+                        onKeyDown={e => e.key === "Enter" && commitCalibration()}
+                        placeholder="0"
+                        className="w-16 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white text-center focus:outline-none focus:border-blue-500"/>
+                      <span className="text-[10px] text-slate-500">in</span>
+                    </div>
+                    <span className="text-slate-500 text-sm mb-4">—</span>
+                    <div className="flex flex-col items-center gap-1">
+                      <select value={calibFraction} onChange={e => setCalibFraction(e.target.value)}
+                        className="w-20 px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white text-center focus:outline-none focus:border-blue-500">
+                        <option value="0">—</option>
+                        <option value="0.125">⅛"</option>
+                        <option value="0.25">¼"</option>
+                        <option value="0.375">⅜"</option>
+                        <option value="0.5">½"</option>
+                        <option value="0.625">⅝"</option>
+                        <option value="0.75">¾"</option>
+                        <option value="0.875">⅞"</option>
+                      </select>
+                      <span className="text-[10px] text-slate-500">frac</span>
+                    </div>
+                  </>
+                ) : (
+                  <input value={calibLength} onChange={e => setCalibLength(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && commitCalibration()}
+                    placeholder={calibUnit === "in" ? `e.g. 10 or 10 1/4` : "e.g. 10"} autoFocus
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white w-28 focus:outline-none"/>
+                )}
                 <select value={calibUnit} onChange={e => setCalibUnit(e.target.value)}
                   className="px-2 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none">
                   {["ft","m","in","mm","cm","yd"].map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
-              {(calibUnit === "in" || calibUnit === "ft") && (
-                <div className="text-[10px] text-slate-500 mb-3 -mt-2">
-                  {calibUnit === "ft" ? `Accepts: 10, 1.5, 1'6", 1'6.5"` : `Accepts: 10, 10 1/4, 10-1/4`}
+              {calibUnit === "ft" && (
+                <div className="text-xs text-amber-400 mb-3 text-center">
+                  = {(parseFloat(calibFeet || "0") + (parseFloat(calibInches || "0") + parseFloat(calibFraction || "0")) / 12).toFixed(4)} ft
                 </div>
+              )}
+              {calibUnit === "in" && (
+                <div className="text-[10px] text-slate-500 mb-3 -mt-2">Accepts: 10, 10 1/4, 10-1/4</div>
               )}
               <div className="flex gap-2">
                 <button onClick={commitCalibration} className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold">Save calibration</button>
