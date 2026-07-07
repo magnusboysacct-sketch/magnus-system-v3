@@ -180,6 +180,37 @@ function PlanViewer({
   // Touch pinch-zoom state
   const pinchStartDist = useRef(0);
   const pinchStartScale = useRef(1);
+  // During a pinch/ctrl-wheel gesture, the zoom is applied as a live CSS
+  // transform (instant, no PDF re-render); setScale is only called once
+  // the gesture ends, triggering exactly one re-render at the final
+  // resolution instead of one per touchmove/wheel event.
+  const liveScaleRef = useRef(1);
+  const canvasWrapperRef = useRef<HTMLDivElement>(null);
+  const wheelZoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function applyLiveScale(newScale: number) {
+    liveScaleRef.current = newScale;
+    const el = canvasWrapperRef.current;
+    if (el) {
+      el.style.transformOrigin = "0 0";
+      el.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${newScale})`;
+    }
+  }
+
+  function commitLiveScale() {
+    const el = canvasWrapperRef.current;
+    if (el) el.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
+    setScale(liveScaleRef.current);
+  }
+
+  // canvasWrapperRef's transform is driven exclusively here (imperatively)
+  // rather than via a declarative JSX style, so a live pinch/wheel-zoom
+  // transform (also written imperatively, see applyLiveScale) is never
+  // fought over by React re-applying a stale translate() mid-gesture.
+  useLayoutEffect(() => {
+    const el = canvasWrapperRef.current;
+    if (el) el.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
+  }, [pan]);
 
   // Tool state
   const [activeTool, setActiveTool] = useState<"pan" | "pen" | "arrow" | "text" | "measure" | "calibrate">("pan");
@@ -692,6 +723,7 @@ function PlanViewer({
     if (e.touches.length === 2) {
       pinchStartDist.current = pinchDistance(e);
       pinchStartScale.current = scale;
+      liveScaleRef.current = scale;
       return;
     }
     handlePointerDown(getTouchPos(e), e.touches[0].clientX, e.touches[0].clientY);
@@ -702,13 +734,20 @@ function PlanViewer({
       if (pinchStartDist.current === 0) return;
       const dist = pinchDistance(e);
       const newScale = Math.min(5, Math.max(0.25, pinchStartScale.current * (dist / pinchStartDist.current)));
-      setScale(newScale);
+      applyLiveScale(newScale);
       return;
     }
     handlePointerMove(getTouchPos(e), e.touches[0].clientX, e.touches[0].clientY);
   }
   function onTouchEnd(e: React.TouchEvent<HTMLCanvasElement>) {
     e.preventDefault();
+    if (e.touches.length < 2 && pinchStartDist.current !== 0) {
+      // Pinch just ended — commit the live CSS-only scale, triggering
+      // exactly one PDF re-render at the final resolution.
+      pinchStartDist.current = 0;
+      commitLiveScale();
+      return;
+    }
     pinchStartDist.current = 0;
     handlePointerUp();
   }
@@ -826,11 +865,27 @@ function PlanViewer({
     const handleWheelZoom = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
-      setScale(s => Math.min(5, Math.max(0.25, s - e.deltaY * 0.01)));
+      // First tick of a new gesture (no pending commit yet) starts from the
+      // committed scale; subsequent ticks within the same gesture compound
+      // on top of the live value so rapid trackpad ticks don't fight the
+      // still-pending commit.
+      if (wheelZoomEndTimer.current === null) liveScaleRef.current = scale;
+      const newScale = Math.min(5, Math.max(0.25, liveScaleRef.current - e.deltaY * 0.01));
+      applyLiveScale(newScale);
+      if (wheelZoomEndTimer.current) clearTimeout(wheelZoomEndTimer.current);
+      // Wheel has no discrete "gesture end" event, so debounce: commit
+      // (and trigger the one real PDF re-render) once ticks stop arriving.
+      wheelZoomEndTimer.current = setTimeout(() => {
+        wheelZoomEndTimer.current = null;
+        commitLiveScale();
+      }, 150);
     };
     el.addEventListener("wheel", handleWheelZoom, { passive: false });
-    return () => el.removeEventListener("wheel", handleWheelZoom);
-  }, []);
+    return () => {
+      el.removeEventListener("wheel", handleWheelZoom);
+      if (wheelZoomEndTimer.current) clearTimeout(wheelZoomEndTimer.current);
+    };
+  }, [scale, pan]);
 
   function addBookmark() {
     const b: BookmarkItem = { id: crypto.randomUUID(), page: pageNum, label: bookmarkLabel || `Page ${pageNum}`, note: "" };
@@ -1046,7 +1101,7 @@ function PlanViewer({
               smaller than the container while staying fully scrollable to
               every edge when zoomed in past the container size — plain
               flex centering clips the start edge of overflowing content. */}
-          <div style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, userSelect: "none", margin: "auto" }} className="relative inline-block">
+          <div ref={canvasWrapperRef} style={{ userSelect: "none", margin: "auto" }} className="relative inline-block">
             {isPdf ? (
               <canvas ref={canvasRef} className="block shadow-2xl"/>
             ) : (
