@@ -177,6 +177,10 @@ function PlanViewer({
   const panStart = useRef<{ mx: number; my: number; px: number; py: number } | null>(null);
   const isPanning = useRef(false);
 
+  // Touch pinch-zoom state
+  const pinchStartDist = useRef(0);
+  const pinchStartScale = useRef(1);
+
   // Tool state
   const [activeTool, setActiveTool] = useState<"pan" | "pen" | "arrow" | "text" | "measure" | "calibrate">("pan");
   const [penColor, setPenColor] = useState("#ef4444");
@@ -193,8 +197,9 @@ function PlanViewer({
 
   // Measurements
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
-  const measStart = useRef<{ x: number; y: number } | null>(null);
-  const isMeasuring = useRef(false);
+  // State (not a ref) so the first-point indicator redraws reliably via
+  // the shared redraw effect, the same way calibPoints already does.
+  const [measStart, setMeasStart] = useState<{ x: number; y: number } | null>(null);
   const [pendingMeas, setPendingMeas] = useState<Omit<Measurement, "id"> | null>(null);
   const [draggingMeasId, setDraggingMeasId] = useState<string | null>(null);
   const dragOffset = useRef<{ x: number; y: number } | null>(null);
@@ -367,22 +372,27 @@ function PlanViewer({
     anns.forEach(a => drawAnnot(ctx, a));
     measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
     drawCalibOverlay(ctx);
+    // First-point indicator for an in-progress measurement (mirrors the
+    // calibrate tool's own first-point dot below).
+    if (activeTool === "measure" && measStart) drawFirstPointRing(ctx, measStart, "#f97316");
   }
 
   // Locked calibration dot(s)/line — kept in sync with calibPoints so it
   // survives any redraw instead of being a one-off imperative paint.
   function drawCalibOverlay(ctx: CanvasRenderingContext2D) {
     if (calibPoints.length === 0) return;
-    drawCalibDot(ctx, calibPoints[0]);
-    if (calibPoints.length >= 2) {
-      drawCalibDot(ctx, calibPoints[1]);
-      // Once a calibration has been committed (calibStep back to "idle"),
-      // label the locked line with its real-world length instead of raw px.
-      const committedLabel = calibStep === "idle" && calibration
-        ? `CAL: ${calibration.knownLength.toFixed(3)} ${calibration.unit}`
-        : undefined;
-      drawCalibLine(ctx, calibPoints[0], calibPoints[1], committedLabel);
+    if (calibPoints.length === 1) {
+      drawFirstPointRing(ctx, calibPoints[0], "#f59e0b");
+      return;
     }
+    drawCalibDot(ctx, calibPoints[0]);
+    drawCalibDot(ctx, calibPoints[1]);
+    // Once a calibration has been committed (calibStep back to "idle"),
+    // label the locked line with its real-world length instead of raw px.
+    const committedLabel = calibStep === "idle" && calibration
+      ? `CAL: ${calibration.knownLength.toFixed(3)} ${calibration.unit}`
+      : undefined;
+    drawCalibLine(ctx, calibPoints[0], calibPoints[1], committedLabel);
   }
 
   function drawCalibDot(ctx: CanvasRenderingContext2D, pt: { x: number; y: number }) {
@@ -393,6 +403,26 @@ function PlanViewer({
     ctx.fill();
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // A more prominent dot+ring shown at the first point of an in-progress
+  // calibration or measurement, so it's clearly visible before the second
+  // point is tapped (important on touch where there's no hover feedback).
+  function drawFirstPointRing(ctx: CanvasRenderingContext2D, pt: { x: number; y: number }, color: string) {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, 14, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -477,21 +507,32 @@ function PlanViewer({
     return calib.unit === "in" ? formatInches(real) : `${real.toFixed(2)} ${calib.unit}`;
   }
 
-  useLayoutEffect(() => { redrawAnnotations(annotations); }, [annotations, measurements, calibPoints, calibStep, calibration]);
+  useLayoutEffect(() => { redrawAnnotations(annotations); }, [annotations, measurements, calibPoints, calibStep, calibration, measStart, activeTool]);
 
   // ── Pointer events ────────────────────────────────────────────────────────
-  function getCanvasPos(e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } {
+  // Mouse and single-touch input share this canvas-space conversion and the
+  // handlePointerDown/Move/Up logic below; only the raw event extraction
+  // differs between onMouse* and onTouch*.
+  function posFromClient(clientX: number, clientY: number): { x: number; y: number } {
     const canvas = annotCanvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
   }
 
-  function onMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
-    const pos = getCanvasPos(e);
+  function getCanvasPos(e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } {
+    return posFromClient(e.clientX, e.clientY);
+  }
+
+  function getTouchPos(e: React.TouchEvent<HTMLCanvasElement>): { x: number; y: number } {
+    const touch = e.touches[0] || e.changedTouches[0];
+    return posFromClient(touch.clientX, touch.clientY);
+  }
+
+  function handlePointerDown(pos: { x: number; y: number }, clientX: number, clientY: number) {
     if (activeTool === "pan") {
-      // Grab an existing measurement line if the click lands near it,
+      // Grab an existing measurement line if the tap lands near it,
       // instead of panning the view.
       const hit = measurements.find(m => distToSegment(pos, m.from, m.to) < 10);
       if (hit) {
@@ -501,7 +542,7 @@ function PlanViewer({
         return;
       }
       isPanning.current = true;
-      panStart.current = { mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y };
+      panStart.current = { mx: clientX, my: clientY, px: pan.x, py: pan.y };
       return;
     }
     if (activeTool === "pen" || activeTool === "arrow") {
@@ -515,12 +556,11 @@ function PlanViewer({
     }
     if (activeTool === "measure") {
       const snapped = snapToPoint(pos);
-      if (!isMeasuring.current) {
-        isMeasuring.current = true;
-        measStart.current = snapped;
+      if (measStart === null) {
+        setMeasStart(snapped);
       } else {
-        // Second click — finalize the measurement and open the save popup.
-        const start = measStart.current!;
+        // Second tap — finalize the measurement and open the save popup.
+        const start = measStart;
         const dx = snapped.x - start.x; const dy = snapped.y - start.y;
         const px = Math.sqrt(dx * dx + dy * dy);
         const real = calibration ? realFromPixels(px, calibration) : null;
@@ -532,8 +572,7 @@ function PlanViewer({
           label, pixelLength: px, realLength: real, unit: calibration?.unit ?? null,
         };
         setPendingMeas(m);
-        isMeasuring.current = false;
-        measStart.current = null;
+        setMeasStart(null);
       }
       return;
     }
@@ -543,7 +582,7 @@ function PlanViewer({
         setCalibPoints([snapped]);
         setCalibStep("drawing");
       } else if (calibStep === "drawing" && calibPoints.length === 1) {
-        // Second click — compute pixel distance and open input dialog.
+        // Second tap — compute pixel distance and open input dialog.
         // The locked dot/line stays visible via the calibPoints-driven redraw effect.
         const dx = snapped.x - calibPoints[0].x;
         const dy = snapped.y - calibPoints[0].y;
@@ -556,9 +595,8 @@ function PlanViewer({
     }
   }
 
-  function onMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+  function handlePointerMove(pos: { x: number; y: number }, clientX: number, clientY: number) {
     if (draggingMeasId) {
-      const pos = getCanvasPos(e);
       const dragged = measurements.find(m => m.id === draggingMeasId);
       if (dragged && dragOffset.current) {
         const newMx = pos.x - dragOffset.current.x;
@@ -572,11 +610,10 @@ function PlanViewer({
       return;
     }
     if (activeTool === "pan" && isPanning.current && panStart.current) {
-      setPan({ x: panStart.current.px + e.clientX - panStart.current.mx, y: panStart.current.py + e.clientY - panStart.current.my });
+      setPan({ x: panStart.current.px + clientX - panStart.current.mx, y: panStart.current.py + clientY - panStart.current.my });
       return;
     }
     if ((activeTool === "pen" || activeTool === "arrow") && isAnnotDrawing.current && drawingAnnot.current) {
-      const pos = getCanvasPos(e);
       if (activeTool === "pen") drawingAnnot.current.points.push(pos);
       else drawingAnnot.current.points = [drawingAnnot.current.points[0], pos];
       const ann = annotCanvasRef.current!;
@@ -588,27 +625,27 @@ function PlanViewer({
       drawAnnot(ctx, drawingAnnot.current);
     }
     if (activeTool === "calibrate" && calibStep === "drawing" && calibPoints.length === 1) {
-      const snapped = snapToPoint(getCanvasPos(e));
+      const snapped = snapToPoint(pos);
       const ann = annotCanvasRef.current;
       if (!ann) return;
       const ctx = ann.getContext("2d")!;
       ctx.clearRect(0, 0, ann.width, ann.height);
       annotations.forEach(a => drawAnnot(ctx, a));
       measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
-      drawCalibDot(ctx, calibPoints[0]);
+      drawFirstPointRing(ctx, calibPoints[0], "#f59e0b");
       drawCalibLine(ctx, calibPoints[0], snapped);
       return;
     }
-    if (activeTool === "measure" && isMeasuring.current) {
-      const snapped = snapToPoint(getCanvasPos(e));
-      const start = measStart.current;
-      if (!start) return;
+    if (activeTool === "measure" && measStart !== null) {
+      const snapped = snapToPoint(pos);
+      const start = measStart;
       const ann = annotCanvasRef.current!;
       const ctx = ann.getContext("2d")!;
       ctx.clearRect(0, 0, ann.width, ann.height);
       annotations.forEach(a => drawAnnot(ctx, a));
       measurements.forEach(m => drawMeasLine(ctx, m.from, m.to, m.label, "#f97316"));
       drawCalibOverlay(ctx);
+      drawFirstPointRing(ctx, start, "#f97316");
       const px = Math.hypot(snapped.x - start.x, snapped.y - start.y);
       const liveLabel = calibration
         ? formatMeasurement(px, calibration)
@@ -617,7 +654,7 @@ function PlanViewer({
     }
   }
 
-  function onMouseUp(e: React.MouseEvent<HTMLCanvasElement>) {
+  function handlePointerUp() {
     isPanning.current = false;
     if (draggingMeasId) {
       setDraggingMeasId(null);
@@ -631,7 +668,49 @@ function PlanViewer({
       drawingAnnot.current = null;
       return;
     }
-    // Measure and calibrate are both two-click tools; nothing to do on mouseUp
+    // Measure and calibrate are both two-tap tools; nothing to do on release
+  }
+
+  function onMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    handlePointerDown(getCanvasPos(e), e.clientX, e.clientY);
+  }
+  function onMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    handlePointerMove(getCanvasPos(e), e.clientX, e.clientY);
+  }
+  function onMouseUp() {
+    handlePointerUp();
+  }
+
+  function pinchDistance(e: React.TouchEvent<HTMLCanvasElement>): number {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    return Math.hypot(dx, dy);
+  }
+
+  function onTouchStart(e: React.TouchEvent<HTMLCanvasElement>) {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      pinchStartDist.current = pinchDistance(e);
+      pinchStartScale.current = scale;
+      return;
+    }
+    handlePointerDown(getTouchPos(e), e.touches[0].clientX, e.touches[0].clientY);
+  }
+  function onTouchMove(e: React.TouchEvent<HTMLCanvasElement>) {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      if (pinchStartDist.current === 0) return;
+      const dist = pinchDistance(e);
+      const newScale = Math.min(5, Math.max(0.25, pinchStartScale.current * (dist / pinchStartDist.current)));
+      setScale(newScale);
+      return;
+    }
+    handlePointerMove(getTouchPos(e), e.touches[0].clientX, e.touches[0].clientY);
+  }
+  function onTouchEnd(e: React.TouchEvent<HTMLCanvasElement>) {
+    e.preventDefault();
+    pinchStartDist.current = 0;
+    handlePointerUp();
   }
 
   function commitText() {
@@ -672,11 +751,7 @@ function PlanViewer({
   }
 
   function cancelMeasure() {
-    if (isMeasuring.current) {
-      isMeasuring.current = false;
-      measStart.current = null;
-      redrawAnnotations(annotations);
-    }
+    if (measStart !== null) setMeasStart(null);
     setActiveTool("pan");
   }
 
@@ -716,6 +791,23 @@ function PlanViewer({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activeTool, annotations, calibStep]);
 
+  // Belt-and-suspenders backstop for the CSS touchAction:"none" above —
+  // some browsers (notably older Safari) don't fully honor touch-action
+  // for pinch gestures, so also block the native default at the JS level.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const preventPinch = (e: TouchEvent) => {
+      if (e.touches.length > 1) e.preventDefault();
+    };
+    el.addEventListener("touchstart", preventPinch, { passive: false });
+    el.addEventListener("touchmove", preventPinch, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", preventPinch);
+      el.removeEventListener("touchmove", preventPinch);
+    };
+  }, []);
+
   function addBookmark() {
     const b: BookmarkItem = { id: crypto.randomUUID(), page: pageNum, label: bookmarkLabel || `Page ${pageNum}`, note: "" };
     setBookmarks(prev => [...prev, b]);
@@ -747,7 +839,7 @@ function PlanViewer({
   const COLORS = ["#ef4444","#f97316","#eab308","#22c55e","#3b82f6","#8b5cf6","#ffffff","#000000"];
 
   return (
-    <div className="fixed inset-0 bg-slate-950 z-50 flex flex-col">
+    <div className="fixed inset-0 bg-slate-950 z-50 flex flex-col" style={{ touchAction: "none" }}>
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 bg-slate-900 border-b border-slate-800 flex-wrap">
         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors">
@@ -850,6 +942,20 @@ function PlanViewer({
         </button>
       </div>
 
+      {(activeTool === "calibrate" || activeTool === "measure") && (
+        <div className="flex-shrink-0 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-400 text-xs font-medium flex items-center gap-2">
+          {activeTool === "calibrate"
+            ? (calibStep === "idle"
+                ? "📏 Tap point 1 on a known measurement"
+                : calibStep === "drawing"
+                ? "📏 ● Point 1 set — tap point 2"
+                : null)
+            : (measStart === null
+                ? "📐 Tap point 1 to start measuring"
+                : "📐 ● Point 1 set — tap point 2")}
+        </div>
+      )}
+
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-semibold shadow-2xl">
           {toast}
@@ -921,7 +1027,8 @@ function PlanViewer({
             <canvas ref={annotCanvasRef}
               className="absolute inset-0 w-full h-full"
               style={{ cursor: activeTool === "pan" ? "grab" : "crosshair", touchAction: "none" }}
-              onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}
+              onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+              onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
             />
             {(activeTool === "calibrate" || activeTool === "measure") && snapIndicator && annotCanvasRef.current && (
               <div className="absolute pointer-events-none rounded-full border-2 border-emerald-400 bg-emerald-400/20"
