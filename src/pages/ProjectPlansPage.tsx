@@ -782,6 +782,13 @@ function PlanViewer({
         return;
       }
       if (isTyping) return;
+      // Ctrl/Cmd+Plus/Minus/0 are browser zoom shortcuts — best-effort
+      // block so they drive the canvas zoom instead of the whole page
+      // (browsers may still ignore preventDefault on these reserved keys).
+      if ((e.ctrlKey || e.metaKey) && (e.key === "+" || e.key === "=" || e.key === "-" || e.key === "0")) {
+        e.preventDefault();
+        if (e.key === "0") { setScale(1); return; }
+      }
       if (e.key === "+" || e.key === "=") setScale(s => Math.min(s + 0.25, 5));
       else if (e.key === "-") setScale(s => Math.max(s - 0.25, 0.25));
       else if (e.key === "m" || e.key === "M") setScale(2);
@@ -806,6 +813,23 @@ function PlanViewer({
       el.removeEventListener("touchstart", preventPinch);
       el.removeEventListener("touchmove", preventPinch);
     };
+  }, []);
+
+  // Desktop trackpad pinch-to-zoom and Ctrl+scroll both fire as wheel
+  // events with ctrlKey true (that's how Chrome/Firefox report them —
+  // there's no separate "pinch" event on desktop). Left alone, this zooms
+  // the whole browser page, including the toolbar. Intercept it and drive
+  // the canvas-only zoom instead, matching the touch pinch behavior.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handleWheelZoom = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setScale(s => Math.min(5, Math.max(0.25, s - e.deltaY * 0.01)));
+    };
+    el.addEventListener("wheel", handleWheelZoom, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheelZoom);
   }, []);
 
   function addBookmark() {
@@ -1012,13 +1036,17 @@ function PlanViewer({
         )}
 
         {/* Canvas area */}
-        <div ref={containerRef} className="flex-1 overflow-auto bg-slate-950 relative flex items-start justify-center p-4">
+        <div ref={containerRef} className="flex-1 overflow-auto bg-slate-950 relative flex p-4">
           {rendering && (
             <div className="absolute inset-0 flex items-center justify-center z-10">
               <div className="text-slate-400 text-sm animate-pulse">Rendering…</div>
             </div>
           )}
-          <div style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, userSelect: "none" }} className="relative inline-block">
+          {/* margin: auto (not items-center/justify-center) centers this when
+              smaller than the container while staying fully scrollable to
+              every edge when zoomed in past the container size — plain
+              flex centering clips the start edge of overflowing content. */}
+          <div style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, userSelect: "none", margin: "auto" }} className="relative inline-block">
             {isPdf ? (
               <canvas ref={canvasRef} className="block shadow-2xl"/>
             ) : (
