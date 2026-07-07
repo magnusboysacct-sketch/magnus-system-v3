@@ -187,19 +187,35 @@ function PlanViewer({
   const liveScaleRef = useRef(1);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const wheelZoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Where the live CSS scale should visually anchor from (pinch midpoint
+  // or cursor position), in the wrapper's own untransformed local space.
+  const zoomOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // The PDF re-render triggered by committing scale is async — clearing
+  // the live CSS transform immediately (before the new pixels are ready)
+  // makes the canvas visibly flash back to the old resolution for a
+  // frame. Instead this is set true on commit and only cleared once the
+  // PDF render effect's promise actually resolves at the new scale.
+  const pendingTransformClear = useRef(false);
 
   function applyLiveScale(newScale: number) {
     liveScaleRef.current = newScale;
     const el = canvasWrapperRef.current;
     if (el) {
-      el.style.transformOrigin = "0 0";
+      const { x, y } = zoomOriginRef.current;
+      el.style.transformOrigin = `${x}px ${y}px`;
       el.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${newScale})`;
     }
   }
 
   function commitLiveScale() {
-    const el = canvasWrapperRef.current;
-    if (el) el.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
+    if (isPdf) {
+      pendingTransformClear.current = true;
+    } else {
+      // Images resize synchronously via CSS width — no async render to
+      // wait for, so it's safe to clear the live transform right away.
+      const el = canvasWrapperRef.current;
+      if (el) el.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
+    }
     setScale(liveScaleRef.current);
   }
 
@@ -274,7 +290,14 @@ function PlanViewer({
     if (!canvas) return;
     setRendering(true);
     renderPdfPage(plan.publicUrl, pageNum, canvas, scale)
-      .then(total => { setTotalPages(total); setRendering(false); syncAnnotCanvas(); detectEdges(); })
+      .then(total => {
+        setTotalPages(total); setRendering(false); syncAnnotCanvas(); detectEdges();
+        if (pendingTransformClear.current) {
+          pendingTransformClear.current = false;
+          const el = canvasWrapperRef.current;
+          if (el) el.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
+        }
+      })
       .catch(() => setRendering(false));
   }, [pageNum, scale, plan.publicUrl, isPdf]);
 
@@ -724,6 +747,16 @@ function PlanViewer({
       pinchStartDist.current = pinchDistance(e);
       pinchStartScale.current = scale;
       liveScaleRef.current = scale;
+      // Anchor the zoom at the pinch midpoint (captured once, in the
+      // wrapper's own untransformed local space) rather than the corner.
+      const wrapper = canvasWrapperRef.current;
+      if (wrapper) {
+        const rect = wrapper.getBoundingClientRect();
+        zoomOriginRef.current = {
+          x: (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
+          y: (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top,
+        };
+      }
       return;
     }
     handlePointerDown(getTouchPos(e), e.touches[0].clientX, e.touches[0].clientY);
@@ -871,6 +904,13 @@ function PlanViewer({
       // still-pending commit.
       if (wheelZoomEndTimer.current === null) liveScaleRef.current = scale;
       const newScale = Math.min(5, Math.max(0.25, liveScaleRef.current - e.deltaY * 0.01));
+      // Anchor on the current cursor position so the zoom expands from
+      // under the pointer rather than the corner.
+      const wrapper = canvasWrapperRef.current;
+      if (wrapper) {
+        const rect = wrapper.getBoundingClientRect();
+        zoomOriginRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      }
       applyLiveScale(newScale);
       if (wheelZoomEndTimer.current) clearTimeout(wheelZoomEndTimer.current);
       // Wheel has no discrete "gesture end" event, so debounce: commit
