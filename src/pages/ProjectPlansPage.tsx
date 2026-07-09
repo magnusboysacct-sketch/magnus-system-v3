@@ -65,6 +65,11 @@ const CATEGORIES = [
   "Plumbing", "Mechanical", "Civil", "Landscape", "Shop Drawings",
 ];
 
+// PDF pages are rasterized once per page load at this fixed resolution;
+// all visual zoom beyond/below it is pure CSS transform:scale(), never a
+// re-render. Higher = crisper at high zoom but slower initial page load.
+const RENDER_SCALE = 2.0;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmtSize(bytes: number | null) {
   if (!bytes) return "";
@@ -180,53 +185,95 @@ function PlanViewer({
   // Touch pinch-zoom state
   const pinchStartDist = useRef(0);
   const pinchStartScale = useRef(1);
-  // During a pinch/ctrl-wheel gesture, the zoom is applied as a live CSS
-  // transform (instant, no PDF re-render); setScale is only called once
-  // the gesture ends, triggering exactly one re-render at the final
-  // resolution instead of one per touchmove/wheel event.
+  // `scale` is the VISUAL zoom level (0.25-5), decoupled from PDF render
+  // resolution. The PDF is rendered once per page at a fixed high
+  // resolution (RENDER_SCALE) and all zoom in between is pure CSS
+  // transform:scale() on canvasWrapperRef — never a re-render — so a
+  // gesture never needs to bridge a "live preview" to a freshly
+  // rendered canvas, which is what caused the earlier snap/jump bugs.
   const liveScaleRef = useRef(1);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
   const wheelZoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Where the live CSS scale should visually anchor from (pinch midpoint
-  // or cursor position), in the wrapper's own untransformed local space.
+  // Where the CSS scale visually anchors from (pinch midpoint or cursor
+  // position), in the wrapper's own untransformed local space. Persists
+  // across the gesture AND into the "at rest" state (see the layout
+  // effect below), since with a permanent CSS transform there's no
+  // discontinuity point where the origin choice stops mattering.
   const zoomOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  // The PDF re-render triggered by committing scale is async — clearing
-  // the live CSS transform immediately (before the new pixels are ready)
-  // makes the canvas visibly flash back to the old resolution for a
-  // frame. Instead this is set true on commit and only cleared once the
-  // PDF render effect's promise actually resolves at the new scale.
-  const pendingTransformClear = useRef(false);
+  // Mirrors `pan` state for imperative mid-gesture writes. Needed because
+  // retargeting the zoom origin (see retargetZoomOrigin below) has to nudge
+  // pan to keep the pivot from jumping — but doing that via setPan mid-
+  // gesture would race with the "at rest" layout effect, which writes the
+  // committed `scale` and would revert the live in-progress zoom. Synced
+  // from `pan` state in the layout effect below, so any pan committed from
+  // elsewhere (the drag/pan tool, reset-view) stays reflected here too.
+  const livePanRef = useRef(pan);
+  // The PDF render effect has no cancellation for its async work: if a
+  // second page/file change fires before the first render's promise
+  // resolves, both .then() callbacks eventually fire and can land out
+  // of order. Each render effect run claims the next generation and
+  // only applies its side effects if it's still the latest by the time
+  // it resolves.
+  const renderGeneration = useRef(0);
+
+  // Converts a desired VISUAL zoom level into the CSS scale() factor
+  // needed on top of however the content is actually rendered: PDFs are
+  // rasterized once at RENDER_SCALE, so the remaining zoom is
+  // visualScale/RENDER_SCALE; images are always at their natural
+  // (1x) size, so the remaining zoom is just visualScale itself.
+  function cssScaleFor(visualScale: number): number {
+    return isPdf ? visualScale / RENDER_SCALE : visualScale;
+  }
 
   function applyLiveScale(newScale: number) {
     liveScaleRef.current = newScale;
     const el = canvasWrapperRef.current;
     if (el) {
       const { x, y } = zoomOriginRef.current;
+      const { x: px, y: py } = livePanRef.current;
       el.style.transformOrigin = `${x}px ${y}px`;
-      el.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${newScale})`;
+      el.style.transform = `translate(${px}px, ${py}px) scale(${cssScaleFor(newScale)})`;
     }
   }
 
   function commitLiveScale() {
-    if (isPdf) {
-      pendingTransformClear.current = true;
-    } else {
-      // Images resize synchronously via CSS width — no async render to
-      // wait for, so it's safe to clear the live transform right away.
-      const el = canvasWrapperRef.current;
-      if (el) el.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
-    }
     setScale(liveScaleRef.current);
+    setPan(livePanRef.current);
+  }
+
+  // transform-origin defines the pivot a scale() change expands/contracts
+  // around. Retargeting it mid-gesture (a new pinch midpoint, or the cursor
+  // moving between wheel ticks) moves that pivot — and unless pan is nudged
+  // to compensate, the content visibly jumps by
+  // (1 - currentCssScale) * (oldOrigin - newOrigin) the instant the new
+  // origin takes effect, even before scale itself changes. Mutates
+  // livePanRef directly (not setPan) so this stays synchronous with the
+  // imperative applyLiveScale writes instead of racing a React re-render.
+  function retargetZoomOrigin(newOrigin: { x: number; y: number }, currentCssScale: number) {
+    const oldOrigin = zoomOriginRef.current;
+    zoomOriginRef.current = newOrigin;
+    const dx = (1 - currentCssScale) * (oldOrigin.x - newOrigin.x);
+    const dy = (1 - currentCssScale) * (oldOrigin.y - newOrigin.y);
+    if (dx !== 0 || dy !== 0) {
+      livePanRef.current = { x: livePanRef.current.x + dx, y: livePanRef.current.y + dy };
+    }
   }
 
   // canvasWrapperRef's transform is driven exclusively here (imperatively)
   // rather than via a declarative JSX style, so a live pinch/wheel-zoom
   // transform (also written imperatively, see applyLiveScale) is never
-  // fought over by React re-applying a stale translate() mid-gesture.
+  // fought over by React re-applying a stale transform mid-gesture. This
+  // single effect is also what makes the "at rest" state (after a
+  // gesture commits, on keyboard-shortcut zoom, and on initial mount)
+  // correct — no separate commit-time DOM write is needed.
   useLayoutEffect(() => {
     const el = canvasWrapperRef.current;
-    if (el) el.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
-  }, [pan]);
+    if (!el) return;
+    livePanRef.current = pan;
+    const { x, y } = zoomOriginRef.current;
+    el.style.transformOrigin = `${x}px ${y}px`;
+    el.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${cssScaleFor(scale)})`;
+  }, [pan, scale, isPdf]);
 
   // Tool state
   const [activeTool, setActiveTool] = useState<"pan" | "pen" | "arrow" | "text" | "measure" | "calibrate">("pan");
@@ -284,22 +331,37 @@ function PlanViewer({
   const thumbRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
 
   // ── Load page ────────────────────────────────────────────────────────────
+  // Fires only on page/file change now — zoom (`scale`) is deliberately
+  // NOT a dependency, since it's handled entirely via CSS transform (see
+  // canvasWrapperRef's layout effect above) and never needs a re-render.
   useEffect(() => {
     if (!isPdf) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const myGeneration = ++renderGeneration.current;
+    // The scrollable container's native scroll position is unrelated to
+    // React state, so re-rendering the canvas (which briefly changes its
+    // size mid-render) can otherwise cause the browser to reset scroll
+    // to 0,0. Restore it once the new canvas is in place.
+    const container = containerRef.current;
+    const scrollLeft = container?.scrollLeft ?? 0;
+    const scrollTop = container?.scrollTop ?? 0;
     setRendering(true);
-    renderPdfPage(plan.publicUrl, pageNum, canvas, scale)
+    renderPdfPage(plan.publicUrl, pageNum, canvas, RENDER_SCALE)
       .then(total => {
-        setTotalPages(total); setRendering(false); syncAnnotCanvas(); detectEdges();
-        if (pendingTransformClear.current) {
-          pendingTransformClear.current = false;
-          const el = canvasWrapperRef.current;
-          if (el) el.style.transform = `translate(${pan.x}px, ${pan.y}px)`;
+        setTotalPages(total); setRendering(false);
+        // A newer render (triggered by another page/file change that
+        // fired before this one resolved) already applied its own
+        // results — don't let this stale one clobber them.
+        if (myGeneration !== renderGeneration.current) return;
+        syncAnnotCanvas(); detectEdges();
+        if (container) {
+          container.scrollLeft = scrollLeft;
+          container.scrollTop = scrollTop;
         }
       })
       .catch(() => setRendering(false));
-  }, [pageNum, scale, plan.publicUrl, isPdf]);
+  }, [pageNum, plan.publicUrl, isPdf]);
 
   // Sync annotation canvas size to the underlying PDF canvas or image
   function syncAnnotCanvas() {
@@ -747,15 +809,20 @@ function PlanViewer({
       pinchStartDist.current = pinchDistance(e);
       pinchStartScale.current = scale;
       liveScaleRef.current = scale;
-      // Anchor the zoom at the pinch midpoint (captured once, in the
-      // wrapper's own untransformed local space) rather than the corner.
+      // Anchor the zoom at the pinch midpoint, in the wrapper's own
+      // untransformed local space (what transform-origin expects) rather
+      // than the corner. The wrapper's transform now has a *permanent*
+      // scale() applied (see cssScaleFor), so getBoundingClientRect()
+      // returns the already-scaled visual box — divide by the currently
+      // applied CSS scale to convert back to local/untransformed units.
       const wrapper = canvasWrapperRef.current;
       if (wrapper) {
         const rect = wrapper.getBoundingClientRect();
-        zoomOriginRef.current = {
-          x: (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
-          y: (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top,
-        };
+        const currentCssScale = cssScaleFor(scale) || 1;
+        retargetZoomOrigin({
+          x: ((e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left) / currentCssScale,
+          y: ((e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top) / currentCssScale,
+        }, currentCssScale);
       }
       return;
     }
@@ -775,8 +842,9 @@ function PlanViewer({
   function onTouchEnd(e: React.TouchEvent<HTMLCanvasElement>) {
     e.preventDefault();
     if (e.touches.length < 2 && pinchStartDist.current !== 0) {
-      // Pinch just ended — commit the live CSS-only scale, triggering
-      // exactly one PDF re-render at the final resolution.
+      // Pinch just ended — save the final scale (just updates state for
+      // the next gesture and the toolbar's % display; the CSS transform
+      // is already showing the correct result, no re-render involved).
       pinchStartDist.current = 0;
       commitLiveScale();
       return;
@@ -903,18 +971,28 @@ function PlanViewer({
       // on top of the live value so rapid trackpad ticks don't fight the
       // still-pending commit.
       if (wheelZoomEndTimer.current === null) liveScaleRef.current = scale;
-      const newScale = Math.min(5, Math.max(0.25, liveScaleRef.current - e.deltaY * 0.01));
       // Anchor on the current cursor position so the zoom expands from
-      // under the pointer rather than the corner.
+      // under the pointer rather than the corner. liveScaleRef.current
+      // here still holds whatever CSS scale is *currently* applied to
+      // the wrapper (just synced above, or from the previous tick) —
+      // getBoundingClientRect() reflects that already-applied scale, so
+      // dividing it back out converts to the untransformed local units
+      // transform-origin expects.
       const wrapper = canvasWrapperRef.current;
       if (wrapper) {
         const rect = wrapper.getBoundingClientRect();
-        zoomOriginRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        const currentCssScale = cssScaleFor(liveScaleRef.current) || 1;
+        retargetZoomOrigin({
+          x: (e.clientX - rect.left) / currentCssScale,
+          y: (e.clientY - rect.top) / currentCssScale,
+        }, currentCssScale);
       }
+      const newScale = Math.min(5, Math.max(0.25, liveScaleRef.current - e.deltaY * 0.01));
       applyLiveScale(newScale);
       if (wheelZoomEndTimer.current) clearTimeout(wheelZoomEndTimer.current);
       // Wheel has no discrete "gesture end" event, so debounce: commit
-      // (and trigger the one real PDF re-render) once ticks stop arriving.
+      // (save the final value to state) once ticks stop arriving, rather
+      // than triggering a React re-render on every single tick.
       wheelZoomEndTimer.current = setTimeout(() => {
         wheelZoomEndTimer.current = null;
         commitLiveScale();
@@ -1145,7 +1223,7 @@ function PlanViewer({
             {isPdf ? (
               <canvas ref={canvasRef} className="block shadow-2xl"/>
             ) : (
-              <img ref={imgRef} src={plan.publicUrl} alt={plan.file_name} crossOrigin="anonymous" className="block shadow-2xl max-w-none" style={{ width: `${scale * 100}%`, transform: "none" }} onLoad={() => { syncAnnotCanvas(); detectEdges(); }}/>
+              <img ref={imgRef} src={plan.publicUrl} alt={plan.file_name} crossOrigin="anonymous" className="block shadow-2xl max-w-none" onLoad={() => { syncAnnotCanvas(); detectEdges(); }}/>
             )}
             <canvas ref={annotCanvasRef}
               className="absolute inset-0 w-full h-full"
