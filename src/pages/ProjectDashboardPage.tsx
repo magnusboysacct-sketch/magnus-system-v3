@@ -398,7 +398,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   ] as any;
 
   return(
-    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] text-slate-100">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] text-slate-900 dark:text-slate-100">
 
       {/* Header */}
       <div className="border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d1117] px-6 py-4">
@@ -409,7 +409,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
             </button>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-slate-100 truncate">{project.name}</h1>
+                <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate">{project.name}</h1>
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border capitalize ${statusCfg.color} ${statusCfg.bg} ${statusCfg.border}`}>
                   {project.status?.replace("_"," ")}
                 </span>
@@ -607,7 +607,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                 <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl max-h-[90vh] overflow-y-auto">
                   <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07] sticky top-0 bg-white dark:bg-[#0d1117]">
-                    <span className="text-sm font-bold text-slate-100">{editingMS?"Edit Milestone":"New Milestone"}</span>
+                    <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{editingMS?"Edit Milestone":"New Milestone"}</span>
                     <button onClick={()=>setShowMSForm(false)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500"><X size={14}/></button>
                   </div>
                   <div className="p-5 space-y-3">
@@ -861,7 +861,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                 <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl max-h-[90vh] overflow-y-auto">
                   <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07] sticky top-0 bg-white dark:bg-[#0d1117]">
-                    <span className="text-sm font-bold text-slate-100">{editingTask?"Edit Task":"New Task"}</span>
+                    <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{editingTask?"Edit Task":"New Task"}</span>
                     <button onClick={()=>setShowTaskForm(false)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500"><X size={14}/></button>
                   </div>
                   <div className="p-5 space-y-3">

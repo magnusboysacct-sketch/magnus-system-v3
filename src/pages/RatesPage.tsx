@@ -789,7 +789,7 @@ export default function RatesPage() {
                     <select autoFocus value={editingCatValue} onChange={e=>setEditingCatValue(e.target.value)}
                       onBlur={()=>setEditingCatId(null)}
                       onKeyDown={async e=>{if(e.key==="Escape")setEditingCatId(null);if(e.key==="Enter"){await saveCategory(item.id,(editingCatValue||"Uncategorized").trim());setEditingCatId(null);}}}
-                      className="bg-[#0b1220] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-800 dark:text-slate-200 outline-none w-full">
+                      className="bg-white dark:bg-[#0b1220] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-800 dark:text-slate-200 outline-none w-full">
                       {categoryOptions.map(c=><option key={c} value={c}>{c}</option>)}
                     </select>
                   ):(
@@ -807,7 +807,7 @@ export default function RatesPage() {
                     <select autoFocus value={editingTypeValue} onChange={e=>setEditingTypeValue(e.target.value)}
                       onBlur={()=>setEditingTypeId(null)}
                       onKeyDown={async e=>{if(e.key==="Escape")setEditingTypeId(null);if(e.key==="Enter"){await saveItemType(item.id,editingTypeValue||"Other");setEditingTypeId(null);}}}
-                      className="bg-[#0b1220] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-800 dark:text-slate-200 outline-none">
+                      className="bg-white dark:bg-[#0b1220] border border-blue-500/40 rounded-md px-2 py-1 text-xs text-slate-800 dark:text-slate-200 outline-none">
                       {ITEM_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
                     </select>
                   ):(
@@ -968,7 +968,7 @@ export default function RatesPage() {
                         const t=e.target.value;setFormulaType(t);
                         const def={length:"length",area:"area",volume:"length * width * height",count:"count"}[t]||"";
                         setFormulaInput(def);previewFormula(t,def);
-                      }} className="w-full bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50">
+                      }} className="w-full bg-white dark:bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50">
                         <option value="">No formula</option>
                         <option value="length">Length</option>
                         <option value="area">Area</option>
@@ -1069,7 +1069,7 @@ export default function RatesPage() {
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Mode</div>
                   <select value={bulkMode} onChange={e=>setBulkMode(e.target.value as any)}
-                    className="w-full bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50">
+                    className="w-full bg-white dark:bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50">
                     <option value="percent">Percent (+/- %)</option>
                     <option value="add">Add amount (+/-)</option>
                     <option value="set">Set value</option>

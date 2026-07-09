@@ -81,7 +81,7 @@ function ClientCard({ client, onEdit, onDelete, onPortalToggle, onResetPassword 
       </div>
 
       <div className="mb-3">
-        <div className="text-sm font-semibold text-slate-100 mb-0.5 truncate">{client.name}</div>
+        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-0.5 truncate">{client.name}</div>
         {client.contact_name && (
           <div className="flex items-center gap-1.5 text-[10px] text-slate-600">
             <User size={9}/> {client.contact_name}
@@ -295,7 +295,7 @@ export default function ClientsPage() {
         {/* Stats strip */}
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: "Total",    value: stats.total,    color: "text-slate-200",    key: "all" as Tab },
+            { label: "Total",    value: stats.total,    color: "text-slate-800 dark:text-slate-200",    key: "all" as Tab },
             { label: "Active",   value: stats.active,   color: "text-emerald-400",  key: "active" as Tab },
             { label: "Inactive", value: stats.inactive, color: "text-slate-500",    key: "inactive" as Tab },
           ].map(s => (
@@ -318,12 +318,12 @@ export default function ClientsPage() {
           <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
             <button onClick={() => setViewMode("grid")}
               className={cn("p-1.5 rounded-md transition-colors",
-                viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+                viewMode === "grid" ? "bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <LayoutGrid size={13}/>
             </button>
             <button onClick={() => setViewMode("list")}
               className={cn("p-1.5 rounded-md transition-colors",
-                viewMode === "list" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+                viewMode === "list" ? "bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <List size={13}/>
             </button>
           </div>
@@ -380,7 +380,7 @@ export default function ClientsPage() {
                         <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
                           <Building2 size={11} className="text-blue-400"/>
                         </div>
-                        <span className="font-semibold text-slate-200">{c.name}</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{c.name}</span>
                       </div>
                     </Td>
                     <Td muted>{c.contact_name || "—"}</Td>

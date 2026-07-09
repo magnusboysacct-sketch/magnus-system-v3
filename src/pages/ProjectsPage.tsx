@@ -93,7 +93,7 @@ function ProjectCard({ project, client, onClick, onCloseOut }: {
       </div>
 
       {/* Name */}
-      <div className="text-sm font-semibold text-slate-100 mb-1 truncate group-hover:text-white transition-colors">
+      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-1 truncate group-hover:text-white transition-colors">
         {project.name}
       </div>
 
@@ -144,7 +144,7 @@ function ProjectRow({ project, client, onClick, onCloseOut }: {
         <Hammer size={13} className="text-cyan-400" />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-slate-200 truncate">{project.name}</div>
+        <div className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{project.name}</div>
         {client && <div className="text-[10px] text-slate-600">{client.name}</div>}
       </div>
       <Badge color={STATUS_COLOR[status] || "slate"} dot>{status.replace("_", " ")}</Badge>
@@ -320,7 +320,7 @@ export default function ProjectsPage() {
         {/* Stats strip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "Total",     value: stats.total,     color: "text-slate-200",   filter: "all" },
+            { label: "Total",     value: stats.total,     color: "text-slate-800 dark:text-slate-200",   filter: "all" },
             { label: "Active",    value: stats.active,    color: "text-emerald-400", filter: "active" },
             { label: "On Hold",   value: stats.onHold,    color: "text-amber-400",   filter: "on_hold" },
             { label: "Completed", value: stats.completed, color: "text-blue-400",    filter: "completed" },
@@ -349,11 +349,11 @@ export default function ProjectsPage() {
           </Select>
           <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
             <button onClick={() => setViewMode("grid")}
-              className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+              className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <LayoutGrid size={13}/>
             </button>
             <button onClick={() => setViewMode("list")}
-              className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+              className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <List size={13}/>
             </button>
           </div>
@@ -455,7 +455,7 @@ export default function ProjectsPage() {
               <div className="w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
                 <CheckSquare size={24} className="text-emerald-400"/>
               </div>
-              <div className="text-sm font-semibold text-slate-200">Project closed out!</div>
+              <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">Project closed out!</div>
               <div className="text-xs text-slate-500 text-center">Actuals saved. AI will use this data to improve future bid recommendations.</div>
             </div>
           ) : (
@@ -463,7 +463,7 @@ export default function ProjectsPage() {
               {/* AI learning notice */}
               <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-2.5 flex gap-2">
                 <TrendingUp size={13} className="text-purple-400 flex-shrink-0 mt-0.5"/>
-                <div className="text-[11px] text-slate-400 leading-relaxed">
+                <div className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
                   These actuals train the AI Bid Advisor. The more projects you close out, the more accurate future markup and duration recommendations become.
                 </div>
               </div>
@@ -547,13 +547,13 @@ export default function ProjectsPage() {
 
               {/* Outcome flags */}
               <div className="grid grid-cols-2 gap-3">
-                <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
                   <input type="checkbox" checked={closeOutForm.was_profitable}
                     onChange={e => setCloseOutForm(f => ({ ...f, was_profitable: e.target.checked }))}
                     className="accent-emerald-500 w-3.5 h-3.5"/>
                   Was Profitable
                 </label>
-                <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
                   <input type="checkbox" checked={closeOutForm.had_delays}
                     onChange={e => setCloseOutForm(f => ({ ...f, had_delays: e.target.checked }))}
                     className="accent-amber-500 w-3.5 h-3.5"/>

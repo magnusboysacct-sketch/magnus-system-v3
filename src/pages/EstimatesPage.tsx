@@ -111,7 +111,7 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
       </div>
 
       <div className="mb-3">
-        <div className="text-sm font-semibold text-slate-100 truncate mb-1">{estimate.title}</div>
+        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate mb-1">{estimate.title}</div>
         <div className="text-[10px] text-slate-600">
           {estimate.projects?.name || "No project"} · v{estimate.version}
         </div>
@@ -216,7 +216,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
           {Object.entries(byType).map(([type, amt]) => (
             <div key={type} className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] p-2.5">
               <div className={cn("text-[9px] font-bold uppercase tracking-widest mb-1", ITEM_TYPE_COLOR[type] || "text-slate-600")}>{type}</div>
-              <div className="text-sm font-bold text-slate-200">{fmt(amt)}</div>
+              <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{fmt(amt)}</div>
             </div>
           ))}
         </div>
@@ -242,7 +242,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
                 <Tr key={item.id}>
                   <Td muted className="font-mono text-[10px]">{item.line_no}</Td>
                   <Td>
-                    <div className="font-medium text-slate-200 text-xs">{item.item}</div>
+                    <div className="font-medium text-slate-800 dark:text-slate-200 text-xs">{item.item}</div>
                     {item.description && <div className="text-[10px] text-slate-600">{item.description}</div>}
                   </Td>
                   <Td>
@@ -253,7 +253,7 @@ function EstimateDetailModal({ estimate, items, onClose }: {
                   <Td muted>{item.unit || "—"}</Td>
                   <Td right muted>{item.qty}</Td>
                   <Td right muted>{fmt(item.rate)}</Td>
-                  <Td right><span className="font-semibold text-slate-200">{fmt(item.amount)}</span></Td>
+                  <Td right><span className="font-semibold text-slate-800 dark:text-slate-200">{fmt(item.amount)}</span></Td>
                 </Tr>
               ))}
             </tbody>
@@ -262,14 +262,14 @@ function EstimateDetailModal({ estimate, items, onClose }: {
 
         {/* Total */}
         <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06]">
-          <span className="text-sm font-semibold text-slate-300">Total Estimate</span>
+          <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Total Estimate</span>
           <span className="text-xl font-bold text-emerald-400">{fmt(total)}</span>
         </div>
 
         {estimate.notes && (
           <div className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] px-3 py-2.5">
             <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">Notes</div>
-            <div className="text-xs text-slate-400">{estimate.notes}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">{estimate.notes}</div>
           </div>
         )}
              <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-white/[0.06]">
@@ -449,8 +449,8 @@ export default function EstimatesPage() {
         {/* Stats strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: "Total",    value: stats.total,    color: "text-slate-200",   key: "all" as Tab },
-            { label: "Draft",    value: stats.draft,    color: "text-slate-400",   key: "draft" as Tab },
+            { label: "Total",    value: stats.total,    color: "text-slate-800 dark:text-slate-200",   key: "all" as Tab },
+            { label: "Draft",    value: stats.draft,    color: "text-slate-500 dark:text-slate-400",   key: "draft" as Tab },
             { label: "Sent",     value: stats.sent,     color: "text-blue-400",    key: "sent" as Tab },
             { label: "Approved", value: stats.approved, color: "text-emerald-400", key: "approved" as Tab },
           ].map(s => (
@@ -476,11 +476,11 @@ export default function EstimatesPage() {
           </Select>
           <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
             <button onClick={() => setViewMode("grid")}
-              className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+              className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <LayoutGrid size={13}/>
             </button>
             <button onClick={() => setViewMode("list")}
-              className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+              className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <List size={13}/>
             </button>
           </div>
@@ -530,7 +530,7 @@ export default function EstimatesPage() {
               <tbody>
                 {filtered.map(e => (
                   <Tr key={e.id} onClick={() => setViewingEstimate(e)}>
-                    <Td><span className="font-semibold text-slate-200">{e.title}</span></Td>
+                    <Td><span className="font-semibold text-slate-800 dark:text-slate-200">{e.title}</span></Td>
                     <Td muted>{e.projects?.name || "—"}</Td>
                     <Td muted>v{e.version}</Td>
                     <Td><Badge color={STATUS_COLOR[e.status]} dot>{e.status}</Badge></Td>
@@ -612,7 +612,7 @@ export default function EstimatesPage() {
               <div className="mb-2 rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-2 flex gap-2">
                 <Bot size={11} className="text-purple-400 flex-shrink-0 mt-0.5"/>
                 <div className="flex-1">
-                  <p className="text-[11px] text-slate-300 leading-relaxed">{aiSuggestion}</p>
+                  <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">{aiSuggestion}</p>
                   <button type="button" onClick={() => setForm(f => ({ ...f, notes: aiSuggestion }))}
                     className="mt-1 text-[10px] text-purple-400 hover:text-purple-300 font-semibold">Use this ?</button>
                 </div>

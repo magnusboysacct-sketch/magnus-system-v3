@@ -127,7 +127,7 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
       </div>
 
       <div className="mb-3">
-        <button onClick={() => onView(worker)} className="text-sm font-semibold text-slate-100 mb-0.5 hover:text-cyan-400 transition-colors text-left">{fullName(worker)}</button>
+        <button onClick={() => onView(worker)} className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-0.5 hover:text-cyan-400 transition-colors text-left">{fullName(worker)}</button>
         <div className={cn("text-[10px] font-semibold capitalize", TYPE_COLOR[worker.worker_type || "employee"])}>
           {worker.worker_type.replace("_", " ")}
         </div>
@@ -400,7 +400,7 @@ export default function WorkersPage() {
         {/* Stats strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: "Total",      value: stats.total,      color: "text-slate-200",   key: "all" as Tab },
+            { label: "Total",      value: stats.total,      color: "text-slate-800 dark:text-slate-200",   key: "all" as Tab },
             { label: "Active",     value: stats.active,     color: "text-emerald-400", key: "active" as Tab },
             { label: "Inactive",   value: stats.inactive,   color: "text-amber-400",   key: "inactive" as Tab },
             { label: "Terminated", value: stats.terminated, color: "text-red-400",     key: "terminated" as Tab },
@@ -445,11 +445,11 @@ export default function WorkersPage() {
           </Select>
           <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
             <button onClick={() => setViewMode("grid")}
-              className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+              className={cn("p-1.5 rounded-md transition-colors", viewMode === "grid" ? "bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <LayoutGrid size={13}/>
             </button>
             <button onClick={() => setViewMode("list")}
-              className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+              className={cn("p-1.5 rounded-md transition-colors", viewMode === "list" ? "bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-200" : "text-slate-600 hover:text-slate-400")}>
               <List size={13}/>
             </button>
           </div>
@@ -507,7 +507,7 @@ export default function WorkersPage() {
                           )}
                         </div>
                         <div>
-                          <button onClick={() => setSelectedWorker(w)} className="font-semibold text-slate-200 text-xs hover:text-cyan-400 transition-colors text-left">{fullName(w)}</button>
+                          <button onClick={() => setSelectedWorker(w)} className="font-semibold text-slate-800 dark:text-slate-200 text-xs hover:text-cyan-400 transition-colors text-left">{fullName(w)}</button>
                           {w.employee_id && <div className="text-[9px] text-slate-700">#{w.employee_id}</div>}
                         </div>
                       </div>
@@ -709,7 +709,7 @@ export default function WorkersPage() {
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
               <div>
-                <div className="text-sm font-bold text-slate-100">{fullName(selectedWorker)}</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100">{fullName(selectedWorker)}</div>
                 <div className="text-[10px] text-slate-600 capitalize">{selectedWorker.worker_type.replace("_"," ")}</div>
               </div>
               <button onClick={() => setSelectedWorker(null)} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
@@ -743,7 +743,7 @@ export default function WorkersPage() {
                 ].filter(f => f.value).map(f => (
                   <div key={f.label} className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] p-2.5">
                     <div className="text-[9px] text-slate-600 mb-0.5">{f.label}</div>
-                    <div className="text-xs font-semibold text-slate-300 capitalize truncate">{f.value}</div>
+                    <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 capitalize truncate">{f.value}</div>
                   </div>
                 ))}
               </div>

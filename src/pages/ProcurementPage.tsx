@@ -601,16 +601,16 @@ function ListView({
                       className={
                         "px-2 py-0.5 rounded text-xs " +
                         (header.status === "draft"
-                          ? "bg-slate-700/50 text-slate-700 dark:text-slate-300"
+                          ? "bg-slate-200 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300"
                           : header.status === "approved"
-                          ? "bg-emerald-900/30 border border-emerald-900/50 text-emerald-300"
+                          ? "bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300"
                           : header.status === "sent"
-                          ? "bg-blue-900/30 border border-blue-900/50 text-blue-300"
+                          ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-900/50 text-blue-700 dark:text-blue-300"
                           : header.status === "completed"
-                          ? "bg-green-900/30 border border-green-900/50 text-green-300"
+                          ? "bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-900/50 text-green-700 dark:text-green-300"
                           : header.status === "cancelled"
-                          ? "bg-red-900/30 border border-red-900/50 text-red-300"
-                          : "bg-slate-700/50 text-slate-700 dark:text-slate-300")
+                          ? "bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-900/50 text-red-700 dark:text-red-300"
+                          : "bg-slate-200 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300")
                       }
                     >
                       {getHeaderStatusLabel(header.status as ProcurementHeaderStatus)}
@@ -1314,21 +1314,21 @@ function DocumentView({
               <button
                 onClick={handleAutoSelectSupplier}
                 disabled={selectedItems.size === 0 || getDocumentApproval()?.status === 'approved'}
-                className="px-3 py-2 rounded-xl text-sm bg-blue-900/30 hover:bg-blue-900/50 border border-blue-900/50 text-blue-300 text-[10px] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-2 rounded-xl text-sm bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 border border-blue-300 dark:border-blue-900/50 text-blue-700 dark:text-blue-300 text-[10px] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Auto Select
               </button>
               <button
                 onClick={handleCreateOptimizedPurchaseOrders}
                 disabled={selectedItems.size === 0 || getDocumentApproval()?.status === 'approved'}
-                className="px-3 py-2 rounded-xl text-sm bg-emerald-900/30 hover:bg-emerald-900/50 border-emerald-900/50 text-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 py-2 rounded-xl text-sm bg-emerald-100 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 border-emerald-300 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Create Optimized POs
               </button>
               {getDocumentApproval()?.status === 'approved' && (
                 <button
                   onClick={() => updateApproval('pending', 'Optimization cancelled - new plan needed')}
-                  className="px-3 py-2 rounded-xl text-sm bg-orange-900/30 hover:bg-orange-900/50 border-orange-900/50 text-orange-300"
+                  className="px-3 py-2 rounded-xl text-sm bg-orange-100 dark:bg-orange-900/30 hover:bg-orange-200 dark:hover:bg-orange-900/50 border-orange-300 dark:border-orange-900/50 text-orange-700 dark:text-orange-300"
                 >
                   Reject / Reset
                 </button>
@@ -1336,7 +1336,7 @@ function DocumentView({
               {getDocumentApproval()?.status === 'rejected' && (
                 <button
                   onClick={resetApproval}
-                  className="px-3 py-2 rounded-xl text-sm bg-slate-700/30 hover:bg-slate-800/50 border border-slate-700/50 text-slate-700 dark:text-slate-300"
+                  className="px-3 py-2 rounded-xl text-sm bg-slate-200 dark:bg-slate-700/30 hover:bg-slate-300 dark:hover:bg-slate-800/50 border border-slate-300 dark:border-slate-700/50 text-slate-700 dark:text-slate-300"
                 >
                   Reset Status
                 </button>
@@ -1349,7 +1349,7 @@ function DocumentView({
                 "px-3 py-2 rounded-xl text-sm transition-colors " +
                 (selectedItems.size === 0
                   ? "bg-slate-50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700/50 text-slate-500 cursor-not-allowed"
-                  : "bg-green-900/30 hover:bg-green-900/50 border border-green-900/50 text-green-300 disabled:opacity-50")
+                  : "bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 border border-green-300 dark:border-green-900/50 text-green-700 dark:text-green-300 disabled:opacity-50")
               }
             >
               {creatingPOs
@@ -1371,7 +1371,7 @@ function DocumentView({
             </select>
             <button
               onClick={onPrint}
-              className="px-3 py-2 rounded-xl bg-blue-900/30 hover:bg-blue-900/50 border border-blue-900/50 text-blue-300 text-sm"
+              className="px-3 py-2 rounded-xl bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 border border-blue-300 dark:border-blue-900/50 text-blue-700 dark:text-blue-300 text-sm"
             >
               Print
             </button>
@@ -1447,7 +1447,7 @@ function DocumentView({
 
                 {/* Current Required Role */}
                 {!documentWorkflow?.is_fully_approved && workflowSteps[Math.max(0, (documentWorkflow?.current_approval_step || 1) - 1)] && (
-                  <div className="px-2 py-1 rounded text-xs font-medium bg-amber-900/30 border border-amber-900/50 text-amber-300">
+                  <div className="px-2 py-1 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-900/50 text-amber-700 dark:text-amber-300">
                     Requires {workflowSteps[Math.max(0, (documentWorkflow?.current_approval_step || 1) - 1)]?.required_role} approval
                   </div>
                 )}
@@ -1587,7 +1587,7 @@ function DocumentView({
                           <span className="font-medium flex items-center gap-2">
                             {approval.status} #{approval.sequence_number}
                             {approval.user_profiles?.role && (
-                              <span className="px-1 py-0.5 rounded bg-slate-700/50 text-slate-700 dark:text-slate-300">
+                              <span className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300">
                                 {approval.user_profiles.role}
                               </span>
                             )}
@@ -1620,14 +1620,14 @@ function DocumentView({
                   onChange={(e) => updateApproval(getDocumentApproval()?.status || 'pending', e.target.value)}
                   placeholder="Add approval notes..."
                   disabled={!canApprove && !documentWorkflow?.is_fully_approved}
-                  className="w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
                   rows={3}
                 />
                 <div className="flex gap-2 mt-3">
                   {getDocumentApproval()?.status !== 'approved' && canApprove && (
                     <button
                       onClick={() => updateApproval('approved', 'Approved via optimization analysis')}
-                      className="px-3 py-2 rounded-lg bg-green-900/30 hover:bg-green-900/50 border border-green-900/50 text-green-300 text-sm"
+                      className="px-3 py-2 rounded-lg bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 border border-green-300 dark:border-green-900/50 text-green-700 dark:text-green-300 text-sm"
                     >
                       Approve
                     </button>
@@ -1635,7 +1635,7 @@ function DocumentView({
                   {getDocumentApproval()?.status !== 'pending' && canApprove && (
                     <button
                       onClick={() => updateApproval('pending', 'Status reset for re-evaluation')}
-                      className="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-700 text-slate-700 dark:text-slate-300 text-sm"
+                      className="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800/60 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm"
                     >
                       Reset
                     </button>
@@ -1643,7 +1643,7 @@ function DocumentView({
                   {getDocumentApproval()?.status !== 'approved' && canApprove && (
                     <button
                       onClick={() => updateApproval('rejected', 'Rejected - requires changes')}
-                      className="px-3 py-2 rounded-lg bg-red-900/30 hover:bg-red-900/50 border border-red-900/50 text-red-300 text-sm"
+                      className="px-3 py-2 rounded-lg bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 border border-red-300 dark:border-red-900/50 text-red-700 dark:text-red-300 text-sm"
                     >
                       Reject
                     </button>
@@ -1810,7 +1810,7 @@ function DocumentView({
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-slate-800 text-left text-xs text-slate-600 dark:text-slate-400">
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs text-slate-600 dark:text-slate-400">
                         <th className="px-4 py-3 font-medium w-8">
                           <input
                             type="checkbox"
@@ -2142,16 +2142,16 @@ function PurchaseOrdersListView({
                       className={
                         "px-2 py-0.5 rounded text-xs " +
                         (po.status === "draft"
-                          ? "bg-slate-700/50 text-slate-700 dark:text-slate-300"
+                          ? "bg-slate-200 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300"
                           : po.status === "issued"
-                          ? "bg-blue-900/30 border border-blue-900/50 text-blue-300"
+                          ? "bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-900/50 text-blue-700 dark:text-blue-300"
                           : po.status === "part_delivered"
-                          ? "bg-orange-900/30 border border-orange-900/50 text-orange-300"
+                          ? "bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-900/50 text-orange-700 dark:text-orange-300"
                           : po.status === "delivered"
-                          ? "bg-emerald-900/30 border border-emerald-900/50 text-emerald-300"
+                          ? "bg-emerald-100 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300"
                           : po.status === "cancelled"
-                          ? "bg-red-900/30 border border-red-900/50 text-red-300"
-                          : "bg-slate-700/50 text-slate-700 dark:text-slate-300")
+                          ? "bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-900/50 text-red-700 dark:text-red-300"
+                          : "bg-slate-200 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300")
                       }
                     >
                       {getStatusLabel(po.status)}
@@ -2336,7 +2336,7 @@ function PurchaseOrderDocumentView({
               <>
                 <button
                   onClick={saveReceiving}
-                  className="px-3 py-2 rounded-xl bg-green-900/30 hover:bg-green-900/50 border border-green-900/50 text-green-300 text-sm"
+                  className="px-3 py-2 rounded-xl bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 border border-green-300 dark:border-green-900/50 text-green-700 dark:text-green-300 text-sm"
                 >
                   Save Deliveries
                 </button>
@@ -2351,13 +2351,13 @@ function PurchaseOrderDocumentView({
               <>
                 <button
                   onClick={startReceiving}
-                  className="px-3 py-2 rounded-xl bg-emerald-900/30 hover:bg-emerald-900/50 border border-emerald-900/50 text-emerald-300 text-sm"
+                  className="px-3 py-2 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 border border-emerald-300 dark:border-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-sm"
                 >
                   Receive Materials
                 </button>
                 <button
                   onClick={onPrint}
-                  className="px-3 py-2 rounded-xl bg-blue-900/30 hover:bg-blue-900/50 border border-blue-900/50 text-blue-300 text-sm"
+                  className="px-3 py-2 rounded-xl bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 border border-blue-300 dark:border-blue-900/50 text-blue-700 dark:text-blue-300 text-sm"
                 >
                   Print PO
                 </button>
@@ -2509,7 +2509,7 @@ function PurchaseOrderDocumentView({
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-800 text-left text-xs text-slate-600 dark:text-slate-400">
+                <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-xs text-slate-600 dark:text-slate-400">
                   <th className="px-4 py-3 font-medium">Material</th>
                   <th className="px-4 py-3 font-medium">Ordered</th>
                   {receivingMode && (

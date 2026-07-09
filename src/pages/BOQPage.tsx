@@ -987,7 +987,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             {persistError && <span className="text-[11px] text-red-400 flex items-center gap-1 max-w-[160px] truncate"><AlertCircle size={11}/>{persistError}</span>}
 
             <button onClick={() => activeProjectId && loadLatestBoq(activeProjectId)} disabled={!activeProjectId || persistLoading}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium disabled:opacity-40 transition">
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium disabled:opacity-40 transition">
               <RefreshCw size={12}/> Load
             </button>
             <button onClick={() => void saveBoq("draft")} disabled={!activeProjectId || persistLoading}
@@ -998,7 +998,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <CheckCircle size={12}/> Approve
             </button>
-            <div className="w-px h-4 bg-white/[0.08] mx-0.5"/>
+            <div className="w-px h-4 bg-slate-200 dark:bg-white/[0.08] mx-0.5"/>
             <button onClick={generateEstimate} disabled={status !== "approved" || persistLoading}
               title={status !== "approved" ? "Approve BOQ first" : ""}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
@@ -1008,7 +1008,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <ShoppingCart size={12}/> Procurement
             </button>
-            <div className="w-px h-4 bg-white/[0.08] mx-0.5"/>
+            <div className="w-px h-4 bg-slate-200 dark:bg-white/[0.08] mx-0.5"/>
             <button
               onClick={() => { setShowAIPanel(true); if(aiMessages.length===0) addAiMessage("Hi! I am your BOQ Assistant. I can check your BOQ for issues, suggest missing items, fill in missing rates, or answer any questions. What would you like to do?", [{label:"Check BOQ",onClick:aiCheckBOQ},{label:"Suggest Missing Items",onClick:aiSuggestMissingItems},{label:"Fill Missing Rates",onClick:aiFillMissingRates}]); }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-[11px] text-white font-bold transition shadow-sm">
@@ -1429,7 +1429,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 <div className={`max-w-[85%] rounded-xl px-3 py-2.5 text-[12px] leading-relaxed ${msg.role==="user"?"bg-blue-600 text-white":"bg-slate-200 dark:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-slate-800 dark:text-slate-200"}`}>
                   <div className="whitespace-pre-wrap">{msg.text}</div>
                   {msg.actions && msg.actions.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2.5 pt-2.5 border-t border-white/[0.1]">
+                    <div className="flex flex-wrap gap-1.5 mt-2.5 pt-2.5 border-t border-slate-300 dark:border-white/[0.1]">
                       {msg.actions.map(a => (
                         <button key={a.label} onClick={a.onClick}
                           className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/30 text-[10px] text-purple-300 font-semibold transition">

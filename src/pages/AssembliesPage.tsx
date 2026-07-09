@@ -587,7 +587,7 @@ export default function AssembliesPage() {
                               <button key={k} onClick={() => setEditForm(f => ({ ...f, measure_type: k }))}
                                 className={[
                                   "flex flex-col items-center gap-1 py-2 rounded-lg border text-[10px] font-bold transition",
-                                  editForm.measure_type === k ? "border-white/20 bg-white/10 text-slate-900 dark:text-slate-100" : "border-slate-200 dark:border-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-600 dark:text-slate-400"
+                                  editForm.measure_type === k ? "border-slate-300 dark:border-white/20 bg-slate-200 dark:bg-white/10 text-slate-900 dark:text-slate-100" : "border-slate-200 dark:border-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-600 dark:text-slate-400"
                                 ].join(" ")}>
                                 <span style={{ color: editForm.measure_type === k ? cfg.color : undefined }}>{cfg.icon}</span>
                                 {cfg.label}
@@ -854,7 +854,7 @@ export default function AssembliesPage() {
                     <button key={k} onClick={() => setForm(f => ({ ...f, measure_type: k }))}
                       className={[
                         "flex flex-col items-center gap-1.5 py-3 rounded-xl border text-[11px] font-bold transition",
-                        form.measure_type === k ? "border-white/20 bg-white/10 text-slate-900 dark:text-slate-100" : "border-slate-200 dark:border-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-600 dark:text-slate-400 hover:border-white/10"
+                        form.measure_type === k ? "border-slate-300 dark:border-white/20 bg-slate-200 dark:bg-white/10 text-slate-900 dark:text-slate-100" : "border-slate-200 dark:border-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-600 dark:text-slate-400 hover:border-white/10"
                       ].join(" ")}>
                       <span style={{ color: form.measure_type === k ? cfg.color : undefined }}>{cfg.icon}</span>
                       {cfg.label}
