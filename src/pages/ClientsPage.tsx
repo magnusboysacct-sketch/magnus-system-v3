@@ -58,24 +58,24 @@ function ClientCard({ client, onEdit, onDelete, onPortalToggle, onResetPassword 
         <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
           <Building2 size={16} className="text-blue-400" />
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
           <button onClick={() => onEdit(client)}
-            className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
-            <Edit2 size={12}/>
+            className="p-2 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
+            <Edit2 size={14}/>
           </button>
           <button onClick={() => onPortalToggle(client)} title={client.portal_enabled ? "Disable Portal" : "Enable Portal"}
-            className={`p-1.5 rounded-lg transition-colors ${client.portal_enabled ? "text-green-400 hover:bg-green-500/15" : "text-slate-600 hover:bg-white/10 hover:text-slate-300"}`}>
-            <ArrowRight size={12}/>
+            className={`p-2 rounded-lg transition-colors ${client.portal_enabled ? "text-green-400 hover:bg-green-500/15" : "text-slate-600 hover:bg-white/10 hover:text-slate-300"}`}>
+            <ArrowRight size={14}/>
           </button>
           {client.portal_enabled && (
             <button onClick={()=>onResetPassword(client)} title="Reset Portal Password"
-              className="p-1.5 rounded-lg text-amber-500 hover:bg-amber-500/15 transition-colors">
+              className="p-2 rounded-lg text-amber-500 hover:bg-amber-500/15 transition-colors">
               🔑
             </button>
           )}
           <button onClick={() => onDelete(client.id)}
-            className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
-            <Trash2 size={12}/>
+            className="p-2 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
+            <Trash2 size={14}/>
           </button>
         </div>
       </div>
@@ -309,8 +309,8 @@ export default function ClientsPage() {
         </div>
 
         {/* Search + view toggle */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[200px] sm:max-w-sm">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700"/>
             <Input className="pl-8" placeholder="Search clients, contacts, email..."
               value={search} onChange={e => setSearch(e.target.value)}/>
@@ -394,12 +394,12 @@ export default function ClientsPage() {
                     <Td>
                       <div className="flex items-center gap-1">
                         <button onClick={() => openEdit(c)}
-                          className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
-                          <Edit2 size={12}/>
+                          className="p-2 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
+                          <Edit2 size={13}/>
                         </button>
                         <button onClick={() => setDeleteConfirm(c.id)}
-                          className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
-                          <Trash2 size={12}/>
+                          className="p-2 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
+                          <Trash2 size={13}/>
                         </button>
                       </div>
                     </Td>

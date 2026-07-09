@@ -112,7 +112,7 @@ function ProjectCard({ project, client, onClick, onCloseOut }: {
           {canCloseOut && (
             <button
               onClick={e => { e.stopPropagation(); onCloseOut(); }}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-[10px] text-emerald-400 font-semibold transition opacity-0 group-hover:opacity-100"
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-[10px] text-emerald-400 font-semibold transition md:opacity-0 md:group-hover:opacity-100"
               title="Record project actuals for AI learning"
             >
               <TrendingUp size={9}/> Close Out
@@ -151,7 +151,7 @@ function ProjectRow({ project, client, onClick, onCloseOut }: {
       {canCloseOut && (
         <button
           onClick={e => { e.stopPropagation(); onCloseOut(); }}
-          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-[10px] text-emerald-400 font-semibold transition opacity-0 group-hover:opacity-100"
+          className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-[10px] text-emerald-400 font-semibold transition md:opacity-0 md:group-hover:opacity-100"
         >
           <TrendingUp size={9}/> Close Out
         </button>
@@ -318,7 +318,7 @@ export default function ProjectsPage() {
 
       <div className="p-6 space-y-5">
         {/* Stats strip */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: "Total",     value: stats.total,     color: "text-slate-200",   filter: "all" },
             { label: "Active",    value: stats.active,    color: "text-emerald-400", filter: "active" },
@@ -337,8 +337,8 @@ export default function ProjectsPage() {
         </div>
 
         {/* Search + filters + view toggle */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[200px] sm:max-w-sm">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700" />
             <Input className="pl-8" placeholder="Search projects..."
               value={search} onChange={e => setSearch(e.target.value)}/>

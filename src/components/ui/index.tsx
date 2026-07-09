@@ -30,19 +30,19 @@ export function PageHeader({
   back?: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-transparent">
-      <div className="flex items-center gap-3">
+    <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-transparent">
+      <div className="flex items-center gap-3 min-w-0">
         {back && (
-          <button onClick={back} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors mr-1">
+          <button onClick={back} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors mr-1 flex-shrink-0">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </button>
         )}
-        <div>
-          <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100 tracking-tight">{title}</h1>
-          {subtitle && <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">{subtitle}</p>}
+        <div className="min-w-0">
+          <h1 className="text-base font-semibold text-slate-900 dark:text-slate-100 tracking-tight truncate">{title}</h1>
+          {subtitle && <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5 truncate">{subtitle}</p>}
         </div>
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>}
     </div>
   );
 }
