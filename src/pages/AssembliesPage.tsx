@@ -440,10 +440,10 @@ export default function AssembliesPage() {
         </button>
       </div>
 
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-col md:flex-row flex-1 min-h-0">
 
         {/* ── Left: Assembly List ── */}
-        <div className="w-72 flex-shrink-0 border-r border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d1117] flex flex-col">
+        <div className="w-full md:w-72 max-h-72 md:max-h-none flex-shrink-0 border-r border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d1117] flex flex-col">
           <div className="p-3 border-b border-slate-200 dark:border-white/[0.06] space-y-2">
             <div className="relative">
               <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
@@ -491,13 +491,13 @@ export default function AssembliesPage() {
                         <span className="text-[9px] text-slate-500 dark:text-slate-600">{a.componentCount} component{a.componentCount !== 1 ? "s" : ""}</span>
                       </div>
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition flex-shrink-0">
+                    <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition flex-shrink-0">
                       <button onClick={e => { e.stopPropagation(); duplicateAssembly(a); }}
-                        className="p-1 rounded hover:bg-white/10 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300" title="Duplicate">
+                        className="p-2 md:p-1 rounded hover:bg-white/10 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300" title="Duplicate">
                         <Copy size={11}/>
                       </button>
                       <button onClick={e => { e.stopPropagation(); deleteAssembly(a.id); }}
-                        className="p-1 rounded hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400" title="Delete">
+                        className="p-2 md:p-1 rounded hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400" title="Delete">
                         <Trash2 size={11}/>
                       </button>
                     </div>
@@ -1216,15 +1216,15 @@ function ComponentRow({ component, idx, total, typeColor, preview, onDelete, onU
               <span className="text-sm font-bold text-sky-400">{preview.withWaste.toFixed(2)}</span>
             ) : <span className="text-slate-400 dark:text-slate-700 text-xs">—</span>}
           </div>
-          <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition">
+          <div className="flex gap-1 justify-end md:opacity-0 md:group-hover:opacity-100 transition">
             <button onClick={() => onMove("up")} disabled={idx === 0}
-              className="p-1 rounded hover:bg-white/10 text-slate-400 dark:text-slate-700 hover:text-slate-700 dark:text-slate-300 disabled:opacity-20 transition text-xs">↑</button>
+              className="p-2 md:p-1 rounded hover:bg-white/10 text-slate-400 dark:text-slate-700 hover:text-slate-700 dark:text-slate-300 disabled:opacity-20 transition text-xs">↑</button>
             <button onClick={() => onMove("down")} disabled={idx === total - 1}
-              className="p-1 rounded hover:bg-white/10 text-slate-400 dark:text-slate-700 hover:text-slate-700 dark:text-slate-300 disabled:opacity-20 transition text-xs">↓</button>
+              className="p-2 md:p-1 rounded hover:bg-white/10 text-slate-400 dark:text-slate-700 hover:text-slate-700 dark:text-slate-300 disabled:opacity-20 transition text-xs">↓</button>
             <button onClick={() => setEditing(true)}
-              className="p-1 rounded hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition"><Edit2 size={11}/></button>
+              className="p-2 md:p-1 rounded hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition"><Edit2 size={11}/></button>
             <button onClick={onDelete}
-              className="p-1 rounded hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400 transition"><Trash2 size={11}/></button>
+              className="p-2 md:p-1 rounded hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400 transition"><Trash2 size={11}/></button>
           </div>
         </div>
       ) : (

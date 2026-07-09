@@ -551,7 +551,7 @@ function ListView({
         </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
           <div className="text-xs text-slate-600 dark:text-slate-400">Total Documents</div>
           <div className="text-2xl font-semibold mt-1">{totalDocs}</div>
@@ -1381,7 +1381,7 @@ function DocumentView({
         {/* Procurement Optimization Dashboard */}
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4 mb-4">
           <div className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Procurement Optimization Dashboard</div>
-          <div className="grid grid-cols-4 gap-3 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
             <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
               <div className="text-xs text-slate-600 dark:text-slate-400">Current Cost</div>
               <div className="text-lg font-semibold mt-1">
@@ -1504,7 +1504,7 @@ function DocumentView({
                 </div>
               </div>
             )}
-            <div className="grid grid-cols-5 gap-3 mb-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
               <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
                 <div className="text-xs text-slate-600 dark:text-slate-400">Risky Items</div>
                 <div className="text-lg font-semibold mt-1 text-red-400">
@@ -1537,7 +1537,7 @@ function DocumentView({
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-5 gap-3 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
             <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-50 dark:bg-slate-900/50 p-3">
               <div className="text-xs text-slate-600 dark:text-slate-400">Risky Items</div>
               <div className="text-lg font-semibold mt-1 text-red-400">
@@ -1676,7 +1676,7 @@ function DocumentView({
           </div>
         </div>
 
-        <div className="grid grid-cols-7 gap-3 mb-6">
+        <div className="grid grid-cols-3 sm:grid-cols-7 gap-3 mb-6">
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
             <div className="text-xs text-slate-600 dark:text-slate-400">Total Items</div>
             <div className="text-xl font-semibold mt-1">{summaryCounts.totalItems}</div>
@@ -2086,7 +2086,7 @@ function PurchaseOrdersListView({
         </button>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
           <div className="text-xs text-slate-600 dark:text-slate-400">Total POs</div>
           <div className="text-2xl font-semibold mt-1">{totalPOs}</div>
@@ -2472,7 +2472,7 @@ function PurchaseOrderDocumentView({
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3">
             <div className="text-xs text-slate-600 dark:text-slate-400">Total Items</div>
             <div className="text-xl font-semibold mt-1">

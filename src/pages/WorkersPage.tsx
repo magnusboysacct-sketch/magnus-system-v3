@@ -110,7 +110,7 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
             initials(worker)
           )}
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
           <button onClick={() => onIdCard(worker)}
             className="p-1.5 rounded-lg hover:bg-yellow-500/15 text-slate-600 hover:text-yellow-400 transition-colors" title="Print ID Card">
             <span style={{fontSize:11}}>🪪</span>
@@ -415,7 +415,7 @@ export default function WorkersPage() {
         </div>
 
         {/* Secondary stats */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <Card>
             <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-1">Employees</div>
             <div className="text-xl font-bold text-blue-400">{stats.employees}</div>

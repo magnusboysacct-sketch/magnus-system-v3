@@ -13,7 +13,7 @@ import {
   ChevronLeft, ChevronRight, Building2, Layers,
   Receipt, Truck, HardHat, Banknote, BookOpen,
   ClipboardList, Package, PieChart, Wrench,
-  ChevronDown, ChevronUp, Plus, Zap
+  ChevronDown, ChevronUp, Plus, Zap, Menu, X
 } from "lucide-react";
 import { cn, SectionLabel } from "../components/ui";
 
@@ -79,14 +79,14 @@ const NAV: NavItem[] = [
 
 // ─── Sidebar Nav Item ─────────────────────────────────────────────────────────
 
-function NavGroup({ item, collapsed, defaultOpen }: { item: NavItem; collapsed: boolean; defaultOpen: boolean }) {
+function NavGroup({ item, collapsed, defaultOpen, onNavigate }: { item: NavItem; collapsed: boolean; defaultOpen: boolean; onNavigate?: () => void }) {
   const [open, setOpen] = useState(defaultOpen);
   const location = useLocation();
   const anyActive = item.children?.some(c => c.to && location.pathname.startsWith(c.to) && c.to !== "/");
 
   if (!item.children) {
     return (
-      <NavLink to={item.to!} end={item.to === "/"}
+      <NavLink to={item.to!} end={item.to === "/"} onClick={onNavigate}
         className={({ isActive }) => cn(
           "flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors mx-2",
           isActive ? "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300" : "text-slate-500 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.04]"
@@ -119,7 +119,7 @@ function NavGroup({ item, collapsed, defaultOpen }: { item: NavItem; collapsed: 
       {!collapsed && open && (
         <div className="ml-5 mt-0.5 mb-1 border-l border-slate-200 dark:border-white/[0.06] pl-2 space-y-0.5">
           {item.children.map(child => (
-            <NavLink key={child.to} to={child.to!}
+            <NavLink key={child.to} to={child.to!} onClick={onNavigate}
               className={({ isActive }) => cn(
                 "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors",
                 isActive ? "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300" : "text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.03]"
@@ -198,6 +198,7 @@ function ProjectPicker({ collapsed }: { collapsed: boolean }) {
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
   const { settings: co } = useCompanySettings();
@@ -223,11 +224,32 @@ export default function AppLayout() {
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#080b10] overflow-hidden">
 
+      {/* ── Mobile hamburger ── */}
+      <button
+        onClick={() => setSidebarOpen(true)}
+        className="md:hidden fixed top-3 left-3 z-30 p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm">
+        <Menu size={20} className="text-slate-600 dark:text-slate-300"/>
+      </button>
+
+      {/* ── Mobile overlay ── */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setSidebarOpen(false)}/>
+      )}
+
       {/* ── Sidebar ── */}
       <aside className={cn(
-        "flex flex-col border-r border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0a0d14] transition-all duration-200 flex-shrink-0",
-        collapsed ? "w-14" : "w-56"
+        "flex flex-col border-r border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0a0d14] transition-all duration-200",
+        "fixed inset-y-0 left-0 z-50 w-56",
+        "md:static md:z-auto md:flex-shrink-0",
+        sidebarOpen ? "translate-x-0" : "-translate-x-full",
+        "md:translate-x-0",
+        collapsed ? "md:w-14" : "md:w-56"
       )}>
+        {/* Close button — mobile only */}
+        <button onClick={() => setSidebarOpen(false)}
+          className="md:hidden absolute top-3 right-3 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 z-10">
+          <X size={16}/>
+        </button>
         {/* Logo */}
         <div className={cn("flex items-center h-12 border-b border-slate-200 dark:border-white/[0.06] flex-shrink-0", collapsed ? "justify-center px-0" : "gap-2.5 px-4")}>
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
@@ -250,7 +272,7 @@ export default function AppLayout() {
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-2 space-y-0.5 scrollbar-hide">
           {NAV.map(item => (
-            <NavGroup key={item.label} item={item} collapsed={collapsed} defaultOpen={isGroupActive(item)} />
+            <NavGroup key={item.label} item={item} collapsed={collapsed} defaultOpen={isGroupActive(item)} onNavigate={() => setSidebarOpen(false)} />
           ))}
         </nav>
 
@@ -277,7 +299,7 @@ export default function AppLayout() {
             {!collapsed && "Sign out"}
           </button>
           <button onClick={() => setCollapsed(v => !v)}
-            className={cn("w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-slate-400 dark:text-slate-700 hover:text-slate-600 dark:hover:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors", collapsed && "justify-center")}>
+            className={cn("w-full hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] text-slate-400 dark:text-slate-700 hover:text-slate-600 dark:hover:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors", collapsed && "justify-center")}>
             {collapsed ? <ChevronRight size={13}/> : <><ChevronLeft size={13}/><span>Collapse</span></>}
           </button>
         </div>
@@ -285,7 +307,7 @@ export default function AppLayout() {
 
       {/* ── Main content ── */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080b10]">
+        <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080b10] pt-14 md:pt-0">
           <Outlet />
         </main>
       </div>

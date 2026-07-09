@@ -93,18 +93,18 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
         <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center flex-shrink-0">
           <FileText size={15} className="text-blue-400"/>
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+        <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
           onClick={e => e.stopPropagation()}>
           <button onClick={onDuplicate}
-            className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors" title="Duplicate">
+            className="p-2.5 md:p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors" title="Duplicate">
             <Copy size={11}/>
           </button>
           <button onClick={onDelete}
-            className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors" title="Delete">
+            className="p-2.5 md:p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors" title="Delete">
             <Trash2 size={11}/>
           </button>
           <button onClick={onAdvisor}
-            className="p-1.5 rounded-lg hover:bg-purple-500/15 text-slate-600 hover:text-purple-400 transition-colors" title="AI Advisor">
+            className="p-2.5 md:p-1.5 rounded-lg hover:bg-purple-500/15 text-slate-600 hover:text-purple-400 transition-colors" title="AI Advisor">
             <Bot size={11}/>
           </button>
         </div>

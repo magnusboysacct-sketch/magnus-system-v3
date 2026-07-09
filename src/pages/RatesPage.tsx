@@ -697,9 +697,9 @@ export default function RatesPage() {
         </div>
 
         {/* Table */}
-        <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden bg-white dark:bg-[#0d1117]">
+        <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-x-auto bg-white dark:bg-[#0d1117]">
           {/* Header */}
-          <div className="grid text-[10px] font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider px-4 py-2.5 border-b border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02]"
+          <div className="grid min-w-[860px] text-[10px] font-semibold text-slate-500 dark:text-slate-600 uppercase tracking-wider px-4 py-2.5 border-b border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02]"
             style={{gridTemplateColumns:"2fr 1.2fr 0.7fr 1fr 1fr 0.7fr 1fr 0.9fr 96px"}}>
             <span>Item</span><span>Description</span><span>Code</span>
             <span>Category</span><span>Type</span><span>Unit</span>
@@ -738,7 +738,7 @@ export default function RatesPage() {
             const ts=TYPE_STYLE[item.item_type||"Other"]||TYPE_STYLE.Other;
             return(
               <div key={item.id}
-                className={`grid items-center px-4 py-3 gap-2 border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:bg-white/[0.02] transition group ${idx===filteredItems.length-1?"border-b-0":""}`}
+                className={`grid min-w-[860px] items-center px-4 py-3 gap-2 border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:bg-white/[0.02] transition group ${idx===filteredItems.length-1?"border-b-0":""}`}
                 style={{gridTemplateColumns:"2fr 1.2fr 0.7fr 1fr 1fr 0.7fr 1fr 0.9fr 96px"}}>
 
                 {/* Item */}
@@ -847,7 +847,7 @@ export default function RatesPage() {
                 <div className="text-[11px] text-slate-400 dark:text-slate-700">{formatDate(item.updated_at)}</div>
 
                 {/* Actions */}
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity justify-end">
                   <button type="button" onClick={()=>openEdit(item)} disabled={busy}
                     className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition" title="Edit">
                     <Edit2 size={13}/>

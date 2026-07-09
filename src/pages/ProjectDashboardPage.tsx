@@ -402,7 +402,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
 
       {/* Header */}
       <div className="border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d1117] px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap gap-y-2">
           <div className="flex items-center gap-3 min-w-0">
             <button onClick={()=>nav("/projects")} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition flex-shrink-0">
               <ChevronLeft size={16}/>
@@ -564,7 +564,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
         {tab==="milestones"&&(
           <>
             {/* Milestone Stats */}
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 {label:"Total",    value:milestones.length,                              color:"text-slate-700 dark:text-slate-300",   bg:"bg-slate-50 dark:bg-white/[0.04]",   border:"border-slate-200 dark:border-white/[0.07]"},
                 {label:"Planned",  value:milestones.filter(m=>m.status==="planned").length,  color:"text-slate-600 dark:text-slate-400",   bg:"bg-slate-500/10",   border:"border-slate-500/20"},
@@ -580,7 +580,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
 
             {/* Budget Summary */}
             {totalPlannedCost>0&&(
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {[
                   {label:"Planned Budget",  value:fmtJMD(totalPlannedCost), color:"text-blue-400",    bg:"bg-blue-500/10",    border:"border-blue-500/20"},
                   {label:"Actual Cost",     value:fmtJMD(totalActualCost),  color:"text-amber-400",   bg:"bg-amber-500/10",   border:"border-amber-500/20"},
@@ -834,7 +834,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
         )}{/* ── TASKS ── */}
         {(tab==="tasks"||showTaskForm)&&(
           <>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 {label:"Total",    value:tasks.length,                                color:"text-slate-700 dark:text-slate-300",   bg:"bg-slate-50 dark:bg-white/[0.04]",   border:"border-slate-200 dark:border-white/[0.07]"},
                 {label:"Planned",  value:tasks.filter(t=>t.status==="planned").length, color:"text-slate-600 dark:text-slate-400",   bg:"bg-slate-500/10",   border:"border-slate-500/20"},
