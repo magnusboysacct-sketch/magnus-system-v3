@@ -24,11 +24,18 @@ interface MeasurementRow {
   id: string;
   description: string;
   qty: number;
-  length: number | "";
-  width: number | "";
-  height: number | "";
+  lengthFt: number | "";
+  lengthIn: number | "";
+  widthFt: number | "";
+  widthIn: number | "";
+  heightFt: number | "";
+  heightIn: number | "";
   total: number;
   deduct: boolean;
+}
+
+function ftIn(ft: number | "", inches: number | ""): number {
+  return (Number(ft) || 0) + (Number(inches) || 0) / 12;
 }
 
 type RateItem = {
@@ -259,15 +266,17 @@ function MeasurementModal({
   const [rows, setRows] = useState<MeasurementRow[]>(modal.rows);
 
   function calcRow(r: MeasurementRow): number {
-    const l = Number(r.length) || 1;
-    const w = Number(r.width) || 1;
-    const h = Number(r.height) || 1;
-    const dims = [r.length, r.width, r.height].filter(v => v !== "" && Number(v) !== 0).length;
+    const l = ftIn(r.lengthFt, r.lengthIn);
+    const w = ftIn(r.widthFt, r.widthIn);
+    const h = ftIn(r.heightFt, r.heightIn);
+    const hasL = l > 0;
+    const hasW = w > 0;
+    const hasH = h > 0;
     let val = 0;
-    if (dims === 0) val = r.qty;
-    else if (dims === 1) val = l * r.qty;
-    else if (dims === 2) val = l * (r.width !== "" ? Number(r.width) : 1) * r.qty;
-    else val = l * w * h * r.qty;
+    if (!hasL && !hasW && !hasH) val = Number(r.qty) || 0;
+    else if (hasL && !hasW && !hasH) val = l * (Number(r.qty) || 1);
+    else if (hasL && hasW && !hasH) val = l * w * (Number(r.qty) || 1);
+    else val = l * w * h * (Number(r.qty) || 1);
     return r.deduct ? -Math.abs(val) : Math.abs(val);
   }
 
@@ -283,7 +292,8 @@ function MeasurementModal({
   function addRow() {
     setRows(prev => [...prev, {
       id: safeId(), description: "", qty: 1,
-      length: "", width: "", height: "", total: 0, deduct: false,
+      lengthFt: "", lengthIn: "", widthFt: "", widthIn: "", heightFt: "", heightIn: "",
+      total: 0, deduct: false,
     }]);
   }
 
@@ -312,55 +322,116 @@ function MeasurementModal({
           <table className="w-full text-xs">
             <thead>
               <tr className="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800">
-                <th className="text-left pb-2 w-8">#</th>
+                <th className="text-left pb-2 w-6">#</th>
                 <th className="text-left pb-2">Description</th>
-                <th className="text-center pb-2 w-16">Qty</th>
-                <th className="text-center pb-2 w-20">Length</th>
-                <th className="text-center pb-2 w-20">Width</th>
-                <th className="text-center pb-2 w-20">Height</th>
-                <th className="text-center pb-2 w-8">–</th>
-                <th className="text-right pb-2 w-24">Total</th>
-                <th className="w-6"/>
+                <th className="text-center pb-2 w-14">Qty</th>
+                <th className="text-center pb-2" colSpan={2}>Length</th>
+                <th className="text-center pb-2" colSpan={2}>Width</th>
+                <th className="text-center pb-2" colSpan={2}>Height</th>
+                <th className="text-center pb-2 w-8">±</th>
+                <th className="text-right pb-2 w-20">Total</th>
+                <th className="w-5"/>
+              </tr>
+              <tr className="text-[9px] text-slate-500 border-b border-slate-100 dark:border-slate-800">
+                <th/><th/>
+                <th/>
+                <th className="text-center pb-1 text-slate-400">ft</th>
+                <th className="text-center pb-1 text-slate-400">in</th>
+                <th className="text-center pb-1 text-slate-400">ft</th>
+                <th className="text-center pb-1 text-slate-400">in</th>
+                <th className="text-center pb-1 text-slate-400">ft</th>
+                <th className="text-center pb-1 text-slate-400">in</th>
+                <th/><th/><th/>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {rows.map((row, idx) => (
                 <tr key={row.id} className={row.deduct ? "bg-red-50 dark:bg-red-500/5" : ""}>
-                  <td className="py-1.5 pr-2 text-slate-400">{idx + 1}</td>
+                  <td className="py-1.5 pr-1 text-slate-400 text-[10px]">{idx + 1}</td>
                   <td className="py-1.5 pr-2">
                     <input
                       value={row.description}
                       onChange={e => updateRow(row.id, { description: e.target.value })}
                       placeholder="e.g. North wall"
-                      className="w-full bg-transparent border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 placeholder-slate-300 focus:outline-none focus:border-blue-500 py-0.5"
+                      className="w-full bg-transparent border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 placeholder-slate-300 dark:placeholder-slate-600 focus:outline-none focus:border-blue-500 py-0.5 text-xs"
                     />
                   </td>
-                  {(["qty","length","width","height"] as const).map(field => (
-                    <td key={field} className="py-1.5 px-1 text-center">
-                      <input
-                        type="number"
-                        value={row[field] === "" ? "" : row[field]}
-                        onChange={e => updateRow(row.id, { [field]: e.target.value === "" ? "" : Number(e.target.value) } as any)}
-                        placeholder={field === "qty" ? "1" : "—"}
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-center text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
-                      />
-                    </td>
-                  ))}
+                  {/* Qty */}
+                  <td className="py-1.5 px-1">
+                    <input type="number" min="1"
+                      value={row.qty}
+                      onChange={e => updateRow(row.id, { qty: Number(e.target.value) || 1 })}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                    />
+                  </td>
+                  {/* Length ft + in */}
+                  <td className="py-1.5 px-0.5">
+                    <input type="number" min="0"
+                      value={row.lengthFt === "" ? "" : row.lengthFt}
+                      onChange={e => updateRow(row.id, { lengthFt: e.target.value === "" ? "" : Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-14 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                    />
+                  </td>
+                  <td className="py-1.5 px-0.5">
+                    <input type="number" min="0" max="11"
+                      value={row.lengthIn === "" ? "" : row.lengthIn}
+                      onChange={e => updateRow(row.id, { lengthIn: e.target.value === "" ? "" : Math.min(11, Number(e.target.value)) })}
+                      placeholder="0"
+                      className="w-14 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                    />
+                  </td>
+                  {/* Width ft + in */}
+                  <td className="py-1.5 px-0.5">
+                    <input type="number" min="0"
+                      value={row.widthFt === "" ? "" : row.widthFt}
+                      onChange={e => updateRow(row.id, { widthFt: e.target.value === "" ? "" : Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-14 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                    />
+                  </td>
+                  <td className="py-1.5 px-0.5">
+                    <input type="number" min="0" max="11"
+                      value={row.widthIn === "" ? "" : row.widthIn}
+                      onChange={e => updateRow(row.id, { widthIn: e.target.value === "" ? "" : Math.min(11, Number(e.target.value)) })}
+                      placeholder="0"
+                      className="w-14 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                    />
+                  </td>
+                  {/* Height ft + in */}
+                  <td className="py-1.5 px-0.5">
+                    <input type="number" min="0"
+                      value={row.heightFt === "" ? "" : row.heightFt}
+                      onChange={e => updateRow(row.id, { heightFt: e.target.value === "" ? "" : Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-14 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                    />
+                  </td>
+                  <td className="py-1.5 px-0.5">
+                    <input type="number" min="0" max="11"
+                      value={row.heightIn === "" ? "" : row.heightIn}
+                      onChange={e => updateRow(row.id, { heightIn: e.target.value === "" ? "" : Math.min(11, Number(e.target.value)) })}
+                      placeholder="0"
+                      className="w-14 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                    />
+                  </td>
+                  {/* Deduct toggle */}
                   <td className="py-1.5 px-1 text-center">
                     <button
                       onClick={() => updateRow(row.id, { deduct: !row.deduct })}
-                      title={row.deduct ? "Deduction (click to toggle)" : "Addition (click to deduct)"}
-                      className={`w-6 h-6 rounded-md text-xs font-bold transition-colors ${row.deduct ? "bg-red-100 dark:bg-red-500/20 text-red-600" : "bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50"}`}>
+                      title={row.deduct ? "Deduction — click to make addition" : "Addition — click to make deduction"}
+                      className={`w-7 h-7 rounded-lg text-sm font-bold transition-colors ${row.deduct ? "bg-red-100 dark:bg-red-500/20 text-red-600" : "bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50 hover:text-red-400"}`}>
                       {row.deduct ? "–" : "+"}
                     </button>
                   </td>
-                  <td className={`py-1.5 text-right font-semibold ${row.deduct ? "text-red-500" : "text-slate-700 dark:text-slate-200"}`}>
-                    {row.deduct ? `(${Math.abs(calcRow(row)).toFixed(2)})` : calcRow(row).toFixed(2)}
+                  {/* Total */}
+                  <td className={`py-1.5 text-right text-xs font-semibold ${row.deduct ? "text-red-500" : "text-slate-700 dark:text-slate-200"}`}>
+                    {row.deduct ? `(${Math.abs(calcRow(row)).toFixed(3)})` : calcRow(row).toFixed(3)}
                   </td>
-                  <td className="py-1.5 pl-2">
+                  <td className="py-1.5 pl-1">
                     <button onClick={() => removeRow(row.id)}
                       className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-300 hover:text-red-400 transition-colors">
-                      <X size={12}/>
+                      <X size={11}/>
                     </button>
                   </td>
                 </tr>
@@ -636,7 +707,7 @@ useEffect(() => {
       const itemsBySection = new Map<string, any[]>();
       if (sectionIds.length > 0) {
         const { data: itemRows, error: iErr } = await supabase.from("boq_section_items")
-          .select("id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate")
+          .select("id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate,measurements")
           .in("section_id", sectionIds).order("sort_order");
         if (iErr) throw iErr;
         for (const r of (itemRows || [])) {
@@ -655,7 +726,8 @@ useEffect(() => {
           pick_variant: String(r.pick_variant ?? ""), cost_item_id: r.cost_item_id ? String(r.cost_item_id) : null,
           item_name: String(r.item_name ?? ""), description: String(r.description ?? ""),
           unit_id: r.unit_id ? String(r.unit_id) : null,
-          qty: numOr(r.qty, 0), rate: numOr(r.rate, 0), rate_source: ""
+          qty: numOr(r.qty, 0), rate: numOr(r.rate, 0), rate_source: "",
+          measurements: (r.measurements as MeasurementRow[]) || [],
         }))
       })));
     } catch (e: any) { setPersistError(e?.message ?? "Failed to load BOQ"); }
@@ -707,7 +779,7 @@ useEffect(() => {
       for (const s of sections) {
         const dbSid = sectionIdMap.get(s.id);
         if (!dbSid) throw new Error(`Section mapping failed: ${s.title}`);
-        s.items.forEach((it, i) => itemPayload.push({ section_id: dbSid, sort_order: i, pick_type: it.pick_type ?? "", pick_category: it.pick_category ?? "", pick_item: it.pick_item ?? "", pick_variant: it.pick_variant ?? "", cost_item_id: it.cost_item_id, item_name: it.item_name ?? "", description: it.description ?? "", unit_id: it.unit_id, qty: numOr(it.qty, 0), rate: numOr(it.rate, 0) }));
+        s.items.forEach((it, i) => itemPayload.push({ section_id: dbSid, sort_order: i, pick_type: it.pick_type ?? "", pick_category: it.pick_category ?? "", pick_item: it.pick_item ?? "", pick_variant: it.pick_variant ?? "", cost_item_id: it.cost_item_id, item_name: it.item_name ?? "", description: it.description ?? "", unit_id: it.unit_id, qty: numOr(it.qty, 0), rate: numOr(it.rate, 0), measurements: it.measurements ?? [] }));
       }
       if (itemPayload.length > 0) {
         const { error: iErr } = await supabase.from("boq_section_items").insert(itemPayload).select("id,item_name");
@@ -782,13 +854,21 @@ useEffect(() => {
       unit: unitLabel,
       rows: item.measurements?.length
         ? item.measurements
-        : [{ id: safeId(), description: "", qty: 1, length: "", width: "", height: "", total: 0, deduct: false }],
+        : [{ id: safeId(), description: "", qty: 1, lengthFt: "", lengthIn: "", widthFt: "", widthIn: "", heightFt: "", heightIn: "", total: 0, deduct: false }],
     });
   }
 
-  function applyMeasurements(sectionId: string, itemId: string, rows: MeasurementRow[], total: number) {
-    updateItem(sectionId, itemId, { qty: Math.max(0, total), measurements: rows });
+  async function applyMeasurements(sectionId: string, itemId: string, rows: MeasurementRow[], total: number) {
+    const qty = Math.max(0, total);
+    updateItem(sectionId, itemId, { qty, measurements: rows });
     setMeasureModal(null);
+    // Best-effort persist: no-ops silently if the item hasn't been saved to
+    // boq_section_items yet — the next saveBoq() will include it via itemPayload.
+    const { error } = await supabase
+      .from("boq_section_items")
+      .update({ measurements: rows, qty })
+      .eq("id", itemId);
+    if (error) console.error("Failed to persist measurements:", error);
   }
 
   // --- Find Item Handler -----------------------------------------------------
