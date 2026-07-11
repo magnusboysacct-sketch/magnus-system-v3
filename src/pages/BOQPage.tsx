@@ -254,12 +254,20 @@ function MeasurementModal({
   modal,
   onClose,
   onApply,
+  rateItems,
 }: {
-  modal: { sectionId: string; itemId: string; itemName: string; unit: string; rows: MeasurementRow[] };
+  modal: { sectionId: string; itemId: string; itemName: string; unit: string; costItemId: string | null; rows: MeasurementRow[] };
   onClose: () => void;
   onApply: (sectionId: string, itemId: string, rows: MeasurementRow[], total: number) => void;
+  rateItems: RateItem[];
 }) {
   const [rows, setRows] = useState<MeasurementRow[]>(modal.rows);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<{
+    calculatedQty: number;
+    explanation: string;
+    breakdown: { label: string; value: string }[];
+  } | null>(null);
 
   function calcRow(r: MeasurementRow): number {
     const l = (Number(r.lengthFt) || 0) + (Number(r.lengthIn) || 0) / 12;
@@ -305,6 +313,66 @@ function MeasurementModal({
   }
 
   const grandTotal = rows.reduce((sum, r) => sum + calcRow(r), 0);
+
+  async function handleAICalculate() {
+    if (grandTotal === 0) return;
+    setAiLoading(true);
+    setAiResult(null);
+    try {
+      const rateItem = rateItems.find(r => r.id === modal.costItemId);
+      const prompt = `You are a construction estimating assistant for Jamaica.
+
+Item: "${modal.itemName}"
+Unit: "${modal.unit}"
+Measured area/quantity: ${grandTotal.toFixed(3)} (from dimensions entered by user)
+
+${rateItem ? `Rate item details: ${rateItem.item_name}, unit: ${rateItem.unit}, category: ${rateItem.category}` : ""}
+
+Task: Calculate how many units of "${modal.itemName}" are needed to cover ${grandTotal.toFixed(3)} ${modal.unit || "units"} of work.
+
+Consider standard Jamaican construction practices:
+- 6" concrete blocks: approximately 12.5 blocks per square metre, or 1.125 blocks per square foot (including mortar joints)
+- 4" concrete blocks: approximately 12.5 blocks per square metre
+- Standard brick: approximately 60 bricks per square metre
+- Paint/primer: approximately 1 gallon per 400 square feet (one coat)
+- Ceramic tiles 12x12: approximately 1.1 tiles per square foot (10% waste)
+- Ready mix concrete: volume in cubic feet ÷ 27 = cubic yards
+- Sand: approximately 0.5 cubic feet per square foot of wall (4" mortar bed)
+
+Respond ONLY with a JSON object (no markdown, no explanation outside the JSON):
+{
+  "coverageFactor": <number - units of item per unit of measurement>,
+  "calculatedQty": <number - total units needed>,
+  "explanation": "<one sentence explaining the calculation>",
+  "breakdown": [
+    {"label": "Measured area", "value": "${grandTotal.toFixed(2)} ${modal.unit || ''}"},
+    {"label": "Coverage factor", "value": "<factor description>"},
+    {"label": "Calculated quantity", "value": "<qty> ${modal.unit || 'units'}"},
+    {"label": "Wastage allowance", "value": "<percentage if applicable>"}
+  ]
+}`;
+
+      const text = await magnusAI.chat(prompt);
+      const clean = String(text).replace(/```json|```/g, "").trim();
+      const start = clean.indexOf("{"), end = clean.lastIndexOf("}");
+      if (start === -1 || end === -1) throw new Error("No JSON in AI response");
+      const parsed = JSON.parse(clean.slice(start, end + 1));
+      setAiResult({
+        calculatedQty: Number(parsed.calculatedQty) || grandTotal,
+        explanation: String(parsed.explanation || ""),
+        breakdown: Array.isArray(parsed.breakdown) ? parsed.breakdown : [],
+      });
+    } catch (e) {
+      console.error("AI calculation failed:", e);
+      setAiResult({
+        calculatedQty: grandTotal,
+        explanation: "Could not calculate automatically. Please enter quantity manually.",
+        breakdown: [],
+      });
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -460,6 +528,38 @@ function MeasurementModal({
           </button>
         </div>
 
+        {/* AI Calculation Result */}
+        {aiResult && (
+          <div className="mx-4 mb-3 p-4 rounded-xl bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-purple-600 dark:text-purple-400">🤖</span>
+              <span className="text-sm font-bold text-purple-700 dark:text-purple-300">AI Calculation Result</span>
+            </div>
+            {aiResult.explanation && (
+              <p className="text-xs text-purple-600 dark:text-purple-400 mb-3">{aiResult.explanation}</p>
+            )}
+            {aiResult.breakdown.length > 0 && (
+              <div className="space-y-1.5 mb-3">
+                {aiResult.breakdown.map((b, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500 dark:text-slate-400">{b.label}</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">{b.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center justify-between p-3 rounded-lg bg-purple-100 dark:bg-purple-500/20">
+              <span className="text-sm font-bold text-purple-700 dark:text-purple-300">Recommended Quantity:</span>
+              <span className="text-xl font-bold text-purple-600 dark:text-purple-400">{aiResult.calculatedQty.toFixed(2)} {modal.unit}</span>
+            </div>
+            <button
+              onClick={() => onApply(modal.sectionId, modal.itemId, rows, aiResult.calculatedQty)}
+              className="w-full mt-3 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2">
+              ✅ Apply {aiResult.calculatedQty.toFixed(2)} {modal.unit} to BOQ
+            </button>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
@@ -471,6 +571,16 @@ function MeasurementModal({
             <button onClick={onClose}
               className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
               Cancel
+            </button>
+            <button
+              onClick={handleAICalculate}
+              disabled={aiLoading || grandTotal === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+              {aiLoading ? (
+                <><span className="animate-spin">⟳</span> Calculating...</>
+              ) : (
+                <><span>🤖</span> Smart Calculate</>
+              )}
             </button>
             <button onClick={() => onApply(modal.sectionId, modal.itemId, rows, grandTotal)}
               className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">
@@ -538,6 +648,7 @@ export default function BOQPage() {
     itemId: string;
     itemName: string;
     unit: string;
+    costItemId: string | null;
     rows: MeasurementRow[];
   } | null>(null);
   const [aiSuggestionsModal, setAiSuggestionsModal] = useState<{ open: boolean; suggestions: BOQSuggestion[] }>({ open: false, suggestions: [] });
@@ -867,6 +978,7 @@ useEffect(() => {
       itemId: item.id,
       itemName: item.item_name || "Item",
       unit: unitLabel,
+      costItemId: item.cost_item_id || null,
       rows: item.measurements?.length
         ? item.measurements
         : [{ id: safeId(), description: "", qty: 1, lengthFt: "", lengthIn: "", widthFt: "", widthIn: "", heightFt: "", heightIn: "", total: 0, deduct: false }],
@@ -1777,6 +1889,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
           modal={measureModal}
           onClose={() => setMeasureModal(null)}
           onApply={applyMeasurements}
+          rateItems={rateItems}
         />
       )}
     </div>
