@@ -20,6 +20,17 @@ import { BOQSuggestionCard } from "../components/BOQSuggestionCard";
 import { addSuggestionToBOQ, type BOQSuggestion } from "../lib/boqSuggestions";
 
 // --- Types --------------------------------------------------------------------
+interface MeasurementRow {
+  id: string;
+  description: string;
+  qty: number;
+  length: number | "";
+  width: number | "";
+  height: number | "";
+  total: number;
+  deduct: boolean;
+}
+
 type RateItem = {
   id: string;
   item_name: string;
@@ -45,6 +56,7 @@ type BOQItemRow = {
   qty: number;
   rate: number;
   rate_source?: "library" | "manual" | "assembly" | "";
+  measurements?: MeasurementRow[];
 };
 
 type Section = {
@@ -234,6 +246,157 @@ function FindItemModal({
   );
 }
 
+// --- Measurement Modal ----------------------------------------------------------
+function MeasurementModal({
+  modal,
+  onClose,
+  onApply,
+}: {
+  modal: { sectionId: string; itemId: string; itemName: string; unit: string; rows: MeasurementRow[] };
+  onClose: () => void;
+  onApply: (sectionId: string, itemId: string, rows: MeasurementRow[], total: number) => void;
+}) {
+  const [rows, setRows] = useState<MeasurementRow[]>(modal.rows);
+
+  function calcRow(r: MeasurementRow): number {
+    const l = Number(r.length) || 1;
+    const w = Number(r.width) || 1;
+    const h = Number(r.height) || 1;
+    const dims = [r.length, r.width, r.height].filter(v => v !== "" && Number(v) !== 0).length;
+    let val = 0;
+    if (dims === 0) val = r.qty;
+    else if (dims === 1) val = l * r.qty;
+    else if (dims === 2) val = l * (r.width !== "" ? Number(r.width) : 1) * r.qty;
+    else val = l * w * h * r.qty;
+    return r.deduct ? -Math.abs(val) : Math.abs(val);
+  }
+
+  function updateRow(id: string, patch: Partial<MeasurementRow>) {
+    setRows(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const updated = { ...r, ...patch };
+      updated.total = calcRow(updated);
+      return updated;
+    }));
+  }
+
+  function addRow() {
+    setRows(prev => [...prev, {
+      id: safeId(), description: "", qty: 1,
+      length: "", width: "", height: "", total: 0, deduct: false,
+    }]);
+  }
+
+  function removeRow(id: string) {
+    setRows(prev => prev.filter(r => r.id !== id));
+  }
+
+  const grandTotal = rows.reduce((sum, r) => sum + calcRow(r), 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">📐 Measurements</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{modal.itemName} · {modal.unit}</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+            <X size={16}/>
+          </button>
+        </div>
+
+        {/* Table */}
+        <div className="flex-1 overflow-auto p-4">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                <th className="text-left pb-2 w-8">#</th>
+                <th className="text-left pb-2">Description</th>
+                <th className="text-center pb-2 w-16">Qty</th>
+                <th className="text-center pb-2 w-20">Length</th>
+                <th className="text-center pb-2 w-20">Width</th>
+                <th className="text-center pb-2 w-20">Height</th>
+                <th className="text-center pb-2 w-8">–</th>
+                <th className="text-right pb-2 w-24">Total</th>
+                <th className="w-6"/>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {rows.map((row, idx) => (
+                <tr key={row.id} className={row.deduct ? "bg-red-50 dark:bg-red-500/5" : ""}>
+                  <td className="py-1.5 pr-2 text-slate-400">{idx + 1}</td>
+                  <td className="py-1.5 pr-2">
+                    <input
+                      value={row.description}
+                      onChange={e => updateRow(row.id, { description: e.target.value })}
+                      placeholder="e.g. North wall"
+                      className="w-full bg-transparent border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 placeholder-slate-300 focus:outline-none focus:border-blue-500 py-0.5"
+                    />
+                  </td>
+                  {(["qty","length","width","height"] as const).map(field => (
+                    <td key={field} className="py-1.5 px-1 text-center">
+                      <input
+                        type="number"
+                        value={row[field] === "" ? "" : row[field]}
+                        onChange={e => updateRow(row.id, { [field]: e.target.value === "" ? "" : Number(e.target.value) } as any)}
+                        placeholder={field === "qty" ? "1" : "—"}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-center text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+                      />
+                    </td>
+                  ))}
+                  <td className="py-1.5 px-1 text-center">
+                    <button
+                      onClick={() => updateRow(row.id, { deduct: !row.deduct })}
+                      title={row.deduct ? "Deduction (click to toggle)" : "Addition (click to deduct)"}
+                      className={`w-6 h-6 rounded-md text-xs font-bold transition-colors ${row.deduct ? "bg-red-100 dark:bg-red-500/20 text-red-600" : "bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50"}`}>
+                      {row.deduct ? "–" : "+"}
+                    </button>
+                  </td>
+                  <td className={`py-1.5 text-right font-semibold ${row.deduct ? "text-red-500" : "text-slate-700 dark:text-slate-200"}`}>
+                    {row.deduct ? `(${Math.abs(calcRow(row)).toFixed(2)})` : calcRow(row).toFixed(2)}
+                  </td>
+                  <td className="py-1.5 pl-2">
+                    <button onClick={() => removeRow(row.id)}
+                      className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-300 hover:text-red-400 transition-colors">
+                      <X size={12}/>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <button onClick={addRow}
+            className="mt-3 flex items-center gap-2 text-xs text-blue-500 hover:text-blue-600 font-medium">
+            <Plus size={13}/> Add Row
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div>
+            <span className="text-xs text-slate-500">Grand Total:</span>
+            <span className="ml-2 text-xl font-bold text-blue-600 dark:text-blue-400">{grandTotal.toFixed(2)}</span>
+            <span className="ml-1 text-xs text-slate-400">{modal.unit}</span>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+              Cancel
+            </button>
+            <button onClick={() => onApply(modal.sectionId, modal.itemId, rows, grandTotal)}
+              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">
+              Apply {grandTotal.toFixed(2)} {modal.unit}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Main Component -----------------------------------------------------------
 export default function BOQPage() {
   const nav = useNavigate();
@@ -284,6 +447,13 @@ export default function BOQPage() {
   const [asmModal, setAsmModal] = useState<AsmModal>({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" });
 
   const [importTakeoffModal, setImportTakeoffModal] = useState<{ open: boolean; sectionId: string | null; itemId: string | null }>({ open: false, sectionId: null, itemId: null });
+  const [measureModal, setMeasureModal] = useState<{
+    sectionId: string;
+    itemId: string;
+    itemName: string;
+    unit: string;
+    rows: MeasurementRow[];
+  } | null>(null);
   const [aiSuggestionsModal, setAiSuggestionsModal] = useState<{ open: boolean; suggestions: BOQSuggestion[] }>({ open: false, suggestions: [] });
   const [ignoredSuggestions, setIgnoredSuggestions] = useState<Set<string>>(new Set());
   const [addingSuggestion, setAddingSuggestion] = useState<string | null>(null);
@@ -601,6 +771,25 @@ useEffect(() => {
   }
   function deleteItem(sectionId: string, itemId: string) { setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: s.items.filter(it => it.id !== itemId) })); }
   function updateItem(sectionId: string, itemId: string, patch: Partial<BOQItemRow>) { setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: s.items.map(it => it.id === itemId ? { ...it, ...patch } : it) })); }
+
+  function openMeasureModal(sectionId: string, item: BOQItemRow) {
+    const unitObj = usableUnits.find((u: any) => getUnitId(u) === item.unit_id);
+    const unitLabel = unitObj ? getUnitLabel(unitObj) : "";
+    setMeasureModal({
+      sectionId,
+      itemId: item.id,
+      itemName: item.item_name || "Item",
+      unit: unitLabel,
+      rows: item.measurements?.length
+        ? item.measurements
+        : [{ id: safeId(), description: "", qty: 1, length: "", width: "", height: "", total: 0, deduct: false }],
+    });
+  }
+
+  function applyMeasurements(sectionId: string, itemId: string, rows: MeasurementRow[], total: number) {
+    updateItem(sectionId, itemId, { qty: Math.max(0, total), measurements: rows });
+    setMeasureModal(null);
+  }
 
   // --- Find Item Handler -----------------------------------------------------
   function handleFindItem(selected: RateItem) {
@@ -1235,6 +1424,14 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                   <Download size={10}/>
                                 </button>
                               )}
+                              {canEdit && (
+                                <button
+                                  onClick={() => openMeasureModal(section.id, item)}
+                                  className={`p-0.5 rounded transition flex-shrink-0 ${item.measurements?.length ? "text-blue-400 hover:bg-blue-500/15" : "text-slate-700 hover:bg-blue-500/15 hover:text-blue-400"}`}
+                                  title="Enter measurements">
+                                  📐
+                                </button>
+                              )}
                             </div>
 
                             {/* Rate */}
@@ -1478,6 +1675,15 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         }}/>
 
       {/* -- AI Assistant -- */}
+
+      {/* -- Measurement Modal -- */}
+      {measureModal && (
+        <MeasurementModal
+          modal={measureModal}
+          onClose={() => setMeasureModal(null)}
+          onApply={applyMeasurements}
+        />
+      )}
     </div>
   );
 }
