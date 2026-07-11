@@ -34,10 +34,6 @@ interface MeasurementRow {
   deduct: boolean;
 }
 
-function ftIn(ft: number | "", inches: number | ""): number {
-  return (Number(ft) || 0) + (Number(inches) || 0) / 12;
-}
-
 type RateItem = {
   id: string;
   item_name: string;
@@ -266,17 +262,24 @@ function MeasurementModal({
   const [rows, setRows] = useState<MeasurementRow[]>(modal.rows);
 
   function calcRow(r: MeasurementRow): number {
-    const l = ftIn(r.lengthFt, r.lengthIn);
-    const w = ftIn(r.widthFt, r.widthIn);
-    const h = ftIn(r.heightFt, r.heightIn);
-    const hasL = l > 0;
-    const hasW = w > 0;
-    const hasH = h > 0;
+    const l = (Number(r.lengthFt) || 0) + (Number(r.lengthIn) || 0) / 12;
+    const w = (Number(r.widthFt) || 0) + (Number(r.widthIn) || 0) / 12;
+    const h = (Number(r.heightFt) || 0) + (Number(r.heightIn) || 0) / 12;
+    const q = Number(r.qty) || 1;
     let val = 0;
-    if (!hasL && !hasW && !hasH) val = Number(r.qty) || 0;
-    else if (hasL && !hasW && !hasH) val = l * (Number(r.qty) || 1);
-    else if (hasL && hasW && !hasH) val = l * w * (Number(r.qty) || 1);
-    else val = l * w * h * (Number(r.qty) || 1);
+    if (l === 0 && w === 0 && h === 0) {
+      val = q; // count only
+    } else if (l > 0 && w === 0 && h === 0) {
+      val = l * q; // linear
+    } else if (l > 0 && w > 0 && h === 0) {
+      val = l * w * q; // area
+    } else if (l > 0 && w > 0 && h > 0) {
+      val = l * w * h * q; // volume
+    } else if (l > 0 && h > 0 && w === 0) {
+      val = l * h * q; // area (length × height, no width)
+    } else {
+      val = q;
+    }
     return r.deduct ? -Math.abs(val) : Math.abs(val);
   }
 
@@ -315,6 +318,18 @@ function MeasurementModal({
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
             <X size={16}/>
           </button>
+        </div>
+
+        {/* How to use */}
+        <div className="mx-4 mt-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20">
+          <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">How to use:</p>
+          <ul className="text-xs text-blue-600 dark:text-blue-400 space-y-0.5">
+            <li>• <strong>Linear</strong> (length only): enter Length → Total = Length × Qty</li>
+            <li>• <strong>Area</strong> (wall, floor): enter Length + Height → Total = L × H × Qty</li>
+            <li>• <strong>Volume</strong> (concrete): enter Length + Width + Height → Total = L × W × H × Qty</li>
+            <li>• <strong>Count only</strong>: leave all dimensions blank → Total = Qty</li>
+            <li>• Click <strong>+</strong> to toggle a row as a <strong>deduction</strong> (e.g. subtract window openings)</li>
+          </ul>
         </div>
 
         {/* Table */}
