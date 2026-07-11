@@ -9,7 +9,8 @@ import {
 } from "../components/ui";
 import {
   FolderOpen, Plus, Search, Hammer, ArrowRight,
-  Building2, LayoutGrid, List, RefreshCw, CheckSquare, TrendingUp
+  Building2, LayoutGrid, List, RefreshCw, CheckSquare, TrendingUp,
+  Edit2, Trash2
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -71,11 +72,13 @@ const DEFAULT_CLOSEOUT: CloseOutForm = {
 
 // ─── Project Card ─────────────────────────────────────────────────────────────
 
-function ProjectCard({ project, client, onClick, onCloseOut }: {
+function ProjectCard({ project, client, onClick, onCloseOut, onEdit, onDelete }: {
   project: Project;
   client?: Client;
   onClick: () => void;
   onCloseOut: () => void;
+  onEdit: (p: Project) => void;
+  onDelete: (p: Project) => void;
 }) {
   const status = project.status || "active";
   const canCloseOut = status === "active" || status === "completed";
@@ -118,6 +121,18 @@ function ProjectCard({ project, client, onClick, onCloseOut }: {
               <TrendingUp size={9}/> Close Out
             </button>
           )}
+          <button
+            onClick={e => { e.stopPropagation(); onEdit(project); }}
+            className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-blue-500/15 text-slate-500 hover:text-blue-400 transition-colors"
+            title="Edit Project">
+            <Edit2 size={13}/>
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onDelete(project); }}
+            className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
+            title="Delete Project">
+            <Trash2 size={13}/>
+          </button>
           <ArrowRight size={13} className="text-slate-700 group-hover:text-cyan-500 group-hover:translate-x-0.5 transition-all" />
         </div>
       </div>
@@ -127,11 +142,13 @@ function ProjectCard({ project, client, onClick, onCloseOut }: {
 
 // ─── Project Row (list view) ──────────────────────────────────────────────────
 
-function ProjectRow({ project, client, onClick, onCloseOut }: {
+function ProjectRow({ project, client, onClick, onCloseOut, onEdit, onDelete }: {
   project: Project;
   client?: Client;
   onClick: () => void;
   onCloseOut: () => void;
+  onEdit: (p: Project) => void;
+  onDelete: (p: Project) => void;
 }) {
   const status = project.status || "active";
   const canCloseOut = status === "active" || status === "completed";
@@ -156,6 +173,18 @@ function ProjectRow({ project, client, onClick, onCloseOut }: {
           <TrendingUp size={9}/> Close Out
         </button>
       )}
+      <button
+        onClick={e => { e.stopPropagation(); onEdit(project); }}
+        className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-blue-500/15 text-slate-500 hover:text-blue-400 transition-colors"
+        title="Edit">
+        <Edit2 size={13}/>
+      </button>
+      <button
+        onClick={e => { e.stopPropagation(); onDelete(project); }}
+        className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
+        title="Delete">
+        <Trash2 size={13}/>
+      </button>
       <ArrowRight size={13} className="text-slate-700 group-hover:text-slate-400 transition-colors flex-shrink-0" />
     </div>
   );
@@ -164,7 +193,7 @@ function ProjectRow({ project, client, onClick, onCloseOut }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ProjectsPage() {
-  const { projects, loadingProjects, refreshProjects } = useProjectContext();
+  const { projects, loadingProjects, refreshProjects, currentProjectId, setCurrentProjectId } = useProjectContext();
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -175,6 +204,9 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [editProject, setEditProject] = useState<Project | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Close Out state
   const [closeOutProject, setCloseOutProject] = useState<Project | null>(null);
@@ -222,28 +254,66 @@ export default function ProjectsPage() {
     setRefreshing(false);
   }
 
-  async function createProject() {
+  async function saveProject() {
+    if (!form.name.trim()) return;
     setSaving(true); setError(null);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not logged in");
-      const { data: profile } = await supabase
-        .from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
-      if (!profile?.company_id) throw new Error("No company found");
-      const { error: e } = await supabase.from("projects").insert({
-        name: form.name.trim(),
-        status: form.status,
-        client_id: form.client_id || null,
-        company_id: profile.company_id,
-      });
-      if (e) throw e;
+      if (editProject) {
+        const { error: e } = await supabase
+          .from("projects")
+          .update({
+            name: form.name.trim(),
+            status: form.status,
+            client_id: form.client_id || null,
+          })
+          .eq("id", editProject.id);
+        if (e) throw e;
+      } else {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Not logged in");
+        const { data: profile } = await supabase
+          .from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
+        if (!profile?.company_id) throw new Error("No company found");
+        const { error: e } = await supabase.from("projects").insert({
+          name: form.name.trim(),
+          status: form.status,
+          client_id: form.client_id || null,
+          company_id: profile.company_id,
+        });
+        if (e) throw e;
+      }
       await refreshProjects();
-      setShowNew(false);
-      setForm({ name: "", status: "active", client_id: "" });
+      closeModal();
     } catch (e: any) {
       setError(e.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openEdit(p: Project) {
+    setEditProject(p);
+    setForm({ name: p.name, status: p.status || "active", client_id: p.client_id || "" });
+    setShowNew(true);
+  }
+
+  function closeModal() {
+    setShowNew(false);
+    setEditProject(null);
+    setForm({ name: "", status: "active", client_id: "" });
+    setError(null);
+  }
+
+  async function deleteProject(p: Project) {
+    setDeleting(true);
+    try {
+      const { error: e } = await supabase.from("projects").delete().eq("id", p.id);
+      if (e) { alert(e.message); return; }
+      await refreshProjects();
+      setDeleteConfirm(null);
+      if (currentProjectId === p.id) setCurrentProjectId(null);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -384,6 +454,8 @@ export default function ProjectsPage() {
                 client={getClient((p as any).client_id)}
                 onClick={() => nav(`/projects/${p.id}`)}
                 onCloseOut={() => openCloseOut(p as Project)}
+                onEdit={openEdit}
+                onDelete={setDeleteConfirm}
               />
             ))}
           </div>
@@ -402,15 +474,18 @@ export default function ProjectsPage() {
                 client={getClient((p as any).client_id)}
                 onClick={() => nav(`/projects/${p.id}`)}
                 onCloseOut={() => openCloseOut(p as Project)}
+                onEdit={openEdit}
+                onDelete={setDeleteConfirm}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* ── New Project Modal ── */}
-      <Modal open={showNew} onClose={() => { setShowNew(false); setError(null); }}
-        title="New Project" subtitle="Fill in the details to create a new project">
+      {/* ── New / Edit Project Modal ── */}
+      <Modal open={showNew} onClose={closeModal}
+        title={editProject ? "Edit Project" : "New Project"}
+        subtitle={editProject ? `Editing ${editProject.name}` : "Fill in the details to create a new project"}>
         <div className="space-y-4">
           {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
           <Field label="Project Name" error={!form.name.trim() && saving ? "Name is required" : undefined}>
@@ -431,9 +506,9 @@ export default function ProjectsPage() {
             </Field>
           )}
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
-            <Btn variant="ghost" onClick={() => { setShowNew(false); setError(null); }}>Cancel</Btn>
-            <Btn variant="primary" onClick={createProject} disabled={!form.name.trim() || saving}>
-              {saving ? "Creating..." : "Create Project"}
+            <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
+            <Btn variant="primary" onClick={saveProject} disabled={!form.name.trim() || saving}>
+              {saving ? (editProject ? "Saving..." : "Creating...") : (editProject ? "Save Changes" : "Create Project")}
             </Btn>
           </div>
         </div>
@@ -572,6 +647,26 @@ export default function ProjectsPage() {
               </div>
             </>
           )}
+        </div>
+      </Modal>
+
+      {/* ── Delete Project Modal ── */}
+      <Modal
+        open={!!deleteConfirm}
+        onClose={() => setDeleteConfirm(null)}
+        title="Delete Project"
+        subtitle="This cannot be undone."
+        width="max-w-sm">
+        <div className="space-y-4">
+          <Alert type="warning">
+            Deleting <strong>{deleteConfirm?.name}</strong> will permanently remove it and all associated data.
+          </Alert>
+          <div className="flex justify-end gap-2">
+            <Btn variant="ghost" onClick={() => setDeleteConfirm(null)}>Cancel</Btn>
+            <Btn variant="danger" onClick={() => deleteConfirm && deleteProject(deleteConfirm)} disabled={deleting}>
+              {deleting ? "Deleting..." : "Delete Project"}
+            </Btn>
+          </div>
         </div>
       </Modal>
     </div>
