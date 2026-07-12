@@ -45,7 +45,12 @@ type RateItem = {
   item_type: string | null;
   current_rate?: number | null;
   current_currency?: string | null;
-  calc_engine_json?: { vars?: { key: string }[]; formulas?: { qty?: string } } | string | null;
+  calc_engine_json?: {
+    vars?: { key: string }[];
+    formulas?: { qty?: string };
+    formula_type?: string;
+    consts?: { unit_weight?: number; weight_unit?: string; coverage_rate?: number; labor_mode?: string; crew_size?: number };
+  } | string | null;
 };
 
 type BOQItemRow = {
@@ -93,6 +98,13 @@ function safeId() {
 function numOr(v: unknown, fallback = 0) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+function parseCalcJson(rateItem: RateItem | undefined | null): any {
+  if (!rateItem?.calc_engine_json) return null;
+  if (typeof rateItem.calc_engine_json === "string") {
+    try { return JSON.parse(rateItem.calc_engine_json); } catch { return null; }
+  }
+  return rateItem.calc_engine_json;
 }
 function getCategoryId(c: any): string { return String(c?.id ?? ""); }
 function getCategoryLabel(c: any): string { return String(c?.name ?? "Unnamed Category"); }
@@ -251,6 +263,312 @@ function FindItemModal({
   );
 }
 
+// --- Weight Measurement Modal ----------------------------------------------------
+interface WeightRow {
+  id: string;
+  description: string;
+  numBars: number | "";
+  lengthM: number | "";
+  lengthFt: number | "";
+  lengthIn: number | "";
+  deduct: boolean;
+}
+
+function WeightMeasurementModal({
+  modal,
+  onClose,
+  onApply,
+  rateItems,
+}: {
+  modal: { sectionId: string; itemId: string; itemName: string; unit: string; costItemId: string | null; rows: MeasurementRow[] };
+  onClose: () => void;
+  onApply: (sectionId: string, itemId: string, rows: MeasurementRow[], total: number) => void;
+  rateItems: RateItem[];
+}) {
+  const rateItem = useMemo(() => rateItems.find(r => r.id === modal.costItemId), [rateItems, modal.costItemId]);
+  const calcJson = useMemo(() => parseCalcJson(rateItem), [rateItem]);
+  const unitWeight = Number(calcJson?.consts?.unit_weight) || 1;
+  const formulaHint = calcJson?.formulas?.qty || null;
+
+  const [rows, setRows] = useState<WeightRow[]>([
+    { id: safeId(), description: "", numBars: "", lengthM: "", lengthFt: "", lengthIn: "", deduct: false }
+  ]);
+  const [outputUnit, setOutputUnit] = useState<"kg"|"tonne"|"lb">(
+    (calcJson?.consts?.weight_unit as "kg"|"tonne"|"lb") || "kg"
+  );
+  const [useMetric, setUseMetric] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
+
+  function calcRowKg(r: WeightRow): number {
+    const bars = Number(r.numBars) || 1;
+    let lengthM = 0;
+    if (useMetric) {
+      lengthM = Number(r.lengthM) || 0;
+    } else {
+      const ft = Number(r.lengthFt) || 0;
+      const inches = Number(r.lengthIn) || 0;
+      lengthM = (ft + inches / 12) * 0.3048;
+    }
+    const kg = bars * lengthM * unitWeight;
+    return r.deduct ? -Math.abs(kg) : Math.abs(kg);
+  }
+
+  function updateRow(id: string, patch: Partial<WeightRow>) {
+    setRows(prev => prev.map(r => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
+  function addRow() {
+    setRows(prev => [...prev, {
+      id: safeId(), description: "", numBars: "", lengthM: "", lengthFt: "", lengthIn: "", deduct: false,
+    }]);
+  }
+
+  function removeRow(id: string) {
+    setRows(prev => prev.filter(r => r.id !== id));
+  }
+
+  const totalKg = rows.reduce((sum, r) => sum + calcRowKg(r), 0);
+
+  function convertOutput(kg: number): number {
+    if (outputUnit === "tonne") return kg / 1000;
+    if (outputUnit === "lb") return kg * 2.20462;
+    return kg;
+  }
+
+  function handleApply() {
+    const finalQty = convertOutput(totalKg);
+    // Weight rows don't map cleanly onto the L/W/H MeasurementRow shape used
+    // by the standard modal — stored just enough (description, bar count,
+    // computed kg) to keep the BOQ item's measurements history non-empty.
+    // Reopening a saved weight item currently starts blank rather than
+    // restoring bars/length inputs.
+    const stdRows: MeasurementRow[] = rows.map(r => ({
+      id: r.id,
+      description: r.description,
+      qty: Number(r.numBars) || 1,
+      lengthFt: useMetric ? "" : (r.lengthFt === "" ? "" : Number(r.lengthFt)),
+      lengthIn: useMetric ? "" : (r.lengthIn === "" ? "" : Number(r.lengthIn)),
+      widthFt: "",
+      widthIn: "",
+      heightFt: "",
+      heightIn: "",
+      total: calcRowKg(r),
+      deduct: r.deduct,
+    }));
+    onApply(modal.sectionId, modal.itemId, stdRows, finalQty);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">⚖️ Steel Weight Calculator</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{modal.itemName} · Unit weight: {unitWeight} kg/m</p>
+            {formulaHint && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">🔢 {formulaHint}</p>
+            )}
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+            <X size={16}/>
+          </button>
+        </div>
+
+        {/* Controls */}
+        <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">Measure in:</span>
+            <button onClick={() => setUseMetric(true)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${useMetric ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>
+              Metres
+            </button>
+            <button onClick={() => setUseMetric(false)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${!useMetric ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>
+              Feet / Inches
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">Output in:</span>
+            {(["kg","tonne","lb"] as const).map(u => (
+              <button key={u} onClick={() => setOutputUnit(u)}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${outputUnit === u ? "bg-red-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>
+                {u}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Help */}
+        <div className="px-5 py-2 border-b border-slate-100 dark:border-slate-800">
+          <button onClick={() => setShowHelp(v => !v)}
+            className="text-xs text-blue-500 hover:text-blue-600 font-medium flex items-center gap-1">
+            {showHelp ? "▲" : "▼"} How to use
+          </button>
+          {showHelp && (
+            <div className="mt-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-xs text-blue-600 dark:text-blue-400 space-y-1">
+              <p>• Enter the <strong>number of bars</strong> and the <strong>length of each bar</strong></p>
+              <p>• System calculates: bars × length × {unitWeight} kg/m = total weight</p>
+              <p>• Use <strong>–</strong> to deduct bars (e.g. offcuts or waste credits)</p>
+              <p>• Toggle between <strong>Metres</strong> and <strong>Feet/Inches</strong> for length input</p>
+              <p>• Toggle output between <strong>kg, tonne, lb</strong></p>
+            </div>
+          )}
+        </div>
+
+        {/* Table */}
+        <div className="flex-1 overflow-auto p-4">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-200 dark:border-slate-800">
+                <th className="text-left pb-2 w-6">#</th>
+                <th className="text-left pb-2">Description</th>
+                <th className="text-center pb-2 w-16">No. Bars</th>
+                {useMetric ? (
+                  <th className="text-center pb-2 w-24">Length (m)</th>
+                ) : (
+                  <>
+                    <th className="text-center pb-2 w-16">ft</th>
+                    <th className="text-center pb-2 w-16">in</th>
+                  </>
+                )}
+                <th className="text-center pb-2 w-24">Total Length (m)</th>
+                <th className="text-center pb-2 w-8">±</th>
+                <th className="text-right pb-2 w-28">Weight ({outputUnit})</th>
+                <th className="w-5"/>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {rows.map((row, idx) => {
+                const kg = calcRowKg(row);
+                const displayWeight = convertOutput(kg);
+                const bars = Number(row.numBars) || 0;
+                const totalM = useMetric
+                  ? bars * (Number(row.lengthM) || 0)
+                  : bars * ((Number(row.lengthFt) || 0) + (Number(row.lengthIn) || 0) / 12) * 0.3048;
+                return (
+                  <tr key={row.id} className={row.deduct ? "bg-red-50 dark:bg-red-500/5" : ""}>
+                    <td className="py-1.5 pr-1 text-slate-400">{idx + 1}</td>
+                    <td className="py-1.5 pr-2">
+                      <input value={row.description}
+                        onChange={e => updateRow(row.id, { description: e.target.value })}
+                        placeholder="e.g. Foundation bars"
+                        className="w-full bg-transparent border-b border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 placeholder-slate-300 dark:placeholder-slate-600 focus:outline-none focus:border-blue-500 py-0.5 text-xs"/>
+                    </td>
+                    <td className="py-1.5 px-1">
+                      <input type="number" min="1"
+                        value={row.numBars === "" ? "" : row.numBars}
+                        onChange={e => updateRow(row.id, { numBars: e.target.value === "" ? "" : Number(e.target.value) })}
+                        placeholder="1"
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"/>
+                    </td>
+                    {useMetric ? (
+                      <td className="py-1.5 px-1">
+                        <input type="number" min="0" step="0.01"
+                          value={row.lengthM === "" ? "" : row.lengthM}
+                          onChange={e => updateRow(row.id, { lengthM: e.target.value === "" ? "" : Number(e.target.value) })}
+                          placeholder="0.00"
+                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"/>
+                      </td>
+                    ) : (
+                      <>
+                        <td className="py-1.5 px-0.5">
+                          <input type="number" min="0"
+                            value={row.lengthFt === "" ? "" : row.lengthFt}
+                            onChange={e => updateRow(row.id, { lengthFt: e.target.value === "" ? "" : Number(e.target.value) })}
+                            placeholder="0"
+                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"/>
+                        </td>
+                        <td className="py-1.5 px-0.5">
+                          <input type="number" min="0" max="11"
+                            value={row.lengthIn === "" ? "" : row.lengthIn}
+                            onChange={e => updateRow(row.id, { lengthIn: e.target.value === "" ? "" : Math.min(11, Number(e.target.value)) })}
+                            placeholder="0"
+                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-1 py-1 text-center text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"/>
+                        </td>
+                      </>
+                    )}
+                    <td className="py-1.5 px-1 text-center text-slate-500 dark:text-slate-400 text-xs">
+                      {totalM.toFixed(2)} m
+                    </td>
+                    <td className="py-1.5 px-1 text-center">
+                      <button onClick={() => updateRow(row.id, { deduct: !row.deduct })}
+                        className={`w-7 h-7 rounded-lg text-sm font-bold transition-colors ${row.deduct ? "bg-red-100 dark:bg-red-500/20 text-red-600" : "bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-red-50 hover:text-red-400"}`}>
+                        {row.deduct ? "–" : "+"}
+                      </button>
+                    </td>
+                    <td className={`py-1.5 text-right text-xs font-semibold ${row.deduct ? "text-red-500" : "text-slate-700 dark:text-slate-200"}`}>
+                      {row.deduct ? `(${Math.abs(displayWeight).toFixed(3)})` : displayWeight.toFixed(3)} {outputUnit}
+                    </td>
+                    <td className="py-1.5 pl-1">
+                      <button onClick={() => removeRow(row.id)}
+                        className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-300 hover:text-red-400 transition-colors">
+                        <X size={11}/>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <button onClick={addRow}
+            className="mt-3 flex items-center gap-2 text-xs text-blue-500 hover:text-blue-600 font-medium">
+            <Plus size={13}/> Add Row
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800">
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 text-center">
+              <div className="text-xs text-slate-400 mb-1">Total Length</div>
+              <div className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                {rows.reduce((sum, r) => {
+                  const bars = Number(r.numBars) || 0;
+                  const m = useMetric
+                    ? Number(r.lengthM) || 0
+                    : ((Number(r.lengthFt) || 0) + (Number(r.lengthIn) || 0) / 12) * 0.3048;
+                  return sum + bars * m;
+                }, 0).toFixed(2)} m
+              </div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 text-center">
+              <div className="text-xs text-slate-400 mb-1">Total Weight (kg)</div>
+              <div className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                {totalKg.toFixed(2)} kg
+              </div>
+            </div>
+            <div className="bg-red-50 dark:bg-red-500/10 rounded-xl p-3 text-center">
+              <div className="text-xs text-red-400 mb-1">Output ({outputUnit})</div>
+              <div className="text-sm font-bold text-red-600 dark:text-red-400">
+                {convertOutput(totalKg).toFixed(3)} {outputUnit}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs text-slate-500">Applying to BOQ as:</span>
+              <span className="ml-2 text-xl font-bold text-red-600 dark:text-red-400">
+                {convertOutput(totalKg).toFixed(3)} {outputUnit}
+              </span>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={onClose}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleApply}
+                className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors">
+                Apply {convertOutput(totalKg).toFixed(3)} {outputUnit} to BOQ
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Measurement Modal ----------------------------------------------------------
 function MeasurementModal({
   modal,
@@ -320,13 +638,7 @@ function MeasurementModal({
   // Resolve the rate item's Advanced Calculator Engine formula once, shared
   // by the header hint, the auto-calc effect, and the manual Smart Calculate button.
   const rateItem = useMemo(() => rateItems.find(r => r.id === modal.costItemId), [rateItems, modal.costItemId]);
-  const calcJson = useMemo(() => {
-    if (!rateItem?.calc_engine_json) return null;
-    if (typeof rateItem.calc_engine_json === "string") {
-      try { return JSON.parse(rateItem.calc_engine_json); } catch { return null; }
-    }
-    return rateItem.calc_engine_json;
-  }, [rateItem]);
+  const calcJson = useMemo(() => parseCalcJson(rateItem), [rateItem]);
   const formulaExpr = calcJson?.formulas?.qty || null;
 
   function resolveFormulaResult(): typeof aiResult | null {
@@ -1359,6 +1671,14 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string) {
   const missingRates = sections.reduce((sum, s) => sum + s.items.filter(it => it.qty > 0 && it.rate === 0).length, 0);
   const missingUnits = sections.reduce((sum, s) => sum + s.items.filter(it => !it.unit_id).length, 0);
 
+  // Weight-type items (steel/rebar) get a dedicated bars×length calculator
+  // instead of the standard L/W/H measurement modal.
+  const measureModalIsWeight = useMemo(() => {
+    if (!measureModal?.costItemId) return false;
+    const rateItem = rateItems.find(r => r.id === measureModal.costItemId);
+    return !!parseCalcJson(rateItem)?.consts?.unit_weight;
+  }, [measureModal, rateItems]);
+
   // --- BOQ AI Actions -------------------------------------------------------
   function addAiMessage(text: string, actions?: {label:string;onClick:()=>void}[]) {
     setAiMessages(prev => [...prev, { role: "ai", text, actions }]);
@@ -1990,7 +2310,15 @@ Answer briefly and practically. If they ask to add items, explain they need to u
       {/* -- AI Assistant -- */}
 
       {/* -- Measurement Modal -- */}
-      {measureModal && (
+      {measureModal && measureModalIsWeight && (
+        <WeightMeasurementModal
+          modal={measureModal}
+          onClose={() => setMeasureModal(null)}
+          onApply={applyMeasurements}
+          rateItems={rateItems}
+        />
+      )}
+      {measureModal && !measureModalIsWeight && (
         <MeasurementModal
           modal={measureModal}
           onClose={() => setMeasureModal(null)}
