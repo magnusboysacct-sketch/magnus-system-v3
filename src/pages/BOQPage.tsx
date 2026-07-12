@@ -1646,7 +1646,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                         <span>Item / Description</span>
                         <span>From Library</span>
                         <span>Unit</span>
-                        <span className="text-right">Qty</span>
+                        <span className="text-right pr-11">Qty</span>
                         <span className="text-right">Rate (JMD)</span>
                         <span className="text-right">Amount</span>
                         <span/>
