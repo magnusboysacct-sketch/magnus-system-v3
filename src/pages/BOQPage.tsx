@@ -316,44 +316,61 @@ function MeasurementModal({
 
   const grandTotal = rows.reduce((sum, r) => sum + calcRow(r), 0);
 
+  // Resolve the rate item's Advanced Calculator Engine formula once, shared
+  // by the header hint, the auto-calc effect, and the manual Smart Calculate button.
+  const rateItem = useMemo(() => rateItems.find(r => r.id === modal.costItemId), [rateItems, modal.costItemId]);
+  const calcJson = useMemo(() => {
+    if (!rateItem?.calc_engine_json) return null;
+    if (typeof rateItem.calc_engine_json === "string") {
+      try { return JSON.parse(rateItem.calc_engine_json); } catch { return null; }
+    }
+    return rateItem.calc_engine_json;
+  }, [rateItem]);
+  const formulaExpr = calcJson?.formulas?.qty || null;
+
+  function resolveFormulaResult(): typeof aiResult | null {
+    if (!formulaExpr || !calcJson?.vars?.length) return null;
+    // Every var (area/length/width/height/count) maps to the same measured
+    // total — grandTotal already represents whichever magnitude the entered
+    // dimensions produced (sf, lf, cf, or count).
+    const vars: Record<string, number> = {};
+    for (const v of calcJson.vars) vars[v.key] = grandTotal;
+    const result = computeQuantity(formulaExpr, vars, { wastePercent: 0, roundTo: 4, clampZero: true });
+    if (!result.ok) return null;
+    const withWaste = Math.ceil(result.value * 1.05); // 5% default wastage
+    return {
+      calculatedQty: withWaste,
+      explanation: `Used item formula: ${formulaExpr} → ${result.value.toFixed(2)} + 5% wastage = ${withWaste} ${modal.unit}`,
+      breakdown: [
+        { label: "Measured", value: `${grandTotal.toFixed(2)} ${modal.unit || ""}`.trim() },
+        { label: "Formula", value: formulaExpr },
+        { label: "Base quantity", value: `${result.value.toFixed(2)} ${modal.unit}` },
+        { label: "Wastage (5%)", value: `+ ${(withWaste - result.value).toFixed(2)} ${modal.unit}` },
+        { label: "Final quantity", value: `${withWaste} ${modal.unit}` },
+      ],
+    };
+  }
+
+  // Formula conversion is deterministic and instant (no AI call needed), so
+  // resolve it automatically as soon as real dimensions are entered — the
+  // user shouldn't have to remember to press Smart Calculate before Apply.
+  // Guarded on actual L/W/H input (not just the default qty:1 placeholder
+  // row) so the modal doesn't show a bogus result before any measuring.
+  const hasDimensions = rows.some(r => Number(r.lengthFt) > 0 || Number(r.widthFt) > 0 || Number(r.heightFt) > 0);
+  useEffect(() => {
+    if (!hasDimensions) { setAiResult(null); return; }
+    const formulaResult = resolveFormulaResult();
+    if (formulaResult) setAiResult(formulaResult);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grandTotal, formulaExpr, hasDimensions]);
+
   async function handleAICalculate() {
     if (grandTotal === 0) return;
+    const formulaResult = resolveFormulaResult();
+    if (formulaResult) { setAiResult(formulaResult); return; }
     setAiLoading(true);
     setAiResult(null);
     try {
-      const rateItem = rateItems.find(r => r.id === modal.costItemId);
-
-      // If the rate item has a formula from the Rate Library's Advanced
-      // Calculator Engine, use it directly instead of asking AI to guess.
-      const calcJson = typeof rateItem?.calc_engine_json === "string"
-        ? (() => { try { return JSON.parse(rateItem.calc_engine_json as string); } catch { return null; } })()
-        : rateItem?.calc_engine_json || null;
-      const formulaExpr = calcJson?.formulas?.qty;
-      if (formulaExpr && calcJson?.vars?.length) {
-        // Every var (area/length/width/height/count) maps to the same
-        // measured total — grandTotal already represents whichever
-        // magnitude the entered dimensions produced (sf, lf, cf, or count).
-        const vars: Record<string, number> = {};
-        for (const v of calcJson.vars) vars[v.key] = grandTotal;
-        const result = computeQuantity(formulaExpr, vars, { wastePercent: 0, roundTo: 4, clampZero: true });
-        if (result.ok) {
-          const withWaste = Math.ceil(result.value * 1.05); // 5% default wastage
-          setAiResult({
-            calculatedQty: withWaste,
-            explanation: `Used item formula: ${formulaExpr} → ${result.value.toFixed(2)} + 5% wastage = ${withWaste} ${modal.unit}`,
-            breakdown: [
-              { label: "Measured", value: `${grandTotal.toFixed(2)} ${modal.unit || ""}`.trim() },
-              { label: "Formula", value: formulaExpr },
-              { label: "Base quantity", value: `${result.value.toFixed(2)} ${modal.unit}` },
-              { label: "Wastage (5%)", value: `+ ${(withWaste - result.value).toFixed(2)} ${modal.unit}` },
-              { label: "Final quantity", value: `${withWaste} ${modal.unit}` },
-            ],
-          });
-          return;
-        }
-        // Formula eval failed — fall through to AI.
-      }
-
       const measuredDims = rows.filter(r => !r.deduct).map(r => {
         const l = (Number(r.lengthFt) || 0) + (Number(r.lengthIn) || 0) / 12;
         const w = (Number(r.widthFt) || 0) + (Number(r.widthIn) || 0) / 12;
@@ -453,6 +470,11 @@ Respond ONLY with valid JSON (no markdown, no backticks):
           <div>
             <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">📐 Measurements</h2>
             <p className="text-xs text-slate-500 mt-0.5">{modal.itemName} · {modal.unit}</p>
+            {formulaExpr && (
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
+                🔢 Formula: {formulaExpr}
+              </p>
+            )}
           </div>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
             <X size={16}/>
@@ -653,10 +675,12 @@ Respond ONLY with valid JSON (no markdown, no backticks):
                 <><span>🤖</span> Smart Calculate</>
               )}
             </button>
-            <button onClick={() => onApply(modal.sectionId, modal.itemId, rows, grandTotal)}
-              className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">
-              Apply {grandTotal.toFixed(2)} {modal.unit}
-            </button>
+            {(!formulaExpr || (grandTotal > 0 && !aiResult)) && (
+              <button onClick={() => onApply(modal.sectionId, modal.itemId, rows, grandTotal)}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">
+                Apply {grandTotal.toFixed(2)} {modal.unit}
+              </button>
+            )}
           </div>
         </div>
       </div>
