@@ -320,35 +320,73 @@ function MeasurementModal({
     setAiResult(null);
     try {
       const rateItem = rateItems.find(r => r.id === modal.costItemId);
-      const prompt = `You are a construction estimating assistant for Jamaica.
 
-Item: "${modal.itemName}"
-Unit: "${modal.unit}"
-Measured area/quantity: ${grandTotal.toFixed(3)} (from dimensions entered by user)
+      const measuredDims = rows.filter(r => !r.deduct).map(r => {
+        const l = (Number(r.lengthFt) || 0) + (Number(r.lengthIn) || 0) / 12;
+        const w = (Number(r.widthFt) || 0) + (Number(r.widthIn) || 0) / 12;
+        const h = (Number(r.heightFt) || 0) + (Number(r.heightIn) || 0) / 12;
+        return { desc: r.description || "wall", l, w, h, qty: r.qty };
+      });
 
-${rateItem ? `Rate item details: ${rateItem.item_name}, unit: ${rateItem.unit}, category: ${rateItem.category}` : ""}
+      const hasLength = measuredDims.some(d => d.l > 0);
+      const hasWidth = measuredDims.some(d => d.w > 0);
+      const hasHeight = measuredDims.some(d => d.h > 0);
 
-Task: Calculate how many units of "${modal.itemName}" are needed to cover ${grandTotal.toFixed(3)} ${modal.unit || "units"} of work.
+      const measureType = !hasLength ? "count"
+        : hasLength && hasWidth && hasHeight ? "volume (cubic feet)"
+        : hasLength && (hasHeight || hasWidth) ? "area (square feet)"
+        : "linear (feet)";
 
-Consider standard Jamaican construction practices:
-- 6" concrete blocks: approximately 12.5 blocks per square metre, or 1.125 blocks per square foot (including mortar joints)
-- 4" concrete blocks: approximately 12.5 blocks per square metre
-- Standard brick: approximately 60 bricks per square metre
-- Paint/primer: approximately 1 gallon per 400 square feet (one coat)
-- Ceramic tiles 12x12: approximately 1.1 tiles per square foot (10% waste)
-- Ready mix concrete: volume in cubic feet ÷ 27 = cubic yards
-- Sand: approximately 0.5 cubic feet per square foot of wall (4" mortar bed)
+      const prompt = `You are a construction quantity surveyor specializing in Jamaican construction.
 
-Respond ONLY with a JSON object (no markdown, no explanation outside the JSON):
+ITEM TO QUANTIFY: "${modal.itemName}"
+ITEM UNIT: "${modal.unit}" (this is the unit we need to calculate — e.g. "each" means number of pieces)
+${rateItem ? `RATE ITEM DETAILS: ${rateItem.item_name}, category: ${rateItem.category}` : ""}
+MEASUREMENT TYPE: ${measureType}
+TOTAL MEASURED: ${grandTotal.toFixed(3)} ${measureType.split(" ")[0]}
+
+MEASUREMENT BREAKDOWN:
+${measuredDims.map(d => `- ${d.desc}: ${d.l > 0 ? `L=${d.l.toFixed(2)}ft` : ""} ${d.h > 0 ? `H=${d.h.toFixed(2)}ft` : ""} ${d.w > 0 ? `W=${d.w.toFixed(2)}ft` : ""} × qty ${d.qty}`).join("\n")}
+
+YOUR JOB: Convert the measured ${measureType} into the number of "${modal.unit}" of "${modal.itemName}" needed.
+
+JAMAICAN CONSTRUCTION STANDARDS:
+- 6" concrete hollow block: 1.125 blocks per square foot of wall (including 3/8" mortar joints) = 12.1 blocks/m²
+- 4" concrete hollow block: 1.125 blocks per square foot of wall
+- 8" concrete hollow block: 1.125 blocks per square foot of wall
+- Standard clay brick: 6.75 bricks per square foot
+- Ceramic floor tile 12"×12": 1.1 tiles per square foot (10% waste)
+- Ceramic wall tile 8"×10": 1.8 tiles per square foot
+- Portland cement bag (94 lb): covers approximately 8 square feet of plaster (1/2" thick)
+- Sand (one cubic foot): covers approximately 16 square feet of plaster
+- Paint (1 gallon): covers 350-400 square feet per coat
+- Primer (1 gallon): covers 300-350 square feet
+- Ready mix concrete: 1 cubic yard = 27 cubic feet
+- Roofing sheet (standard): covers approximately 27.5 square feet
+- Plywood sheet 4'×8': covers 32 square feet
+- 2×4 lumber stud: 1 per 1.5 linear feet of wall
+
+IMPORTANT:
+- The measured quantity is in ${measureType} but the item unit is "${modal.unit}"
+- You MUST convert from ${measureType} to "${modal.unit}"
+- For blocks: sf of wall ÷ (1/1.125) = number of blocks
+- Always add appropriate wastage (typically 5-10% for blocks, 10-15% for tiles)
+- Round up to nearest whole number for countable items
+
+Respond ONLY with valid JSON (no markdown, no backticks):
 {
-  "coverageFactor": <number - units of item per unit of measurement>,
-  "calculatedQty": <number - total units needed>,
-  "explanation": "<one sentence explaining the calculation>",
+  "coverageFactor": <number>,
+  "coverageUnit": "<e.g. '1.125 blocks per sf' or '1 gallon per 400 sf'>",
+  "baseQuantity": <number without wastage>,
+  "wastagePercent": <number>,
+  "calculatedQty": <final quantity including wastage, rounded up for countable items>,
+  "explanation": "<one clear sentence explaining the conversion>",
   "breakdown": [
-    {"label": "Measured area", "value": "${grandTotal.toFixed(2)} ${modal.unit || ''}"},
-    {"label": "Coverage factor", "value": "<factor description>"},
-    {"label": "Calculated quantity", "value": "<qty> ${modal.unit || 'units'}"},
-    {"label": "Wastage allowance", "value": "<percentage if applicable>"}
+    {"label": "Measured area", "value": "${grandTotal.toFixed(2)} sf"},
+    {"label": "Coverage factor", "value": "<coverage description>"},
+    {"label": "Base quantity", "value": "<base qty> ${modal.unit}"},
+    {"label": "Wastage (X%)", "value": "+ <wastage qty> ${modal.unit}"},
+    {"label": "Final quantity", "value": "<total> ${modal.unit}"}
   ]
 }`;
 
