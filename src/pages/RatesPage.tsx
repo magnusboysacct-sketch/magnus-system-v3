@@ -7,7 +7,6 @@ import { useMasterLists } from "../hooks/useMasterLists";
 import { buildDefaultVars, computeQuantity } from "../lib/calculatorEngine";
 import { SmartItemSelectorButton } from "../components/SmartItemSelectorButton";
 import AIPriceLookup from "../components/AIPriceLookup";
-import { magnusAI } from "../lib/magnusAI";
 import {
   Plus, Download, Upload, RefreshCw, Zap, RotateCcw,
   Edit2, Trash2, ChevronDown, Search, Package,
@@ -38,6 +37,7 @@ type CostItem = {
   description: string | null;
   cost_code: string | null;
   variant: string | null;
+  grade: string | null;
   unit: string | null;
   category: string | null;
   item_type: string | null;
@@ -221,6 +221,7 @@ export default function RatesPage() {
   const [fDesc,setFDesc]=useState("");
   const [fCode,setFCode]=useState("");
   const [fVariant,setFVariant]=useState("");
+  const [fGrade,setFGrade]=useState("");
   const [itemTypes,setItemTypes]=useState<string[]>(()=>{
     try{const s=localStorage.getItem("magnus_item_types");return s?JSON.parse(s):["Material","Labor","Equipment","Subcontract","Other"];}
     catch{return ["Material","Labor","Equipment","Subcontract","Other"];}
@@ -233,10 +234,6 @@ export default function RatesPage() {
   const [formulaType,setFormulaType]=useState<string>("");
   const [formulaInput,setFormulaInput]=useState<string>("");
   const [formulaPreview,setFormulaPreview]=useState<number|null>(null);
-  const [autoFillLoading,setAutoFillLoading]=useState(false);
-  const [bulkFilling,setBulkFilling]=useState(false);
-  const [bulkProgress,setBulkProgress]=useState(0);
-  const [bulkTotal,setBulkTotal]=useState(0);
 
   function toggleType(t:string){setTypeFilter(prev=>({...prev,[t]:!prev[t]}));}
   function setOnlyType(t:string){setTypeFilter({Material:false,Labor:false,Equipment:false,Subcontract:false,Other:false,[t]:true});}
@@ -273,9 +270,9 @@ export default function RatesPage() {
       const rawItems=resp.data as any[];
       if(rawItems&&rawItems.length>0){
         const ids=rawItems.map(i=>i.id);
-        const variants=await supabase.from("cost_items").select("id,variant").in("id",ids);
-        const varMap=new Map((variants.data||[]).map((v:any)=>[v.id,v.variant]));
-        setItems(rawItems.map(i=>({...i,variant:(varMap.get(i.id)||"") as string})) as CostItem[]);
+        const variants=await supabase.from("cost_items").select("id,variant,grade").in("id",ids);
+        const varMap=new Map((variants.data||[]).map((v:any)=>[v.id,{variant:v.variant,grade:v.grade}]));
+        setItems(rawItems.map(i=>({...i,variant:(varMap.get(i.id)?.variant||"") as string,grade:(varMap.get(i.id)?.grade||"") as string})) as CostItem[]);
       } else setItems([]);
       setLoading(false);
     }
@@ -293,9 +290,9 @@ export default function RatesPage() {
       const rawItems=resp.data as any[];
       if(rawItems&&rawItems.length>0){
         const ids=rawItems.map(i=>i.id);
-        const variants=await supabase.from("cost_items").select("id,variant").in("id",ids);
-        const varMap=new Map((variants.data||[]).map((v:any)=>[v.id,v.variant]));
-        setItems(rawItems.map(i=>({...i,variant:(varMap.get(i.id)||"") as string})) as CostItem[]);
+        const variants=await supabase.from("cost_items").select("id,variant,grade").in("id",ids);
+        const varMap=new Map((variants.data||[]).map((v:any)=>[v.id,{variant:v.variant,grade:v.grade}]));
+        setItems(rawItems.map(i=>({...i,variant:(varMap.get(i.id)?.variant||"") as string,grade:(varMap.get(i.id)?.grade||"") as string})) as CostItem[]);
       } else setItems([]);
       setLoading(false);
     }
@@ -341,6 +338,7 @@ export default function RatesPage() {
       if(!q) return true;
       return (it.item_name||"").toLowerCase().includes(q)||
         (it.variant||"").toLowerCase().includes(q)||
+        (it.grade||"").toLowerCase().includes(q)||
         (it.unit||"").toLowerCase().includes(q)||
         (it.item_type||"").toLowerCase().includes(q)||
         cat.toLowerCase().includes(q)||
@@ -364,7 +362,7 @@ export default function RatesPage() {
   const typeCounts=useMemo(()=>{const c:Record<string,number>={};items.forEach(i=>{const t=i.item_type||"Other";c[t]=(c[t]||0)+1;});return c;},[items]);
 
   function openAdd(){
-    setMode("add");setActiveId(null);setFName("");setFDesc("");setFVariant("");
+    setMode("add");setActiveId(null);setFName("");setFDesc("");setFVariant("");setFGrade("");
     setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit(unitOptions[0]??"each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
     setIsModalOpen(true);
@@ -374,7 +372,7 @@ export default function RatesPage() {
     setFName(item.item_name||"");setFDesc(item.description||"");
     setFCode(item.cost_code||"");setFCategory(normCategory(item.category));
     setFType(item.item_type||ITEM_TYPES[0]);setFUnit((item.unit||"").trim()||(unitOptions[0]??"each"));
-    setFRate(item.current_rate==null?"":String(item.current_rate));setFVariant(item.variant||"");
+    setFRate(item.current_rate==null?"":String(item.current_rate));setFVariant(item.variant||"");setFGrade(item.grade||"");
     const calcJson=(item as any).calc_engine_json;
     if(calcJson){
       try{
@@ -391,7 +389,7 @@ export default function RatesPage() {
     setIsModalOpen(true);
   }
   function closeModal(){
-    setIsModalOpen(false);setFName("");setFDesc("");setFCode("");setFVariant("");
+    setIsModalOpen(false);setFName("");setFDesc("");setFCode("");setFVariant("");setFGrade("");
     setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit("each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
     setActiveId(null);setMode("add");
@@ -415,60 +413,9 @@ export default function RatesPage() {
     setFormulaPreview(result.ok?result.value:null);
   }
 
-  async function extractSizeFromName(itemName:string):Promise<string|null>{
-    const text=await magnusAI.chat(
-      `Extract the size/specification from this construction material name: "${itemName}"
-       Return ONLY the size/spec string, nothing else. Examples:
-       "Drywall 1/2\\" 4×8 sheet" → "1/2\\" × 4×8"
-       "6\\" Concrete Block" → "6\\""
-       "2×4×10 Lumber" → "2×4 × 10ft"
-       "BRC Wire Mesh 4×4 W4 4×8 sheet" → "4×4 W4, 4×8"
-       "Corrugated Zinc Sheet 10ft" → "10ft"
-       "#6 Rebar 3/4\\" (20ft bar)" → "3/4\\" × 20ft"
-       If no size is detectable, return "N/A"`
-    );
-    const size=String(text||"").trim().replace(/^"|"$/g,"");
-    return size&&size!=="N/A"?size:null;
-  }
-
-  async function autoFillVariant(){
-    if(!fName.trim()) return;
-    setAutoFillLoading(true);
-    try{
-      const size=await extractSizeFromName(fName);
-      if(size) setFVariant(size);
-    }catch(e){
-      console.error("Auto-fill failed:",e);
-    }finally{
-      setAutoFillLoading(false);
-    }
-  }
-
-  async function autoFillAllVariants(){
-    const itemsWithoutVariant=items.filter(i=>!i.variant||i.variant.trim()==="");
-    if(itemsWithoutVariant.length===0){
-      alert("All items already have a size/spec filled in.");
-      return;
-    }
-    if(!confirm(`Auto-fill size/spec for ${itemsWithoutVariant.length} items using AI? This may take a few minutes.`)) return;
-    setBulkFilling(true);
-    setBulkTotal(itemsWithoutVariant.length);
-    setBulkProgress(0);
-    let done=0;
-    for(const item of itemsWithoutVariant){
-      try{
-        const size=await extractSizeFromName(item.item_name);
-        if(size){
-          await supabase.from("cost_items").update({variant:size}).eq("id",item.id);
-          setItems(prev=>prev.map(i=>i.id===item.id?{...i,variant:size}:i));
-        }
-      }catch{ /* skip failed items */ }
-      done++;
-      setBulkProgress(done);
-      await new Promise(r=>setTimeout(r,200));
-    }
-    setBulkFilling(false);
-    alert(`✅ Auto-filled ${done} items. Refresh to see all updates.`);
+  function autoFillDescription(name:string,grade:string,size:string){
+    const parts=[name.trim(),grade.trim(),size.trim()].filter(Boolean);
+    if(parts.length>0) setFDesc(parts.join(", "));
   }
 
   async function saveRate(itemId:string,nextRate:number){
@@ -682,10 +629,6 @@ export default function RatesPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-white/[0.08] transition disabled:opacity-40">
               <Zap size={12}/> Bulk Update
             </button>
-            <button onClick={autoFillAllVariants} disabled={bulkFilling||busy}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-100 dark:bg-purple-500/20 hover:bg-purple-200 dark:hover:bg-purple-500/30 text-purple-700 dark:text-purple-300 text-xs font-semibold disabled:opacity-50 transition-colors">
-              {bulkFilling?`✨ Filling… (${bulkProgress}/${bulkTotal})`:"✨ Auto-fill Sizes"}
-            </button>
             <button onClick={undoLastBulk} disabled={busy||lastBulkBatches.length===0}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-white/[0.08] text-slate-600 dark:text-slate-400 text-xs font-medium border border-slate-200 dark:border-white/[0.08] transition disabled:opacity-30"
               title={lastBulkBatches.length?`Last: ${lastBulkBatches[0]}`:"No bulk batch yet"}>
@@ -810,9 +753,18 @@ export default function RatesPage() {
                 {/* Item */}
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{item.item_name}</div>
-                  {item.variant&&(
-                    <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5 truncate">
-                      📐 {item.variant}
+                  {(item.grade||item.variant)&&(
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      {item.grade&&(
+                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                          {item.grade}
+                        </span>
+                      )}
+                      {item.variant&&(
+                        <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                          📐 {item.variant}
+                        </span>
+                      )}
                     </div>
                   )}
                   <div className="flex items-center gap-1.5 mt-0.5">
@@ -976,22 +928,21 @@ export default function RatesPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Item Name</div>
-                  <input value={fName} onChange={e=>setFName(e.target.value)}
+                  <input value={fName} onChange={e=>{setFName(e.target.value);autoFillDescription(e.target.value,fGrade,fVariant);}}
                     className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-500 dark:text-slate-600"
                     placeholder="e.g. Ready Mix Concrete"/>
                 </div>
                 <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Grade / Type</div>
+                  <input value={fGrade} onChange={e=>{setFGrade(e.target.value);autoFillDescription(fName,e.target.value,fVariant);}}
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-500 dark:text-slate-600"
+                    placeholder="e.g. Standard, Moisture-Resistant, Hollow, Corrugated"/>
+                </div>
+                <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Size / Spec</div>
-                  <div className="flex gap-2">
-                    <input value={fVariant} onChange={e=>setFVariant(e.target.value)}
-                      className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-500 dark:text-slate-600"
-                      placeholder='e.g. 4×8, 1/2", 20ft, Grade A'/>
-                    <button type="button" onClick={autoFillVariant} disabled={autoFillLoading||!fName.trim()}
-                      className="px-3 py-2 rounded-lg bg-purple-100 dark:bg-purple-500/20 hover:bg-purple-200 dark:hover:bg-purple-500/30 text-purple-700 dark:text-purple-300 text-xs font-semibold disabled:opacity-50 transition-colors whitespace-nowrap flex-shrink-0"
-                      title="Auto-detect size from item name">
-                      {autoFillLoading?"…":"✨ Auto"}
-                    </button>
-                  </div>
+                  <input value={fVariant} onChange={e=>{setFVariant(e.target.value);autoFillDescription(fName,fGrade,e.target.value);}}
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-500 dark:text-slate-600"
+                    placeholder='e.g. 4×8, 1/2", 20ft, Grade A'/>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Cost Code</div>
@@ -1086,6 +1037,7 @@ export default function RatesPage() {
                 const name=fName.trim();if(!name) return;
                 const payload:any={
                   item_name:name,description:fDesc.trim()||null,variant:fVariant.trim()||null,
+                  grade:fGrade.trim()||null,
                   cost_code:fCode.trim()||null,category:(fCategory||"Uncategorized").trim(),
                   item_type:(fType||"Other").trim(),unit:(fUnit||"each").trim(),
                   updated_at:new Date().toISOString(),
