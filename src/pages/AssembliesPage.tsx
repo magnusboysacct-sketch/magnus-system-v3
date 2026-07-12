@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type MeasureType = "linear" | "area" | "count" | "volume";
+type MeasureType = "linear" | "area" | "count" | "volume" | "weight" | "stirrup" | "grid" | "stair";
 
 interface Assembly {
   id: string;
@@ -78,17 +78,25 @@ function evalFormula(formula: string, vars: Record<string, number>): number | nu
 
 // Variables available per measurement type
 const MEASURE_VARS: Record<MeasureType, string[]> = {
-  linear: ["length", "height", "width"],
-  area:   ["area", "length", "width"],
-  count:  ["count"],
-  volume: ["volume", "length", "width", "height"],
+  linear:  ["length", "height", "width"],
+  area:    ["area", "length", "width"],
+  count:   ["count"],
+  volume:  ["volume", "length", "width", "height"],
+  weight:  ["length", "unit_weight", "num_bars"],
+  stirrup: ["bar_width", "bar_depth", "spacing", "element_length", "hook_allowance"],
+  grid:    ["area", "sheet_length", "sheet_width", "waste_factor"],
+  stair:   ["num_stairs", "going", "riser", "stair_width", "bar_spacing"],
 };
 
 const MEASURE_CFG: Record<MeasureType, { label: string; icon: React.ReactNode; color: string; hint: string }> = {
-  linear: { label: "Linear",  icon: <Ruler size={14}/>,  color: "#38bdf8", hint: "Variables: length, height, width" },
-  area:   { label: "Area",    icon: <Square size={14}/>, color: "#a78bfa", hint: "Variables: area, length, width" },
-  count:  { label: "Count",   icon: <Hash size={14}/>,   color: "#fb923c", hint: "Variables: count" },
-  volume: { label: "Volume",  icon: <Box size={14}/>,    color: "#34d399", hint: "Variables: volume, length, width, height" },
+  linear:  { label: "Linear",    icon: <Ruler size={14}/>,  color: "#38bdf8", hint: "Variables: length, height, width" },
+  area:    { label: "Area",      icon: <Square size={14}/>, color: "#a78bfa", hint: "Variables: area, length, width" },
+  count:   { label: "Count",     icon: <Hash size={14}/>,   color: "#fb923c", hint: "Variables: count" },
+  volume:  { label: "Volume",    icon: <Box size={14}/>,    color: "#34d399", hint: "Variables: volume, length, width, height" },
+  weight:  { label: "Weight",    icon: <Layers size={14}/>, color: "#f87171", hint: "Variables: length, unit_weight, num_bars — Steel bars by weight" },
+  stirrup: { label: "Stirrup",   icon: <Layers size={14}/>, color: "#fb923c", hint: "Variables: bar_width, bar_depth, spacing, element_length, hook_allowance — Column/beam links" },
+  grid:    { label: "Grid/Mesh", icon: <Square size={14}/>, color: "#34d399", hint: "Variables: area, sheet_length, sheet_width, waste_factor — BRC mesh by sheet" },
+  stair:   { label: "Stairs",    icon: <Layers size={14}/>, color: "#c084fc", hint: "Variables: num_stairs, going, riser, stair_width, bar_spacing — Stair reinforcement" },
 };
 
 const LINE_TYPES = ["material","labor","equipment","subcontract","other"];
@@ -122,6 +130,29 @@ const FORMULA_HINTS: Record<MeasureType, {label:string;formula:string}[]> = {
   volume: [
     { label:"Concrete (1 yd³)", formula:"volume / 27" },
     { label:"Bags (0.6 ft³ per bag)", formula:"volume / 0.6" },
+  ],
+  weight: [
+    { label:"Total weight (kg)", formula:"num_bars * length * unit_weight" },
+    { label:"Weight in tonnes", formula:"(num_bars * length * unit_weight) / 1000" },
+    { label:"Single bar weight", formula:"length * unit_weight" },
+  ],
+  stirrup: [
+    { label:"Links needed (150mm spacing)", formula:"element_length / spacing" },
+    { label:"Length per link (with hooks)", formula:"(bar_width + bar_depth) * 2 + hook_allowance" },
+    { label:"Total stirrup length", formula:"(element_length / spacing) * ((bar_width + bar_depth) * 2 + hook_allowance)" },
+    { label:"Total weight (kg, #3 bar)", formula:"(element_length / spacing) * ((bar_width + bar_depth) * 2 + hook_allowance) * 0.56" },
+  ],
+  grid: [
+    { label:"Sheets needed", formula:"(area * waste_factor) / (sheet_length * sheet_width)" },
+    { label:"Sheets (BRC 2.4×6m, 5% waste)", formula:"(area * 1.05) / (2.4 * 6)" },
+    { label:"Sheets (BRC 2.4×6m, 10% waste)", formula:"(area * 1.10) / (2.4 * 6)" },
+    { label:"Area per roll", formula:"sheet_length * sheet_width" },
+  ],
+  stair: [
+    { label:"Bar length per stair (going+riser)", formula:"(going + riser) * stair_width / bar_spacing" },
+    { label:"Total bar length all stairs", formula:"num_stairs * (going + riser) * stair_width / bar_spacing" },
+    { label:"Total weight (#4 bar, kg)", formula:"num_stairs * (going + riser) * stair_width / bar_spacing * 0.994" },
+    { label:"Number of bars per stair", formula:"stair_width / bar_spacing" },
   ],
 };
 
@@ -179,6 +210,11 @@ export default function AssembliesPage() {
   // Live preview
   const [previewVars, setPreviewVars] = useState<Record<string, string>>({
     length: "10", height: "8", width: "1", area: "100", count: "5", volume: "50",
+    // Steel types
+    unit_weight: "0.994", num_bars: "10",
+    bar_width: "0.3", bar_depth: "0.3", spacing: "0.15", element_length: "3", hook_allowance: "0.2",
+    sheet_length: "6", sheet_width: "2.4", waste_factor: "1.05",
+    num_stairs: "12", going: "0.25", riser: "0.175", stair_width: "1.2", bar_spacing: "0.15",
   });
   const [showPreview, setShowPreview] = useState(false);
 
@@ -627,6 +663,32 @@ export default function AssembliesPage() {
                   <Info size={11} className="text-slate-500 dark:text-slate-600 flex-shrink-0"/>
                   <span className="text-[10px] text-slate-500 dark:text-slate-600">{measureCfg!.hint} — use these in your formulas below</span>
                 </div>
+
+                {/* Steel type info panels */}
+                {activeAssembly.measure_type === "weight" && (
+                  <div className="px-5 py-3 bg-red-500/5 border-t border-red-500/10 text-xs text-red-300">
+                    <strong>Steel Bar Weights (kg/m):</strong> #3=0.560 · #4=0.994 · #5=1.552 · #6=2.235 · #8=3.973
+                    <br/>Formula: <code className="font-mono text-red-400">num_bars × length × unit_weight = kg</code>
+                  </div>
+                )}
+                {activeAssembly.measure_type === "stirrup" && (
+                  <div className="px-5 py-3 bg-orange-500/5 border-t border-orange-500/10 text-xs text-orange-300">
+                    <strong>Stirrup/Links:</strong> All dimensions in metres · spacing = centre-to-centre distance
+                    <br/>Formula: <code className="font-mono text-orange-400">(element_length ÷ spacing) × ((width + depth) × 2 + hooks) = total length (m)</code>
+                  </div>
+                )}
+                {activeAssembly.measure_type === "grid" && (
+                  <div className="px-5 py-3 bg-green-500/5 border-t border-green-500/10 text-xs text-green-300">
+                    <strong>BRC Mesh:</strong> Standard sheet = 2.4m × 6m = 14.4m² · Add 5-10% waste
+                    <br/>Formula: <code className="font-mono text-green-400">(area × waste_factor) ÷ (sheet_length × sheet_width) = sheets needed</code>
+                  </div>
+                )}
+                {activeAssembly.measure_type === "stair" && (
+                  <div className="px-5 py-3 bg-purple-500/5 border-t border-purple-500/10 text-xs text-purple-300">
+                    <strong>Stairs:</strong> All dimensions in metres · going = horizontal tread · riser = vertical height
+                    <br/>Formula: <code className="font-mono text-purple-400">num_stairs × (going + riser) × stair_width ÷ bar_spacing = total bar length (m)</code>
+                  </div>
+                )}
               </div>
 
               {/* Live Preview */}
@@ -1109,7 +1171,15 @@ Important rules:
                     ? "e.g. how many tiles I need, each tile is 1 foot by 1 foot with 5 percent extra"
                     : measureType === "count"
                     ? "e.g. 4 bolts needed per item"
-                    : "e.g. cubic yards of concrete for a slab"
+                    : measureType === "volume"
+                    ? "e.g. cubic yards of concrete for a slab"
+                    : measureType === "weight"
+                    ? "e.g. total kg for #4 rebar bars, weight is 0.994 kg per metre"
+                    : measureType === "stirrup"
+                    ? "e.g. number of links spaced 150mm apart along the beam, each link wraps a 300x300 column with 200mm hooks"
+                    : measureType === "grid"
+                    ? "e.g. sheets of BRC mesh needed to cover the area, sheets are 2.4 by 6 metres, add 5 percent waste"
+                    : "e.g. total rebar length for stair treads, 12 stairs each 1.2m wide with bars every 150mm"
                 }
                 rows={2}
                 className="w-full bg-slate-50 dark:bg-white/[0.04] border border-purple-500/20 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:text-slate-700 outline-none focus:border-purple-500/50 resize-none"/>
