@@ -1641,7 +1641,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                     <>
                       {/* Column headers */}
                       <div className="grid px-4 py-2 border-b border-slate-100 dark:border-white/[0.04] text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-700"
-                        style={{ gridTemplateColumns: "44px 1fr 160px 80px 80px 90px 90px 32px" }}>
+                        style={{ gridTemplateColumns: "44px 1fr 160px 80px 104px 90px 90px 32px" }}>
                         <span>Type</span>
                         <span>Item / Description</span>
                         <span>From Library</span>
@@ -1660,10 +1660,10 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                         return (
                           <div key={item.id}
                             className={`grid px-4 py-2 border-b border-white/[0.03] hover:bg-slate-50 dark:bg-white/[0.02] transition group items-center ${isMissingRate ? "bg-amber-500/[0.02]" : ""}`}
-                            style={{ gridTemplateColumns: "44px 1fr 160px 80px 80px 90px 90px 32px" }}>
+                            style={{ gridTemplateColumns: "44px 1fr 160px 80px 104px 90px 90px 32px" }}>
 
                             {/* Type chip */}
-                            <div>
+                            <div className="min-w-0">
                               {item.pick_type
                                 ? <TypeChip type={item.pick_type}/>
                                 : <span className="text-[10px] text-slate-800">?</span>}
@@ -1694,7 +1694,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             </div>
 
                             {/* Library picker */}
-                            <div className="pr-2 space-y-1">
+                            <div className="pr-2 space-y-1 min-w-0">
                               {linkedItem && (
                                 <div className="text-[9px] text-slate-500 dark:text-slate-600 truncate" title={item.pick_item || ""}>
                                   {item.pick_item || "Linked"}
@@ -1717,7 +1717,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             </div>
 
                             {/* Unit */}
-                            <div className="pr-1">
+                            <div className="pr-1 min-w-0">
                               <select value={item.unit_id ?? ""} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { unit_id: e.target.value || null })}
                                 className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-1.5 py-1 text-[10px] text-slate-700 dark:text-slate-300 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50">
@@ -1727,7 +1727,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             </div>
 
                             {/* Qty */}
-                            <div className="flex items-center gap-0.5 pr-1">
+                            <div className="flex items-center gap-0.5 pr-1 min-w-0">
                               <input type="number" value={Number.isFinite(item.qty) ? item.qty : 0} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { qty: numOr(e.target.value, 0) })}
                                 className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-1.5 py-1 text-[10px] text-right text-slate-800 dark:text-slate-200 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50"/>
@@ -1748,19 +1748,19 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             </div>
 
                             {/* Rate */}
-                            <div className="pr-1">
+                            <div className="pr-1 min-w-0">
                               <input type="number" value={Number.isFinite(item.rate) ? item.rate : 0} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { rate: numOr(e.target.value, 0), rate_source: "manual" })}
                                 className={`w-full bg-slate-50 dark:bg-white/[0.04] border rounded-lg px-1.5 py-1 text-[10px] text-right font-semibold focus:outline-none disabled:opacity-50 transition ${isMissingRate ? "border-amber-500/40 text-amber-500" : "border-slate-200 dark:border-white/[0.07] text-green-400 focus:border-cyan-500/40"}`}/>
                             </div>
 
                             {/* Amount */}
-                            <div className="text-right text-xs font-bold text-slate-800 dark:text-slate-200 pr-1">
+                            <div className="text-right text-xs font-bold text-slate-800 dark:text-slate-200 pr-1 min-w-0">
                               {fmtMoney(amount)}
                             </div>
 
                             {/* Delete */}
-                            <div className="flex justify-center">
+                            <div className="flex justify-center min-w-0">
                               <button onClick={() => deleteItem(section.id, item.id)} disabled={!canEdit}
                                 className="p-1 rounded-lg text-transparent group-hover:text-slate-400 dark:text-slate-700 hover:!text-red-400 hover:bg-red-500/10 transition disabled:hidden">
                                 <X size={12}/>
