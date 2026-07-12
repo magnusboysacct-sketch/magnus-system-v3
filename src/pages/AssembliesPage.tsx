@@ -823,13 +823,26 @@ export default function AssembliesPage() {
                   <div className="p-4 space-y-4">
                     {/* Test inputs */}
                     <div className="flex gap-3 flex-wrap">
-                      {measureVars.map(v => (
-                        <div key={v}>
-                          <label className="text-[10px] text-slate-500 block mb-1 uppercase tracking-wider">{v}</label>
-                          <input type="number" value={previewVars[v] || ""} onChange={e => setPreviewVars(prev => ({ ...prev, [v]: e.target.value }))}
-                            className="w-24 bg-slate-50 dark:bg-white/[0.04] border border-emerald-500/20 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500/40"/>
-                        </div>
-                      ))}
+                      {measureVars.map(v => {
+                        const isConstant = v in (activeAssembly.constants || {});
+                        const constVal = activeAssembly.constants?.[v];
+                        return (
+                          <div key={v}>
+                            <label className="text-[10px] text-slate-500 block mb-1 uppercase tracking-wider flex items-center gap-1">
+                              {v}
+                              {isConstant && <span className="text-amber-500 dark:text-amber-400 text-[8px] font-bold">CONST</span>}
+                            </label>
+                            {isConstant ? (
+                              <div className="w-24 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-700 dark:text-amber-300 font-mono cursor-not-allowed">
+                                {constVal}
+                              </div>
+                            ) : (
+                              <input type="number" value={previewVars[v] || ""} onChange={e => setPreviewVars(prev => ({ ...prev, [v]: e.target.value }))}
+                                className="w-24 bg-slate-50 dark:bg-white/[0.04] border border-emerald-500/20 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-emerald-500/40"/>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                     {/* Results */}
                     {previewResults.length > 0 && (
