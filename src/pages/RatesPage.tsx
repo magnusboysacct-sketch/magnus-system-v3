@@ -222,6 +222,7 @@ export default function RatesPage() {
   const [fCode,setFCode]=useState("");
   const [fVariant,setFVariant]=useState("");
   const [fGrade,setFGrade]=useState("");
+  const [saveError,setSaveError]=useState<string|null>(null);
   const [itemTypes,setItemTypes]=useState<string[]>(()=>{
     try{const s=localStorage.getItem("magnus_item_types");return s?JSON.parse(s):["Material","Labor","Equipment","Subcontract","Other"];}
     catch{return ["Material","Labor","Equipment","Subcontract","Other"];}
@@ -392,7 +393,7 @@ export default function RatesPage() {
     setIsModalOpen(false);setFName("");setFDesc("");setFCode("");setFVariant("");setFGrade("");
     setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit("each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
-    setActiveId(null);setMode("add");
+    setActiveId(null);setMode("add");setSaveError(null);
   }
 
   function buildCalcJson(type:string,formula:string){
@@ -1030,6 +1031,11 @@ export default function RatesPage() {
                   placeholder="Optional description"/>
               </div>
             </div>
+            {saveError&&(
+              <div className="mx-6 mb-4 px-4 py-2 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 text-xs">
+                ⚠️ {saveError}
+              </div>
+            )}
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-200 dark:border-white/[0.07]">
               <button type="button" onClick={closeModal} disabled={busy}
                 className="px-4 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-sm text-slate-700 dark:text-slate-300 transition disabled:opacity-50">Cancel</button>
@@ -1043,18 +1049,19 @@ export default function RatesPage() {
                   updated_at:new Date().toISOString(),
                   calc_engine_json:formulaType&&formulaInput?buildCalcJson(formulaType,formulaInput):null,
                 };
+                setSaveError(null);
                 setBusy(true);
                 try{
                   if(mode==="add"){
                     const{data:newItem,error:insertError}=await supabase.from("cost_items").insert(payload).select("id").single();
-                    if(insertError){console.error(insertError);return;}
+                    if(insertError){console.error(insertError);setSaveError(insertError.message||"Save failed. Please try again.");return;}
                     if(fRate.trim()){
                       await supabase.from("cost_item_rates").insert({cost_item_id:(newItem as any).id,rate:Number(fRate),currency:"JMD",effective_date:new Date().toISOString().slice(0,10),source:"manual",note:null});
                     }
                   } else {
                     if(!activeId) return;
                     const{error:updateError}=await supabase.from("cost_items").update(payload).eq("id",activeId);
-                    if(updateError){console.error(updateError);return;}
+                    if(updateError){console.error(updateError);setSaveError(updateError.message||"Save failed. Please try again.");return;}
                     if(fRate.trim()){
                       await supabase.from("cost_item_rates").insert({cost_item_id:activeId,rate:Number(fRate),currency:"JMD",effective_date:new Date().toISOString().slice(0,10),source:"manual",note:null});
                     }
