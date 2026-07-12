@@ -26,6 +26,7 @@ interface Assembly {
   output_unit: string | null;
   is_active: boolean;
   metadata: any;
+  constants: Record<string, number>; // stored in metadata.constants
   componentCount?: number;
 }
 
@@ -190,6 +191,12 @@ export default function AssembliesPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Assembly constants
+  const [editingConstants, setEditingConstants] = useState(false);
+  const [constantDraft, setConstantDraft] = useState<Record<string, number>>({});
+  const [newConstKey, setNewConstKey] = useState("");
+  const [newConstVal, setNewConstVal] = useState("");
+
   // New assembly form
   const [form, setForm] = useState({
     name: "", description: "", category: "", assembly_code: "",
@@ -252,6 +259,7 @@ export default function AssembliesPage() {
       default_waste_percent: numOr(a.default_waste_percent, 0),
       is_active: a.is_active !== false, metadata: a.metadata || {},
       measure_type: (a.metadata?.measure_type as MeasureType) || "linear",
+      constants: (a.metadata?.constants as Record<string, number>) || {},
       componentCount: counts[a.id] || 0,
     }));
     setAssemblies(list);
@@ -332,7 +340,7 @@ export default function AssembliesPage() {
         assembly_code: editForm.assembly_code.trim() || null,
         output_unit: editForm.output_unit.trim() || null,
         default_waste_percent: parseFloat(editForm.default_waste_percent) || 0,
-        metadata: { measure_type: editForm.measure_type },
+        metadata: { measure_type: editForm.measure_type, constants: activeAssembly?.constants || {} },
         updated_at: new Date().toISOString(),
       }).eq("id", activeId);
       if (e) throw e;
@@ -357,7 +365,7 @@ export default function AssembliesPage() {
       name: `${a.name} (Copy)`, description: a.description, category: a.category,
       output_unit: a.output_unit, default_waste_percent: a.default_waste_percent,
       is_active: true, company_id: companyId || null,
-      metadata: { measure_type: a.measure_type },
+      metadata: { measure_type: a.measure_type, constants: a.constants },
     }).select().single();
     if (!data) return;
     // Copy components
@@ -371,6 +379,16 @@ export default function AssembliesPage() {
     showToast("Assembly duplicated!");
     await loadAssemblies();
     setActiveId(data.id);
+  }
+
+  async function saveConstants(assemblyId: string, constants: Record<string, number>) {
+    const assembly = assemblies.find(a => a.id === assemblyId);
+    if (!assembly) return;
+    const newMetadata = { ...assembly.metadata, constants };
+    await supabase.from("assemblies").update({ metadata: newMetadata }).eq("id", assemblyId);
+    setAssemblies(prev => prev.map(a => a.id === assemblyId ? { ...a, constants, metadata: newMetadata } : a));
+    showToast("Constants saved!");
+    setEditingConstants(false);
   }
 
   // ─── Component CRUD ────────────────────────────────────────────────────────
@@ -426,7 +444,10 @@ export default function AssembliesPage() {
   const previewResults = useMemo(() => {
     if (!activeAssembly) return [];
     const vars: Record<string, number> = {};
+    // Merge measurement variables
     Object.entries(previewVars).forEach(([k, v]) => { vars[k] = parseFloat(v) || 0; });
+    // Merge assembly constants (constants override preview vars for fixed values)
+    Object.entries(activeAssembly.constants).forEach(([k, v]) => { vars[k] = v; });
     return components.map(c => {
       const base = evalFormula(c.formula, vars);
       const withWaste = base !== null ? base * (1 + c.waste_percent / 100) : null;
@@ -691,6 +712,106 @@ export default function AssembliesPage() {
                 )}
               </div>
 
+              {/* Constants Panel */}
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-amber-500/10">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-amber-500 dark:text-amber-400 uppercase tracking-wider">⚙️ Assembly Constants</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-600">Fixed values shared across all formulas</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setConstantDraft({ ...activeAssembly.constants });
+                      setEditingConstants(v => !v);
+                    }}
+                    className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-medium transition-colors">
+                    {editingConstants ? "Cancel" : "Edit"}
+                  </button>
+                </div>
+
+                {editingConstants ? (
+                  <div className="p-4 space-y-3">
+                    {/* Existing constants */}
+                    {Object.entries(constantDraft).map(([key, val]) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <code className="text-xs text-amber-600 dark:text-amber-300 font-mono w-32 flex-shrink-0">{key}</code>
+                        <span className="text-xs text-slate-400 dark:text-slate-600">=</span>
+                        <input
+                          type="number"
+                          value={val}
+                          onChange={e => setConstantDraft(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                          className="w-28 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-amber-500/20 text-xs text-amber-700 dark:text-amber-200 font-mono focus:outline-none focus:border-amber-500/50"
+                        />
+                        <button
+                          onClick={() => setConstantDraft(prev => { const n = { ...prev }; delete n[key]; return n; })}
+                          className="p-1 rounded hover:bg-red-500/20 text-slate-400 dark:text-slate-600 hover:text-red-400 transition-colors">
+                          <X size={12}/>
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Add new constant */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-amber-500/10">
+                      <input
+                        value={newConstKey}
+                        onChange={e => setNewConstKey(e.target.value.replace(/\s/g, "_").toLowerCase())}
+                        placeholder="name (e.g. num_bars)"
+                        className="flex-1 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-amber-500/20 text-xs text-amber-700 dark:text-amber-200 font-mono placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
+                      />
+                      <span className="text-xs text-slate-400 dark:text-slate-600">=</span>
+                      <input
+                        type="number"
+                        value={newConstVal}
+                        onChange={e => setNewConstVal(e.target.value)}
+                        placeholder="value"
+                        className="w-24 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-amber-500/20 text-xs text-amber-700 dark:text-amber-200 font-mono placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
+                      />
+                      <button
+                        onClick={() => {
+                          if (!newConstKey.trim() || newConstVal === "") return;
+                          setConstantDraft(prev => ({ ...prev, [newConstKey.trim()]: Number(newConstVal) }));
+                          setNewConstKey(""); setNewConstVal("");
+                        }}
+                        className="flex items-center gap-1 px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold transition-colors">
+                        <Plus size={11}/> Add
+                      </button>
+                    </div>
+
+                    {/* Save button */}
+                    <div className="flex justify-end pt-2">
+                      <button
+                        onClick={() => saveConstants(activeAssembly.id, constantDraft)}
+                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold transition-colors">
+                        <Save size={12}/> Save Constants
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="px-4 py-3">
+                    {Object.keys(activeAssembly.constants).length === 0 ? (
+                      <div className="text-xs text-slate-500 dark:text-slate-600 italic">
+                        No constants defined yet. Click Edit to add fixed values like num_bars, spacing, unit_weight.
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-3">
+                        {Object.entries(activeAssembly.constants).map(([key, val]) => (
+                          <div key={key} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                            <code className="text-xs text-amber-600 dark:text-amber-300 font-mono">{key}</code>
+                            <span className="text-xs text-slate-400 dark:text-slate-600">=</span>
+                            <span className="text-xs font-bold text-amber-700 dark:text-amber-200">{val}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {Object.keys(activeAssembly.constants).length > 0 && (
+                      <p className="text-[10px] text-slate-500 dark:text-slate-600 mt-2">
+                        These values are available in all component formulas alongside the measurement variables.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Live Preview */}
               {showPreview && (
                 <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] overflow-hidden">
@@ -843,6 +964,7 @@ export default function AssembliesPage() {
                           {(() => {
                             const vars: Record<string,number> = {};
                             Object.entries(previewVars).forEach(([k,v]) => { vars[k]=parseFloat(v)||0; });
+                            Object.entries(activeAssembly?.constants || {}).forEach(([k,v]) => { vars[k]=v; });
                             const r = evalFormula(newComp.formula, vars);
                             return r !== null ? `≈ ${r.toFixed(2)}` : "?";
                           })()}
@@ -873,12 +995,20 @@ export default function AssembliesPage() {
                   )}
 
                   {/* Variable reference */}
-                  <div className="flex items-center gap-2 rounded-lg bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.05] px-3 py-2">
+                  <div className="flex items-center gap-2 flex-wrap rounded-lg bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/[0.05] px-3 py-2">
                     <Info size={10} className="text-slate-500 dark:text-slate-600 flex-shrink-0"/>
                     <span className="text-[10px] text-slate-500 dark:text-slate-600">Available variables: </span>
                     {measureVars.map(v => (
                       <code key={v} className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 font-mono">{v}</code>
                     ))}
+                    {Object.keys(activeAssembly?.constants || {}).length > 0 && (
+                      <>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-600 ml-2">+ constants: </span>
+                        {Object.entries(activeAssembly?.constants || {}).map(([k, v]) => (
+                          <code key={k} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-mono">{k}={v}</code>
+                        ))}
+                      </>
+                    )}
                     <span className="text-[10px] text-slate-400 dark:text-slate-700 ml-1">· Math ops: + - * / ( )</span>
                   </div>
                 </div>
