@@ -18,6 +18,7 @@ import { SmartItemSelector } from "../components/SmartItemSelector";
 import { magnusAI } from "../lib/magnusAI";
 import { BOQSuggestionCard } from "../components/BOQSuggestionCard";
 import { addSuggestionToBOQ, type BOQSuggestion } from "../lib/boqSuggestions";
+import { computeQuantity } from "../lib/calculatorEngine";
 
 // --- Types --------------------------------------------------------------------
 interface MeasurementRow {
@@ -44,6 +45,7 @@ type RateItem = {
   item_type: string | null;
   current_rate?: number | null;
   current_currency?: string | null;
+  calc_engine_json?: { vars?: { key: string }[]; formulas?: { qty?: string } } | string | null;
 };
 
 type BOQItemRow = {
@@ -320,6 +322,37 @@ function MeasurementModal({
     setAiResult(null);
     try {
       const rateItem = rateItems.find(r => r.id === modal.costItemId);
+
+      // If the rate item has a formula from the Rate Library's Advanced
+      // Calculator Engine, use it directly instead of asking AI to guess.
+      const calcJson = typeof rateItem?.calc_engine_json === "string"
+        ? (() => { try { return JSON.parse(rateItem.calc_engine_json as string); } catch { return null; } })()
+        : rateItem?.calc_engine_json || null;
+      const formulaExpr = calcJson?.formulas?.qty;
+      if (formulaExpr && calcJson?.vars?.length) {
+        // Every var (area/length/width/height/count) maps to the same
+        // measured total — grandTotal already represents whichever
+        // magnitude the entered dimensions produced (sf, lf, cf, or count).
+        const vars: Record<string, number> = {};
+        for (const v of calcJson.vars) vars[v.key] = grandTotal;
+        const result = computeQuantity(formulaExpr, vars, { wastePercent: 0, roundTo: 4, clampZero: true });
+        if (result.ok) {
+          const withWaste = Math.ceil(result.value * 1.05); // 5% default wastage
+          setAiResult({
+            calculatedQty: withWaste,
+            explanation: `Used item formula: ${formulaExpr} → ${result.value.toFixed(2)} + 5% wastage = ${withWaste} ${modal.unit}`,
+            breakdown: [
+              { label: "Measured", value: `${grandTotal.toFixed(2)} ${modal.unit || ""}`.trim() },
+              { label: "Formula", value: formulaExpr },
+              { label: "Base quantity", value: `${result.value.toFixed(2)} ${modal.unit}` },
+              { label: "Wastage (5%)", value: `+ ${(withWaste - result.value).toFixed(2)} ${modal.unit}` },
+              { label: "Final quantity", value: `${withWaste} ${modal.unit}` },
+            ],
+          });
+          return;
+        }
+        // Formula eval failed — fall through to AI.
+      }
 
       const measuredDims = rows.filter(r => !r.deduct).map(r => {
         const l = (Number(r.lengthFt) || 0) + (Number(r.lengthIn) || 0) / 12;
@@ -705,14 +738,14 @@ export default function BOQPage() {
       }
       try {
         const { data, error } = await supabase.from("v_cost_items_current")
-          .select("id,item_name,description,variant,unit,category,item_type,current_rate,current_currency")
+          .select("id,item_name,description,variant,unit,category,item_type,current_rate,current_currency,calc_engine_json")
           .order("item_name", { ascending: true }).limit(5000);
         if (error) throw error;
         if (alive) setRateItems((data ?? []) as RateItem[]);
       } catch {
         try {
           const { data } = await supabase.from("cost_items")
-            .select("id,item_name,description,variant,unit,category,item_type")
+            .select("id,item_name,description,variant,unit,category,item_type,calc_engine_json")
             .order("item_name", { ascending: true }).limit(5000);
           if (alive) setRateItems((data ?? []) as RateItem[]);
         } catch (e: any) { console.error("Failed to load rate items:", e); }
