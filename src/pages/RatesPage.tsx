@@ -30,6 +30,17 @@ const TYPE_STYLE: Record<string,{pill:string;icon:React.ReactNode}> = {
   Other:      {pill:"bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20", icon:<MoreHorizontal size={10}/>},
 };
 
+const FORMULA_BADGE: Record<string,{label:string;pill:string}> = {
+  length:    {label:"Length",    pill:"bg-blue-500/15 text-blue-400 border-blue-500/20"},
+  area:      {label:"Area",      pill:"bg-green-500/15 text-green-400 border-green-500/20"},
+  volume:    {label:"Volume",    pill:"bg-purple-500/15 text-purple-400 border-purple-500/20"},
+  count:     {label:"Count",     pill:"bg-orange-500/15 text-orange-400 border-orange-500/20"},
+  weight:    {label:"Weight",    pill:"bg-red-500/15 text-red-400 border-red-500/20"},
+  coverage:  {label:"Coverage",  pill:"bg-cyan-500/15 text-cyan-400 border-cyan-500/20"},
+  labor:     {label:"Labor",     pill:"bg-emerald-500/15 text-emerald-400 border-emerald-500/20"},
+  perimeter: {label:"Perimeter", pill:"bg-amber-500/15 text-amber-400 border-amber-500/20"},
+};
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type CostItem = {
   id: string;
@@ -235,6 +246,11 @@ export default function RatesPage() {
   const [formulaType,setFormulaType]=useState<string>("");
   const [formulaInput,setFormulaInput]=useState<string>("");
   const [formulaPreview,setFormulaPreview]=useState<number|null>(null);
+  const [fUnitWeight,setFUnitWeight]=useState("");
+  const [fWeightUnit,setFWeightUnit]=useState("kg");
+  const [fCoverageRate,setFCoverageRate]=useState("");
+  const [fLaborMode,setFLaborMode]=useState<"day"|"hour">("day");
+  const [fCrewSize,setFCrewSize]=useState("1");
 
   function toggleType(t:string){setTypeFilter(prev=>({...prev,[t]:!prev[t]}));}
   function setOnlyType(t:string){setTypeFilter({Material:false,Labor:false,Equipment:false,Subcontract:false,Other:false,[t]:true});}
@@ -366,6 +382,7 @@ export default function RatesPage() {
     setMode("add");setActiveId(null);setFName("");setFDesc("");setFVariant("");setFGrade("");
     setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit(unitOptions[0]??"each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
+    setFUnitWeight("");setFWeightUnit("kg");setFCoverageRate("");setFLaborMode("day");setFCrewSize("1");
     setIsModalOpen(true);
   }
   function openEdit(item:CostItem){
@@ -374,16 +391,30 @@ export default function RatesPage() {
     setFCode(item.cost_code||"");setFCategory(normCategory(item.category));
     setFType(item.item_type||ITEM_TYPES[0]);setFUnit((item.unit||"").trim()||(unitOptions[0]??"each"));
     setFRate(item.current_rate==null?"":String(item.current_rate));setFVariant(item.variant||"");setFGrade(item.grade||"");
+    setFUnitWeight("");setFWeightUnit("kg");setFCoverageRate("");setFLaborMode("day");setFCrewSize("1");
     const calcJson=(item as any).calc_engine_json;
     if(calcJson){
       try{
         const p=typeof calcJson==="string"?JSON.parse(calcJson):calcJson;
-        if(p.vars?.length>0){
+        if(p.formula_type){
+          setFormulaType(p.formula_type);
+          setFormulaInput(p.formulas?.qty||"");
+          if(p.consts){
+            if(p.consts.unit_weight!=null) setFUnitWeight(String(p.consts.unit_weight));
+            if(p.consts.weight_unit) setFWeightUnit(p.consts.weight_unit);
+            if(p.consts.coverage_rate!=null) setFCoverageRate(String(p.consts.coverage_rate));
+            if(p.consts.labor_mode) setFLaborMode(p.consts.labor_mode);
+            if(p.consts.crew_size!=null) setFCrewSize(String(p.consts.crew_size));
+          }
+        } else if(p.vars?.length>0){
+          // Fallback for items saved before formula_type was tracked explicitly
           const keys=p.vars.map((v:any)=>v.key);
           if(keys.includes("count")){setFormulaType("count");setFormulaInput(p.formulas?.qty||"count");}
           else if(keys.includes("area")){setFormulaType("area");setFormulaInput(p.formulas?.qty||"area");}
           else if(keys.includes("length")&&keys.includes("width")){setFormulaType("volume");setFormulaInput(p.formulas?.qty||"length * width * height");}
           else if(keys.includes("length")){setFormulaType("length");setFormulaInput(p.formulas?.qty||"length");}
+        } else {
+          setFormulaType("");setFormulaInput("");
         }
       }catch{setFormulaType("");setFormulaInput("");}
     } else{setFormulaType("");setFormulaInput("");}
@@ -393,23 +424,39 @@ export default function RatesPage() {
     setIsModalOpen(false);setFName("");setFDesc("");setFCode("");setFVariant("");setFGrade("");
     setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit("each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
+    setFUnitWeight("");setFWeightUnit("kg");setFCoverageRate("");setFLaborMode("day");setFCrewSize("1");
     setActiveId(null);setMode("add");setSaveError(null);
   }
 
   function buildCalcJson(type:string,formula:string){
-    if(!type||!formula) return null;
-    const base={version:1,qty_expr:"qty"};
+    if(!type) return null;
+    const base={version:1,qty_expr:"qty",formula_type:type};
     switch(type){
-      case "length": return{...base,vars:[{key:"length",label:"Length"}],formulas:{qty:formula}};
-      case "area":   return{...base,vars:[{key:"area",label:"Area"}],formulas:{qty:formula}};
-      case "volume": return{...base,vars:[{key:"length"},{key:"width"},{key:"height"}],formulas:{qty:formula}};
-      case "count":  return{...base,vars:[{key:"count"}],formulas:{qty:formula}};
+      case "length": return{...base,vars:[{key:"length",label:"Length"}],formulas:{qty:formula||"length"}};
+      case "area":   return{...base,vars:[{key:"area",label:"Area"}],formulas:{qty:formula||"area"}};
+      case "volume": return{...base,vars:[{key:"length",label:"Length"},{key:"width",label:"Width"},{key:"height",label:"Height"}],formulas:{qty:formula||"length * width * height"}};
+      case "count":  return{...base,vars:[{key:"count",label:"Count"}],formulas:{qty:formula||"count"}};
+      case "weight": {
+        const uw=parseFloat(fUnitWeight)||1;
+        return{...base,vars:[{key:"length",label:"Length (m)"}],consts:{unit_weight:uw,weight_unit:fWeightUnit},formulas:{qty:`length * ${uw}`}};
+      }
+      case "coverage": {
+        const cr=parseFloat(fCoverageRate)||400;
+        return{...base,vars:[{key:"area",label:"Area (sf)"}],consts:{coverage_rate:cr},formulas:{qty:`area / ${cr}`}};
+      }
+      case "labor":
+        return{...base,
+          vars: fLaborMode==="day"?[{key:"days",label:"Days"},{key:"crew",label:"Crew Size"}]:[{key:"hours",label:"Hours"},{key:"crew",label:"Crew Size"}],
+          consts:{labor_mode:fLaborMode,crew_size:parseFloat(fCrewSize)||1},
+          formulas:{qty: fLaborMode==="day"?"days * crew":"hours * crew"}};
+      case "perimeter":
+        return{...base,vars:[{key:"length",label:"Length"},{key:"width",label:"Width"},{key:"height",label:"Height"}],formulas:{qty:formula||"(length + width) * 2 * height"}};
       default:       return null;
     }
   }
   function previewFormula(type:string,formula:string){
     if(!type||!formula){setFormulaPreview(null);return;}
-    const vars:any={length:10,width:5,height:2,area:100,count:1};
+    const vars:any={length:10,width:5,height:2,area:100,count:1,days:5,hours:8,crew:2};
     const result=computeQuantity(formula,vars,{roundTo:2,clampZero:true});
     setFormulaPreview(result.ok?result.value:null);
   }
@@ -736,13 +783,17 @@ export default function RatesPage() {
             if(calcJson){
               try{
                 const p=typeof calcJson==="string"?JSON.parse(calcJson):calcJson;
-                if(p.vars?.length>0){
+                let ftype:string|null=p.formula_type||null;
+                if(!ftype&&p.vars?.length>0){
+                  // Fallback for items saved before formula_type was tracked explicitly
                   const keys=p.vars.map((v:any)=>v.key);
-                  if(keys.includes("count")) formulaBadge=<span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 border border-orange-500/20 font-semibold">Count</span>;
-                  else if(keys.includes("area")) formulaBadge=<span className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 border border-green-500/20 font-semibold">Area</span>;
-                  else if(keys.includes("length")&&keys.includes("width")) formulaBadge=<span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 border border-purple-500/20 font-semibold">Volume</span>;
-                  else if(keys.includes("length")) formulaBadge=<span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/20 font-semibold">Length</span>;
+                  if(keys.includes("count")) ftype="count";
+                  else if(keys.includes("area")) ftype="area";
+                  else if(keys.includes("length")&&keys.includes("width")) ftype="volume";
+                  else if(keys.includes("length")) ftype="length";
                 }
+                const badge=ftype?FORMULA_BADGE[ftype]:null;
+                if(badge) formulaBadge=<span className={`text-[9px] px-1.5 py-0.5 rounded border font-semibold ${badge.pill}`}>{badge.label}</span>;
               }catch{}
             }
             const ts=TYPE_STYLE[item.item_type||"Other"]||TYPE_STYLE.Other;
@@ -995,23 +1046,107 @@ export default function RatesPage() {
                       <div className="text-xs text-slate-500 mb-1.5">Formula Type</div>
                       <select value={formulaType} onChange={e=>{
                         const t=e.target.value;setFormulaType(t);
-                        const def={length:"length",area:"area",volume:"length * width * height",count:"count"}[t]||"";
-                        setFormulaInput(def);previewFormula(t,def);
+                        const def:Record<string,string>={length:"length",area:"area",volume:"length * width * height",count:"count",perimeter:"(length + width) * 2 * height"};
+                        const d=def[t]||"";
+                        setFormulaInput(d);previewFormula(t,d);
                       }} className="w-full bg-white dark:bg-[#0b1220] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50">
                         <option value="">No formula</option>
-                        <option value="length">Length</option>
-                        <option value="area">Area</option>
-                        <option value="volume">Volume</option>
-                        <option value="count">Count</option>
+                        <option value="length">Length (lf / m)</option>
+                        <option value="area">Area (sf / m²)</option>
+                        <option value="volume">Volume (cf / m³ / yd³)</option>
+                        <option value="count">Count (each / piece)</option>
+                        <option value="weight">Weight (kg / tonne) — Steel &amp; Rebar</option>
+                        <option value="coverage">Coverage (paint, waterproofing, adhesive)</option>
+                        <option value="labor">Labor (man-days / man-hours)</option>
+                        <option value="perimeter">Perimeter (fencing, skirting, molding)</option>
                       </select>
                     </div>
-                    {formulaType&&(
+
+                    {/* Weight type — extra fields */}
+                    {formulaType==="weight"&&(
+                      <div className="space-y-3">
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1.5">
+                            Unit Weight <span className="text-slate-400 dark:text-slate-600">(kg per metre or lbs per foot)</span>
+                          </div>
+                          <input type="number" value={fUnitWeight}
+                            onChange={e=>{setFUnitWeight(e.target.value);previewFormula(formulaType,`length * ${e.target.value||1}`);}}
+                            placeholder="e.g. 0.560 for #3 rebar, 2.235 for #6 rebar"
+                            className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1.5">Default Output Unit</div>
+                          <div className="flex gap-2">
+                            {["kg","tonne","lb"].map(u=>(
+                              <button key={u} type="button" onClick={()=>setFWeightUnit(u)}
+                                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-colors ${fWeightUnit===u?"bg-blue-600 text-white":"bg-white dark:bg-white/[0.04] text-slate-500 border border-slate-200 dark:border-white/[0.08] hover:bg-slate-100 dark:hover:bg-white/[0.08]"}`}>
+                                {u}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-600 bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] rounded-lg p-2">
+                          Formula: <span className="font-mono text-blue-500">length × {fUnitWeight||"unit_weight"} = {fWeightUnit}</span>
+                          <br/>User can toggle kg/tonne in the BOQ measurement modal
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Coverage type — extra fields */}
+                    {formulaType==="coverage"&&(
+                      <div className="space-y-3">
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1.5">
+                            Coverage Rate <span className="text-slate-400 dark:text-slate-600">(area covered per unit, e.g. sf per gallon)</span>
+                          </div>
+                          <input type="number" value={fCoverageRate}
+                            onChange={e=>{setFCoverageRate(e.target.value);previewFormula(formulaType,`area / ${e.target.value||400}`);}}
+                            placeholder="e.g. 400 (sf per gallon of paint)"
+                            className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-600 bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] rounded-lg p-2">
+                          Formula: <span className="font-mono text-blue-500">area ÷ {fCoverageRate||"coverage_rate"} = units needed</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Labor type — extra fields */}
+                    {formulaType==="labor"&&(
+                      <div className="space-y-3">
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1.5">Labor Mode</div>
+                          <div className="flex gap-2">
+                            {(["day","hour"] as const).map(m=>(
+                              <button key={m} type="button" onClick={()=>setFLaborMode(m)}
+                                className={`px-4 py-2 rounded-lg text-xs font-semibold capitalize transition-colors ${fLaborMode===m?"bg-emerald-600 text-white":"bg-white dark:bg-white/[0.04] text-slate-500 border border-slate-200 dark:border-white/[0.08] hover:bg-slate-100 dark:hover:bg-white/[0.08]"}`}>
+                                Per {m}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-slate-500 mb-1.5">Default Crew Size</div>
+                          <input type="number" min="1" value={fCrewSize} onChange={e=>setFCrewSize(e.target.value)}
+                            placeholder="e.g. 2"
+                            className="w-32 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"/>
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-600 bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] rounded-lg p-2">
+                          Formula: <span className="font-mono text-emerald-500">crew × {fLaborMode==="day"?"days":"hours"} = man-{fLaborMode}s</span>
+                          <br/>Rate = JMD per person per {fLaborMode}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Standard formula expression for other types */}
+                    {formulaType&&!["weight","coverage","labor"].includes(formulaType)&&(
                       <div>
                         <div className="text-xs text-slate-500 mb-1.5">Formula Expression</div>
                         <input value={formulaInput} onChange={e=>{setFormulaInput(e.target.value);previewFormula(formulaType,e.target.value);}}
                           placeholder="Enter formula…"
                           className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 font-mono outline-none focus:border-blue-500/50"/>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-600 mt-1">Variables: {formulaType==="volume"?"length, width, height":formulaType}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-600 mt-1">
+                          Variables: {formulaType==="volume"||formulaType==="perimeter"?"length, width, height":formulaType}
+                        </div>
                       </div>
                     )}
                     {formulaPreview!=null&&(
@@ -1047,7 +1182,7 @@ export default function RatesPage() {
                   cost_code:fCode.trim()||null,category:(fCategory||"Uncategorized").trim(),
                   item_type:(fType||"Other").trim(),unit:(fUnit||"each").trim(),
                   updated_at:new Date().toISOString(),
-                  calc_engine_json:formulaType&&formulaInput?buildCalcJson(formulaType,formulaInput):null,
+                  calc_engine_json:formulaType?buildCalcJson(formulaType,formulaInput):null,
                 };
                 setSaveError(null);
                 setBusy(true);
