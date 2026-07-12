@@ -270,6 +270,7 @@ function MeasurementModal({
     explanation: string;
     breakdown: { label: string; value: string }[];
   } | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
 
   function calcRow(r: MeasurementRow): number {
     const l = (Number(r.lengthFt) || 0) + (Number(r.lengthIn) || 0) / 12;
@@ -482,15 +483,25 @@ Respond ONLY with valid JSON (no markdown, no backticks):
         </div>
 
         {/* How to use */}
-        <div className="mx-4 mt-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20">
-          <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">How to use:</p>
-          <ul className="text-xs text-blue-600 dark:text-blue-400 space-y-0.5">
-            <li>• <strong>Linear</strong> (length only): enter Length → Total = Length × Qty</li>
-            <li>• <strong>Area</strong> (wall, floor): enter Length + Height → Total = L × H × Qty</li>
-            <li>• <strong>Volume</strong> (concrete): enter Length + Width + Height → Total = L × W × H × Qty</li>
-            <li>• <strong>Count only</strong>: leave all dimensions blank → Total = Qty</li>
-            <li>• Click <strong>+</strong> to toggle a row as a <strong>deduction</strong> (e.g. subtract window openings)</li>
-          </ul>
+        <div className="mx-4 mt-3">
+          <button
+            onClick={() => setShowHelp(v => !v)}
+            className="flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors">
+            <span>{showHelp ? "▲" : "▼"}</span>
+            How to use
+            <span className="text-[10px] font-normal text-slate-400">{showHelp ? "click to hide" : "click to show"}</span>
+          </button>
+          {showHelp && (
+            <div className="mt-2 p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20">
+              <ul className="text-xs text-blue-600 dark:text-blue-400 space-y-0.5">
+                <li>• <strong>Linear</strong> (length only): enter Length → Total = Length × Qty</li>
+                <li>• <strong>Area</strong> (wall, floor): enter Length + Height → Total = L × H × Qty</li>
+                <li>• <strong>Volume</strong> (concrete): enter Length + Width + Height → Total = L × W × H × Qty</li>
+                <li>• <strong>Count only</strong>: leave all dimensions blank → Total = Qty</li>
+                <li>• Click <strong>+</strong> to toggle a row as a <strong>deduction</strong> (e.g. subtract window openings)</li>
+              </ul>
+            </div>
+          )}
         </div>
 
         {/* Table */}
