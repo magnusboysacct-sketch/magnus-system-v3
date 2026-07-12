@@ -7,6 +7,7 @@ import { useMasterLists } from "../hooks/useMasterLists";
 import { buildDefaultVars, computeQuantity } from "../lib/calculatorEngine";
 import { SmartItemSelectorButton } from "../components/SmartItemSelectorButton";
 import AIPriceLookup from "../components/AIPriceLookup";
+import { magnusAI } from "../lib/magnusAI";
 import {
   Plus, Download, Upload, RefreshCw, Zap, RotateCcw,
   Edit2, Trash2, ChevronDown, Search, Package,
@@ -232,6 +233,10 @@ export default function RatesPage() {
   const [formulaType,setFormulaType]=useState<string>("");
   const [formulaInput,setFormulaInput]=useState<string>("");
   const [formulaPreview,setFormulaPreview]=useState<number|null>(null);
+  const [autoFillLoading,setAutoFillLoading]=useState(false);
+  const [bulkFilling,setBulkFilling]=useState(false);
+  const [bulkProgress,setBulkProgress]=useState(0);
+  const [bulkTotal,setBulkTotal]=useState(0);
 
   function toggleType(t:string){setTypeFilter(prev=>({...prev,[t]:!prev[t]}));}
   function setOnlyType(t:string){setTypeFilter({Material:false,Labor:false,Equipment:false,Subcontract:false,Other:false,[t]:true});}
@@ -337,6 +342,7 @@ export default function RatesPage() {
       return (it.item_name||"").toLowerCase().includes(q)||
         (it.variant||"").toLowerCase().includes(q)||
         (it.unit||"").toLowerCase().includes(q)||
+        (it.item_type||"").toLowerCase().includes(q)||
         cat.toLowerCase().includes(q)||
         (it.current_rate==null?"":String(it.current_rate)).includes(q)||
         (it.cost_code||"").toLowerCase().includes(q)||
@@ -407,6 +413,62 @@ export default function RatesPage() {
     const vars:any={length:10,width:5,height:2,area:100,count:1};
     const result=computeQuantity(formula,vars,{roundTo:2,clampZero:true});
     setFormulaPreview(result.ok?result.value:null);
+  }
+
+  async function extractSizeFromName(itemName:string):Promise<string|null>{
+    const text=await magnusAI.chat(
+      `Extract the size/specification from this construction material name: "${itemName}"
+       Return ONLY the size/spec string, nothing else. Examples:
+       "Drywall 1/2\\" 4×8 sheet" → "1/2\\" × 4×8"
+       "6\\" Concrete Block" → "6\\""
+       "2×4×10 Lumber" → "2×4 × 10ft"
+       "BRC Wire Mesh 4×4 W4 4×8 sheet" → "4×4 W4, 4×8"
+       "Corrugated Zinc Sheet 10ft" → "10ft"
+       "#6 Rebar 3/4\\" (20ft bar)" → "3/4\\" × 20ft"
+       If no size is detectable, return "N/A"`
+    );
+    const size=String(text||"").trim().replace(/^"|"$/g,"");
+    return size&&size!=="N/A"?size:null;
+  }
+
+  async function autoFillVariant(){
+    if(!fName.trim()) return;
+    setAutoFillLoading(true);
+    try{
+      const size=await extractSizeFromName(fName);
+      if(size) setFVariant(size);
+    }catch(e){
+      console.error("Auto-fill failed:",e);
+    }finally{
+      setAutoFillLoading(false);
+    }
+  }
+
+  async function autoFillAllVariants(){
+    const itemsWithoutVariant=items.filter(i=>!i.variant||i.variant.trim()==="");
+    if(itemsWithoutVariant.length===0){
+      alert("All items already have a size/spec filled in.");
+      return;
+    }
+    if(!confirm(`Auto-fill size/spec for ${itemsWithoutVariant.length} items using AI? This may take a few minutes.`)) return;
+    setBulkFilling(true);
+    setBulkTotal(itemsWithoutVariant.length);
+    setBulkProgress(0);
+    let done=0;
+    for(const item of itemsWithoutVariant){
+      try{
+        const size=await extractSizeFromName(item.item_name);
+        if(size){
+          await supabase.from("cost_items").update({variant:size}).eq("id",item.id);
+          setItems(prev=>prev.map(i=>i.id===item.id?{...i,variant:size}:i));
+        }
+      }catch{ /* skip failed items */ }
+      done++;
+      setBulkProgress(done);
+      await new Promise(r=>setTimeout(r,200));
+    }
+    setBulkFilling(false);
+    alert(`✅ Auto-filled ${done} items. Refresh to see all updates.`);
   }
 
   async function saveRate(itemId:string,nextRate:number){
@@ -620,6 +682,10 @@ export default function RatesPage() {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-white/[0.08] transition disabled:opacity-40">
               <Zap size={12}/> Bulk Update
             </button>
+            <button onClick={autoFillAllVariants} disabled={bulkFilling||busy}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-100 dark:bg-purple-500/20 hover:bg-purple-200 dark:hover:bg-purple-500/30 text-purple-700 dark:text-purple-300 text-xs font-semibold disabled:opacity-50 transition-colors">
+              {bulkFilling?`✨ Filling… (${bulkProgress}/${bulkTotal})`:"✨ Auto-fill Sizes"}
+            </button>
             <button onClick={undoLastBulk} disabled={busy||lastBulkBatches.length===0}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-white/[0.08] text-slate-600 dark:text-slate-400 text-xs font-medium border border-slate-200 dark:border-white/[0.08] transition disabled:opacity-30"
               title={lastBulkBatches.length?`Last: ${lastBulkBatches[0]}`:"No bulk batch yet"}>
@@ -664,7 +730,7 @@ export default function RatesPage() {
           <div className="relative flex-1 min-w-52 max-w-sm">
             <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
             <input value={search} onChange={e=>setSearch(e.target.value)}
-              placeholder="Search item, category, code, rate…"
+              placeholder="Search item, size/spec, category, unit, type, code, rate…"
               className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
           </div>
           <button onClick={()=>companyId&&reload()}
@@ -744,9 +810,13 @@ export default function RatesPage() {
                 {/* Item */}
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{item.item_name}</div>
+                  {item.variant&&(
+                    <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5 truncate">
+                      📐 {item.variant}
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5 mt-0.5">
                     {formulaBadge||<span className="text-[9px] text-slate-400 dark:text-slate-700">No formula</span>}
-                    {item.variant&&<span className="text-[9px] text-slate-500 dark:text-slate-600 truncate">{item.variant}</span>}
                   </div>
                 </div>
 
@@ -911,10 +981,17 @@ export default function RatesPage() {
                     placeholder="e.g. Ready Mix Concrete"/>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Variant</div>
-                  <input value={fVariant} onChange={e=>setFVariant(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-500 dark:text-slate-600"
-                    placeholder='e.g. 6" Standard Grey'/>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Size / Spec</div>
+                  <div className="flex gap-2">
+                    <input value={fVariant} onChange={e=>setFVariant(e.target.value)}
+                      className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 transition placeholder:text-slate-500 dark:text-slate-600"
+                      placeholder='e.g. 4×8, 1/2", 20ft, Grade A'/>
+                    <button type="button" onClick={autoFillVariant} disabled={autoFillLoading||!fName.trim()}
+                      className="px-3 py-2 rounded-lg bg-purple-100 dark:bg-purple-500/20 hover:bg-purple-200 dark:hover:bg-purple-500/30 text-purple-700 dark:text-purple-300 text-xs font-semibold disabled:opacity-50 transition-colors whitespace-nowrap flex-shrink-0"
+                      title="Auto-detect size from item name">
+                      {autoFillLoading?"…":"✨ Auto"}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5 font-medium">Cost Code</div>
