@@ -96,13 +96,15 @@ export default function AIPriceLookup() {
 
   if (!open) return (
     <button onClick={()=>setOpen(true)}
-      style={{position:"fixed",bottom:24,right:24,zIndex:200,background:"linear-gradient(135deg,#7c3aed,#4f46e5)",border:"none",borderRadius:16,padding:"12px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 8px 32px rgba(124,58,237,0.4)"}}>
+      className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[200]"
+      style={{background:"linear-gradient(135deg,#7c3aed,#4f46e5)",border:"none",borderRadius:16,padding:"12px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 8px 32px rgba(124,58,237,0.4)"}}>
       <span style={{fontSize:16}}>✨</span> AI Price Lookup
     </button>
   );
 
   return (
-    <div style={{position:"fixed",bottom:24,right:24,zIndex:200,width:340,background:"#0d1117",border:"1px solid rgba(124,58,237,0.3)",borderRadius:20,boxShadow:"0 16px 48px rgba(0,0,0,0.5)",overflow:"hidden"}}>
+    <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[200]"
+      style={{width:340,background:"#0d1117",border:"1px solid rgba(124,58,237,0.3)",borderRadius:20,boxShadow:"0 16px 48px rgba(0,0,0,0.5)",overflow:"hidden"}}>
       {/* Header */}
       <div style={{background:"linear-gradient(135deg,#7c3aed,#4f46e5)",padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>

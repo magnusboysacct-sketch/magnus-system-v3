@@ -1351,7 +1351,7 @@ export default function RatesPage() {
         </div>
       )}
 
-      <AIPriceLookup/>
+      {!isModalOpen && <AIPriceLookup/>}
     </div>
   );
 }
