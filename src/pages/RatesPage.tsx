@@ -471,6 +471,7 @@ export default function RatesPage() {
   async function duplicateItem(item:CostItem){
     setBusy(true);
     try{
+      const calcJson=(item as any).calc_engine_json||null;
       const{data:newItem,error:insertError}=await supabase.from("cost_items").insert({
         item_name:`Copy of ${item.item_name}`,
         description:item.description,
@@ -481,7 +482,7 @@ export default function RatesPage() {
         item_type:item.item_type,
         unit:item.unit,
         company_id:companyId||null,
-        calc_engine_json:(item as any).calc_engine_json||null,
+        calc_engine_json:calcJson,
       }).select("id").single();
       if(insertError){alert(insertError.message);return;}
       if(item.current_rate&&newItem){
@@ -493,8 +494,44 @@ export default function RatesPage() {
           source:"manual",
         });
       }
-      await reload();
-      showToast(`✅ "${item.item_name}" duplicated — edit the copy to customize it`);
+
+      // Build the new item and splice it right after the original in local
+      // state instead of reload()-ing — a DB refetch re-sorts alphabetically
+      // by item_name, which is exactly why "Copy of X" used to land somewhere
+      // else in the list instead of next to X.
+      const newCostItem:CostItem={
+        id:(newItem as any).id,
+        item_name:`Copy of ${item.item_name}`,
+        description:item.description,
+        cost_code:null,
+        variant:item.variant,
+        grade:item.grade,
+        category:item.category,
+        item_type:item.item_type,
+        unit:item.unit,
+        current_rate:item.current_rate,
+        current_currency:item.current_currency,
+        current_effective_date:new Date().toISOString().slice(0,10),
+        current_source:"manual",
+        current_batch_id:null,
+        updated_at:new Date().toISOString(),
+      };
+      (newCostItem as any).calc_engine_json=calcJson;
+
+      setItems(prev=>{
+        const idx=prev.findIndex(i=>i.id===item.id);
+        if(idx===-1) return [...prev,newCostItem];
+        const next=[...prev];
+        next.splice(idx+1,0,newCostItem);
+        return next;
+      });
+
+      setTimeout(()=>{
+        const el=document.getElementById(`rate-item-${newCostItem.id}`);
+        if(el) el.scrollIntoView({behavior:"smooth",block:"center"});
+        openEdit(newCostItem);
+        showToast("✅ Duplicated — rename and customize it");
+      },150);
     }finally{setBusy(false);}
   }
   async function saveRate(itemId:string,nextRate:number){
@@ -829,7 +866,7 @@ export default function RatesPage() {
             }
             const ts=TYPE_STYLE[item.item_type||"Other"]||TYPE_STYLE.Other;
             return(
-              <div key={item.id}
+              <div key={item.id} id={`rate-item-${item.id}`}
                 className={`grid min-w-[860px] items-center px-4 py-3 gap-2 border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:bg-white/[0.02] transition group ${idx===filteredItems.length-1?"border-b-0":""}`}
                 style={{gridTemplateColumns:"2fr 1.2fr 0.7fr 1fr 1fr 0.7fr 1fr 0.9fr 96px"}}>
 
