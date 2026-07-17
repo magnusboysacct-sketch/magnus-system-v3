@@ -867,7 +867,11 @@ export default function RatesPage() {
             const ts=TYPE_STYLE[item.item_type||"Other"]||TYPE_STYLE.Other;
             return(
               <div key={item.id} id={`rate-item-${item.id}`}
-                className={`grid min-w-[860px] items-center px-4 py-3 gap-2 border-b border-slate-100 dark:border-white/[0.04] hover:bg-slate-50 dark:bg-white/[0.02] transition group ${idx===filteredItems.length-1?"border-b-0":""}`}
+                className={`group grid min-w-[860px] items-center px-4 py-3 gap-2 border-b border-slate-100 dark:border-white/[0.04] border-l-2 transition-colors cursor-default ${idx===filteredItems.length-1?"border-b-0":""} ${
+                  activeId===item.id
+                    ? "bg-blue-50 dark:bg-blue-500/10 border-l-blue-500"
+                    : "border-l-transparent hover:bg-blue-50 dark:hover:bg-blue-500/5 hover:border-l-blue-400"
+                }`}
                 style={{gridTemplateColumns:"2fr 1.2fr 0.7fr 1fr 1fr 0.7fr 1fr 0.9fr 96px"}}>
 
                 {/* Item */}
@@ -989,9 +993,9 @@ export default function RatesPage() {
                 <div className="text-[11px] text-slate-400 dark:text-slate-700">{formatDate(item.updated_at)}</div>
 
                 {/* Actions */}
-                <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity justify-end">
+                <div className={`flex gap-1 transition-opacity justify-end ${activeId===item.id?"opacity-100":"md:opacity-0 md:group-hover:opacity-100"}`}>
                   <button type="button" onClick={()=>openEdit(item)} disabled={busy}
-                    className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition" title="Edit">
+                    className={`p-1.5 rounded-lg hover:bg-blue-500/15 transition ${activeId===item.id?"text-blue-500":"text-slate-500 dark:text-slate-600 hover:text-blue-400"}`} title="Edit">
                     <Edit2 size={13}/>
                   </button>
                   <button type="button" onClick={()=>duplicateItem(item)} disabled={busy}
@@ -1008,7 +1012,7 @@ export default function RatesPage() {
                         setItems(prev=>prev.filter(r=>r.id!==item.id));
                       }finally{setBusy(false);}
                     }}
-                    className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400 transition" title="Delete">
+                    className={`p-1.5 rounded-lg hover:bg-red-500/15 transition ${activeId===item.id?"text-red-500":"text-slate-500 dark:text-slate-600 hover:text-red-400"}`} title="Delete">
                     <Trash2 size={13}/>
                   </button>
                 </div>
