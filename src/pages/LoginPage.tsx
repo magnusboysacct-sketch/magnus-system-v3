@@ -124,9 +124,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-[#0b1220] text-white">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 shadow-2xl overflow-hidden">
-        <div className="p-6 border-b border-white/10">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-slate-50 to-blue-50 text-slate-800">
+      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+        <div className="p-6 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <img
               src={MAGNUS_BRAND.logo_url}
@@ -135,24 +135,24 @@ export default function LoginPage() {
             />
 
             <div>
-              <div className="text-lg font-semibold">
+              <div className="text-lg font-semibold text-slate-800">
                 {MAGNUS_BRAND.company_name}
               </div>
-              <div className="text-xs opacity-70">
+              <div className="text-xs text-slate-500">
                 {mode === "signin" ? "Sign in to continue" : "Create your account"}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="flex border-b border-white/10">
+        <div className="flex border-b border-slate-100">
           <button
             type="button"
             onClick={() => switchMode("signin")}
             className={`flex-1 py-3 text-sm transition ${
               mode === "signin"
-                ? "bg-white/10 border-b-2 border-white/30 font-medium"
-                : "opacity-70 hover:opacity-100 hover:bg-white/5"
+                ? "bg-slate-50 border-b-2 border-blue-500 font-medium text-slate-800"
+                : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
             }`}
           >
             Sign In
@@ -162,8 +162,8 @@ export default function LoginPage() {
             onClick={() => switchMode("signup")}
             className={`flex-1 py-3 text-sm transition ${
               mode === "signup"
-                ? "bg-white/10 border-b-2 border-white/30 font-medium"
-                : "opacity-70 hover:opacity-100 hover:bg-white/5"
+                ? "bg-slate-50 border-b-2 border-blue-500 font-medium text-slate-800"
+                : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
             }`}
           >
             Sign Up
@@ -174,22 +174,22 @@ export default function LoginPage() {
           {mode === "signup" && (
             <>
               <div>
-                <div className="text-xs opacity-70 mb-1">Full Name</div>
+                <div className="text-xs text-slate-500 mb-1">Full Name</div>
                 <input
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/50"
                   placeholder="John Doe"
                   autoComplete="name"
                 />
               </div>
 
               <div>
-                <div className="text-xs opacity-70 mb-1">Company Name</div>
+                <div className="text-xs text-slate-500 mb-1">Company Name</div>
                 <input
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/50"
                   placeholder="Your Company Ltd."
                   autoComplete="organization"
                 />
@@ -198,36 +198,36 @@ export default function LoginPage() {
           )}
 
           <div>
-            <div className="text-xs opacity-70 mb-1">Email</div>
+            <div className="text-xs text-slate-500 mb-1">Email</div>
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
+              className="w-full bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/50"
               placeholder="you@example.com"
               autoComplete="email"
             />
           </div>
 
           <div>
-            <div className="text-xs opacity-70 mb-1">Password</div>
+            <div className="text-xs text-slate-500 mb-1">Password</div>
             <input
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               type="password"
-              className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-white/20"
+              className="w-full bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-800 placeholder-slate-400 outline-none focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/50"
               placeholder="••••••••"
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
             />
           </div>
 
           {err && (
-            <div className="text-sm text-red-300 bg-red-900/20 border border-red-500/20 rounded-md px-3 py-2">
+            <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
               {err}
             </div>
           )}
 
           {success && (
-            <div className="text-sm text-green-300 bg-green-900/20 border border-green-500/20 rounded-md px-3 py-2">
+            <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
               {success}
             </div>
           )}
@@ -240,7 +240,7 @@ export default function LoginPage() {
               !password ||
               (mode === "signup" && (!fullName.trim() || !companyName.trim()))
             }
-            className="w-full bg-white/10 hover:bg-white/15 border border-white/10 rounded-md px-4 py-2 text-sm transition disabled:opacity-50"
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-md px-4 py-2 text-sm font-semibold transition disabled:opacity-50"
           >
             {busy
               ? mode === "signin"
@@ -251,15 +251,15 @@ export default function LoginPage() {
               : "Sign Up"}
           </button>
           {mode === "signin" && (
-            <div className="mt-4 pt-4 border-t border-white/10 text-center space-y-2">
-              <button type="button" onClick={()=>{setShowForgot(true);setResetEmail(email);setErr(null);}} className="text-xs text-cyan-400 hover:text-cyan-300 underline block w-full">Forgot password?</button>
-              <p className="text-xs opacity-60">
+            <div className="mt-4 pt-4 border-t border-slate-100 text-center space-y-2">
+              <button type="button" onClick={()=>{setShowForgot(true);setResetEmail(email);setErr(null);}} className="text-xs text-blue-600 hover:text-blue-700 underline block w-full">Forgot password?</button>
+              <p className="text-xs text-slate-500">
 
                 Don't have an account?{" "}
                 <button
                   type="button"
                   onClick={() => switchMode("signup")}
-                  className="underline hover:opacity-80"
+                  className="underline hover:text-slate-700"
                 >
                   Sign up here
                 </button>
@@ -268,13 +268,13 @@ export default function LoginPage() {
           )}
 
           {mode === "signup" && (
-            <div className="mt-4 pt-4 border-t border-white/10 text-center">
-              <p className="text-xs opacity-60">
+            <div className="mt-4 pt-4 border-t border-slate-100 text-center">
+              <p className="text-xs text-slate-500">
                 Already have an account?{" "}
                 <button
                   type="button"
                   onClick={() => switchMode("signin")}
-                  className="underline hover:opacity-80"
+                  className="underline hover:text-slate-700"
                 >
                   Sign in here
                 </button>
@@ -284,20 +284,20 @@ export default function LoginPage() {
         </form>
       </div>
       {showForgot && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#0d1117] border border-white/10 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-            <div className="text-sm font-bold text-slate-100 mb-1">Reset Password</div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="text-sm font-bold text-slate-800 mb-1">Reset Password</div>
             <div className="text-xs text-slate-500 mb-4">Enter your email and we will send you a reset link.</div>
             {resetSent ? (
               <div className="space-y-4">
-                <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-3 text-xs text-emerald-300 text-center">Reset email sent! Check your inbox.</div>
-                <button onClick={()=>{setShowForgot(false);setResetSent(false);}} className="w-full py-2 rounded-lg bg-white/10 text-sm text-white transition">Close</button>
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-3 text-xs text-emerald-700 text-center">Reset email sent! Check your inbox.</div>
+                <button onClick={()=>{setShowForgot(false);setResetSent(false);}} className="w-full py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm text-slate-700 transition">Close</button>
               </div>
             ) : (
               <div className="space-y-3">
-                <input type="email" value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="your@email.com" autoFocus className="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-sm outline-none text-white"/>
-                <button onClick={handleForgotPassword} disabled={resetLoading} className="w-full py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold transition disabled:opacity-50">{resetLoading ? "Sending..." : "Send Reset Link"}</button>
-                <button onClick={()=>{setShowForgot(false);setErr(null);}} className="w-full py-2 rounded-lg bg-white/5 text-slate-400 text-xs transition">Cancel</button>
+                <input type="email" value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="your@email.com" autoFocus className="w-full bg-slate-50 border border-slate-200 rounded-md px-3 py-2 text-sm outline-none text-slate-800 placeholder-slate-400"/>
+                <button onClick={handleForgotPassword} disabled={resetLoading} className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition disabled:opacity-50">{resetLoading ? "Sending..." : "Send Reset Link"}</button>
+                <button onClick={()=>{setShowForgot(false);setErr(null);}} className="w-full py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs transition">Cancel</button>
               </div>
             )}
           </div>
