@@ -14,25 +14,24 @@
     <title>Magnus Boys Construction ERP</title>
     <style>
       #initial-splash {
-        position: fixed; inset: 0; background: #0a0f1a; z-index: 9999;
+        position: fixed; inset: 0; background: #ffffff; z-index: 9999;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       }
-      #initial-splash .logo-box {
-        width: 80px; height: 80px; border-radius: 20px; margin-bottom: 16px;
-        background: linear-gradient(135deg, #06b6d4, #2563eb);
-        display: flex; align-items: center; justify-content: center;
-        box-shadow: 0 20px 60px rgba(6, 182, 212, 0.3);
+      #initial-splash img {
+        width: 160px; height: 160px; object-fit: contain; border-radius: 24px;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
+        margin-bottom: 24px;
       }
-      #initial-splash h1 { color: #fff; font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
-      #initial-splash p { color: #94a3b8; font-size: 13px; margin: 4px 0 0; }
+      #initial-splash h1 { color: #1e293b; font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+      #initial-splash p { color: #64748b; font-size: 13px; margin: 4px 0 0; }
       #initial-splash .loading-track {
-        width: 192px; height: 4px; margin-top: 32px; border-radius: 9999px;
-        background: #1e293b; overflow: hidden;
+        width: 192px; height: 6px; margin-top: 32px; border-radius: 9999px;
+        background: #f1f5f9; overflow: hidden;
       }
       #initial-splash .loading-bar {
         height: 100%; border-radius: 9999px;
-        background: linear-gradient(90deg, #06b6d4, #2563eb);
+        background: linear-gradient(90deg, #ef4444, #1d4ed8);
         animation: initialSplashSlide 1.5s ease-in-out infinite;
       }
       @keyframes initialSplashSlide {
@@ -45,13 +44,8 @@
   <body>
     <div id="root"></div>
     <div id="initial-splash">
-      <div class="logo-box">
-        <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-          <path d="M8 32L20 8L32 32" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M12 24H28" stroke="white" stroke-width="3" stroke-linecap="round"/>
-        </svg>
-      </div>
-      <h1>Magnus System</h1>
+      <img src="/app-logo-round.svg" alt="Magnus Boys Construction"/>
+      <h1>Magnus Boys Construction</h1>
       <p>Construction ERP</p>
       <div class="loading-track"><div class="loading-bar"></div></div>
     </div>
