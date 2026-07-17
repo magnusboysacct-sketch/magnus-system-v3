@@ -127,14 +127,21 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (checking) return (
-    <div className="min-h-screen bg-[#080b10] flex items-center justify-center">
-      <div className="flex items-center gap-2.5 text-xs text-slate-500">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="animate-spin text-cyan-500">
-          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.2"/>
-          <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-        </svg>
-        Loading…
+    <div className="fixed inset-0 bg-[#0a0f1a] flex flex-col items-center justify-center z-50">
+      <div className="mb-8 flex flex-col items-center">
+        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-2xl mb-4">
+          <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+            <path d="M8 32L20 8L32 32" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M12 24H28" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+          </svg>
+        </div>
+        <h1 className="text-2xl font-bold text-white tracking-tight">Magnus System</h1>
+        <p className="text-sm text-slate-400 mt-1">Construction ERP</p>
       </div>
+      <div className="w-48 h-1 bg-slate-800 rounded-full overflow-hidden">
+        <div className="h-full bg-gradient-to-r from-cyan-500 to-blue-600 rounded-full" style={{ animation: "splashSlide 1.5s ease-in-out infinite" }}/>
+      </div>
+      <p className="text-xs text-slate-500 mt-4">Loading your workspace...</p>
     </div>
   );
 

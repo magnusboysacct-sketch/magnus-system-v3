@@ -66,3 +66,10 @@ html.dark ::-webkit-scrollbar-thumb:hover { background: #334155; }
   .print-worker-card { display: block !important; }
   #root { display: block !important; }
 }
+
+/* ── Splash / auth-check loading bar ── */
+@keyframes splashSlide {
+  0%   { width: 0%;  margin-left: 0%; }
+  50%  { width: 70%; margin-left: 15%; }
+  100% { width: 0%;  margin-left: 100%; }
+}

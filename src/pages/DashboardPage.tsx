@@ -39,6 +39,28 @@ export default function DashboardPage() {
 
   const activeProjects = projects.filter(p => p.status === "active").slice(0, 6);
 
+  // A single unified gate for both independent loading flags. Previously the
+  // KPI row and the project list resolved at different times (one waiting on
+  // `loading`, the other on `loadingProjects`), so real content popped in
+  // piecemeal instead of all at once — that staggered pop-in was the
+  // "flickering/jumping" reported, not a lack of parallel fetching (the stats
+  // fetch already uses Promise.all).
+  if (loading || loadingProjects) return (
+    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] p-6 space-y-6 animate-pulse">
+      <div className="h-8 bg-slate-200 dark:bg-slate-800 rounded-xl w-64"/>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {[1,2,3,4].map(i => (
+          <div key={i} className="h-24 bg-slate-200 dark:bg-slate-800 rounded-2xl"/>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {[1,2,3,4].map(i => (
+          <div key={i} className="h-32 bg-slate-200 dark:bg-slate-800 rounded-2xl"/>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader
@@ -49,10 +71,10 @@ export default function DashboardPage() {
       <div className="p-6 space-y-6">
         {/* KPI row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Active Projects" value={loading ? "â€”" : stats.active} icon={<FolderOpen size={15}/>} color="text-cyan-300" trend={{ value: 8, label: "vs last month" }}/>
-          <StatCard label="Active Budget" value={loading ? "â€”" : fmt(stats.budget)} icon={<DollarSign size={15}/>} color="text-emerald-300"/>
-          <StatCard label="Open POs" value={loading ? "â€”" : stats.openPOs} icon={<ShoppingCart size={15}/>} color="text-amber-300"/>
-          <StatCard label="Active Workers" value={loading ? "â€”" : stats.workers} icon={<Users size={15}/>} color="text-violet-300"/>
+          <StatCard label="Active Projects" value={stats.active} icon={<FolderOpen size={15}/>} color="text-cyan-300" trend={{ value: 8, label: "vs last month" }}/>
+          <StatCard label="Active Budget" value={fmt(stats.budget)} icon={<DollarSign size={15}/>} color="text-emerald-300"/>
+          <StatCard label="Open POs" value={stats.openPOs} icon={<ShoppingCart size={15}/>} color="text-amber-300"/>
+          <StatCard label="Active Workers" value={stats.workers} icon={<Users size={15}/>} color="text-violet-300"/>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -63,9 +85,7 @@ export default function DashboardPage() {
                 <span className="text-sm font-semibold text-slate-200">Active Projects</span>
                 <Btn size="xs" variant="ghost" onClick={() => nav("/projects")}>All projects <ArrowRight size={11}/></Btn>
               </div>
-              {loadingProjects ? (
-                <div className="flex items-center justify-center py-12 text-xs text-slate-600">Loadingâ€¦</div>
-              ) : activeProjects.length === 0 ? (
+              {activeProjects.length === 0 ? (
                 <Empty icon={<FolderOpen size={18}/>} title="No active projects" action={<Btn variant="primary" size="sm" onClick={() => nav("/projects")}>Create project</Btn>}/>
               ) : (
                 <div className="divide-y divide-white/[0.04]">
