@@ -128,11 +128,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 
   if (checking) return (
     <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
-      <div className="mb-8 flex flex-col items-center">
+      <div className="mb-8 flex flex-col items-center px-8">
         <img src="/app-logo-round.svg" alt="Magnus Boys Construction"
           className="w-40 h-40 object-contain rounded-3xl shadow-lg mb-6"/>
-        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Magnus Boys Construction</h1>
-        <p className="text-sm text-slate-500 mt-1">Construction ERP</p>
+        <h1 className="text-2xl font-bold text-slate-800 tracking-tight text-center">Magnus Boys Construction</h1>
+        <p className="text-sm text-slate-500 mt-1 text-center">Construction ERP</p>
       </div>
       <div className="w-48 h-1.5 bg-slate-100 rounded-full overflow-hidden">
         <div className="h-full bg-gradient-to-r from-red-500 to-blue-700 rounded-full" style={{ animation: "splashSlide 1.5s ease-in-out infinite" }}/>
