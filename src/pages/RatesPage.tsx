@@ -10,7 +10,7 @@ import AIPriceLookup from "../components/AIPriceLookup";
 import {
   Plus, Download, Upload, RefreshCw, Zap, RotateCcw,
   Edit2, Trash2, ChevronDown, Search, Package,
-  Layers, Wrench, Users, MoreHorizontal
+  Layers, Wrench, Users, MoreHorizontal, Copy
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -234,6 +234,8 @@ export default function RatesPage() {
   const [fVariant,setFVariant]=useState("");
   const [fGrade,setFGrade]=useState("");
   const [saveError,setSaveError]=useState<string|null>(null);
+  const [toast,setToast]=useState<string|null>(null);
+  function showToast(msg:string){setToast(msg);setTimeout(()=>setToast(null),3000);}
   const [itemTypes,setItemTypes]=useState<string[]>(()=>{
     try{const s=localStorage.getItem("magnus_item_types");return s?JSON.parse(s):["Material","Labor","Equipment","Subcontract","Other"];}
     catch{return ["Material","Labor","Equipment","Subcontract","Other"];}
@@ -466,6 +468,35 @@ export default function RatesPage() {
     if(parts.length>0) setFDesc(parts.join(", "));
   }
 
+  async function duplicateItem(item:CostItem){
+    setBusy(true);
+    try{
+      const{data:newItem,error:insertError}=await supabase.from("cost_items").insert({
+        item_name:`Copy of ${item.item_name}`,
+        description:item.description,
+        cost_code:null,
+        variant:item.variant,
+        grade:item.grade,
+        category:item.category,
+        item_type:item.item_type,
+        unit:item.unit,
+        company_id:companyId||null,
+        calc_engine_json:(item as any).calc_engine_json||null,
+      }).select("id").single();
+      if(insertError){alert(insertError.message);return;}
+      if(item.current_rate&&newItem){
+        await supabase.from("cost_item_rates").insert({
+          cost_item_id:(newItem as any).id,
+          rate:item.current_rate,
+          currency:item.current_currency||"JMD",
+          effective_date:new Date().toISOString().slice(0,10),
+          source:"manual",
+        });
+      }
+      await reload();
+      showToast(`✅ "${item.item_name}" duplicated — edit the copy to customize it`);
+    }finally{setBusy(false);}
+  }
   async function saveRate(itemId:string,nextRate:number){
     setBusy(true);
     try{
@@ -926,6 +957,10 @@ export default function RatesPage() {
                     className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition" title="Edit">
                     <Edit2 size={13}/>
                   </button>
+                  <button type="button" onClick={()=>duplicateItem(item)} disabled={busy}
+                    className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition" title="Duplicate item">
+                    <Copy size={13}/>
+                  </button>
                   <button type="button" disabled={busy}
                     onClick={async()=>{
                       if(!confirm("Delete this item?")) return;
@@ -1201,6 +1236,7 @@ export default function RatesPage() {
                       await supabase.from("cost_item_rates").insert({cost_item_id:activeId,rate:Number(fRate),currency:"JMD",effective_date:new Date().toISOString().slice(0,10),source:"manual",note:null});
                     }
                   }
+                  showToast(mode==="add"?"✅ Rate added!":"✅ Rate updated!");
                   reload();closeModal();
                 }finally{setBusy(false);}
               }}
@@ -1352,6 +1388,12 @@ export default function RatesPage() {
       )}
 
       {!isModalOpen && <AIPriceLookup/>}
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-semibold shadow-2xl">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
