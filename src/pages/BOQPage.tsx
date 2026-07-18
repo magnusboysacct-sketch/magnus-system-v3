@@ -1787,7 +1787,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
 
       {/* -- Sticky Header -- */}
       <div className="sticky top-0 z-30 bg-white dark:bg-[#0d1117]/95 backdrop-blur-md border-b border-slate-200 dark:border-white/[0.06]">
-        <div className="px-5 py-3 flex items-center justify-between gap-4">
+        <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-3">
           {/* Left */}
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-cyan-900/30">
@@ -1803,7 +1803,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
           </div>
 
           {/* Right ? action buttons */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="flex items-center gap-1.5 flex-nowrap overflow-x-auto w-full md:w-auto flex-shrink-0 -mx-5 px-5 md:mx-0 md:px-0 pb-1 md:pb-0">
             {persistLoading && <span className="text-[11px] text-slate-500 flex items-center gap-1"><RefreshCw size={11} className="animate-spin"/>Saving?</span>}
             {saveSuccess && !persistLoading && <span className="text-[11px] text-emerald-400 flex items-center gap-1"><CheckCircle size={11}/>Saved</span>}
             {persistError && <span className="text-[11px] text-red-400 flex items-center gap-1 max-w-[160px] truncate"><AlertCircle size={11}/>{persistError}</span>}
@@ -1897,23 +1897,23 @@ Answer briefly and practically. If they ask to add items, explain they need to u
           return (
             <div key={section.id} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] overflow-hidden">
               {/* Section header */}
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/[0.06]">
+              <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-200 dark:border-white/[0.06]">
                 <button onClick={() => toggleCollapse(section.id)} className="text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition flex-shrink-0">
                   {section.collapsed ? <ChevronRight size={14}/> : <ChevronDown size={14}/>}
                 </button>
                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-700 w-5 text-center flex-shrink-0">{sIdx + 1}</span>
 
                 <select value={section.masterCategoryId ?? ""} disabled={!canEdit} onChange={e => onPickCategory(section.id, e.target.value)}
-                  className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1 text-[11px] text-slate-600 dark:text-slate-400 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50 max-w-[160px] flex-shrink-0">
+                  className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1 text-[11px] text-slate-600 dark:text-slate-400 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50 w-28 md:w-auto md:max-w-[160px] flex-shrink-0">
                   <option value="">Category?</option>
                   {usableCategories.map((c: any) => <option key={getCategoryId(c)} value={getCategoryId(c)}>{getCategoryLabel(c)}</option>)}
                 </select>
 
                 <input value={section.title} disabled={!canEdit} onChange={e => updateSection(section.id, { title: e.target.value })}
-                  className="flex-1 bg-transparent text-sm font-bold text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-0"
+                  className="flex-1 bg-transparent text-sm font-bold text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-[100px]"
                   placeholder="Section title?"/>
 
-                <div className="flex items-center gap-3 flex-shrink-0 ml-auto">
+                <div className="w-full md:w-auto flex items-center justify-between md:justify-end gap-3 flex-shrink-0 md:ml-auto order-last md:order-none">
                   {sectionWarnings > 0 && (
                     <span className="flex items-center gap-1 text-[10px] text-amber-400"><AlertTriangle size={10}/>{sectionWarnings} missing rate</span>
                   )}
@@ -1959,6 +1959,108 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                     </div>
                   ) : (
                     <>
+                      {/* Mobile card layout */}
+                      <div className="md:hidden divide-y divide-slate-100 dark:divide-white/[0.03]">
+                        {section.items.map(item => {
+                          const amount = numOr(item.qty) * numOr(item.rate);
+                          const isMissingRate = item.qty > 0 && item.rate === 0;
+                          const linkedItem = item.pick_item || item.cost_item_id;
+                          return (
+                            <div key={item.id} className={`p-3 ${isMissingRate ? "bg-amber-500/[0.02]" : ""}`}>
+                              {/* Row 1: Type badge + Item name + Delete */}
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  {item.pick_type && <TypeChip type={item.pick_type}/>}
+                                  <input value={item.item_name} disabled={!canEdit}
+                                    onChange={e => updateItem(section.id, item.id, { item_name: e.target.value, rate_source: "manual" })}
+                                    className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 focus:outline-none disabled:opacity-60"
+                                    placeholder="Item name…"/>
+                                  {isMissingRate && <AlertTriangle size={12} className="text-amber-500 flex-shrink-0"/>}
+                                </div>
+                                <button onClick={() => deleteItem(section.id, item.id)} disabled={!canEdit}
+                                  className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-300 dark:text-slate-700 hover:text-red-400 transition-colors flex-shrink-0 disabled:opacity-40">
+                                  <X size={14}/>
+                                </button>
+                              </div>
+
+                              {/* Row 2: Find Item button */}
+                              <div className="mb-2">
+                                <button onClick={() => setFindModal({ open: true, sectionId: section.id, rowId: item.id })}
+                                  disabled={!canEdit || rateLoading}
+                                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.07] transition disabled:opacity-40">
+                                  <Search size={12}/>
+                                  {linkedItem ? `📦 ${item.pick_item || "Linked"}` : "Find Item from Library"}
+                                </button>
+                              </div>
+
+                              {/* Row 3: Unit + Qty + Rate */}
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="flex-shrink-0">
+                                  <div className="text-[9px] text-slate-400 dark:text-slate-700 mb-1 uppercase">Unit</div>
+                                  <select value={item.unit_id ?? ""} disabled={!canEdit}
+                                    onChange={e => updateItem(section.id, item.id, { unit_id: e.target.value || null })}
+                                    className="w-20 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-xs text-slate-700 dark:text-slate-300 focus:outline-none disabled:opacity-50">
+                                    <option value="">—</option>
+                                    {usableUnits.map((u: any) => <option key={getUnitId(u)} value={getUnitId(u)}>{getUnitLabel(u)}</option>)}
+                                  </select>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[9px] text-slate-400 dark:text-slate-700 mb-1 uppercase">Quantity</div>
+                                  <div className="flex items-center gap-1">
+                                    <input type="number" value={Number.isFinite(item.qty) ? item.qty : 0} disabled={!canEdit}
+                                      onChange={e => updateItem(section.id, item.id, { qty: numOr(e.target.value, 0) })}
+                                      className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-xs text-slate-800 dark:text-slate-200 text-center focus:outline-none focus:border-cyan-500/40 disabled:opacity-50"/>
+                                    {canEdit && routeProjectId && (
+                                      <button onClick={() => setImportTakeoffModal({ open: true, sectionId: section.id, itemId: item.id })}
+                                        className="p-1.5 rounded-lg hover:bg-emerald-500/15 text-slate-400 dark:text-slate-700 hover:text-emerald-400 transition flex-shrink-0" title="Import from Takeoff">
+                                        <Download size={13}/>
+                                      </button>
+                                    )}
+                                    {canEdit && (
+                                      <button onClick={() => openMeasureModal(section.id, item)}
+                                        className={`p-1.5 rounded-lg transition flex-shrink-0 ${item.measurements?.length ? "text-blue-400 bg-blue-50 dark:bg-blue-500/15" : "text-slate-400 dark:text-slate-700 hover:bg-blue-50 dark:hover:bg-blue-500/15 hover:text-blue-400"}`}
+                                        title="Enter measurements">
+                                        📐
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex-shrink-0 w-24">
+                                  <div className="text-[9px] text-slate-400 dark:text-slate-700 mb-1 uppercase">Rate (JMD)</div>
+                                  <input type="number" value={Number.isFinite(item.rate) ? item.rate : 0} disabled={!canEdit}
+                                    onChange={e => updateItem(section.id, item.id, { rate: numOr(e.target.value, 0), rate_source: "manual" })}
+                                    className={`w-full px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] border text-xs font-semibold text-right focus:outline-none disabled:opacity-50 transition ${isMissingRate ? "border-amber-500/40 text-amber-500" : "border-slate-200 dark:border-white/[0.07] text-green-500 dark:text-green-400 focus:border-cyan-500/40"}`}/>
+                                </div>
+                              </div>
+
+                              {/* Row 4: Amount */}
+                              <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-white/[0.04]">
+                                {isMissingRate && (
+                                  <span className="text-[10px] text-amber-500 flex items-center gap-1">
+                                    <AlertTriangle size={10}/> No rate set
+                                  </span>
+                                )}
+                                <div className="ml-auto text-sm font-bold text-slate-700 dark:text-slate-200">
+                                  {fmtMoney(amount)}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Add item — mobile */}
+                        {canEdit && (
+                          <div className="p-3">
+                            <button onClick={() => addItem(section.id)}
+                              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/[0.07] text-xs text-slate-500 dark:text-slate-400 hover:border-cyan-400 hover:text-cyan-500 transition-colors">
+                              <Plus size={14}/> Add Item
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Desktop grid layout */}
+                      <div className="hidden md:block">
                       {/* Column headers */}
                       <div className="grid px-4 py-2 border-b border-slate-100 dark:border-white/[0.04] text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-700"
                         style={{ gridTemplateColumns: "44px 1fr 160px 80px 104px 90px 90px 32px" }}>
@@ -2089,6 +2191,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                           </div>
                         );
                       })}
+                      </div>
 
                       {/* Section total */}
                       <div className="flex items-center justify-end gap-3 px-4 py-2.5 bg-slate-50 dark:bg-white/[0.01] border-t border-slate-100 dark:border-white/[0.04]">
