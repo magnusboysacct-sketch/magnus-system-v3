@@ -435,17 +435,17 @@ export default function SupplierPriceSyncPage() {
       <div className="border-b border-slate-200 dark:border-slate-700 p-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Supplier Price Sync</h1>
-          <div className="text-sm text-slate-500 dark:text-slate-400">
-            Project: {projectId}
+          <div className="text-sm text-slate-500 dark:text-slate-400 truncate">
+            Project: {currentProject?.name || projectId}
           </div>
         </div>
       </div>
 
       {/* Controls */}
       <div className="border-b border-slate-200 dark:border-slate-700 p-4 space-y-4">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           {/* Supplier Dropdown */}
-          <div className="flex-1 max-w-xs">
+          <div className="flex-1 min-w-[160px] max-w-xs">
             <label className="block text-sm font-medium text-slate-600 dark:text-slate-300 mb-1">
               Supplier
             </label>
@@ -473,7 +473,7 @@ export default function SupplierPriceSyncPage() {
           </div>
 
           {/* Load Button */}
-          <div className="flex items-end gap-2">
+          <div className="flex flex-wrap items-end gap-2">
             <button
               onClick={loadSupplierItems}
               disabled={!selectedSupplierId || loading}

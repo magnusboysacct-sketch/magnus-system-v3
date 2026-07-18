@@ -248,10 +248,10 @@ export function Alert({ type = "info", children, onClose, className }: { type?: 
 
 // ─── Table ────────────────────────────────────────────────────────────────────
 
-export function Table({ children }: { children: React.ReactNode }) {
+export function Table({ children, minWidth = 640 }: { children: React.ReactNode; minWidth?: number }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-xs">{children}</table>
+      <table className="w-full text-xs" style={{ minWidth }}>{children}</table>
     </div>
   );
 }

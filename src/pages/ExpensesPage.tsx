@@ -186,15 +186,15 @@ export default function ExpensesPage() {
 
       <div className="p-6 space-y-5">
         {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
           {[
             { label: "Total Expenses", value: fmt(totalAll),     color: "text-slate-200" },
             { label: "Pending",        value: fmt(totalPending),  color: "text-amber-400" },
             { label: "Approved",       value: fmt(totalApproved), color: "text-emerald-400" },
           ].map(s => (
-            <Card key={s.label}>
+            <Card key={s.label} className="min-w-0">
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">{s.label}</div>
-              <div className={cn("text-2xl font-bold", s.color)}>{s.value}</div>
+              <div className={cn("text-lg sm:text-2xl font-bold truncate", s.color)}>{s.value}</div>
             </Card>
           ))}
         </div>

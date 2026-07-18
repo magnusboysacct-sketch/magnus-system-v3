@@ -173,20 +173,20 @@ export default function FinanceDashboardPage() {
             {/* Accounting Equation */}
             <Card>
               <CardHeader title="Accounting Equation" subtitle="Assets = Liabilities + Equity"/>
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex-1 text-center p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+              <div className="flex items-center justify-between gap-2 md:gap-4">
+                <div className="flex-1 min-w-0 text-center p-3 md:p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
                   <div className="text-[9px] font-bold uppercase tracking-widest text-cyan-600 mb-1">Assets</div>
-                  <div className="text-2xl font-bold text-cyan-300">{fmt(stats.totalAssets)}</div>
+                  <div className="text-base md:text-2xl font-bold text-cyan-300 truncate">{fmt(stats.totalAssets)}</div>
                 </div>
-                <div className="text-xl font-bold text-slate-600">=</div>
-                <div className="flex-1 text-center p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                <div className="text-lg md:text-xl font-bold text-slate-600 flex-shrink-0">=</div>
+                <div className="flex-1 min-w-0 text-center p-3 md:p-4 rounded-xl bg-red-500/10 border border-red-500/20">
                   <div className="text-[9px] font-bold uppercase tracking-widest text-red-600 mb-1">Liabilities</div>
-                  <div className="text-2xl font-bold text-red-300">{fmt(stats.totalLiabilities)}</div>
+                  <div className="text-base md:text-2xl font-bold text-red-300 truncate">{fmt(stats.totalLiabilities)}</div>
                 </div>
-                <div className="text-xl font-bold text-slate-600">+</div>
-                <div className="flex-1 text-center p-4 rounded-xl bg-violet-500/10 border border-violet-500/20">
+                <div className="text-lg md:text-xl font-bold text-slate-600 flex-shrink-0">+</div>
+                <div className="flex-1 min-w-0 text-center p-3 md:p-4 rounded-xl bg-violet-500/10 border border-violet-500/20">
                   <div className="text-[9px] font-bold uppercase tracking-widest text-violet-600 mb-1">Equity</div>
-                  <div className="text-2xl font-bold text-violet-300">{fmt(stats.totalEquity)}</div>
+                  <div className="text-base md:text-2xl font-bold text-violet-300 truncate">{fmt(stats.totalEquity)}</div>
                 </div>
               </div>
               <div className={cn("mt-3 text-center text-[10px] font-semibold", Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "text-emerald-400" : "text-amber-400")}>

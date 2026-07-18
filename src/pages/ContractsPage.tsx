@@ -845,9 +845,9 @@ Adjust percentages based on the project type and value. Make sure they add up to
             { label:"Total Value",     value:fmtJMD(stats.totalValue), color:"text-blue-400",    key:"" },
           ].map(s => (
             <button key={s.label} onClick={() => s.key && setStatusFilter(sf => sf === s.key ? "" : s.key)}
-              className={`rounded-xl border p-4 text-left transition-all ${statusFilter === s.key && s.key ? "border-blue-500/30 bg-blue-500/10" : "border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] hover:border-white/[0.12]"}`}>
+              className={`min-w-0 rounded-xl border p-4 text-left transition-all ${statusFilter === s.key && s.key ? "border-blue-500/30 bg-blue-500/10" : "border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] hover:border-white/[0.12]"}`}>
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-1">{s.label}</div>
-              <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+              <div className={`text-lg md:text-2xl font-bold truncate ${s.color}`}>{s.value}</div>
             </button>
           ))}
         </div>

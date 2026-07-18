@@ -451,39 +451,39 @@ export default function AccountsReceivablePage() {
           </div>
         ) : null}
 
-        <div className="mb-6 grid grid-cols-3 gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+          <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 sm:p-5">
             <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-blue-50 p-2.5">
+              <div className="rounded-lg bg-blue-50 p-2.5 flex-shrink-0">
                 <DollarSign size={20} className="text-blue-600" />
               </div>
-              <div>
-                <div className="text-sm font-medium text-slate-500 dark:text-slate-600">Outstanding</div>
-                <div className="text-2xl font-bold text-slate-900">${summary.total.toLocaleString()}</div>
+              <div className="min-w-0">
+                <div className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-600 truncate">Outstanding</div>
+                <div className="text-lg sm:text-2xl font-bold text-slate-900 truncate">${summary.total.toLocaleString()}</div>
               </div>
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 sm:p-5">
             <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-red-50 p-2.5">
+              <div className="rounded-lg bg-red-50 p-2.5 flex-shrink-0">
                 <AlertCircle size={20} className="text-red-600" />
               </div>
-              <div>
-                <div className="text-sm font-medium text-slate-500 dark:text-slate-600">Overdue</div>
-                <div className="text-2xl font-bold text-red-600">${summary.overdue.toLocaleString()}</div>
+              <div className="min-w-0">
+                <div className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-600 truncate">Overdue</div>
+                <div className="text-lg sm:text-2xl font-bold text-red-600 truncate">${summary.overdue.toLocaleString()}</div>
               </div>
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 sm:p-5 col-span-2 sm:col-span-1">
             <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-green-50 p-2.5">
+              <div className="rounded-lg bg-green-50 p-2.5 flex-shrink-0">
                 <CheckCircle size={20} className="text-green-600" />
               </div>
-              <div>
-                <div className="text-sm font-medium text-slate-500 dark:text-slate-600">Paid (YTD)</div>
-                <div className="text-2xl font-bold text-green-600">${summary.paid.toLocaleString()}</div>
+              <div className="min-w-0">
+                <div className="text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-600 truncate">Paid (YTD)</div>
+                <div className="text-lg sm:text-2xl font-bold text-green-600 truncate">${summary.paid.toLocaleString()}</div>
               </div>
             </div>
           </div>
@@ -504,8 +504,8 @@ export default function AccountsReceivablePage() {
           </select>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="w-full">
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <table className="w-full" style={{ minWidth: 640 }}>
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-700">

@@ -1018,57 +1018,57 @@ export default function FinanceTransactionsPage() {
 
           {/* Summary Cards */}
           <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-            <div className="rounded-xl border border-amber-800/60 bg-amber-900/20 p-4">
+            <div className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/20 p-4 min-w-0">
               <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-amber-500"></div>
-                <div>
-                  <div className="text-lg font-semibold text-amber-300">{summaryStats.unmatched}</div>
-                  <div className="text-xs text-amber-400">Unmatched</div>
+                <div className="h-8 w-8 rounded-full bg-amber-500 flex-shrink-0"></div>
+                <div className="min-w-0">
+                  <div className="text-lg font-semibold text-amber-700 dark:text-amber-300 truncate">{summaryStats.unmatched}</div>
+                  <div className="text-xs text-amber-600 dark:text-amber-400 truncate">Unmatched</div>
                 </div>
               </div>
-              <div className="text-xs text-slate-400">Need classification and matching</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">Need classification and matching</div>
             </div>
-            <div className="rounded-xl border border-emerald-800/60 bg-emerald-900/20 p-4">
+            <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-900/20 p-4 min-w-0">
               <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-emerald-500"></div>
-                <div>
-                  <div className="text-lg font-semibold text-emerald-300">{summaryStats.matched}</div>
-                  <div className="text-xs text-emerald-400">Matched</div>
+                <div className="h-8 w-8 rounded-full bg-emerald-500 flex-shrink-0"></div>
+                <div className="min-w-0">
+                  <div className="text-lg font-semibold text-emerald-700 dark:text-emerald-300 truncate">{summaryStats.matched}</div>
+                  <div className="text-xs text-emerald-600 dark:text-emerald-400 truncate">Matched</div>
                 </div>
               </div>
-              <div className="text-xs text-slate-400">Ready to post</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">Ready to post</div>
             </div>
-            <div className="rounded-xl border border-rose-800/60 bg-rose-900/20 p-4">
+            <div className="rounded-xl border border-rose-200 dark:border-rose-800/60 bg-rose-50 dark:bg-rose-900/20 p-4 min-w-0">
               <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-rose-500"></div>
-                <div>
-                  <div className="text-lg font-semibold text-rose-300">{summaryStats.ignored}</div>
-                  <div className="text-xs text-rose-400">Ignored</div>
+                <div className="h-8 w-8 rounded-full bg-rose-500 flex-shrink-0"></div>
+                <div className="min-w-0">
+                  <div className="text-lg font-semibold text-rose-700 dark:text-rose-300 truncate">{summaryStats.ignored}</div>
+                  <div className="text-xs text-rose-600 dark:text-rose-400 truncate">Ignored</div>
                 </div>
               </div>
-              <div className="text-xs text-slate-400">Disputed transactions</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">Disputed transactions</div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-4 min-w-0">
               <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-sky-500"></div>
-                <div>
-                  <div className="text-lg font-semibold text-sky-400">${formatCurrency(summaryStats.bankAmount)}</div>
-                  <div className="text-xs text-slate-400">Total Bank Amount</div>
+                <div className="h-8 w-8 rounded-full bg-sky-500 flex-shrink-0"></div>
+                <div className="min-w-0">
+                  <div className="text-lg font-semibold text-sky-600 dark:text-sky-400 truncate">${formatCurrency(summaryStats.bankAmount)}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">Total Bank Amount</div>
                 </div>
               </div>
-              <div className="text-xs text-slate-400">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
                 {summaryStats.bankAmount >= 0 ? "Income" : "Expenses"}
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-4 min-w-0">
               <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-violet-500"></div>
-                <div>
-                  <div className="text-lg font-semibold text-violet-400">${formatCurrency(summaryStats.creditAmount)}</div>
-                  <div className="text-xs text-slate-400">Total Credit Amount</div>
+                <div className="h-8 w-8 rounded-full bg-violet-500 flex-shrink-0"></div>
+                <div className="min-w-0">
+                  <div className="text-lg font-semibold text-violet-600 dark:text-violet-400 truncate">${formatCurrency(summaryStats.creditAmount)}</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">Total Credit Amount</div>
                 </div>
               </div>
-              <div className="text-xs text-slate-400">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
                 {summaryStats.creditAmount >= 0 ? "Charges" : "Payments"}
               </div>
             </div>
