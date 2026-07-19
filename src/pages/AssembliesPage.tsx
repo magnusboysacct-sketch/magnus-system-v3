@@ -751,20 +751,20 @@ export default function AssembliesPage() {
                     ))}
 
                     {/* Add new constant */}
-                    <div className="flex items-center gap-2 pt-2 border-t border-amber-500/10">
+                    <div className="flex items-center gap-1.5 pt-2 border-t border-amber-500/10">
                       <input
                         value={newConstKey}
                         onChange={e => setNewConstKey(e.target.value.replace(/\s/g, "_").toLowerCase())}
-                        placeholder="name (e.g. num_bars)"
-                        className="flex-1 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-amber-500/20 text-xs text-amber-700 dark:text-amber-200 font-mono placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
+                        placeholder="name"
+                        className="flex-1 min-w-0 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-amber-500/20 text-xs text-amber-700 dark:text-amber-200 font-mono placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
                       />
-                      <span className="text-xs text-slate-400 dark:text-slate-600">=</span>
+                      <span className="text-xs text-slate-400 dark:text-slate-600 flex-shrink-0">=</span>
                       <input
                         type="number"
                         value={newConstVal}
                         onChange={e => setNewConstVal(e.target.value)}
-                        placeholder="value"
-                        className="w-24 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-amber-500/20 text-xs text-amber-700 dark:text-amber-200 font-mono placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
+                        placeholder="0"
+                        className="w-16 flex-shrink-0 px-2 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-amber-500/20 text-xs text-amber-700 dark:text-amber-200 font-mono placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
                       />
                       <button
                         onClick={() => {
@@ -772,7 +772,7 @@ export default function AssembliesPage() {
                           setConstantDraft(prev => ({ ...prev, [newConstKey.trim()]: Number(newConstVal) }));
                           setNewConstKey(""); setNewConstVal("");
                         }}
-                        className="flex items-center gap-1 px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold transition-colors">
+                        className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold transition-colors">
                         <Plus size={11}/> Add
                       </button>
                     </div>
@@ -931,65 +931,66 @@ export default function AssembliesPage() {
                     onFormulaGenerated={(formula) => setNewComp(p => ({ ...p, formula }))}
                   />
 
-                  <div className="grid gap-3" style={{ gridTemplateColumns: "2fr 1fr 2fr 80px 80px auto" }}>
-                    {/* Item picker */}
-                    <div>
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Item</label>
-                      <button onClick={() => setShowItemSearch(true)}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-[11px] text-left hover:bg-slate-200 dark:bg-white/[0.07] transition">
-                        {newComp.cost_item_id ? (
-                          <span className="text-slate-800 dark:text-slate-200 truncate">{costItems.find(i => i.id === newComp.cost_item_id)?.item_name || "Selected"}</span>
-                        ) : (
-                          <span className="text-slate-500 dark:text-slate-600">Select item from Rate Library…</span>
-                        )}
-                      </button>
+                  <div className="flex flex-col gap-3">
+                    {/* Row 1 — Item picker + Type */}
+                    <div className="flex gap-2">
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Item</label>
+                        <button onClick={() => setShowItemSearch(true)}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-[11px] text-left hover:bg-slate-200 dark:bg-white/[0.07] transition">
+                          {newComp.cost_item_id ? (
+                            <span className="text-slate-800 dark:text-slate-200 truncate">{costItems.find(i => i.id === newComp.cost_item_id)?.item_name || "Selected"}</span>
+                          ) : (
+                            <span className="text-slate-500 dark:text-slate-600 truncate">Select item from Rate Library…</span>
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="w-28 flex-shrink-0">
+                        <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Type</label>
+                        <select value={newComp.line_type} onChange={e => setNewComp(p => ({ ...p, line_type: e.target.value }))}
+                          className="w-full bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.07] rounded-lg px-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 outline-none focus:border-purple-500/40">
+                          {LINE_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+                        </select>
+                      </div>
                     </div>
 
-                    {/* Line type */}
-                    <div>
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Type</label>
-                      <select value={newComp.line_type} onChange={e => setNewComp(p => ({ ...p, line_type: e.target.value }))}
-                        className="w-full bg-slate-50 dark:bg-[#080b10] border border-slate-200 dark:border-white/[0.07] rounded-lg px-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 outline-none focus:border-purple-500/40">
-                        {LINE_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
-                      </select>
-                    </div>
+                    {/* Row 2 — Formula + Waste % + Add button */}
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Formula (qty per unit)</label>
+                        <input value={newComp.formula} onChange={e => setNewComp(p => ({ ...p, formula: e.target.value }))}
+                          placeholder="Formula e.g. length * 2.5"
+                          className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-3 py-2 text-[11px] text-slate-800 dark:text-slate-200 font-mono placeholder:text-slate-400 dark:text-slate-700 outline-none focus:border-purple-500/50"/>
+                      </div>
 
-                    {/* Formula */}
-                    <div className="relative">
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Formula (qty per unit)</label>
-                      <input value={newComp.formula} onChange={e => setNewComp(p => ({ ...p, formula: e.target.value }))}
-                        placeholder="Formula e.g. length * 2.5"
-                        className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-3 py-2 text-[11px] text-slate-800 dark:text-slate-200 font-mono placeholder:text-slate-400 dark:text-slate-700 outline-none focus:border-purple-500/50"/>
-                    </div>
+                      <div className="w-16 flex-shrink-0">
+                        <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Waste %</label>
+                        <input type="number" value={newComp.waste_percent} onChange={e => setNewComp(p => ({ ...p, waste_percent: e.target.value }))}
+                          placeholder="0"
+                          className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-2 py-2 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50 text-right"/>
+                      </div>
 
-                    {/* Waste % */}
-                    <div>
-                      <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 mb-1">Waste %</label>
-                      <input type="number" value={newComp.waste_percent} onChange={e => setNewComp(p => ({ ...p, waste_percent: e.target.value }))}
-                        placeholder="0"
-                        className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg px-2 py-2 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-purple-500/50 text-right"/>
+                      <div className="flex-shrink-0">
+                        <button onClick={addComponent} disabled={!newComp.cost_item_id || !newComp.formula.trim()}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-semibold disabled:opacity-40 transition">
+                          <Plus size={12}/> Add
+                        </button>
+                      </div>
                     </div>
 
                     {/* Preview of formula */}
-                    <div className="flex items-center justify-center">
-                      {newComp.formula && (
-                        <span className="text-[10px] text-emerald-400 font-mono font-bold">
-                          {(() => {
-                            const vars: Record<string,number> = {};
-                            Object.entries(previewVars).forEach(([k,v]) => { vars[k]=parseFloat(v)||0; });
-                            Object.entries(activeAssembly?.constants || {}).forEach(([k,v]) => { vars[k]=v; });
-                            const r = evalFormula(newComp.formula, vars);
-                            return r !== null ? `≈ ${r.toFixed(2)}` : "?";
-                          })()}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Add button */}
-                    <button onClick={addComponent} disabled={!newComp.cost_item_id || !newComp.formula.trim()}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-semibold disabled:opacity-40 transition">
-                      <Plus size={12}/> Add
-                    </button>
+                    {newComp.formula && (
+                      <div className="text-[10px] text-emerald-400 font-mono font-bold">
+                        {(() => {
+                          const vars: Record<string,number> = {};
+                          Object.entries(previewVars).forEach(([k,v]) => { vars[k]=parseFloat(v)||0; });
+                          Object.entries(activeAssembly?.constants || {}).forEach(([k,v]) => { vars[k]=v; });
+                          const r = evalFormula(newComp.formula, vars);
+                          return r !== null ? `≈ ${r.toFixed(2)}` : "?";
+                        })()}
+                      </div>
+                    )}
                   </div>
 
                   {/* Formula hints */}
