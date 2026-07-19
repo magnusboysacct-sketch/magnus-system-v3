@@ -586,17 +586,17 @@ export default function AssembliesPage() {
 
               {/* Assembly header card */}
               <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] overflow-hidden">
-                <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.06] flex items-center justify-between">
+                <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.06] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   {!editingAssembly ? (
                     <>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
                         <div className="w-9 h-9 rounded-xl flex items-center justify-center border flex-shrink-0"
                           style={{ backgroundColor: measureCfg!.color + "15", borderColor: measureCfg!.color + "30" }}>
                           <span style={{ color: measureCfg!.color }}>{measureCfg!.icon}</span>
                         </div>
-                        <div>
-                          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{activeAssembly.name}</h2>
-                          <div className="flex items-center gap-2 mt-0.5">
+                        <div className="min-w-0">
+                          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate">{activeAssembly.name}</h2>
+                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
                             <span className="text-[10px] px-2 py-0.5 rounded-md border font-semibold"
                               style={{ backgroundColor: measureCfg!.color + "15", borderColor: measureCfg!.color + "25", color: measureCfg!.color }}>
                               {measureCfg!.label}
@@ -607,13 +607,13 @@ export default function AssembliesPage() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-shrink-0">
                         <button onClick={() => setShowPreview(v => !v)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition ${showPreview ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" : "bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.07] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
+                          className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition ${showPreview ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" : "bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.07] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
                           <Play size={11}/> {showPreview ? "Hide Preview" : "Live Preview"}
                         </button>
                         <button onClick={() => setEditingAssembly(true)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.07] text-[11px] text-slate-600 dark:text-slate-400 transition">
+                          className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.07] text-[11px] text-slate-600 dark:text-slate-400 transition">
                           <Edit2 size={11}/> Edit
                         </button>
                       </div>
@@ -881,7 +881,7 @@ export default function AssembliesPage() {
                 </div>
 
                 {/* Column headers */}
-                <div className="grid text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-700 px-5 py-2 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.05]"
+                <div className="hidden md:grid text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-700 px-5 py-2 bg-slate-50 dark:bg-white/[0.02] border-b border-slate-100 dark:border-white/[0.05]"
                   style={{ gridTemplateColumns: "2fr 1fr 2fr 80px 60px 72px" }}>
                   <span>Item</span><span>Type</span><span>Formula</span><span className="text-right">Waste %</span><span className="text-right">Preview</span><span/>
                 </div>
@@ -1413,33 +1413,63 @@ function ComponentRow({ component, idx, total, typeColor, preview, onDelete, onU
   return (
     <div className={`group border-b border-white/[0.03] last:border-0 ${idx % 2 === 1 ? "bg-slate-50 dark:bg-white/[0.01]" : ""}`}>
       {!editing ? (
-        <div className="grid items-center px-5 py-3 gap-2 hover:bg-slate-50 dark:bg-white/[0.02] transition"
-          style={{ gridTemplateColumns: "2fr 1fr 2fr 80px 60px 72px" }}>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{component.cost_item?.item_name || "—"}</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-600">{component.cost_item?.category || "—"}{component.cost_item?.unit ? ` · ${component.cost_item.unit}` : ""}</div>
+        <>
+          <div className="hidden md:grid items-center px-5 py-3 gap-2 hover:bg-slate-50 dark:bg-white/[0.02] transition"
+            style={{ gridTemplateColumns: "2fr 1fr 2fr 80px 60px 72px" }}>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{component.cost_item?.item_name || "—"}</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-600">{component.cost_item?.category || "—"}{component.cost_item?.unit ? ` · ${component.cost_item.unit}` : ""}</div>
+            </div>
+            <span className={`text-[10px] font-bold px-2 py-1 rounded-md border w-fit ${typeColor}`}>
+              {component.line_type}
+            </span>
+            <code className="text-[11px] text-purple-300 font-mono truncate">{component.formula || "—"}</code>
+            <div className="text-right text-[11px] text-amber-400">{component.waste_percent > 0 ? `${component.waste_percent}%` : "—"}</div>
+            <div className="text-right">
+              {preview?.withWaste != null ? (
+                <span className="text-sm font-bold text-sky-400">{preview.withWaste.toFixed(2)}</span>
+              ) : <span className="text-slate-400 dark:text-slate-700 text-xs">—</span>}
+            </div>
+            <div className="flex gap-1 justify-end md:opacity-0 md:group-hover:opacity-100 transition">
+              <button onClick={() => onMove("up")} disabled={idx === 0}
+                className="p-2 md:p-1 rounded hover:bg-white/10 text-slate-400 dark:text-slate-700 hover:text-slate-700 dark:text-slate-300 disabled:opacity-20 transition text-xs">↑</button>
+              <button onClick={() => onMove("down")} disabled={idx === total - 1}
+                className="p-2 md:p-1 rounded hover:bg-white/10 text-slate-400 dark:text-slate-700 hover:text-slate-700 dark:text-slate-300 disabled:opacity-20 transition text-xs">↓</button>
+              <button onClick={() => setEditing(true)}
+                className="p-2 md:p-1 rounded hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition"><Edit2 size={11}/></button>
+              <button onClick={onDelete}
+                className="p-2 md:p-1 rounded hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400 transition"><Trash2 size={11}/></button>
+            </div>
           </div>
-          <span className={`text-[10px] font-bold px-2 py-1 rounded-md border w-fit ${typeColor}`}>
-            {component.line_type}
-          </span>
-          <code className="text-[11px] text-purple-300 font-mono truncate">{component.formula || "—"}</code>
-          <div className="text-right text-[11px] text-amber-400">{component.waste_percent > 0 ? `${component.waste_percent}%` : "—"}</div>
-          <div className="text-right">
-            {preview?.withWaste != null ? (
-              <span className="text-sm font-bold text-sky-400">{preview.withWaste.toFixed(2)}</span>
-            ) : <span className="text-slate-400 dark:text-slate-700 text-xs">—</span>}
+
+          {/* Mobile component card */}
+          <div className="md:hidden px-4 py-3">
+            <div className="flex items-start justify-between gap-2 mb-1">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{component.cost_item?.item_name || "—"}</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-600">{component.cost_item?.category || "—"}{component.cost_item?.unit ? ` · ${component.cost_item.unit}` : ""}</div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {preview?.withWaste != null ? (
+                  <span className="text-sm font-bold text-sky-400">{preview.withWaste.toFixed(2)}</span>
+                ) : <span className="text-slate-400 dark:text-slate-700 text-xs">—</span>}
+                <button onClick={() => setEditing(true)}
+                  className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-400 dark:text-slate-600 hover:text-blue-400 transition"><Edit2 size={12}/></button>
+                <button onClick={onDelete}
+                  className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-400 dark:text-slate-600 hover:text-red-400 transition"><Trash2 size={12}/></button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap mt-1">
+              <span className={`text-[10px] px-2 py-0.5 rounded-md border font-semibold ${typeColor}`}>
+                {component.line_type}
+              </span>
+              <code className="text-[10px] text-purple-300 font-mono bg-purple-500/10 px-2 py-0.5 rounded flex-1 min-w-0 truncate">
+                {component.formula || "—"}
+              </code>
+              {component.waste_percent > 0 && <span className="text-[10px] text-amber-400 flex-shrink-0">waste: {component.waste_percent}%</span>}
+            </div>
           </div>
-          <div className="flex gap-1 justify-end md:opacity-0 md:group-hover:opacity-100 transition">
-            <button onClick={() => onMove("up")} disabled={idx === 0}
-              className="p-2 md:p-1 rounded hover:bg-white/10 text-slate-400 dark:text-slate-700 hover:text-slate-700 dark:text-slate-300 disabled:opacity-20 transition text-xs">↑</button>
-            <button onClick={() => onMove("down")} disabled={idx === total - 1}
-              className="p-2 md:p-1 rounded hover:bg-white/10 text-slate-400 dark:text-slate-700 hover:text-slate-700 dark:text-slate-300 disabled:opacity-20 transition text-xs">↓</button>
-            <button onClick={() => setEditing(true)}
-              className="p-2 md:p-1 rounded hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition"><Edit2 size={11}/></button>
-            <button onClick={onDelete}
-              className="p-2 md:p-1 rounded hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400 transition"><Trash2 size={11}/></button>
-          </div>
-        </div>
+        </>
       ) : (
         <div className="px-5 py-3 bg-purple-500/[0.04] border-l-2 border-purple-500 space-y-2">
           <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Editing: {component.cost_item?.item_name}</div>
