@@ -27,6 +27,8 @@ const ELEMENT_TYPES = [
   { key: "lintel",        label: "Lintel",           icon: "🪟", group: "Structural",  category: "Reinforcement (Steel)" },
   { key: "slab",          label: "Slab",             icon: "📐", group: "Structural",  category: "Reinforcement (Steel)" },
   { key: "pad_footing",   label: "Pad Footing",      icon: "⬛", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "strip_footing", label: "Strip Footing",    icon: "📏", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "blinding",      label: "Blinding",         icon: "🪨", group: "Structural",  category: "Concrete Works" },
   { key: "retaining_wall",label: "Retaining Wall",   icon: "🧱", group: "Structural",  category: "Reinforcement (Steel)" },
   { key: "staircase",     label: "Staircase",        icon: "🪜", group: "Structural",  category: "Reinforcement (Steel)" },
   // Masonry
@@ -143,6 +145,20 @@ interface WizardValues {
   include_purlins: boolean;
   purlin_spacing: number; // mm
   include_ridge: boolean;
+
+  // Strip footing
+  strip_width: number;
+  strip_depth: number;
+  strip_long_bars: number;
+  strip_long_bar: string;
+  strip_link_bar: string;
+  strip_link_spacing: number;
+  include_blinding: boolean;
+  blinding_thickness: number;
+
+  // Blinding
+  blinding_only_thickness: number;
+  blinding_grade: string;
 }
 
 const DEFAULT_VALUES: WizardValues = {
@@ -187,6 +203,16 @@ const DEFAULT_VALUES: WizardValues = {
   roof_sheet_type: "corrugated", roof_sheet_length: 10,
   roof_pitch: 15, include_purlins: true,
   purlin_spacing: 600, include_ridge: true,
+  strip_width: 450,
+  strip_depth: 225,
+  strip_long_bars: 3,
+  strip_long_bar: "#4",
+  strip_link_bar: "#3",
+  strip_link_spacing: 300,
+  include_blinding: true,
+  blinding_thickness: 75,
+  blinding_only_thickness: 75,
+  blinding_grade: "2000 PSI",
 };
 
 // ─── Component generator ───────────────────────────────────────────────────
@@ -521,6 +547,72 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       ];
     }
 
+    case "strip_footing": {
+      const sw = v.strip_width / 1000;
+      const sd = v.strip_depth / 1000;
+      const slsp = v.strip_link_spacing / 1000;
+      const slw = barWeight(v.strip_long_bar);
+      const slkw = barWeight(v.strip_link_bar);
+      const comps: GeneratedComponent[] = [
+        {
+          item_name: `Rebar ${v.strip_long_bar}`,
+          type: "material",
+          formula: `${v.strip_long_bars} * length * ${slw}`,
+          waste_percent: 5,
+          description: `${v.strip_long_bars} longitudinal bars running along footing`,
+        },
+        {
+          item_name: `Rebar ${v.strip_link_bar}`,
+          type: "material",
+          formula: `(length / ${slsp}) * (${sw} * 2 + ${sd} * 2 + 0.2) * ${slkw}`,
+          waste_percent: 10,
+          description: `Cross bars/links @ ${v.strip_link_spacing}mm spacing`,
+        },
+      ];
+      if (v.include_concrete) comps.push({
+        item_name: "Ready Mix Concrete",
+        type: "material",
+        formula: `${sw} * ${sd} * length`,
+        waste_percent: 5,
+        description: `Strip footing concrete ${v.concrete_grade}`,
+      });
+      if (v.include_formwork) comps.push({
+        item_name: "Formwork",
+        type: "material",
+        formula: `${sd} * 2 * length`,
+        waste_percent: 10,
+        description: "Both sides formwork",
+      });
+      if (v.include_blinding) comps.push({
+        item_name: "Blinding Concrete",
+        type: "material",
+        formula: `${sw + 0.1} * ${v.blinding_thickness / 1000} * length`,
+        waste_percent: 5,
+        description: `${v.blinding_thickness}mm blinding (50mm wider each side)`,
+      });
+      return comps;
+    }
+
+    case "blinding": {
+      const bt = v.blinding_only_thickness / 1000;
+      return [
+        {
+          item_name: "Blinding Concrete",
+          type: "material",
+          formula: `length * width * ${bt}`,
+          waste_percent: 5,
+          description: `${v.blinding_only_thickness}mm lean mix blinding ${v.blinding_grade}`,
+        },
+        {
+          item_name: "Sand Blinding",
+          type: "material",
+          formula: `length * width * 0.05`,
+          waste_percent: 10,
+          description: "50mm sand blinding bed",
+        },
+      ];
+    }
+
     default:
       return [];
   }
@@ -646,6 +738,13 @@ export default function AssemblyWizard({
     } else if (type === "retaining_wall") {
       c.wall_height = v.ret_height / 1000;
       c.wall_thickness = v.ret_thickness / 1000;
+    } else if (type === "strip_footing") {
+      c.strip_width = v.strip_width / 1000;
+      c.strip_depth = v.strip_depth / 1000;
+      c.strip_long_bars = v.strip_long_bars;
+      c.link_spacing = v.strip_link_spacing / 1000;
+    } else if (type === "blinding") {
+      c.thickness = v.blinding_only_thickness / 1000;
     }
     // Add more element types as needed
     return c;
@@ -658,7 +757,7 @@ export default function AssemblyWizard({
       // Explicit per-type mapping (not substring matching) since "wall" now
       // matches both block_wall (area-shaped formulas) and retaining_wall
       // (length-shaped formulas) — those need different measure types.
-      const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing"]);
+      const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding"]);
       const measureType = AREA_TYPES.has(elementType) ? "area"
         : elementType === "staircase" ? "count"
         : "linear";
@@ -1082,9 +1181,60 @@ export default function AssemblyWizard({
                 </>
               )}
 
+              {/* Strip Footing */}
+              {elementType === "strip_footing" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Strip footing runs continuously along the base of all walls. Enter the <strong>total perimeter length</strong> in the BOQ.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Footing width" value={values.strip_width} onChange={v => set("strip_width", v)} unit="mm" hint="Typically 450mm"/>
+                    <NumInput label="Footing depth" value={values.strip_depth} onChange={v => set("strip_depth", v)} unit="mm" hint="Typically 225mm"/>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Longitudinal bars (run along length)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Number of bars" value={values.strip_long_bars} onChange={v => set("strip_long_bars", v)} hint="Typically 2 or 3"/>
+                    <BarPicker label="Bar size" value={values.strip_long_bar} onChange={v => set("strip_long_bar", v)}/>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Cross bars (links across width)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <BarPicker label="Cross bar size" value={values.strip_link_bar} onChange={v => set("strip_link_bar", v)}/>
+                    <NumInput label="Spacing" value={values.strip_link_spacing} onChange={v => set("strip_link_spacing", v)} unit="mm" hint="Typically 300mm"/>
+                  </div>
+                  <Toggle label="Include blinding concrete under footing" value={values.include_blinding} onChange={v => set("include_blinding", v)}/>
+                  {values.include_blinding && (
+                    <NumInput label="Blinding thickness" value={values.blinding_thickness} onChange={v => set("blinding_thickness", v)} unit="mm" hint="Typically 75mm lean mix"/>
+                  )}
+                </>
+              )}
+
+              {/* Blinding */}
+              {elementType === "blinding" && (
+                <>
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
+                    💡 Blinding is a thin layer of lean mix concrete laid on the ground before the main foundation. Enter <strong>length × width</strong> of the area in the BOQ.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Thickness" value={values.blinding_only_thickness} onChange={v => set("blinding_only_thickness", v)} unit="mm" hint="Typically 75mm"/>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Concrete grade</label>
+                      <div className="flex gap-2">
+                        {["2000 PSI", "2500 PSI", "3000 PSI"].map(g => (
+                          <button key={g} type="button"
+                            onClick={() => set("blinding_grade", g)}
+                            className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.blinding_grade === g ? "border-amber-500 bg-amber-50 dark:bg-amber-500/10 text-amber-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
               {/* Common options — only structural types actually consume these;
                   block_wall and the finish trades don't reference them at all. */}
-              {!["block_wall", "plastering", "tiling", "painting", "ceiling", "roofing"].includes(elementType) && (
+              {!["block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding"].includes(elementType) && (
                 <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-1">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Include in Assembly</p>
                   <Toggle label="Ready Mix Concrete" value={values.include_concrete} onChange={v => set("include_concrete", v)}/>
