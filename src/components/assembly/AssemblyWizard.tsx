@@ -39,6 +39,14 @@ const ELEMENT_TYPES = [
   { key: "painting",      label: "Painting",         icon: "🎨", group: "Finishes",    category: "Painting" },
   { key: "ceiling",       label: "Ceiling",          icon: "⬆️", group: "Finishes",    category: "Ceiling" },
   { key: "roofing",       label: "Roofing",          icon: "🏠", group: "Finishes",    category: "Roofing" },
+  { key: "ground_slab",   label: "Ground Floor Slab",icon: "⬜", group: "Structural",  category: "Concrete Works" },
+  // Partitions
+  { key: "drywall_partition", label: "Drywall Partition", icon: "🏢", group: "Partitions", category: "Drywall & Plastering" },
+  { key: "drywall_painting",  label: "Drywall Painting",  icon: "🖌️", group: "Partitions", category: "Painting" },
+  // External
+  { key: "chain_link",        label: "Chain Link Fence",  icon: "🔗", group: "External",   category: "Fencing" },
+  { key: "septic_tank",       label: "Septic Tank",       icon: "🪣", group: "External",   category: "Drainage" },
+  { key: "drain_gutter",      label: "Drain / Gutter",    icon: "💧", group: "External",   category: "Drainage" },
 ];
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -159,6 +167,50 @@ interface WizardValues {
   // Blinding
   blinding_only_thickness: number;
   blinding_grade: string;
+
+  // Drywall partition
+  stud_spacing: number;       // mm — 400 or 600
+  stud_size: string;          // "3-5/8\"" or "2-1/2\""
+  drywall_layers: number;     // 1 or 2 per side
+  drywall_both_sides: boolean;
+  include_insulation: boolean;
+
+  // Drywall painting
+  drywall_paint_coats: number;
+  include_pva_sealer: boolean;
+
+  // Chain link fencing
+  fence_height: number;       // mm
+  fence_post_spacing: number; // mm
+  chain_link_gauge: string;   // "9 gauge" "11 gauge"
+  include_top_rail: boolean;
+  include_concrete_posts: boolean;
+
+  // Ground floor slab
+  ground_slab_thickness: number; // mm
+  ground_slab_bar: string;
+  ground_slab_bar_spacing: number; // mm
+  include_sand_fill: boolean;
+  sand_fill_depth: number; // mm
+  include_dpc: boolean; // damp proof course
+  include_mesh: boolean; // BRC mesh instead of bars
+  mesh_type: string;
+
+  // Septic tank
+  septic_length: number;   // mm
+  septic_width: number;    // mm
+  septic_depth: number;    // mm
+  septic_wall_thickness: number; // mm
+  septic_bar: string;
+  septic_bar_spacing: number; // mm
+  include_cover_slab: boolean;
+
+  // Drain / gutter
+  drain_width: number;   // mm
+  drain_depth: number;   // mm
+  drain_thickness: number; // mm wall thickness
+  drain_bar: string;
+  include_drain_cover: boolean;
 }
 
 const DEFAULT_VALUES: WizardValues = {
@@ -213,6 +265,38 @@ const DEFAULT_VALUES: WizardValues = {
   blinding_thickness: 75,
   blinding_only_thickness: 75,
   blinding_grade: "2000 PSI",
+  stud_spacing: 400,
+  stud_size: "3-5/8\"",
+  drywall_layers: 1,
+  drywall_both_sides: true,
+  include_insulation: false,
+  drywall_paint_coats: 2,
+  include_pva_sealer: true,
+  fence_height: 1800,
+  fence_post_spacing: 3000,
+  chain_link_gauge: "9 gauge",
+  include_top_rail: true,
+  include_concrete_posts: true,
+  ground_slab_thickness: 150,
+  ground_slab_bar: "#4",
+  ground_slab_bar_spacing: 200,
+  include_sand_fill: true,
+  sand_fill_depth: 150,
+  include_dpc: true,
+  include_mesh: false,
+  mesh_type: "BRC 4x4 W4",
+  septic_length: 3000,
+  septic_width: 1500,
+  septic_depth: 2000,
+  septic_wall_thickness: 200,
+  septic_bar: "#4",
+  septic_bar_spacing: 200,
+  include_cover_slab: true,
+  drain_width: 300,
+  drain_depth: 300,
+  drain_thickness: 100,
+  drain_bar: "#3",
+  include_drain_cover: false,
 };
 
 // ─── Component generator ───────────────────────────────────────────────────
@@ -613,6 +697,289 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       ];
     }
 
+    case "drywall_partition": {
+      const studSp = v.stud_spacing / 1000;
+      const sides = v.drywall_both_sides ? 2 : 1;
+      const layers = v.drywall_layers;
+      const comps: GeneratedComponent[] = [
+        {
+          item_name: "Metal Floor Track",
+          type: "material",
+          formula: "length * 2",
+          waste_percent: 5,
+          description: "Floor + ceiling track (lf)",
+        },
+        {
+          item_name: `Metal Stud ${v.stud_size}`,
+          type: "material",
+          formula: `(length / ${studSp}) * height`,
+          waste_percent: 10,
+          description: `Studs @ ${v.stud_spacing}mm centres`,
+        },
+        {
+          item_name: "Gypsum Board 4x8",
+          type: "material",
+          formula: `length * height * ${sides} * ${layers} / 2.976`,
+          waste_percent: 10,
+          description: `${layers} layer${layers > 1 ? "s" : ""} each side — 4×8 sheets`,
+        },
+        {
+          item_name: "Joint Compound",
+          type: "material",
+          formula: `length * height * ${sides} * 0.02`,
+          waste_percent: 10,
+          description: "Joint compound (bags)",
+        },
+        {
+          item_name: "Paper Tape",
+          type: "material",
+          formula: `length * height * ${sides} * 0.3`,
+          waste_percent: 10,
+          description: "Paper tape (lf)",
+        },
+        {
+          item_name: "Drywall Screw",
+          type: "material",
+          formula: `length * height * ${sides} * 3`,
+          waste_percent: 5,
+          description: "Screws (each)",
+        },
+      ];
+      if (v.include_insulation) comps.push({
+        item_name: "Insulation Batt",
+        type: "material",
+        formula: "length * height",
+        waste_percent: 5,
+        description: "Wall insulation",
+      });
+      comps.push({
+        item_name: "Labor - Drywall",
+        type: "labor",
+        formula: "length * height * 0.8",
+        waste_percent: 0,
+        description: "Drywall installation labor (man-hours)",
+      });
+      return comps;
+    }
+
+    case "drywall_painting": {
+      const comps: GeneratedComponent[] = [];
+      if (v.include_pva_sealer) comps.push({
+        item_name: "PVA Sealer",
+        type: "material",
+        formula: `length * height * ${(1/350).toFixed(5)}`,
+        waste_percent: 5,
+        description: "PVA sealer coat (1 gal / 350 sf)",
+      });
+      comps.push({
+        item_name: "Paint",
+        type: "material",
+        formula: `length * height * ${((1/400) * v.drywall_paint_coats).toFixed(5)}`,
+        waste_percent: 5,
+        description: `${v.drywall_paint_coats} coats paint (gallons)`,
+      });
+      comps.push({
+        item_name: "Labor - Painting",
+        type: "labor",
+        formula: "length * height * 0.15",
+        waste_percent: 0,
+        description: "Drywall painting labor (man-hours)",
+      });
+      return comps;
+    }
+
+    case "chain_link": {
+      const fps = v.fence_post_spacing / 1000;
+      const comps: GeneratedComponent[] = [
+        {
+          item_name: `Chain Link ${v.chain_link_gauge} ${v.fence_height}mm`,
+          type: "material",
+          formula: "length * 1.05",
+          waste_percent: 5,
+          description: "Chain link fabric (lf with 5% overlap)",
+        },
+        {
+          item_name: "Fence Post",
+          type: "material",
+          formula: `(length / ${fps}) + 1`,
+          waste_percent: 0,
+          description: `Posts @ ${v.fence_post_spacing}mm centres`,
+        },
+      ];
+      if (v.include_top_rail) comps.push({
+        item_name: "Top Rail",
+        type: "material",
+        formula: "length * 1.05",
+        waste_percent: 5,
+        description: "Top rail (lf)",
+      });
+      if (v.include_concrete_posts) comps.push({
+        item_name: "Ready Mix Concrete",
+        type: "material",
+        formula: `(length / ${fps} + 1) * 0.05`,
+        waste_percent: 10,
+        description: "Concrete for post holes (m³)",
+      });
+      comps.push({
+        item_name: "Labor - Fencing",
+        type: "labor",
+        formula: "length * 0.5",
+        waste_percent: 0,
+        description: "Fencing labor (man-hours)",
+      });
+      return comps;
+    }
+
+    case "ground_slab": {
+      const gst = v.ground_slab_thickness / 1000;
+      const gssp = v.ground_slab_bar_spacing / 1000;
+      const gsbw = barWeight(v.ground_slab_bar);
+      const sfd = v.sand_fill_depth / 1000;
+      const comps: GeneratedComponent[] = [];
+      if (v.include_sand_fill) comps.push({
+        item_name: "Sand Fill",
+        type: "material",
+        formula: `length * width * ${sfd}`,
+        waste_percent: 10,
+        description: `${v.sand_fill_depth}mm compacted sand fill (m³)`,
+      });
+      if (v.include_dpc) comps.push({
+        item_name: "DPC Membrane",
+        type: "material",
+        formula: "length * width * 1.1",
+        waste_percent: 10,
+        description: "Damp proof membrane (m²)",
+      });
+      if (v.include_mesh) {
+        comps.push({
+          item_name: `BRC Mesh ${v.mesh_type}`,
+          type: "material",
+          formula: "length * width * 1.1 / 14.4",
+          waste_percent: 10,
+          description: "BRC mesh sheets (2.4×6m each)",
+        });
+      } else {
+        comps.push({
+          item_name: `Rebar ${v.ground_slab_bar}`,
+          type: "material",
+          formula: `length * width / ${gssp} * ${gsbw} * 2`,
+          waste_percent: 10,
+          description: `${v.ground_slab_bar} bars both ways @ ${v.ground_slab_bar_spacing}mm`,
+        });
+      }
+      comps.push({
+        item_name: "Ready Mix Concrete",
+        type: "material",
+        formula: `length * width * ${gst}`,
+        waste_percent: 5,
+        description: `${v.ground_slab_thickness}mm ground slab concrete`,
+      });
+      comps.push({
+        item_name: "Labor - Concrete",
+        type: "labor",
+        formula: "length * width * 0.5",
+        waste_percent: 0,
+        description: "Concrete labor (man-hours)",
+      });
+      return comps;
+    }
+
+    case "septic_tank": {
+      const sl = v.septic_length / 1000;
+      const sw2 = v.septic_width / 1000;
+      const sd = v.septic_depth / 1000;
+      const st = v.septic_wall_thickness / 1000;
+      const sbw = barWeight(v.septic_bar);
+      const sbsp = v.septic_bar_spacing / 1000;
+      const totalWallArea = (sl * sd * 2) + (sw2 * sd * 2) + (sl * sw2);
+      const comps: GeneratedComponent[] = [
+        {
+          item_name: `Rebar ${v.septic_bar}`,
+          type: "material",
+          formula: `${(totalWallArea / sbsp * sbw * 2).toFixed(3)}`,
+          waste_percent: 10,
+          description: "Reinforcement for walls + base both ways",
+        },
+        {
+          item_name: "Ready Mix Concrete",
+          type: "material",
+          formula: `${(totalWallArea * st).toFixed(3)}`,
+          waste_percent: 5,
+          description: "Concrete for walls + base",
+        },
+        {
+          item_name: "Formwork",
+          type: "material",
+          formula: `${(totalWallArea * 2).toFixed(3)}`,
+          waste_percent: 10,
+          description: "Both faces of all walls",
+        },
+      ];
+      if (v.include_cover_slab) {
+        comps.push({
+          item_name: `Rebar ${v.septic_bar}`,
+          type: "material",
+          formula: `${((sl * sw2) / sbsp * sbw * 2).toFixed(3)}`,
+          waste_percent: 10,
+          description: "Cover slab reinforcement",
+        });
+        comps.push({
+          item_name: "Ready Mix Concrete",
+          type: "material",
+          formula: `${(sl * sw2 * 0.15).toFixed(3)}`,
+          waste_percent: 5,
+          description: "Cover slab concrete (150mm)",
+        });
+      }
+      return comps;
+    }
+
+    case "drain_gutter": {
+      const dw = v.drain_width / 1000;
+      const dd = v.drain_depth / 1000;
+      const dt = v.drain_thickness / 1000;
+      const dbw = barWeight(v.drain_bar);
+      const perim = (dw + dd * 2);
+      const comps: GeneratedComponent[] = [
+        {
+          item_name: `Rebar ${v.drain_bar}`,
+          type: "material",
+          formula: `length * ${perim} * ${dbw} * 2`,
+          waste_percent: 10,
+          description: "U-shaped drain reinforcement",
+        },
+        {
+          item_name: "Ready Mix Concrete",
+          type: "material",
+          formula: `length * ${perim} * ${dt}`,
+          waste_percent: 5,
+          description: "Drain concrete",
+        },
+        {
+          item_name: "Formwork",
+          type: "material",
+          formula: `length * ${perim}`,
+          waste_percent: 10,
+          description: "Drain formwork",
+        },
+      ];
+      if (v.include_drain_cover) comps.push({
+        item_name: "Drain Cover Grating",
+        type: "material",
+        formula: "length",
+        waste_percent: 5,
+        description: "Galvanized steel grating cover (lf)",
+      });
+      comps.push({
+        item_name: "Labor - Drain",
+        type: "labor",
+        formula: "length * 0.4",
+        waste_percent: 0,
+        description: "Drain construction labor (man-hours)",
+      });
+      return comps;
+    }
+
     default:
       return [];
   }
@@ -757,9 +1124,10 @@ export default function AssemblyWizard({
       // Explicit per-type mapping (not substring matching) since "wall" now
       // matches both block_wall (area-shaped formulas) and retaining_wall
       // (length-shaped formulas) — those need different measure types.
-      const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding"]);
+      const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting"]);
+      const COUNT_TYPES = new Set(["staircase", "septic_tank"]);
       const measureType = AREA_TYPES.has(elementType) ? "area"
-        : elementType === "staircase" ? "count"
+        : COUNT_TYPES.has(elementType) ? "count"
         : "linear";
 
       // Create assembly — measure_type/constants live inside metadata (jsonb),
@@ -854,7 +1222,7 @@ export default function AssemblyWizard({
           {/* STEP 1 — Pick type */}
           {step === "pick_type" && (
             <div className="space-y-5">
-              {["Structural", "Masonry", "Finishes"].map(group => (
+              {["Structural", "Masonry", "Finishes", "Partitions", "External"].map(group => (
                 <div key={group}>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">{group}</p>
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
@@ -1150,6 +1518,142 @@ export default function AssemblyWizard({
                 </>
               )}
 
+              {/* Drywall Partition */}
+              {elementType === "drywall_partition" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter wall <strong>length × height</strong> in the BOQ. System calculates all framing, boards, and screws automatically.
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Stud size</label>
+                    <div className="flex gap-2">
+                      {['2-1/2"', '3-5/8"', '6"'].map(s => (
+                        <button key={s} type="button"
+                          onClick={() => set("stud_size", s)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.stud_size === s ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Stud spacing" value={values.stud_spacing} onChange={v => set("stud_spacing", v)} unit="mm" hint="400mm or 600mm"/>
+                    <NumInput label="Gypsum layers per side" value={values.drywall_layers} onChange={v => set("drywall_layers", v)} hint="1 standard, 2 for fire rating"/>
+                  </div>
+                  <Toggle label="Board on both sides" value={values.drywall_both_sides} onChange={v => set("drywall_both_sides", v)}/>
+                  <Toggle label="Include insulation" value={values.include_insulation} onChange={v => set("include_insulation", v)}/>
+                </>
+              )}
+
+              {/* Drywall Painting */}
+              {elementType === "drywall_painting" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Drywall needs PVA sealer before painting to seal the surface. Enter wall <strong>length × height</strong> in BOQ.
+                  </div>
+                  <NumInput label="Number of paint coats" value={values.drywall_paint_coats} onChange={v => set("drywall_paint_coats", v)} hint="Typically 2 coats"/>
+                  <Toggle label="Include PVA sealer coat" value={values.include_pva_sealer} onChange={v => set("include_pva_sealer", v)}/>
+                </>
+              )}
+
+              {/* Chain Link */}
+              {elementType === "chain_link" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter total <strong>fence length</strong> in the BOQ.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Fence height" value={values.fence_height} onChange={v => set("fence_height", v)} unit="mm" hint="1800mm typical"/>
+                    <NumInput label="Post spacing" value={values.fence_post_spacing} onChange={v => set("fence_post_spacing", v)} unit="mm" hint="3000mm typical"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Chain link gauge</label>
+                    <div className="flex gap-2">
+                      {["9 gauge", "11 gauge"].map(g => (
+                        <button key={g} type="button"
+                          onClick={() => set("chain_link_gauge", g)}
+                          className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${values.chain_link_gauge === g ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Toggle label="Include top rail" value={values.include_top_rail} onChange={v => set("include_top_rail", v)}/>
+                  <Toggle label="Concrete in post holes" value={values.include_concrete_posts} onChange={v => set("include_concrete_posts", v)}/>
+                </>
+              )}
+
+              {/* Ground Floor Slab */}
+              {elementType === "ground_slab" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter slab <strong>length × width</strong> in the BOQ.
+                  </div>
+                  <NumInput label="Slab thickness" value={values.ground_slab_thickness} onChange={v => set("ground_slab_thickness", v)} unit="mm" hint="Typically 100-150mm"/>
+                  <Toggle label="Use BRC mesh instead of bars" value={values.include_mesh} onChange={v => set("include_mesh", v)}/>
+                  {values.include_mesh ? (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Mesh type</label>
+                      <div className="flex gap-2">
+                        {["BRC 4x4 W4", "BRC 6x6 W2.9"].map(m => (
+                          <button key={m} type="button"
+                            onClick={() => set("mesh_type", m)}
+                            className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.mesh_type === m ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      <BarPicker label="Bar size" value={values.ground_slab_bar} onChange={v => set("ground_slab_bar", v)}/>
+                      <NumInput label="Bar spacing (both ways)" value={values.ground_slab_bar_spacing} onChange={v => set("ground_slab_bar_spacing", v)} unit="mm"/>
+                    </div>
+                  )}
+                  <Toggle label="Include sand fill" value={values.include_sand_fill} onChange={v => set("include_sand_fill", v)}/>
+                  {values.include_sand_fill && (
+                    <NumInput label="Sand fill depth" value={values.sand_fill_depth} onChange={v => set("sand_fill_depth", v)} unit="mm" hint="Typically 150mm compacted"/>
+                  )}
+                  <Toggle label="Include DPC membrane" value={values.include_dpc} onChange={v => set("include_dpc", v)}/>
+                </>
+              )}
+
+              {/* Septic Tank */}
+              {elementType === "septic_tank" && (
+                <>
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
+                    💡 All quantities are calculated from the tank dimensions below — no BOQ measurement needed. Just enter <strong>count = 1</strong>.
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <NumInput label="Length" value={values.septic_length} onChange={v => set("septic_length", v)} unit="mm"/>
+                    <NumInput label="Width" value={values.septic_width} onChange={v => set("septic_width", v)} unit="mm"/>
+                    <NumInput label="Depth" value={values.septic_depth} onChange={v => set("septic_depth", v)} unit="mm"/>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Wall thickness" value={values.septic_wall_thickness} onChange={v => set("septic_wall_thickness", v)} unit="mm"/>
+                    <BarPicker label="Bar size" value={values.septic_bar} onChange={v => set("septic_bar", v)}/>
+                  </div>
+                  <NumInput label="Bar spacing" value={values.septic_bar_spacing} onChange={v => set("septic_bar_spacing", v)} unit="mm"/>
+                  <Toggle label="Include cover slab" value={values.include_cover_slab} onChange={v => set("include_cover_slab", v)}/>
+                </>
+              )}
+
+              {/* Drain / Gutter */}
+              {elementType === "drain_gutter" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter total drain <strong>length</strong> in BOQ.
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <NumInput label="Width" value={values.drain_width} onChange={v => set("drain_width", v)} unit="mm"/>
+                    <NumInput label="Depth" value={values.drain_depth} onChange={v => set("drain_depth", v)} unit="mm"/>
+                    <NumInput label="Wall thickness" value={values.drain_thickness} onChange={v => set("drain_thickness", v)} unit="mm"/>
+                  </div>
+                  <BarPicker label="Bar size" value={values.drain_bar} onChange={v => set("drain_bar", v)}/>
+                  <Toggle label="Include grating cover" value={values.include_drain_cover} onChange={v => set("include_drain_cover", v)}/>
+                </>
+              )}
+
               {/* Staircase fields */}
               {elementType === "staircase" && (
                 <>
@@ -1234,7 +1738,7 @@ export default function AssemblyWizard({
 
               {/* Common options — only structural types actually consume these;
                   block_wall and the finish trades don't reference them at all. */}
-              {!["block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding"].includes(elementType) && (
+              {!["block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "chain_link", "septic_tank", "drain_gutter"].includes(elementType) && (
                 <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-1">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Include in Assembly</p>
                   <Toggle label="Ready Mix Concrete" value={values.include_concrete} onChange={v => set("include_concrete", v)}/>
