@@ -18,14 +18,25 @@ function barWeight(key: string): number {
 
 // ─── Element type definitions ──────────────────────────────────────────────
 const ELEMENT_TYPES = [
-  { key: "column_square",    label: "Square Column",     icon: "🏛️", category: "Reinforcement (Steel)" },
-  { key: "column_rect",      label: "Rect. Column",      icon: "🏗️", category: "Reinforcement (Steel)" },
-  { key: "ground_beam",      label: "Ground Beam",       icon: "🔲", category: "Reinforcement (Steel)" },
-  { key: "ring_beam",        label: "Ring Beam",         icon: "🔄", category: "Reinforcement (Steel)" },
-  { key: "slab",             label: "Slab",              icon: "📐", category: "Reinforcement (Steel)" },
-  { key: "block_wall",       label: "Block Wall",        icon: "🧱", category: "Masonry" },
-  { key: "staircase",        label: "Staircase",         icon: "🪜", category: "Reinforcement (Steel)" },
-  { key: "pad_footing",      label: "Pad Footing",       icon: "⬛", category: "Reinforcement (Steel)" },
+  // Structural
+  { key: "column_square", label: "Square Column",    icon: "🏛️", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "column_rect",   label: "Rect. Column",     icon: "🏗️", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "ground_beam",   label: "Ground Beam",      icon: "🔲", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "ring_beam",     label: "Ring Beam",        icon: "🔄", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "tie_beam",      label: "Tie Beam",         icon: "➖", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "lintel",        label: "Lintel",           icon: "🪟", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "slab",          label: "Slab",             icon: "📐", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "pad_footing",   label: "Pad Footing",      icon: "⬛", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "retaining_wall",label: "Retaining Wall",   icon: "🧱", group: "Structural",  category: "Reinforcement (Steel)" },
+  { key: "staircase",     label: "Staircase",        icon: "🪜", group: "Structural",  category: "Reinforcement (Steel)" },
+  // Masonry
+  { key: "block_wall",    label: "Block Wall",       icon: "🧱", group: "Masonry",     category: "Masonry" },
+  // Finishes
+  { key: "plastering",    label: "Plastering",       icon: "🪣", group: "Finishes",    category: "Plastering" },
+  { key: "tiling",        label: "Tiling",           icon: "⬜", group: "Finishes",    category: "Tiling & Flooring" },
+  { key: "painting",      label: "Painting",         icon: "🎨", group: "Finishes",    category: "Painting" },
+  { key: "ceiling",       label: "Ceiling",          icon: "⬆️", group: "Finishes",    category: "Ceiling" },
+  { key: "roofing",       label: "Roofing",          icon: "🏠", group: "Finishes",    category: "Roofing" },
 ];
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -66,6 +77,72 @@ interface WizardValues {
   footing_thickness: number;
   footing_bar: string;
   footing_spacing: number;
+
+  // Horizontal bars (block wall)
+  include_horiz_bars: boolean;
+  horiz_bar_size: string;
+  horiz_bar_spacing: number; // mm, vertical spacing between horizontal bars
+
+  // Lintel
+  lintel_width: number;
+  lintel_depth: number;
+  lintel_span: number;
+  lintel_top_bars: number;
+  lintel_top_bar: string;
+  lintel_bottom_bars: number;
+  lintel_bottom_bar: string;
+  lintel_link_bar: string;
+  lintel_link_spacing: number;
+
+  // Tie beam (same as ring beam shape)
+  tie_width: number;
+  tie_depth: number;
+  tie_top_bars: number;
+  tie_top_bar: string;
+  tie_bottom_bars: number;
+  tie_bottom_bar: string;
+  tie_link_bar: string;
+  tie_link_spacing: number;
+
+  // Retaining wall
+  ret_height: number;
+  ret_thickness: number;
+  ret_vert_bar: string;
+  ret_vert_spacing: number;
+  ret_horiz_bar: string;
+  ret_horiz_spacing: number;
+  ret_include_base: boolean;
+  ret_base_width: number;
+  ret_base_bar: string;
+  ret_base_spacing: number;
+
+  // Plastering
+  plaster_coats: number;
+  plaster_thickness: number; // mm
+  include_scratch_coat: boolean;
+
+  // Tiling
+  tile_size: string; // "12x12", "24x24", etc
+  tile_waste: number; // % waste
+  include_adhesive: boolean;
+  include_grout: boolean;
+
+  // Painting
+  paint_coats: number;
+  include_primer: boolean;
+  paint_coverage: number; // sf per gallon
+
+  // Ceiling
+  ceiling_type: string; // "t-bar", "gyp-board", "wood"
+  ceiling_tile_size: string;
+
+  // Roofing
+  roof_sheet_type: string; // "corrugated", "standing-seam"
+  roof_sheet_length: number; // ft
+  roof_pitch: number; // degrees
+  include_purlins: boolean;
+  purlin_spacing: number; // mm
+  include_ridge: boolean;
 }
 
 const DEFAULT_VALUES: WizardValues = {
@@ -85,6 +162,31 @@ const DEFAULT_VALUES: WizardValues = {
   include_formwork: true, include_labor: false,
   footing_width: 600, footing_depth: 600, footing_thickness: 300,
   footing_bar: "#4", footing_spacing: 150,
+  include_horiz_bars: true,
+  horiz_bar_size: "#3",
+  horiz_bar_spacing: 600,
+  lintel_width: 200, lintel_depth: 200, lintel_span: 1200,
+  lintel_top_bars: 2, lintel_top_bar: "#4",
+  lintel_bottom_bars: 2, lintel_bottom_bar: "#4",
+  lintel_link_bar: "#3", lintel_link_spacing: 150,
+  tie_width: 225, tie_depth: 150,
+  tie_top_bars: 2, tie_top_bar: "#4",
+  tie_bottom_bars: 2, tie_bottom_bar: "#4",
+  tie_link_bar: "#3", tie_link_spacing: 200,
+  ret_height: 1800, ret_thickness: 200,
+  ret_vert_bar: "#4", ret_vert_spacing: 200,
+  ret_horiz_bar: "#3", ret_horiz_spacing: 300,
+  ret_include_base: true, ret_base_width: 600,
+  ret_base_bar: "#4", ret_base_spacing: 200,
+  plaster_coats: 2, plaster_thickness: 15,
+  include_scratch_coat: true,
+  tile_size: "12x12", tile_waste: 10,
+  include_adhesive: true, include_grout: true,
+  paint_coats: 2, include_primer: true, paint_coverage: 400,
+  ceiling_type: "t-bar", ceiling_tile_size: "2x2",
+  roof_sheet_type: "corrugated", roof_sheet_length: 10,
+  roof_pitch: 15, include_purlins: true,
+  purlin_spacing: 600, include_ridge: true,
 };
 
 // ─── Component generator ───────────────────────────────────────────────────
@@ -203,13 +305,195 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
 
     case "block_wall": {
       // area isn't a recognized variable — a wall's area is length * height.
-      const blocksPerSqM = v.block_size === '4"' ? 12.5 : v.block_size === '6"' ? 12.5 : 12.5;
-      const blocksPerSqFt = blocksPerSqM / 10.764;
-      return [
-        { item_name: `Concrete Block ${v.block_size}`, type: "material", formula: `length * height * ${blocksPerSqFt.toFixed(4)}`, waste_percent: 5, description: `${v.block_size} blocks at ${blocksPerSqM} per m²` },
-        ...(v.include_mortar ? [{ item_name: "Portland Cement", type: "material", formula: "length * height * 0.08", waste_percent: 10, description: "Mortar cement" }] : []),
-        { item_name: "Sand", type: "material", formula: "length * height * 0.025", waste_percent: 10, description: "Mortar sand" },
+      const blocksPerSqFt = 1.125;
+      const comps: GeneratedComponent[] = [
+        { item_name: `Concrete Block ${v.block_size}`, type: "material", formula: `length * height * ${blocksPerSqFt.toFixed(4)}`, waste_percent: 5, description: `${v.block_size} hollow blocks` },
+        ...(v.include_mortar ? [{ item_name: "Portland Cement", type: "material", formula: "length * height * 0.08", waste_percent: 10, description: "Mortar cement (bags)" }] : []),
+        { item_name: "Sand", type: "material", formula: "length * height * 0.025", waste_percent: 10, description: "Mortar sand (m³)" },
       ];
+      if (v.include_horiz_bars) {
+        const hbw = barWeight(v.horiz_bar_size);
+        const hsp = v.horiz_bar_spacing / 1000;
+        comps.push({
+          item_name: `Rebar ${v.horiz_bar_size}`,
+          type: "material",
+          formula: `(height / ${hsp}) * length * ${hbw}`,
+          waste_percent: 10,
+          description: `Horizontal wall bars ${v.horiz_bar_size} @ ${v.horiz_bar_spacing}mm`,
+        });
+      }
+      return comps;
+    }
+
+    case "lintel": {
+      const lw = v.lintel_width / 1000;
+      const ld = v.lintel_depth / 1000;
+      const ltw = barWeight(v.lintel_top_bar);
+      const lbw = barWeight(v.lintel_bottom_bar);
+      const llw = barWeight(v.lintel_link_bar);
+      const lsp = v.lintel_link_spacing / 1000;
+      return [
+        {
+          item_name: `Rebar ${v.lintel_top_bar}`,
+          type: "material",
+          formula: `${v.lintel_top_bars} * (length + 0.5) * ${ltw}`,
+          waste_percent: 5,
+          description: `${v.lintel_top_bars} top bars + 250mm bearing each end`,
+        },
+        {
+          item_name: `Rebar ${v.lintel_bottom_bar}`,
+          type: "material",
+          formula: `${v.lintel_bottom_bars} * (length + 0.5) * ${lbw}`,
+          waste_percent: 5,
+          description: `${v.lintel_bottom_bars} bottom bars + 250mm bearing each end`,
+        },
+        {
+          item_name: `Rebar ${v.lintel_link_bar}`,
+          type: "material",
+          formula: `(length / ${lsp}) * ((${lw} + ${ld}) * 2 + 0.2) * ${llw}`,
+          waste_percent: 10,
+          description: `Links @ ${v.lintel_link_spacing}mm`,
+        },
+        ...(v.include_concrete ? [{
+          item_name: "Ready Mix Concrete",
+          type: "material",
+          formula: `${lw} * ${ld} * (length + 0.5)`,
+          waste_percent: 5,
+          description: `Lintel concrete ${v.concrete_grade}`,
+        }] : []),
+        ...(v.include_formwork ? [{
+          item_name: "Formwork",
+          type: "material",
+          formula: `(${lw} + ${ld} * 2) * (length + 0.5)`,
+          waste_percent: 10,
+          description: "Lintel formwork",
+        }] : []),
+      ];
+    }
+
+    case "tie_beam": {
+      const tbw2 = v.tie_width / 1000;
+      const tbd = v.tie_depth / 1000;
+      const tlsp = v.tie_link_spacing / 1000;
+      const ttw = barWeight(v.tie_top_bar);
+      const tbw = barWeight(v.tie_bottom_bar);
+      const tlw = barWeight(v.tie_link_bar);
+      return [
+        { item_name: `Rebar ${v.tie_top_bar}`, type: "material", formula: `${v.tie_top_bars} * length * ${ttw}`, waste_percent: 5, description: `${v.tie_top_bars} top bars` },
+        { item_name: `Rebar ${v.tie_bottom_bar}`, type: "material", formula: `${v.tie_bottom_bars} * length * ${tbw}`, waste_percent: 5, description: `${v.tie_bottom_bars} bottom bars` },
+        { item_name: `Rebar ${v.tie_link_bar}`, type: "material", formula: `(length / ${tlsp}) * ((${tbw2} + ${tbd}) * 2 + 0.2) * ${tlw}`, waste_percent: 10, description: `Links @ ${v.tie_link_spacing}mm` },
+        ...(v.include_concrete ? [{ item_name: "Ready Mix Concrete", type: "material", formula: `${tbw2} * ${tbd} * length`, waste_percent: 5, description: "Tie beam concrete" }] : []),
+        ...(v.include_formwork ? [{ item_name: "Formwork", type: "material", formula: `(${tbw2} + ${tbd} * 2) * length`, waste_percent: 10, description: "Formwork" }] : []),
+      ];
+    }
+
+    case "retaining_wall": {
+      const rh = v.ret_height / 1000;
+      const rt = v.ret_thickness / 1000;
+      const rvsp = v.ret_vert_spacing / 1000;
+      const rhsp = v.ret_horiz_spacing / 1000;
+      const rvw = barWeight(v.ret_vert_bar);
+      const rhw = barWeight(v.ret_horiz_bar);
+      const rbw = barWeight(v.ret_base_bar);
+      const rbsp = v.ret_base_spacing / 1000;
+      const rbw2 = v.ret_base_width / 1000;
+      const comps: GeneratedComponent[] = [
+        { item_name: `Rebar ${v.ret_vert_bar}`, type: "material", formula: `(length / ${rvsp}) * ${rh} * ${rvw}`, waste_percent: 10, description: `Vertical bars @ ${v.ret_vert_spacing}mm` },
+        { item_name: `Rebar ${v.ret_horiz_bar}`, type: "material", formula: `(${rh} / ${rhsp}) * length * ${rhw}`, waste_percent: 10, description: `Horizontal bars @ ${v.ret_horiz_spacing}mm` },
+        ...(v.include_concrete ? [{ item_name: "Ready Mix Concrete", type: "material", formula: `${rt} * ${rh} * length`, waste_percent: 5, description: "Wall concrete" }] : []),
+        ...(v.include_formwork ? [{ item_name: "Formwork", type: "material", formula: `${rh} * length * 2`, waste_percent: 10, description: "Both faces formwork" }] : []),
+      ];
+      if (v.ret_include_base) {
+        comps.push({ item_name: `Rebar ${v.ret_base_bar}`, type: "material", formula: `(length / ${rbsp}) * ${rbw2} * ${rbw} * 2`, waste_percent: 10, description: "Base slab bars both ways" });
+        if (v.include_concrete) comps.push({ item_name: "Ready Mix Concrete", type: "material", formula: `${rbw2} * 0.3 * length`, waste_percent: 5, description: "Base slab concrete" });
+      }
+      return comps;
+    }
+
+    case "plastering": {
+      // area isn't a recognized variable — plastering is assumed on a wall
+      // face, so area is expressed as length * height.
+      const comps: GeneratedComponent[] = [];
+      if (v.include_scratch_coat) {
+        comps.push({ item_name: "Portland Cement", type: "material", formula: "length * height * 0.06", waste_percent: 10, description: "Scratch coat cement (bags)" });
+        comps.push({ item_name: "Sand", type: "material", formula: "length * height * 0.015", waste_percent: 10, description: "Scratch coat sand (m³)" });
+      }
+      comps.push({ item_name: "Portland Cement", type: "material", formula: `length * height * ${(v.plaster_coats * 0.08).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster cement (bags)` });
+      comps.push({ item_name: "Sand", type: "material", formula: `length * height * ${(v.plaster_coats * 0.02).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster sand (m³)` });
+      comps.push({ item_name: "Labor - Plastering", type: "labor", formula: "length * height * 0.5", waste_percent: 0, description: "Plastering labor (man-hours)" });
+      return comps;
+    }
+
+    case "tiling": {
+      // area isn't a recognized variable — tiling is assumed on a floor
+      // plan, so area is expressed as length * width.
+      const tileSizes: Record<string, number> = {
+        "12x12": 1.1, "18x18": 1.1, "24x24": 1.1, "12x24": 1.1
+      };
+      const tilesPerSqFt = tileSizes[v.tile_size] || 1.1;
+      const comps: GeneratedComponent[] = [
+        { item_name: `Ceramic Tile ${v.tile_size}`, type: "material", formula: `length * width * ${tilesPerSqFt}`, waste_percent: v.tile_waste, description: `${v.tile_size} tiles with ${v.tile_waste}% waste` },
+      ];
+      if (v.include_adhesive) comps.push({ item_name: "Tile Adhesive", type: "material", formula: "length * width * 0.04", waste_percent: 5, description: "Tile adhesive (bags)" });
+      if (v.include_grout) comps.push({ item_name: "Tile Grout", type: "material", formula: "length * width * 0.01", waste_percent: 5, description: "Tile grout (bags)" });
+      comps.push({ item_name: "Labor - Tiling", type: "labor", formula: "length * width * 0.75", waste_percent: 0, description: "Tiling labor (man-hours)" });
+      return comps;
+    }
+
+    case "painting": {
+      // area isn't a recognized variable — painting is assumed on a wall
+      // face, so area is expressed as length * height.
+      const gallonsPerSqFt = 1 / v.paint_coverage;
+      const comps: GeneratedComponent[] = [];
+      if (v.include_primer) comps.push({ item_name: "Primer", type: "material", formula: `length * height * ${(1/350).toFixed(5)}`, waste_percent: 5, description: "Primer (1 gal / 350 sf)" });
+      comps.push({ item_name: "Paint", type: "material", formula: `length * height * ${(gallonsPerSqFt * v.paint_coats).toFixed(5)}`, waste_percent: 5, description: `${v.paint_coats} coats paint (gallons)` });
+      comps.push({ item_name: "Labor - Painting", type: "labor", formula: "length * height * 0.2", waste_percent: 0, description: "Painting labor (man-hours)" });
+      return comps;
+    }
+
+    case "ceiling": {
+      // area isn't a recognized variable — ceiling area is the floor plan
+      // footprint, expressed as length * width.
+      const comps: GeneratedComponent[] = [];
+      if (v.ceiling_type === "t-bar") {
+        comps.push({ item_name: "T-Bar Grid Main Runner", type: "material", formula: "length * width / 1.2 * 0.6", waste_percent: 10, description: "Main T-bar runners" });
+        comps.push({ item_name: "T-Bar Grid Cross Tee", type: "material", formula: "length * width / 0.6", waste_percent: 10, description: "Cross tees" });
+        comps.push({ item_name: `Ceiling Tile ${v.ceiling_tile_size}`, type: "material", formula: "length * width * 1.1", waste_percent: 10, description: `${v.ceiling_tile_size} ceiling tiles` });
+        comps.push({ item_name: "Hanger Wire", type: "material", formula: "length * width * 0.5", waste_percent: 10, description: "Hanger wire (m)" });
+      } else if (v.ceiling_type === "gyp-board") {
+        comps.push({ item_name: "Gypsum Board 4x8", type: "material", formula: "length * width / 2.976", waste_percent: 10, description: "4×8 gyp board sheets" });
+        comps.push({ item_name: "Metal Furring Channel", type: "material", formula: "length * width * 1.2", waste_percent: 10, description: "Furring channels (lf)" });
+        comps.push({ item_name: "Joint Compound", type: "material", formula: "length * width * 0.02", waste_percent: 5, description: "Joint compound (bags)" });
+      }
+      comps.push({ item_name: "Labor - Ceiling", type: "labor", formula: "length * width * 0.6", waste_percent: 0, description: "Ceiling installation labor" });
+      return comps;
+    }
+
+    case "roofing": {
+      // area isn't a recognized variable — roof area is the plan footprint,
+      // expressed as length * width.
+      const sheetLength = v.roof_sheet_length; // ft
+      const sheetWidthFt = 2.667; // standard 32" = 2.667ft
+      const sheetAreaSqFt = sheetLength * sheetWidthFt;
+      const purlinSp = v.purlin_spacing / 1000; // m
+      const comps: GeneratedComponent[] = [
+        {
+          item_name: `${v.roof_sheet_type === "corrugated" ? "Corrugated" : "Standing Seam"} Zinc Sheet ${v.roof_sheet_length}ft`,
+          type: "material",
+          formula: `length * width * 1.1 / ${sheetAreaSqFt.toFixed(3)}`,
+          waste_percent: 5,
+          description: `${v.roof_sheet_length}ft sheets with 10% overlap`,
+        },
+      ];
+      if (v.include_purlins) {
+        comps.push({ item_name: "Purlin 2×4", type: "material", formula: `(length * width / ${purlinSp.toFixed(3)}) / ${sheetWidthFt.toFixed(3)}`, waste_percent: 10, description: `Purlins @ ${v.purlin_spacing}mm centres` });
+      }
+      if (v.include_ridge) {
+        comps.push({ item_name: "Ridge Cap", type: "material", formula: "width * 1.1", waste_percent: 5, description: "Ridge capping" });
+      }
+      comps.push({ item_name: "Roofing Screw", type: "material", formula: "length * width * 4", waste_percent: 10, description: "Roofing screws (each)" });
+      comps.push({ item_name: "Labor - Roofing", type: "labor", formula: "length * width * 0.3", waste_percent: 0, description: "Roofing labor (man-hours)" });
+      return comps;
     }
 
     case "staircase": {
@@ -350,6 +634,18 @@ export default function AssemblyWizard({
       c.hook_allowance = v.hook_allowance / 1000;
       c.main_bar_weight = barWeight(v.main_bar);
       c.link_bar_weight = barWeight(v.link_bar);
+    } else if (type === "ground_beam" || type === "ring_beam" || type === "tie_beam") {
+      c.beam_width = v.beam_width / 1000;
+      c.beam_depth = v.beam_depth / 1000;
+    } else if (type === "slab") {
+      c.slab_thickness = v.slab_thickness / 1000;
+      c.bar_spacing = v.bar_spacing_x / 1000;
+    } else if (type === "block_wall") {
+      c.blocks_per_sqft = 1.125;
+      c.horiz_spacing = v.horiz_bar_spacing / 1000;
+    } else if (type === "retaining_wall") {
+      c.wall_height = v.ret_height / 1000;
+      c.wall_thickness = v.ret_thickness / 1000;
     }
     // Add more element types as needed
     return c;
@@ -359,9 +655,12 @@ export default function AssemblyWizard({
     if (!elementType || !values.name.trim()) return;
     setSaving(true);
     try {
-      const measureType = elementType.includes("slab") ? "area"
-        : elementType.includes("wall") ? "area"
-        : elementType.includes("stair") ? "count"
+      // Explicit per-type mapping (not substring matching) since "wall" now
+      // matches both block_wall (area-shaped formulas) and retaining_wall
+      // (length-shaped formulas) — those need different measure types.
+      const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing"]);
+      const measureType = AREA_TYPES.has(elementType) ? "area"
+        : elementType === "staircase" ? "count"
         : "linear";
 
       // Create assembly — measure_type/constants live inside metadata (jsonb),
@@ -455,19 +754,24 @@ export default function AssemblyWizard({
 
           {/* STEP 1 — Pick type */}
           {step === "pick_type" && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {ELEMENT_TYPES.map(el => (
-                  <button key={el.key}
-                    onClick={() => { setElementType(el.key); setValues(v => ({ ...v, name: el.label })); setStep("configure"); }}
-                    className="flex flex-col items-center gap-2 p-4 rounded-2xl border-2 border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all group">
-                    <span className="text-3xl">{el.icon}</span>
-                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 text-center group-hover:text-blue-600 dark:group-hover:text-blue-400">
-                      {el.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
+            <div className="space-y-5">
+              {["Structural", "Masonry", "Finishes"].map(group => (
+                <div key={group}>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">{group}</p>
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                    {ELEMENT_TYPES.filter(e => e.group === group).map(el => (
+                      <button key={el.key}
+                        onClick={() => { setElementType(el.key); setValues(v => ({ ...v, name: el.label })); setStep("configure"); }}
+                        className="flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all group">
+                        <span className="text-2xl">{el.icon}</span>
+                        <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 text-center leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                          {el.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
                 <button
                   onClick={onUseBlankForm}
@@ -562,6 +866,188 @@ export default function AssemblyWizard({
                     </div>
                   </div>
                   <Toggle label="Include mortar" value={values.include_mortar} onChange={v => set("include_mortar", v)}/>
+                  <div className="border-t border-slate-100 dark:border-slate-800 pt-4">
+                    <Toggle label="Include horizontal reinforcement bars" value={values.include_horiz_bars} onChange={v => set("include_horiz_bars", v)}/>
+                    {values.include_horiz_bars && (
+                      <div className="grid grid-cols-2 gap-3 mt-3">
+                        <BarPicker label="Horizontal bar size" value={values.horiz_bar_size} onChange={v => set("horiz_bar_size", v)}/>
+                        <NumInput label="Vertical spacing" value={values.horiz_bar_spacing} onChange={v => set("horiz_bar_spacing", v)} unit="mm" hint="Every 2-3 courses (600mm typical)"/>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Lintel fields */}
+              {elementType === "lintel" && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Width" value={values.lintel_width} onChange={v => set("lintel_width", v)} unit="mm"/>
+                    <NumInput label="Depth" value={values.lintel_depth} onChange={v => set("lintel_depth", v)} unit="mm"/>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Top bars" value={values.lintel_top_bars} onChange={v => set("lintel_top_bars", v)}/>
+                    <BarPicker label="Top bar size" value={values.lintel_top_bar} onChange={v => set("lintel_top_bar", v)}/>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Bottom bars" value={values.lintel_bottom_bars} onChange={v => set("lintel_bottom_bars", v)}/>
+                    <BarPicker label="Bottom bar size" value={values.lintel_bottom_bar} onChange={v => set("lintel_bottom_bar", v)}/>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <BarPicker label="Link bar size" value={values.lintel_link_bar} onChange={v => set("lintel_link_bar", v)}/>
+                    <NumInput label="Link spacing" value={values.lintel_link_spacing} onChange={v => set("lintel_link_spacing", v)} unit="mm"/>
+                  </div>
+                </>
+              )}
+
+              {/* Tie beam fields */}
+              {elementType === "tie_beam" && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Beam width" value={values.tie_width} onChange={v => set("tie_width", v)} unit="mm"/>
+                    <NumInput label="Beam depth" value={values.tie_depth} onChange={v => set("tie_depth", v)} unit="mm" hint="Typically same as block width"/>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Top bars" value={values.tie_top_bars} onChange={v => set("tie_top_bars", v)}/>
+                    <BarPicker label="Top bar size" value={values.tie_top_bar} onChange={v => set("tie_top_bar", v)}/>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Bottom bars" value={values.tie_bottom_bars} onChange={v => set("tie_bottom_bars", v)}/>
+                    <BarPicker label="Bottom bar size" value={values.tie_bottom_bar} onChange={v => set("tie_bottom_bar", v)}/>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <BarPicker label="Link bar" value={values.tie_link_bar} onChange={v => set("tie_link_bar", v)}/>
+                    <NumInput label="Link spacing" value={values.tie_link_spacing} onChange={v => set("tie_link_spacing", v)} unit="mm"/>
+                  </div>
+                </>
+              )}
+
+              {/* Retaining wall fields */}
+              {elementType === "retaining_wall" && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Wall height" value={values.ret_height} onChange={v => set("ret_height", v)} unit="mm"/>
+                    <NumInput label="Wall thickness" value={values.ret_thickness} onChange={v => set("ret_thickness", v)} unit="mm"/>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Vertical bars</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <BarPicker label="Vertical bar size" value={values.ret_vert_bar} onChange={v => set("ret_vert_bar", v)}/>
+                    <NumInput label="Vertical spacing" value={values.ret_vert_spacing} onChange={v => set("ret_vert_spacing", v)} unit="mm"/>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Horizontal bars</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <BarPicker label="Horizontal bar size" value={values.ret_horiz_bar} onChange={v => set("ret_horiz_bar", v)}/>
+                    <NumInput label="Horizontal spacing" value={values.ret_horiz_spacing} onChange={v => set("ret_horiz_spacing", v)} unit="mm"/>
+                  </div>
+                  <Toggle label="Include base slab" value={values.ret_include_base} onChange={v => set("ret_include_base", v)}/>
+                  {values.ret_include_base && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <NumInput label="Base width" value={values.ret_base_width} onChange={v => set("ret_base_width", v)} unit="mm"/>
+                      <BarPicker label="Base bar size" value={values.ret_base_bar} onChange={v => set("ret_base_bar", v)}/>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Plastering fields */}
+              {elementType === "plastering" && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Number of coats" value={values.plaster_coats} onChange={v => set("plaster_coats", v)} hint="Typically 2 coats"/>
+                    <NumInput label="Thickness per coat" value={values.plaster_thickness} onChange={v => set("plaster_thickness", v)} unit="mm"/>
+                  </div>
+                  <Toggle label="Include scratch coat" value={values.include_scratch_coat} onChange={v => set("include_scratch_coat", v)}/>
+                </>
+              )}
+
+              {/* Tiling fields */}
+              {elementType === "tiling" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Tile size</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {["12x12", "18x18", "24x24", "12x24"].map(s => (
+                        <button key={s} type="button"
+                          onClick={() => set("tile_size", s)}
+                          className={`py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.tile_size === s ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {s}"
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <NumInput label="Waste %" value={values.tile_waste} onChange={v => set("tile_waste", v)} hint="10% for straight lay, 15% for diagonal"/>
+                  <Toggle label="Include adhesive" value={values.include_adhesive} onChange={v => set("include_adhesive", v)}/>
+                  <Toggle label="Include grout" value={values.include_grout} onChange={v => set("include_grout", v)}/>
+                </>
+              )}
+
+              {/* Painting fields */}
+              {elementType === "painting" && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Number of coats" value={values.paint_coats} onChange={v => set("paint_coats", v)} hint="Typically 2 coats"/>
+                    <NumInput label="Coverage" value={values.paint_coverage} onChange={v => set("paint_coverage", v)} unit="sf/gal" hint="350-400 sf per gallon"/>
+                  </div>
+                  <Toggle label="Include primer coat" value={values.include_primer} onChange={v => set("include_primer", v)}/>
+                </>
+              )}
+
+              {/* Ceiling fields */}
+              {elementType === "ceiling" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Ceiling type</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[["t-bar", "T-Bar Grid"], ["gyp-board", "Gypsum Board"]].map(([key, label]) => (
+                        <button key={key} type="button"
+                          onClick={() => set("ceiling_type", key)}
+                          className={`py-2.5 rounded-lg text-sm font-semibold border-2 transition-colors ${values.ceiling_type === key ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {values.ceiling_type === "t-bar" && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Tile size</label>
+                      <div className="flex gap-2">
+                        {["2x2", "2x4"].map(s => (
+                          <button key={s} type="button"
+                            onClick={() => set("ceiling_tile_size", s)}
+                            className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${values.ceiling_tile_size === s ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                            {s}ft
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Roofing fields */}
+              {elementType === "roofing" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Sheet type</label>
+                    <div className="flex gap-2">
+                      {[["corrugated", "Corrugated Zinc"], ["standing-seam", "Standing Seam"]].map(([key, label]) => (
+                        <button key={key} type="button"
+                          onClick={() => set("roof_sheet_type", key)}
+                          className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${values.roof_sheet_type === key ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Sheet length" value={values.roof_sheet_length} onChange={v => set("roof_sheet_length", v)} unit="ft" hint="8ft, 10ft, 12ft"/>
+                    <NumInput label="Roof pitch" value={values.roof_pitch} onChange={v => set("roof_pitch", v)} unit="°" hint="Angle in degrees"/>
+                  </div>
+                  <Toggle label="Include purlins" value={values.include_purlins} onChange={v => set("include_purlins", v)}/>
+                  {values.include_purlins && (
+                    <NumInput label="Purlin spacing" value={values.purlin_spacing} onChange={v => set("purlin_spacing", v)} unit="mm" hint="Typically 600mm"/>
+                  )}
+                  <Toggle label="Include ridge cap" value={values.include_ridge} onChange={v => set("include_ridge", v)}/>
                 </>
               )}
 
@@ -596,8 +1082,9 @@ export default function AssemblyWizard({
                 </>
               )}
 
-              {/* Common options — show for structural types */}
-              {elementType !== "block_wall" && (
+              {/* Common options — only structural types actually consume these;
+                  block_wall and the finish trades don't reference them at all. */}
+              {!["block_wall", "plastering", "tiling", "painting", "ceiling", "roofing"].includes(elementType) && (
                 <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-1">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Include in Assembly</p>
                   <Toggle label="Ready Mix Concrete" value={values.include_concrete} onChange={v => set("include_concrete", v)}/>
