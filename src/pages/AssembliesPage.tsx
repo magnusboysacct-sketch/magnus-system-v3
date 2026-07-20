@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists";
 import EditableDropdown from "../components/common/EditableDropdown";
+import AssemblyWizard from "../components/assembly/AssemblyWizard";
 import { magnusAI } from "../lib/magnusAI";
 import {
   Plus, Trash2, Edit2, Save, X, Search, ChevronRight,
@@ -171,6 +172,7 @@ export default function AssembliesPage() {
 
   // UI state
   const [showNewForm, setShowNewForm] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -491,7 +493,7 @@ export default function AssembliesPage() {
             <p className="text-xs text-slate-500">{assemblies.length} assemblies · Formula-driven material calculator</p>
           </div>
         </div>
-        <button onClick={() => setShowNewForm(true)}
+        <button onClick={() => setShowWizard(true)}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition shadow-sm">
           <Plus size={14}/> New Assembly
         </button>
@@ -528,7 +530,7 @@ export default function AssembliesPage() {
               <div className="text-center py-10">
                 <Layers size={20} className="text-slate-800 mx-auto mb-2"/>
                 <p className="text-xs text-slate-400 dark:text-slate-700">No assemblies yet</p>
-                <button onClick={() => setShowNewForm(true)} className="mt-3 text-xs text-purple-400 hover:text-purple-300">+ Create first</button>
+                <button onClick={() => setShowWizard(true)} className="mt-3 text-xs text-purple-400 hover:text-purple-300">+ Create first</button>
               </div>
             ) : filtered.map(a => {
               const cfg = MEASURE_CFG[a.measure_type];
@@ -576,7 +578,7 @@ export default function AssembliesPage() {
                 <p className="text-slate-600 dark:text-slate-400 text-sm font-medium mb-1">No assembly selected</p>
                 <p className="text-slate-400 dark:text-slate-700 text-xs">Select from the list or create a new one</p>
               </div>
-              <button onClick={() => setShowNewForm(true)}
+              <button onClick={() => setShowWizard(true)}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition">
                 <Plus size={12}/> New Assembly
               </button>
@@ -1031,6 +1033,16 @@ export default function AssembliesPage() {
           )}
         </div>
       </div>
+
+      {/* ── Smart Assembly Wizard ── */}
+      {showWizard && (
+        <AssemblyWizard
+          onClose={() => setShowWizard(false)}
+          onCreated={() => { setShowWizard(false); loadAssemblies(); }}
+          onUseBlankForm={() => { setShowWizard(false); setShowNewForm(true); }}
+          companyId={companyId || null}
+        />
+      )}
 
       {/* ── New Assembly Modal ── */}
       {showNewForm && (
