@@ -47,6 +47,21 @@ const ELEMENT_TYPES = [
   { key: "chain_link",        label: "Chain Link Fence",  icon: "🔗", group: "External",   category: "Fencing" },
   { key: "septic_tank",       label: "Septic Tank",       icon: "🪣", group: "External",   category: "Drainage" },
   { key: "drain_gutter",      label: "Drain / Gutter",    icon: "💧", group: "External",   category: "Drainage" },
+  // Plumbing
+  { key: "water_supply",     label: "Water Supply",      icon: "🚿", group: "Plumbing",   category: "Plumbing" },
+  { key: "drainage_piping",  label: "Drainage Piping",   icon: "🪠", group: "Plumbing",   category: "Plumbing" },
+  { key: "plumbing_fixtures",label: "Bathroom Fitout",   icon: "🛁", group: "Plumbing",   category: "Plumbing" },
+  // Electrical
+  { key: "electrical_wiring",label: "Electrical Wiring", icon: "⚡", group: "Electrical", category: "Electrical" },
+  { key: "electrical_fitout",label: "Electrical Fitout", icon: "🔌", group: "Electrical", category: "Electrical" },
+  // Doors & Windows
+  { key: "door_solid",       label: "Door (Solid)",      icon: "🚪", group: "Doors & Windows", category: "Doors & Windows" },
+  { key: "window_aluminum",  label: "Window (Aluminum)", icon: "🪟", group: "Doors & Windows", category: "Doors & Windows" },
+  { key: "window_louvre",    label: "Window (Louvre)",   icon: "🪟", group: "Doors & Windows", category: "Doors & Windows" },
+  // Structural Steel
+  { key: "roof_truss",       label: "Roof Truss",        icon: "🏗️", group: "Structural Steel", category: "Structural Steel" },
+  // External
+  { key: "paving",           label: "Paving",            icon: "🛣️", group: "External",  category: "External Works" },
 ];
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -211,6 +226,80 @@ interface WizardValues {
   drain_thickness: number; // mm wall thickness
   drain_bar: string;
   include_drain_cover: boolean;
+
+  // Water supply
+  water_pipe_size: string;      // "1/2\"" "3/4\"" "1\""
+  water_pipe_material: string;  // "CPVC" "PEX" "Galvanized"
+  water_num_fixtures: number;
+  water_include_fittings: boolean;
+
+  // Drainage
+  drain_pipe_size: string;      // "4\"" "3\"" "2\""
+  drain_pipe_material: string;  // "PVC" "Cast Iron"
+  drain_num_wc: number;
+  drain_num_basins: number;
+  drain_include_fittings: boolean;
+  drain_include_vent: boolean;
+
+  // Plumbing fixtures
+  num_wc: number;
+  num_washbasin: number;
+  num_shower: number;
+  num_bath: number;
+  fixture_grade: string;        // "standard" "mid" "premium"
+
+  // Electrical wiring
+  num_circuits: number;
+  circuit_length: number;       // avg metres per circuit
+  wire_size: string;            // "12 AWG" "10 AWG"
+  conduit_type: string;         // "EMT" "PVC"
+  include_conduit: boolean;
+
+  // Electrical fitout
+  num_outlets: number;
+  num_switches: number;
+  num_lights: number;
+  num_ac_points: number;
+  include_db: boolean;          // distribution board
+  db_breakers: number;
+
+  // Door
+  door_width: number;           // mm
+  door_height: number;          // mm
+  door_material: string;        // "solid-wood" "hollow-core" "steel"
+  door_include_frame: boolean;
+  door_include_hardware: boolean;
+  door_include_paint: boolean;
+
+  // Window aluminum
+  win_width: number;            // mm
+  win_height: number;           // mm
+  win_type: string;             // "sliding" "casement" "awning"
+  win_glass: string;            // "clear" "tinted" "frosted"
+  win_include_grille: boolean;
+
+  // Window louvre
+  louv_width: number;           // mm
+  louv_height: number;          // mm
+  louv_blade_material: string;  // "glass" "aluminum"
+  louv_num_blades: number;
+
+  // Roof truss
+  truss_span: number;           // mm — width of building
+  truss_spacing: number;        // mm — spacing between trusses
+  truss_pitch: number;          // degrees
+  truss_type: string;           // "fink" "howe" "mono-pitch"
+  truss_steel_size: string;     // "2x2x1/8" "2x3x3/16"
+  truss_include_purlins: boolean;
+  truss_purlin_spacing: number; // mm
+  truss_include_ridge: boolean;
+
+  // Paving
+  paving_type: string;          // "concrete" "asphalt" "pavers" "tiles"
+  paving_thickness: number;     // mm
+  paving_sub_base: boolean;
+  sub_base_thickness: number;   // mm
+  paving_include_curb: boolean;
 }
 
 const DEFAULT_VALUES: WizardValues = {
@@ -297,6 +386,60 @@ const DEFAULT_VALUES: WizardValues = {
   drain_thickness: 100,
   drain_bar: "#3",
   include_drain_cover: false,
+  water_pipe_size: "1/2\"",
+  water_pipe_material: "CPVC",
+  water_num_fixtures: 6,
+  water_include_fittings: true,
+  drain_pipe_size: "4\"",
+  drain_pipe_material: "PVC",
+  drain_num_wc: 1,
+  drain_num_basins: 1,
+  drain_include_fittings: true,
+  drain_include_vent: true,
+  num_wc: 1,
+  num_washbasin: 1,
+  num_shower: 1,
+  num_bath: 0,
+  fixture_grade: "standard",
+  num_circuits: 8,
+  circuit_length: 15,
+  wire_size: "12 AWG",
+  conduit_type: "PVC",
+  include_conduit: true,
+  num_outlets: 10,
+  num_switches: 8,
+  num_lights: 10,
+  num_ac_points: 2,
+  include_db: true,
+  db_breakers: 12,
+  door_width: 900,
+  door_height: 2100,
+  door_material: "solid-wood",
+  door_include_frame: true,
+  door_include_hardware: true,
+  door_include_paint: true,
+  win_width: 1200,
+  win_height: 1050,
+  win_type: "sliding",
+  win_glass: "clear",
+  win_include_grille: true,
+  louv_width: 900,
+  louv_height: 900,
+  louv_blade_material: "glass",
+  louv_num_blades: 6,
+  truss_span: 8000,
+  truss_spacing: 1200,
+  truss_pitch: 25,
+  truss_type: "fink",
+  truss_steel_size: "2x2x1/8",
+  truss_include_purlins: true,
+  truss_purlin_spacing: 600,
+  truss_include_ridge: true,
+  paving_type: "concrete",
+  paving_thickness: 100,
+  paving_sub_base: true,
+  sub_base_thickness: 150,
+  paving_include_curb: false,
 };
 
 // ─── Component generator ───────────────────────────────────────────────────
@@ -980,6 +1123,373 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       return comps;
     }
 
+    case "water_supply": {
+      const fittingsFactor = v.water_include_fittings ? 0.3 : 0;
+      return [
+        {
+          item_name: `${v.water_pipe_material} Pipe ${v.water_pipe_size}`,
+          type: "material",
+          formula: `length * 1.1`,
+          waste_percent: 10,
+          description: `${v.water_pipe_size} ${v.water_pipe_material} supply pipe (lf)`,
+        },
+        ...(v.water_include_fittings ? [{
+          item_name: `Pipe Fitting ${v.water_pipe_size}`,
+          type: "material",
+          formula: `length * ${fittingsFactor}`,
+          waste_percent: 10,
+          description: "Elbows, tees, couplings (est. 30% of pipe length)",
+        }] : []),
+        {
+          item_name: "Labor - Plumbing",
+          type: "labor",
+          formula: "length * 0.4",
+          waste_percent: 0,
+          description: "Plumbing labor (man-hours)",
+        },
+      ];
+    }
+
+    case "drainage_piping": {
+      return [
+        {
+          item_name: `${v.drain_pipe_material} Soil Pipe ${v.drain_pipe_size}`,
+          type: "material",
+          formula: "length * 1.1",
+          waste_percent: 10,
+          description: `${v.drain_pipe_size} ${v.drain_pipe_material} drainage pipe (lf)`,
+        },
+        ...(v.drain_include_fittings ? [{
+          item_name: `Drainage Fitting ${v.drain_pipe_size}`,
+          type: "material",
+          formula: "length * 0.25",
+          waste_percent: 10,
+          description: "Bends, junctions, reducers",
+        }] : []),
+        ...(v.drain_include_vent ? [{
+          item_name: `PVC Vent Pipe 2"`,
+          type: "material",
+          formula: `${v.drain_num_wc + v.drain_num_basins} * 3`,
+          waste_percent: 5,
+          description: "Vent stack per fixture",
+        }] : []),
+        {
+          item_name: "Labor - Drainage",
+          type: "labor",
+          formula: "length * 0.5",
+          waste_percent: 0,
+          description: "Drainage labor (man-hours)",
+        },
+      ];
+    }
+
+    case "plumbing_fixtures": {
+      const comps: GeneratedComponent[] = [];
+      if (v.num_wc > 0) comps.push({
+        item_name: "WC Suite (Toilet + Cistern)",
+        type: "material",
+        formula: `${v.num_wc}`,
+        waste_percent: 0,
+        description: `${v.num_wc} toilet suite(s) — ${v.fixture_grade} grade`,
+      });
+      if (v.num_washbasin > 0) comps.push({
+        item_name: "Wash Basin + Pedestal",
+        type: "material",
+        formula: `${v.num_washbasin}`,
+        waste_percent: 0,
+        description: `${v.num_washbasin} wash basin(s)`,
+      });
+      if (v.num_shower > 0) comps.push({
+        item_name: "Shower Set",
+        type: "material",
+        formula: `${v.num_shower}`,
+        waste_percent: 0,
+        description: `${v.num_shower} shower set(s)`,
+      });
+      if (v.num_bath > 0) comps.push({
+        item_name: "Bathtub",
+        type: "material",
+        formula: `${v.num_bath}`,
+        waste_percent: 0,
+        description: `${v.num_bath} bathtub(s)`,
+      });
+      comps.push({
+        item_name: "Labor - Fixture Install",
+        type: "labor",
+        formula: `${(v.num_wc + v.num_washbasin + v.num_shower + v.num_bath) * 3}`,
+        waste_percent: 0,
+        description: "Fixture installation labor (man-hours)",
+      });
+      return comps;
+    }
+
+    case "electrical_wiring": {
+      return [
+        {
+          item_name: `${v.wire_size} Wire`,
+          type: "material",
+          formula: `${v.num_circuits} * length * 1.2`,
+          waste_percent: 10,
+          description: `${v.wire_size} electrical wire — ${v.num_circuits} circuits`,
+        },
+        ...(v.include_conduit ? [{
+          item_name: `${v.conduit_type} Conduit`,
+          type: "material",
+          formula: `${v.num_circuits} * length * 1.1`,
+          waste_percent: 10,
+          description: `${v.conduit_type} conduit`,
+        }] : []),
+        {
+          item_name: "Wire Connector",
+          type: "material",
+          formula: `${v.num_circuits} * length * 0.5`,
+          waste_percent: 10,
+          description: "Wire connectors and clips",
+        },
+        {
+          item_name: "Labor - Electrical",
+          type: "labor",
+          formula: `${v.num_circuits} * length * 0.3`,
+          waste_percent: 0,
+          description: "Electrical wiring labor (man-hours)",
+        },
+      ];
+    }
+
+    case "electrical_fitout": {
+      const comps: GeneratedComponent[] = [
+        { item_name: "Electrical Outlet (Duplex)", type: "material", formula: `${v.num_outlets}`, waste_percent: 5, description: `${v.num_outlets} power outlets` },
+        { item_name: "Light Switch", type: "material", formula: `${v.num_switches}`, waste_percent: 5, description: `${v.num_switches} switches` },
+        { item_name: "Light Fitting", type: "material", formula: `${v.num_lights}`, waste_percent: 5, description: `${v.num_lights} light fittings` },
+      ];
+      if (v.num_ac_points > 0) comps.push({
+        item_name: "AC Disconnect Box",
+        type: "material",
+        formula: `${v.num_ac_points}`,
+        waste_percent: 0,
+        description: `${v.num_ac_points} A/C points`,
+      });
+      if (v.include_db) comps.push({
+        item_name: "Distribution Board",
+        type: "material",
+        formula: "1",
+        waste_percent: 0,
+        description: `${v.db_breakers} way distribution board`,
+      }, {
+        item_name: "Circuit Breaker",
+        type: "material",
+        formula: `${v.db_breakers}`,
+        waste_percent: 0,
+        description: `${v.db_breakers} circuit breakers`,
+      });
+      comps.push({
+        item_name: "Labor - Electrical Fitout",
+        type: "labor",
+        formula: `${(v.num_outlets + v.num_switches + v.num_lights) * 1.5}`,
+        waste_percent: 0,
+        description: "Fitout labor (man-hours)",
+      });
+      return comps;
+    }
+
+    case "door_solid": {
+      const dw = v.door_width / 1000;
+      const dh = v.door_height / 1000;
+      const comps: GeneratedComponent[] = [];
+      if (v.door_include_frame) comps.push({
+        item_name: "Door Frame",
+        type: "material",
+        formula: `count * ${((dw * 2 + dh * 2) + 0.3).toFixed(3)}`,
+        waste_percent: 10,
+        description: `Door frame (lf) — ${v.door_width}×${v.door_height}mm opening`,
+      });
+      comps.push({
+        item_name: `Door ${v.door_material === "solid-wood" ? "Solid Wood" : v.door_material === "hollow-core" ? "Hollow Core" : "Steel"} ${v.door_width}×${v.door_height}`,
+        type: "material",
+        formula: "count",
+        waste_percent: 0,
+        description: `${v.door_width}mm × ${v.door_height}mm ${v.door_material} door`,
+      });
+      if (v.door_include_hardware) comps.push({
+        item_name: "Door Hardware Set",
+        type: "material",
+        formula: "count",
+        waste_percent: 0,
+        description: "Hinges, handle, lock set",
+      });
+      if (v.door_include_paint) comps.push({
+        item_name: "Paint",
+        type: "material",
+        formula: `count * ${(dw * dh * 2 / 400).toFixed(4)}`,
+        waste_percent: 10,
+        description: "Door paint (both sides, 2 coats)",
+      });
+      comps.push({
+        item_name: "Labor - Door Install",
+        type: "labor",
+        formula: "count * 3",
+        waste_percent: 0,
+        description: "Door installation (man-hours per door)",
+      });
+      return comps;
+    }
+
+    case "window_aluminum": {
+      const ww = v.win_width / 1000;
+      const wh = v.win_height / 1000;
+      const comps: GeneratedComponent[] = [
+        {
+          item_name: `Aluminum Window ${v.win_type} ${v.win_width}×${v.win_height}`,
+          type: "material",
+          formula: "count",
+          waste_percent: 0,
+          description: `${v.win_width}×${v.win_height}mm ${v.win_type} window — ${v.win_glass} glass`,
+        },
+      ];
+      if (v.win_include_grille) comps.push({
+        item_name: "Window Grille",
+        type: "material",
+        formula: "count",
+        waste_percent: 0,
+        description: "Security grille per window",
+      });
+      comps.push({
+        item_name: "Sealant/Silicone",
+        type: "material",
+        formula: `count * ${((ww + wh) * 2 / 6).toFixed(3)}`,
+        waste_percent: 10,
+        description: "Perimeter sealant (tubes)",
+      });
+      comps.push({
+        item_name: "Labor - Window Install",
+        type: "labor",
+        formula: "count * 2",
+        waste_percent: 0,
+        description: "Window installation (man-hours per window)",
+      });
+      return comps;
+    }
+
+    case "window_louvre": {
+      const lw = v.louv_width / 1000;
+      return [
+        {
+          item_name: `Louvre Frame ${v.louv_width}×${v.louv_height}`,
+          type: "material",
+          formula: "count",
+          waste_percent: 0,
+          description: `${v.louv_width}×${v.louv_height}mm louvre frame`,
+        },
+        {
+          item_name: `Louvre ${v.louv_blade_material === "glass" ? "Glass" : "Aluminum"} Blade`,
+          type: "material",
+          formula: `count * ${v.louv_num_blades}`,
+          waste_percent: 5,
+          description: `${v.louv_num_blades} blades per window`,
+        },
+        {
+          item_name: "Louvre Operator",
+          type: "material",
+          formula: "count",
+          waste_percent: 0,
+          description: "Operating mechanism per window",
+        },
+        {
+          item_name: "Labor - Louvre Install",
+          type: "labor",
+          formula: "count * 1.5",
+          waste_percent: 0,
+          description: "Installation labor (man-hours)",
+        },
+      ];
+    }
+
+    case "roof_truss": {
+      const trussSpacingM = v.truss_spacing / 1000;
+      const trussSpanM = v.truss_span / 1000;
+      // Rafter length = span/2 / cos(pitch)
+      const pitchRad = (v.truss_pitch * Math.PI) / 180;
+      const rafterLength = (trussSpanM / 2) / Math.cos(pitchRad);
+      const totalTrussLength = rafterLength * 2 + trussSpanM * 1.5; // simplified truss steel
+      const purlinSp = v.truss_purlin_spacing / 1000;
+      return [
+        {
+          item_name: `Angle Iron ${v.truss_steel_size}`,
+          type: "material",
+          formula: `(length / ${trussSpacingM}) * ${totalTrussLength.toFixed(3)}`,
+          waste_percent: 10,
+          description: `Steel for ${v.truss_type} trusses @ ${v.truss_spacing}mm spacing`,
+        },
+        {
+          item_name: "Bolt & Nut Set",
+          type: "material",
+          formula: `(length / ${trussSpacingM}) * 12`,
+          waste_percent: 5,
+          description: "Gusset plate bolts per truss",
+        },
+        {
+          item_name: "Gusset Plate",
+          type: "material",
+          formula: `(length / ${trussSpacingM}) * 4`,
+          waste_percent: 5,
+          description: "Gusset plates per truss",
+        },
+        ...(v.truss_include_purlins ? [{
+          item_name: "Purlin 2×4",
+          type: "material",
+          formula: `(${rafterLength.toFixed(3)} * 2 / ${purlinSp}) * length`,
+          waste_percent: 10,
+          description: `Purlins @ ${v.truss_purlin_spacing}mm`,
+        }] : []),
+        ...(v.truss_include_ridge ? [{
+          item_name: `Angle Iron ${v.truss_steel_size}`,
+          type: "material",
+          formula: "length * 1.05",
+          waste_percent: 5,
+          description: "Ridge beam",
+        }] : []),
+        {
+          item_name: "Labor - Steel Roofing",
+          type: "labor",
+          formula: `(length / ${trussSpacingM}) * 8`,
+          waste_percent: 0,
+          description: "Truss fabrication + erection (man-hours)",
+        },
+      ];
+    }
+
+    case "paving": {
+      const pt = v.paving_thickness / 1000;
+      const sbt = v.sub_base_thickness / 1000;
+      const comps: GeneratedComponent[] = [];
+      if (v.paving_sub_base) comps.push({
+        item_name: "Crusher Run / Marl",
+        type: "material",
+        formula: `length * width * ${sbt}`,
+        waste_percent: 10,
+        description: `${v.sub_base_thickness}mm sub-base compacted fill`,
+      });
+      if (v.paving_type === "concrete") {
+        comps.push({ item_name: "Ready Mix Concrete", type: "material", formula: `length * width * ${pt}`, waste_percent: 5, description: `${v.paving_thickness}mm concrete slab` });
+        comps.push({ item_name: `BRC Mesh 4x4 W4`, type: "material", formula: `length * width * 1.1 / 14.4`, waste_percent: 10, description: "BRC mesh reinforcement" });
+      } else if (v.paving_type === "pavers") {
+        comps.push({ item_name: "Concrete Paver", type: "material", formula: `length * width * 1.05 / 0.0929`, waste_percent: 5, description: "Paving blocks (each)" });
+        comps.push({ item_name: "Sand Bedding", type: "material", formula: `length * width * 0.05`, waste_percent: 10, description: "50mm sand bedding (m³)" });
+        comps.push({ item_name: "Jointing Sand", type: "material", formula: `length * width * 0.01`, waste_percent: 10, description: "Jointing sand (m³)" });
+      } else if (v.paving_type === "asphalt") {
+        comps.push({ item_name: "Asphalt", type: "material", formula: `length * width * ${pt} * 2.4`, waste_percent: 5, description: `${v.paving_thickness}mm asphalt (tonnes)` });
+      }
+      if (v.paving_include_curb) comps.push({
+        item_name: "Concrete Curb",
+        type: "material",
+        formula: "(length + width) * 2",
+        waste_percent: 5,
+        description: "Perimeter curbing (lf)",
+      });
+      comps.push({ item_name: "Labor - Paving", type: "labor", formula: "length * width * 0.3", waste_percent: 0, description: "Paving labor (man-hours)" });
+      return comps;
+    }
+
     default:
       return [];
   }
@@ -1079,9 +1589,12 @@ export default function AssemblyWizard({
     return generateComponents(elementType, values);
   }, [elementType, values]);
 
-  // Preview vars — a 3m x 3m x 3m element, matching the only variables the
-  // live formula evaluator (and every generated formula) actually uses.
-  const previewVars = { length: 3, width: 3, height: 3 };
+  // Preview vars — a 3m x 3m x 3m element, matching the variables the live
+  // formula evaluator recognizes (length/height/width), plus `count` for the
+  // count-type assemblies (doors, windows, fixtures) whose formulas use it —
+  // that one is only understood by this local preview, not yet by the real
+  // BOQ evaluator (see note below on evalAssemblyFormula's supported vars).
+  const previewVars = { length: 3, width: 3, height: 3, count: 1 };
 
   function buildConstants(type: string, v: WizardValues): Record<string, number> {
     const c: Record<string, number> = {};
@@ -1124,8 +1637,12 @@ export default function AssemblyWizard({
       // Explicit per-type mapping (not substring matching) since "wall" now
       // matches both block_wall (area-shaped formulas) and retaining_wall
       // (length-shaped formulas) — those need different measure types.
-      const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting"]);
-      const COUNT_TYPES = new Set(["staircase", "septic_tank"]);
+      // water_supply, drainage_piping and electrical_wiring are intentionally
+      // left out of AREA_TYPES — their formulas only reference `length` (a
+      // pipe/cable run), not `width`, so "linear" is the accurate tag; they
+      // fall through to the default below.
+      const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "paving"]);
+      const COUNT_TYPES = new Set(["staircase", "septic_tank", "plumbing_fixtures", "electrical_fitout", "door_solid", "window_aluminum", "window_louvre"]);
       const measureType = AREA_TYPES.has(elementType) ? "area"
         : COUNT_TYPES.has(elementType) ? "count"
         : "linear";
@@ -1222,7 +1739,7 @@ export default function AssemblyWizard({
           {/* STEP 1 — Pick type */}
           {step === "pick_type" && (
             <div className="space-y-5">
-              {["Structural", "Masonry", "Finishes", "Partitions", "External"].map(group => (
+              {["Structural", "Masonry", "Finishes", "Partitions", "Plumbing", "Electrical", "Doors & Windows", "Structural Steel", "External"].map(group => (
                 <div key={group}>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">{group}</p>
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
@@ -1654,6 +2171,296 @@ export default function AssemblyWizard({
                 </>
               )}
 
+              {/* Water Supply */}
+              {elementType === "water_supply" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter total pipe <strong>run length</strong> in the BOQ.
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Pipe material</label>
+                    <div className="flex gap-2">
+                      {["CPVC", "PEX", "Galvanized"].map(m => (
+                        <button key={m} type="button" onClick={() => set("water_pipe_material", m)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.water_pipe_material === m ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Pipe size</label>
+                    <div className="flex gap-2">
+                      {['1/2"', '3/4"', '1"'].map(s => (
+                        <button key={s} type="button" onClick={() => set("water_pipe_size", s)}
+                          className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${values.water_pipe_size === s ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Toggle label="Include fittings" value={values.water_include_fittings} onChange={v => set("water_include_fittings", v)}/>
+                </>
+              )}
+
+              {/* Drainage Piping */}
+              {elementType === "drainage_piping" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter total drain pipe <strong>run length</strong> in BOQ.
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Pipe size</label>
+                    <div className="flex gap-2">
+                      {['2"', '3"', '4"'].map(s => (
+                        <button key={s} type="button" onClick={() => set("drain_pipe_size", s)}
+                          className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${values.drain_pipe_size === s ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="No. of WC connections" value={values.drain_num_wc} onChange={v => set("drain_num_wc", v)}/>
+                    <NumInput label="No. of basin connections" value={values.drain_num_basins} onChange={v => set("drain_num_basins", v)}/>
+                  </div>
+                  <Toggle label="Include fittings" value={values.drain_include_fittings} onChange={v => set("drain_include_fittings", v)}/>
+                  <Toggle label="Include vent stack" value={values.drain_include_vent} onChange={v => set("drain_include_vent", v)}/>
+                </>
+              )}
+
+              {/* Plumbing Fixtures */}
+              {elementType === "plumbing_fixtures" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter <strong>count = 1</strong> per bathroom in the BOQ. Quantities are calculated from fixture counts below.
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Fixture grade</label>
+                    <div className="flex gap-2">
+                      {[["standard", "Standard"], ["mid", "Mid-Range"], ["premium", "Premium"]].map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => set("fixture_grade", key)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.fixture_grade === key ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Toilets (WC)" value={values.num_wc} onChange={v => set("num_wc", v)}/>
+                    <NumInput label="Wash basins" value={values.num_washbasin} onChange={v => set("num_washbasin", v)}/>
+                    <NumInput label="Showers" value={values.num_shower} onChange={v => set("num_shower", v)}/>
+                    <NumInput label="Bathtubs" value={values.num_bath} onChange={v => set("num_bath", v)}/>
+                  </div>
+                </>
+              )}
+
+              {/* Electrical Wiring */}
+              {elementType === "electrical_wiring" && (
+                <>
+                  <div className="p-3 rounded-xl bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-100 dark:border-yellow-500/20 text-xs text-yellow-600 dark:text-yellow-400">
+                    💡 Enter average circuit <strong>run length</strong> in BOQ. Number of circuits set below.
+                  </div>
+                  <NumInput label="Number of circuits" value={values.num_circuits} onChange={v => set("num_circuits", v)} hint="Lighting + power circuits"/>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Wire size</label>
+                    <div className="flex gap-2">
+                      {["12 AWG", "10 AWG", "8 AWG"].map(s => (
+                        <button key={s} type="button" onClick={() => set("wire_size", s)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.wire_size === s ? "border-yellow-500 bg-yellow-50 dark:bg-yellow-500/10 text-yellow-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Conduit type</label>
+                    <div className="flex gap-2">
+                      {["PVC", "EMT", "None"].map(c => (
+                        <button key={c} type="button" onClick={() => { set("conduit_type", c); set("include_conduit", c !== "None"); }}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.conduit_type === c ? "border-yellow-500 bg-yellow-50 dark:bg-yellow-500/10 text-yellow-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Electrical Fitout */}
+              {elementType === "electrical_fitout" && (
+                <>
+                  <div className="p-3 rounded-xl bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-100 dark:border-yellow-500/20 text-xs text-yellow-600 dark:text-yellow-400">
+                    💡 Enter <strong>count = 1</strong> per floor/zone in BOQ. All quantities from settings below.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Power outlets" value={values.num_outlets} onChange={v => set("num_outlets", v)}/>
+                    <NumInput label="Light switches" value={values.num_switches} onChange={v => set("num_switches", v)}/>
+                    <NumInput label="Light fittings" value={values.num_lights} onChange={v => set("num_lights", v)}/>
+                    <NumInput label="A/C points" value={values.num_ac_points} onChange={v => set("num_ac_points", v)}/>
+                  </div>
+                  <Toggle label="Include distribution board" value={values.include_db} onChange={v => set("include_db", v)}/>
+                  {values.include_db && (
+                    <NumInput label="Number of breakers" value={values.db_breakers} onChange={v => set("db_breakers", v)} hint="Typically 12 or 24 way"/>
+                  )}
+                </>
+              )}
+
+              {/* Door */}
+              {elementType === "door_solid" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter <strong>number of doors</strong> (count) in BOQ.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Door width" value={values.door_width} onChange={v => set("door_width", v)} unit="mm" hint="Typically 900mm"/>
+                    <NumInput label="Door height" value={values.door_height} onChange={v => set("door_height", v)} unit="mm" hint="Typically 2100mm"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Door type</label>
+                    <div className="flex gap-2">
+                      {[["solid-wood", "Solid Wood"], ["hollow-core", "Hollow Core"], ["steel", "Steel"]].map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => set("door_material", key)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.door_material === key ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Toggle label="Include door frame" value={values.door_include_frame} onChange={v => set("door_include_frame", v)}/>
+                  <Toggle label="Include hardware (hinges, lock)" value={values.door_include_hardware} onChange={v => set("door_include_hardware", v)}/>
+                  <Toggle label="Include painting" value={values.door_include_paint} onChange={v => set("door_include_paint", v)}/>
+                </>
+              )}
+
+              {/* Aluminum Window */}
+              {elementType === "window_aluminum" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter <strong>number of windows</strong> (count) in BOQ.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Width" value={values.win_width} onChange={v => set("win_width", v)} unit="mm"/>
+                    <NumInput label="Height" value={values.win_height} onChange={v => set("win_height", v)} unit="mm"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Window type</label>
+                    <div className="flex gap-2">
+                      {[["sliding", "Sliding"], ["casement", "Casement"], ["awning", "Awning"]].map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => set("win_type", key)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.win_type === key ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Glass type</label>
+                    <div className="flex gap-2">
+                      {["clear", "tinted", "frosted"].map(g => (
+                        <button key={g} type="button" onClick={() => set("win_glass", g)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 capitalize transition-colors ${values.win_glass === g ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Toggle label="Include security grille" value={values.win_include_grille} onChange={v => set("win_include_grille", v)}/>
+                </>
+              )}
+
+              {/* Louvre Window */}
+              {elementType === "window_louvre" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter <strong>number of louvre windows</strong> (count) in BOQ.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Width" value={values.louv_width} onChange={v => set("louv_width", v)} unit="mm"/>
+                    <NumInput label="Height" value={values.louv_height} onChange={v => set("louv_height", v)} unit="mm"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Blade material</label>
+                    <div className="flex gap-2">
+                      {[["glass", "Glass"], ["aluminum", "Aluminum"]].map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => set("louv_blade_material", key)}
+                          className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${values.louv_blade_material === key ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <NumInput label="Number of blades" value={values.louv_num_blades} onChange={v => set("louv_num_blades", v)} hint="Typically 4-8 blades"/>
+                </>
+              )}
+
+              {/* Roof Truss */}
+              {elementType === "roof_truss" && (
+                <>
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400">
+                    💡 Enter total <strong>roof length</strong> (ridge length) in BOQ. Span and spacing set below.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Building span" value={values.truss_span} onChange={v => set("truss_span", v)} unit="mm" hint="Width of building"/>
+                    <NumInput label="Truss spacing" value={values.truss_spacing} onChange={v => set("truss_spacing", v)} unit="mm" hint="Typically 1200mm"/>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Roof pitch" value={values.truss_pitch} onChange={v => set("truss_pitch", v)} unit="°" hint="Angle e.g. 25°"/>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Steel size</label>
+                      <select value={values.truss_steel_size} onChange={e => set("truss_steel_size", e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:outline-none">
+                        <option value="2x2x1/8">2×2×1/8" angle iron</option>
+                        <option value="2x3x3/16">2×3×3/16" angle iron</option>
+                        <option value="3x3x1/4">3×3×1/4" angle iron</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Truss type</label>
+                    <div className="flex gap-2">
+                      {[["fink", "Fink"], ["howe", "Howe"], ["mono-pitch", "Mono Pitch"]].map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => set("truss_type", key)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.truss_type === key ? "border-slate-700 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Toggle label="Include purlins" value={values.truss_include_purlins} onChange={v => set("truss_include_purlins", v)}/>
+                  {values.truss_include_purlins && (
+                    <NumInput label="Purlin spacing" value={values.truss_purlin_spacing} onChange={v => set("truss_purlin_spacing", v)} unit="mm"/>
+                  )}
+                  <Toggle label="Include ridge beam" value={values.truss_include_ridge} onChange={v => set("truss_include_ridge", v)}/>
+                </>
+              )}
+
+              {/* Paving */}
+              {elementType === "paving" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Enter paved area <strong>length × width</strong> in BOQ.
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Paving type</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[["concrete", "Concrete"], ["pavers", "Concrete Pavers"], ["asphalt", "Asphalt"], ["tiles", "Outdoor Tiles"]].map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => set("paving_type", key)}
+                          className={`py-2.5 rounded-lg text-xs font-semibold border-2 transition-colors ${values.paving_type === key ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <NumInput label="Thickness" value={values.paving_thickness} onChange={v => set("paving_thickness", v)} unit="mm" hint="Concrete: 100-150mm"/>
+                  <Toggle label="Include sub-base" value={values.paving_sub_base} onChange={v => set("paving_sub_base", v)}/>
+                  {values.paving_sub_base && (
+                    <NumInput label="Sub-base thickness" value={values.sub_base_thickness} onChange={v => set("sub_base_thickness", v)} unit="mm" hint="Typically 150mm crusher run"/>
+                  )}
+                  <Toggle label="Include perimeter curb" value={values.paving_include_curb} onChange={v => set("paving_include_curb", v)}/>
+                </>
+              )}
+
               {/* Staircase fields */}
               {elementType === "staircase" && (
                 <>
@@ -1738,7 +2545,7 @@ export default function AssemblyWizard({
 
               {/* Common options — only structural types actually consume these;
                   block_wall and the finish trades don't reference them at all. */}
-              {!["block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "chain_link", "septic_tank", "drain_gutter"].includes(elementType) && (
+              {!["block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "chain_link", "septic_tank", "drain_gutter", "water_supply", "drainage_piping", "plumbing_fixtures", "electrical_wiring", "electrical_fitout", "door_solid", "window_aluminum", "window_louvre", "roof_truss", "paving"].includes(elementType) && (
                 <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-1">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Include in Assembly</p>
                   <Toggle label="Ready Mix Concrete" value={values.include_concrete} onChange={v => set("include_concrete", v)}/>
