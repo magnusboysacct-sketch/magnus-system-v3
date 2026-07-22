@@ -2115,14 +2115,49 @@ export default function AssemblyWizard({
       const unmatched: string[] = [];
       let sortOrder = 0;
       for (const comp of components) {
-        const { data: items } = await supabase
+        let costItemId: string | null = null;
+
+        // Strategy 1: exact item_name match
+        const { data: exact } = await supabase
           .from("cost_items")
           .select("id")
           .eq("company_id", companyId)
-          .ilike("item_name", `%${comp.item_name}%`)
+          .ilike("item_name", comp.item_name)
           .limit(1);
+        if (exact?.[0]) costItemId = exact[0].id;
 
-        const costItemId = items?.[0]?.id;
+        // Strategy 2: match base name (e.g. "Rebar" for "Rebar #4") against variant/grade
+        if (!costItemId) {
+          const baseName = comp.item_name.split(" ")[0];
+          const sizeSpec = comp.item_name.split(" ").slice(1).join(" ");
+          const { data: byBase } = await supabase
+            .from("cost_items")
+            .select("id, item_name, variant, grade")
+            .eq("company_id", companyId)
+            .ilike("item_name", `%${baseName}%`)
+            .limit(10);
+          const match = (byBase as any[] | null)?.find(i =>
+            (i.variant || "").toLowerCase().includes(sizeSpec.toLowerCase()) ||
+            (i.grade || "").toLowerCase().includes(sizeSpec.toLowerCase()) ||
+            i.item_name.toLowerCase().includes(sizeSpec.toLowerCase())
+          );
+          if (match) costItemId = match.id;
+        }
+
+        // Strategy 3: partial name match on any significant word
+        if (!costItemId) {
+          const words = comp.item_name.split(" ").filter(w => w.length > 2);
+          for (const word of words) {
+            const { data: partial } = await supabase
+              .from("cost_items")
+              .select("id")
+              .eq("company_id", companyId)
+              .ilike("item_name", `%${word}%`)
+              .limit(1);
+            if (partial?.[0]) { costItemId = partial[0].id; break; }
+          }
+        }
+
         if (!costItemId) { unmatched.push(comp.item_name); continue; }
 
         await supabase.from("assembly_components").insert({

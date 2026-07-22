@@ -73,6 +73,16 @@ type BOQItemRow = {
   // so procurement/estimate generation keep reading them unchanged.
   assembly_instance_id?: string | null;
   assembly_name?: string | null;
+  // Master measurement inheritance — set on every component row when the
+  // assembly group's master measurement is applied; a component keeps its
+  // own qty once `measurement_overridden` is set, ignoring the master.
+  assembly_master_length?: number | null;
+  assembly_master_width?: number | null;
+  assembly_master_height?: number | null;
+  assembly_master_set?: boolean;
+  component_formula?: string | null;
+  component_waste_percent?: number | null;
+  measurement_overridden?: boolean;
 };
 
 type Section = {
@@ -1077,6 +1087,13 @@ export default function BOQPage() {
   function deleteAssemblyGroup(sectionId: string, instanceId: string) {
     setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: s.items.filter(it => it.assembly_instance_id !== instanceId) }));
   }
+  // Master measurement — one measurement drives every non-overridden component's qty.
+  const [assemblyMasterMeasModal, setAssemblyMasterMeasModal] = useState<{
+    instanceId: string;
+    assemblyName: string;
+    unit: string;
+    currentRows: MeasurementRow[];
+  } | null>(null);
 
   const [importTakeoffModal, setImportTakeoffModal] = useState<{ open: boolean; sectionId: string | null; itemId: string | null }>({ open: false, sectionId: null, itemId: null });
   const [measureModal, setMeasureModal] = useState<{
@@ -1424,7 +1441,8 @@ useEffect(() => {
 
   async function applyMeasurements(sectionId: string, itemId: string, rows: MeasurementRow[], total: number) {
     const qty = Math.max(0, total);
-    updateItem(sectionId, itemId, { qty, measurements: rows });
+    // A component that gets its own measurement set opts out of master-measurement inheritance.
+    updateItem(sectionId, itemId, { qty, measurements: rows, measurement_overridden: true });
     setMeasureModal(null);
     // Best-effort persist: no-ops silently if the item hasn't been saved to
     // boq_section_items yet — the next saveBoq() will include it via itemPayload.
@@ -1433,6 +1451,58 @@ useEffect(() => {
       .update({ measurements: rows, qty })
       .eq("id", itemId);
     if (error) console.error("Failed to persist measurements:", error);
+  }
+
+  function applyMasterMeasurement(instanceId: string, rows: MeasurementRow[], grandTotal: number) {
+    setAssemblyMasterMeasModal(null);
+
+    const firstRow = rows.find(r => !r.deduct) || rows[0];
+    const masterLength = (Number(firstRow?.lengthFt) || 0) + (Number(firstRow?.lengthIn) || 0) / 12;
+    const masterWidth = (Number(firstRow?.widthFt) || 0) + (Number(firstRow?.widthIn) || 0) / 12;
+    const masterHeight = (Number(firstRow?.heightFt) || 0) + (Number(firstRow?.heightIn) || 0) / 12;
+
+    const vars: Record<string, number> = {
+      length: masterLength || grandTotal,
+      width: masterWidth || 1,
+      height: masterHeight || 1,
+      area: grandTotal,
+      volume: grandTotal,
+      count: grandTotal,
+    };
+
+    setSections(prev => prev.map(section => ({
+      ...section,
+      items: section.items.map(item => {
+        if (item.assembly_instance_id !== instanceId) return item;
+        // Skip items that have been manually overridden with their own measurement.
+        if (item.measurement_overridden) return item;
+
+        let newQty = grandTotal;
+        if (item.component_formula) {
+          try {
+            let expr = item.component_formula;
+            Object.entries(vars).forEach(([k, val]) => {
+              expr = expr.replace(new RegExp(`\\b${k}\\b`, "g"), String(val));
+            });
+            if (/^[\d\s\+\-\*\/\.\(\)]+$/.test(expr)) {
+              // eslint-disable-next-line no-new-func
+              newQty = Function(`"use strict"; return (${expr})`)() as number;
+              newQty = newQty * (1 + (item.component_waste_percent || 0) / 100);
+            }
+          } catch { /* keep grandTotal */ }
+        }
+
+        return {
+          ...item,
+          qty: Math.round(newQty * 100) / 100,
+          assembly_master_length: masterLength,
+          assembly_master_width: masterWidth,
+          assembly_master_height: masterHeight,
+          assembly_master_set: true,
+          measurements: rows,
+        };
+      }),
+    })));
   }
 
   // --- Find Item Handler -----------------------------------------------------
@@ -1606,6 +1676,13 @@ function explodeAssembly(
         rate_source: "assembly",
         assembly_instance_id: instanceId,
         assembly_name: assemblyName || null,
+        component_formula: formula,
+        component_waste_percent: numOr(c.waste_percent, 0),
+        measurement_overridden: false,
+        assembly_master_set: false,
+        assembly_master_length: null,
+        assembly_master_width: null,
+        assembly_master_height: null,
       };
     })
     .filter(Boolean) as BOQItemRow[];
@@ -2077,6 +2154,14 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                         📐
                                       </button>
                                     )}
+                                    {canEdit && item.assembly_instance_id && item.measurement_overridden && (
+                                      <button
+                                        onClick={() => updateItem(section.id, item.id, { measurement_overridden: false })}
+                                        className="text-[9px] text-amber-500 hover:text-amber-600 px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-500/10 font-medium flex-shrink-0"
+                                        title="Remove override — inherit from assembly master measurement">
+                                        ↩ Reset
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                                 <div className="flex-shrink-0 w-24">
@@ -2119,11 +2204,33 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                       <X size={14}/>
                                     </button>
                                   </div>
-                                  <div className="flex items-center justify-between">
-                                    <button onClick={() => toggleAssemblyExpanded(group.instanceId)}
-                                      className={`text-[10px] px-2 py-1 rounded-full font-semibold transition-colors ${expanded ? "bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>
-                                      {expanded ? "▲ Hide" : "▼"} {group.items.length} component{group.items.length !== 1 ? "s" : ""}
-                                    </button>
+                                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <div className="flex items-center gap-1.5">
+                                      <button onClick={() => toggleAssemblyExpanded(group.instanceId)}
+                                        className={`text-[10px] px-2 py-1 rounded-full font-semibold transition-colors ${expanded ? "bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>
+                                        {expanded ? "▲ Hide" : "▼"} {group.items.length} component{group.items.length !== 1 ? "s" : ""}
+                                      </button>
+                                      {(() => {
+                                        const masterSet = group.items.find(i => i.assembly_master_set);
+                                        return (
+                                          <button
+                                            onClick={() => setAssemblyMasterMeasModal({
+                                              instanceId: group.instanceId,
+                                              assemblyName: group.name,
+                                              unit: "m",
+                                              currentRows: masterSet?.measurements?.length ? masterSet.measurements : [{
+                                                id: safeId(), description: "", qty: 1,
+                                                lengthFt: "", lengthIn: "", widthFt: "", widthIn: "", heightFt: "", heightIn: "",
+                                                total: 0, deduct: false,
+                                              }],
+                                            })}
+                                            disabled={!canEdit}
+                                            className={`text-[10px] px-2 py-1 rounded-full font-semibold transition-colors disabled:opacity-40 ${masterSet ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>
+                                            📐 {masterSet ? `${masterSet.assembly_master_length?.toFixed(1)}m` : "Measure"}
+                                          </button>
+                                        );
+                                      })()}
+                                    </div>
                                     <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{fmtMoney(total)}</span>
                                   </div>
                                 </div>
@@ -2253,6 +2360,14 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                   📐
                                 </button>
                               )}
+                              {canEdit && item.assembly_instance_id && item.measurement_overridden && (
+                                <button
+                                  onClick={() => updateItem(section.id, item.id, { measurement_overridden: false })}
+                                  className="text-[9px] text-amber-500 hover:text-amber-600 px-1 py-0.5 rounded bg-amber-50 dark:bg-amber-500/10 font-medium flex-shrink-0"
+                                  title="Remove override — inherit from assembly master measurement">
+                                  ↩
+                                </button>
+                              )}
                             </div>
 
                             {/* Rate */}
@@ -2296,6 +2411,27 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                       className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold transition-colors flex-shrink-0 ${expanded ? "bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400" : "bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-purple-50 dark:hover:bg-purple-500/10 hover:text-purple-500"}`}>
                                       {expanded ? "▲ Hide" : "▼ Breakdown"}
                                     </button>
+                                    {(() => {
+                                      const masterSet = group.items.find(i => i.assembly_master_set);
+                                      return (
+                                        <button
+                                          onClick={() => setAssemblyMasterMeasModal({
+                                            instanceId: group.instanceId,
+                                            assemblyName: group.name,
+                                            unit: "m",
+                                            currentRows: masterSet?.measurements?.length ? masterSet.measurements : [{
+                                              id: safeId(), description: "", qty: 1,
+                                              lengthFt: "", lengthIn: "", widthFt: "", widthIn: "", heightFt: "", heightIn: "",
+                                              total: 0, deduct: false,
+                                            }],
+                                          })}
+                                          disabled={!canEdit}
+                                          className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold transition-colors flex-shrink-0 disabled:opacity-40 ${masterSet ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400" : "bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 hover:text-blue-500"}`}
+                                          title="Set master measurement for all components">
+                                          📐 {masterSet ? `${masterSet.assembly_master_length?.toFixed(1)}m` : "Measure"}
+                                        </button>
+                                      );
+                                    })()}
                                   </div>
                                   <div className="text-[10px] text-slate-400 mt-0.5">{group.items.length} component{group.items.length !== 1 ? "s" : ""}</div>
                                 </div>
@@ -2553,6 +2689,23 @@ Answer briefly and practically. If they ask to add items, explain they need to u
           modal={measureModal}
           onClose={() => setMeasureModal(null)}
           onApply={applyMeasurements}
+          rateItems={rateItems}
+        />
+      )}
+
+      {/* -- Assembly master measurement modal -- */}
+      {assemblyMasterMeasModal && (
+        <MeasurementModal
+          modal={{
+            sectionId: "",
+            itemId: assemblyMasterMeasModal.instanceId,
+            itemName: assemblyMasterMeasModal.assemblyName,
+            unit: assemblyMasterMeasModal.unit,
+            costItemId: null,
+            rows: assemblyMasterMeasModal.currentRows,
+          }}
+          onClose={() => setAssemblyMasterMeasModal(null)}
+          onApply={(_sectionId, _itemId, rows, total) => applyMasterMeasurement(assemblyMasterMeasModal.instanceId, rows, total)}
           rateItems={rateItems}
         />
       )}
