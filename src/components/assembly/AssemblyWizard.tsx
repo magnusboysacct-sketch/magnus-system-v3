@@ -41,6 +41,13 @@ const ELEMENT_TYPES = [
   { key: "painting",      label: "Painting",         icon: "🎨", group: "Finishes",    category: "Painting" },
   { key: "ceiling",       label: "Ceiling",          icon: "⬆️", group: "Finishes",    category: "Ceiling" },
   { key: "roofing",       label: "Roofing",          icon: "🏠", group: "Finishes",    category: "Roofing" },
+  { key: "rough_render",    label: "Rough Render",      icon: "🪨", group: "Finishes", category: "Plastering" },
+  { key: "float_coat",      label: "Float Coat",         icon: "🪣", group: "Finishes", category: "Plastering" },
+  { key: "skim_coat",       label: "Skim Coat",          icon: "✨", group: "Finishes", category: "Plastering" },
+  { key: "floor_screed",    label: "Floor Screed",       icon: "🔲", group: "Finishes", category: "Plastering" },
+  { key: "waterproof_render", label: "Waterproof Render", icon: "💧", group: "Finishes", category: "Plastering" },
+  { key: "tyrolean",        label: "Tyrolean/Roughcast", icon: "🏚️", group: "Finishes", category: "Plastering" },
+  { key: "wall_tiling",     label: "Wall Tiling",        icon: "🟦", group: "Finishes", category: "Tiling & Flooring" },
   { key: "ground_slab",   label: "Ground Floor Slab",icon: "⬜", group: "Structural",  category: "Concrete Works" },
   // Partitions
   { key: "drywall_partition", label: "Drywall Partition", icon: "🏢", group: "Partitions", category: "Drywall & Plastering" },
@@ -318,6 +325,40 @@ interface WizardValues {
   include_backfill: boolean;        // backfill after foundation
   backfill_percent: number;         // % of excavation to backfill
   include_compaction: boolean;      // compact backfill
+
+  // Rough render
+  rough_render_thickness: number;   // mm typically 15
+  rough_render_mix: string;         // "1:3" "1:4"
+
+  // Float coat
+  float_thickness: number;          // mm typically 10
+  float_mix: string;                // "1:3" "1:4"
+
+  // Skim coat
+  skim_thickness: number;           // mm typically 3-5
+  skim_type: string;                // "cement-lime" "gypsum"
+
+  // Floor screed
+  screed_thickness: number;         // mm typically 50-75
+  screed_mix: string;               // "1:3" "1:4"
+  screed_reinforced: boolean;       // include wire mesh
+  screed_finish: string;            // "steel-trowel" "wood-float" "power-float"
+
+  // Waterproof render
+  waterproof_coats: number;         // typically 2
+  waterproof_thickness: number;     // mm per coat
+  waterproof_additive: string;      // "sika" "aquaseal" "hydrostop"
+
+  // Tyrolean
+  tyrolean_coats: number;           // typically 2-3
+  tyrolean_type: string;            // "machine" "hand"
+
+  // Wall tiling
+  wall_tile_size: string;           // "4x4" "6x6" "8x10" "12x24"
+  wall_tile_waste: number;          // % waste
+  wall_include_adhesive: boolean;
+  wall_include_grout: boolean;
+  wall_include_trim: boolean;       // edge trim tiles
 }
 
 const DEFAULT_VALUES: WizardValues = {
@@ -470,6 +511,26 @@ const DEFAULT_VALUES: WizardValues = {
   include_backfill: true,
   backfill_percent: 30,
   include_compaction: true,
+  rough_render_thickness: 15,
+  rough_render_mix: "1:3",
+  float_thickness: 10,
+  float_mix: "1:4",
+  skim_thickness: 4,
+  skim_type: "cement-lime",
+  screed_thickness: 50,
+  screed_mix: "1:3",
+  screed_reinforced: false,
+  screed_finish: "steel-trowel",
+  waterproof_coats: 2,
+  waterproof_thickness: 6,
+  waterproof_additive: "sika",
+  tyrolean_coats: 2,
+  tyrolean_type: "machine",
+  wall_tile_size: "8x10",
+  wall_tile_waste: 10,
+  wall_include_adhesive: true,
+  wall_include_grout: true,
+  wall_include_trim: true,
 };
 
 // ─── Component generator ───────────────────────────────────────────────────
@@ -1619,6 +1680,256 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       return comps;
     }
 
+    case "rough_render": {
+      // Mix ratio determines cement:sand quantities
+      // 1:3 mix — 1 bag cement covers approx 8 sf at 15mm thick
+      // Sand — approx 0.028 m³ per m² at 15mm
+      const thicknessFactor = v.rough_render_thickness / 15;
+      const mixFactor = v.rough_render_mix === "1:3" ? 1 : 0.8;
+      return [
+        {
+          item_name: "Portland Cement",
+          type: "material",
+          formula: `length * height * ${(0.086 * thicknessFactor * mixFactor).toFixed(4)}`,
+          waste_percent: 10,
+          description: `Cement for ${v.rough_render_mix} render at ${v.rough_render_thickness}mm (bags)`,
+        },
+        {
+          item_name: "Sharp Sand",
+          type: "material",
+          formula: `length * height * ${(0.028 * thicknessFactor).toFixed(4)}`,
+          waste_percent: 10,
+          description: `Sharp sand for rough render (m³)`,
+        },
+        {
+          item_name: "Labor - Rendering",
+          type: "labor",
+          formula: "length * height * 0.6",
+          waste_percent: 0,
+          description: "Rough render labor (man-hours)",
+        },
+      ];
+    }
+
+    case "float_coat": {
+      const thicknessFactor = v.float_thickness / 10;
+      const mixFactor = v.float_mix === "1:3" ? 1 : 0.8;
+      return [
+        {
+          item_name: "Portland Cement",
+          type: "material",
+          formula: `length * height * ${(0.057 * thicknessFactor * mixFactor).toFixed(4)}`,
+          waste_percent: 10,
+          description: `Cement for ${v.float_mix} float coat at ${v.float_thickness}mm (bags)`,
+        },
+        {
+          item_name: "Fine Sand",
+          type: "material",
+          formula: `length * height * ${(0.019 * thicknessFactor).toFixed(4)}`,
+          waste_percent: 10,
+          description: "Fine sand for float coat (m³)",
+        },
+        {
+          item_name: "Labor - Float Coat",
+          type: "labor",
+          formula: "length * height * 0.5",
+          waste_percent: 0,
+          description: "Float coat labor (man-hours)",
+        },
+      ];
+    }
+
+    case "skim_coat": {
+      const isGypsum = v.skim_type === "gypsum";
+      return [
+        ...(isGypsum ? [{
+          item_name: "Gypsum Plaster",
+          type: "material",
+          formula: "length * height * 0.008",
+          waste_percent: 10,
+          description: `Gypsum skim at ${v.skim_thickness}mm (bags)`,
+        }] : [
+          {
+            item_name: "Portland Cement",
+            type: "material",
+            formula: "length * height * 0.025",
+            waste_percent: 10,
+            description: "Cement for skim coat (bags)",
+          },
+          {
+            item_name: "Hydrated Lime",
+            type: "material",
+            formula: "length * height * 0.012",
+            waste_percent: 10,
+            description: "Lime for skim coat (bags)",
+          },
+        ]),
+        {
+          item_name: "Labor - Skim Coat",
+          type: "labor",
+          formula: "length * height * 0.4",
+          waste_percent: 0,
+          description: "Skim coat labor (man-hours) — fine finish",
+        },
+      ];
+    }
+
+    case "floor_screed": {
+      const st = v.screed_thickness / 1000;
+      const mixFactor = v.screed_mix === "1:3" ? 1 : 0.8;
+      const comps: GeneratedComponent[] = [
+        {
+          item_name: "Portland Cement",
+          type: "material",
+          formula: `length * width * ${(st * 300 * mixFactor).toFixed(3)}`,
+          waste_percent: 10,
+          description: `Cement for ${v.screed_mix} screed at ${v.screed_thickness}mm (bags)`,
+        },
+        {
+          item_name: "Sharp Sand",
+          type: "material",
+          formula: `length * width * ${st.toFixed(4)}`,
+          waste_percent: 10,
+          description: `Sand for floor screed (m³)`,
+        },
+      ];
+      if (v.screed_reinforced) comps.push({
+        item_name: "Wire Mesh (Chicken Wire)",
+        type: "material",
+        formula: "length * width * 1.1",
+        waste_percent: 10,
+        description: "Light mesh reinforcement (m²)",
+      });
+      comps.push({
+        item_name: "Labor - Floor Screed",
+        type: "labor",
+        formula: `length * width * ${v.screed_finish === "power-float" ? 0.3 : 0.5}`,
+        waste_percent: 0,
+        description: `${v.screed_finish} finish screed labor (man-hours)`,
+      });
+      if (v.screed_finish === "power-float") comps.push({
+        item_name: "Power Float Hire",
+        type: "equipment",
+        formula: "length * width * 0.05",
+        waste_percent: 0,
+        description: "Power float machine hire (hours)",
+      });
+      return comps;
+    }
+
+    case "waterproof_render": {
+      const wpFactor = v.waterproof_coats * (v.waterproof_thickness / 6);
+      return [
+        {
+          item_name: "Portland Cement",
+          type: "material",
+          formula: `length * height * ${(0.057 * wpFactor).toFixed(4)}`,
+          waste_percent: 10,
+          description: `Cement for waterproof render ${v.waterproof_coats} coat(s) (bags)`,
+        },
+        {
+          item_name: "Fine Sand",
+          type: "material",
+          formula: `length * height * ${(0.019 * wpFactor).toFixed(4)}`,
+          waste_percent: 10,
+          description: "Sand for waterproof render (m³)",
+        },
+        {
+          item_name: `Waterproof Additive (${v.waterproof_additive})`,
+          type: "material",
+          formula: `length * height * ${(0.15 * v.waterproof_coats).toFixed(3)}`,
+          waste_percent: 5,
+          description: `${v.waterproof_additive} waterproofing additive (litres)`,
+        },
+        {
+          item_name: "Labor - Waterproof Render",
+          type: "labor",
+          formula: `length * height * ${(0.5 * v.waterproof_coats).toFixed(2)}`,
+          waste_percent: 0,
+          description: `Waterproof render labor — ${v.waterproof_coats} coats (man-hours)`,
+        },
+      ];
+    }
+
+    case "tyrolean": {
+      return [
+        {
+          item_name: "Portland Cement",
+          type: "material",
+          formula: `length * height * ${(0.04 * v.tyrolean_coats).toFixed(3)}`,
+          waste_percent: 15,
+          description: `Cement for tyrolean ${v.tyrolean_coats} coat(s) (bags)`,
+        },
+        {
+          item_name: "Fine Aggregate / Pea Gravel",
+          type: "material",
+          formula: `length * height * ${(0.012 * v.tyrolean_coats).toFixed(4)}`,
+          waste_percent: 15,
+          description: "Fine aggregate for tyrolean texture (m³)",
+        },
+        ...(v.tyrolean_type === "machine" ? [{
+          item_name: "Tyrolean Machine Hire",
+          type: "equipment" as const,
+          formula: `length * height * 0.05`,
+          waste_percent: 0,
+          description: "Tyrolean projector machine hire (hours)",
+        }] : []),
+        {
+          item_name: "Labor - Tyrolean",
+          type: "labor",
+          formula: `length * height * ${v.tyrolean_type === "machine" ? 0.3 : 0.6}`,
+          waste_percent: 0,
+          description: `${v.tyrolean_type === "machine" ? "Machine" : "Hand"} tyrolean labor (man-hours)`,
+        },
+      ];
+    }
+
+    case "wall_tiling": {
+      // Tiles per sf based on size
+      const tileSizeMap: Record<string, number> = {
+        "4x4": 9, "6x6": 4, "8x10": 1.8, "12x24": 0.5,
+      };
+      const tilesPerSqFt = tileSizeMap[v.wall_tile_size] || 1.8;
+      const comps: GeneratedComponent[] = [
+        {
+          item_name: `Ceramic Wall Tile ${v.wall_tile_size}"`,
+          type: "material",
+          formula: `length * height * ${tilesPerSqFt} * ${1 + v.wall_tile_waste / 100}`,
+          waste_percent: 0,
+          description: `${v.wall_tile_size}" wall tiles with ${v.wall_tile_waste}% waste`,
+        },
+      ];
+      if (v.wall_include_adhesive) comps.push({
+        item_name: "Wall Tile Adhesive",
+        type: "material",
+        formula: "length * height * 0.05",
+        waste_percent: 5,
+        description: "Tile adhesive (bags)",
+      });
+      if (v.wall_include_grout) comps.push({
+        item_name: "Tile Grout",
+        type: "material",
+        formula: "length * height * 0.012",
+        waste_percent: 5,
+        description: "Tile grout (bags)",
+      });
+      if (v.wall_include_trim) comps.push({
+        item_name: "Edge Trim / Tile Bead",
+        type: "material",
+        formula: "(length + height) * 2 * 1.1",
+        waste_percent: 10,
+        description: "Perimeter edge trim (lf)",
+      });
+      comps.push({
+        item_name: "Labor - Wall Tiling",
+        type: "labor",
+        formula: "length * height * 1.0",
+        waste_percent: 0,
+        description: "Wall tiling labor (man-hours)",
+      });
+      return comps;
+    }
+
     default:
       return [];
   }
@@ -1770,7 +2081,7 @@ export default function AssemblyWizard({
       // left out of AREA_TYPES — their formulas only reference `length` (a
       // pipe/cable run), not `width`, so "linear" is the accurate tag; they
       // fall through to the default below.
-      const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "paving"]);
+      const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "paving", "rough_render", "float_coat", "skim_coat", "floor_screed", "waterproof_render", "tyrolean", "wall_tiling"]);
       const COUNT_TYPES = new Set(["staircase", "septic_tank", "plumbing_fixtures", "electrical_fitout", "door_solid", "window_aluminum", "window_louvre"]);
       const measureType = AREA_TYPES.has(elementType) ? "area"
         : COUNT_TYPES.has(elementType) ? "count"
@@ -2221,6 +2532,177 @@ export default function AssemblyWizard({
                     <NumInput label="Purlin spacing" value={values.purlin_spacing} onChange={v => set("purlin_spacing", v)} unit="mm" hint="Typically 600mm"/>
                   )}
                   <Toggle label="Include ridge cap" value={values.include_ridge} onChange={v => set("include_ridge", v)}/>
+                </>
+              )}
+
+              {/* Rough Render */}
+              {elementType === "rough_render" && (
+                <>
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400">
+                    💡 First coat applied directly to block wall. Provides key/bond for float coat. Enter wall <strong>length × height</strong> in BOQ.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Thickness" value={values.rough_render_thickness} onChange={v => set("rough_render_thickness", v)} unit="mm" hint="Typically 12-15mm"/>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Mix ratio (cement:sand)</label>
+                      <div className="flex gap-2">
+                        {["1:3", "1:4"].map(m => (
+                          <button key={m} type="button" onClick={() => set("rough_render_mix", m)}
+                            className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${values.rough_render_mix === m ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Float Coat */}
+              {elementType === "float_coat" && (
+                <>
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400">
+                    💡 Second coat over rough render. Produces smooth even surface ready for skim or paint. Enter wall <strong>length × height</strong> in BOQ.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Thickness" value={values.float_thickness} onChange={v => set("float_thickness", v)} unit="mm" hint="Typically 8-10mm"/>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Mix ratio</label>
+                      <div className="flex gap-2">
+                        {["1:3", "1:4"].map(m => (
+                          <button key={m} type="button" onClick={() => set("float_mix", m)}
+                            className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${values.float_mix === m ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Skim Coat */}
+              {elementType === "skim_coat" && (
+                <>
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400">
+                    💡 Ultra-thin final coat giving a perfectly smooth surface before painting. Enter wall <strong>length × height</strong> in BOQ.
+                  </div>
+                  <NumInput label="Thickness" value={values.skim_thickness} onChange={v => set("skim_thickness", v)} unit="mm" hint="Typically 3-5mm"/>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Skim type</label>
+                    <div className="flex gap-2">
+                      {[["cement-lime", "Cement + Lime"], ["gypsum", "Gypsum Plaster"]].map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => set("skim_type", key)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.skim_type === key ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Floor Screed */}
+              {elementType === "floor_screed" && (
+                <>
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400">
+                    💡 Levelling layer applied over concrete slab before floor finish. Enter floor <strong>length × width</strong> in BOQ.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Thickness" value={values.screed_thickness} onChange={v => set("screed_thickness", v)} unit="mm" hint="Typically 50-75mm"/>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Mix ratio</label>
+                      <div className="flex gap-2">
+                        {["1:3", "1:4"].map(m => (
+                          <button key={m} type="button" onClick={() => set("screed_mix", m)}
+                            className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.screed_mix === m ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Surface finish</label>
+                    <div className="flex gap-2">
+                      {[["steel-trowel", "Steel Trowel"], ["wood-float", "Wood Float"], ["power-float", "Power Float"]].map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => set("screed_finish", key)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.screed_finish === key ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Toggle label="Include wire mesh reinforcement" value={values.screed_reinforced} onChange={v => set("screed_reinforced", v)}/>
+                </>
+              )}
+
+              {/* Waterproof Render */}
+              {elementType === "waterproof_render" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 Used in wet areas — bathrooms, basements, water tanks, retaining walls. Enter <strong>length × height</strong> in BOQ.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Number of coats" value={values.waterproof_coats} onChange={v => set("waterproof_coats", v)} hint="Typically 2 coats"/>
+                    <NumInput label="Thickness per coat" value={values.waterproof_thickness} onChange={v => set("waterproof_thickness", v)} unit="mm" hint="Typically 6mm per coat"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Waterproofing additive</label>
+                    <div className="flex gap-2">
+                      {["Sika", "Aquaseal", "Hydrostop", "Febmix"].map(a => (
+                        <button key={a} type="button" onClick={() => set("waterproof_additive", a.toLowerCase())}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.waterproof_additive === a.toLowerCase() ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {a}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Tyrolean */}
+              {elementType === "tyrolean" && (
+                <>
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400">
+                    💡 Decorative textured exterior finish. Applied over float coat. Enter wall <strong>length × height</strong> in BOQ.
+                  </div>
+                  <NumInput label="Number of coats" value={values.tyrolean_coats} onChange={v => set("tyrolean_coats", v)} hint="Typically 2-3 coats for full coverage"/>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Application method</label>
+                    <div className="flex gap-2">
+                      {[["machine", "Machine Projector"], ["hand", "Hand Applied"]].map(([key, label]) => (
+                        <button key={key} type="button" onClick={() => set("tyrolean_type", key)}
+                          className={`flex-1 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${values.tyrolean_type === key ? "border-slate-700 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                            {label}
+                          </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Wall Tiling */}
+              {elementType === "wall_tiling" && (
+                <>
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+                    💡 For bathroom and kitchen walls. Different from floor tiling. Enter wall <strong>length × height</strong> in BOQ.
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Tile size</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {["4x4", "6x6", "8x10", "12x24"].map(s => (
+                        <button key={s} type="button" onClick={() => set("wall_tile_size", s)}
+                          className={`py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.wall_tile_size === s ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {s}"
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <NumInput label="Waste %" value={values.wall_tile_waste} onChange={v => set("wall_tile_waste", v)} hint="10% straight lay, 15% diagonal"/>
+                  <Toggle label="Include tile adhesive" value={values.wall_include_adhesive} onChange={v => set("wall_include_adhesive", v)}/>
+                  <Toggle label="Include grout" value={values.wall_include_grout} onChange={v => set("wall_include_grout", v)}/>
+                  <Toggle label="Include edge trim" value={values.wall_include_trim} onChange={v => set("wall_include_trim", v)}/>
                 </>
               )}
 
@@ -2734,7 +3216,7 @@ export default function AssemblyWizard({
 
               {/* Common options — only structural types actually consume these;
                   block_wall and the finish trades don't reference them at all. */}
-              {!["setting_out", "excavation", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "chain_link", "septic_tank", "drain_gutter", "water_supply", "drainage_piping", "plumbing_fixtures", "electrical_wiring", "electrical_fitout", "door_solid", "window_aluminum", "window_louvre", "roof_truss", "paving"].includes(elementType) && (
+              {!["setting_out", "excavation", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "chain_link", "septic_tank", "drain_gutter", "water_supply", "drainage_piping", "plumbing_fixtures", "electrical_wiring", "electrical_fitout", "door_solid", "window_aluminum", "window_louvre", "roof_truss", "paving", "rough_render", "float_coat", "skim_coat", "floor_screed", "waterproof_render", "tyrolean", "wall_tiling"].includes(elementType) && (
                 <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-1">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Include in Assembly</p>
                   <Toggle label="Ready Mix Concrete" value={values.include_concrete} onChange={v => set("include_concrete", v)}/>
