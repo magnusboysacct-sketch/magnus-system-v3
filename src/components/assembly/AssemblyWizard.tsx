@@ -19,6 +19,8 @@ function barWeight(key: string): number {
 // ─── Element type definitions ──────────────────────────────────────────────
 const ELEMENT_TYPES = [
   // Structural
+  { key: "setting_out",   label: "Setting Out",      icon: "📍", group: "Structural",  category: "Preliminary Works" },
+  { key: "excavation",    label: "Excavation",       icon: "⛏️", group: "Structural",  category: "Preliminary Works" },
   { key: "column_square", label: "Square Column",    icon: "🏛️", group: "Structural",  category: "Reinforcement (Steel)" },
   { key: "column_rect",   label: "Rect. Column",     icon: "🏗️", group: "Structural",  category: "Reinforcement (Steel)" },
   { key: "ground_beam",   label: "Ground Beam",      icon: "🔲", group: "Structural",  category: "Reinforcement (Steel)" },
@@ -300,6 +302,22 @@ interface WizardValues {
   paving_sub_base: boolean;
   sub_base_thickness: number;   // mm
   paving_include_curb: boolean;
+
+  // Setting out
+  setting_out_perimeter: number;    // metres — total wall perimeter
+  include_profiles: boolean;        // timber profile boards
+  profile_post_spacing: number;     // mm spacing between profile posts
+  include_builders_line: boolean;
+  include_lime_marking: boolean;
+
+  // Excavation
+  excav_width: number;              // mm — trench width
+  excav_depth: number;              // mm — trench depth
+  excav_method: string;             // "manual" "machine" "mixed"
+  include_spoil_removal: boolean;   // truck away excavated material
+  include_backfill: boolean;        // backfill after foundation
+  backfill_percent: number;         // % of excavation to backfill
+  include_compaction: boolean;      // compact backfill
 }
 
 const DEFAULT_VALUES: WizardValues = {
@@ -440,6 +458,18 @@ const DEFAULT_VALUES: WizardValues = {
   paving_sub_base: true,
   sub_base_thickness: 150,
   paving_include_curb: false,
+  setting_out_perimeter: 0,
+  include_profiles: true,
+  profile_post_spacing: 1200,
+  include_builders_line: true,
+  include_lime_marking: true,
+  excav_width: 600,
+  excav_depth: 900,
+  excav_method: "manual",
+  include_spoil_removal: true,
+  include_backfill: true,
+  backfill_percent: 30,
+  include_compaction: true,
 };
 
 // ─── Component generator ───────────────────────────────────────────────────
@@ -466,6 +496,105 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
   const lw = barWeight(v.link_bar);
 
   switch (elementType) {
+    case "setting_out": {
+      const psp = v.profile_post_spacing / 1000;
+      const comps: GeneratedComponent[] = [];
+      if (v.include_profiles) {
+        comps.push({
+          item_name: "Timber Profile Post 2×2",
+          type: "material",
+          formula: `(length / ${psp}) * 2`,
+          waste_percent: 10,
+          description: `Profile posts @ ${v.profile_post_spacing}mm — both sides of trench`,
+        });
+        comps.push({
+          item_name: "Profile Board 1×6",
+          type: "material",
+          formula: "length * 2",
+          waste_percent: 10,
+          description: "Horizontal profile boards (lf)",
+        });
+        comps.push({
+          item_name: "Nail (Assorted)",
+          type: "material",
+          formula: `(length / ${psp}) * 0.1`,
+          waste_percent: 5,
+          description: "Nails for profile boards (lbs)",
+        });
+      }
+      if (v.include_builders_line) comps.push({
+        item_name: "Builder's Line / String Line",
+        type: "material",
+        formula: "length * 3",
+        waste_percent: 20,
+        description: "String line for setting out (lf)",
+      });
+      if (v.include_lime_marking) comps.push({
+        item_name: "Hydrated Lime / Chalk",
+        type: "material",
+        formula: "length * 0.02",
+        waste_percent: 10,
+        description: "Lime powder for ground marking (bags)",
+      });
+      comps.push({
+        item_name: "Labor - Setting Out",
+        type: "labor",
+        formula: "length * 0.3",
+        waste_percent: 0,
+        description: "Setting out labor (man-hours)",
+      });
+      return comps;
+    }
+
+    case "excavation": {
+      const ew = v.excav_width / 1000;
+      const ed = v.excav_depth / 1000;
+      const comps: GeneratedComponent[] = [
+        {
+          item_name: v.excav_method === "machine" ? "Excavator Hire" : "Labor - Excavation",
+          type: v.excav_method === "machine" ? "equipment" : "labor",
+          formula: v.excav_method === "machine"
+            ? `length * ${ew} * ${ed} * 0.5`   // machine: 0.5 hrs per m³
+            : `length * ${ew} * ${ed} * 4`,     // manual: 4 man-hours per m³
+          waste_percent: 0,
+          description: v.excav_method === "machine"
+            ? `Machine excavation ${v.excav_width}×${v.excav_depth}mm trench (hours)`
+            : `Manual excavation ${v.excav_width}×${v.excav_depth}mm trench (man-hours)`,
+        },
+      ];
+      if (v.excav_method === "mixed") comps.push({
+        item_name: "Excavator Hire",
+        type: "equipment",
+        formula: `length * ${ew} * ${ed} * 0.25`,
+        waste_percent: 0,
+        description: "Machine excavation (hours)",
+      });
+      if (v.include_spoil_removal) comps.push({
+        item_name: "Tipper Truck Hire",
+        type: "equipment",
+        formula: `length * ${ew} * ${ed} * ${(100 - v.backfill_percent) / 100} / 5`,
+        waste_percent: 0,
+        description: `Spoil removal — ${100 - v.backfill_percent}% of excavation (truck loads)`,
+      });
+      if (v.include_backfill) {
+        comps.push({
+          item_name: "Labor - Backfill",
+          type: "labor",
+          formula: `length * ${ew} * ${ed} * ${v.backfill_percent / 100} * 2`,
+          waste_percent: 0,
+          description: `Backfill ${v.backfill_percent}% of excavation (man-hours)`,
+        });
+        if (v.include_compaction) comps.push({
+          item_name: "Compactor / Wacker Plate Hire",
+          type: "equipment",
+          formula: `length * ${ew} * ${ed} * ${v.backfill_percent / 100} * 0.5`,
+          waste_percent: 0,
+          description: "Compaction of backfill (hours)",
+        });
+      }
+      return comps;
+    }
+
     case "column_square":
     case "column_rect": {
       const comps: GeneratedComponent[] = [
@@ -1780,6 +1909,66 @@ export default function AssemblyWizard({
                 />
               </div>
 
+              {/* Setting Out */}
+              {elementType === "setting_out" && (
+                <>
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 text-xs text-emerald-600 dark:text-emerald-400">
+                    💡 Setting out is the first operation on site — marking foundation positions before excavation. Enter total <strong>wall perimeter length</strong> in BOQ.
+                  </div>
+                  <Toggle label="Include timber profile boards" value={values.include_profiles} onChange={v => set("include_profiles", v)}/>
+                  {values.include_profiles && (
+                    <NumInput
+                      label="Profile post spacing"
+                      value={values.profile_post_spacing}
+                      onChange={v => set("profile_post_spacing", v)}
+                      unit="mm"
+                      hint="Posts every 1200mm along wall line"
+                    />
+                  )}
+                  <Toggle label="Include builder's line" value={values.include_builders_line} onChange={v => set("include_builders_line", v)}/>
+                  <Toggle label="Include lime/chalk marking" value={values.include_lime_marking} onChange={v => set("include_lime_marking", v)}/>
+                </>
+              )}
+
+              {/* Excavation */}
+              {elementType === "excavation" && (
+                <>
+                  <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
+                    💡 Enter total foundation <strong>trench length</strong> in BOQ. Width and depth set below.
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumInput label="Trench width" value={values.excav_width} onChange={v => set("excav_width", v)} unit="mm" hint="Typically 600-900mm"/>
+                    <NumInput label="Trench depth" value={values.excav_depth} onChange={v => set("excav_depth", v)} unit="mm" hint="Typically 900-1200mm"/>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Excavation method</label>
+                    <div className="flex gap-2">
+                      {[["manual", "Manual (Labor)"], ["machine", "Machine (JCB)"], ["mixed", "Mixed"]].map(([key, label]) => (
+                        <button key={key} type="button"
+                          onClick={() => set("excav_method", key)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${values.excav_method === key ? "border-amber-500 bg-amber-50 dark:bg-amber-500/10 text-amber-600" : "border-slate-200 dark:border-slate-700 text-slate-500"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Toggle label="Include spoil removal (truck away)" value={values.include_spoil_removal} onChange={v => set("include_spoil_removal", v)}/>
+                  <Toggle label="Include backfill after foundation" value={values.include_backfill} onChange={v => set("include_backfill", v)}/>
+                  {values.include_backfill && (
+                    <>
+                      <NumInput
+                        label="Backfill percentage"
+                        value={values.backfill_percent}
+                        onChange={v => set("backfill_percent", v)}
+                        unit="%"
+                        hint="How much excavated material goes back (typically 30%)"
+                      />
+                      <Toggle label="Include compaction" value={values.include_compaction} onChange={v => set("include_compaction", v)}/>
+                    </>
+                  )}
+                </>
+              )}
+
               {/* Column fields */}
               {(elementType === "column_square" || elementType === "column_rect") && (
                 <>
@@ -2545,7 +2734,7 @@ export default function AssemblyWizard({
 
               {/* Common options — only structural types actually consume these;
                   block_wall and the finish trades don't reference them at all. */}
-              {!["block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "chain_link", "septic_tank", "drain_gutter", "water_supply", "drainage_piping", "plumbing_fixtures", "electrical_wiring", "electrical_fitout", "door_solid", "window_aluminum", "window_louvre", "roof_truss", "paving"].includes(elementType) && (
+              {!["setting_out", "excavation", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "chain_link", "septic_tank", "drain_gutter", "water_supply", "drainage_piping", "plumbing_fixtures", "electrical_wiring", "electrical_fitout", "door_solid", "window_aluminum", "window_louvre", "roof_truss", "paving"].includes(elementType) && (
                 <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-1">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Include in Assembly</p>
                   <Toggle label="Ready Mix Concrete" value={values.include_concrete} onChange={v => set("include_concrete", v)}/>
