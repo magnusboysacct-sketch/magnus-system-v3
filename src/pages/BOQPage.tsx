@@ -67,6 +67,12 @@ type BOQItemRow = {
   rate: number;
   rate_source?: "library" | "manual" | "assembly" | "";
   measurements?: MeasurementRow[];
+  // Shared by every component row exploded from the same "Add From Assembly"
+  // action, so the UI can collapse them into one summary row with a
+  // drill-down — the rows themselves stay real (cost_item_id, rate, etc.)
+  // so procurement/estimate generation keep reading them unchanged.
+  assembly_instance_id?: string | null;
+  assembly_name?: string | null;
 };
 
 type Section = {
@@ -1059,6 +1065,18 @@ export default function BOQPage() {
   const [assemblyComponents, setAssemblyComponents] = useState<AssemblyComponentRow[]>([]);
   type AsmModal = { open: boolean; sectionId: string | null; search: string; selectedId: string; qty: string };
   const [asmModal, setAsmModal] = useState<AsmModal>({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" });
+  // Which assembly instances currently show their component breakdown (collapsed by default).
+  const [expandedAssemblies, setExpandedAssemblies] = useState<Set<string>>(new Set());
+  function toggleAssemblyExpanded(instanceId: string) {
+    setExpandedAssemblies(prev => {
+      const next = new Set(prev);
+      if (next.has(instanceId)) next.delete(instanceId); else next.add(instanceId);
+      return next;
+    });
+  }
+  function deleteAssemblyGroup(sectionId: string, instanceId: string) {
+    setSections(prev => prev.map(s => s.id !== sectionId ? s : { ...s, items: s.items.filter(it => it.assembly_instance_id !== instanceId) }));
+  }
 
   const [importTakeoffModal, setImportTakeoffModal] = useState<{ open: boolean; sectionId: string | null; itemId: string | null }>({ open: false, sectionId: null, itemId: null });
   const [measureModal, setMeasureModal] = useState<{
@@ -1168,7 +1186,8 @@ useEffect(() => {
                     usableUnits,
                     (g.length != null || g.height != null || g.width != null)
                       ? { length: Number(g.length) || undefined, height: Number(g.height) || undefined, width: Number(g.width) || undefined }
-                      : undefined
+                      : undefined,
+                    assemblies.find(a => a.id === g.assemblyId)?.name || g.name || g.groupName || "Assembly"
             );
 
           if (exploded.length > 0) {
@@ -1538,11 +1557,16 @@ function explodeAssembly(
   assemblyComponents: AssemblyComponentRow[],
   rateItems: RateItem[],
   usableUnits: any[],
-  dims?: FormulaVars
+  dims?: FormulaVars,
+  assemblyName?: string
 ): BOQItemRow[] {
   const comps = assemblyComponents
     .filter(c => c.assembly_id === assemblyId)
     .sort((a, b) => a.sort_order - b.sort_order);
+
+  // One shared id per "Add From Assembly" action so the UI can group these
+  // rows into a single collapsible summary row (see groupBOQItems below).
+  const instanceId = safeId();
 
   return comps
     .map(c => {
@@ -1580,9 +1604,36 @@ function explodeAssembly(
         qty: Number.isFinite(finalQty) ? finalQty : 0,
         rate: numOr(r.current_rate ?? 0, 0),
         rate_source: "assembly",
+        assembly_instance_id: instanceId,
+        assembly_name: assemblyName || null,
       };
     })
     .filter(Boolean) as BOQItemRow[];
+}
+
+// --- Grouping for display: collapse an assembly's component rows into one
+// summary row with a drill-down, without altering what actually gets saved.
+type BOQItemGroup =
+  | { kind: "single"; item: BOQItemRow }
+  | { kind: "assembly"; instanceId: string; name: string; items: BOQItemRow[] };
+
+function groupBOQItems(items: BOQItemRow[]): BOQItemGroup[] {
+  const groups: BOQItemGroup[] = [];
+  const byInstance = new Map<string, Extract<BOQItemGroup, { kind: "assembly" }>>();
+  for (const item of items) {
+    if (item.assembly_instance_id) {
+      let g = byInstance.get(item.assembly_instance_id);
+      if (!g) {
+        g = { kind: "assembly", instanceId: item.assembly_instance_id, name: item.assembly_name || "Assembly", items: [] };
+        byInstance.set(item.assembly_instance_id, g);
+        groups.push(g);
+      }
+      g.items.push(item);
+    } else {
+      groups.push({ kind: "single", item });
+    }
+  }
+  return groups;
 }
 
 function addAssembly(sectionId: string, assemblyId: string, qtyStr: string) {
@@ -1598,7 +1649,9 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string) {
     qtyBase,
     assemblyComponents,
     rateItems,
-    usableUnits
+    usableUnits,
+    undefined,
+    assemblies.find(a => a.id === assemblyId)?.name || "Assembly"
   );
 
   if (newRows.length === 0) {
@@ -1961,12 +2014,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                     <>
                       {/* Mobile card layout */}
                       <div className="md:hidden divide-y divide-slate-100 dark:divide-white/[0.03]">
-                        {section.items.map(item => {
+                        {(() => {
+                          const renderMobileCard = (item: BOQItemRow, indented?: boolean) => {
                           const amount = numOr(item.qty) * numOr(item.rate);
                           const isMissingRate = item.qty > 0 && item.rate === 0;
                           const linkedItem = item.pick_item || item.cost_item_id;
                           return (
-                            <div key={item.id} className={`p-3 ${isMissingRate ? "bg-amber-500/[0.02]" : ""}`}>
+                            <div key={item.id} className={`p-3 ${indented ? "pl-6 bg-purple-50/40 dark:bg-purple-500/[0.03]" : ""} ${isMissingRate ? "bg-amber-500/[0.02]" : ""}`}>
                               {/* Row 1: Type badge + Item name + Delete */}
                               <div className="flex items-start justify-between gap-2 mb-2">
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -2046,7 +2100,38 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                               </div>
                             </div>
                           );
-                        })}
+                          };
+
+                          return groupBOQItems(section.items).map(group => {
+                            if (group.kind === "single") return renderMobileCard(group.item);
+                            const total = group.items.reduce((s, it) => s + numOr(it.qty) * numOr(it.rate), 0);
+                            const expanded = expandedAssemblies.has(group.instanceId);
+                            return (
+                              <React.Fragment key={group.instanceId}>
+                                <div className="p-3 bg-purple-50/60 dark:bg-purple-500/[0.05]">
+                                  <div className="flex items-start justify-between gap-2 mb-1">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase bg-purple-500/10 text-purple-500 border border-purple-500/20 flex-shrink-0">ASM</span>
+                                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{group.name}</span>
+                                    </div>
+                                    <button onClick={() => deleteAssemblyGroup(section.id, group.instanceId)} disabled={!canEdit}
+                                      className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-300 dark:text-slate-700 hover:text-red-400 transition-colors flex-shrink-0 disabled:opacity-40">
+                                      <X size={14}/>
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <button onClick={() => toggleAssemblyExpanded(group.instanceId)}
+                                      className={`text-[10px] px-2 py-1 rounded-full font-semibold transition-colors ${expanded ? "bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>
+                                      {expanded ? "▲ Hide" : "▼"} {group.items.length} component{group.items.length !== 1 ? "s" : ""}
+                                    </button>
+                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{fmtMoney(total)}</span>
+                                  </div>
+                                </div>
+                                {expanded && group.items.map(it => renderMobileCard(it, true))}
+                              </React.Fragment>
+                            );
+                          });
+                        })()}
 
                         {/* Add item — mobile */}
                         {canEdit && (
@@ -2075,13 +2160,14 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                       </div>
 
                       {/* Item rows */}
-                      {section.items.map(item => {
+                      {(() => {
+                        const renderDesktopRow = (item: BOQItemRow, indented?: boolean) => {
                         const amount = numOr(item.qty) * numOr(item.rate);
                         const isMissingRate = item.qty > 0 && item.rate === 0;
                         const linkedItem = item.pick_item || item.cost_item_id;
                         return (
                           <div key={item.id}
-                            className={`grid px-4 py-2 border-b border-white/[0.03] hover:bg-slate-50 dark:bg-white/[0.02] transition group items-center ${isMissingRate ? "bg-amber-500/[0.02]" : ""}`}
+                            className={`grid px-4 py-2 border-b border-white/[0.03] hover:bg-slate-50 dark:bg-white/[0.02] transition group items-center ${indented ? "pl-8 bg-purple-50/40 dark:bg-purple-500/[0.03]" : ""} ${isMissingRate ? "bg-amber-500/[0.02]" : ""}`}
                             style={{ gridTemplateColumns: "44px 1fr 160px 80px 104px 90px 90px 32px" }}>
 
                             {/* Type chip */}
@@ -2190,7 +2276,48 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             </div>
                           </div>
                         );
-                      })}
+                        };
+
+                        return groupBOQItems(section.items).map(group => {
+                          if (group.kind === "single") return renderDesktopRow(group.item);
+                          const total = group.items.reduce((s, it) => s + numOr(it.qty) * numOr(it.rate), 0);
+                          const expanded = expandedAssemblies.has(group.instanceId);
+                          return (
+                            <React.Fragment key={group.instanceId}>
+                              <div className="grid px-4 py-2 border-b border-white/[0.03] items-center group"
+                                style={{ gridTemplateColumns: "44px 1fr 160px 80px 104px 90px 90px 32px" }}>
+                                <div>
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase bg-purple-500/10 text-purple-500 border border-purple-500/20">ASM</span>
+                                </div>
+                                <div className="min-w-0 pr-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{group.name}</span>
+                                    <button onClick={() => toggleAssemblyExpanded(group.instanceId)}
+                                      className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold transition-colors flex-shrink-0 ${expanded ? "bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400" : "bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-purple-50 dark:hover:bg-purple-500/10 hover:text-purple-500"}`}>
+                                      {expanded ? "▲ Hide" : "▼ Breakdown"}
+                                    </button>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 mt-0.5">{group.items.length} component{group.items.length !== 1 ? "s" : ""}</div>
+                                </div>
+                                <div/>
+                                <div/>
+                                <div/>
+                                <div/>
+                                <div className="text-right text-xs font-bold text-slate-700 dark:text-slate-200 pr-1">
+                                  {fmtMoney(total)}
+                                </div>
+                                <div className="flex justify-center min-w-0">
+                                  <button onClick={() => deleteAssemblyGroup(section.id, group.instanceId)} disabled={!canEdit}
+                                    className="p-1 rounded-lg text-transparent group-hover:text-slate-400 dark:text-slate-700 hover:!text-red-400 hover:bg-red-500/10 transition disabled:hidden">
+                                    <X size={12}/>
+                                  </button>
+                                </div>
+                              </div>
+                              {expanded && group.items.map(it => renderDesktopRow(it, true))}
+                            </React.Fragment>
+                          );
+                        });
+                      })()}
                       </div>
 
                       {/* Section total */}
