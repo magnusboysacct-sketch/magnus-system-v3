@@ -80,6 +80,8 @@ function ProjectCard({ project, client, onClick, onCloseOut, onEdit, onDelete }:
   onEdit: (p: Project) => void;
   onDelete: (p: Project) => void;
 }) {
+  const { userRole } = useProjectContext();
+  const canDelete = userRole === "director";
   const status = project.status || "active";
   const canCloseOut = status === "active" || status === "completed";
   return (
@@ -127,12 +129,14 @@ function ProjectCard({ project, client, onClick, onCloseOut, onEdit, onDelete }:
             title="Edit Project">
             <Edit2 size={13}/>
           </button>
-          <button
-            onClick={e => { e.stopPropagation(); onDelete(project); }}
-            className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
-            title="Delete Project">
-            <Trash2 size={13}/>
-          </button>
+          {canDelete && (
+            <button
+              onClick={e => { e.stopPropagation(); onDelete(project); }}
+              className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
+              title="Delete Project">
+              <Trash2 size={13}/>
+            </button>
+          )}
           <ArrowRight size={13} className="text-slate-700 group-hover:text-cyan-500 group-hover:translate-x-0.5 transition-all" />
         </div>
       </div>
@@ -150,6 +154,8 @@ function ProjectRow({ project, client, onClick, onCloseOut, onEdit, onDelete }: 
   onEdit: (p: Project) => void;
   onDelete: (p: Project) => void;
 }) {
+  const { userRole } = useProjectContext();
+  const canDelete = userRole === "director";
   const status = project.status || "active";
   const canCloseOut = status === "active" || status === "completed";
   return (
@@ -179,12 +185,14 @@ function ProjectRow({ project, client, onClick, onCloseOut, onEdit, onDelete }: 
         title="Edit">
         <Edit2 size={13}/>
       </button>
-      <button
-        onClick={e => { e.stopPropagation(); onDelete(project); }}
-        className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
-        title="Delete">
-        <Trash2 size={13}/>
-      </button>
+      {canDelete && (
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(project); }}
+          className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
+          title="Delete">
+          <Trash2 size={13}/>
+        </button>
+      )}
       <ArrowRight size={13} className="text-slate-700 group-hover:text-slate-400 transition-colors flex-shrink-0" />
     </div>
   );

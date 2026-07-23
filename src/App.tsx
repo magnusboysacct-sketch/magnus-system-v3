@@ -13,7 +13,8 @@ import ProjectPhotosPage from './pages/ProjectPhotosPage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { ProjectProvider } from "./context/ProjectContext";
+import { ProjectProvider, useProjectContext } from "./context/ProjectContext";
+import { useFinanceAccess } from "./hooks/useFinanceAccess";
 import { supabase } from "./lib/supabase";
 
 // --- Pages -------------------------------------------------------------------
@@ -153,6 +154,60 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// --- Role-based route guards ---------------------------------------------------
+
+function AccessRestricted() {
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
+      <div className="text-center p-8">
+        <div className="text-4xl mb-4">🔒</div>
+        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">
+          Access Restricted
+        </h2>
+        <p className="text-slate-500 text-sm">
+          You don't have permission to access this page.
+          <br/>Contact your administrator.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// Generic role-list guard — reads userRole from ProjectContext (populated
+// from user_profiles.role in the same fetch that loads projects, so
+// loadingProjects doubles as "is the role known yet").
+function RoleGuard({
+  allowedRoles,
+  children,
+}: {
+  allowedRoles: string[];
+  children: React.ReactNode;
+}) {
+  const { userRole, loadingProjects } = useProjectContext();
+  if (loadingProjects) return null;
+  if (!userRole || !allowedRoles.includes(userRole)) {
+    return <AccessRestricted />;
+  }
+  return <>{children}</>;
+}
+
+// Finance-specific guard — reuses the existing finance_access_level system
+// (useFinanceAccess) already correctly enforced on FinanceTransactionsPage,
+// rather than a second, parallel role-list check for the same feature area.
+function FinanceGuard({
+  level,
+  children,
+}: {
+  level: "full" | "project";
+  children: React.ReactNode;
+}) {
+  const { canAccessFullFinance, canAccessProjectFinance, loading } = useFinanceAccess();
+  if (loading) return null;
+  const allowed = level === "full" ? canAccessFullFinance : canAccessProjectFinance;
+  if (!allowed) return <AccessRestricted />;
+  return <>{children}</>;
+}
+
 // --- App ----------------------------------------------------------------------
 
 export default function App() {
@@ -187,9 +242,9 @@ export default function App() {
               <Route path="/projects/:projectId/boq"          element={<BOQPage />} />
               <Route path="/projects/:projectId/takeoff"      element={<TakeoffPage />} />
               <Route path="/projects/:projectId/procurement"  element={<ProcurementPage />} />
-              <Route path="/projects/:projectId/finance"      element={<FinancePage />} />
+              <Route path="/projects/:projectId/finance"      element={<FinanceGuard level="project"><FinancePage /></FinanceGuard>} />
               <Route path="/projects/:projectId/finance/transactions" element={<FinanceTransactionsPage />} />
-              <Route path="/projects/:projectId/finance/reports"      element={<FinanceReportsPage />} />
+              <Route path="/projects/:projectId/finance/reports"      element={<FinanceGuard level="project"><FinanceReportsPage /></FinanceGuard>} />
               <Route path="/projects/:projectId/reports"      element={<ReportsPage />} />
 
               {/* Estimating */}
@@ -207,31 +262,31 @@ export default function App() {
               <Route path="/supplier-prices" element={<SupplierPriceSyncPage />} />
 
               {/* Finance */}
-              <Route path="/finance" element={<FinanceDashboardPage />} />
-              <Route path="/finance/journal-entry" element={<JournalEntryPage />} />
+              <Route path="/finance" element={<FinanceGuard level="full"><FinanceDashboardPage /></FinanceGuard>} />
+              <Route path="/finance/journal-entry" element={<FinanceGuard level="full"><JournalEntryPage /></FinanceGuard>} />
               <Route path="/finance/transactions"    element={<FinanceTransactionsPage />} />
-              <Route path="/finance/reports"         element={<FinanceReportsPage />} />
-              <Route path="/expenses"                element={<ExpensesPage />} />
-              <Route path="/cash-flow"               element={<CashFlowPage />} />
-              <Route path="/finance/upload-statement" element={<UploadStatementPage />} />
-              <Route path="/accounts-receivable"     element={<AccountsReceivablePage />} />
-              <Route path="/field-payments"          element={<FieldPaymentsPage />} />
+              <Route path="/finance/reports"         element={<FinanceGuard level="full"><FinanceReportsPage /></FinanceGuard>} />
+              <Route path="/expenses"                element={<FinanceGuard level="full"><ExpensesPage /></FinanceGuard>} />
+              <Route path="/cash-flow"               element={<FinanceGuard level="full"><CashFlowPage /></FinanceGuard>} />
+              <Route path="/finance/upload-statement" element={<FinanceGuard level="full"><UploadStatementPage /></FinanceGuard>} />
+              <Route path="/accounts-receivable"     element={<FinanceGuard level="full"><AccountsReceivablePage /></FinanceGuard>} />
+              <Route path="/field-payments"          element={<RoleGuard allowedRoles={["director","site_supervisor","accounts"]}><FieldPaymentsPage /></RoleGuard>} />
 
               {/* People */}
-              <Route path="/workers"                 element={<WorkersPage />} />
+              <Route path="/workers"                 element={<RoleGuard allowedRoles={["director","site_supervisor"]}><WorkersPage /></RoleGuard>} />
 
               {/* Reports + Settings */}
               <Route path="/reports"                       element={<ReportsPage />} />
               <Route path="/billing"                       element={<BillingPage />} />
               <Route path="/upgrade" element={<UpgradePage />} />
               <Route path="/materials-library" element={<Navigate to="/rates" replace />} />
-              <Route path="/settings"                      element={<SettingsPage />} />
-              <Route path="/settings/company"              element={<SettingsCompanyPage />} />
-              <Route path="/settings/master-lists"         element={<SettingsMasterListsPage />} />
-              <Route path="/settings/master-categories"    element={<SettingsMasterCategoriesPage />} />
-              <Route path="/settings/cost-codes"           element={<SettingsCostCodesPage />} />
-              <Route path="/settings/users"                element={<SettingsUsersPage />} />
-              <Route path="/settings/records"              element={<SettingsRecordsPage />} />
+              <Route path="/settings"                      element={<RoleGuard allowedRoles={["director"]}><SettingsPage /></RoleGuard>} />
+              <Route path="/settings/company"              element={<RoleGuard allowedRoles={["director"]}><SettingsCompanyPage /></RoleGuard>} />
+              <Route path="/settings/master-lists"         element={<RoleGuard allowedRoles={["director"]}><SettingsMasterListsPage /></RoleGuard>} />
+              <Route path="/settings/master-categories"    element={<RoleGuard allowedRoles={["director"]}><SettingsMasterCategoriesPage /></RoleGuard>} />
+              <Route path="/settings/cost-codes"           element={<RoleGuard allowedRoles={["director"]}><SettingsCostCodesPage /></RoleGuard>} />
+              <Route path="/settings/users"                element={<RoleGuard allowedRoles={["director"]}><SettingsUsersPage /></RoleGuard>} />
+              <Route path="/settings/records"              element={<RoleGuard allowedRoles={["director"]}><SettingsRecordsPage /></RoleGuard>} />
               <Route path="/settings/company"              element={<Navigate to="/settings" replace />} />
 
               {/* Admin / Payroll */}

@@ -4,6 +4,7 @@ import MasterCategorySelect from "../components/master/MasterCategorySelect.tsx"
 import MasterUnitSelect from "../components/master/MasterUnitSelect.tsx";
 import EditableDropdown from "../components/common/EditableDropdown.tsx";
 import { useMasterLists } from "../hooks/useMasterLists";
+import { useProjectContext } from "../context/ProjectContext";
 import { buildDefaultVars, computeQuantity } from "../lib/calculatorEngine";
 import { SmartItemSelectorButton } from "../components/SmartItemSelectorButton";
 import AIPriceLookup from "../components/AIPriceLookup";
@@ -189,6 +190,8 @@ function SmartCombobox(props:{value:string;options:string[];onChange:(v:string)=
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function RatesPage() {
   const { categories, refresh: refreshCategories } = useMasterLists();
+  const { userRole } = useProjectContext();
+  const canDelete = userRole === "director";
   const [items,setItems]=useState<CostItem[]>([]);
   const [loading,setLoading]=useState(true);
   const [companyId,setCompanyId]=useState<string>("");
@@ -1002,19 +1005,21 @@ export default function RatesPage() {
                     className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition" title="Duplicate item">
                     <Copy size={13}/>
                   </button>
-                  <button type="button" disabled={busy}
-                    onClick={async()=>{
-                      if(!confirm("Delete this item?")) return;
-                      setBusy(true);
-                      try{
-                        const{error}=await supabase.from("cost_items").delete().eq("id",item.id);
-                        if(error){console.error(error);return;}
-                        setItems(prev=>prev.filter(r=>r.id!==item.id));
-                      }finally{setBusy(false);}
-                    }}
-                    className={`p-1.5 rounded-lg hover:bg-red-500/15 transition ${activeId===item.id?"text-red-500":"text-slate-500 dark:text-slate-600 hover:text-red-400"}`} title="Delete">
-                    <Trash2 size={13}/>
-                  </button>
+                  {canDelete && (
+                    <button type="button" disabled={busy}
+                      onClick={async()=>{
+                        if(!confirm("Delete this item?")) return;
+                        setBusy(true);
+                        try{
+                          const{error}=await supabase.from("cost_items").delete().eq("id",item.id);
+                          if(error){console.error(error);return;}
+                          setItems(prev=>prev.filter(r=>r.id!==item.id));
+                        }finally{setBusy(false);}
+                      }}
+                      className={`p-1.5 rounded-lg hover:bg-red-500/15 transition ${activeId===item.id?"text-red-500":"text-slate-500 dark:text-slate-600 hover:text-red-400"}`} title="Delete">
+                      <Trash2 size={13}/>
+                    </button>
+                  )}
                 </div>
               </div>
             );

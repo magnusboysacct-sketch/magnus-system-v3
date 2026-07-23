@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useNavigate as useNav } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { useProjectContext } from "../context/ProjectContext";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
   Table, Th, Tr, Td, Empty, Modal, Alert, Textarea,
@@ -52,6 +53,8 @@ function ClientCard({ client, onEdit, onDelete, onPortalToggle, onResetPassword 
   onPortalToggle: (c: Client) => void;
   onResetPassword: (c: Client) => void;
 }) {
+  const { userRole } = useProjectContext();
+  const canDelete = userRole === "director";
   return (
     <Card className="group hover:border-slate-300 dark:hover:border-white/[0.13] transition-all">
       <div className="flex items-start justify-between mb-4">
@@ -73,10 +76,12 @@ function ClientCard({ client, onEdit, onDelete, onPortalToggle, onResetPassword 
               🔑
             </button>
           )}
-          <button onClick={() => onDelete(client.id)}
-            className="p-2 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
-            <Trash2 size={14}/>
-          </button>
+          {canDelete && (
+            <button onClick={() => onDelete(client.id)}
+              className="p-2 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
+              <Trash2 size={14}/>
+            </button>
+          )}
         </div>
       </div>
 
@@ -124,6 +129,8 @@ function ClientCard({ client, onEdit, onDelete, onPortalToggle, onResetPassword 
 
 export default function ClientsPage() {
   const nav = useNavigate();
+  const { userRole } = useProjectContext();
+  const canDelete = userRole === "director";
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -397,10 +404,12 @@ export default function ClientsPage() {
                           className="p-2 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
                           <Edit2 size={13}/>
                         </button>
-                        <button onClick={() => setDeleteConfirm(c.id)}
-                          className="p-2 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
-                          <Trash2 size={13}/>
-                        </button>
+                        {canDelete && (
+                          <button onClick={() => setDeleteConfirm(c.id)}
+                            className="p-2 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
+                            <Trash2 size={13}/>
+                          </button>
+                        )}
                       </div>
                     </Td>
                   </Tr>

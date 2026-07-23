@@ -150,7 +150,7 @@ export default function FieldPaymentsPage() {
     total: payments.length,
   };
 
-  const canEditDelete = ["owner","admin","manager"].includes(userRole||"") || true;
+  const canEditDelete = ["director","admin","project_manager"].includes(userRole||"");
 
   async function saveEdit(p: Payment, updates: Partial<Payment>) {
     const {error} = await supabase.from("field_payments").update(updates).eq("id", p.id);
@@ -159,7 +159,7 @@ export default function FieldPaymentsPage() {
       setSelected(prev => prev ? {...prev, ...updates} : null);
       setEditingPayment(null);
     }
-  } // TODO: remove || true after testing
+  }
 
   async function deletePayment(p: Payment) {
     if(!confirm(`Delete payment record for ${p.worker_name}? This cannot be undone.`)) return;

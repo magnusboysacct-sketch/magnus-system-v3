@@ -1031,7 +1031,8 @@ Respond ONLY with valid JSON (no markdown, no backticks):
 export default function BOQPage() {
   const nav = useNavigate();
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
-  const { currentProjectId, currentProject: selectedProject } = useProjectContext();
+  const { currentProjectId, currentProject: selectedProject, userRole } = useProjectContext();
+  const canApproveBoq = userRole === "director" || userRole === "estimator";
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [status, setStatus] = useState<"draft" | "approved">("draft");
@@ -1946,10 +1947,12 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-200 dark:border-white/[0.08] text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <Save size={12}/> Save Draft
             </button>
-            <button onClick={() => void saveBoq("approved")} disabled={!activeProjectId || persistLoading}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
-              <CheckCircle size={12}/> Approve
-            </button>
+            {canApproveBoq && (
+              <button onClick={() => void saveBoq("approved")} disabled={!activeProjectId || persistLoading}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
+                <CheckCircle size={12}/> Approve
+              </button>
+            )}
             <div className="w-px h-4 bg-slate-200 dark:bg-white/[0.08] mx-0.5"/>
             <button onClick={generateEstimate} disabled={status !== "approved" || persistLoading}
               title={status !== "approved" ? "Approve BOQ first" : ""}

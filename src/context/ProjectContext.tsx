@@ -20,6 +20,8 @@ type ProjectContextType = {
   currentProjectId: string | null;
   currentProject: ProjectOption | null;
   loadingProjects: boolean;
+  userRole: string | null;
+  userId: string | null;
   setCurrentProjectId: (projectId: string | null) => void;
   refreshProjects: () => Promise<void>;
 };
@@ -32,6 +34,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [currentProjectId, setCurrentProjectIdState] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const loadProjects = useCallback(async () => {
     setLoadingProjects(true);
@@ -41,23 +45,30 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (!user) {
       console.error("No authenticated user found");
       setProjects([]);
+      setUserRole(null);
+      setUserId(null);
       setLoadingProjects(false);
       return;
     }
 
-    // Load user's company_id from user_profiles
+    // Load user's role and company_id from user_profiles
     const { data: profileData, error: profileError } = await supabase
       .from("user_profiles")
-      .select("company_id")
+      .select("role, company_id, id")
       .eq("id", user.id)
       .single();
 
     if (profileError || !profileData?.company_id) {
       console.error("Failed to load user profile or no company assigned:", profileError);
       setProjects([]);
+      setUserRole(null);
+      setUserId(null);
       setLoadingProjects(false);
       return;
     }
+
+    setUserRole(profileData.role ?? null);
+    setUserId(profileData.id ?? null);
 
     // Filter projects by user's company_id
     const { data, error } = await supabase
@@ -129,10 +140,12 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       currentProjectId,
       currentProject,
       loadingProjects,
+      userRole,
+      userId,
       setCurrentProjectId,
       refreshProjects: loadProjects,
     }),
-    [projects, currentProjectId, currentProject, loadingProjects, setCurrentProjectId, loadProjects]
+    [projects, currentProjectId, currentProject, loadingProjects, userRole, userId, setCurrentProjectId, loadProjects]
   );
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;

@@ -1,11 +1,12 @@
 // src/layout/AppLayout.tsx — Main shell with sidebar + top bar
 // Drop-in replacement for SidebarLayout.tsx
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
+import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { useTheme } from "../hooks/useTheme";
 import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
@@ -204,6 +205,8 @@ export default function AppLayout() {
   const { settings: co } = useCompanySettings();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
+  const { userRole } = useProjectContext();
+  const { canAccessFullFinance } = useFinanceAccess();
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
@@ -220,6 +223,36 @@ export default function AppLayout() {
       c.to === "/" ? location.pathname === "/" : location.pathname.startsWith(c.to)
     )) ?? false;
   }
+
+  const isDirector = userRole === "director";
+  const canSeeWorkers = isDirector || userRole === "site_supervisor";
+  const canSeeFieldPayments = isDirector || userRole === "site_supervisor" || userRole === "accounts";
+
+  // Filter the nav by role — hide items the current user can't act on rather
+  // than showing a destination that just 403s. Groups left with no visible
+  // children are dropped entirely.
+  const visibleNav = useMemo(() => {
+    return NAV
+      .map(item => {
+        if (item.label === "Finance") {
+          const children = item.children?.filter(c =>
+            c.to === "/field-payments" ? canSeeFieldPayments : canAccessFullFinance
+          );
+          return children?.length ? { ...item, children } : null;
+        }
+        if (item.label === "People") {
+          const children = item.children?.filter(c =>
+            c.to === "/workers" ? canSeeWorkers : true
+          );
+          return children?.length ? { ...item, children } : null;
+        }
+        if (item.label === "Settings") {
+          return isDirector ? item : null;
+        }
+        return item;
+      })
+      .filter((item): item is NavItem => item !== null);
+  }, [canAccessFullFinance, canSeeFieldPayments, canSeeWorkers, isDirector]);
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#080b10] overflow-hidden">
@@ -271,7 +304,7 @@ export default function AppLayout() {
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-2 space-y-0.5 scrollbar-hide">
-          {NAV.map(item => (
+          {visibleNav.map(item => (
             <NavGroup key={item.label} item={item} collapsed={collapsed} defaultOpen={isGroupActive(item)} onNavigate={() => setSidebarOpen(false)} />
           ))}
         </nav>

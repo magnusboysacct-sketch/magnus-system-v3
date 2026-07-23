@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
+import { useProjectContext } from "../context/ProjectContext";
 import { WorkerIDCard } from "../components/WorkerIDCard";
 import { SimpleIDScanner } from "../components/SimpleIDScanner";
 import {
@@ -97,6 +98,8 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
   onView: (w: Worker) => void;
   onIdCard: (w: Worker) => void;
 }) {
+  const { userRole } = useProjectContext();
+  const canDelete = userRole === "director" || userRole === "site_supervisor";
     worker.worker_type === "crew_lead" ? "bg-cyan-500/20 text-cyan-300" :
     "bg-violet-500/20 text-violet-300";
 
@@ -119,10 +122,12 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
             className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
             <Edit2 size={12}/>
           </button>
-          <button onClick={() => onDelete(worker.id)}
-            className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
-            <Trash2 size={12}/>
-          </button>
+          {canDelete && (
+            <button onClick={() => onDelete(worker.id)}
+              className="p-1.5 rounded-lg hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
+              <Trash2 size={12}/>
+            </button>
+          )}
         </div>
       </div>
 
@@ -179,6 +184,8 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
 
 export default function WorkersPage() {
   const { settings: companySettings } = useCompanySettings();
+  const { userRole } = useProjectContext();
+  const canDelete = userRole === "director" || userRole === "site_supervisor";
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -533,10 +540,12 @@ export default function WorkersPage() {
                           className="p-1.5 rounded hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
                           <Edit2 size={12}/>
                         </button>
-                        <button onClick={() => setDeleteConfirm(w.id)}
-                          className="p-1.5 rounded hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
-                          <Trash2 size={12}/>
-                        </button>
+                        {canDelete && (
+                          <button onClick={() => setDeleteConfirm(w.id)}
+                            className="p-1.5 rounded hover:bg-red-500/15 text-slate-600 hover:text-red-400 transition-colors">
+                            <Trash2 size={12}/>
+                          </button>
+                        )}
                       </div>
                     </Td>
                   </Tr>
