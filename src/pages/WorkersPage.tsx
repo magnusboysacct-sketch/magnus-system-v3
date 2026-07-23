@@ -13,7 +13,8 @@ import {
 import {
   Plus, Search, HardHat, Phone, Mail, MapPin,
   RefreshCw, Edit2, Trash2, LayoutGrid, List,
-  DollarSign, Clock, User, Calendar, Briefcase
+  DollarSign, Clock, User, Calendar, Briefcase,
+  Camera, Upload, Check, X
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -180,6 +181,205 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
   );
 }
 
+// ─── Circular photo cropper ───────────────────────────────────────────────────
+// Used for the passport photo: drag to reposition, drag the corner handle to
+// resize, output is a circular-clipped JPEG Blob at a fixed 400x400 canvas.
+
+function ImageCropper({
+  src,
+  onCrop,
+  onCancel,
+}: {
+  src: string;
+  onCrop: (blob: Blob) => void;
+  onCancel: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [cropBox, setCropBox] = useState({ x: 50, y: 50, size: 200 });
+  const [imgSize, setImgSize] = useState({ w: 0, h: 0, scale: 1 });
+  const dragging = useRef(false);
+  const resizing = useRef(false);
+  const dragStart = useRef({ mx: 0, my: 0, bx: 0, by: 0 });
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      imgRef.current = img;
+      const container = containerRef.current;
+      if (!container) return;
+      const maxW = container.clientWidth;
+      const maxH = 350;
+      const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
+      const w = img.naturalWidth * scale;
+      const h = img.naturalHeight * scale;
+      setImgSize({ w, h, scale });
+      const size = Math.min(w, h) * 0.6;
+      const box = { x: (w - size) / 2, y: (h - size) / 2, size };
+      setCropBox(box);
+      drawCanvas(box, w, h, img);
+    };
+    img.src = src;
+  }, [src]);
+
+  function drawCanvas(box: { x: number; y: number; size: number }, w: number, h: number, img: HTMLImageElement) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    // Dark overlay
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, 0, w, h);
+    // Clear crop circle
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(box.x + box.size / 2, box.y + box.size / 2, box.size / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(img, 0, 0, w, h);
+    ctx.restore();
+    // Circle border
+    ctx.strokeStyle = "#3b82f6";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(box.x + box.size / 2, box.y + box.size / 2, box.size / 2, 0, Math.PI * 2);
+    ctx.stroke();
+    // Resize handle
+    ctx.fillStyle = "#3b82f6";
+    ctx.beginPath();
+    ctx.arc(box.x + box.size, box.y + box.size, 8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function redraw(box: { x: number; y: number; size: number }) {
+    if (imgRef.current) {
+      drawCanvas(box, imgSize.w, imgSize.h, imgRef.current);
+    }
+  }
+
+  function getPos(e: React.MouseEvent | React.TouchEvent) {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
+  }
+
+  function onDown(e: React.MouseEvent | React.TouchEvent) {
+    const pos = getPos(e);
+    const { x, y, size } = cropBox;
+    const cx = x + size / 2;
+    const cy = y + size / 2;
+    const dist = Math.sqrt(Math.pow(pos.x - cx, 2) + Math.pow(pos.y - cy, 2));
+    // Check resize handle
+    const rdist = Math.sqrt(Math.pow(pos.x - (x + size), 2) + Math.pow(pos.y - (y + size), 2));
+    if (rdist < 16) {
+      resizing.current = true;
+    } else if (dist < size / 2) {
+      dragging.current = true;
+      dragStart.current = { mx: pos.x, my: pos.y, bx: x, by: y };
+    }
+  }
+
+  function onMove(e: React.MouseEvent | React.TouchEvent) {
+    if (!dragging.current && !resizing.current) return;
+    e.preventDefault();
+    const pos = getPos(e);
+    if (dragging.current) {
+      const dx = pos.x - dragStart.current.mx;
+      const dy = pos.y - dragStart.current.my;
+      const newX = Math.max(0, Math.min(imgSize.w - cropBox.size, dragStart.current.bx + dx));
+      const newY = Math.max(0, Math.min(imgSize.h - cropBox.size, dragStart.current.by + dy));
+      const newBox = { ...cropBox, x: newX, y: newY };
+      setCropBox(newBox);
+      redraw(newBox);
+    } else if (resizing.current) {
+      const newSize = Math.max(80, Math.min(
+        Math.min(imgSize.w, imgSize.h),
+        Math.max(pos.x - cropBox.x, pos.y - cropBox.y)
+      ));
+      const newBox = { ...cropBox, size: newSize };
+      setCropBox(newBox);
+      redraw(newBox);
+    }
+  }
+
+  function onUp() {
+    dragging.current = false;
+    resizing.current = false;
+  }
+
+  function handleCrop() {
+    const img = imgRef.current;
+    if (!img) return;
+    const output = document.createElement("canvas");
+    output.width = 400;
+    output.height = 400;
+    const ctx = output.getContext("2d")!;
+    // Draw circle clip
+    ctx.beginPath();
+    ctx.arc(200, 200, 200, 0, Math.PI * 2);
+    ctx.clip();
+    // Draw the cropped area (map crop box back to the original image's pixels)
+    const srcX = cropBox.x / imgSize.scale;
+    const srcY = cropBox.y / imgSize.scale;
+    const srcSize = cropBox.size / imgSize.scale;
+    ctx.drawImage(img, srcX, srcY, srcSize, srcSize, 0, 0, 400, 400);
+    output.toBlob(blob => { if (blob) onCrop(blob); }, "image/jpeg", 0.92);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[60] flex flex-col items-center justify-center p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Crop Photo</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Drag to move · Drag corner to resize</p>
+          </div>
+          <button onClick={onCancel} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+            <X size={16}/>
+          </button>
+        </div>
+        {/* Canvas */}
+        <div ref={containerRef} className="p-4 bg-slate-100 dark:bg-slate-950 flex justify-center">
+          <canvas
+            ref={canvasRef}
+            className="max-w-full rounded-lg cursor-move"
+            style={{ touchAction: "none" }}
+            onMouseDown={onDown}
+            onMouseMove={onMove}
+            onMouseUp={onUp}
+            onMouseLeave={onUp}
+            onTouchStart={onDown}
+            onTouchMove={onMove}
+            onTouchEnd={onUp}
+          />
+        </div>
+        {/* Footer */}
+        <div className="flex gap-3 px-5 py-4 border-t border-slate-200 dark:border-slate-800">
+          <button onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+            Cancel
+          </button>
+          <button onClick={handleCrop}
+            className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors flex items-center justify-center gap-2">
+            <Check size={14}/> Use Photo
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WorkersPage() {
@@ -201,6 +401,9 @@ export default function WorkersPage() {
   const idPhotoFileRef = useRef<File | null>(null);
   const passportPhotoFileRef = useRef<File | null>(null);
   const [passportPhotoPreview, setPassportPhotoPreview] = useState<string | null>(null);
+  const passportGalleryInputRef = useRef<HTMLInputElement>(null);
+  const passportCameraInputRef = useRef<HTMLInputElement>(null);
+  const [passportCropSrc, setPassportCropSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [idCardWorker, setIdCardWorker] = useState<Worker | null>(null);
@@ -243,6 +446,27 @@ export default function WorkersPage() {
       id_number:        result.idNumber  || result.documentNumber || f.id_number,
       national_id_type: result.documentType || f.national_id_type,
     }));
+  }
+
+  // Passport photo — gallery pick or camera capture both feed into the crop
+  // tool; the actual passportPhotoFileRef/preview only get set once the user
+  // confirms the crop (handlePassportCropped), so nothing uploads uncropped.
+  function handlePassportPhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setPassportCropSrc(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  function handlePassportCropped(blob: Blob) {
+    const file = new File([blob], `passport_${Date.now()}.jpg`, { type: "image/jpeg" });
+    passportPhotoFileRef.current = file;
+    const reader = new FileReader();
+    reader.onload = ev => setPassportPhotoPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+    setPassportCropSrc(null);
   }
   async function saveWorker() {
     setSaving(true); setError(null);
@@ -603,20 +827,35 @@ export default function WorkersPage() {
             </div>
             <div className="flex-1">
               <div className="text-xs font-semibold text-amber-300 mb-1">Passport Photo</div>
-              <div className="text-[10px] text-slate-500 mb-2">Upload a headshot for the ID card</div>
-              <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition-colors">
-                <span className="text-[10px] text-amber-300 font-medium">📷 Choose Photo</span>
-                <input type="file" accept="image/*" className="hidden" onChange={e => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  passportPhotoFileRef.current = file;
-                  const reader = new FileReader();
-                  reader.onload = ev => setPassportPhotoPreview(ev.target?.result as string);
-                  reader.readAsDataURL(file);
-                }} />
-              </label>
+              <div className="text-[10px] text-slate-500 mb-2">Take or upload a headshot for the ID card</div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => passportCameraInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition-colors">
+                  <Camera size={12} className="text-amber-300"/>
+                  <span className="text-[10px] text-amber-300 font-medium">Take Photo</span>
+                </button>
+                <button type="button" onClick={() => passportGalleryInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] hover:bg-slate-200 dark:hover:bg-white/[0.07] transition-colors">
+                  <Upload size={12} className="text-slate-500 dark:text-slate-400"/>
+                  <span className="text-[10px] text-slate-600 dark:text-slate-400 font-medium">Upload</span>
+                </button>
+              </div>
+              {/* Camera capture — front-facing, for a headshot */}
+              <input ref={passportCameraInputRef} type="file" accept="image/*" capture="user"
+                className="hidden" onChange={handlePassportPhotoSelect} />
+              {/* Gallery pick */}
+              <input ref={passportGalleryInputRef} type="file" accept="image/*"
+                className="hidden" onChange={handlePassportPhotoSelect} />
             </div>
           </div>
+
+          {passportCropSrc && (
+            <ImageCropper
+              src={passportCropSrc}
+              onCrop={blob => handlePassportCropped(blob)}
+              onCancel={() => setPassportCropSrc(null)}
+            />
+          )}
           <div className="grid grid-cols-3 gap-4">
             <Field label="First Name">
               <Input placeholder="John" value={form.first_name}
