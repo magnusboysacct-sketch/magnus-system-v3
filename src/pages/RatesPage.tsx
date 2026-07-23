@@ -192,6 +192,7 @@ export default function RatesPage() {
   const { categories, refresh: refreshCategories } = useMasterLists();
   const { userRole } = useProjectContext();
   const canDelete = userRole === "director";
+  const canEdit = userRole === "director" || userRole === "estimator";
   const [items,setItems]=useState<CostItem[]>([]);
   const [loading,setLoading]=useState(true);
   const [companyId,setCompanyId]=useState<string>("");
@@ -717,10 +718,12 @@ export default function RatesPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={openAdd} disabled={busy}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition shadow-sm disabled:opacity-50">
-              <Plus size={13}/> Add Rate
-            </button>
+            {canEdit && (
+              <button onClick={openAdd} disabled={busy}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition shadow-sm disabled:opacity-50">
+                <Plus size={13}/> Add Rate
+              </button>
+            )}
             <div className="relative" data-export-menu>
               <button onClick={()=>setExportOpen(v=>!v)} disabled={busy||loading||filteredItems.length===0}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-white/[0.08] transition disabled:opacity-40">
@@ -842,7 +845,7 @@ export default function RatesPage() {
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <Package size={20} className="text-slate-400 dark:text-slate-700"/>
               <span className="text-slate-500 text-sm">No items match your filters</span>
-              {!search&&categoryFilter==="__ALL__"&&(
+              {!search&&categoryFilter==="__ALL__"&&canEdit&&(
                 <button onClick={openAdd} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition mt-1">
                   <Plus size={12}/> Add First Rate
                 </button>
@@ -997,14 +1000,18 @@ export default function RatesPage() {
 
                 {/* Actions */}
                 <div className={`flex gap-1 transition-opacity justify-end ${activeId===item.id?"opacity-100":"md:opacity-0 md:group-hover:opacity-100"}`}>
-                  <button type="button" onClick={()=>openEdit(item)} disabled={busy}
-                    className={`p-1.5 rounded-lg hover:bg-blue-500/15 transition ${activeId===item.id?"text-blue-500":"text-slate-500 dark:text-slate-600 hover:text-blue-400"}`} title="Edit">
-                    <Edit2 size={13}/>
-                  </button>
-                  <button type="button" onClick={()=>duplicateItem(item)} disabled={busy}
-                    className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition" title="Duplicate item">
-                    <Copy size={13}/>
-                  </button>
+                  {canEdit && (
+                    <button type="button" onClick={()=>openEdit(item)} disabled={busy}
+                      className={`p-1.5 rounded-lg hover:bg-blue-500/15 transition ${activeId===item.id?"text-blue-500":"text-slate-500 dark:text-slate-600 hover:text-blue-400"}`} title="Edit">
+                      <Edit2 size={13}/>
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button type="button" onClick={()=>duplicateItem(item)} disabled={busy}
+                      className="p-1.5 rounded-lg hover:bg-blue-500/10 text-slate-500 dark:text-slate-600 hover:text-blue-400 transition" title="Duplicate item">
+                      <Copy size={13}/>
+                    </button>
+                  )}
                   {canDelete && (
                     <button type="button" disabled={busy}
                       onClick={async()=>{

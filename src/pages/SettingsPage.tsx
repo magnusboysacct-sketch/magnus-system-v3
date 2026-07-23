@@ -3,6 +3,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader, Card, Btn, cn } from "../components/ui";
 import { Settings, BookOpen, Users, Building2, CreditCard, ArrowRight, FileText } from "lucide-react";
+import { useProjectContext } from "../context/ProjectContext";
 
 const SETTINGS_SECTIONS = [
   { title: "Company", desc: "Company name, logo, address", icon: <Building2 size={18}/>, to: "/settings/company", color: "text-blue-400 bg-blue-500/10 border-blue-500/20" },
@@ -14,6 +15,23 @@ const SETTINGS_SECTIONS = [
 
 export default function SettingsPage() {
   const nav = useNavigate();
+  const { userRole, loadingProjects } = useProjectContext();
+
+  // Defense-in-depth: the route itself is already wrapped in a RoleGuard
+  // (see App.tsx), but this page also checks directly in case it's ever
+  // rendered from somewhere that isn't route-guarded.
+  if (!loadingProjects && userRole !== "director") {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-8">
+        <div className="text-center">
+          <div className="text-5xl mb-4">🔒</div>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">Access Restricted</h2>
+          <p className="text-sm text-slate-500">You don't have permission to access this page.<br/>Contact your administrator.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader title="Settings" subtitle="System configuration"/>
