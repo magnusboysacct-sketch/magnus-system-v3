@@ -121,12 +121,12 @@ function rowStatusLabel(txn: CombinedTransaction) {
 
 function rowStatusClasses(txn: CombinedTransaction) {
   if (txn.gl_transaction_id) {
-    return "border-emerald-800/70 bg-emerald-900/20 text-emerald-300";
+    return "border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-300";
   }
   if ((txn.confidence_score ?? 0) >= 0.7) {
-    return "border-teal-800/70 bg-teal-900/20 text-teal-300";
+    return "border-teal-200 dark:border-teal-800/70 bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-300";
   }
-  return "border-amber-800/70 bg-amber-900/20 text-amber-300";
+  return "border-amber-200 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-300";
 }
 
 function confidenceBarClasses(score?: number) {
@@ -136,7 +136,7 @@ function confidenceBarClasses(score?: number) {
 }
 
 function amountClasses(amount: number) {
-  return amount >= 0 ? "text-emerald-400" : "text-rose-400";
+  return amount >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400";
 }
 
 function getClassificationCategory(classification?: ClassificationResult) {
@@ -963,13 +963,13 @@ export default function FinanceTransactionsPage() {
             </p>
           </div>
         </div>
-        <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
-          <p className="text-sm text-slate-400">
+        <div className="mt-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-8 text-center">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Please select a project from the projects page
           </p>
           <button
             onClick={() => navigate("/projects")}
-            className="mt-4 rounded-xl bg-slate-800/60 px-3 py-2 text-sm hover:bg-slate-800"
+            className="mt-4 rounded-xl bg-slate-100 dark:bg-slate-800/60 px-3 py-2 text-sm hover:bg-slate-200 dark:hover:bg-slate-800"
           >
             Go to Projects
           </button>
@@ -998,21 +998,21 @@ export default function FinanceTransactionsPage() {
         </div>
         <button
           onClick={() => navigate(`/projects/${projectId}`)}
-          className="rounded-xl bg-slate-800/60 px-3 py-2 text-sm hover:bg-slate-800"
+          className="rounded-xl bg-slate-100 dark:bg-slate-800/60 px-3 py-2 text-sm hover:bg-slate-200 dark:hover:bg-slate-800"
         >
           Back to Project
         </button>
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/30 p-8 text-center">
-          <p className="text-slate-400">Loading transactions...</p>
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-8 text-center">
+          <p className="text-slate-500 dark:text-slate-400">Loading transactions...</p>
         </div>
       ) : (
         <>
           {error && (
-            <div className="mb-4 rounded-xl border border-rose-800/60 bg-rose-900/20 p-4">
-              <p className="text-sm text-rose-300">Error: {error}</p>
+            <div className="mb-4 rounded-xl border border-rose-200 dark:border-rose-800/60 bg-rose-50 dark:bg-rose-900/20 p-4">
+              <p className="text-sm text-rose-600 dark:text-rose-300">Error: {error}</p>
             </div>
           )}
 
@@ -1075,10 +1075,10 @@ export default function FinanceTransactionsPage() {
           </div>
 
           {/* Quick Filters */}
-          <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+          <div className="mb-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-wrap gap-2">
-                <div className="text-sm font-medium text-slate-300 mb-2">Quick Filters:</div>
+                <div className="text-sm font-medium text-slate-600 dark:text-slate-300 mb-2">Quick Filters:</div>
                 
                 {/* Transaction Type Filters */}
                 <div className="flex flex-wrap gap-2">
@@ -1089,7 +1089,7 @@ export default function FinanceTransactionsPage() {
                       className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                         activeTab === type
                           ? "bg-sky-600 text-white"
-                          : "bg-slate-800/60 text-slate-300 hover:bg-slate-800 hover:text-white"
+                          : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white"
                       }`}
                     >
                       {type === "all" ? "All" : type === "bank" ? "Bank" : "Credit"}
@@ -1107,7 +1107,7 @@ export default function FinanceTransactionsPage() {
                         className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                           statusFilter === status
                             ? "bg-sky-600 text-white"
-                            : "bg-slate-800/60 text-slate-300 hover:bg-slate-800 hover:text-white"
+                            : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white"
                         }`}
                       >
                         {status === "all"
@@ -1129,7 +1129,7 @@ export default function FinanceTransactionsPage() {
                     className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                       statusFilter === "all"
                         ? "bg-sky-600 text-white"
-                        : "bg-slate-800/60 text-slate-300 hover:bg-slate-800 hover:text-white"
+                        : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white"
                     }`}
                   >
                     All Confidence
@@ -1139,7 +1139,7 @@ export default function FinanceTransactionsPage() {
                     className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                       statusFilter === "high_confidence"
                         ? "bg-emerald-600 text-white"
-                        : "bg-slate-800/60 text-slate-300 hover:bg-slate-800 hover:text-white"
+                        : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white"
                     }`}
                   >
                     High Confidence (≥70%)
@@ -1154,7 +1154,7 @@ export default function FinanceTransactionsPage() {
                   placeholder="Search transactions..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800/60 py-2 pl-9 pr-3 text-sm text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 py-2 pl-9 pr-3 text-sm text-slate-900 dark:text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
                 />
               </div>
 
@@ -1166,13 +1166,13 @@ export default function FinanceTransactionsPage() {
                 >
                   Auto Post Ready ({summaryStats.readyToPost})
                 </button>
-                
+
                 {/* Bulk Actions */}
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={handleBulkIgnore}
                     disabled={selectedTransactions.length === 0 || bulkBusy !== null}
-                    className="inline-flex items-center gap-2 rounded-lg border border-rose-700 bg-rose-900/20 px-3 py-2 text-sm font-medium text-rose-300 transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-lg border border-rose-200 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/20 px-3 py-2 text-sm font-medium text-rose-600 dark:text-rose-300 transition hover:bg-rose-100 dark:hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <X className="h-4 w-4" />
                     {bulkBusy === "ignore" ? "Ignoring..." : "Bulk Ignore"}
@@ -1180,7 +1180,7 @@ export default function FinanceTransactionsPage() {
                   <button
                     onClick={handleBulkRestore}
                     disabled={selectedTransactions.length === 0 || bulkBusy !== null}
-                    className="inline-flex items-center gap-2 rounded-lg border border-amber-700 bg-amber-900/20 px-3 py-2 text-sm font-medium text-amber-300 transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-300 transition hover:bg-amber-100 dark:hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Check className="h-4 w-4" />
                     {bulkBusy === "restore" ? "Restoring..." : "Bulk Restore"}
@@ -1196,11 +1196,11 @@ export default function FinanceTransactionsPage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                <span className="rounded-full border border-slate-700 bg-slate-800/60 px-2.5 py-1">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 px-2.5 py-1">
                   {selectedTransactions.length} selected
                 </span>
-                <span className="rounded-full border border-slate-700 bg-slate-800/60 px-2.5 py-1">
+                <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 px-2.5 py-1">
                   {filteredTransactions.length} visible
                 </span>
               </div>
@@ -1208,47 +1208,47 @@ export default function FinanceTransactionsPage() {
           </div>
 
           <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400">Total</div>
-              <div className="mt-1 text-lg font-semibold text-white">{summaryStats.total}</div>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Total</div>
+              <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">{summaryStats.total}</div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400">Bank</div>
-              <div className="mt-1 text-lg font-semibold text-sky-400">{summaryStats.bank}</div>
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Bank</div>
+              <div className="mt-1 text-lg font-semibold text-sky-600 dark:text-sky-400">{summaryStats.bank}</div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400">Credit</div>
-              <div className="mt-1 text-lg font-semibold text-violet-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Credit</div>
+              <div className="mt-1 text-lg font-semibold text-violet-600 dark:text-violet-400">
                 {summaryStats.credit}
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400">Needs Review</div>
-              <div className="mt-1 text-lg font-semibold text-amber-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Needs Review</div>
+              <div className="mt-1 text-lg font-semibold text-amber-600 dark:text-amber-400">
                 {summaryStats.needsReview}
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400">Ready to Post</div>
-              <div className="mt-1 text-lg font-semibold text-teal-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Ready to Post</div>
+              <div className="mt-1 text-lg font-semibold text-teal-600 dark:text-teal-400">
                 {summaryStats.readyToPost}
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400">Posted</div>
-              <div className="mt-1 text-lg font-semibold text-emerald-400">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Posted</div>
+              <div className="mt-1 text-lg font-semibold text-emerald-600 dark:text-emerald-400">
                 {summaryStats.posted}
               </div>
             </div>
-            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-              <div className="text-xs text-slate-400">Total Amount</div>
-              <div className="mt-1 text-lg font-semibold text-white">
+            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Total Amount</div>
+              <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
                 ${formatCurrency(summaryStats.totalAmount)}
               </div>
             </div>
           </div>
 
-          <div className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/30 p-4">
+          <div className="mb-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-4">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
               <div className="flex flex-wrap gap-2">
                 {(["all", "bank", "credit"] as TransactionType[]).map((tab) => (
@@ -1258,7 +1258,7 @@ export default function FinanceTransactionsPage() {
                     className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                       activeTab === tab
                         ? "bg-sky-600 text-white"
-                        : "bg-slate-800/60 text-slate-300 hover:bg-slate-800 hover:text-white"
+                        : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white"
                     }`}
                   >
                     {tab === "all" ? "All" : tab === "bank" ? "Bank" : "Credit"}
@@ -1275,7 +1275,7 @@ export default function FinanceTransactionsPage() {
                       className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                         statusFilter === status
                           ? "bg-sky-600 text-white"
-                          : "bg-slate-800/60 text-slate-300 hover:bg-slate-800 hover:text-white"
+                          : "bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white"
                       }`}
                     >
                       {status === "all"
@@ -1297,7 +1297,7 @@ export default function FinanceTransactionsPage() {
                   placeholder="Search transactions..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-800/60 py-2 pl-9 pr-3 text-sm text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 py-2 pl-9 pr-3 text-sm text-slate-900 dark:text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
                 />
               </div>
 
@@ -1310,12 +1310,12 @@ export default function FinanceTransactionsPage() {
               </button>
             </div>
 
-            <div className="mt-4 flex flex-col gap-3 border-t border-slate-800/80 pt-4 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                <span className="rounded-full border border-slate-700 bg-slate-800/60 px-2.5 py-1">
+            <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 dark:border-slate-800/80 pt-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 px-2.5 py-1">
                   {selectedTransactions.length} selected
                 </span>
-                <span className="rounded-full border border-slate-700 bg-slate-800/60 px-2.5 py-1">
+                <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 px-2.5 py-1">
                   {filteredTransactions.length} visible
                 </span>
               </div>
@@ -1324,7 +1324,7 @@ export default function FinanceTransactionsPage() {
                 <button
                   onClick={handleBulkReview}
                   disabled={selectedTransactions.length === 0 || bulkBusy !== null}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Bot className="h-4 w-4" />
                   {bulkBusy === "review" ? "Reviewing..." : "Bulk Review"}
@@ -1341,17 +1341,17 @@ export default function FinanceTransactionsPage() {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/30">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1120px]">
                 <thead>
-                  <tr className="border-b border-slate-800 text-left text-[11px] uppercase tracking-wide text-slate-400">
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     <th className="w-12 px-4 py-3">
                       <input
                         type="checkbox"
                         checked={allFilteredSelected}
                         onChange={toggleAllFiltered}
-                        className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-sky-500 focus:ring-sky-500"
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-100 dark:bg-slate-800 text-sky-500 focus:ring-sky-500"
                       />
                     </th>
                     <th className="px-4 py-3 font-medium">Transaction</th>
@@ -1367,14 +1367,14 @@ export default function FinanceTransactionsPage() {
                   {/* Unmatched Section */}
                   {filteredTransactions.filter(t => t.match_status === 'unmatched').length > 0 && (
                     <>
-                      <tr className="border-b-2 border-amber-800/40 bg-amber-900/10">
+                      <tr className="border-b-2 border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/10">
                         <td colSpan={8} className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <div className="h-2 w-2 rounded-full bg-amber-500"></div>
-                            <span className="text-sm font-semibold text-amber-300">
+                            <span className="text-sm font-semibold text-amber-600 dark:text-amber-300">
                               Unmatched ({filteredTransactions.filter(t => t.match_status === 'unmatched').length})
                             </span>
-                            <span className="text-xs text-amber-400">
+                            <span className="text-xs text-amber-600 dark:text-amber-400">
                               - Need classification and matching
                             </span>
                           </div>
@@ -1395,10 +1395,10 @@ export default function FinanceTransactionsPage() {
                         return (
                           <tr
                             key={transaction.id}
-                            className={`border-b border-slate-800/60 transition ${
+                            className={`border-b border-slate-200 dark:border-slate-800/60 transition ${
                               selectedTransaction?.id === transaction.id
-                                ? "bg-slate-800/50"
-                                : "hover:bg-slate-800/30"
+                                ? "bg-slate-100 dark:bg-slate-800/50"
+                                : "hover:bg-slate-200 dark:hover:bg-slate-800/30"
                             }`}
                           >
                             <td className="px-4 py-3 align-top">
@@ -1407,7 +1407,7 @@ export default function FinanceTransactionsPage() {
                                 checked={isSelected}
                                 onChange={() => toggleRowSelection(transaction.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-800 text-sky-500 focus:ring-sky-500"
+                                className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-100 dark:bg-slate-800 text-sky-500 focus:ring-sky-500"
                               />
                             </td>
 
@@ -1419,8 +1419,8 @@ export default function FinanceTransactionsPage() {
                                 <div
                                   className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border text-xs font-semibold ${
                                     transaction.type === "bank"
-                                      ? "border-sky-800/60 bg-sky-900/20 text-sky-300"
-                                      : "border-violet-800/60 bg-violet-900/20 text-violet-300"
+                                      ? "border-sky-200 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-300"
+                                      : "border-violet-200 dark:border-violet-800/60 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-300"
                                   }`}
                                 >
                                   {transaction.type === "bank" ? (
@@ -1432,7 +1432,7 @@ export default function FinanceTransactionsPage() {
 
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-sm font-medium text-white">
+                                    <span className="text-sm font-medium text-slate-900 dark:text-white">
                                       {transaction.description}
                                     </span>
                                     <span
@@ -1444,7 +1444,7 @@ export default function FinanceTransactionsPage() {
                                     </span>
                                   </div>
 
-                                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                                     <span>{formatDate(transaction.transaction_date)}</span>
                                     <span>
                                       {transaction.type === "bank" ? "Bank" : "Credit"}
@@ -1462,7 +1462,7 @@ export default function FinanceTransactionsPage() {
                               onClick={() => updateSelectedTransaction(transaction)}
                             >
                               <div className="space-y-1">
-                                <div className="text-sm text-slate-200">{accountLabel}</div>
+                                <div className="text-sm text-slate-700 dark:text-slate-200">{accountLabel}</div>
                                 <div className="text-xs text-slate-500">{vendorHint}</div>
                               </div>
                             </td>
@@ -1473,7 +1473,7 @@ export default function FinanceTransactionsPage() {
                             >
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2">
-                                  <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-800">
+                                  <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                                     <div
                                       className={`h-full ${confidenceBarClasses(
                                         transaction.confidence_score
@@ -1486,7 +1486,7 @@ export default function FinanceTransactionsPage() {
                                       }}
                                     />
                                   </div>
-                                  <span className="text-xs text-slate-400">
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">
                                     {transaction.confidence_score !== undefined
                                       ? `${Math.round(transaction.confidence_score * 100)}%`
                                       : "—"}
@@ -1503,7 +1503,7 @@ export default function FinanceTransactionsPage() {
                               onClick={() => updateSelectedTransaction(transaction)}
                             >
                               <div className="space-y-1">
-                                <div className="text-sm text-slate-200">
+                                <div className="text-sm text-slate-700 dark:text-slate-200">
                                   {transaction.gl_transaction_id
                                     ? "Posted to GL"
                                     : "Pending"}
@@ -1528,7 +1528,7 @@ export default function FinanceTransactionsPage() {
                               <div className="flex justify-end gap-2">
                                 <button
                                   onClick={() => updateSelectedTransaction(transaction)}
-                                  className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                                 >
                                   Open
                                 </button>
@@ -1558,7 +1558,7 @@ export default function FinanceTransactionsPage() {
                                 )}
                                 <button
                                   onClick={() => handleIgnoreTransaction(transaction)}
-                                  className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                                 >
                                   Ignore
                                 </button>
@@ -1573,14 +1573,14 @@ export default function FinanceTransactionsPage() {
                   {/* Matched Section */}
                   {filteredTransactions.filter(t => t.match_status === 'matched').length > 0 && (
                     <>
-                      <tr className="border-b-2 border-emerald-800/40 bg-emerald-900/10">
+                      <tr className="border-b-2 border-emerald-200 dark:border-emerald-800/40 bg-emerald-50 dark:bg-emerald-900/10">
                         <td colSpan={8} className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <div className="h-2 w-2 rounded-full bg-emerald-500"></div>
-                            <span className="text-sm font-semibold text-emerald-300">
+                            <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-300">
                               Matched ({filteredTransactions.filter(t => t.match_status === 'matched').length})
                             </span>
-                            <span className="text-xs text-emerald-400">
+                            <span className="text-xs text-emerald-600 dark:text-emerald-400">
                               - Ready to post
                             </span>
                           </div>
@@ -1601,10 +1601,10 @@ export default function FinanceTransactionsPage() {
                         return (
                           <tr
                             key={transaction.id}
-                            className={`border-b border-slate-800/60 transition ${
+                            className={`border-b border-slate-200 dark:border-slate-800/60 transition ${
                               selectedTransaction?.id === transaction.id
-                                ? "bg-slate-800/50"
-                                : "hover:bg-slate-800/30"
+                                ? "bg-slate-100 dark:bg-slate-800/50"
+                                : "hover:bg-slate-200 dark:hover:bg-slate-800/30"
                             }`}
                           >
                             <td className="px-4 py-3 align-top">
@@ -1613,7 +1613,7 @@ export default function FinanceTransactionsPage() {
                                 checked={isSelected}
                                 onChange={() => toggleRowSelection(transaction.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-800 text-sky-500 focus:ring-sky-500"
+                                className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-100 dark:bg-slate-800 text-sky-500 focus:ring-sky-500"
                               />
                             </td>
 
@@ -1625,8 +1625,8 @@ export default function FinanceTransactionsPage() {
                                 <div
                                   className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border text-xs font-semibold ${
                                     transaction.type === "bank"
-                                      ? "border-sky-800/60 bg-sky-900/20 text-sky-300"
-                                      : "border-violet-800/60 bg-violet-900/20 text-violet-300"
+                                      ? "border-sky-200 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-300"
+                                      : "border-violet-200 dark:border-violet-800/60 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-300"
                                   }`}
                                 >
                                   {transaction.type === "bank" ? (
@@ -1638,17 +1638,17 @@ export default function FinanceTransactionsPage() {
 
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-sm font-medium text-white">
+                                    <span className="text-sm font-medium text-slate-900 dark:text-white">
                                       {transaction.description}
                                     </span>
                                     <span
-                                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-emerald-800/60 bg-emerald-900/20 text-emerald-300`}
+                                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-300`}
                                     >
                                       Matched
                                     </span>
                                   </div>
 
-                                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                                     <span>{formatDate(transaction.transaction_date)}</span>
                                     <span>
                                       {transaction.type === "bank" ? "Bank" : "Credit"}
@@ -1666,12 +1666,12 @@ export default function FinanceTransactionsPage() {
                               onClick={() => updateSelectedTransaction(transaction)}
                             >
                               <div className="space-y-1">
-                                <div className="text-sm text-slate-200">{accountLabel}</div>
+                                <div className="text-sm text-slate-700 dark:text-slate-200">{accountLabel}</div>
                                 <div className="text-xs text-slate-500">{vendorHint}</div>
                                 {transaction.classification && (
-                                  <div className="mt-2 rounded-lg border border-slate-800/60 bg-slate-900/40 p-2">
-                                    <div className="text-xs font-medium text-slate-400 mb-1">AI Classification</div>
-                                    <div className="text-sm text-slate-200">
+                                  <div className="mt-2 rounded-lg border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-slate-900/40 p-2">
+                                    <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">AI Classification</div>
+                                    <div className="text-sm text-slate-700 dark:text-slate-200">
                                       {getClassificationCategory(transaction.classification)} / {getClassificationSubcategory(transaction.classification)}
                                     </div>
                                     {transaction.classification.confidence_score && (
@@ -1682,13 +1682,13 @@ export default function FinanceTransactionsPage() {
                                   </div>
                                 )}
                                 {transaction.matches && transaction.matches.length > 0 && (
-                                  <div className="mt-2 rounded-lg border border-slate-800/60 bg-slate-900/40 p-2">
-                                    <div className="text-xs font-medium text-slate-400 mb-1">Match Suggestions</div>
+                                  <div className="mt-2 rounded-lg border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-slate-900/40 p-2">
+                                    <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Match Suggestions</div>
                                     {transaction.matches.slice(0, 2).map((match, index) => (
-                                      <div key={index} className="text-sm text-slate-200 mb-1">
+                                      <div key={index} className="text-sm text-slate-700 dark:text-slate-200 mb-1">
                                         <div className="font-medium">{match.target_entity_type}</div>
                                         <div className="text-xs text-slate-500">{match.target_entity_id}</div>
-                                        <div className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                                        <div className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
                                           {Math.round(match.confidence_score * 100)}%
                                         </div>
                                       </div>
@@ -1704,7 +1704,7 @@ export default function FinanceTransactionsPage() {
                             >
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2">
-                                  <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-800">
+                                  <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                                     <div
                                       className={`h-full ${confidenceBarClasses(
                                         transaction.confidence_score
@@ -1717,7 +1717,7 @@ export default function FinanceTransactionsPage() {
                                       }}
                                     />
                                   </div>
-                                  <span className="text-xs text-slate-400">
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">
                                     {transaction.confidence_score !== undefined
                                       ? `${Math.round(transaction.confidence_score * 100)}%`
                                       : "—"}
@@ -1734,7 +1734,7 @@ export default function FinanceTransactionsPage() {
                               onClick={() => updateSelectedTransaction(transaction)}
                             >
                               <div className="space-y-1">
-                                <div className="text-sm text-emerald-300 font-semibold">
+                                <div className="text-sm text-emerald-600 dark:text-emerald-300 font-semibold">
                                   Ready to Post
                                 </div>
                                 <div className="text-xs text-emerald-500">
@@ -1757,7 +1757,7 @@ export default function FinanceTransactionsPage() {
                               <div className="flex justify-end gap-2">
                                 <button
                                   onClick={() => updateSelectedTransaction(transaction)}
-                                  className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                                 >
                                   Open
                                 </button>
@@ -1787,7 +1787,7 @@ export default function FinanceTransactionsPage() {
                                 )}
                                 <button
                                   onClick={() => handleIgnoreTransaction(transaction)}
-                                  className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                                 >
                                   Ignore
                                 </button>
@@ -1802,14 +1802,14 @@ export default function FinanceTransactionsPage() {
                   {/* Posted Section */}
                   {filteredTransactions.filter(t => t.match_status === 'posted').length > 0 && (
                     <>
-                      <tr className="border-b-2 border-emerald-800/40 bg-emerald-900/10">
+                      <tr className="border-b-2 border-emerald-200 dark:border-emerald-800/40 bg-emerald-50 dark:bg-emerald-900/10">
                         <td colSpan={8} className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <div className="h-2 w-2 rounded-full bg-emerald-500"></div>
-                            <span className="text-sm font-semibold text-emerald-300">
+                            <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-300">
                               Posted ({filteredTransactions.filter(t => t.match_status === 'posted').length})
                             </span>
-                            <span className="text-xs text-emerald-400">
+                            <span className="text-xs text-emerald-600 dark:text-emerald-400">
                               - In General Ledger
                             </span>
                           </div>
@@ -1830,10 +1830,10 @@ export default function FinanceTransactionsPage() {
                         return (
                           <tr
                             key={transaction.id}
-                            className={`border-b border-slate-800/60 transition ${
+                            className={`border-b border-slate-200 dark:border-slate-800/60 transition ${
                               selectedTransaction?.id === transaction.id
-                                ? "bg-slate-800/50"
-                                : "hover:bg-slate-800/30"
+                                ? "bg-slate-100 dark:bg-slate-800/50"
+                                : "hover:bg-slate-200 dark:hover:bg-slate-800/30"
                             }`}
                           >
                             <td className="px-4 py-3 align-top">
@@ -1842,7 +1842,7 @@ export default function FinanceTransactionsPage() {
                                 checked={isSelected}
                                 onChange={() => toggleRowSelection(transaction.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-800 text-sky-500 focus:ring-sky-500"
+                                className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-100 dark:bg-slate-800 text-sky-500 focus:ring-sky-500"
                               />
                             </td>
 
@@ -1854,8 +1854,8 @@ export default function FinanceTransactionsPage() {
                                 <div
                                   className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border text-xs font-semibold ${
                                     transaction.type === "bank"
-                                      ? "border-sky-800/60 bg-sky-900/20 text-sky-300"
-                                      : "border-violet-800/60 bg-violet-900/20 text-violet-300"
+                                      ? "border-sky-200 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-300"
+                                      : "border-violet-200 dark:border-violet-800/60 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-300"
                                   }`}
                                 >
                                   {transaction.type === "bank" ? (
@@ -1867,17 +1867,17 @@ export default function FinanceTransactionsPage() {
 
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-sm font-medium text-white">
+                                    <span className="text-sm font-medium text-slate-900 dark:text-white">
                                       {transaction.description}
                                     </span>
                                     <span
-                                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-emerald-800/60 bg-emerald-900/20 text-emerald-300`}
+                                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-300`}
                                     >
                                       Posted
                                     </span>
                                   </div>
 
-                                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                                     <span>{formatDate(transaction.transaction_date)}</span>
                                     <span>
                                       {transaction.type === "bank" ? "Bank" : "Credit"}
@@ -1895,12 +1895,12 @@ export default function FinanceTransactionsPage() {
                               onClick={() => updateSelectedTransaction(transaction)}
                             >
                               <div className="space-y-1">
-                                <div className="text-sm text-slate-200">{accountLabel}</div>
+                                <div className="text-sm text-slate-700 dark:text-slate-200">{accountLabel}</div>
                                 <div className="text-xs text-slate-500">{vendorHint}</div>
                                 {transaction.classification && (
-                                  <div className="mt-2 rounded-lg border border-slate-800/60 bg-slate-900/40 p-2">
-                                    <div className="text-xs font-medium text-slate-400 mb-1">AI Classification</div>
-                                    <div className="text-sm text-slate-200">
+                                  <div className="mt-2 rounded-lg border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-slate-900/40 p-2">
+                                    <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">AI Classification</div>
+                                    <div className="text-sm text-slate-700 dark:text-slate-200">
                                       {getClassificationCategory(transaction.classification)} / {getClassificationSubcategory(transaction.classification)}
                                     </div>
                                     {transaction.classification.confidence_score && (
@@ -1911,13 +1911,13 @@ export default function FinanceTransactionsPage() {
                                   </div>
                                 )}
                                 {transaction.matches && transaction.matches.length > 0 && (
-                                  <div className="mt-2 rounded-lg border border-slate-800/60 bg-slate-900/40 p-2">
-                                    <div className="text-xs font-medium text-slate-400 mb-1">Match Suggestions</div>
+                                  <div className="mt-2 rounded-lg border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-slate-900/40 p-2">
+                                    <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Match Suggestions</div>
                                     {transaction.matches.slice(0, 2).map((match, index) => (
-                                      <div key={index} className="text-sm text-slate-200 mb-1">
+                                      <div key={index} className="text-sm text-slate-700 dark:text-slate-200 mb-1">
                                         <div className="font-medium">{match.target_entity_type}</div>
                                         <div className="text-xs text-slate-500">{match.target_entity_id}</div>
-                                        <div className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                                        <div className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
                                           {Math.round(match.confidence_score * 100)}%
                                         </div>
                                       </div>
@@ -1933,7 +1933,7 @@ export default function FinanceTransactionsPage() {
                             >
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2">
-                                  <div className="h-1.5 w-20 overflow-hidden rounded-full bg-emerald-800">
+                                  <div className="h-1.5 w-20 overflow-hidden rounded-full bg-emerald-100 dark:bg-emerald-800">
                                     <div
                                       className={`h-full bg-emerald-500`}
                                       style={{
@@ -1944,7 +1944,7 @@ export default function FinanceTransactionsPage() {
                                       }}
                                     />
                                   </div>
-                                  <span className="text-xs text-emerald-400">
+                                  <span className="text-xs text-emerald-600 dark:text-emerald-400">
                                     {transaction.confidence_score !== undefined
                                       ? `${Math.round(transaction.confidence_score * 100)}%`
                                       : "—"}
@@ -1961,7 +1961,7 @@ export default function FinanceTransactionsPage() {
                               onClick={() => updateSelectedTransaction(transaction)}
                             >
                               <div className="space-y-1">
-                                <div className="text-sm text-emerald-300 font-semibold">
+                                <div className="text-sm text-emerald-600 dark:text-emerald-300 font-semibold">
                                   Posted to GL
                                 </div>
                                 <div className="text-xs text-emerald-500">
@@ -1984,13 +1984,13 @@ export default function FinanceTransactionsPage() {
                               <div className="flex justify-end gap-2">
                                 <button
                                   onClick={() => updateSelectedTransaction(transaction)}
-                                  className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                                 >
                                   View
                                 </button>
                                 <button
                                   onClick={() => handleIgnoreTransaction(transaction)}
-                                  className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                                 >
                                   Ignore
                                 </button>
@@ -2005,14 +2005,14 @@ export default function FinanceTransactionsPage() {
                   {/* Ignored/Disputed Section */}
                   {filteredTransactions.filter(t => t.match_status === 'disputed').length > 0 && (
                     <>
-                      <tr className="border-b-2 border-rose-800/40 bg-rose-900/10">
+                      <tr className="border-b-2 border-rose-200 dark:border-rose-800/40 bg-rose-50 dark:bg-rose-900/10">
                         <td colSpan={8} className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <div className="h-2 w-2 rounded-full bg-rose-500"></div>
-                            <span className="text-sm font-semibold text-rose-300">
+                            <span className="text-sm font-semibold text-rose-600 dark:text-rose-300">
                               Ignored ({filteredTransactions.filter(t => t.match_status === 'disputed').length})
                             </span>
-                            <span className="text-xs text-rose-400">
+                            <span className="text-xs text-rose-600 dark:text-rose-400">
                               - Disputed transactions
                             </span>
                           </div>
@@ -2033,10 +2033,10 @@ export default function FinanceTransactionsPage() {
                         return (
                           <tr
                             key={transaction.id}
-                            className={`border-b border-slate-800/60 transition opacity-60 ${
+                            className={`border-b border-slate-200 dark:border-slate-800/60 transition opacity-60 ${
                               selectedTransaction?.id === transaction.id
-                                ? "bg-slate-800/50"
-                                : "hover:bg-slate-800/30"
+                                ? "bg-slate-100 dark:bg-slate-800/50"
+                                : "hover:bg-slate-200 dark:hover:bg-slate-800/30"
                             }`}
                           >
                             <td className="px-4 py-3 align-top">
@@ -2045,7 +2045,7 @@ export default function FinanceTransactionsPage() {
                                 checked={isSelected}
                                 onChange={() => toggleRowSelection(transaction.id)}
                                 onClick={(e) => e.stopPropagation()}
-                                className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-800 text-sky-500 focus:ring-sky-500"
+                                className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-100 dark:bg-slate-800 text-sky-500 focus:ring-sky-500"
                               />
                             </td>
 
@@ -2057,8 +2057,8 @@ export default function FinanceTransactionsPage() {
                                 <div
                                   className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border text-xs font-semibold ${
                                     transaction.type === "bank"
-                                      ? "border-sky-800/60 bg-sky-900/20 text-sky-300"
-                                      : "border-violet-800/60 bg-violet-900/20 text-violet-300"
+                                      ? "border-sky-200 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-300"
+                                      : "border-violet-200 dark:border-violet-800/60 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-300"
                                   }`}
                                 >
                                   {transaction.type === "bank" ? (
@@ -2070,11 +2070,11 @@ export default function FinanceTransactionsPage() {
 
                                 <div className="min-w-0 flex-1">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <span className="text-sm font-medium text-white opacity-60">
+                                    <span className="text-sm font-medium text-slate-900 dark:text-white opacity-60">
                                       {transaction.description}
                                     </span>
                                     <span
-                                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-rose-800/60 bg-rose-900/20 text-rose-300`}
+                                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border-rose-200 dark:border-rose-800/60 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-300`}
                                     >
                                       Ignored
                                     </span>
@@ -2098,7 +2098,7 @@ export default function FinanceTransactionsPage() {
                               onClick={() => updateSelectedTransaction(transaction)}
                             >
                               <div className="space-y-1 opacity-60">
-                                <div className="text-sm text-slate-200">{accountLabel}</div>
+                                <div className="text-sm text-slate-700 dark:text-slate-200">{accountLabel}</div>
                                 <div className="text-xs text-slate-500">{vendorHint}</div>
                               </div>
                             </td>
@@ -2109,7 +2109,7 @@ export default function FinanceTransactionsPage() {
                             >
                               <div className="space-y-1 opacity-60">
                                 <div className="flex items-center gap-2">
-                                  <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-800">
+                                  <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                                     <div
                                       className={`h-full bg-rose-500`}
                                       style={{
@@ -2120,7 +2120,7 @@ export default function FinanceTransactionsPage() {
                                       }}
                                     />
                                   </div>
-                                  <span className="text-xs text-slate-400">
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">
                                     {transaction.confidence_score !== undefined
                                       ? `${Math.round(transaction.confidence_score * 100)}%`
                                       : "—"}
@@ -2137,7 +2137,7 @@ export default function FinanceTransactionsPage() {
                               onClick={() => updateSelectedTransaction(transaction)}
                             >
                               <div className="space-y-1 opacity-60">
-                                <div className="text-sm text-rose-300 font-semibold">
+                                <div className="text-sm text-rose-600 dark:text-rose-300 font-semibold">
                                   Disputed
                                 </div>
                                 <div className="text-xs text-rose-500">
@@ -2160,13 +2160,13 @@ export default function FinanceTransactionsPage() {
                               <div className="flex justify-end gap-2">
                                 <button
                                   onClick={() => updateSelectedTransaction(transaction)}
-                                  className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                                 >
                                   View
                                 </button>
                                 <button
                                   onClick={() => handleIgnoreTransaction(transaction)}
-                                  className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                                 >
                                   Restore
                                 </button>
@@ -2194,10 +2194,10 @@ export default function FinanceTransactionsPage() {
                     return (
                       <tr
                         key={transaction.id}
-                        className={`border-b border-slate-800/60 transition ${
+                        className={`border-b border-slate-200 dark:border-slate-800/60 transition ${
                           selectedTransaction?.id === transaction.id
-                            ? "bg-slate-800/50"
-                            : "hover:bg-slate-800/30"
+                            ? "bg-slate-100 dark:bg-slate-800/50"
+                            : "hover:bg-slate-200 dark:hover:bg-slate-800/30"
                         }`}
                       >
                         <td className="px-4 py-3 align-top">
@@ -2206,7 +2206,7 @@ export default function FinanceTransactionsPage() {
                             checked={isSelected}
                             onChange={() => toggleRowSelection(transaction.id)}
                             onClick={(e) => e.stopPropagation()}
-                            className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-800 text-sky-500 focus:ring-sky-500"
+                            className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-100 dark:bg-slate-800 text-sky-500 focus:ring-sky-500"
                           />
                         </td>
 
@@ -2218,8 +2218,8 @@ export default function FinanceTransactionsPage() {
                             <div
                               className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl border text-xs font-semibold ${
                                 transaction.type === "bank"
-                                  ? "border-sky-800/60 bg-sky-900/20 text-sky-300"
-                                  : "border-violet-800/60 bg-violet-900/20 text-violet-300"
+                                  ? "border-sky-200 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-300"
+                                  : "border-violet-200 dark:border-violet-800/60 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-300"
                               }`}
                             >
                               {transaction.type === "bank" ? (
@@ -2231,7 +2231,7 @@ export default function FinanceTransactionsPage() {
 
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-sm font-medium text-white">
+                                <span className="text-sm font-medium text-slate-900 dark:text-white">
                                   {transaction.description}
                                 </span>
                                 <span
@@ -2243,7 +2243,7 @@ export default function FinanceTransactionsPage() {
                                 </span>
                               </div>
 
-                              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                                 <span>{formatDate(transaction.transaction_date)}</span>
                                 <span>
                                   {transaction.type === "bank" ? "Bank" : "Credit"}
@@ -2261,12 +2261,12 @@ export default function FinanceTransactionsPage() {
                           onClick={() => updateSelectedTransaction(transaction)}
                         >
                           <div className="space-y-1">
-                            <div className="text-sm text-slate-200">{accountLabel}</div>
+                            <div className="text-sm text-slate-700 dark:text-slate-200">{accountLabel}</div>
                             <div className="text-xs text-slate-500">{vendorHint}</div>
                             {transaction.classification && (
-                              <div className="mt-2 rounded-lg border border-slate-800/60 bg-slate-900/40 p-2">
-                                <div className="text-xs font-medium text-slate-400 mb-1">AI Classification</div>
-                                <div className="text-sm text-slate-200">
+                              <div className="mt-2 rounded-lg border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-slate-900/40 p-2">
+                                <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">AI Classification</div>
+                                <div className="text-sm text-slate-700 dark:text-slate-200">
                                   {getClassificationCategory(transaction.classification)} / {getClassificationSubcategory(transaction.classification)}
                                 </div>
                                 {transaction.classification.confidence_score && (
@@ -2277,13 +2277,13 @@ export default function FinanceTransactionsPage() {
                               </div>
                             )}
                             {transaction.matches && transaction.matches.length > 0 && (
-                              <div className="mt-2 rounded-lg border border-slate-800/60 bg-slate-900/40 p-2">
-                                <div className="text-xs font-medium text-slate-400 mb-1">Match Suggestions</div>
+                              <div className="mt-2 rounded-lg border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-slate-900/40 p-2">
+                                <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Match Suggestions</div>
                                 {transaction.matches.slice(0, 2).map((match, index) => (
-                                  <div key={index} className="text-sm text-slate-200 mb-1">
+                                  <div key={index} className="text-sm text-slate-700 dark:text-slate-200 mb-1">
                                     <div className="font-medium">{match.target_entity_type}</div>
                                     <div className="text-xs text-slate-500">{match.target_entity_id}</div>
-                                    <div className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                                    <div className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
                                       {Math.round(match.confidence_score * 100)}%
                                     </div>
                                   </div>
@@ -2299,7 +2299,7 @@ export default function FinanceTransactionsPage() {
                         >
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
-                              <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-800">
+                              <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                                 <div
                                   className={`h-full ${confidenceBarClasses(
                                     transaction.confidence_score
@@ -2312,7 +2312,7 @@ export default function FinanceTransactionsPage() {
                                   }}
                                 />
                               </div>
-                              <span className="text-xs text-slate-400">
+                              <span className="text-xs text-slate-500 dark:text-slate-400">
                                 {transaction.confidence_score !== undefined
                                   ? `${Math.round(transaction.confidence_score * 100)}%`
                                   : "—"}
@@ -2329,7 +2329,7 @@ export default function FinanceTransactionsPage() {
                           onClick={() => updateSelectedTransaction(transaction)}
                         >
                           <div className="space-y-1">
-                            <div className="text-sm text-slate-200">
+                            <div className="text-sm text-slate-700 dark:text-slate-200">
                               {transaction.gl_transaction_id
                                 ? "Posted to GL"
                                 : "Pending"}
@@ -2354,7 +2354,7 @@ export default function FinanceTransactionsPage() {
                           <div className="flex justify-end gap-2">
                             <button
                               onClick={() => updateSelectedTransaction(transaction)}
-                              className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                             >
                               Open
                             </button>
@@ -2384,7 +2384,7 @@ export default function FinanceTransactionsPage() {
                             )}
                             <button
                               onClick={() => handleIgnoreTransaction(transaction)}
-                              className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-200 transition hover:bg-slate-800"
+                              className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                             >
                               Ignore
                             </button>
@@ -2399,16 +2399,16 @@ export default function FinanceTransactionsPage() {
 
             {filteredTransactions.length === 0 && (
               <div className="p-8">
-                <div className="mx-auto max-w-md rounded-2xl border border-slate-800 bg-slate-900/40 p-8 text-center">
-                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-slate-700 bg-slate-800/50">
-                    <Landmark className="h-8 w-8 text-slate-400" />
+                <div className="mx-auto max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-8 text-center">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/50">
+                    <Landmark className="h-8 w-8 text-slate-500 dark:text-slate-400" />
                   </div>
                   
-                  <h3 className="mb-2 text-lg font-semibold text-white">
+                  <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-white">
                     No Transactions Yet
                   </h3>
                   
-                  <p className="mb-6 text-sm text-slate-400 leading-relaxed">
+                  <p className="mb-6 text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
                     No bank or cash transactions have been imported yet. 
                     Start by connecting your bank accounts or creating transactions manually from the finance workflow.
                   </p>
@@ -2421,7 +2421,7 @@ export default function FinanceTransactionsPage() {
                       <Plus className="h-4 w-4" />
                       Add Transaction
                     </button>
-                    
+
                     <button
                       onClick={() => navigate("/finance")}
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-sky-700"
@@ -2432,16 +2432,16 @@ export default function FinanceTransactionsPage() {
                     
                     <button
                       onClick={() => navigate(`/projects/${projectId}`)}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800/70 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800"
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                     >
                       <ChevronRight className="h-4 w-4" />
                       Back to Project
                     </button>
                   </div>
                   
-                  <div className="rounded-lg border border-slate-800/50 bg-slate-800/30 p-3 text-left">
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-800/50 bg-slate-100 dark:bg-slate-800/30 p-3 text-left">
                     <p className="text-xs text-slate-500 leading-relaxed">
-                      <strong className="text-slate-400">💡 Tip:</strong> You can import bank statements, connect bank feeds, or create manual cash transactions from the Finance Hub to get started.
+                      <strong className="text-slate-500 dark:text-slate-400">💡 Tip:</strong> You can import bank statements, connect bank feeds, or create manual cash transactions from the Finance Hub to get started.
                     </p>
                   </div>
                 </div>
@@ -2452,19 +2452,19 @@ export default function FinanceTransactionsPage() {
           {selectedTransaction && (
             <>
               <div
-                className="fixed inset-0 z-30 bg-slate-950/30 xl:hidden"
+                className="fixed inset-0 z-30 bg-slate-50 dark:bg-slate-950/30 xl:hidden"
                 onClick={() => setSelectedTransaction(null)}
               />
-              <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-[28rem] border-l border-slate-800 bg-slate-950/95 shadow-2xl backdrop-blur xl:bg-slate-950">
+              <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-[28rem] border-l border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/95 shadow-2xl backdrop-blur xl:bg-slate-50 dark:xl:bg-slate-950">
                 <div className="flex h-full flex-col">
-                  <div className="flex items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
+                  <div className="flex items-start justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-4">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span
                           className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                             selectedTransaction.type === "bank"
-                              ? "border-sky-800/70 bg-sky-900/20 text-sky-300"
-                              : "border-violet-800/70 bg-violet-900/20 text-violet-300"
+                              ? "border-sky-200 dark:border-sky-800/70 bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-300"
+                              : "border-violet-200 dark:border-violet-800/70 bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-300"
                           }`}
                         >
                           {selectedTransaction.type === "bank" ? "Bank" : "Credit"}
@@ -2477,26 +2477,26 @@ export default function FinanceTransactionsPage() {
                           {rowStatusLabel(selectedTransaction)}
                         </span>
                       </div>
-                      <h3 className="mt-2 truncate text-lg font-semibold text-white">
+                      <h3 className="mt-2 truncate text-lg font-semibold text-slate-900 dark:text-white">
                         Transaction Details
                       </h3>
-                      <p className="mt-1 truncate text-sm text-slate-400">
+                      <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">
                         {selectedTransaction.description}
                       </p>
                     </div>
                     <button
                       onClick={() => setSelectedTransaction(null)}
-                      className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+                      className="rounded-lg p-2 text-slate-500 dark:text-slate-400 transition hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white"
                     >
                       <X className="h-5 w-5" />
                     </button>
                   </div>
 
                   <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
-                    <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
                       <div className="mb-3 flex items-center gap-2">
-                        <h4 className="text-sm font-semibold text-white">Transaction</h4>
-                        <span className="rounded-full border border-slate-700 bg-slate-800/60 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Transaction</h4>
+                        <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
                           {selectedTransaction.source_type}
                         </span>
                       </div>
@@ -2506,9 +2506,9 @@ export default function FinanceTransactionsPage() {
                           {formatCurrency(selectedTransaction.amount)}
                         </div>
                         <div className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                          selectedTransaction.gl_transaction_id 
-                            ? "border-emerald-800/70 bg-emerald-900/20 text-emerald-300"
-                            : "border-amber-800/70 bg-amber-900/20 text-amber-300"
+                          selectedTransaction.gl_transaction_id
+                            ? "border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-300"
+                            : "border-amber-200 dark:border-amber-800/70 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-300"
                         }`}>
                           {selectedTransaction.gl_transaction_id ? "Posted" : "Unposted"}
                         </div>
@@ -2519,7 +2519,7 @@ export default function FinanceTransactionsPage() {
                           <div className="text-[11px] uppercase tracking-wide text-slate-500">
                             Date
                           </div>
-                          <div className="mt-1 text-slate-200">
+                          <div className="mt-1 text-slate-700 dark:text-slate-200">
                             {formatDateTime(selectedTransaction.transaction_date)}
                           </div>
                         </div>
@@ -2528,7 +2528,7 @@ export default function FinanceTransactionsPage() {
                           <div className="text-[11px] uppercase tracking-wide text-slate-500">
                             Account
                           </div>
-                          <div className="mt-1 text-slate-200">
+                          <div className="mt-1 text-slate-700 dark:text-slate-200">
                             {selectedTransaction.type === "bank"
                               ? selectedTransaction.bank_account_name || "Unknown Bank"
                               : selectedTransaction.credit_card_name || "Unknown Card"}
@@ -2540,7 +2540,7 @@ export default function FinanceTransactionsPage() {
                             <div className="text-[11px] uppercase tracking-wide text-slate-500">
                               Reference
                             </div>
-                            <div className="mt-1 break-all font-mono text-slate-300">
+                            <div className="mt-1 break-all font-mono text-slate-600 dark:text-slate-300">
                               {selectedTransaction.reference_number}
                             </div>
                           </div>
@@ -2551,7 +2551,7 @@ export default function FinanceTransactionsPage() {
                             <div className="text-[11px] uppercase tracking-wide text-slate-500">
                               Merchant
                             </div>
-                            <div className="mt-1 text-slate-200">
+                            <div className="mt-1 text-slate-700 dark:text-slate-200">
                               {selectedTransaction.merchant_name}
                             </div>
                           </div>
@@ -2562,7 +2562,7 @@ export default function FinanceTransactionsPage() {
                             <div className="text-[11px] uppercase tracking-wide text-slate-500">
                               GL Transaction ID
                             </div>
-                            <div className="mt-1 break-all font-mono text-emerald-300">
+                            <div className="mt-1 break-all font-mono text-emerald-600 dark:text-emerald-300">
                               {selectedTransaction.gl_transaction_id}
                             </div>
                           </div>
@@ -2573,7 +2573,7 @@ export default function FinanceTransactionsPage() {
                             <div className="text-[11px] uppercase tracking-wide text-slate-500">
                               Balance
                             </div>
-                            <div className="mt-1 text-slate-200">
+                            <div className="mt-1 text-slate-700 dark:text-slate-200">
                               {formatCurrency(selectedTransaction.balance)}
                             </div>
                           </div>
@@ -2581,9 +2581,9 @@ export default function FinanceTransactionsPage() {
                       </div>
                     </section>
 
-                    <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
                       <div className="mb-3 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-white">
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
                           Posting / Assignment
                         </h4>
                         <button
@@ -2597,7 +2597,7 @@ export default function FinanceTransactionsPage() {
 
                       <div className="space-y-4">
                         <div>
-                          <label className="mb-1 block text-xs font-medium text-slate-400">
+                          <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
                             Project
                           </label>
                           <select
@@ -2608,7 +2608,7 @@ export default function FinanceTransactionsPage() {
                                 projectId: e.target.value,
                               }))
                             }
-                            className="w-full rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-sky-500 focus:outline-none"
                           >
                             <option value="">Select project</option>
                             {projectOptions.map((option) => (
@@ -2620,7 +2620,7 @@ export default function FinanceTransactionsPage() {
                         </div>
 
                         <div>
-                          <label className="mb-1 block text-xs font-medium text-slate-400">
+                          <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
                             Account
                           </label>
                           <select
@@ -2631,7 +2631,7 @@ export default function FinanceTransactionsPage() {
                                 accountId: e.target.value,
                               }))
                             }
-                            className="w-full rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-sky-500 focus:outline-none"
                           >
                             <option value="">Select account</option>
                             {accountOptions.map((option) => (
@@ -2643,7 +2643,7 @@ export default function FinanceTransactionsPage() {
                         </div>
 
                         <div>
-                          <label className="mb-1 block text-xs font-medium text-slate-400">
+                          <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
                             Vendor
                           </label>
                           <select
@@ -2654,7 +2654,7 @@ export default function FinanceTransactionsPage() {
                                 vendorId: e.target.value,
                               }))
                             }
-                            className="w-full rounded-xl border border-slate-700 bg-slate-800/70 px-3 py-2 text-sm text-white focus:border-sky-500 focus:outline-none"
+                            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-sky-500 focus:outline-none"
                           >
                             <option value="">Select vendor</option>
                             {vendorOptions.map((option) => (
@@ -2665,10 +2665,10 @@ export default function FinanceTransactionsPage() {
                           </select>
                         </div>
 
-                        <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-800/50 px-3 py-3">
+                        <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/50 px-3 py-3">
                           <div>
-                            <div className="text-sm font-medium text-white">Owner Draw</div>
-                            <div className="text-xs text-slate-400">
+                            <div className="text-sm font-medium text-slate-900 dark:text-white">Owner Draw</div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
                               Mark this transaction as owner draw handling
                             </div>
                           </div>
@@ -2696,19 +2696,19 @@ export default function FinanceTransactionsPage() {
                       </div>
                     </section>
 
-                    <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
                       <div className="mb-3 flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <Bot className="h-4 w-4 text-sky-400" />
-                          <h4 className="text-sm font-semibold text-white">AI Analysis</h4>
+                          <Bot className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                          <h4 className="text-sm font-semibold text-slate-900 dark:text-white">AI Analysis</h4>
                         </div>
                         <div className="text-right">
                           <div className={`text-lg font-semibold ${
-                            (selectedTransaction.confidence_score ?? 0) >= 0.7 
-                              ? "text-emerald-400" 
-                              : (selectedTransaction.confidence_score ?? 0) >= 0.5 
-                                ? "text-amber-400" 
-                                : "text-rose-400"
+                            (selectedTransaction.confidence_score ?? 0) >= 0.7
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : (selectedTransaction.confidence_score ?? 0) >= 0.5
+                                ? "text-amber-600 dark:text-amber-400"
+                                : "text-rose-600 dark:text-rose-400"
                           }`}>
                             {selectedTransaction.confidence_score !== undefined
                               ? `${Math.round(selectedTransaction.confidence_score * 100)}%`
@@ -2719,19 +2719,19 @@ export default function FinanceTransactionsPage() {
                       </div>
 
                       <div className="space-y-4">
-                        <div className="rounded-xl border border-slate-800 bg-slate-800/50 p-3">
+                        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/50 p-3">
                           <div className="mb-2 flex items-center justify-between">
-                            <div className="text-sm font-medium text-slate-200">
+                            <div className="text-sm font-medium text-slate-700 dark:text-slate-200">
                               {getClassificationCategory(selectedTransaction.classification)}
                             </div>
-                            <div className="text-xs text-slate-400">
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
                               {selectedTransaction.confidence_score !== undefined
                                 ? `${Math.round(selectedTransaction.confidence_score * 100)}% confidence`
                                 : "Unscored"}
                             </div>
                           </div>
                           {getClassificationSubcategory(selectedTransaction.classification) ? (
-                            <div className="text-xs text-slate-400">
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
                               Subcategory:{" "}
                               {getClassificationSubcategory(selectedTransaction.classification)}
                             </div>
@@ -2769,18 +2769,18 @@ export default function FinanceTransactionsPage() {
                               {selectedTransaction.matches.map((match, index) => (
                                 <div
                                   key={`${match.target_entity_id}-${index}`}
-                                  className="rounded-xl border border-slate-800 bg-slate-800/50 p-3"
+                                  className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/50 p-3"
                                 >
                                   <div className="flex items-center justify-between gap-3">
                                     <div className="min-w-0">
-                                      <div className="truncate text-sm font-medium text-slate-200">
+                                      <div className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">
                                         {match.target_entity_type}
                                       </div>
                                       <div className="truncate text-xs text-slate-500">
                                         {match.target_entity_id}
                                       </div>
                                     </div>
-                                    <span className="rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                                    <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
                                       {Math.round(match.confidence_score * 100)}%
                                     </span>
                                   </div>
@@ -2791,7 +2791,7 @@ export default function FinanceTransactionsPage() {
                               ))}
                             </div>
                           ) : (
-                            <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/30 p-3 text-sm text-slate-500">
+                            <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-3 text-sm text-slate-500">
                               No matches found
                             </div>
                           )}
@@ -2800,16 +2800,16 @@ export default function FinanceTransactionsPage() {
                     </section>
 
                     {/* Notes Section */}
-                    <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+                    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4">
                       <div className="mb-3 flex items-center gap-2">
-                        <h4 className="text-sm font-semibold text-white">Raw Data</h4>
+                        <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Raw Data</h4>
                       </div>
                       <div className="space-y-3 text-sm">
                         <div>
                           <div className="text-[11px] uppercase tracking-wide text-slate-500">
                             Source ID
                           </div>
-                          <div className="mt-1 break-all font-mono text-slate-300">
+                          <div className="mt-1 break-all font-mono text-slate-600 dark:text-slate-300">
                             {selectedTransaction.source_id}
                           </div>
                         </div>
@@ -2817,7 +2817,7 @@ export default function FinanceTransactionsPage() {
                           <div className="text-[11px] uppercase tracking-wide text-slate-500">
                             Created
                           </div>
-                          <div className="mt-1 text-slate-200">
+                          <div className="mt-1 text-slate-700 dark:text-slate-200">
                             {formatDateTime(selectedTransaction.created_at)}
                           </div>
                         </div>
@@ -2825,7 +2825,7 @@ export default function FinanceTransactionsPage() {
                           <div className="text-[11px] uppercase tracking-wide text-slate-500">
                             Last Updated
                           </div>
-                          <div className="mt-1 text-slate-200">
+                          <div className="mt-1 text-slate-700 dark:text-slate-200">
                             {formatDateTime(selectedTransaction.updated_at)}
                           </div>
                         </div>
@@ -2833,7 +2833,7 @@ export default function FinanceTransactionsPage() {
                     </section>
                   </div>
 
-                  <div className="border-t border-slate-800 px-5 py-4">
+                  <div className="border-t border-slate-200 dark:border-slate-800 px-5 py-4">
                     <div className="flex flex-wrap gap-2">
                       {!selectedTransaction.gl_transaction_id ? (
                         <button
@@ -2847,7 +2847,7 @@ export default function FinanceTransactionsPage() {
                             : "Post Transaction"}
                         </button>
                       ) : (
-                        <div className="inline-flex items-center gap-2 rounded-xl border border-emerald-800/70 bg-emerald-900/20 px-4 py-2 text-sm font-medium text-emerald-300">
+                        <div className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-2 text-sm font-medium text-emerald-600 dark:text-emerald-300">
                           <Check className="h-4 w-4" />
                           Posted
                         </div>
@@ -2855,7 +2855,7 @@ export default function FinanceTransactionsPage() {
 
                       <button
                         onClick={() => setSelectedTransaction(null)}
-                        className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/80 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800"
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 px-4 py-2 text-sm text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
                       >
                         Close
                         <ChevronRight className="h-4 w-4" />
