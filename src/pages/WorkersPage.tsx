@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { useProjectContext } from "../context/ProjectContext";
+import EditableDropdown from "../components/common/EditableDropdown";
 import { WorkerIDCard } from "../components/WorkerIDCard";
 import { SimpleIDScanner } from "../components/SimpleIDScanner";
 import {
@@ -27,6 +28,7 @@ type Worker = {
   id: string;
   company_id: string;
   worker_type: WorkerType;
+  job_title?: string | null;
   first_name: string;
   last_name: string;
   email?: string | null;
@@ -69,11 +71,20 @@ const EMPTY_FORM = {
   first_name: "", last_name: "", email: "", phone: "",
   address: "", city: "", hire_date: "",
   worker_type: "employee" as WorkerType,
+  job_title: "",
   status: "active" as WorkerStatus,
   pay_type: "hourly" as PayType,
   pay_rate: "", overtime_rate: "", employee_id: "", notes: "",
   id_number: "", id_photo_url: "", national_id_type: "", passport_photo_url: "",
 };
+
+const DEFAULT_JOB_TITLES = [
+  "Mason", "Carpenter", "Steel Fixer", "Electrician", "Plumber",
+  "Painter", "Tiler", "Roofer", "General Labourer", "Truck Driver",
+  "Equipment Operator", "Supervisor", "Foreman", "Site Engineer",
+  "Estimator", "Accountant", "Security Guard", "Cleaner", "Other"
+];
+const JOB_TITLES_STORAGE_KEY = "magnus_job_titles";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
@@ -134,6 +145,9 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
 
       <div className="mb-3">
         <button onClick={() => onView(worker)} className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-0.5 hover:text-cyan-400 transition-colors text-left">{fullName(worker)}</button>
+        {worker.job_title && (
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">{worker.job_title}</div>
+        )}
         <div className={cn("text-[10px] font-semibold capitalize", TYPE_COLOR[worker.worker_type || "employee"])}>
           {worker.worker_type.replace("_", " ")}
         </div>
@@ -397,6 +411,7 @@ export default function WorkersPage() {
   const passportGalleryInputRef = useRef<HTMLInputElement>(null);
   const passportCameraInputRef = useRef<HTMLInputElement>(null);
   const [passportCropSrc, setPassportCropSrc] = useState<string | null>(null);
+  const [jobTitles, setJobTitles] = useState<string[]>(DEFAULT_JOB_TITLES);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [idCardWorker, setIdCardWorker] = useState<Worker | null>(null);
@@ -411,6 +426,31 @@ export default function WorkersPage() {
   }, []);
 
   useEffect(() => { if (companyId) loadWorkers(); }, [companyId]);
+
+  // Job titles are a simple per-browser list (no dedicated master-list table
+  // for these yet), persisted to localStorage so additions/removals stick.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(JOB_TITLES_STORAGE_KEY);
+      if (saved) setJobTitles(JSON.parse(saved));
+    } catch { /* ignore */ }
+  }, []);
+
+  async function addJobTitle(title: string) {
+    setJobTitles(prev => {
+      const updated = [...prev, title];
+      localStorage.setItem(JOB_TITLES_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }
+
+  async function deleteJobTitle(title: string) {
+    setJobTitles(prev => {
+      const updated = prev.filter(t => t !== title);
+      localStorage.setItem(JOB_TITLES_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }
 
   async function loadWorkers() {
     setLoading(true);
@@ -473,6 +513,7 @@ export default function WorkersPage() {
         city: form.city.trim() || null,
         hire_date: form.hire_date || null,
         worker_type: form.worker_type,
+        job_title: form.job_title.trim() || null,
         status: form.status,
         pay_type: form.pay_type || null,
         pay_rate: form.pay_rate ? parseFloat(form.pay_rate) : null,
@@ -558,6 +599,7 @@ export default function WorkersPage() {
       city: worker.city || "",
       hire_date: worker.hire_date || "",
       worker_type: worker.worker_type,
+      job_title: worker.job_title || "",
       status: worker.status,
       pay_type: worker.pay_type || "hourly",
       pay_rate: worker.pay_rate?.toString() || "",
@@ -732,6 +774,7 @@ export default function WorkersPage() {
                         </div>
                         <div>
                           <button onClick={() => setSelectedWorker(w)} className="font-semibold text-slate-800 dark:text-slate-200 text-xs hover:text-cyan-400 transition-colors text-left">{fullName(w)}</button>
+                          {w.job_title && <div className="text-[9px] text-slate-500 dark:text-slate-400">{w.job_title}</div>}
                           {w.employee_id && <div className="text-[9px] text-slate-700">#{w.employee_id}</div>}
                         </div>
                       </div>
@@ -866,6 +909,20 @@ export default function WorkersPage() {
                 <option value="crew_lead">Crew Lead</option>
               </Select>
             </Field>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+              Job Title / Trade
+            </label>
+            <EditableDropdown
+              value={form.job_title}
+              onChange={v => setForm(f => ({ ...f, job_title: v }))}
+              options={jobTitles}
+              onAddOption={addJobTitle}
+              onDeleteOption={deleteJobTitle}
+              placeholder="e.g. Mason, Estimator, Foreman..."
+            />
           </div>
 
           <div className="grid grid-cols-3 gap-4">

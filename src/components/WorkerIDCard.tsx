@@ -10,6 +10,7 @@ interface Worker {
   last_name: string;
   employee_id?: string | null;
   worker_type?: string | null;
+  job_title?: string | null;
   id_number?: string | null;
   national_id_type?: string | null;
   address?: string | null;
@@ -50,6 +51,9 @@ function expiry(d?: string | null) {
 function roleLabel(t?: string | null) {
   return (t || "worker").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
+function displayTitle(worker: Worker) {
+  return worker.job_title?.trim() || roleLabel(worker.worker_type);
+}
 
 const BASE_URL = window.location.origin;
 const CARD_W = 338, CARD_H = 213; // CR80-ish ratio at print scale
@@ -72,7 +76,7 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
       setLoading(true);
       const { data } = await supabase
         .from("workers")
-        .select("id,first_name,last_name,employee_id,worker_type,id_number,national_id_type,address,city,phone,hire_date,passport_photo_url,id_photo_url")
+        .select("id,first_name,last_name,employee_id,worker_type,job_title,id_number,national_id_type,address,city,phone,hire_date,passport_photo_url,id_photo_url")
         .eq("id", workerId)
         .single();
       setWorker(data);
@@ -172,7 +176,7 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.fillText(`${worker!.first_name} ${worker!.last_name}`.toUpperCase(), ix, 68 * S);
     ctx.fillStyle = STEEL;
     ctx.font = `${7 * S}px sans-serif`;
-    ctx.fillText(roleLabel(worker!.worker_type).toUpperCase(), ix, 79 * S);
+    ctx.fillText(displayTitle(worker!).toUpperCase(), ix, 79 * S);
 
     const rows = [
       worker!.id_number ? [`${worker!.national_id_type || "ID"}`, worker!.id_number] : null,
@@ -434,7 +438,7 @@ img{width:${W/S}px;height:${H/S}px}
             </div>
             <div style={{ flex:1, minWidth:0, paddingTop:2 }}>
               <div style={{ fontSize:13, fontWeight:700, color:"#fff", lineHeight:1.1, marginBottom:2 }}>{worker.first_name} {worker.last_name}</div>
-              <div style={{ fontSize:8, color:STEEL, fontWeight:600, letterSpacing:1.5, textTransform:"uppercase", marginBottom:5 }}>{roleLabel(worker.worker_type)}</div>
+              <div style={{ fontSize:8, color:STEEL, fontWeight:600, letterSpacing:1.5, textTransform:"uppercase", marginBottom:5 }}>{displayTitle(worker)}</div>
               {worker.id_number && <InfoRow label={worker.national_id_type || "ID"} value={worker.id_number} />}
               {(worker.address || worker.city) && <InfoRow label="Address" value={[worker.address, worker.city].filter(Boolean).join(", ")} />}
               {worker.phone && <InfoRow label="Phone" value={worker.phone} />}

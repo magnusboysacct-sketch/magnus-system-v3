@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists";
+import EditableDropdown from "../components/common/EditableDropdown";
 import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
 import { generateProcurementFromBOQ } from "../lib/procurement";
 import { generateEstimateFromBOQ } from "../lib/estimates";
@@ -1050,7 +1051,7 @@ export default function BOQPage() {
   const [aiMessages, setAiMessages] = useState<{role:"ai"|"user";text:string;actions?:{label:string;onClick:()=>void}[]}[]>([]);
   const [aiInput, setAiInput] = useState("");
 
-  const { categories: masterCategories, units: masterUnits } = useMasterLists();
+  const { categories: masterCategories, units: masterUnits, refresh: refreshCategories } = useMasterLists();
   const canEdit = status === "draft";
 
   const usableCategories = useMemo(() => {
@@ -1417,6 +1418,21 @@ useEffect(() => {
   function onPickCategory(sectionId: string, catId: string) {
     const cat = usableCategories.find((c: any) => getCategoryId(c) === catId);
     updateSection(sectionId, { masterCategoryId: catId, title: cat ? getCategoryLabel(cat) : "New Section", scope: cat ? getCategoryScope(cat) : "" });
+  }
+
+  async function addBOQCategory(name: string) {
+    await supabase.from("master_categories").insert({
+      name,
+      company_id: companyId || null,
+      is_active: true,
+      sort_order: usableCategories.length + 1,
+    });
+    await refreshCategories();
+  }
+
+  async function deleteBOQCategory(name: string) {
+    await supabase.from("master_categories").delete().eq("name", name);
+    await refreshCategories();
   }
 
   function addItem(sectionId: string) {
@@ -2036,11 +2052,22 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 </button>
                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-700 w-5 text-center flex-shrink-0">{sIdx + 1}</span>
 
-                <select value={section.masterCategoryId ?? ""} disabled={!canEdit} onChange={e => onPickCategory(section.id, e.target.value)}
-                  className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1 text-[11px] text-slate-600 dark:text-slate-400 focus:outline-none focus:border-cyan-500/40 disabled:opacity-50 w-28 md:w-auto md:max-w-[160px] flex-shrink-0">
-                  <option value="">Category?</option>
-                  {usableCategories.map((c: any) => <option key={getCategoryId(c)} value={getCategoryId(c)}>{getCategoryLabel(c)}</option>)}
-                </select>
+                <EditableDropdown
+                  value={(() => {
+                    const cat = usableCategories.find((c: any) => getCategoryId(c) === section.masterCategoryId);
+                    return cat ? getCategoryLabel(cat) : "";
+                  })()}
+                  onChange={(name) => {
+                    const cat = usableCategories.find((c: any) => getCategoryLabel(c) === name);
+                    onPickCategory(section.id, cat ? getCategoryId(cat) : "");
+                  }}
+                  options={usableCategories.map((c: any) => getCategoryLabel(c))}
+                  onAddOption={addBOQCategory}
+                  onDeleteOption={deleteBOQCategory}
+                  placeholder="Category?"
+                  disabled={!canEdit}
+                  className="w-28 md:w-40 flex-shrink-0"
+                />
 
                 <input value={section.title} disabled={!canEdit} onChange={e => updateSection(section.id, { title: e.target.value })}
                   className="flex-1 bg-transparent text-sm font-bold text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-700 focus:outline-none disabled:opacity-60 min-w-[100px]"
