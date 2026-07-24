@@ -17,6 +17,7 @@ interface Worker {
   city?: string | null;
   phone?: string | null;
   hire_date?: string | null;
+  id_expiry_date?: string | null;
   passport_photo_url?: string | null;
   id_photo_url?: string | null;
 }
@@ -39,14 +40,24 @@ const AMBER = "#F2A93B";
 const AMBER_DIM = "rgba(242,169,59,0.18)";
 const STEEL = "#7FA8C9";
 const INK = "#15315A"; // back-face text uses the same navy as ink, for unity
+const ALERT_RED = "#DC2626";
 
 function fmtDate(d?: string | null) {
   return (d ? new Date(d) : new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
-function expiry(d?: string | null) {
-  const dt = d ? new Date(d) : new Date();
+// Falls back to hire_date + 2 years when no explicit id_expiry_date is set,
+// preserving the card's old behavior for workers added before this field existed.
+function resolveExpiryDate(worker: Worker): Date {
+  if (worker.id_expiry_date) return new Date(worker.id_expiry_date);
+  const dt = worker.hire_date ? new Date(worker.hire_date) : new Date();
   dt.setFullYear(dt.getFullYear() + 2);
-  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return dt;
+}
+function expiry(worker: Worker) {
+  return resolveExpiryDate(worker).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+function isIdExpired(worker: Worker) {
+  return resolveExpiryDate(worker) < new Date();
 }
 function roleLabel(t?: string | null) {
   return (t || "worker").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -76,7 +87,7 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
       setLoading(true);
       const { data } = await supabase
         .from("workers")
-        .select("id,first_name,last_name,employee_id,worker_type,job_title,id_number,national_id_type,address,city,phone,hire_date,passport_photo_url,id_photo_url")
+        .select("id,first_name,last_name,employee_id,worker_type,job_title,id_number,national_id_type,address,city,phone,hire_date,id_expiry_date,passport_photo_url,id_photo_url")
         .eq("id", workerId)
         .single();
       setWorker(data);
@@ -222,13 +233,13 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.font = `bold ${7.5 * S}px sans-serif`;
     ctx.fillText(fmtDate(worker!.hire_date), 12*S, 193*S);
 
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fillStyle = isIdExpired(worker!) ? ALERT_RED : "rgba(255,255,255,0.35)";
     ctx.font = `${5.5 * S}px sans-serif`;
     ctx.textAlign = "right";
-    ctx.fillText("EXPIRES", (CARD_W-12)*S, 181*S);
-    ctx.fillStyle = AMBER;
+    ctx.fillText(isIdExpired(worker!) ? "EXPIRED" : "EXPIRES", (CARD_W-12)*S, 181*S);
+    ctx.fillStyle = isIdExpired(worker!) ? ALERT_RED : AMBER;
     ctx.font = `bold ${7.5 * S}px sans-serif`;
-    ctx.fillText(expiry(worker!.hire_date), (CARD_W-12)*S, 193*S);
+    ctx.fillText(expiry(worker!), (CARD_W-12)*S, 193*S);
 
     ctx.fillStyle = "rgba(255,255,255,0.2)";
     ctx.font = `${5.5 * S}px monospace`;
@@ -456,7 +467,7 @@ img{width:${W/S}px;height:${H/S}px}
           <div style={{ background:"rgba(0,0,0,0.25)", borderTop:"1px solid rgba(255,255,255,0.05)", padding:"5px 12px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div><div style={{ fontSize:6, color:"rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>Issued</div><div style={{ fontSize:8, color:AMBER, fontWeight:600 }}>{fmtDate(worker.hire_date)}</div></div>
             <div style={{ fontSize:6, color:"rgba(255,255,255,0.2)", letterSpacing:1 }}>{(worker.employee_id || worker.id_number || "").toUpperCase()}</div>
-            <div><div style={{ fontSize:6, color:"rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>Expires</div><div style={{ fontSize:8, color:AMBER, fontWeight:600 }}>{expiry(worker.hire_date)}</div></div>
+            <div><div style={{ fontSize:6, color: isIdExpired(worker) ? ALERT_RED : "rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>{isIdExpired(worker) ? "Expired" : "Expires"}</div><div style={{ fontSize:8, color: isIdExpired(worker) ? ALERT_RED : AMBER, fontWeight:600 }}>{expiry(worker)}</div></div>
           </div>
         </div>
 

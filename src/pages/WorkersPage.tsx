@@ -37,6 +37,7 @@ type Worker = {
   city?: string | null;
   state?: string | null;
   hire_date?: string | null;
+  id_expiry_date?: string | null;
   status: WorkerStatus;
   pay_type?: PayType | null;
   pay_rate?: number | null;
@@ -70,6 +71,7 @@ const TYPE_BG: Record<WorkerType, string> = {
 const EMPTY_FORM = {
   first_name: "", last_name: "", email: "", phone: "",
   address: "", city: "", hire_date: "",
+  id_expiry_date: "",
   worker_type: "employee" as WorkerType,
   job_title: "",
   status: "active" as WorkerStatus,
@@ -99,6 +101,28 @@ function initials(w: Worker) {
 function fmtDate(d: string | null | undefined) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function IdExpiryBadge({ idExpiryDate }: { idExpiryDate?: string | null }) {
+  if (!idExpiryDate) return null;
+  const expiry = new Date(idExpiryDate);
+  const now = new Date();
+  const daysLeft = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return (
+    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400">
+      ID EXPIRED
+    </span>
+  );
+  if (daysLeft <= 30) return (
+    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
+      EXPIRES {daysLeft}d
+    </span>
+  );
+  return (
+    <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400">
+      ID Valid
+    </span>
+  );
 }
 
 // ─── Worker Card ──────────────────────────────────────────────────────────────
@@ -153,6 +177,9 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
         </div>
         {worker.employee_id && (
           <div className="text-[9px] text-slate-700 mt-0.5">ID: {worker.employee_id}</div>
+        )}
+        {worker.id_expiry_date && (
+          <div className="mt-1"><IdExpiryBadge idExpiryDate={worker.id_expiry_date}/></div>
         )}
       </div>
 
@@ -512,6 +539,7 @@ export default function WorkersPage() {
         address: form.address.trim() || null,
         city: form.city.trim() || null,
         hire_date: form.hire_date || null,
+        id_expiry_date: form.id_expiry_date || null,
         worker_type: form.worker_type,
         job_title: form.job_title.trim() || null,
         status: form.status,
@@ -598,6 +626,7 @@ export default function WorkersPage() {
       address: worker.address || "",
       city: worker.city || "",
       hire_date: worker.hire_date || "",
+      id_expiry_date: worker.id_expiry_date || "",
       worker_type: worker.worker_type,
       job_title: worker.job_title || "",
       status: worker.status,
@@ -776,6 +805,7 @@ export default function WorkersPage() {
                           <button onClick={() => setSelectedWorker(w)} className="font-semibold text-slate-800 dark:text-slate-200 text-xs hover:text-cyan-400 transition-colors text-left">{fullName(w)}</button>
                           {w.job_title && <div className="text-[9px] text-slate-500 dark:text-slate-400">{w.job_title}</div>}
                           {w.employee_id && <div className="text-[9px] text-slate-700">#{w.employee_id}</div>}
+                          {w.id_expiry_date && <div className="mt-0.5"><IdExpiryBadge idExpiryDate={w.id_expiry_date}/></div>}
                         </div>
                       </div>
                     </Td>
@@ -959,6 +989,56 @@ export default function WorkersPage() {
             </Field>
           </div>
 
+          <div>
+            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+              ID Expiry Date
+            </label>
+            <div className="space-y-2">
+              {/* Quick select buttons */}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "1 Month",  days: 30 },
+                  { label: "3 Months", days: 90 },
+                  { label: "6 Months", days: 180 },
+                  { label: "1 Year",   days: 365 },
+                  { label: "2 Years",  days: 730 },
+                ].map(({ label, days }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      const d = new Date();
+                      d.setDate(d.getDate() + days);
+                      setForm(f => ({ ...f, id_expiry_date: d.toISOString().slice(0, 10) }));
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-500/10 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {/* Manual date picker */}
+              <input
+                type="date"
+                value={form.id_expiry_date}
+                onChange={e => setForm(f => ({ ...f, id_expiry_date: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              />
+              {form.id_expiry_date && (
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-slate-400">
+                    Expires: {new Date(form.id_expiry_date).toLocaleDateString("en-JM", { day: "numeric", month: "long", year: "numeric" })}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, id_expiry_date: "" }))}
+                    className="text-xs text-red-400 hover:text-red-500">
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
           <Divider label="Pay Information"/>
 
           <div className="grid grid-cols-4 gap-4">
@@ -1038,6 +1118,7 @@ export default function WorkersPage() {
                   { label:"City",        value: selectedWorker.city },
                   { label:"Pay Rate",    value: selectedWorker.pay_rate ? `${selectedWorker.pay_rate}/hr` : null },
                   { label:"Hire Date",   value: selectedWorker.hire_date ? fmtDate(selectedWorker.hire_date) : null },
+                  { label:"ID Expiry",   value: selectedWorker.id_expiry_date ? fmtDate(selectedWorker.id_expiry_date) : null },
                 ].filter(f => f.value).map(f => (
                   <div key={f.label} className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.05] p-2.5">
                     <div className="text-[9px] text-slate-600 mb-0.5">{f.label}</div>
