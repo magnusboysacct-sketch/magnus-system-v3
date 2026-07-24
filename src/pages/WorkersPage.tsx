@@ -234,24 +234,23 @@ function ImageCropper({
     // Dark overlay
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(0, 0, w, h);
-    // Clear crop circle
+    // Clear crop square
     ctx.save();
     ctx.beginPath();
-    ctx.arc(box.x + box.size / 2, box.y + box.size / 2, box.size / 2, 0, Math.PI * 2);
+    ctx.rect(box.x, box.y, box.size, box.size);
     ctx.clip();
     ctx.drawImage(img, 0, 0, w, h);
     ctx.restore();
-    // Circle border
+    // Square border
     ctx.strokeStyle = "#3b82f6";
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(box.x + box.size / 2, box.y + box.size / 2, box.size / 2, 0, Math.PI * 2);
-    ctx.stroke();
-    // Resize handle
+    ctx.strokeRect(box.x, box.y, box.size, box.size);
+    // Corner handles for visual reference
+    const handleSize = 10;
     ctx.fillStyle = "#3b82f6";
-    ctx.beginPath();
-    ctx.arc(box.x + box.size, box.y + box.size, 8, 0, Math.PI * 2);
-    ctx.fill();
+    [[box.x, box.y], [box.x + box.size, box.y], [box.x, box.y + box.size], [box.x + box.size, box.y + box.size]].forEach(([hx, hy]) => {
+      ctx.fillRect(hx - handleSize / 2, hy - handleSize / 2, handleSize, handleSize);
+    });
   }
 
   function redraw(box: { x: number; y: number; size: number }) {
@@ -276,14 +275,11 @@ function ImageCropper({
   function onDown(e: React.MouseEvent | React.TouchEvent) {
     const pos = getPos(e);
     const { x, y, size } = cropBox;
-    const cx = x + size / 2;
-    const cy = y + size / 2;
-    const dist = Math.sqrt(Math.pow(pos.x - cx, 2) + Math.pow(pos.y - cy, 2));
-    // Check resize handle
+    // Check resize handle (bottom-right corner)
     const rdist = Math.sqrt(Math.pow(pos.x - (x + size), 2) + Math.pow(pos.y - (y + size), 2));
     if (rdist < 16) {
       resizing.current = true;
-    } else if (dist < size / 2) {
+    } else if (pos.x >= x && pos.x <= x + size && pos.y >= y && pos.y <= y + size) {
       dragging.current = true;
       dragStart.current = { mx: pos.x, my: pos.y, bx: x, by: y };
     }
@@ -324,10 +320,7 @@ function ImageCropper({
     output.width = 400;
     output.height = 400;
     const ctx = output.getContext("2d")!;
-    // Draw circle clip
-    ctx.beginPath();
-    ctx.arc(200, 200, 200, 0, Math.PI * 2);
-    ctx.clip();
+    // No clip — square crop, draw the full output canvas.
     // Draw the cropped area (map crop box back to the original image's pixels)
     const srcX = cropBox.x / imgSize.scale;
     const srcY = cropBox.y / imgSize.scale;
