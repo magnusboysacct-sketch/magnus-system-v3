@@ -10,7 +10,7 @@ import {
 import {
   FolderOpen, Plus, Search, Hammer, ArrowRight,
   Building2, LayoutGrid, List, RefreshCw, CheckSquare, TrendingUp,
-  Edit2, Trash2
+  Edit2, Trash2, RotateCcw
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -45,6 +45,7 @@ const STATUS_COLOR: Record<string, any> = {
   on_hold:   "amber",
   cancelled: "red",
   planning:  "violet",
+  archived:  "slate",
 };
 
 const STATUS_OPTS = [
@@ -54,6 +55,11 @@ const STATUS_OPTS = [
   { value: "completed", label: "Completed" },
   { value: "cancelled", label: "Cancelled" },
 ];
+
+// Filter-only — "archived" isn't a status a director should be able to pick
+// from the regular New/Edit Project form; it's only reachable via the
+// dedicated Archive action in the delete flow.
+const FILTER_STATUS_OPTS = [...STATUS_OPTS, { value: "archived", label: "Archived" }];
 
 const DEFAULT_CLOSEOUT: CloseOutForm = {
   project_type: "",
@@ -80,10 +86,15 @@ function ProjectCard({ project, client, onClick, onCloseOut, onEdit, onDelete }:
   onEdit: (p: Project) => void;
   onDelete: (p: Project) => void;
 }) {
-  const { userRole } = useProjectContext();
+  const { userRole, refreshProjects } = useProjectContext();
   const canDelete = userRole === "director";
   const status = project.status || "active";
   const canCloseOut = status === "active" || status === "completed";
+  async function restore(e: React.MouseEvent) {
+    e.stopPropagation();
+    await supabase.from("projects").update({ status: "active" }).eq("id", project.id);
+    await refreshProjects();
+  }
   return (
     <div
       onClick={onClick}
@@ -123,19 +134,32 @@ function ProjectCard({ project, client, onClick, onCloseOut, onEdit, onDelete }:
               <TrendingUp size={9}/> Close Out
             </button>
           )}
-          <button
-            onClick={e => { e.stopPropagation(); onEdit(project); }}
-            className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-blue-500/15 text-slate-500 hover:text-blue-400 transition-colors"
-            title="Edit Project">
-            <Edit2 size={13}/>
-          </button>
-          {canDelete && (
-            <button
-              onClick={e => { e.stopPropagation(); onDelete(project); }}
-              className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
-              title="Delete Project">
-              <Trash2 size={13}/>
-            </button>
+          {status === "archived" ? (
+            canDelete && (
+              <button
+                onClick={restore}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-[10px] text-blue-400 font-semibold transition"
+                title="Restore Project">
+                <RotateCcw size={11}/> Restore
+              </button>
+            )
+          ) : (
+            <>
+              <button
+                onClick={e => { e.stopPropagation(); onEdit(project); }}
+                className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-blue-500/15 text-slate-500 hover:text-blue-400 transition-colors"
+                title="Edit Project">
+                <Edit2 size={13}/>
+              </button>
+              {canDelete && (
+                <button
+                  onClick={e => { e.stopPropagation(); onDelete(project); }}
+                  className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
+                  title="Delete Project">
+                  <Trash2 size={13}/>
+                </button>
+              )}
+            </>
           )}
           <ArrowRight size={13} className="text-slate-700 group-hover:text-cyan-500 group-hover:translate-x-0.5 transition-all" />
         </div>
@@ -154,10 +178,15 @@ function ProjectRow({ project, client, onClick, onCloseOut, onEdit, onDelete }: 
   onEdit: (p: Project) => void;
   onDelete: (p: Project) => void;
 }) {
-  const { userRole } = useProjectContext();
+  const { userRole, refreshProjects } = useProjectContext();
   const canDelete = userRole === "director";
   const status = project.status || "active";
   const canCloseOut = status === "active" || status === "completed";
+  async function restore(e: React.MouseEvent) {
+    e.stopPropagation();
+    await supabase.from("projects").update({ status: "active" }).eq("id", project.id);
+    await refreshProjects();
+  }
   return (
     <div
       onClick={onClick}
@@ -179,19 +208,32 @@ function ProjectRow({ project, client, onClick, onCloseOut, onEdit, onDelete }: 
           <TrendingUp size={9}/> Close Out
         </button>
       )}
-      <button
-        onClick={e => { e.stopPropagation(); onEdit(project); }}
-        className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-blue-500/15 text-slate-500 hover:text-blue-400 transition-colors"
-        title="Edit">
-        <Edit2 size={13}/>
-      </button>
-      {canDelete && (
-        <button
-          onClick={e => { e.stopPropagation(); onDelete(project); }}
-          className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
-          title="Delete">
-          <Trash2 size={13}/>
-        </button>
+      {status === "archived" ? (
+        canDelete && (
+          <button
+            onClick={restore}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-[10px] text-blue-400 font-semibold transition"
+            title="Restore">
+            <RotateCcw size={11}/> Restore
+          </button>
+        )
+      ) : (
+        <>
+          <button
+            onClick={e => { e.stopPropagation(); onEdit(project); }}
+            className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-blue-500/15 text-slate-500 hover:text-blue-400 transition-colors"
+            title="Edit">
+            <Edit2 size={13}/>
+          </button>
+          {canDelete && (
+            <button
+              onClick={e => { e.stopPropagation(); onDelete(project); }}
+              className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-red-500/15 text-slate-500 hover:text-red-400 transition-colors"
+              title="Delete">
+              <Trash2 size={13}/>
+            </button>
+          )}
+        </>
       )}
       <ArrowRight size={13} className="text-slate-700 group-hover:text-slate-400 transition-colors flex-shrink-0" />
     </div>
@@ -214,7 +256,8 @@ export default function ProjectsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [editProject, setEditProject] = useState<Project | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [deleteAction, setDeleteAction] = useState<"choosing" | "deleting" | "archiving">("choosing");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Close Out state
   const [closeOutProject, setCloseOutProject] = useState<Project | null>(null);
@@ -245,7 +288,9 @@ export default function ProjectsPage() {
 
   const filtered = projects.filter(p => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || p.status === statusFilter;
+    // "All" means all non-archived — archived projects only show when the
+    // Archived filter is explicitly selected, matching "Archive hides it".
+    const matchStatus = statusFilter === "all" ? p.status !== "archived" : p.status === statusFilter;
     return matchSearch && matchStatus;
   });
 
@@ -312,16 +357,48 @@ export default function ProjectsPage() {
     setError(null);
   }
 
-  async function deleteProject(p: Project) {
-    setDeleting(true);
+  async function archiveProject(p: Project) {
+    setDeleteAction("archiving");
+    setDeleteError(null);
     try {
-      const { error: e } = await supabase.from("projects").delete().eq("id", p.id);
-      if (e) { alert(e.message); return; }
+      const { error: e } = await supabase.from("projects").update({ status: "archived" }).eq("id", p.id);
+      if (e) { setDeleteError(e.message); return; }
       await refreshProjects();
       setDeleteConfirm(null);
       if (currentProjectId === p.id) setCurrentProjectId(null);
     } finally {
-      setDeleting(false);
+      setDeleteAction("choosing");
+    }
+  }
+
+  async function deleteProject(p: Project) {
+    setDeleteAction("deleting");
+    setDeleteError(null);
+    try {
+      // Most project_id FKs already cascade at the DB level, but a few
+      // (confirmed: field_payments) don't, and a handful of tables created
+      // outside tracked migrations have unknown cascade behavior — deleting
+      // their rows first is harmless where cascade already exists and
+      // necessary where it doesn't.
+      const pid = p.id;
+      await supabase.from("field_payments").delete().eq("project_id", pid);
+      await supabase.from("boq_headers").delete().eq("project_id", pid);
+      await supabase.from("project_daily_logs").delete().eq("project_id", pid);
+      await supabase.from("project_photos").delete().eq("project_id", pid);
+      await supabase.from("project_issues").delete().eq("project_id", pid);
+      await supabase.from("project_tasks").delete().eq("project_id", pid);
+      await supabase.from("site_visits").delete().eq("project_id", pid);
+      await supabase.from("project_plans").delete().eq("project_id", pid);
+      await supabase.from("project_milestones").delete().eq("project_id", pid);
+      await supabase.from("purchase_orders").delete().eq("project_id", pid);
+      // Finally delete the project
+      const { error: e } = await supabase.from("projects").delete().eq("id", pid);
+      if (e) { setDeleteError(e.message); return; }
+      await refreshProjects();
+      setDeleteConfirm(null);
+      if (currentProjectId === p.id) setCurrentProjectId(null);
+    } finally {
+      setDeleteAction("choosing");
     }
   }
 
@@ -423,7 +500,7 @@ export default function ProjectsPage() {
           </div>
           <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="w-36">
             <option value="all">All status</option>
-            {STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            {FILTER_STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </Select>
           <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
             <button onClick={() => setViewMode("grid")}
@@ -661,20 +738,59 @@ export default function ProjectsPage() {
       {/* ── Delete Project Modal ── */}
       <Modal
         open={!!deleteConfirm}
-        onClose={() => setDeleteConfirm(null)}
-        title="Delete Project"
-        subtitle="This cannot be undone."
+        onClose={() => { if (deleteAction === "choosing") { setDeleteConfirm(null); setDeleteError(null); } }}
+        title="Delete Project?"
+        subtitle={deleteConfirm?.name || ""}
         width="max-w-sm">
-        <div className="space-y-4">
-          <Alert type="warning">
-            Deleting <strong>{deleteConfirm?.name}</strong> will permanently remove it and all associated data.
-          </Alert>
-          <div className="flex justify-end gap-2">
-            <Btn variant="ghost" onClick={() => setDeleteConfirm(null)}>Cancel</Btn>
-            <Btn variant="danger" onClick={() => deleteConfirm && deleteProject(deleteConfirm)} disabled={deleting}>
-              {deleting ? "Deleting..." : "Delete Project"}
-            </Btn>
+        <div>
+          <p className="text-sm text-slate-500 text-center mb-5">
+            This project may have linked records. What would you like to do?
+          </p>
+
+          {deleteError && (
+            <div className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 text-xs">
+              ⚠️ {deleteError}
+            </div>
+          )}
+
+          <div className="space-y-3 mb-5">
+            {/* Archive */}
+            <button
+              onClick={() => deleteConfirm && archiveProject(deleteConfirm)}
+              disabled={deleteAction !== "choosing"}
+              className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all disabled:opacity-50 text-left">
+              <span className="text-2xl flex-shrink-0">🗄️</span>
+              <div>
+                <div className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                  {deleteAction === "archiving" ? "Archiving..." : "Archive Project"}
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  Hides project from the active list. All data kept safe — restore anytime.
+                </div>
+              </div>
+            </button>
+
+            {/* Delete */}
+            <button
+              onClick={() => deleteConfirm && deleteProject(deleteConfirm)}
+              disabled={deleteAction !== "choosing"}
+              className="w-full flex items-start gap-3 p-4 rounded-xl border-2 border-red-200 dark:border-red-500/30 hover:border-red-400 dark:hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-all disabled:opacity-50 text-left">
+              <span className="text-2xl flex-shrink-0">🗑️</span>
+              <div>
+                <div className="text-sm font-bold text-red-600 dark:text-red-400">
+                  {deleteAction === "deleting" ? "Deleting..." : "Delete Everything"}
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  Permanently removes the project and all linked data — payments, BOQ, photos, logs. Cannot be undone.
+                </div>
+              </div>
+            </button>
           </div>
+
+          <Btn variant="ghost" onClick={() => { setDeleteConfirm(null); setDeleteError(null); }}
+            disabled={deleteAction !== "choosing"} className="w-full justify-center">
+            Cancel
+          </Btn>
         </div>
       </Modal>
     </div>

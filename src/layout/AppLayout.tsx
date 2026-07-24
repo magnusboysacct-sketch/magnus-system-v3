@@ -138,8 +138,9 @@ function NavGroup({ item, collapsed, defaultOpen, onNavigate }: { item: NavItem;
 // ─── Project Picker ───────────────────────────────────────────────────────────
 
 function ProjectPicker({ collapsed }: { collapsed: boolean }) {
-  const { projects, currentProject, setCurrentProjectId, loadingProjects } = useProjectContext();
+  const { projects: allProjects, currentProject, setCurrentProjectId, loadingProjects } = useProjectContext();
   const [open, setOpen] = useState(false);
+  const projects = allProjects.filter(p => p.status !== "archived");
 
   if (loadingProjects) {
     return <div className="mx-3 h-9 rounded-lg bg-slate-100 dark:bg-white/[0.04] animate-pulse" />;
