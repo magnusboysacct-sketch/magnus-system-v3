@@ -847,10 +847,27 @@ export default function WorkersPage() {
       </div>
 
       {/* New / Edit Modal */}
-      <Modal open={showNew} onClose={closeModal}
-        title={editWorker ? "Edit Worker" : "Add Worker"}
-        subtitle={editWorker ? fullName(editWorker) : "Add a new worker to your team"}
-        width="max-w-4xl">
+      {showNew && (
+      <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+        <div className="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl w-full sm:max-w-4xl flex flex-col"
+          style={{ maxHeight: "95dvh" }}>
+
+          {/* Mobile drag handle */}
+          <div className="flex-shrink-0 flex justify-center pt-3 pb-1 sm:hidden">
+            <div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600"/>
+          </div>
+
+          {/* Header — fixed at top */}
+          <div className="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
+            <div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{editWorker ? "Edit Worker" : "Add Worker"}</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-600 mt-0.5">{editWorker ? fullName(editWorker) : "Add a new worker to your team"}</div>
+            </div>
+            <button onClick={closeModal} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"><X size={15}/></button>
+          </div>
+
+          {/* Body — scrollable */}
+          <div className="flex-1 overflow-y-auto p-5">
         <div className="space-y-4">
           {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
 
@@ -1069,7 +1086,11 @@ export default function WorkersPage() {
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}/>
           </Field>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
+        </div>
+          </div>
+
+          {/* Footer — fixed at bottom, always visible */}
+          <div className="flex-shrink-0 flex justify-end gap-2 px-5 py-4 border-t border-slate-200 dark:border-white/[0.06] bg-white dark:bg-slate-900">
             <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
             <Btn variant="primary" onClick={saveWorker}
               disabled={!form.first_name.trim() || !form.last_name.trim() || saving}>
@@ -1077,7 +1098,8 @@ export default function WorkersPage() {
             </Btn>
           </div>
         </div>
-      </Modal>
+      </div>
+      )}
 
       {/* Worker Detail Modal — shows ID photo */}
       {selectedWorker && (
