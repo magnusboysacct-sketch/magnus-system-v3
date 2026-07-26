@@ -1771,29 +1771,31 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string) {
 }
 // --- Generate Actions ------------------------------------------------------
   async function generateEstimate() {
+    const effectiveProjectId = routeProjectId || activeProjectId;
     if (status !== "approved") { setPersistError("Approve the BOQ first."); return; }
-    if (!routeProjectId || !boqId) { setPersistError("Save the BOQ first."); return; }
+    if (!effectiveProjectId || !boqId) { setPersistError("Save the BOQ first."); return; }
     setPersistLoading(true);
     try {
-      const result = await generateEstimateFromBOQ(routeProjectId, boqId);
-      if (result.success) setTimeout(() => nav(`/projects/${routeProjectId}/estimates`), 500);
+      const result = await generateEstimateFromBOQ(effectiveProjectId, boqId);
+      if (result.success) setTimeout(() => nav(`/projects/${effectiveProjectId}/estimates`), 500);
       else setPersistError(`Failed: ${result.error}`);
     } catch (e: any) { setPersistError(e?.message); } finally { setPersistLoading(false); }
   }
 
   async function handleGenerateProcurement() {
-    if (!routeProjectId) { setPersistError("Select a project first"); return; }
+    const effectiveProjectId = routeProjectId || activeProjectId;
+    if (!effectiveProjectId) { setPersistError("Select a project first"); return; }
     if (!boqId) { setPersistError("Save the BOQ before generating procurement"); return; }
     if (!window.confirm("Save BOQ and regenerate procurement list. Continue?")) return;
     setPersistLoading(true); setPersistError(null);
     try {
       await saveBoq("draft");
-      await loadLatestBoq(routeProjectId);
-      const result = await generateProcurementFromBOQ(routeProjectId);
+      await loadLatestBoq(effectiveProjectId);
+      const result = await generateProcurementFromBOQ(effectiveProjectId);
       if (result.success) {
         const procId = (result as any).procurementId as string | undefined;
-        if (procId) { await supabase.rpc("sync_procurement_committed_to_cost_events", { p_procurement_id: procId }); setTimeout(() => nav(`/projects/${routeProjectId}/procurement?view=document&doc=${procId}`), 500); }
-        else setTimeout(() => nav(`/projects/${routeProjectId}/procurement`), 500);
+        if (procId) { await supabase.rpc("sync_procurement_committed_to_cost_events", { p_procurement_id: procId }); setTimeout(() => nav(`/projects/${effectiveProjectId}/procurement?view=document&doc=${procId}`), 500); }
+        else setTimeout(() => nav(`/projects/${effectiveProjectId}/procurement`), 500);
       } else setPersistError(`Failed: ${result.error}`);
     } catch (e: any) { setPersistError(e?.message); } finally { setPersistLoading(false); }
   }
@@ -1975,7 +1977,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <FileSpreadsheet size={12}/> Estimate
             </button>
-            <button onClick={handleGenerateProcurement} disabled={!routeProjectId || sections.length === 0 || persistLoading}
+            <button onClick={handleGenerateProcurement} disabled={!(routeProjectId || activeProjectId) || sections.length === 0 || persistLoading}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <ShoppingCart size={12}/> Procurement
             </button>
