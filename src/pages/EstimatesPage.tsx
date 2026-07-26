@@ -344,14 +344,17 @@ export default function EstimatesPage() {
   }
 
   async function createEstimate() {
+    if (!form.project_id) { setError("Please select a project."); return; }
+    if (!form.title.trim()) { setError("Please enter an estimate title."); return; }
     setSaving(true); setError(null);
     try {
       const { error: e } = await supabase.from("estimate_headers").insert({
-        project_id: form.project_id || null,
+        project_id: form.project_id,
         title: form.title.trim(),
         status: form.status,
         version: 1,
         notes: form.notes.trim() || null,
+        company_id: companyId,
       });
       if (e) throw e;
       await loadEstimates();
@@ -588,14 +591,13 @@ export default function EstimatesPage() {
           </Field>
           <Field label="Project">
             <Select value={form.project_id} onChange={e => setForm(f => ({ ...f, project_id: e.target.value }))}>
-              <option value="">No project</option>
+              <option value="" disabled>Select a project</option>
               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </Select>
           </Field>
           <Field label="Status">
             <Select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
               <option value="draft">Draft</option>
-              <option value="sent">Sent</option>
               <option value="approved">Approved</option>
             </Select>
           </Field>
