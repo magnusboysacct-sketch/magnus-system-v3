@@ -396,21 +396,26 @@ export default function FieldPaymentsPage() {
               return(
                 <div key={p.id} role="button" tabIndex={0} onClick={()=>openDetail(p)}
                   onKeyDown={e=>{if(e.key==="Enter"||e.key===" ")openDetail(p);}}
-                  className="relative w-full rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] p-4 text-left hover:border-slate-300 dark:hover:border-white/[0.13] transition cursor-pointer">
-                  {canEditDelete&&(
-                    <div className="absolute top-3 right-3 flex items-center gap-1 z-10" onClick={e=>e.stopPropagation()}>
-                      <button onClick={()=>{setSelected(p);setEditingPayment(p);}}
-                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-                        <Pencil size={13}/>
-                      </button>
-                      <button onClick={()=>deletePayment(p)}
-                        className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
-                        <Trash2 size={13}/>
-                      </button>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2.5">
+                  className="w-full rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] p-4 text-left hover:border-slate-300 dark:hover:border-white/[0.13] transition cursor-pointer">
+                  {/* Row 1 — payment type badge + edit/delete actions, own row so they never fight the amount */}
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${pt.color} ${pt.bg} ${pt.border}`}>{pt.icon} {pt.label}</span>
+                    {canEditDelete&&(
+                      <div className="flex items-center gap-1 flex-shrink-0" onClick={e=>e.stopPropagation()}>
+                        <button onClick={()=>{setSelected(p);setEditingPayment(p);}}
+                          className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+                          <Pencil size={13}/>
+                        </button>
+                        <button onClick={()=>deletePayment(p)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
+                          <Trash2 size={13}/>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {/* Row 2 — worker + amount */}
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       {p.id_photo_url?(
                         <img src={p.id_photo_url} className="w-10 h-10 rounded-full object-cover border border-white/[0.1] flex-shrink-0"/>
                       ):(
@@ -418,15 +423,12 @@ export default function FieldPaymentsPage() {
                           {p.worker_name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
                         </div>
                       )}
-                      <div>
-                        <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{p.worker_name}</div>
-                        <div className="text-[10px] text-slate-500 dark:text-slate-600">{p.worker_id_number&&`ID: ${p.worker_id_number} · `}{fmtDate(p.work_date)}</div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{p.worker_name}</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-600 truncate">{p.worker_id_number&&`ID: ${p.worker_id_number} · `}{fmtDate(p.work_date)}</div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className={`text-base font-bold ${pt.color}`}>{fmtJMD(p.total_amount)}</div>
-                      <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${pt.color} ${pt.bg} ${pt.border}`}>{pt.icon} {pt.label}</span>
-                    </div>
+                    <div className={`text-base font-bold flex-shrink-0 ${pt.color}`}>{fmtJMD(p.total_amount)}</div>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[10px] text-slate-500 dark:text-slate-600 truncate">{p.work_type||"—"}</div>
