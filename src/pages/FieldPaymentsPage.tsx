@@ -9,7 +9,8 @@ import html2canvas from "html2canvas";
 import {
   Plus, Search, HandCoins, DollarSign, Users,
   Calendar, RefreshCw, FileText, X, TrendingUp,
-  CheckCircle2, Printer, Mail, Share2, Loader2
+  CheckCircle2, Printer, Mail, Share2, Loader2,
+  Pencil, Trash2
 } from "lucide-react";
 
 type Payment = {
@@ -150,7 +151,11 @@ export default function FieldPaymentsPage() {
     total: payments.length,
   };
 
-  const canEditDelete = ["director","admin","project_manager"].includes(userRole||"");
+  // Matches the roles allowed onto this page at all (see App.tsx RoleGuard for
+  // "/field-payments"). Previously excluded site_supervisor/accounts, which are
+  // the roles that actually use this page day-to-day — they could open a payment
+  // but never saw the Edit/Delete buttons.
+  const canEditDelete = ["director","site_supervisor","accounts","admin","project_manager"].includes(userRole||"");
 
   async function saveEdit(p: Payment, updates: Partial<Payment>) {
     const {error} = await supabase.from("field_payments").update(updates).eq("id", p.id);
@@ -389,8 +394,21 @@ export default function FieldPaymentsPage() {
               const pt=PT_CFG[p.payment_type||"payment"]||PT_CFG.payment;
               const st=PT_CFG[p.status]||PT_CFG.draft;
               return(
-                <button key={p.id} onClick={()=>openDetail(p)}
-                  className="w-full rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] p-4 text-left hover:border-white/[0.13] transition">
+                <div key={p.id} role="button" tabIndex={0} onClick={()=>openDetail(p)}
+                  onKeyDown={e=>{if(e.key==="Enter"||e.key===" ")openDetail(p);}}
+                  className="relative w-full rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] p-4 text-left hover:border-slate-300 dark:hover:border-white/[0.13] transition cursor-pointer">
+                  {canEditDelete&&(
+                    <div className="absolute top-3 right-3 flex items-center gap-1 z-10" onClick={e=>e.stopPropagation()}>
+                      <button onClick={()=>{setSelected(p);setEditingPayment(p);}}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+                        <Pencil size={13}/>
+                      </button>
+                      <button onClick={()=>deletePayment(p)}
+                        className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
+                        <Trash2 size={13}/>
+                      </button>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2.5">
                       {p.id_photo_url?(
@@ -418,7 +436,7 @@ export default function FieldPaymentsPage() {
                       {p.receipt_number&&<span className="text-[9px] text-slate-400 dark:text-slate-700">#{p.receipt_number.slice(-6)}</span>}
                     </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

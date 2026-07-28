@@ -85,9 +85,9 @@ function fmtDate(d: string) {
     <div className="space-y-2">
       <div className="relative rounded-xl border-2 border-dashed border-cyan-500/40 bg-white dark:bg-[#060910] overflow-hidden">
         <canvas ref={canvasRef} width={600} height={200} className="w-full touch-none cursor-crosshair" style={{height:180}}/>
-        {!hasSign&&<div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="text-center"><PenTool size={24} className="text-slate-700 mx-auto mb-2"/><div className="text-xs text-slate-600">Sign here</div></div></div>}
+        {!hasSign&&<div className="absolute inset-0 flex items-center justify-center pointer-events-none"><div className="text-center"><PenTool size={24} className="text-slate-800 dark:text-slate-700 mx-auto mb-2"/><div className="text-xs text-slate-800 dark:text-slate-600">Sign here</div></div></div>}
       </div>
-      {hasSign&&<button onClick={clear} className="flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-red-400 transition"><RefreshCw size={11}/> Clear</button>}
+      {hasSign&&<button onClick={clear} className="flex items-center gap-1.5 text-[11px] text-slate-800 dark:text-slate-500 hover:text-red-400 transition"><RefreshCw size={11}/> Clear</button>}
     </div>
   );
 }
@@ -108,12 +108,12 @@ function StepBar({step, paymentType}:{step:Step; paymentType:PaymentType}) {
         <React.Fragment key={s.key}>
           <div className="flex flex-col items-center gap-0.5">
             <div className={cn("w-7 h-7 rounded-full flex items-center justify-center border-2 transition-all",
-              i<idx?"bg-emerald-500 border-emerald-500 text-white":i===idx?"bg-cyan-600 border-cyan-400 text-white":"bg-white/[0.04] border-white/[0.12] text-slate-600")}>
+              i<idx?"bg-emerald-500 border-emerald-500 text-white":i===idx?"bg-cyan-600 border-cyan-400 text-white":"bg-slate-100 dark:bg-white/[0.04] border-slate-300 dark:border-white/[0.12] text-slate-500 dark:text-slate-600")}>
               {i<idx?<Check size={11}/>:s.icon}
             </div>
-            <div className={cn("text-[8px] font-bold uppercase tracking-wider",i<=idx?"text-slate-300":"text-slate-700")}>{s.label}</div>
+            <div className={cn("text-[8px] font-bold uppercase tracking-wider",i<=idx?"text-slate-800 dark:text-slate-300":"text-slate-400 dark:text-slate-700")}>{s.label}</div>
           </div>
-          {i<steps.length-1&&<div className={cn("flex-1 h-0.5 mx-0.5 mb-3",i<idx?"bg-emerald-500":"bg-white/[0.08]")}/>}
+          {i<steps.length-1&&<div className={cn("flex-1 h-0.5 mx-0.5 mb-3",i<idx?"bg-emerald-500":"bg-slate-200 dark:bg-white/[0.08]")}/>}
         </React.Fragment>
       ))}
     </div>
@@ -496,11 +496,11 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
 
   const totalAmount=parseFloat(form.total_amount)||0;
   const advanceAmount=parseFloat(form.advance_amount)||0;return(
-    <div className="min-h-full bg-[#080b10]">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-[#0c1018]">
+    <div className="min-h-full bg-slate-50 dark:bg-[#080b10]">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0c1018]">
         <div>
-          <div className="text-sm font-semibold text-slate-200">New Field Payment</div>
-          <div className="text-[10px] text-slate-600">
+          <div className="text-sm font-semibold text-slate-900 dark:text-slate-200">New Field Payment</div>
+          <div className="text-[10px] text-slate-800 dark:text-slate-600">
             {step==="type_select"&&"Select payment type"}
             {step==="id_scan"&&"Scan or enter worker ID"}
             {step==="project_task"&&"Select project & task"}
@@ -509,7 +509,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
             {step==="done"&&"Payment complete"}
           </div>
         </div>
-        <button onClick={onCancel} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300"><X size={16}/></button>
+        <button onClick={onCancel} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-800 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"><X size={16}/></button>
       </div>
 
       <div className="p-4 max-w-lg mx-auto">
@@ -520,7 +520,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
         {/* ── STEP 1: PAYMENT TYPE ── */}
         {step==="type_select"&&(
           <div className="space-y-3">
-            <div className="text-xs text-slate-500 text-center mb-4">What type of payment is this?</div>
+            <div className="text-xs text-slate-800 dark:text-slate-500 text-center mb-4">What type of payment is this?</div>
             {[
               {type:"advance" as PaymentType, label:"Advance Payment", desc:"Give worker money before work is done", icon:<TrendingUp size={20}/>, color:"text-amber-400", bg:"bg-amber-500/10", border:"border-amber-500/30", grad:"from-amber-500/20 to-amber-600/10"},
               {type:"payment" as PaymentType, label:"Work Payment",    desc:"Pay for work completed today",          icon:<DollarSign size={20}/>, color:"text-emerald-400", bg:"bg-emerald-500/10", border:"border-emerald-500/30", grad:"from-emerald-500/20 to-emerald-600/10"},
@@ -533,9 +533,9 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                 </div>
                 <div>
                   <div className={`text-sm font-bold ${t.color}`}>{t.label}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">{t.desc}</div>
+                  <div className="text-[11px] text-slate-800 dark:text-slate-500 mt-0.5">{t.desc}</div>
                 </div>
-                <ChevronRight size={16} className="ml-auto text-slate-600"/>
+                <ChevronRight size={16} className="ml-auto text-slate-800 dark:text-slate-600"/>
               </button>
             ))}
           </div>
@@ -547,29 +547,29 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
             {/* Payment type badge */}
             <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border ${form.payment_type==="advance"?"bg-amber-500/10 border-amber-500/30 text-amber-400":form.payment_type==="final"?"bg-cyan-500/10 border-cyan-500/30 text-cyan-400":"bg-emerald-500/10 border-emerald-500/30 text-emerald-400"}`}>
               {form.payment_type==="advance"?"⚡ Advance Payment":form.payment_type==="final"?"✅ Final Payment":"💰 Work Payment"}
-              <button onClick={()=>setStep("type_select")} className="text-slate-600 hover:text-slate-400 ml-1">change</button>
+              <button onClick={()=>setStep("type_select")} className="text-slate-800 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-400 ml-1">change</button>
             </div>
 
             <SimpleIDScanner onResult={handleIDScanResult} onCancel={()=>{}}/>
 
-            <div className="border-t border-white/[0.06] pt-4 space-y-3">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-600">
+            <div className="border-t border-slate-200 dark:border-white/[0.06] pt-4 space-y-3">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600">
                 Worker Details {form.worker_name&&<span className="text-emerald-400 ml-2">✓ Auto-filled</span>}
               </div>
-              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Full Name *</label>
+              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Full Name *</label>
                 <input value={form.worker_name} onChange={setF("worker_name")} placeholder="Worker full name"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                  className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">ID Number</label>
+                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">ID Number</label>
                   <input value={form.worker_id_number} onChange={setF("worker_id_number")} placeholder="National ID #"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
-                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Phone</label>
+                    className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Phone</label>
                   <input value={form.worker_phone} onChange={setF("worker_phone")} placeholder="876-xxx-xxxx"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                    className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
               </div>
-              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Address</label>
+              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Address</label>
                 <input value={form.worker_address} onChange={setF("worker_address")} placeholder="Worker address"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                  className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
             </div>
 
             <button onClick={async()=>{
@@ -589,13 +589,13 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
         {/* ── STEP 3: PROJECT / MILESTONE / TASK ── */}
         {step==="project_task"&&(
           <div className="space-y-4">
-            <div className="flex items-center gap-3 rounded-xl bg-white/[0.03] border border-white/[0.06] p-3">
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] p-3">
               <div className="w-9 h-9 rounded-full bg-cyan-500/20 flex items-center justify-center text-sm font-bold text-cyan-300 flex-shrink-0">
                 {form.worker_name.split(" ").map((w:string)=>w[0]).join("").slice(0,2).toUpperCase()}
               </div>
               <div>
-                <div className="text-sm font-semibold text-slate-200">{form.worker_name}</div>
-                {form.worker_id_number&&<div className="text-[10px] text-slate-600">ID: {form.worker_id_number}</div>}
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-200">{form.worker_name}</div>
+                {form.worker_id_number&&<div className="text-[10px] text-slate-800 dark:text-slate-600">ID: {form.worker_id_number}</div>}
               </div>
               <button onClick={()=>setStep("id_scan")} className="ml-auto text-[10px] text-cyan-500">Edit</button>
             </div>
@@ -605,34 +605,34 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
               <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-amber-600 mb-2">Worker Advance History</div>
                 <div className="text-sm font-bold text-amber-400">Total Advanced: {fmtJMD(totalAdvanced)}</div>
-                <div className="text-[10px] text-slate-600 mt-1">{workerAdvances.length} advance{workerAdvances.length!==1?"s":""} on record</div>
+                <div className="text-[10px] text-slate-800 dark:text-slate-600 mt-1">{workerAdvances.length} advance{workerAdvances.length!==1?"s":""} on record</div>
                 {workerAdvances.slice(0,3).map((a:any,i:number)=>(
-                  <div key={i} className="text-[10px] text-slate-600 mt-0.5">· {new Date(a.created_at).toLocaleDateString()} — {fmtJMD(a.total_amount)}</div>
+                  <div key={i} className="text-[10px] text-slate-800 dark:text-slate-600 mt-0.5">· {new Date(a.created_at).toLocaleDateString()} — {fmtJMD(a.total_amount)}</div>
                 ))}
               </div>
             )}
 
             <div className="space-y-3">
-              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Project (optional)</label>
+              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Project (optional)</label>
                 <select value={form.project_id} onChange={setF("project_id")}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none [&>option]:bg-[#111820]">
+                  className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 outline-none [&>option]:bg-white dark:[&>option]:bg-[#111820]">
                   <option value="">— No project —</option>
                   {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
                 </select></div>
 
               {form.project_id&&milestones.length>0&&(
-                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Milestone</label>
+                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Milestone</label>
                   <select value={form.milestone_id} onChange={setF("milestone_id")}
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none [&>option]:bg-[#111820]">
+                    className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 outline-none [&>option]:bg-white dark:[&>option]:bg-[#111820]">
                     <option value="">— Select milestone —</option>
                     {milestones.map(m=><option key={m.id} value={m.id}>{m.milestone_name}</option>)}
                   </select></div>
               )}
 
               {form.milestone_id&&taskOptions.length>0&&(
-                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Task</label>
+                <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Task</label>
                   <select value={form.task_id} onChange={e=>selectTask(e.target.value)}
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none [&>option]:bg-[#111820]">
+                    className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 outline-none [&>option]:bg-white dark:[&>option]:bg-[#111820]">
                     <option value="">— Select task —</option>
                     {taskOptions.map(t=><option key={t.id} value={t.id}>{t.task_name}{t.quantity?` (${t.quantity} ${t.unit||"units"} @ JMD ${t.rate_per_unit||0})`:""}</option>)}
                   </select></div>
@@ -642,9 +642,9 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                 <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/[0.06] p-3">
                   <div className="text-[10px] font-bold uppercase tracking-widest text-cyan-600 mb-1">Task Auto-filled</div>
                   <div className="flex flex-wrap gap-3 text-[11px]">
-                    {selectedTask.trade_type&&<span className="text-slate-400">🔨 {selectedTask.trade_type}</span>}
-                    {selectedTask.quantity&&<span className="text-slate-400">📦 {selectedTask.quantity} {selectedTask.unit||""} total</span>}
-                    {selectedTask.rate_per_unit&&<span className="text-slate-400">💰 {fmtJMD(selectedTask.rate_per_unit)}/{selectedTask.unit||"unit"}</span>}
+                    {selectedTask.trade_type&&<span className="text-slate-800 dark:text-slate-400">🔨 {selectedTask.trade_type}</span>}
+                    {selectedTask.quantity&&<span className="text-slate-800 dark:text-slate-400">📦 {selectedTask.quantity} {selectedTask.unit||""} total</span>}
+                    {selectedTask.rate_per_unit&&<span className="text-slate-800 dark:text-slate-400">💰 {fmtJMD(selectedTask.rate_per_unit)}/{selectedTask.unit||"unit"}</span>}
                     {selectedTask.actual_quantity_completed>0&&<span className="text-amber-400">✓ {selectedTask.actual_quantity_completed} done so far</span>}
                   </div>
                 </div>
@@ -652,7 +652,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
             </div>
 
             <div className="flex gap-3">
-              <button onClick={()=>setStep("id_scan")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-slate-400"><ChevronLeft size={15}/> Back</button>
+              <button onClick={()=>setStep("id_scan")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-sm text-slate-800 dark:text-slate-400"><ChevronLeft size={15}/> Back</button>
               <button onClick={()=>setStep("payment")}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-sm text-white font-semibold">
                 Continue <ChevronRight size={15}/>
@@ -663,16 +663,16 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
         {step==="payment"&&(
           <div className="space-y-4">
             {/* Summary */}
-            <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3 space-y-1">
+            <div className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] p-3 space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-bold text-slate-200">{form.worker_name}</span>
+                <span className="text-sm font-bold text-slate-900 dark:text-slate-200">{form.worker_name}</span>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${form.payment_type==="advance"?"text-amber-400 bg-amber-500/10 border-amber-500/20":form.payment_type==="final"?"text-cyan-400 bg-cyan-500/10 border-cyan-500/20":"text-emerald-400 bg-emerald-500/10 border-emerald-500/20"}`}>
                   {form.payment_type==="advance"?"⚡ Advance":form.payment_type==="final"?"✅ Final":"💰 Payment"}
                 </span>
               </div>
-              {selectedProject&&<div className="text-[10px] text-slate-600">📁 {selectedProject.name}</div>}
-              {selectedMilestone&&<div className="text-[10px] text-slate-600">🚩 {selectedMilestone.milestone_name}</div>}
-              {form.task_name&&<div className="text-[10px] text-slate-600">✅ {form.task_name}</div>}
+              {selectedProject&&<div className="text-[10px] text-slate-800 dark:text-slate-600">📁 {selectedProject.name}</div>}
+              {selectedMilestone&&<div className="text-[10px] text-slate-800 dark:text-slate-600">🚩 {selectedMilestone.milestone_name}</div>}
+              {form.task_name&&<div className="text-[10px] text-slate-800 dark:text-slate-600">✅ {form.task_name}</div>}
               {totalAdvanced>0&&<div className="text-[10px] text-amber-500">⚡ Previous advances: {fmtJMD(totalAdvanced)}</div>}
             </div>
 
@@ -682,8 +682,8 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-4 space-y-3">
                   <div className="text-[10px] font-bold uppercase tracking-widest text-amber-600">Advance Amount</div>
                   <input type="number" value={form.advance_amount} onChange={setF("advance_amount")} placeholder="0.00"
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-2xl font-bold text-amber-400 placeholder-slate-700 outline-none focus:border-amber-500/50"/>
-                  <div className="text-[11px] text-slate-600 text-center">This advance will be deducted from final payment</div>
+                    className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl px-4 py-3 text-2xl font-bold text-amber-400 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-amber-500/50"/>
+                  <div className="text-[11px] text-slate-800 dark:text-slate-600 text-center">This advance will be deducted from final payment</div>
                   {totalAdvanced>0&&(
                     <div className="text-[11px] text-amber-500 text-center">Running total after this: {fmtJMD(totalAdvanced+(parseFloat(form.advance_amount)||0))}</div>
                   )}
@@ -693,29 +693,29 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
               {/* WORK PAYMENT / FINAL — enter work details */}
               {(form.payment_type==="payment"||form.payment_type==="final")&&(
                 <>
-                  <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-2">Payment Type</label>
+                  <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-2">Payment Type</label>
                     <div className="grid grid-cols-3 gap-2">
                       {[{v:"task",l:"By Task"},{v:"day",l:"By Day"},{v:"hour",l:"By Hour"}].map(t=>(
                         <button key={t.v} onClick={()=>setForm(f=>({...f,rate_type:t.v,total_amount:""}))}
-                          className={cn("py-2.5 rounded-lg text-xs font-bold border transition",form.rate_type===t.v?"bg-cyan-500/20 border-cyan-500/40 text-cyan-300":"bg-white/[0.03] border-white/[0.07] text-slate-500")}>
+                          className={cn("py-2.5 rounded-lg text-xs font-bold border transition",form.rate_type===t.v?"bg-cyan-500/20 border-cyan-500/40 text-cyan-300":"bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.07] text-slate-800 dark:text-slate-500")}>
                           {t.l}</button>
                       ))}</div></div>
 
                   {form.rate_type==="task"&&(
-                    <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 space-y-3">
-                      <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Task / Work Done</label>
+                    <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-3 space-y-3">
+                      <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Task / Work Done</label>
                         <input value={form.task_name} onChange={setF("task_name")} placeholder="e.g. Lay blocks, Paint walls..."
-                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
+                          className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
                       <div className="grid grid-cols-2 gap-3">
-                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Quantity Done</label>
+                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Quantity Done</label>
                           <input type="number" value={form.task_quantity} onChange={setF("task_quantity")} placeholder="e.g. 60"
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/></div>
-                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Rate/Unit (JMD)</label>
+                            className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 outline-none focus:border-cyan-500/50"/></div>
+                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Rate/Unit (JMD)</label>
                           <input type="number" value={form.task_unit_rate} onChange={setF("task_unit_rate")} placeholder="e.g. 18"
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/></div>
+                            className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 outline-none focus:border-cyan-500/50"/></div>
                       </div>
                       {form.task_quantity&&form.task_unit_rate&&(
-                        <div className="text-xs text-slate-500 text-center">
+                        <div className="text-xs text-slate-800 dark:text-slate-500 text-center">
                           {form.task_quantity} {form.unit||"units"} × {fmtJMD(parseFloat(form.task_unit_rate)||0)} = <span className="text-emerald-400 font-bold">{fmtJMD(totalAmount)}</span>
                         </div>
                       )}
@@ -723,64 +723,64 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                   )}
 
                   {form.rate_type==="day"&&(
-                    <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 space-y-3">
+                    <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-3 space-y-3">
                       <div className="grid grid-cols-2 gap-3">
-                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Days Worked</label>
+                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Days Worked</label>
                           <input type="number" value={form.days_worked} onChange={setF("days_worked")} placeholder="1"
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/></div>
-                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Rate/Day (JMD)</label>
+                            className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 outline-none focus:border-cyan-500/50"/></div>
+                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Rate/Day (JMD)</label>
                           <input type="number" value={form.rate_per_day} onChange={setF("rate_per_day")} placeholder="0.00"
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/></div>
+                            className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 outline-none focus:border-cyan-500/50"/></div>
                       </div>
-                      {form.days_worked&&form.rate_per_day&&<div className="text-xs text-slate-500 text-center">{form.days_worked} days × {fmtJMD(parseFloat(form.rate_per_day)||0)} = <span className="text-emerald-400 font-bold">{fmtJMD(totalAmount)}</span></div>}
+                      {form.days_worked&&form.rate_per_day&&<div className="text-xs text-slate-800 dark:text-slate-500 text-center">{form.days_worked} days × {fmtJMD(parseFloat(form.rate_per_day)||0)} = <span className="text-emerald-400 font-bold">{fmtJMD(totalAmount)}</span></div>}
                     </div>
                   )}
 
                   {form.rate_type==="hour"&&(
-                    <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3 space-y-3">
+                    <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-3 space-y-3">
                       <div className="grid grid-cols-2 gap-3">
-                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Hours Worked</label>
+                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Hours Worked</label>
                           <input type="number" value={form.hours_worked} onChange={setF("hours_worked")} placeholder="0"
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/></div>
-                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Rate/Hour (JMD)</label>
+                            className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 outline-none focus:border-cyan-500/50"/></div>
+                        <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Rate/Hour (JMD)</label>
                           <input type="number" value={form.rate_per_hour} onChange={setF("rate_per_hour")} placeholder="0.00"
-                            className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-cyan-500/50"/></div>
+                            className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 outline-none focus:border-cyan-500/50"/></div>
                       </div>
-                      {form.hours_worked&&form.rate_per_hour&&<div className="text-xs text-slate-500 text-center">{form.hours_worked} hrs × {fmtJMD(parseFloat(form.rate_per_hour)||0)} = <span className="text-emerald-400 font-bold">{fmtJMD(totalAmount)}</span></div>}
+                      {form.hours_worked&&form.rate_per_hour&&<div className="text-xs text-slate-800 dark:text-slate-500 text-center">{form.hours_worked} hrs × {fmtJMD(parseFloat(form.rate_per_hour)||0)} = <span className="text-emerald-400 font-bold">{fmtJMD(totalAmount)}</span></div>}
                     </div>
                   )}
 
-                  <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Total Amount (JMD) *</label>
+                  <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Total Amount (JMD) *</label>
                     <input type="number" value={form.total_amount} onChange={setF("total_amount")} placeholder="0.00"
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-xl font-bold text-emerald-400 placeholder-slate-700 outline-none"/></div>
+                      className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl px-4 py-3 text-xl font-bold text-emerald-400 placeholder-slate-400 dark:placeholder-slate-700 outline-none"/></div>
 
                   {/* Final payment — show advance deduction */}
                   {form.payment_type==="final"&&totalAdvanced>0&&totalAmount>0&&(
                     <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/[0.06] p-3 space-y-1.5">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-cyan-600">Final Settlement</div>
-                      <div className="flex justify-between text-sm"><span className="text-slate-400">Total Earned</span><span className="text-slate-200 font-bold">{fmtJMD(totalAmount)}</span></div>
-                      <div className="flex justify-between text-sm"><span className="text-slate-400">Less Advances</span><span className="text-amber-400 font-bold">- {fmtJMD(totalAdvanced)}</span></div>
-                      <div className="border-t border-white/[0.08] pt-1.5 flex justify-between text-sm font-bold"><span className="text-slate-200">Balance to Pay</span><span className="text-emerald-400">{fmtJMD(Math.max(0,totalAmount-totalAdvanced))}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-800 dark:text-slate-400">Total Earned</span><span className="text-slate-900 dark:text-slate-200 font-bold">{fmtJMD(totalAmount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-800 dark:text-slate-400">Less Advances</span><span className="text-amber-400 font-bold">- {fmtJMD(totalAdvanced)}</span></div>
+                      <div className="border-t border-slate-200 dark:border-white/[0.08] pt-1.5 flex justify-between text-sm font-bold"><span className="text-slate-900 dark:text-slate-200">Balance to Pay</span><span className="text-emerald-600 dark:text-emerald-400">{fmtJMD(Math.max(0,totalAmount-totalAdvanced))}</span></div>
                     </div>
                   )}
                 </>
               )}
 
-              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Payment Method</label>
+              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Payment Method</label>
                 <div className="grid grid-cols-4 gap-2">
                   {PAYMENT_METHODS.map(m=>(
                     <button key={m.value} onClick={()=>setForm(f=>({...f,payment_method:m.value}))}
-                      className={cn("py-2 rounded-lg text-[11px] font-semibold border transition",form.payment_method===m.value?"bg-cyan-500/20 border-cyan-500/40 text-cyan-300":"bg-white/[0.03] border-white/[0.07] text-slate-500")}>
+                      className={cn("py-2 rounded-lg text-[11px] font-semibold border transition",form.payment_method===m.value?"bg-cyan-500/20 border-cyan-500/40 text-cyan-300":"bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.07] text-slate-800 dark:text-slate-500")}>
                       {m.label}</button>
                   ))}</div></div>
 
-              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Notes</label>
+              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Notes</label>
                 <textarea value={form.notes} onChange={setF("notes") as any} rows={2} placeholder="Additional notes..."
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none resize-none"/></div>
+                  className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none resize-none"/></div>
             </div>
 
             <div className="flex gap-3">
-              <button onClick={()=>setStep("project_task")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-slate-400"><ChevronLeft size={15}/> Back</button>
+              <button onClick={()=>setStep("project_task")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-sm text-slate-800 dark:text-slate-400"><ChevronLeft size={15}/> Back</button>
               <button onClick={()=>setStep("signature")}
                 disabled={form.payment_type==="advance"?!form.advance_amount:!form.total_amount}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-sm text-white font-semibold">
@@ -796,10 +796,10 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
             <div className={`rounded-xl border p-4 ${form.payment_type==="advance"?"border-amber-500/20 bg-amber-500/[0.06]":form.payment_type==="final"?"border-cyan-500/20 bg-cyan-500/[0.06]":"border-emerald-500/20 bg-emerald-500/[0.06]"}`}>
               <div className="flex items-center justify-between mb-2">
                 <div>
-                  <div className="text-sm font-bold text-slate-200">{form.worker_name}</div>
-                  {selectedProject&&<div className="text-[10px] text-slate-500">📁 {selectedProject.name}</div>}
-                  {selectedMilestone&&<div className="text-[10px] text-slate-500">🚩 {selectedMilestone.milestone_name}</div>}
-                  {form.task_name&&<div className="text-[10px] text-slate-500">✅ {form.task_name}</div>}
+                  <div className="text-sm font-bold text-slate-900 dark:text-slate-200">{form.worker_name}</div>
+                  {selectedProject&&<div className="text-[10px] text-slate-800 dark:text-slate-500">📁 {selectedProject.name}</div>}
+                  {selectedMilestone&&<div className="text-[10px] text-slate-800 dark:text-slate-500">🚩 {selectedMilestone.milestone_name}</div>}
+                  {form.task_name&&<div className="text-[10px] text-slate-800 dark:text-slate-500">✅ {form.task_name}</div>}
                 </div>
                 <div className="text-right">
                   <div className={`text-2xl font-bold ${form.payment_type==="advance"?"text-amber-400":form.payment_type==="final"?"text-cyan-400":"text-emerald-400"}`}>
@@ -811,13 +811,13 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                 </div>
               </div>
               {form.payment_type==="final"&&totalAdvanced>0&&(
-                <div className="text-[11px] text-slate-500 mt-1">Previous advances: {fmtJMD(totalAdvanced)} will be settled</div>
+                <div className="text-[11px] text-slate-800 dark:text-slate-500 mt-1">Previous advances: {fmtJMD(totalAdvanced)} will be settled</div>
               )}
             </div>
 
             <div>
-              <div className="text-xs font-semibold text-slate-300 mb-2 flex items-center gap-2"><PenTool size={13} className="text-cyan-400"/>Worker Signature</div>
-              <div className="text-[10px] text-slate-600 mb-3">
+              <div className="text-xs font-semibold text-slate-800 dark:text-slate-300 mb-2 flex items-center gap-2"><PenTool size={13} className="text-cyan-400"/>Worker Signature</div>
+              <div className="text-[10px] text-slate-800 dark:text-slate-600 mb-3">
                 {form.payment_type==="advance"
                   ?"I acknowledge receiving this advance payment. Balance to be settled on completion."
                   :form.payment_type==="final"
@@ -827,12 +827,12 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
               <SignaturePad onSign={data=>setForm(f=>({...f,signature_data:data}))} onClear={()=>setForm(f=>({...f,signature_data:""}))}/>
             </div>
 
-            <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Supervisor / Paid By</label>
+            <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Supervisor / Paid By</label>
               <input value={form.supervisor_name} onChange={setF("supervisor_name")} placeholder="Your name"
-                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none"/></div>
+                className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none"/></div>
 
             <div className="flex gap-3">
-              <button onClick={()=>setStep("payment")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-white/[0.08] text-sm text-slate-400"><ChevronLeft size={15}/> Back</button>
+              <button onClick={()=>setStep("payment")} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-sm text-slate-800 dark:text-slate-400"><ChevronLeft size={15}/> Back</button>
               <button onClick={savePayment} disabled={saving}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-sm text-white font-semibold">
                 {saving?<><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Saving...</>:<><Check size={15}/>Confirm & Save</>}
@@ -850,22 +850,22 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                 <div className={`text-base font-bold ${form.payment_type==="advance"?"text-amber-300":form.payment_type==="final"?"text-cyan-300":"text-emerald-300"}`}>
                   {form.payment_type==="advance"?"⚡ Advance Recorded!":form.payment_type==="final"?"✅ Final Payment Complete!":"💰 Payment Recorded!"}
                 </div>
-                <div className="text-[11px] text-slate-500 mt-0.5">Receipt #{receiptNumber}</div>
-                <div className="text-[11px] text-slate-500">Saved · Generate receipt anytime from payment list</div>
+                <div className="text-[11px] text-slate-800 dark:text-slate-500 mt-0.5">Receipt #{receiptNumber}</div>
+                <div className="text-[11px] text-slate-800 dark:text-slate-500">Saved · Generate receipt anytime from payment list</div>
               </div>
             </div>
 
             {/* Payment summary */}
-            <div className="rounded-xl border border-white/[0.07] bg-[#0d1117] p-4 space-y-2">
+            <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] p-4 space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Worker</span>
-                <span className="text-slate-200 font-semibold">{form.worker_name}</span>
+                <span className="text-slate-800 dark:text-slate-500">Worker</span>
+                <span className="text-slate-900 dark:text-slate-200 font-semibold">{form.worker_name}</span>
               </div>
-              {selectedProject&&<div className="flex justify-between text-sm"><span className="text-slate-500">Project</span><span className="text-slate-200 font-semibold">{selectedProject.name}</span></div>}
-              {selectedMilestone&&<div className="flex justify-between text-sm"><span className="text-slate-500">Milestone</span><span className="text-slate-200 font-semibold">{selectedMilestone.milestone_name}</span></div>}
-              {form.task_name&&<div className="flex justify-between text-sm"><span className="text-slate-500">Task</span><span className="text-slate-200 font-semibold">{form.task_name}</span></div>}
-              <div className="border-t border-white/[0.06] pt-2 flex justify-between">
-                <span className="text-slate-500 font-semibold">Amount Paid</span>
+              {selectedProject&&<div className="flex justify-between text-sm"><span className="text-slate-800 dark:text-slate-500">Project</span><span className="text-slate-900 dark:text-slate-200 font-semibold">{selectedProject.name}</span></div>}
+              {selectedMilestone&&<div className="flex justify-between text-sm"><span className="text-slate-800 dark:text-slate-500">Milestone</span><span className="text-slate-900 dark:text-slate-200 font-semibold">{selectedMilestone.milestone_name}</span></div>}
+              {form.task_name&&<div className="flex justify-between text-sm"><span className="text-slate-800 dark:text-slate-500">Task</span><span className="text-slate-900 dark:text-slate-200 font-semibold">{form.task_name}</span></div>}
+              <div className="border-t border-slate-200 dark:border-white/[0.06] pt-2 flex justify-between">
+                <span className="text-slate-800 dark:text-slate-500 font-semibold">Amount Paid</span>
                 <span className={`text-xl font-bold ${form.payment_type==="advance"?"text-amber-400":form.payment_type==="final"?"text-cyan-400":"text-emerald-400"}`}>
                   {fmtJMD(form.payment_type==="advance"?advanceAmount:totalAmount)}
                 </span>
@@ -875,7 +875,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
             {/* Actions */}
             <div className="space-y-2">
               <button onClick={generateAndPrint}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.1] hover:border-white/[0.2] bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 font-semibold transition text-sm">
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-slate-200 dark:border-white/[0.1] hover:border-slate-300 dark:hover:border-white/[0.2] bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-800 dark:text-slate-300 font-semibold transition text-sm">
                 <FileText size={15}/> Generate & Print Receipt
               </button>
               <div className="grid grid-cols-2 gap-2">
@@ -888,7 +888,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                   <span>📧</span> Email
                 </button>
               </div>
-              <div className="text-[10px] text-slate-700 text-center">Receipt saved — generate again anytime from the payment list</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-700 text-center">Receipt saved — generate again anytime from the payment list</div>
             </div>
 
             <button onClick={onComplete}
