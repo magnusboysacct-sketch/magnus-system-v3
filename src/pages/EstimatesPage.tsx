@@ -6,6 +6,10 @@ import { useProjectContext } from "../context/ProjectContext";
 import { magnusAI } from "../lib/magnusAI";
 import EstimateAdvisorPanel from "../components/EstimateAdvisorPanel";
 import {
+  createClientInvoice, createInvoiceLineItems,
+  createClientPayment, updateInvoiceAfterPayment, fetchInvoicePayments,
+} from "../lib/finance";
+import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
   Table, Th, Tr, Td, Empty, Modal, Alert, Textarea,
   Tabs, Progress, cn
@@ -36,6 +40,7 @@ type EstimateHeader = {
   subtotal_markup?: number | null;
   total_client_price?: number | null;
   print_format?: string | null;
+  invoice_id?: string | null;
   // joined
   projects?: { name: string } | null;
 };
@@ -180,6 +185,20 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClo
   const [contingencyPct, setContingencyPct] = useState<number>(estimate.contingency_pct ?? 5);
   const [savingMarkup, setSavingMarkup] = useState(false);
 
+  // --- Payment tracking ---------------------------------------------------
+  const [linkedInvoiceId, setLinkedInvoiceId] = useState<string | null>(estimate.invoice_id || null);
+  const [creatingInvoice, setCreatingInvoice] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [invoicePayments, setInvoicePayments] = useState<any[]>([]);
+  const [paymentForm, setPaymentForm] = useState({
+    amount: "",
+    payment_method: "cash",
+    reference_number: "",
+    payment_date: new Date().toISOString().slice(0, 10),
+    notes: "",
+  });
+
   useEffect(() => {
     async function loadDefaults() {
       if (!companyId || estimate.markup_overall != null) return;
@@ -196,6 +215,17 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClo
     loadDefaults();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estimate.id, companyId]);
+
+  useEffect(() => {
+    async function loadPayments() {
+      if (!estimate.invoice_id) return;
+      setLinkedInvoiceId(estimate.invoice_id);
+      const payments = await fetchInvoicePayments(estimate.invoice_id);
+      setInvoicePayments(payments || []);
+    }
+    loadPayments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimate.id, estimate.invoice_id]);
 
   const subtotalCost = items.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
   const markupAmount = subtotalCost * (markupOverall / 100);
@@ -225,6 +255,89 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClo
       title: estimate.title,
     });
     nav(`/contracts?new=1&${params.toString()}`);
+  }
+
+  async function createInvoiceFromEstimate() {
+    if (!companyId) return;
+    setCreatingInvoice(true);
+    try {
+      const { data: project } = await supabase
+        .from("projects").select("client_id").eq("id", estimate.project_id).maybeSingle();
+
+      const invNumber = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
+      const total = totalClientPrice || subtotalCost;
+
+      const invoice = await createClientInvoice({
+        company_id: companyId,
+        project_id: estimate.project_id,
+        client_id: project?.client_id || null,
+        invoice_number: invNumber,
+        invoice_date: new Date().toISOString().slice(0, 10),
+        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        subtotal: subtotalCost,
+        tax_rate: 0,
+        tax_amount: 0,
+        total_amount: total,
+        amount_paid: 0,
+        balance_due: total,
+        status: "sent",
+        notes: `Generated from estimate: ${estimate.title}`,
+        terms: "Net 30",
+      });
+
+      if (items.length > 0) {
+        await createInvoiceLineItems(items.map((item, i) => ({
+          invoice_id: invoice.id,
+          company_id: companyId,
+          line_number: i + 1,
+          description: item.item || item.description || "Item",
+          quantity: Number(item.qty) || 1,
+          unit: item.unit || "",
+          rate: Number(item.rate) || 0,
+          amount: Number(item.amount) || 0,
+        })));
+      }
+
+      await supabase.from("estimate_headers").update({ invoice_id: invoice.id }).eq("id", estimate.id);
+
+      setLinkedInvoiceId(invoice.id);
+      setInvoicePayments([]);
+      alert(`Invoice ${invNumber} created successfully! View it in Accounts Receivable.`);
+    } catch (e: any) {
+      alert("Failed to create invoice: " + e.message);
+    } finally {
+      setCreatingInvoice(false);
+    }
+  }
+
+  async function handleRecordPayment() {
+    if (!linkedInvoiceId || !companyId) return;
+    const amount = Number(paymentForm.amount);
+    if (!amount || amount <= 0) { alert("Enter a valid amount."); return; }
+    setSavingPayment(true);
+    try {
+      await createClientPayment({
+        company_id: companyId,
+        invoice_id: linkedInvoiceId,
+        payment_number: `PAY-${Date.now()}`,
+        payment_date: paymentForm.payment_date,
+        amount,
+        payment_method: paymentForm.payment_method as any,
+        reference_number: paymentForm.reference_number || null,
+        notes: paymentForm.notes || null,
+      });
+
+      await updateInvoiceAfterPayment(linkedInvoiceId);
+
+      const payments = await fetchInvoicePayments(linkedInvoiceId);
+      setInvoicePayments(payments || []);
+      setShowPaymentModal(false);
+      setPaymentForm(f => ({ ...f, amount: "", reference_number: "", notes: "" }));
+    } catch (e: any) {
+      alert("Failed to record payment: " + e.message);
+    } finally {
+      setSavingPayment(false);
+    }
   }
 
   async function printProposal() {
@@ -416,6 +529,7 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClo
     setTimeout(() => w.print(), 600);
   }
   return (
+    <>
     <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
       <div className="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl w-full sm:max-w-3xl flex flex-col"
         style={{ maxHeight: "95dvh" }}>
@@ -509,6 +623,88 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClo
           </div>
         </div>
 
+        {/* Payment Tracking */}
+        {estimate.status === "approved" && (
+          <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden">
+            <div className="px-4 py-3 bg-slate-50 dark:bg-white/[0.03] border-b border-slate-200 dark:border-white/[0.06] flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Payment Tracking</span>
+              {!linkedInvoiceId ? (
+                <button onClick={createInvoiceFromEstimate} disabled={creatingInvoice}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white transition-colors">
+                  {creatingInvoice ? "Creating..." : "Create Invoice"}
+                </button>
+              ) : (
+                <button onClick={() => setShowPaymentModal(true)}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors">
+                  + Record Payment
+                </button>
+              )}
+            </div>
+
+            {!linkedInvoiceId ? (
+              <div className="px-4 py-6 text-center">
+                <div className="text-sm font-semibold text-slate-600 dark:text-slate-300 mb-1">No invoice yet</div>
+                <div className="text-xs text-slate-400">Create an invoice from this estimate to start tracking payments.</div>
+              </div>
+            ) : (
+              <div className="p-4 space-y-3">
+                {(() => {
+                  const invTotal = totalClientPrice || subtotalCost;
+                  const paid = invoicePayments.reduce((s, p) => s + Number(p.amount), 0);
+                  const outstanding = invTotal - paid;
+                  const pct = invTotal > 0 ? (paid / invTotal) * 100 : 0;
+                  return (
+                    <>
+                      <div className="w-full bg-slate-100 dark:bg-white/[0.06] rounded-full h-2.5">
+                        <div className="bg-emerald-500 h-2.5 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, pct)}%` }}/>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 text-center">
+                        <div className="p-2 rounded-lg bg-slate-50 dark:bg-white/[0.03]">
+                          <div className="text-[10px] text-slate-400 uppercase tracking-wider">Total</div>
+                          <div className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                            {fmt(invTotal)}
+                          </div>
+                        </div>
+                        <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-500/10">
+                          <div className="text-[10px] text-emerald-600 dark:text-emerald-500 uppercase tracking-wider">Paid</div>
+                          <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                            {fmt(paid)}
+                          </div>
+                        </div>
+                        <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-500/10">
+                          <div className="text-[10px] text-amber-600 dark:text-amber-500 uppercase tracking-wider">Outstanding</div>
+                          <div className="text-sm font-bold text-amber-600 dark:text-amber-400">
+                            {fmt(Math.max(0, outstanding))}
+                          </div>
+                        </div>
+                      </div>
+                      {invoicePayments.length > 0 && (
+                        <div className="border-t border-slate-100 dark:border-white/[0.06] pt-3 space-y-2">
+                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Payment History</div>
+                          {invoicePayments.map(p => (
+                            <div key={p.id} className="flex items-center justify-between text-xs">
+                              <div>
+                                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                                  {fmt(Number(p.amount))}
+                                </span>
+                                <span className="text-slate-400 ml-2">{p.payment_date}</span>
+                                <span className="text-slate-400 ml-2 capitalize">{p.payment_method}</span>
+                                {p.reference_number && <span className="text-slate-400 ml-2">· {p.reference_number}</span>}
+                              </div>
+                              <span className="text-emerald-500 font-bold">Received</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Items table */}
         <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden max-h-80 overflow-y-auto">
           <Table>
@@ -600,6 +796,115 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClo
         </div>
       </div>
     </div>
+
+    {/* Record Payment Modal */}
+    {showPaymentModal && (
+      <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
+        <div className="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md flex flex-col"
+          style={{ maxHeight: "90dvh" }}>
+          {/* Header */}
+          <div className="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
+            <div>
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Record Payment</h3>
+              <p className="text-xs text-slate-400 mt-0.5">{estimate.title}</p>
+            </div>
+            <button onClick={() => setShowPaymentModal(false)}
+              className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400">
+              <X size={16}/>
+            </button>
+          </div>
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Quick Select</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: "Deposit 30%", pct: 0.30 },
+                  { label: "Progress 40%", pct: 0.40 },
+                  { label: "Final 30%", pct: 0.30 },
+                ].map(({ label, pct }) => {
+                  const invTotal = totalClientPrice || subtotalCost;
+                  const amt = Math.round(invTotal * pct);
+                  return (
+                    <button key={label} type="button"
+                      onClick={() => setPaymentForm(f => ({ ...f, amount: String(amt) }))}
+                      className="flex flex-col items-center p-2.5 rounded-xl border-2 border-slate-200 dark:border-white/[0.1] hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-all text-center">
+                      <span className="text-[10px] text-slate-400 font-medium">{label}</span>
+                      <span className="text-sm font-bold text-slate-700 dark:text-slate-200 mt-0.5">
+                        {fmt(amt)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+                Amount (JMD) <span className="text-red-400">*</span>
+              </label>
+              <input type="number" min="0"
+                value={paymentForm.amount}
+                onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
+                placeholder="0.00"
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Payment Method</label>
+              <div className="grid grid-cols-3 gap-2">
+                {["cash", "check", "wire", "credit_card", "ach", "other"].map(m => (
+                  <button key={m} type="button"
+                    onClick={() => setPaymentForm(f => ({ ...f, payment_method: m }))}
+                    className={cn("py-2 rounded-lg text-xs font-semibold capitalize border-2 transition-colors",
+                      paymentForm.payment_method === m
+                        ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                        : "border-slate-200 dark:border-white/[0.1] text-slate-500 dark:text-slate-400 hover:border-slate-300")}>
+                    {m.replace("_", " ")}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Payment Date</label>
+                <input type="date"
+                  value={paymentForm.payment_date}
+                  onChange={e => setPaymentForm(f => ({ ...f, payment_date: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Reference #</label>
+                <input type="text"
+                  value={paymentForm.reference_number}
+                  onChange={e => setPaymentForm(f => ({ ...f, reference_number: e.target.value }))}
+                  placeholder="Cheque # / Transfer ref"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Notes</label>
+              <textarea
+                value={paymentForm.notes}
+                onChange={e => setPaymentForm(f => ({ ...f, notes: e.target.value }))}
+                rows={2}
+                placeholder="Optional notes..."
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none"/>
+            </div>
+          </div>
+          {/* Footer */}
+          <div className="flex-shrink-0 flex gap-3 px-5 py-4 border-t border-slate-200 dark:border-white/[0.07]">
+            <button onClick={() => setShowPaymentModal(false)}
+              className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-white/[0.1] text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.05] transition-colors">
+              Cancel
+            </button>
+            <button onClick={handleRecordPayment} disabled={savingPayment || !paymentForm.amount}
+              className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+              {savingPayment ? "Recording..." : "Record Payment"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
