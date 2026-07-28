@@ -10,7 +10,7 @@ import {
 import {
   FolderOpen, Plus, Search, Hammer, ArrowRight,
   Building2, LayoutGrid, List, RefreshCw, CheckSquare, TrendingUp,
-  Edit2, Trash2, RotateCcw
+  Edit2, Trash2, RotateCcw, Users, X
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -78,16 +78,18 @@ const DEFAULT_CLOSEOUT: CloseOutForm = {
 
 // ─── Project Card ─────────────────────────────────────────────────────────────
 
-function ProjectCard({ project, client, onClick, onCloseOut, onEdit, onDelete }: {
+function ProjectCard({ project, client, onClick, onCloseOut, onEdit, onDelete, onTeam }: {
   project: Project;
   client?: Client;
   onClick: () => void;
   onCloseOut: () => void;
   onEdit: (p: Project) => void;
   onDelete: (p: Project) => void;
+  onTeam: (p: Project) => void;
 }) {
   const { userRole, refreshProjects } = useProjectContext();
   const canDelete = userRole === "director";
+  const canManageTeam = userRole === "director" || userRole === "admin";
   const status = project.status || "active";
   const canCloseOut = status === "active" || status === "completed";
   async function restore(e: React.MouseEvent) {
@@ -145,6 +147,14 @@ function ProjectCard({ project, client, onClick, onCloseOut, onEdit, onDelete }:
             )
           ) : (
             <>
+              {canManageTeam && (
+                <button
+                  onClick={e => { e.stopPropagation(); onTeam(project); }}
+                  className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-blue-500/15 text-slate-500 hover:text-blue-400 transition-colors"
+                  title="Manage team">
+                  <Users size={13}/>
+                </button>
+              )}
               <button
                 onClick={e => { e.stopPropagation(); onEdit(project); }}
                 className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-blue-500/15 text-slate-500 hover:text-blue-400 transition-colors"
@@ -170,16 +180,18 @@ function ProjectCard({ project, client, onClick, onCloseOut, onEdit, onDelete }:
 
 // ─── Project Row (list view) ──────────────────────────────────────────────────
 
-function ProjectRow({ project, client, onClick, onCloseOut, onEdit, onDelete }: {
+function ProjectRow({ project, client, onClick, onCloseOut, onEdit, onDelete, onTeam }: {
   project: Project;
   client?: Client;
   onClick: () => void;
   onCloseOut: () => void;
   onEdit: (p: Project) => void;
   onDelete: (p: Project) => void;
+  onTeam: (p: Project) => void;
 }) {
   const { userRole, refreshProjects } = useProjectContext();
   const canDelete = userRole === "director";
+  const canManageTeam = userRole === "director" || userRole === "admin";
   const status = project.status || "active";
   const canCloseOut = status === "active" || status === "completed";
   async function restore(e: React.MouseEvent) {
@@ -219,6 +231,14 @@ function ProjectRow({ project, client, onClick, onCloseOut, onEdit, onDelete }: 
         )
       ) : (
         <>
+          {canManageTeam && (
+            <button
+              onClick={e => { e.stopPropagation(); onTeam(project); }}
+              className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-blue-500/15 text-slate-500 hover:text-blue-400 transition-colors"
+              title="Manage team">
+              <Users size={13}/>
+            </button>
+          )}
           <button
             onClick={e => { e.stopPropagation(); onEdit(project); }}
             className="p-1.5 rounded-lg md:opacity-0 md:group-hover:opacity-100 hover:bg-blue-500/15 text-slate-500 hover:text-blue-400 transition-colors"
@@ -258,6 +278,15 @@ export default function ProjectsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<Project | null>(null);
   const [deleteAction, setDeleteAction] = useState<"choosing" | "deleting" | "archiving">("choosing");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Team assignment
+  const [teamModal, setTeamModal] = useState<Project | null>(null);
+  const [projectMembers, setProjectMembers] = useState<any[]>([]);
+  const [assignableUsers, setAssignableUsers] = useState<any[]>([]);
+  const [loadingTeam, setLoadingTeam] = useState(false);
+  const [addingMember, setAddingMember] = useState(false);
+  const [newMemberUserId, setNewMemberUserId] = useState("");
+  const [newMemberRole, setNewMemberRole] = useState("site_supervisor");
 
   // Close Out state
   const [closeOutProject, setCloseOutProject] = useState<Project | null>(null);
@@ -402,6 +431,58 @@ export default function ProjectsPage() {
     }
   }
 
+  async function openTeamModal(project: Project) {
+    setTeamModal(project);
+    setLoadingTeam(true);
+    try {
+      const { data: members } = await supabase
+        .rpc("get_project_members", { p_project_id: project.id });
+      setProjectMembers(members || []);
+      const { data: users } = await supabase
+        .rpc("get_company_assignable_users");
+      setAssignableUsers(users || []);
+    } finally {
+      setLoadingTeam(false);
+    }
+  }
+
+  async function addProjectMember() {
+    if (!teamModal || !newMemberUserId) return;
+    setAddingMember(true);
+    try {
+      const { error } = await supabase.rpc("upsert_project_member", {
+        p_project_id: teamModal.id,
+        p_user_id: newMemberUserId,
+        p_role: newMemberRole,
+      });
+      if (error) throw error;
+      const { data: members } = await supabase
+        .rpc("get_project_members", { p_project_id: teamModal.id });
+      setProjectMembers(members || []);
+      setNewMemberUserId("");
+    } catch (e: any) {
+      alert("Failed to assign member: " + e.message);
+    } finally {
+      setAddingMember(false);
+    }
+  }
+
+  async function removeProjectMember(userId: string) {
+    if (!teamModal) return;
+    if (!window.confirm("Remove this member from the project?")) return;
+    try {
+      const { error } = await supabase
+        .from("project_members")
+        .delete()
+        .eq("project_id", teamModal.id)
+        .eq("user_id", userId);
+      if (error) throw error;
+      setProjectMembers(prev => prev.filter(m => m.user_id !== userId));
+    } catch (e: any) {
+      alert("Failed to remove member: " + e.message);
+    }
+  }
+
   async function saveCloseOut() {
     if (!closeOutProject || !companyId) return;
     setCloseOutSaving(true); setCloseOutError(null);
@@ -541,6 +622,7 @@ export default function ProjectsPage() {
                 onCloseOut={() => openCloseOut(p as Project)}
                 onEdit={openEdit}
                 onDelete={setDeleteConfirm}
+                onTeam={openTeamModal}
               />
             ))}
           </div>
@@ -561,6 +643,7 @@ export default function ProjectsPage() {
                 onCloseOut={() => openCloseOut(p as Project)}
                 onEdit={openEdit}
                 onDelete={setDeleteConfirm}
+                onTeam={openTeamModal}
               />
             ))}
           </div>
@@ -793,6 +876,115 @@ export default function ProjectsPage() {
           </Btn>
         </div>
       </Modal>
+
+      {/* ── Team Assignment Modal ── */}
+      {teamModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg flex flex-col"
+            style={{ maxHeight: "90dvh" }}>
+            {/* Header */}
+            <div className="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Project Team</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{teamModal.name}</p>
+              </div>
+              <button onClick={() => setTeamModal(null)}
+                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+                <X size={16}/>
+              </button>
+            </div>
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {/* Add member */}
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-3">
+                <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Add Team Member</div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Select Staff</label>
+                  <select value={newMemberUserId}
+                    onChange={e => setNewMemberUserId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-200 focus:outline-none">
+                    <option value="">Choose staff member...</option>
+                    {assignableUsers
+                      .filter(u => !projectMembers.find(m => m.user_id === u.user_id))
+                      .map(u => (
+                        <option key={u.user_id} value={u.user_id}>
+                          {u.full_name || u.email} — {u.role}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Project Role</label>
+                  <select value={newMemberRole}
+                    onChange={e => setNewMemberRole(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-200 focus:outline-none">
+                    <option value="project_manager">Project Manager</option>
+                    <option value="site_supervisor">Site Supervisor</option>
+                    <option value="estimator">Estimator</option>
+                    <option value="procurement">Procurement</option>
+                    <option value="accounts">Accounts</option>
+                    <option value="viewer">Viewer (read only)</option>
+                  </select>
+                </div>
+                <button onClick={addProjectMember} disabled={!newMemberUserId || addingMember}
+                  className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+                  {addingMember ? "Adding..." : "+ Add to Project"}
+                </button>
+              </div>
+
+              {/* Current members */}
+              <div>
+                <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
+                  Current Team ({projectMembers.length})
+                </div>
+                {loadingTeam ? (
+                  <div className="text-sm text-slate-400 text-center py-4">Loading...</div>
+                ) : projectMembers.length === 0 ? (
+                  <div className="text-center py-6">
+                    <div className="text-sm text-slate-500 dark:text-slate-400">No team members assigned yet</div>
+                    <div className="text-xs text-slate-400 mt-1">Add staff above to give them access</div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {projectMembers.map(member => (
+                      <div key={member.user_id}
+                        className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center text-sm font-bold text-blue-600 dark:text-blue-400 flex-shrink-0">
+                            {(member.full_name || member.email || "?")[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                              {member.full_name || member.email}
+                            </div>
+                            <div className="text-xs text-slate-400">{member.email}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 capitalize">
+                            {member.project_role?.replace(/_/g, " ")}
+                          </span>
+                          <button onClick={() => removeProjectMember(member.user_id)}
+                            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
+                            <X size={13}/>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* Footer */}
+            <div className="flex-shrink-0 px-5 py-4 border-t border-slate-200 dark:border-slate-800">
+              <button onClick={() => setTeamModal(null)}
+                className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

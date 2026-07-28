@@ -70,12 +70,41 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setUserRole(profileData.role ?? null);
     setUserId(profileData.id ?? null);
 
-    // Filter projects by user's company_id
-    const { data, error } = await supabase
-      .from("projects")
-      .select("id, name, client_id, status")
-      .eq("company_id", profileData.company_id)
-      .order("name", { ascending: true });
+    // Directors and admins see every project in the company. Everyone else
+    // only sees projects they've been assigned to via project_members.
+    let data: any[] | null = null;
+    let error: any = null;
+    if (profileData.role === "director" || profileData.role === "admin") {
+      const res = await supabase
+        .from("projects")
+        .select("id, name, client_id, status")
+        .eq("company_id", profileData.company_id)
+        .order("name", { ascending: true });
+      data = res.data;
+      error = res.error;
+    } else {
+      const { data: memberRows, error: memberError } = await supabase
+        .from("project_members")
+        .select("project_id")
+        .eq("user_id", profileData.id)
+        .eq("is_active", true);
+      if (memberError) {
+        error = memberError;
+      } else {
+        const projectIds = (memberRows || []).map((m: any) => m.project_id);
+        if (projectIds.length === 0) {
+          data = [];
+        } else {
+          const res = await supabase
+            .from("projects")
+            .select("id, name, client_id, status")
+            .in("id", projectIds)
+            .order("name", { ascending: true });
+          data = res.data;
+          error = res.error;
+        }
+      }
+    }
 
     if (error) {
       console.error("Failed to load projects:", error);

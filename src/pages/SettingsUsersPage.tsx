@@ -4,10 +4,12 @@ import { supabase } from "../lib/supabase";
 type Role =
   | "director"
   | "admin"
+  | "project_manager"
+  | "site_supervisor"
   | "estimator"
-  | "supervisor"
-  | "office_user"
-  | "site_user";
+  | "procurement"
+  | "accounts"
+  | "viewer";
 
 type Status = "active" | "disabled";
 type InviteStatus = "pending" | "accepted" | "revoked" | "expired";
@@ -34,10 +36,12 @@ type InvitationRow = {
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: "director", label: "Director" },
   { value: "admin", label: "Admin" },
+  { value: "project_manager", label: "Project Manager" },
+  { value: "site_supervisor", label: "Site Supervisor" },
   { value: "estimator", label: "Estimator" },
-  { value: "supervisor", label: "Supervisor" },
-  { value: "office_user", label: "Office User" },
-  { value: "site_user", label: "Site User" },
+  { value: "procurement", label: "Procurement" },
+  { value: "accounts", label: "Accounts" },
+  { value: "viewer", label: "Viewer" },
 ];
 
 const ROLE_META: Record<
@@ -48,7 +52,7 @@ const ROLE_META: Record<
     color: "bg-cyan-100 text-cyan-800 border-cyan-300",
     dot: "bg-cyan-500",
     label: "Director",
-    desc: "Full access, billing, delete company",
+    desc: "Full access to everything",
   },
   admin: {
     color: "bg-violet-100 text-violet-800 border-violet-300",
@@ -56,29 +60,41 @@ const ROLE_META: Record<
     label: "Admin",
     desc: "Full access except billing",
   },
+  project_manager: {
+    color: "bg-indigo-100 text-indigo-800 border-indigo-300",
+    dot: "bg-indigo-500",
+    label: "Project Manager",
+    desc: "Manage assigned projects",
+  },
+  site_supervisor: {
+    color: "bg-emerald-100 text-emerald-800 border-emerald-300",
+    dot: "bg-emerald-500",
+    label: "Site Supervisor",
+    desc: "Field operations and workers",
+  },
   estimator: {
     color: "bg-amber-100 text-amber-800 border-amber-300",
     dot: "bg-amber-500",
     label: "Estimator",
-    desc: "BOQ, Takeoff, Estimates only",
+    desc: "BOQ, estimates, rate library",
   },
-  supervisor: {
-    color: "bg-emerald-100 text-emerald-800 border-emerald-300",
-    dot: "bg-emerald-500",
-    label: "Supervisor",
-    desc: "Field ops, progress updates",
+  procurement: {
+    color: "bg-orange-100 text-orange-800 border-orange-300",
+    dot: "bg-orange-500",
+    label: "Procurement",
+    desc: "Purchase orders and suppliers",
   },
-  office_user: {
+  accounts: {
     color: "bg-blue-100 text-blue-800 border-blue-300",
     dot: "bg-blue-500",
-    label: "Office User",
-    desc: "Procurement, finance, admin tasks",
+    label: "Accounts",
+    desc: "Finance and invoicing",
   },
-  site_user: {
+  viewer: {
     color: "bg-slate-100 text-slate-700 border-slate-300",
     dot: "bg-slate-500",
-    label: "Site User",
-    desc: "Field time entries, read-only elsewhere",
+    label: "Viewer",
+    desc: "Read-only access",
   },
 };
 
