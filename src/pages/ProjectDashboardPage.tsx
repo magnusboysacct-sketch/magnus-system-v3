@@ -113,14 +113,26 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   const [newReply, setNewReply] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
   const [currentUser, setCurrentUser] = useState<{id:string; full_name?:string} | null>(null);
+  const [userRole, setUserRole] = useState<string|null>(null);
+
+  // Budget / cash flow
+  const [contractAmount, setContractAmount] = useState(0);
+  const [totalReceived, setTotalReceived] = useState(0);
+  const [totalFieldPayments, setTotalFieldPayments] = useState(0);
+  const [totalPOCommitments, setTotalPOCommitments] = useState(0);
+  const [totalExpenses, setTotalExpenses] = useState(0);
+  const [weeklyFieldPayments, setWeeklyFieldPayments] = useState(0);
 
   useEffect(()=>{ if(projectId) loadAll(); },[projectId]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) {
-        supabase.from("user_profiles").select("id, full_name").eq("id", data.user.id).maybeSingle()
-          .then(({ data: profile }) => setCurrentUser(profile));
+        supabase.from("user_profiles").select("id, full_name, role").eq("id", data.user.id).maybeSingle()
+          .then(({ data: profile }) => {
+            setCurrentUser(profile);
+            setUserRole(profile?.role || null);
+          });
       }
     });
   }, []);
@@ -161,13 +173,27 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
         setClient(cl);
       }
 
-      const [expRes,poRes,workerRes,msRes,taskRes,msgRes]=await Promise.allSettled([
+      const [expRes,poRes,workerRes,msRes,taskRes,msgRes,contractRes,invoicesRes,fieldPmtRes,poItemsRes,expApprovedRes]=await Promise.allSettled([
         supabase.from("expenses").select("amount,description,created_at").eq("project_id",projectId!),
         supabase.from("purchase_orders").select("id,status,created_at,supplier_name").eq("project_id",projectId!),
         supabase.from("workers").select("id,first_name,last_name,worker_type,status").eq("company_id",proj.company_id||"").eq("status","active").limit(30),
         supabase.from("project_milestones").select("*").eq("project_id",projectId!).order("milestone_no",{ascending:true}),
         supabase.from("project_tasks").select("id,task_name,task_description,trade_type,quantity,unit,rate_per_unit,start_date,end_date,status,percent_complete,milestone_id").eq("project_id",projectId!).order("created_at",{ascending:true}),
         supabase.from("client_comments").select("*").eq("project_id",projectId!).order("created_at",{ascending:true}),
+        // Active contract for this project (for contract value / profit view)
+        supabase.from("client_contracts").select("contract_amount,retention_percent,status")
+          .eq("project_id",projectId!).eq("status","active").order("created_at",{ascending:false}).limit(1),
+        // Money received from client — summed via client_invoices.amount_paid, since
+        // client_payments has no project_id column (only invoice_id); amount_paid is
+        // kept in sync with actual payments by updateInvoiceAfterPayment().
+        supabase.from("client_invoices").select("amount_paid").eq("project_id",projectId!),
+        // Field payments (money out to labour). Every row is created with status
+        // "signed" — there's no "approved" status on this table — so no status filter.
+        supabase.from("field_payments").select("total_amount,payment_type,work_date").eq("project_id",projectId!),
+        // PO commitments — amounts live on purchase_order_items, not purchase_orders itself
+        supabase.from("purchase_order_items").select("total_amount,purchase_order_id,purchase_orders!inner(project_id,status)")
+          .eq("purchase_orders.project_id",projectId!).neq("purchase_orders.status","cancelled"),
+        supabase.from("expenses").select("amount").eq("project_id",projectId!).in("status",["approved","reimbursed"]),
       ]);
 
       const expenses=expRes.status==="fulfilled"?expRes.value.data||[]:[];
@@ -176,6 +202,25 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
       const msList=msRes.status==="fulfilled"?msRes.value.data||[]:[];
       const taskList=taskRes.status==="fulfilled"?taskRes.value.data||[]:[];
       const msgList=msgRes.status==="fulfilled"?msgRes.value.data||[]:[];
+
+      const contract=contractRes.status==="fulfilled"?(contractRes.value.data?.[0]||null):null;
+      const invoices=invoicesRes.status==="fulfilled"?invoicesRes.value.data||[]:[];
+      const fieldPmts=fieldPmtRes.status==="fulfilled"?fieldPmtRes.value.data||[]:[];
+      const poItems=poItemsRes.status==="fulfilled"?poItemsRes.value.data||[]:[];
+      const approvedExpenses=expApprovedRes.status==="fulfilled"?expApprovedRes.value.data||[]:[];
+
+      setContractAmount(Number(contract?.contract_amount||0));
+      setTotalReceived(invoices.reduce((s:number,i:any)=>s+(Number(i.amount_paid)||0),0));
+      setTotalFieldPayments(fieldPmts.reduce((s:number,p:any)=>s+(Number(p.total_amount)||0),0));
+      setTotalPOCommitments(poItems.reduce((s:number,p:any)=>s+(Number(p.total_amount)||0),0));
+      setTotalExpenses(approvedExpenses.reduce((s:number,e:any)=>s+(Number(e.amount)||0),0));
+
+      const oneWeekAgo=new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate()-7);
+      setWeeklyFieldPayments(
+        fieldPmts.filter((p:any)=>p.work_date&&new Date(p.work_date)>=oneWeekAgo)
+          .reduce((s:number,p:any)=>s+(Number(p.total_amount)||0),0)
+      );
 
       setWorkers(workerList);
       setMilestones(msList);
@@ -369,13 +414,20 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
     </div>
   );
 
-  const budget=0;
   const spent=stats.totalExpenses;
   const statusCfg=STATUS_CFG[project.status]||STATUS_CFG.planning;
   const totalPlannedCost=milestones.reduce((s,m)=>s+(Number(m.planned_total_cost)||0),0);
   const totalActualCost=milestones.reduce((s,m)=>s+(Number(m.actual_total_cost)||0),0);
   const msComplete=milestones.filter(m=>m.status==="complete").length;
   const overallProgress=milestones.length>0?Math.round((msComplete/milestones.length)*100):0;
+
+  // Cash flow: money received from client vs money actually paid out
+  const totalSpent=totalFieldPayments+totalPOCommitments+totalExpenses;
+  const availableBalance=totalReceived-totalSpent;
+  const stillToCollect=contractAmount-totalReceived;
+  const estimatedProfit=contractAmount-totalSpent-(contractAmount*0.05); // rough estimate — 5% held back for overhead/contingency
+  const balancePct=totalReceived>0?(availableBalance/totalReceived)*100:0;
+  const nextWeekForecast=availableBalance-weeklyFieldPayments;
 
   const MODULES=[
     {label:"Site Visit",icon:<Layers size={15}/>,to:`/projects/${projectId}/site-visit`,color:"text-purple-400",bg:"bg-purple-500/10",border:"border-purple-500/20",desc:"Voice notes, photos, sketch"},
@@ -451,7 +503,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
       <div className="p-6 space-y-5">{/* ── OVERVIEW ── */}
         {tab==="overview"&&(
           <>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               {[
                 {label:"Milestones",  value:`${msComplete}/${milestones.length}`, sub:"completed", color:"text-cyan-400",    bg:"bg-cyan-500/10",    border:"border-cyan-500/20",    icon:<Flag size={14}/>},
                 {label:"Tasks",       value:tasks.length,                          sub:`${tasks.filter(t=>t.status==="complete").length} done`, color:"text-violet-400", bg:"bg-violet-500/10", border:"border-violet-500/20", icon:<ListTodo size={14}/>},
@@ -465,6 +517,26 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                   <div className="text-[10px] text-slate-400 dark:text-slate-700 mt-0.5">{card.sub}</div>
                 </div>
               ))}
+              <div className={`rounded-xl border p-4 col-span-2 lg:col-span-1 ${
+                availableBalance<0 ? "border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10" :
+                balancePct<30 ? "border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10" :
+                "border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10"
+              }`}>
+                <div className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${
+                  availableBalance<0 ? "text-red-500" : balancePct<30 ? "text-amber-500" : "text-emerald-500"
+                }`}>
+                  {availableBalance<0 ? "🔴 Overspent" : balancePct<30 ? "🟡 Low Balance" : "🟢 Available"}
+                </div>
+                <div className={`text-xl font-black ${
+                  availableBalance<0 ? "text-red-700 dark:text-red-400" :
+                  balancePct<30 ? "text-amber-700 dark:text-amber-400" :
+                  "text-emerald-700 dark:text-emerald-400"
+                }`}>
+                  {fmtShort(availableBalance)}
+                </div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-600 uppercase tracking-wider font-semibold mt-0.5">Balance</div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-700 mt-0.5">available to spend</div>
+              </div>
             </div>
 
             {/* Overall Progress */}
@@ -1018,12 +1090,47 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
         {/* ── FINANCIALS ── */}
         {tab==="financials"&&(
           <>
+            {/* Balance Alert Banner */}
+            {availableBalance < 0 ? (
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30">
+                <span className="text-2xl">🔴</span>
+                <div>
+                  <div className="text-sm font-bold text-red-700 dark:text-red-400">Overspent — Stop Payments!</div>
+                  <div className="text-xs text-red-500">Spent JMD {Math.abs(availableBalance).toLocaleString(undefined,{maximumFractionDigits:0})} more than received. Wait for next client payment.</div>
+                </div>
+              </div>
+            ) : balancePct < 10 ? (
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30">
+                <span className="text-2xl">🔴</span>
+                <div>
+                  <div className="text-sm font-bold text-red-700 dark:text-red-400">Critical — Less than 10% remaining</div>
+                  <div className="text-xs text-red-500">Only JMD {availableBalance.toLocaleString(undefined,{maximumFractionDigits:0})} left. Request client payment before spending more.</div>
+                </div>
+              </div>
+            ) : balancePct < 30 ? (
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30">
+                <span className="text-2xl">🟡</span>
+                <div>
+                  <div className="text-sm font-bold text-amber-700 dark:text-amber-400">Warning — Less than 30% remaining</div>
+                  <div className="text-xs text-amber-500">JMD {availableBalance.toLocaleString(undefined,{maximumFractionDigits:0})} available. Plan next client payment soon.</div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30">
+                <span className="text-2xl">🟢</span>
+                <div>
+                  <div className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Good — Sufficient funds available</div>
+                  <div className="text-xs text-emerald-500">JMD {availableBalance.toLocaleString(undefined,{maximumFractionDigits:0})} available to spend on this project.</div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
                 {label:"Planned Budget",  value:fmtShort(totalPlannedCost), color:"text-blue-400",    icon:<Target size={14}/>},
                 {label:"Actual Cost",     value:fmtShort(totalActualCost),  color:"text-amber-400",   icon:<TrendingDown size={14}/>},
                 {label:"Variance",        value:fmtShort(Math.abs(totalPlannedCost-totalActualCost)), color:totalActualCost>totalPlannedCost?"text-red-400":"text-emerald-400", icon:<TrendingUp size={14}/>},
-                {label:"PO Commitments",  value:fmtShort(0),                color:"text-violet-400",  icon:<Package size={14}/>},
+                {label:"PO Commitments",  value:fmtShort(totalPOCommitments), color:"text-violet-400",  icon:<Package size={14}/>},
               ].map(card=>(
                 <div key={card.label} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] p-4">
                   <div className={`${card.color} mb-2`}>{card.icon}</div>
@@ -1032,6 +1139,69 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                 </div>
               ))}
             </div>
+
+            {/* Project Balance — cash received from client vs actually spent */}
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">💰 Project Balance</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Based on money received from client minus all project spend</p>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-slate-500 dark:text-slate-400">Spent</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">{Math.round(100 - balancePct)}% of received funds</span>
+                  </div>
+                  <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-3">
+                    <div className={`h-3 rounded-full transition-all ${
+                      balancePct < 10 ? "bg-red-500" :
+                      balancePct < 30 ? "bg-amber-500" : "bg-emerald-500"
+                    }`} style={{ width: `${Math.min(100, Math.max(0, 100 - balancePct))}%` }}/>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 col-span-2 sm:col-span-1">
+                    <div className="text-[10px] text-blue-500 uppercase tracking-wider font-semibold">Available to Spend</div>
+                    <div className={`text-xl font-black mt-1 ${availableBalance < 0 ? "text-red-600 dark:text-red-400" : "text-blue-700 dark:text-blue-300"}`}>
+                      JMD {availableBalance.toLocaleString(undefined, {maximumFractionDigits:0})}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
+                    <div className="text-[10px] text-emerald-500 uppercase tracking-wider font-semibold">Received</div>
+                    <div className="text-base font-bold text-emerald-700 dark:text-emerald-300 mt-1">
+                      JMD {totalReceived.toLocaleString(undefined, {maximumFractionDigits:0})}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20">
+                    <div className="text-[10px] text-red-500 uppercase tracking-wider font-semibold">Total Spent</div>
+                    <div className="text-base font-bold text-red-700 dark:text-red-300 mt-1">
+                      JMD {totalSpent.toLocaleString(undefined, {maximumFractionDigits:0})}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 dark:border-slate-800 pt-3 space-y-2">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Spend Breakdown</div>
+                  {[
+                    { label: "Field Payments (Labor)", amount: totalFieldPayments, icon: "👷" },
+                    { label: "Purchase Orders (Materials)", amount: totalPOCommitments, icon: "📦" },
+                    { label: "Expenses", amount: totalExpenses, icon: "🧾" },
+                  ].map(({ label, amount, icon }) => (
+                    <div key={label} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span>{icon}</span>
+                        <span className="text-sm text-slate-600 dark:text-slate-300">{label}</span>
+                      </div>
+                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                        JMD {amount.toLocaleString(undefined, {maximumFractionDigits:0})}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* Cost per Milestone */}
             {milestones.length>0&&(
               <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] overflow-hidden">
@@ -1059,14 +1229,98 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                 })}
               </div>
             )}
+            {/* Weekly payroll forecast */}
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">📅 Weekly Forecast</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Based on last 7 days of field payments</p>
+              </div>
+              <div className="p-5 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <div className="text-[10px] text-slate-400 uppercase tracking-wider">Last 7 Days Paid</div>
+                    <div className="text-base font-bold text-slate-700 dark:text-slate-200 mt-1">
+                      JMD {weeklyFieldPayments.toLocaleString(undefined, {maximumFractionDigits:0})}
+                    </div>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${
+                    nextWeekForecast < 0
+                      ? "bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/30"
+                      : "bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30"
+                  }`}>
+                    <div className={`text-[10px] uppercase tracking-wider ${nextWeekForecast < 0 ? "text-red-500" : "text-emerald-500"}`}>
+                      After This Week
+                    </div>
+                    <div className={`text-base font-bold mt-1 ${nextWeekForecast < 0 ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}`}>
+                      JMD {nextWeekForecast.toLocaleString(undefined, {maximumFractionDigits:0})}
+                    </div>
+                  </div>
+                </div>
+                {nextWeekForecast < 0 && (
+                  <div className="text-xs text-red-500 font-semibold">
+                    ⚠️ If weekly payroll continues at this rate, funds will run out. Request client payment.
+                  </div>
+                )}
+                {nextWeekForecast >= 0 && weeklyFieldPayments > 0 && nextWeekForecast < weeklyFieldPayments && (
+                  <div className="text-xs text-amber-500 font-semibold">
+                    ⚠️ Enough for approximately {Math.floor(availableBalance / weeklyFieldPayments)} more week(s) at current spend rate.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Director-only section — profit view */}
+            {(userRole === "director" || userRole === "admin") && (
+              <div className="rounded-2xl border border-purple-200 dark:border-purple-500/30 overflow-hidden">
+                <div className="px-5 py-4 border-b border-purple-200 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-purple-700 dark:text-purple-300">📊 Director View — Profitability</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 font-semibold">Private</span>
+                  </div>
+                  <p className="text-xs text-purple-400 mt-0.5">Not visible to site managers or other staff</p>
+                </div>
+                <div className="p-5 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                      <div className="text-[10px] text-slate-400 uppercase tracking-wider">Contract Value</div>
+                      <div className="text-base font-bold text-slate-700 dark:text-slate-200 mt-1">
+                        JMD {contractAmount.toLocaleString(undefined, {maximumFractionDigits:0})}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                      <div className="text-[10px] text-slate-400 uppercase tracking-wider">Still to Collect</div>
+                      <div className="text-base font-bold text-amber-600 dark:text-amber-400 mt-1">
+                        JMD {stillToCollect.toLocaleString(undefined, {maximumFractionDigits:0})}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30">
+                      <div className="text-[10px] text-emerald-500 uppercase tracking-wider">Estimated Profit</div>
+                      <div className={`text-base font-bold mt-1 ${estimatedProfit >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                        JMD {estimatedProfit.toLocaleString(undefined, {maximumFractionDigits:0})}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30">
+                      <div className="text-[10px] text-emerald-500 uppercase tracking-wider">Profit Margin</div>
+                      <div className={`text-base font-bold mt-1 ${estimatedProfit >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}>
+                        {contractAmount > 0 ? ((estimatedProfit / contractAmount) * 100).toFixed(1) : "0"}%
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    * Estimated profit = Contract value − total spend. Final profit calculated at project completion.
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0d1117] overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-200 dark:border-white/[0.06]"><span className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Quick Links</span></div>
-              <div className="grid grid-cols-2 gap-2 p-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
                 {[
-                  {label:"Expenses",       to:"/expenses",           icon:<Receipt size={13}/>,      color:"text-amber-400"},
-                  {label:"Purchase Orders",to:`/projects/${projectId}/procurement`,icon:<ShoppingCart size={13}/>,color:"text-blue-400"},
-                  {label:"Cash Flow",      to:"/cash-flow",          icon:<TrendingUp size={13}/>,   color:"text-cyan-400"},
-                  {label:"Accounts Recv.", to:"/accounts-receivable",icon:<FileText size={13}/>,     color:"text-violet-400"},
+                  {label:"Field Payments", to:`/field-payments?project=${projectId}`, icon:<Users size={13}/>,        color:"text-emerald-400"},
+                  {label:"Procurement",    to:`/projects/${projectId}/procurement`,   icon:<ShoppingCart size={13}/>, color:"text-blue-400"},
+                  {label:"Expenses",       to:`/expenses?project=${projectId}`,       icon:<Receipt size={13}/>,      color:"text-amber-400"},
+                  {label:"Invoices",       to:`/accounts-receivable?project=${projectId}`, icon:<FileText size={13}/>, color:"text-violet-400"},
                 ].map(l=>(
                   <button key={l.to} onClick={()=>nav(l.to)}
                     className="flex items-center gap-2.5 px-4 py-3 rounded-lg border border-slate-200 dark:border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.03] transition text-left">

@@ -218,6 +218,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [selectedMilestone, setSelectedMilestone] = useState<any>(null);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [projectBalance, setProjectBalance] = useState<number|null>(null);
 
   const [form, setForm] = useState<FormData>({
     payment_type:(prefillWorker?.payment_type as PaymentType)||"payment",
@@ -280,13 +281,30 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     setTotalAdvanced(total);
   }
 
+  // Load project balance (received from client minus money already paid out)
+  // so field crews can see whether there's room to keep paying before they enter
+  // an amount. client_payments has no project_id column (only invoice_id), so
+  // "received" is summed via client_invoices.amount_paid — kept in sync with
+  // actual payments by updateInvoiceAfterPayment().
+  async function loadProjectBalance(projectId: string) {
+    if(!projectId){setProjectBalance(null);return;}
+    const [{data:invoices},{data:fp}]=await Promise.all([
+      supabase.from("client_invoices").select("amount_paid").eq("project_id",projectId),
+      supabase.from("field_payments").select("total_amount").eq("project_id",projectId),
+    ]);
+    const received=(invoices||[]).reduce((s:number,i:any)=>s+(Number(i.amount_paid)||0),0);
+    const spent=(fp||[]).reduce((s:number,p:any)=>s+(Number(p.total_amount)||0),0);
+    setProjectBalance(received-spent);
+  }
+
   // Load milestones when project changes
   useEffect(()=>{
-    if(!form.project_id){setMilestones([]);setTaskOptions([]);return;}
+    if(!form.project_id){setMilestones([]);setTaskOptions([]);setProjectBalance(null);return;}
     const proj=projects.find(p=>p.id===form.project_id);
     setSelectedProject(proj||null);
     supabase.from("project_milestones").select("*").eq("project_id",form.project_id).order("milestone_no")
       .then(({data})=>setMilestones(data||[]));
+    loadProjectBalance(form.project_id);
     setForm(f=>({...f,milestone_id:"",task_id:"",task_name:"",trade_type:"",unit:"",task_unit_rate:"",task_quantity:"",total_amount:""}));
     setSelectedMilestone(null); setSelectedTask(null);
   },[form.project_id]);
@@ -662,6 +680,23 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
         )}{/* ── STEP 4: PAYMENT DETAILS ── */}
         {step==="payment"&&(
           <div className="space-y-4">
+            {/* Project balance warning */}
+            {projectBalance !== null && (
+              <div className={`flex items-center gap-2 p-3 rounded-xl text-xs font-semibold ${
+                projectBalance < 0
+                  ? "bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400"
+                  : projectBalance < 50000
+                  ? "bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-600 dark:text-amber-400"
+                  : "bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+              }`}>
+                <span>{projectBalance < 0 ? "🔴" : projectBalance < 50000 ? "🟡" : "🟢"}</span>
+                <span>
+                  Project balance: JMD {projectBalance.toLocaleString(undefined, {maximumFractionDigits:0})}
+                  {projectBalance < 0 ? " — OVERSPENT! Do not make payments." :
+                   projectBalance < 50000 ? " — Low balance. Check with director." : " — OK to proceed."}
+                </span>
+              </div>
+            )}
             {/* Summary */}
             <div className="rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] p-3 space-y-1">
               <div className="flex items-center justify-between">
