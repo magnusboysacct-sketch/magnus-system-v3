@@ -160,10 +160,11 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
 
 // --- Detail Modal -------------------------------------------------------------
 
-function EstimateDetailModal({ estimate, items, companyId, onClose }: {
+function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClose }: {
   estimate: EstimateHeader;
   items: EstimateItem[];
   companyId: string | null;
+  onUpdateStatus: (status: EstimateHeader["status"]) => void;
   onClose: () => void;
 }) {
   const nav = useNavigate();
@@ -415,10 +416,32 @@ function EstimateDetailModal({ estimate, items, companyId, onClose }: {
     setTimeout(() => w.print(), 600);
   }
   return (
-    <Modal open onClose={onClose} title={estimate.title}
-      subtitle={`v${estimate.version} · ${estimate.projects?.name || "No project"}`}
-      width="max-w-3xl">
-      <div className="space-y-4">
+    <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl w-full sm:max-w-3xl flex flex-col"
+        style={{ maxHeight: "95dvh" }}>
+
+        {/* Mobile drag handle */}
+        <div className="flex-shrink-0 flex justify-center pt-3 pb-1 sm:hidden">
+          <div className="w-10 h-1 rounded-full bg-slate-300 dark:bg-slate-600"/>
+        </div>
+
+        {/* Header — fixed, never scrolls */}
+        <div className="flex-shrink-0 flex items-start justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
+          <div>
+            <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">{estimate.title}</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge color={STATUS_COLOR[estimate.status]} dot>{estimate.status}</Badge>
+              <span className="text-xs text-slate-500">v{estimate.version} · {estimate.projects?.name || "No project"}</span>
+            </div>
+          </div>
+          <button onClick={onClose}
+            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 flex-shrink-0">
+            <X size={18}/>
+          </button>
+        </div>
+
+        {/* Body — scrollable */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
         {/* Summary */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {Object.entries(byType).map(([type, amt]) => (
@@ -537,17 +560,46 @@ function EstimateDetailModal({ estimate, items, companyId, onClose }: {
             <div className="text-xs text-slate-500 dark:text-slate-400">{estimate.notes}</div>
           </div>
         )}
-             <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
+        </div>
+
+        {/* Footer — fixed, always visible */}
+        <div className="flex-shrink-0 flex flex-wrap items-center gap-2 px-5 py-4 border-t border-slate-200 dark:border-white/[0.07] bg-white dark:bg-slate-900">
+          {estimate.status === "draft" && (
+            <button onClick={() => onUpdateStatus("sent")}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition">
+              <Send size={14}/> Send to Client
+            </button>
+          )}
+          {estimate.status === "sent" && (
+            <>
+              <button onClick={() => onUpdateStatus("approved")}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition">
+                <CheckCircle2 size={14}/> Approve
+              </button>
+              <button onClick={() => onUpdateStatus("declined")}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-sm font-semibold transition">
+                <XCircle size={14}/> Decline
+              </button>
+            </>
+          )}
           {estimate.status === "approved" && (
             <button onClick={handleGenerateContract}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition">
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition">
               <FileText size={14}/> Generate Contract
             </button>
           )}
-          <button onClick={printProposal} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition"><Printer size={14}/> Print / Export Proposal</button>
+          <div className="flex-1"/>
+          <button onClick={printProposal}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition">
+            <Printer size={14}/> Print
+          </button>
+          <button onClick={onClose}
+            className="px-4 py-2 rounded-xl border border-slate-200 dark:border-white/[0.08] text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.05] transition">
+            Close
+          </button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 
@@ -669,6 +721,7 @@ export default function EstimatesPage() {
   async function updateStatus(id: string, status: EstimateHeader["status"]) {
     await supabase.from("estimate_headers").update({ status }).eq("id", id);
     setEstimates(prev => prev.map(e => e.id === id ? { ...e, status } : e));
+    setViewingEstimate(prev => prev && prev.id === id ? { ...prev, status } : prev);
   }
 
   async function getAISuggestion() {
@@ -836,6 +889,7 @@ export default function EstimatesPage() {
           estimate={viewingEstimate}
           items={itemsByEstimate[viewingEstimate.id] || []}
           companyId={companyId}
+          onUpdateStatus={status => updateStatus(viewingEstimate.id, status)}
           onClose={() => setViewingEstimate(null)}
         />
       )}
