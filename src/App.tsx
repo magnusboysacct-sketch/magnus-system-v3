@@ -54,6 +54,7 @@ import ReportsPage            from "./pages/ReportsPage";
 import ContractsPage          from "./pages/ContractsPage";
 
 import SettingsPage           from "./pages/SettingsPage";
+import SettingsEstimatesPage   from "./pages/SettingsEstimatesPage";
 import SettingsRecordsPage     from "./pages/SettingsRecordsPage";
 import SettingsCompanyPage      from "./pages/SettingsCompanyPage";
 import WorkerVerifyPage         from "./pages/WorkerVerifyPage";
@@ -282,6 +283,7 @@ export default function App() {
               <Route path="/materials-library" element={<Navigate to="/rates" replace />} />
               <Route path="/settings"                      element={<RoleGuard allowedRoles={["director"]}><SettingsPage /></RoleGuard>} />
               <Route path="/settings/company"              element={<RoleGuard allowedRoles={["director"]}><SettingsCompanyPage /></RoleGuard>} />
+              <Route path="/settings/estimates"            element={<RoleGuard allowedRoles={["director"]}><SettingsEstimatesPage /></RoleGuard>} />
               <Route path="/settings/master-lists"         element={<RoleGuard allowedRoles={["director"]}><SettingsMasterListsPage /></RoleGuard>} />
               <Route path="/settings/master-categories"    element={<RoleGuard allowedRoles={["director"]}><SettingsMasterCategoriesPage /></RoleGuard>} />
               <Route path="/settings/cost-codes"           element={<RoleGuard allowedRoles={["director"]}><SettingsCostCodesPage /></RoleGuard>} />

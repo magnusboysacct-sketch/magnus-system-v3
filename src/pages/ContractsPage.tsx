@@ -23,6 +23,7 @@ interface Contract {
   company_id: string;
   project_id: string | null;
   client_id: string | null;
+  estimate_id: string | null;
   contract_number: string;
   contract_name: string;
   contract_date: string | null;
@@ -560,7 +561,7 @@ export default function ContractsPage() {
 
   // New contract form
   const [form, setForm] = useState({
-    contract_name: "", client_id: "", project_id: "", contract_number: genContractNo(),
+    contract_name: "", client_id: "", project_id: "", estimate_id: "", contract_number: genContractNo(),
     contract_date: new Date().toISOString().slice(0,10),
     start_date: "", completion_date: "",
     contract_amount: "", retention_percent: "5",
@@ -597,6 +598,21 @@ export default function ContractsPage() {
     init();
   }, []);
 
+  // Pre-fill "New Contract" from an approved estimate via Estimates > Generate Contract
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") === "1") {
+      setForm(f => ({
+        ...f,
+        project_id: params.get("project_id") || "",
+        contract_amount: params.get("amount") || "",
+        contract_name: params.get("title") || "",
+        estimate_id: params.get("estimate_id") || "",
+      }));
+      setShowNew(true);
+    }
+  }, []);
+
   async function loadAll(cid: string) {
     setLoading(true);
     try {
@@ -628,6 +644,7 @@ export default function ContractsPage() {
         company_id: companyId,
         project_id: form.project_id || null,
         client_id: form.client_id || null,
+        estimate_id: form.estimate_id || null,
         contract_number: form.contract_number,
         contract_name: form.contract_name.trim(),
         contract_date: form.contract_date || null,

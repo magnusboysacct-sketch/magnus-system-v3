@@ -27,6 +27,15 @@ type EstimateHeader = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  // pricing
+  markup_overall?: number | null;
+  markup_type?: "overall" | "category" | null;
+  contingency_pct?: number | null;
+  contingency_amount?: number | null;
+  subtotal_cost?: number | null;
+  subtotal_markup?: number | null;
+  total_client_price?: number | null;
+  print_format?: string | null;
   // joined
   projects?: { name: string } | null;
 };
@@ -151,60 +160,259 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
 
 // --- Detail Modal -------------------------------------------------------------
 
-function EstimateDetailModal({ estimate, items, onClose }: {
+function EstimateDetailModal({ estimate, items, companyId, onClose }: {
   estimate: EstimateHeader;
   items: EstimateItem[];
+  companyId: string | null;
   onClose: () => void;
 }) {
+  const nav = useNavigate();
   const total = items.reduce((s, i) => s + (i.amount || 0), 0);
   const byType = items.reduce((acc: Record<string, number>, i) => {
     acc[i.item_type] = (acc[i.item_type] || 0) + (i.amount || 0);
     return acc;
   }, {});
 
-  function printProposal() {
+  // --- Pricing: markup + contingency ------------------------------------
+  const [markupType, setMarkupType] = useState<"overall" | "category">(estimate.markup_type || "overall");
+  const [markupOverall, setMarkupOverall] = useState<number>(estimate.markup_overall ?? 25);
+  const [contingencyPct, setContingencyPct] = useState<number>(estimate.contingency_pct ?? 5);
+  const [savingMarkup, setSavingMarkup] = useState(false);
+
+  useEffect(() => {
+    async function loadDefaults() {
+      if (!companyId || estimate.markup_overall != null) return;
+      const { data: cs } = await supabase
+        .from("company_settings")
+        .select("estimate_markup_overall, estimate_contingency")
+        .eq("company_id", companyId)
+        .maybeSingle();
+      if (cs) {
+        setMarkupOverall(cs.estimate_markup_overall ?? 25);
+        setContingencyPct(cs.estimate_contingency ?? 5);
+      }
+    }
+    loadDefaults();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimate.id, companyId]);
+
+  const subtotalCost = items.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+  const markupAmount = subtotalCost * (markupOverall / 100);
+  const subtotalWithMarkup = subtotalCost + markupAmount;
+  const contingencyAmount = subtotalWithMarkup * (contingencyPct / 100);
+  const totalClientPrice = subtotalWithMarkup + contingencyAmount;
+
+  async function saveMarkup() {
+    setSavingMarkup(true);
+    await supabase.from("estimate_headers").update({
+      markup_overall: markupOverall,
+      markup_type: markupType,
+      contingency_pct: contingencyPct,
+      contingency_amount: contingencyAmount,
+      subtotal_cost: subtotalCost,
+      subtotal_markup: markupAmount,
+      total_client_price: totalClientPrice,
+    }).eq("id", estimate.id);
+    setSavingMarkup(false);
+  }
+
+  function handleGenerateContract() {
+    const params = new URLSearchParams({
+      estimate_id: estimate.id,
+      project_id: estimate.project_id || "",
+      amount: String(Math.round(totalClientPrice)),
+      title: estimate.title,
+    });
+    nav(`/contracts?new=1&${params.toString()}`);
+  }
+
+  async function printProposal() {
     const fmtJMD = (n: number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:2}).format(n);
-    const html = `<!DOCTYPE html><html><head><title>Proposal</title>
+
+    const { data: { user } } = await supabase.auth.getUser();
+    let cs: any = null;
+    let proj: any = null;
+    let client: any = null;
+    if (user) {
+      const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
+      if (profile?.company_id) {
+        const { data } = await supabase.from("company_settings")
+          .select("company_name, address_line1, address_line2, parish, phone, email, logo_url, estimate_validity_days, estimate_print_format")
+          .eq("company_id", profile.company_id).maybeSingle();
+        cs = data;
+      }
+    }
+    const { data: projData } = await supabase.from("projects")
+      .select("name, site_address, client_id").eq("id", estimate.project_id).maybeSingle();
+    proj = projData;
+    if (proj?.client_id) {
+      const { data: c } = await supabase.from("clients").select("name, address, phone, email").eq("id", proj.client_id).maybeSingle();
+      client = c;
+    }
+
+    const markup = markupAmount;
+    const subtotal = subtotalWithMarkup;
+    const contingency = contingencyAmount;
+    const grandTotal = totalClientPrice;
+    const validUntil = new Date(new Date(estimate.created_at).getTime() + (cs?.estimate_validity_days || 30) * 24 * 60 * 60 * 1000);
+    const estNumber = `EST-${new Date(estimate.created_at).getFullYear()}-${estimate.id.slice(-6).toUpperCase()}`;
+    const printFormat = estimate.print_format || cs?.estimate_print_format || "summary";
+
+    const html = `<!DOCTYPE html><html><head>
+    <title>${estimate.title} — Cost Proposal</title>
     <style>
-      *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:Georgia,serif;color:#1a1a1a;background:white;padding:40px;max-width:800px;margin:0 auto}
-      .header{border-bottom:3px solid #1a1a1a;padding-bottom:20px;margin-bottom:24px;display:flex;justify-content:space-between}
-      .company{font-size:22px;font-weight:900;letter-spacing:2px;text-transform:uppercase}
-      .doc-title{text-align:right}
-      .doc-title h1{font-size:20px;font-weight:900;letter-spacing:3px;text-transform:uppercase}
-      .doc-title p{font-size:11px;color:#666;margin-top:4px}
-      table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:12px}
-      th{text-align:left;padding:8px;background:#f8f8f8;border-bottom:2px solid #1a1a1a;font-size:10px;text-transform:uppercase}
-      td{padding:8px;border-bottom:1px solid #eee}
-      .tr{text-align:right}
-      .total-row td{border-top:2px solid #1a1a1a;padding:12px 8px;font-weight:900}
-      .footer{margin-top:40px;border-top:2px solid #1a1a1a;padding-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:20px}
-      .sig-line{border-top:1px solid #1a1a1a;margin-top:50px;padding-top:6px;font-size:11px;color:#666}
-      @media print{body{padding:20px}@page{size:A4;margin:15mm}}
-    </style></head><body>
+      * { margin:0; padding:0; box-sizing:border-box; }
+      body { font-family: 'Segoe UI', Arial, sans-serif; color:#1e293b; background:white; padding:40px; font-size:13px; }
+      .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:32px; padding-bottom:20px; border-bottom:3px solid #1e3a5f; }
+      .company-logo { height:60px; width:auto; object-fit:contain; margin-bottom:8px; }
+      .company-name { font-size:22px; font-weight:900; color:#1e3a5f; }
+      .company-sub { font-size:11px; color:#64748b; margin-top:2px; }
+      .doc-title { font-size:28px; font-weight:900; color:#1e3a5f; text-align:right; }
+      .doc-meta { font-size:11px; color:#64748b; text-align:right; margin-top:4px; line-height:1.8; }
+      .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:28px; padding:16px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; }
+      .info-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#94a3b8; margin-bottom:6px; }
+      .info-value { font-size:14px; font-weight:700; color:#1e293b; }
+      .info-sub { font-size:11px; color:#64748b; margin-top:2px; line-height:1.6; }
+      table { width:100%; border-collapse:collapse; margin-bottom:24px; }
+      th { background:#1e3a5f; color:white; padding:10px 12px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; }
+      th.right { text-align:right; }
+      td { padding:10px 12px; border-bottom:1px solid #e2e8f0; font-size:12px; }
+      td.right { text-align:right; }
+      tr:nth-child(even) td { background:#f8fafc; }
+      .totals { display:flex; justify-content:flex-end; margin-bottom:32px; }
+      .totals-box { width:320px; }
+      .total-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #e2e8f0; font-size:12px; }
+      .total-final { display:flex; justify-content:space-between; padding:14px 16px; background:#1e3a5f; border-radius:8px; margin-top:8px; }
+      .total-final span { color:white; font-weight:700; font-size:14px; }
+      .contingency-row { display:flex; justify-content:space-between; padding:8px 12px; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; margin:4px 0; font-size:12px; }
+      .terms { margin-bottom:24px; padding:16px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; }
+      .terms-title { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#94a3b8; margin-bottom:8px; }
+      .terms-text { font-size:10px; color:#64748b; line-height:1.8; }
+      .sigs { display:grid; grid-template-columns:1fr 1fr; gap:40px; margin-bottom:32px; }
+      .sig-line { border-top:2px solid #1e3a5f; padding-top:8px; }
+      .sig-name { font-size:11px; font-weight:600; color:#1e293b; }
+      .sig-sub { font-size:10px; color:#94a3b8; margin-top:4px; }
+      .footer { text-align:center; padding-top:16px; border-top:1px solid #e2e8f0; font-size:10px; color:#94a3b8; line-height:1.8; }
+      .badge { display:inline-block; padding:3px 10px; background:#dcfce7; color:#166534; font-size:10px; font-weight:700; border-radius:20px; text-transform:uppercase; }
+      @media print { body { padding:20px; } }
+    </style>
+    </head><body>
+
     <div class="header">
-      <div><div class="company">${estimate.projects?.name||"Project"}</div><div style="font-size:12px;color:#666;margin-top:4px">Magnus Boys Construction</div></div>
-      <div class="doc-title"><h1>Cost Proposal</h1><p>${estimate.title}</p><p>Version ${estimate.version}</p></div>
+      <div>
+        ${cs?.logo_url ? `<img src="${cs.logo_url}" class="company-logo"/>` : `<div class="company-name">${cs?.company_name || "Magnus Boys Construction"}</div>`}
+        <div class="company-sub">${cs?.address_line1 || ""}${cs?.parish ? ", " + cs.parish : ""}</div>
+        <div class="company-sub">${cs?.phone || ""}${cs?.email ? " · " + cs.email : ""}</div>
+      </div>
+      <div>
+        <div class="doc-title">COST PROPOSAL</div>
+        <div class="doc-meta">
+          Estimate #: ${estNumber}<br/>
+          Date: ${new Date(estimate.created_at).toLocaleDateString("en-JM", {day:"numeric",month:"long",year:"numeric"})}<br/>
+          Valid Until: ${validUntil.toLocaleDateString("en-JM", {day:"numeric",month:"long",year:"numeric"})}<br/>
+          Version ${estimate.version || 1} &nbsp; <span class="badge">${estimate.status}</span>
+        </div>
+      </div>
     </div>
+
+    <div class="info-grid">
+      <div>
+        <div class="info-label">Prepared For</div>
+        <div class="info-value">${client?.name || "—"}</div>
+        <div class="info-sub">${client?.address || ""}${client?.phone ? "<br/>" + client.phone : ""}${client?.email ? "<br/>" + client.email : ""}</div>
+      </div>
+      <div>
+        <div class="info-label">Project</div>
+        <div class="info-value">${proj?.name || estimate.title}</div>
+        <div class="info-sub">${proj?.site_address || ""}${estimate.notes ? "<br/>" + estimate.notes : ""}</div>
+      </div>
+    </div>
+
+    ${printFormat === "summary" ? `
     <table>
-      <thead><tr><th>#</th><th>Item</th><th>Type</th><th>Unit</th><th class="tr">Qty</th><th class="tr">Rate (JMD)</th><th class="tr">Amount (JMD)</th></tr></thead>
+      <thead><tr>
+        <th>#</th><th>Description</th><th class="right">Amount (JMD)</th>
+      </tr></thead>
       <tbody>
-        ${items.map(i=>`<tr><td>${i.line_no}</td><td><strong>${i.item}</strong>${i.description?`<br/><span style="color:#666;font-size:11px">${i.description}</span>`:""}</td><td style="color:#666;font-size:11px;text-transform:capitalize">${i.item_type}</td><td style="color:#666">${i.unit||"—"}</td><td class="tr">${i.qty}</td><td class="tr">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.rate)}</td><td class="tr" style="font-weight:600">${new Intl.NumberFormat("en-US",{minimumFractionDigits:2}).format(i.amount)}</td></tr>`).join("")}
-        <tr class="total-row"><td colspan="6">TOTAL ESTIMATE</td><td class="tr">${fmtJMD(total)}</td></tr>
+        ${Object.entries(
+          items.reduce((groups: Record<string, number>, item: any) => {
+            const cat = item.category || "General Works";
+            groups[cat] = (groups[cat] || 0) + (Number(item.amount) || 0);
+            return groups;
+          }, {})
+        ).map(([cat, amt], i) => {
+          const clientAmt = (amt as number) * (1 + markupOverall / 100);
+          return `<tr><td>${i+1}</td><td><strong>${cat}</strong></td><td class="right"><strong>JMD ${clientAmt.toLocaleString(undefined,{maximumFractionDigits:0})}</strong></td></tr>`;
+        }).join("")}
       </tbody>
     </table>
-    ${estimate.notes?`<div style="background:#f8f8f8;border-left:4px solid #1a1a1a;padding:12px;margin-top:16px;font-size:12px"><strong>Notes:</strong> ${estimate.notes}</div>`:""}
-    <div class="footer">
-      <div><div style="font-size:11px;color:#666;margin-bottom:50px">Client Acceptance</div><div class="sig-line">Client Signature &amp; Date</div></div>
-      <div><div style="font-size:11px;color:#666;margin-bottom:50px">Authorized By</div><div class="sig-line">Company Representative &amp; Date</div></div>
+    ` : `
+    <table>
+      <thead><tr>
+        <th>#</th><th>Item</th><th>Type</th><th>Unit</th>
+        ${printFormat === "breakdown" ? "<th class='right'>Qty</th><th class='right'>Rate (JMD)</th>" : "<th class='right'>Qty</th>"}
+        <th class="right">Amount (JMD)</th>
+      </tr></thead>
+      <tbody>
+        ${items.map((item: any, i: number) => {
+          const clientRate = (Number(item.rate)||0) * (1 + markupOverall/100);
+          const clientAmt = (Number(item.amount)||0) * (1 + markupOverall/100);
+          return `<tr>
+            <td>${i+1}</td>
+            <td><strong>${item.item||""}</strong>${item.description ? "<br/><span style='color:#64748b;font-size:10px'>" + item.description + "</span>" : ""}</td>
+            <td>${item.item_type||""}</td>
+            <td>${item.unit||""}</td>
+            ${printFormat === "breakdown" ? `<td class="right">${Number(item.qty||0).toLocaleString()}</td><td class="right">${clientRate.toLocaleString(undefined,{maximumFractionDigits:0})}</td>` : `<td class="right">${Number(item.qty||0).toLocaleString()}</td>`}
+            <td class="right"><strong>JMD ${clientAmt.toLocaleString(undefined,{maximumFractionDigits:0})}</strong></td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+    `}
+
+    <div class="totals">
+      <div class="totals-box">
+        <div class="total-row"><span>Subtotal</span><span>JMD ${subtotal.toLocaleString(undefined,{maximumFractionDigits:0})}</span></div>
+        ${contingency > 0 ? `<div class="contingency-row"><span>Contingency (${contingencyPct}%)</span><span>JMD ${contingency.toLocaleString(undefined,{maximumFractionDigits:0})}</span></div>` : ""}
+        <div class="total-final"><span>TOTAL CONTRACT VALUE</span><span>JMD ${grandTotal.toLocaleString(undefined,{maximumFractionDigits:0})}</span></div>
+      </div>
     </div>
-    <div style="margin-top:24px;text-align:center;font-size:10px;color:#999">Magnus Boys Construction · This proposal is valid for 30 days from date of issue</div>
+
+    <div class="terms">
+      <div class="terms-title">Terms & Conditions</div>
+      <div class="terms-text">
+        1. This proposal is valid for ${cs?.estimate_validity_days || 30} days from date of issue.<br/>
+        2. Prices are in Jamaican Dollars (JMD) and subject to change after validity period.<br/>
+        3. A deposit is required before commencement of work.<br/>
+        4. Progress payments as per agreed schedule.<br/>
+        5. All materials remain property of ${cs?.company_name || "Magnus Boys Construction"} until full payment is received.<br/>
+        6. Contingency allowance covers unforeseen site conditions and price variations.
+      </div>
+    </div>
+
+    <div class="sigs">
+      <div class="sig-line">
+        <div class="sig-name">Client Acceptance</div>
+        <div class="sig-sub">Signature &amp; Date</div>
+      </div>
+      <div class="sig-line">
+        <div class="sig-name">Authorized By — ${cs?.company_name || "Magnus Boys Construction"}</div>
+        <div class="sig-sub">Signature &amp; Date</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      ${cs?.company_name || "Magnus Boys Construction"} · ${cs?.phone || ""} · ${cs?.email || ""}<br/>
+      This proposal is valid for ${cs?.estimate_validity_days || 30} days from date of issue.
+    </div>
+
     </body></html>`;
-    const w = window.open("","_blank");
-    if(!w) return;
+
+    const w = window.open("", "_blank");
+    if (!w) return;
     w.document.write(html);
     w.document.close();
-    setTimeout(()=>w.print(),600);
+    setTimeout(() => w.print(), 600);
   }
   return (
     <Modal open onClose={onClose} title={estimate.title}
@@ -219,6 +427,63 @@ function EstimateDetailModal({ estimate, items, onClose }: {
               <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{fmt(amt)}</div>
             </div>
           ))}
+        </div>
+
+        {/* Pricing Panel */}
+        <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden">
+          <div className="px-4 py-3 bg-slate-50 dark:bg-white/[0.03] border-b border-slate-200 dark:border-white/[0.06] flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Pricing</span>
+            <span className="text-[9px] text-slate-500 bg-slate-100 dark:bg-white/[0.06] px-2 py-0.5 rounded-full">Internal — client never sees markup</span>
+          </div>
+          <div className="p-4 space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-600 dark:text-slate-400">BOQ Cost</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">{fmt(subtotalCost)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-slate-600 dark:text-slate-400">Markup</span>
+              <div className="flex items-center gap-2">
+                <input type="number" min="0" max="200"
+                  value={markupOverall}
+                  onChange={e => setMarkupOverall(Number(e.target.value))}
+                  className="w-16 px-2 py-1 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-right font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                <span className="text-sm text-slate-400">%</span>
+                <span className="text-sm font-semibold text-emerald-500 dark:text-emerald-400">
+                  = {fmt(markupAmount)}
+                </span>
+              </div>
+            </div>
+            <div className="border-t border-slate-100 dark:border-white/[0.06] pt-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600 dark:text-slate-400">Subtotal (with markup)</span>
+                <span className="font-semibold text-slate-700 dark:text-slate-200">{fmt(subtotalWithMarkup)}</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 rounded-lg p-3">
+              <div>
+                <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">Contingency</span>
+                <span className="text-[10px] text-amber-600 dark:text-amber-500 ml-2">shown to client</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="number" min="0" max="50"
+                  value={contingencyPct}
+                  onChange={e => setContingencyPct(Number(e.target.value))}
+                  className="w-16 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-500/30 bg-white dark:bg-white/[0.04] text-sm text-right font-semibold text-amber-700 dark:text-amber-400 focus:outline-none"/>
+                <span className="text-sm text-amber-600 dark:text-amber-500">%</span>
+                <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                  = {fmt(contingencyAmount)}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between bg-blue-600 rounded-xl px-4 py-3">
+              <span className="text-sm font-bold text-white">TOTAL TO CLIENT</span>
+              <span className="text-lg font-black text-white">{fmt(totalClientPrice)}</span>
+            </div>
+            <button onClick={saveMarkup} disabled={savingMarkup}
+              className="w-full py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors">
+              {savingMarkup ? "Saving..." : "Save markup settings"}
+            </button>
+          </div>
         </div>
 
         {/* Items table */}
@@ -272,7 +537,13 @@ function EstimateDetailModal({ estimate, items, onClose }: {
             <div className="text-xs text-slate-500 dark:text-slate-400">{estimate.notes}</div>
           </div>
         )}
-             <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-white/[0.06]">
+             <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
+          {estimate.status === "approved" && (
+            <button onClick={handleGenerateContract}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition">
+              <FileText size={14}/> Generate Contract
+            </button>
+          )}
           <button onClick={printProposal} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition"><Printer size={14}/> Print / Export Proposal</button>
         </div>
       </div>
@@ -564,6 +835,7 @@ export default function EstimatesPage() {
         <EstimateDetailModal
           estimate={viewingEstimate}
           items={itemsByEstimate[viewingEstimate.id] || []}
+          companyId={companyId}
           onClose={() => setViewingEstimate(null)}
         />
       )}
