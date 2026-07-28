@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { FileText, Plus, DollarSign, CircleAlert as AlertCircle, CircleCheck as CheckCircle, X, Trash2, Eye, Bell, MessageCircle, Mail, Save } from "lucide-react";
+import { FileText, Plus, DollarSign, CircleAlert as AlertCircle, CircleCheck as CheckCircle, X, Trash2, Eye, Bell, MessageCircle, Mail, Save, Pencil } from "lucide-react";
 import {
   fetchClientInvoices,
   createClientInvoice,
@@ -15,6 +15,7 @@ import type { ClientInvoice, ClientInvoiceLineItem, ClientPayment } from "../lib
 import ContractProgressBilling from "../components/ContractProgressBilling";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
+import { useProjectContext } from "../context/ProjectContext";
 
 interface LineItem {
   id?: string;
@@ -27,6 +28,7 @@ interface LineItem {
 
 export default function AccountsReceivablePage() {
   const financeAccess = useFinanceAccess();
+  const { userRole } = useProjectContext();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "draft" | "sent" | "partial" | "overdue" | "paid">("all");
@@ -71,6 +73,16 @@ export default function AccountsReceivablePage() {
     payment_method: "check" as const,
     reference_number: "",
     notes: "",
+  });
+
+  const [editingInvoice, setEditingInvoice] = useState<ClientInvoice | null>(null);
+  const [editForm, setEditForm] = useState({
+    invoice_date: "",
+    due_date: "",
+    tax_rate: 0,
+    notes: "",
+    terms: "",
+    status: "",
   });
 
   useEffect(() => {
@@ -335,6 +347,68 @@ export default function AccountsReceivablePage() {
     }
   }
 
+  async function deleteInvoice(invoice: ClientInvoice) {
+    if (!window.confirm(`Delete invoice ${invoice.invoice_number}? This cannot be undone.`)) return;
+    try {
+      const { supabase } = await import("../lib/supabase");
+      await supabase.from("client_invoice_line_items").delete().eq("invoice_id", invoice.id);
+      await supabase.from("client_payments").delete().eq("invoice_id", invoice.id);
+      const { error } = await supabase.from("client_invoices").delete().eq("id", invoice.id);
+      if (error) throw error;
+      await loadInvoices();
+      if (selectedInvoice?.id === invoice.id) setSelectedInvoice(null);
+    } catch (e: any) {
+      alert("Failed to delete invoice: " + e.message);
+    }
+  }
+
+  function openEditInvoice(invoice: ClientInvoice) {
+    setEditingInvoice(invoice);
+    setEditForm({
+      invoice_date: invoice.invoice_date || "",
+      due_date: invoice.due_date || "",
+      tax_rate: invoice.tax_rate || 0,
+      notes: invoice.notes || "",
+      terms: invoice.terms || "",
+      status: invoice.status || "draft",
+    });
+  }
+
+  async function saveEditInvoice() {
+    if (!editingInvoice) return;
+    try {
+      await updateClientInvoice(editingInvoice.id, {
+        invoice_date: editForm.invoice_date,
+        due_date: editForm.due_date,
+        tax_rate: editForm.tax_rate,
+        notes: editForm.notes.trim() || null,
+        terms: editForm.terms.trim() || null,
+        status: editForm.status as ClientInvoice["status"],
+      });
+      await loadInvoices();
+      setEditingInvoice(null);
+    } catch (e: any) {
+      alert("Failed to update invoice: " + e.message);
+    }
+  }
+
+  async function deletePayment(paymentId: string, invoiceId: string) {
+    if (!window.confirm("Delete this payment record? This cannot be undone.")) return;
+    try {
+      const { supabase } = await import("../lib/supabase");
+      const { error } = await supabase.from("client_payments").delete().eq("id", paymentId);
+      if (error) throw error;
+      await updateInvoiceAfterPayment(invoiceId);
+      await loadInvoices();
+      if (selectedInvoice?.id === invoiceId) {
+        const payments = await fetchInvoicePayments(invoiceId);
+        setInvoicePayments(payments);
+      }
+    } catch (e: any) {
+      alert("Failed to delete payment: " + e.message);
+    }
+  }
+
   function buildReminderMessage(invoice: any, client: any) {
     const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD" }).format(n);
     const isOverdue = new Date(invoice.due_date) < new Date();
@@ -573,12 +647,28 @@ export default function AccountsReceivablePage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button
-                      onClick={() => openDetailModal(inv)}
-                      className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                    >
-                      View
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => openDetailModal(inv)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors"
+                      >
+                        View
+                      </button>
+                      <button
+                        onClick={() => openEditInvoice(inv)}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                      >
+                        <Pencil size={13}/>
+                      </button>
+                      {userRole === "director" && (
+                        <button
+                          onClick={() => deleteInvoice(inv)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors"
+                        >
+                          <Trash2 size={13}/>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -922,7 +1012,7 @@ export default function AccountsReceivablePage() {
               {invoicePayments.length > 0 ? (
                 <div className="space-y-2">
                   {invoicePayments.map((payment) => (
-                    <div key={payment.id} className="flex justify-between text-sm border-b border-slate-100 pb-2">
+                    <div key={payment.id} className="flex items-center justify-between text-sm border-b border-slate-100 pb-2">
                       <div>
                         <div className="font-medium text-slate-900">{payment.payment_date}</div>
                         <div className="text-xs text-slate-500 capitalize">
@@ -930,7 +1020,15 @@ export default function AccountsReceivablePage() {
                           {payment.reference_number && ` - ${payment.reference_number}`}
                         </div>
                       </div>
-                      <div className="font-medium text-green-600">${Number(payment.amount).toFixed(2)}</div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="font-medium text-green-600">${Number(payment.amount).toFixed(2)}</div>
+                        {userRole === "director" && (
+                          <button onClick={() => deletePayment(payment.id!, selectedInvoice.id)}
+                            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-300 hover:text-red-400 transition-colors">
+                            <Trash2 size={12}/>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1162,6 +1260,87 @@ ${companySettings?.company_name || "Magnus Boys Construction"}`}
             >
               Skip for now
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Invoice Modal */}
+      {editingInvoice && (
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg flex flex-col"
+            style={{ maxHeight: "90dvh" }}>
+            {/* Header */}
+            <div className="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Edit Invoice</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{editingInvoice.invoice_number}</p>
+              </div>
+              <button onClick={() => setEditingInvoice(null)}
+                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+                <X size={16}/>
+              </button>
+            </div>
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Invoice Date</label>
+                  <input type="date" value={editForm.invoice_date}
+                    onChange={e => setEditForm(f => ({ ...f, invoice_date: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Due Date</label>
+                  <input type="date" value={editForm.due_date}
+                    onChange={e => setEditForm(f => ({ ...f, due_date: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Status</label>
+                <select value={editForm.status}
+                  onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none">
+                  <option value="draft">Draft</option>
+                  <option value="sent">Sent</option>
+                  <option value="partial">Partial</option>
+                  <option value="paid">Paid</option>
+                  <option value="overdue">Overdue</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Tax Rate (%)</label>
+                <input type="number" min="0" max="100" value={editForm.tax_rate}
+                  onChange={e => setEditForm(f => ({ ...f, tax_rate: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Terms</label>
+                <input type="text" value={editForm.terms}
+                  onChange={e => setEditForm(f => ({ ...f, terms: e.target.value }))}
+                  placeholder="e.g. Net 30"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Notes</label>
+                <textarea value={editForm.notes}
+                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none"/>
+              </div>
+            </div>
+            {/* Footer */}
+            <div className="flex-shrink-0 flex gap-3 px-5 py-4 border-t border-slate-200 dark:border-slate-800">
+              <button onClick={() => setEditingInvoice(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                Cancel
+              </button>
+              <button onClick={saveEditInvoice}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">
+                Save Changes
+              </button>
+            </div>
           </div>
         </div>
       )}
