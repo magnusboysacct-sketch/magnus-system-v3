@@ -133,6 +133,307 @@ class ErrorBoundary extends React.Component<{children:React.ReactNode},{err:any}
   }
 }
 
+// --- Mobile view ----------------------------------------------------------------
+// Desktop stays the full draw-on-plan canvas tool. On mobile, precise finger-drawn
+// measurements aren't realistic, so this trades drawing for: view the plan
+// (native browser PDF pan/zoom via iframe), and manually record measurements taken
+// on site with a tape measure — same Measurement shape, same save/BOQ pipeline.
+const MOBILE_TYPE_CFG: { value: "line"|"area"|"count"|"volume"; label: string; unit: string }[] = [
+  { value: "line",   label: "📏 Linear", unit: "m" },
+  { value: "area",   label: "📐 Area",   unit: "m²" },
+  { value: "count",  label: "🔢 Count",  unit: "nr" },
+  { value: "volume", label: "📦 Volume", unit: "m³" },
+];
+
+function TakeoffMobileView({
+  project,
+  measurements,
+  pdfUrl,
+  costItems,
+  onAddMeasurement,
+  onDeleteMeasurement,
+  onSendToBOQ,
+}: {
+  project: { name: string } | null | undefined;
+  measurements: Measurement[];
+  pdfUrl: string | null;
+  costItems: CostItem[];
+  onAddMeasurement: (m: Measurement) => void;
+  onDeleteMeasurement: (id: string) => void;
+  onSendToBOQ: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<"plan"|"measure"|"taken">(pdfUrl ? "plan" : "measure");
+  const [form, setForm] = useState({
+    type: "line" as "line"|"area"|"count"|"volume",
+    value: "",   // linear: length · area: length · volume: length
+    value2: "",  // area: width · volume: width
+    value3: "",  // volume: depth
+    label: "",
+    unit: "m",
+    itemName: "",
+  });
+
+  function handleAdd() {
+    if (!form.value || !form.label) return;
+    let result = Number(form.value) || 0;
+    if (form.type === "area") result = result * (Number(form.value2) || 1);
+    if (form.type === "volume") result = result * (Number(form.value2) || 1) * (Number(form.value3) || 1);
+
+    const item = form.itemName.trim()
+      ? costItems.find(i => i.item_name.toLowerCase() === form.itemName.trim().toLowerCase())
+      : undefined;
+
+    onAddMeasurement({
+      id: uid(),
+      type: form.type,
+      points: [],
+      result,
+      unit: form.unit,
+      label: form.label.trim(),
+      color: nextColor(),
+      linkedItemId: item?.id,
+      linkedItemName: item?.item_name || form.itemName.trim() || undefined,
+      timestamp: Date.now(),
+    });
+    setForm({ type: "line", value: "", value2: "", value3: "", label: "", unit: "m", itemName: "" });
+    setActiveTab("taken");
+  }
+
+  return (
+    <div className="flex flex-col h-screen bg-white dark:bg-slate-950">
+      {/* Header */}
+      <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        <div>
+          <h1 className="text-base font-bold text-slate-800 dark:text-slate-100">Takeoff</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{project?.name || "No project"}</p>
+        </div>
+        <button onClick={onSendToBOQ} disabled={measurements.length === 0}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors">
+          Send to BOQ
+        </button>
+      </div>
+
+      {/* Tab bar */}
+      <div className="flex-shrink-0 flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        {[
+          { key: "plan", label: "📐 Plan" },
+          { key: "measure", label: "📏 Measure" },
+          { key: "taken", label: `✅ Taken (${measurements.length})` },
+        ].map(t => (
+          <button key={t.key}
+            onClick={() => setActiveTab(t.key as any)}
+            className={`flex-1 py-3 text-xs font-semibold border-b-2 transition-colors ${
+              activeTab === t.key
+                ? "border-cyan-500 text-cyan-600 dark:text-cyan-400"
+                : "border-transparent text-slate-500 dark:text-slate-400"
+            }`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-hidden">
+
+        {/* Plan tab */}
+        {activeTab === "plan" && (
+          <div className="h-full flex flex-col">
+            {!pdfUrl ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
+                <FileText size={40} className="text-slate-300 dark:text-slate-700"/>
+                <div className="text-sm font-semibold text-slate-600 dark:text-slate-300">No plan uploaded yet</div>
+                <div className="text-xs text-slate-400 dark:text-slate-500 text-center">Upload a plan on desktop to view it here</div>
+              </div>
+            ) : (
+              <div className="flex-1 bg-slate-100 dark:bg-slate-900 p-2">
+                <iframe src={pdfUrl} className="w-full h-full rounded-lg border border-slate-200 dark:border-slate-700" title="Project Plan"/>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Measure tab */}
+        {activeTab === "measure" && (
+          <div className="h-full overflow-y-auto p-4 space-y-4">
+            <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
+              💡 Use your tape measure on site, then enter the measurements here. They'll be added to your takeoff list and sent to the BOQ.
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Measurement type</label>
+              <div className="grid grid-cols-4 gap-2">
+                {MOBILE_TYPE_CFG.map(t => (
+                  <button key={t.value} type="button"
+                    onClick={() => setForm(f => ({ ...f, type: t.value, unit: t.unit }))}
+                    className={`py-2.5 rounded-xl text-xs font-semibold border-2 transition-colors text-center ${
+                      form.type === t.value
+                        ? "border-cyan-500 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
+                        : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400"
+                    }`}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Description</label>
+              <input type="text"
+                value={form.label}
+                onChange={e => setForm(f => ({ ...f, label: e.target.value }))}
+                placeholder="e.g. North wall, Column A, Foundation"
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"/>
+            </div>
+
+            {form.type === "line" && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Length (m)</label>
+                <input type="number" min="0" step="0.01"
+                  value={form.value}
+                  onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
+                  placeholder="0.00"
+                  className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"/>
+              </div>
+            )}
+            {form.type === "area" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Length (m)</label>
+                  <input type="number" min="0" step="0.01"
+                    value={form.value}
+                    onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Width (m)</label>
+                  <input type="number" min="0" step="0.01"
+                    value={form.value2}
+                    onChange={e => setForm(f => ({ ...f, value2: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                </div>
+              </div>
+            )}
+            {form.type === "count" && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Count (number of items)</label>
+                <input type="number" min="0" step="1"
+                  value={form.value}
+                  onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
+                  placeholder="0"
+                  className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"/>
+              </div>
+            )}
+            {form.type === "volume" && (
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Length (m)</label>
+                  <input type="number" min="0" step="0.01"
+                    value={form.value}
+                    onChange={e => setForm(f => ({ ...f, value: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Width (m)</label>
+                  <input type="number" min="0" step="0.01"
+                    value={form.value2}
+                    onChange={e => setForm(f => ({ ...f, value2: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Depth (m)</label>
+                  <input type="number" min="0" step="0.01"
+                    value={form.value3}
+                    onChange={e => setForm(f => ({ ...f, value3: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Link to Rate Library item (optional)</label>
+              <input type="text"
+                value={form.itemName}
+                onChange={e => setForm(f => ({ ...f, itemName: e.target.value }))}
+                placeholder="e.g. Concrete Block 6&quot;, Rebar #4..."
+                list="rate-items-mobile"
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"/>
+              <datalist id="rate-items-mobile">
+                {costItems.map(item => (
+                  <option key={item.id} value={item.item_name}/>
+                ))}
+              </datalist>
+            </div>
+
+            <button
+              onClick={handleAdd}
+              disabled={!form.value || !form.label}
+              className="w-full py-3.5 rounded-2xl bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white text-sm font-bold transition-colors">
+              + Add Measurement
+            </button>
+          </div>
+        )}
+
+        {/* Taken tab */}
+        {activeTab === "taken" && (
+          <div className="h-full overflow-y-auto">
+            {measurements.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-3 p-6">
+                <Ruler size={40} className="text-slate-300 dark:text-slate-700"/>
+                <div className="text-sm font-semibold text-slate-600 dark:text-slate-300">No measurements yet</div>
+                <div className="text-xs text-slate-400 dark:text-slate-500 text-center">Go to Measure tab to add measurements</div>
+                <button onClick={() => setActiveTab("measure")}
+                  className="px-4 py-2 rounded-xl bg-cyan-600 text-white text-sm font-semibold">
+                  Start Measuring
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                {measurements.map(m => (
+                  <div key={m.id} className="flex items-center justify-between px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{m.label || m.type}</div>
+                      <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                        {fmt2(m.result)} {m.unit}
+                        {m.linkedItemName && ` · ${m.linkedItemName}`}
+                        {m.linkedAssemblyName && ` · ${m.linkedAssemblyName}`}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                        m.type === "line" ? "bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400" :
+                        m.type === "area" ? "bg-purple-100 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400" :
+                        m.type === "count" ? "bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400" :
+                        "bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-400"
+                      }`}>{m.type === "line" ? "linear" : m.type}</span>
+                      <button onClick={() => onDeleteMeasurement(m.id)}
+                        className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 dark:text-slate-500 hover:text-red-500 transition-colors">
+                        <X size={13}/>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {measurements.length > 0 && (
+              <div className="p-4 border-t border-slate-100 dark:border-slate-800">
+                <button onClick={onSendToBOQ}
+                  className="w-full py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-bold transition-colors">
+                  📤 Send All to BOQ ({measurements.length} measurements)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // --- Main ---------------------------------------------------------------------
 function TakeoffInner() {
   const { projectId: routeProjectId } = useParams<{ projectId?: string }>();
@@ -229,6 +530,27 @@ const calibration =
   const [creatingMs, setCreatingMs] = useState(false);
 
   // Session
+  // Mobile
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [pdfSignedUrl, setPdfSignedUrl] = useState<string|null>(null);
+  useEffect(() => {
+    function handleResize() { setIsMobile(window.innerWidth < 768); }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+  // Mobile plan viewer needs a directly-loadable PDF URL (the desktop canvas
+  // renders via pdfjs, not a plain <img>/<iframe> src) — fetch one independently
+  // whenever the active file changes.
+  useEffect(() => {
+    const path = pdfFiles[activePdfIdx]?.storagePath;
+    if (!path) { setPdfSignedUrl(null); return; }
+    let cancelled = false;
+    supabase.storage.from("project-files").createSignedUrl(path, 3600*24).then(({ data }) => {
+      if (!cancelled && data?.signedUrl) setPdfSignedUrl(data.signedUrl);
+    });
+    return () => { cancelled = true; };
+  }, [pdfFiles, activePdfIdx]);
+
   const [sessionId, setSessionId] = useState<string|null>(null);
   const sessionIdRef = useRef<string|null>(null);
   const companyIdRef = useRef<string|null>(null);
@@ -1325,6 +1647,30 @@ calibRef.current =
 
   const curTool = TOOL_CFG[tool];
 
+  // --- Mobile: swap in the plan-viewer + manual-entry experience. All hooks
+  // above have already run unconditionally, so it's safe to branch here.
+  if (isMobile) {
+    return (
+      <TakeoffMobileView
+        project={currentProject}
+        measurements={measurements}
+        pdfUrl={pdfSignedUrl}
+        costItems={costItems}
+        onAddMeasurement={(m) => {
+          const withPage = { ...m, pageNumber: pageNum };
+          const next = [...measurementsRef.current, withPage];
+          setMeasurements(next); measurementsRef.current = next;
+        }}
+        onDeleteMeasurement={(id) => {
+          const next = measurementsRef.current.filter(m => m.id !== id);
+          setMeasurements(next); measurementsRef.current = next;
+          if (selectedIdRef.current === id) { setSelectedId(null); selectedIdRef.current = null; }
+        }}
+        onSendToBOQ={sendToBOQ}
+      />
+    );
+  }
+
   // --- Render -------------------------------------------------------------------
   return (
     <div className="flex h-screen flex-col bg-slate-50 dark:bg-[#080b10] text-slate-900 dark:text-slate-100 select-none overflow-hidden">
@@ -1371,7 +1717,7 @@ calibRef.current = null;
               if (sessionIdRef.current) supabase.from("takeoff_sessions").update({ calibration: calibrations }).eq("id", sessionIdRef.current);
             }}
             title="Clear calibration and start over"
-            className="flex items-center justify-center w-6 h-6 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-500 hover:text-red-400 hover:border-red-500/30 transition">
+            className="flex items-center justify-center w-6 h-6 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-slate-400 hover:text-red-400 hover:border-red-500/30 transition">
             <X size={11}/>
           </button>
         )}
@@ -1420,7 +1766,7 @@ calibRef.current = null;
         {/* -- Pages Panel -- */}
         <div className={`flex-shrink-0 flex flex-col bg-white dark:bg-[#0d1117] border-r border-slate-200 dark:border-white/[0.06] z-10 transition-all ${pagesPanelCollapsed ? "w-10" : "w-64"}`}>
           <button onClick={()=>setPagesPanelCollapsed(v=>!v)}
-            className="flex items-center justify-center h-10 hover:bg-slate-100 dark:bg-white/[0.05] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition border-b border-slate-200 dark:border-white/[0.06]"
+            className="flex items-center justify-center h-10 hover:bg-slate-100 dark:bg-white/[0.05] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300 transition border-b border-slate-200 dark:border-white/[0.06]"
             title={pagesPanelCollapsed ? "Show pages" : "Hide pages"}>
             {pagesPanelCollapsed ? <ChevronRight size={14}/> : <ChevronLeft size={14}/>}
             {!pagesPanelCollapsed && <span className="text-[10px] font-bold uppercase tracking-wider ml-1.5">Pages</span>}
@@ -1496,7 +1842,7 @@ calibRef.current = null;
           {!pdfDoc && !loadingPdf && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 pointer-events-none">
               <div className="w-20 h-20 rounded-3xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] flex items-center justify-center">
-                <FileText size={36} className="text-slate-300 dark:text-slate-800"/>
+                <FileText size={36} className="text-slate-300 dark:text-slate-700"/>
               </div>
               <div className="text-center">
                 <div className="text-base font-semibold text-slate-600 dark:text-slate-400 mb-1">No drawing loaded</div>
@@ -1584,7 +1930,7 @@ calibRef.current = null;
                     <Flag size={10} className="text-emerald-400"/>
                     <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 flex-1">Milestone</span>
                     {activeMilestoneId && (
-                      <button onClick={()=>{setActiveMilestoneId("");activeMilestoneIdRef.current="";setActiveMilestoneName("");}} className="text-slate-400 hover:text-red-400 transition"><X size={10}/></button>
+                      <button onClick={()=>{setActiveMilestoneId("");activeMilestoneIdRef.current="";setActiveMilestoneName("");}} className="text-slate-400 dark:text-slate-500 hover:text-red-400 transition"><X size={10}/></button>
                     )}
                   </div>
                   <div className="p-2 space-y-1.5">
@@ -1633,7 +1979,7 @@ calibRef.current = null;
                   <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
                   <input value={searchLib} onChange={e=>setSearchLib(e.target.value)}
                     placeholder="Search templates & items…"
-                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:text-slate-700 outline-none focus:border-sky-500/40"/>
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-600 outline-none focus:border-sky-500/40"/>
                 </div>
 
                 {/* Active link */}
