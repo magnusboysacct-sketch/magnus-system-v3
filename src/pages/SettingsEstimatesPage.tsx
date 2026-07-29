@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { PageHeader } from "../components/ui";
-import { Save, Percent, DollarSign, FileText, ArrowLeft } from "lucide-react";
+import { Save, Percent, DollarSign, FileText, ArrowLeft, Building } from "lucide-react";
 
 type EstimateSettings = {
   estimate_markup_overall: number;
@@ -17,6 +17,8 @@ type EstimateSettings = {
   estimate_progress_pct: number;
   estimate_completion_pct: number;
   estimate_print_format: string;
+  company_overhead_pct: number;
+  salary_period: string;
 };
 
 const DEFAULTS: EstimateSettings = {
@@ -31,6 +33,8 @@ const DEFAULTS: EstimateSettings = {
   estimate_progress_pct: 40,
   estimate_completion_pct: 30,
   estimate_print_format: "summary",
+  company_overhead_pct: 8,
+  salary_period: "monthly",
 };
 
 export default function SettingsEstimatesPage() {
@@ -158,6 +162,47 @@ export default function SettingsEstimatesPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Company Overhead */}
+      <div className="rounded-2xl border border-slate-200 dark:border-white/[0.08] overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.03]">
+          <div className="flex items-center gap-2">
+            <Building size={15} className="text-purple-500"/>
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">Company Overhead</h3>
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">Office rent, utilities, admin staff, insurance — applied as % of direct costs.</p>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">Company Overhead Rate</div>
+              <div className="text-xs text-slate-400">Added to every estimate automatically. Typical: 8–15%</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="number" min="0" max="50"
+                value={settings.company_overhead_pct}
+                onChange={e => set("company_overhead_pct", Number(e.target.value))}
+                className="w-20 px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-right font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/30"/>
+              <span className="text-sm text-slate-400">%</span>
+            </div>
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Staff Salary Period</div>
+            <div className="flex gap-2">
+              {([
+                ["monthly","Monthly"],["annual","Annual"],["biweekly","Bi-weekly"],
+              ] as const).map(([val,label]) => (
+                <button key={val} type="button"
+                  onClick={() => set("salary_period", val)}
+                  className={`flex-1 py-2 rounded-lg text-xs font-semibold border-2 transition-colors ${settings.salary_period === val ? "border-purple-500 bg-purple-50 dark:bg-purple-500/10 text-purple-600" : "border-slate-200 dark:border-white/[0.1] text-slate-500"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-400 mt-1">How pay_rate is stored for salaried workers in your system.</p>
           </div>
         </div>
       </div>

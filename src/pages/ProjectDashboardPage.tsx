@@ -38,7 +38,7 @@ function daysFromNow(d: string) {
   return `${days} days left`;
 }
 
-type Tab = "overview"|"milestones"|"tasks"|"financials"|"team"|"activity"|"messages";
+type Tab = "overview"|"milestones"|"tasks"|"financials"|"costplan"|"team"|"activity"|"messages";
 
 const STATUS_CFG: Record<string,{color:string;bg:string;border:string}> = {
   active:   {color:"text-emerald-400",bg:"bg-emerald-500/10",border:"border-emerald-500/20"},
@@ -123,6 +123,26 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   const [totalExpenses, setTotalExpenses] = useState(0);
   const [weeklyFieldPayments, setWeeklyFieldPayments] = useState(0);
 
+  // Cost plan (Cost Plan tab)
+  const [cpDuration, setCpDuration] = useState(6);
+  const [cpTargetProfit, setCpTargetProfit] = useState(15);
+  const [cpVehicles, setCpVehicles] = useState(1);
+  const [cpVehicleCost, setCpVehicleCost] = useState(15000);
+  const [cpOverheadPct, setCpOverheadPct] = useState(8);
+  const [cpContingencyPct, setCpContingencyPct] = useState(5);
+  const [cpStaff, setCpStaff] = useState<{
+    workerId: string;
+    name: string;
+    role: string;
+    monthlyRate: number;
+    allocationPct: number;
+  }[]>([]);
+  const [availableWorkers, setAvailableWorkers] = useState<any[]>([]);
+  const [addStaffId, setAddStaffId] = useState("");
+  const [addStaffPct, setAddStaffPct] = useState(100);
+  const [cpSaving, setCpSaving] = useState(false);
+  const [cpLoaded, setCpLoaded] = useState(false);
+
   useEffect(()=>{ if(projectId) loadAll(); },[projectId]);
 
   useEffect(() => {
@@ -160,7 +180,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
     setLoading(true); setError(null);
     try {
       const {data:proj,error:pe} = await supabase.from("projects")
-        .select("id,name,status,client_id,start_date,end_date,notes,company_id,site_address")
+        .select("id,name,status,client_id,start_date,end_date,notes,company_id,site_address,duration_months,target_profit_pct,overhead_budget")
         .eq("id",projectId!).maybeSingle();
       if(pe)throw pe;
       if(!proj)throw new Error("Project not found");
@@ -173,7 +193,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
         setClient(cl);
       }
 
-      const [expRes,poRes,workerRes,msRes,taskRes,msgRes,contractRes,invoicesRes,fieldPmtRes,poItemsRes,expApprovedRes]=await Promise.allSettled([
+      const [expRes,poRes,workerRes,msRes,taskRes,msgRes,contractRes,invoicesRes,fieldPmtRes,poItemsRes,expApprovedRes,cpWorkersRes,csRes,cpBudgetRes]=await Promise.allSettled([
         supabase.from("expenses").select("amount,description,created_at").eq("project_id",projectId!),
         supabase.from("purchase_orders").select("id,status,created_at,supplier_name").eq("project_id",projectId!),
         supabase.from("workers").select("id,first_name,last_name,worker_type,status").eq("company_id",proj.company_id||"").eq("status","active").limit(30),
@@ -194,6 +214,12 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
         supabase.from("purchase_order_items").select("total_amount,purchase_order_id,purchase_orders!inner(project_id,status)")
           .eq("purchase_orders.project_id",projectId!).neq("purchase_orders.status","cancelled"),
         supabase.from("expenses").select("amount").eq("project_id",projectId!).in("status",["approved","reimbursed"]),
+        // Cost Plan: salaried/contract staff assignable as project overhead
+        supabase.from("workers").select("id,first_name,last_name,pay_type,pay_rate,job_title")
+          .eq("company_id",proj.company_id||"").eq("status","active").in("pay_type",["salary","contract"]),
+        supabase.from("company_settings").select("company_overhead_pct,salary_period,estimate_contingency")
+          .eq("company_id",proj.company_id||"").maybeSingle(),
+        supabase.from("project_budgets").select("*").eq("project_id",projectId!).eq("category","overhead").eq("is_active",true).limit(1),
       ]);
 
       const expenses=expRes.status==="fulfilled"?expRes.value.data||[]:[];
@@ -221,6 +247,32 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
         fieldPmts.filter((p:any)=>p.work_date&&new Date(p.work_date)>=oneWeekAgo)
           .reduce((s:number,p:any)=>s+(Number(p.total_amount)||0),0)
       );
+
+      const cpWorkers=cpWorkersRes.status==="fulfilled"?cpWorkersRes.value.data||[]:[];
+      setAvailableWorkers(cpWorkers);
+
+      // Only apply saved cost-plan values once — a later manual refresh shouldn't
+      // discard whatever the director is mid-editing on the Cost Plan tab.
+      if(!cpLoaded){
+        const cs=csRes.status==="fulfilled"?csRes.value.data:null;
+        if(cs){
+          setCpOverheadPct(cs.company_overhead_pct ?? 8);
+          setCpContingencyPct(cs.estimate_contingency ?? 5);
+        }
+        setCpDuration(proj.duration_months||6);
+        setCpTargetProfit(proj.target_profit_pct||15);
+
+        const budgetRow=cpBudgetRes.status==="fulfilled"?(cpBudgetRes.value.data?.[0]||null):null;
+        if(budgetRow?.description){
+          try{
+            const parsed=JSON.parse(budgetRow.description);
+            if(Array.isArray(parsed.staff))setCpStaff(parsed.staff);
+            if(parsed.vehicles!=null)setCpVehicles(Number(parsed.vehicles));
+            if(parsed.vehicle_cost!=null)setCpVehicleCost(Number(parsed.vehicle_cost));
+          }catch{/* description wasn't JSON — ignore, treat as no saved plan */}
+        }
+        setCpLoaded(true);
+      }
 
       setWorkers(workerList);
       setMilestones(msList);
@@ -429,6 +481,21 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   const balancePct=totalReceived>0?(availableBalance/totalReceived)*100:0;
   const nextWeekForecast=availableBalance-weeklyFieldPayments;
 
+  // Cost plan: what this project actually costs to deliver, and what to charge
+  const directCosts=totalSpent; // field payments + POs + expenses
+  const staffCost=cpStaff.reduce((s,w)=>s+(w.monthlyRate*cpDuration*w.allocationPct/100),0);
+  const vehicleCost=cpVehicles*cpVehicleCost*cpDuration;
+  const overheadCost=directCosts*(cpOverheadPct/100);
+  const totalOverhead=staffCost+vehicleCost+overheadCost;
+  const totalProjectCost=directCosts+totalOverhead;
+  const contingencyAmt=totalProjectCost*(cpContingencyPct/100);
+  const totalWithContingency=totalProjectCost+contingencyAmt;
+  const markupAmt=totalWithContingency*(cpTargetProfit/100);
+  const recommendedPrice=totalWithContingency+markupAmt;
+  const breakEvenPrice=totalWithContingency;
+  const currentEstimateProfit=contractAmount-totalProjectCost;
+  const currentMargin=contractAmount>0?(currentEstimateProfit/contractAmount)*100:0;
+
   const MODULES=[
     {label:"Site Visit",icon:<Layers size={15}/>,to:`/projects/${projectId}/site-visit`,color:"text-purple-400",bg:"bg-purple-500/10",border:"border-purple-500/20",desc:"Voice notes, photos, sketch"},
     {label:"Plans & Drawings",icon:<Map size={15}/>,to:`/projects/${projectId}/plans`,color:"text-cyan-400",bg:"bg-cyan-500/10",border:"border-cyan-500/20",desc:"Upload and view drawings"},
@@ -444,6 +511,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
     {key:"milestones",label:"Milestones",count:milestones.length},
     {key:"tasks",label:"Tasks",count:tasks.length},
     {key:"financials",label:"Financials"},
+    {key:"costplan",label:"Cost Plan"},
     {key:"team",label:"Team",count:stats.activeWorkers},
     {key:"activity",label:"Activity",count:activity.length},
     {key:"messages",label:"Messages",count:unreadCount},
@@ -1332,6 +1400,273 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
               </div>
             </div>
           </>
+        )}
+
+        {/* ── COST PLAN ── */}
+        {tab==="costplan"&&(
+          <div className="space-y-6">
+
+            {/* Price recommendation banner */}
+            <div className={`p-4 rounded-2xl border-2 ${
+              currentMargin >= cpTargetProfit
+                ? "border-emerald-400 dark:border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10"
+                : currentMargin > 0
+                ? "border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-500/10"
+                : "border-red-400 dark:border-red-500 bg-red-50 dark:bg-red-500/10"
+            }`}>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <div className={`text-sm font-bold ${currentMargin >= cpTargetProfit ? "text-emerald-700 dark:text-emerald-300" : currentMargin > 0 ? "text-amber-700 dark:text-amber-300" : "text-red-700 dark:text-red-300"}`}>
+                    {currentMargin >= cpTargetProfit ? "✅ On Track — Meeting profit target" :
+                     currentMargin > 0 ? "⚠️ Below Target — Consider raising price" :
+                     "🔴 Losing Money — Price too low"}
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Current margin: {currentMargin.toFixed(1)}% | Target: {cpTargetProfit}%
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-slate-400">Recommended price</div>
+                  <div className="text-xl font-black text-slate-800 dark:text-slate-100">
+                    JMD {recommendedPrice.toLocaleString(undefined, {maximumFractionDigits:0})}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Project duration + profit target */}
+            <div className="rounded-2xl border border-slate-200 dark:border-white/[0.07] overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.03]">
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">⚙️ Project Setup</h3>
+              </div>
+              <div className="p-5 grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Project Duration</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="1" max="60"
+                      value={cpDuration}
+                      onChange={e => setCpDuration(Number(e.target.value))}
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                    <span className="text-sm text-slate-400">months</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Target Profit %</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="0" max="100"
+                      value={cpTargetProfit}
+                      onChange={e => setCpTargetProfit(Number(e.target.value))}
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                    <span className="text-sm text-slate-400">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Company Overhead %</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="0" max="50"
+                      value={cpOverheadPct}
+                      onChange={e => setCpOverheadPct(Number(e.target.value))}
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                    <span className="text-sm text-slate-400">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Contingency %</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="0" max="50"
+                      value={cpContingencyPct}
+                      onChange={e => setCpContingencyPct(Number(e.target.value))}
+                      className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                    <span className="text-sm text-slate-400">%</span>
+                  </div>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Vehicles on Job</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="0" max="20"
+                      value={cpVehicles}
+                      onChange={e => setCpVehicles(Number(e.target.value))}
+                      className="w-20 px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                    <span className="text-sm text-slate-400">× JMD</span>
+                    <input type="number" min="0"
+                      value={cpVehicleCost}
+                      onChange={e => setCpVehicleCost(Number(e.target.value))}
+                      className="w-24 px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                    <span className="text-xs text-slate-400">/mo</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Staff allocation */}
+            <div className="rounded-2xl border border-slate-200 dark:border-white/[0.07] overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.03]">
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">👥 Staff Overhead</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Project managers, supervisors, estimators running this job</p>
+              </div>
+              <div className="p-5 space-y-4">
+                <div className="flex gap-2 flex-wrap">
+                  <select value={addStaffId}
+                    onChange={e => setAddStaffId(e.target.value)}
+                    className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-slate-700 dark:text-slate-200 focus:outline-none">
+                    <option value="">Select staff member...</option>
+                    {availableWorkers
+                      .filter(w => !cpStaff.find(s => s.workerId === w.id))
+                      .map(w => (
+                        <option key={w.id} value={w.id}>
+                          {w.first_name} {w.last_name} — {w.job_title || w.pay_type} (JMD {Number(w.pay_rate||0).toLocaleString()}/mo)
+                        </option>
+                      ))}
+                  </select>
+                  <div className="flex items-center gap-1">
+                    <input type="number" min="10" max="100"
+                      value={addStaffPct}
+                      onChange={e => setAddStaffPct(Number(e.target.value))}
+                      className="w-16 px-2 py-2 rounded-lg border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-center font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"/>
+                    <span className="text-xs text-slate-400">%</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const w = availableWorkers.find(x => x.id === addStaffId);
+                      if (!w) return;
+                      setCpStaff(prev => [...prev, {
+                        workerId: w.id,
+                        name: `${w.first_name} ${w.last_name}`,
+                        role: w.job_title || w.pay_type || "Staff",
+                        monthlyRate: Number(w.pay_rate || 0),
+                        allocationPct: addStaffPct,
+                      }]);
+                      setAddStaffId("");
+                    }}
+                    disabled={!addStaffId}
+                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+                    + Add
+                  </button>
+                </div>
+
+                {cpStaff.length === 0 ? (
+                  <div className="text-center py-4 text-sm text-slate-400">
+                    No staff allocated yet. Add project managers, supervisors etc.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {cpStaff.map((s, i) => {
+                      const totalCost = s.monthlyRate * cpDuration * s.allocationPct / 100;
+                      return (
+                        <div key={s.workerId} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07]">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-slate-700 dark:text-slate-200">{s.name}</div>
+                            <div className="text-xs text-slate-400">
+                              {s.role} · JMD {s.monthlyRate.toLocaleString()}/mo × {cpDuration}mo × {s.allocationPct}% allocated
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <div className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                              JMD {totalCost.toLocaleString(undefined, {maximumFractionDigits:0})}
+                            </div>
+                            <button onClick={() => setCpStaff(prev => prev.filter((_, idx) => idx !== i))}
+                              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
+                              <X size={13}/>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Full cost breakdown */}
+            <div className="rounded-2xl border border-slate-200 dark:border-white/[0.07] overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.03]">
+                <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200">📊 Full Cost Breakdown</h3>
+                <p className="text-xs text-slate-400 mt-0.5">What this project actually costs to deliver</p>
+              </div>
+              <div className="p-5 space-y-2">
+                {[
+                  { label: "Direct Costs (BOQ)", amount: directCosts, color: "text-slate-700 dark:text-slate-200", indent: false },
+                  { label: "Staff Overhead", amount: staffCost, color: "text-purple-600 dark:text-purple-400", indent: true },
+                  { label: `Vehicle/Transport (${cpVehicles} × JMD ${cpVehicleCost.toLocaleString()}/mo × ${cpDuration}mo)`, amount: vehicleCost, color: "text-purple-600 dark:text-purple-400", indent: true },
+                  { label: `Company Overhead (${cpOverheadPct}% of direct)`, amount: overheadCost, color: "text-purple-600 dark:text-purple-400", indent: true },
+                  { label: "Total Overhead", amount: totalOverhead, color: "text-purple-700 dark:text-purple-300 font-bold", indent: false },
+                  { label: "TOTAL PROJECT COST", amount: totalProjectCost, color: "text-slate-800 dark:text-slate-100 font-bold", indent: false },
+                  { label: `Contingency (${cpContingencyPct}%)`, amount: contingencyAmt, color: "text-amber-600 dark:text-amber-400", indent: true },
+                  { label: `Target Profit (${cpTargetProfit}%)`, amount: markupAmt, color: "text-emerald-600 dark:text-emerald-400", indent: true },
+                ].map(({ label, amount, color, indent }) => (
+                  <div key={label} className={`flex items-center justify-between py-1.5 ${indent ? "pl-4 border-l-2 border-slate-100 dark:border-white/[0.06]" : "border-t border-slate-100 dark:border-white/[0.06] pt-2 mt-1"}`}>
+                    <span className={`text-sm ${color}`}>{label}</span>
+                    <span className={`text-sm ${color}`}>JMD {amount.toLocaleString(undefined, {maximumFractionDigits:0})}</span>
+                  </div>
+                ))}
+
+                <div className="mt-4 space-y-2 border-t border-slate-200 dark:border-white/[0.07] pt-4">
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-slate-100 dark:bg-white/[0.06]">
+                    <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">Break-even Price</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">JMD {breakEvenPrice.toLocaleString(undefined, {maximumFractionDigits:0})}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-600">
+                    <span className="text-sm font-bold text-white">Recommended Price ({cpTargetProfit}% profit)</span>
+                    <span className="text-lg font-black text-white">JMD {recommendedPrice.toLocaleString(undefined, {maximumFractionDigits:0})}</span>
+                  </div>
+                  {contractAmount > 0 && (
+                    <div className={`flex items-center justify-between p-3 rounded-xl ${
+                      currentEstimateProfit >= 0 ? "bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30" : "bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30"
+                    }`}>
+                      <span className={`text-sm font-semibold ${currentEstimateProfit >= 0 ? "text-blue-700 dark:text-blue-300" : "text-red-700 dark:text-red-300"}`}>
+                        {currentEstimateProfit >= 0 ? "Profit at current contract price" : "Loss at current contract price"}
+                      </span>
+                      <span className={`text-sm font-bold ${currentEstimateProfit >= 0 ? "text-blue-700 dark:text-blue-300" : "text-red-700 dark:text-red-300"}`}>
+                        JMD {currentEstimateProfit.toLocaleString(undefined, {maximumFractionDigits:0})} ({currentMargin.toFixed(1)}%)
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={async () => {
+                    setCpSaving(true);
+                    try {
+                      await supabase.from("projects").update({
+                        duration_months: cpDuration,
+                        target_profit_pct: cpTargetProfit,
+                        overhead_budget: totalOverhead,
+                      }).eq("id", projectId);
+
+                      const payload = {
+                        budget_amount: totalOverhead,
+                        description: JSON.stringify({
+                          staff: cpStaff,
+                          vehicles: cpVehicles,
+                          vehicle_cost: cpVehicleCost,
+                        }),
+                        budget_period: "total",
+                        is_active: true,
+                      };
+                      const { data: existing } = await supabase.from("project_budgets")
+                        .select("id").eq("project_id", projectId).eq("category", "overhead")
+                        .eq("is_active", true).limit(1).maybeSingle();
+                      if (existing) {
+                        await supabase.from("project_budgets").update(payload).eq("id", existing.id);
+                      } else {
+                        await supabase.from("project_budgets").insert({
+                          project_id: projectId, company_id: companyId, category: "overhead", ...payload,
+                        });
+                      }
+                      alert("Cost plan saved!");
+                    } catch (e: any) {
+                      alert("Failed to save cost plan: " + e.message);
+                    } finally {
+                      setCpSaving(false);
+                    }
+                  }}
+                  disabled={cpSaving}
+                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors mt-2">
+                  {cpSaving ? "Saving..." : "💾 Save Cost Plan"}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* ── TEAM ── */}
