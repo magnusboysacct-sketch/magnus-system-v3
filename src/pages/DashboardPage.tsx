@@ -81,26 +81,26 @@ export default function DashboardPage() {
           {/* Projects list */}
           <div className="lg:col-span-2">
             <Card padding={false}>
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
-                <span className="text-sm font-semibold text-slate-200">Active Projects</span>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Active Projects</span>
                 <Btn size="xs" variant="ghost" onClick={() => nav("/projects")}>All projects <ArrowRight size={11}/></Btn>
               </div>
               {activeProjects.length === 0 ? (
                 <Empty icon={<FolderOpen size={18}/>} title="No active projects" action={<Btn variant="primary" size="sm" onClick={() => nav("/projects")}>Create project</Btn>}/>
               ) : (
-                <div className="divide-y divide-white/[0.04]">
+                <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
                   {activeProjects.map(p => (
-                    <div key={p.id} onClick={() => nav(`/projects/${p.id}`)} className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] cursor-pointer transition-colors group">
+                    <div key={p.id} onClick={() => nav(`/projects/${p.id}`)} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors group">
                       <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center flex-shrink-0">
                         <Hammer size={13} className="text-cyan-400"/>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-slate-200 truncate">{p.name}</div>
+                        <div className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{p.name}</div>
                         <div className="flex items-center gap-2 mt-0.5">
                           <Badge color="green" dot>Active</Badge>
                         </div>
                       </div>
-                      <ArrowRight size={13} className="text-slate-700 group-hover:text-slate-400 transition-colors flex-shrink-0"/>
+                      <ArrowRight size={13} className="text-slate-400 dark:text-slate-700 group-hover:text-slate-600 dark:group-hover:text-slate-400 transition-colors flex-shrink-0"/>
                     </div>
                   ))}
                 </div>
@@ -121,10 +121,10 @@ export default function DashboardPage() {
                   { label: "Add Worker",     icon: <Users size={12}/>,       to: "/workers",     color: "bg-violet-500/10 text-violet-400" },
                   { label: "Cash Flow",      icon: <TrendingUp size={12}/>,  to: "/cash-flow",   color: "bg-pink-500/10 text-pink-400" },
                 ].map(a => (
-                  <button key={a.to} onClick={() => nav(a.to)} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-left group">
+                  <button key={a.to} onClick={() => nav(a.to)} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors text-left group">
                     <div className={cn("w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0", a.color)}>{a.icon}</div>
-                    <span className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors">{a.label}</span>
-                    <ArrowRight size={10} className="ml-auto text-slate-700"/>
+                    <span className="text-xs text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-300 transition-colors">{a.label}</span>
+                    <ArrowRight size={10} className="ml-auto text-slate-400 dark:text-slate-700"/>
                   </button>
                 ))}
               </div>
@@ -133,9 +133,9 @@ export default function DashboardPage() {
             <Card>
               <CardHeader title="Status"/>
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-xs text-emerald-400"><CheckCircle2 size={12}/> All services operational</div>
-                <div className="flex items-center gap-2 text-xs text-slate-600"><Clock size={12}/> Auto-save enabled</div>
-                <div className="flex items-center gap-2 text-xs text-slate-600"><Clock size={12}/> {new Date().toLocaleDateString()}</div>
+                <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={12}/> All services operational</div>
+                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-600"><Clock size={12}/> Auto-save enabled</div>
+                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-600"><Clock size={12}/> {new Date().toLocaleDateString()}</div>
               </div>
             </Card>
           </div>
