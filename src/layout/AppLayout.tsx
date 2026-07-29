@@ -14,7 +14,7 @@ import {
   ChevronLeft, ChevronRight, Building2, Layers,
   Receipt, Truck, HardHat, Banknote, BookOpen,
   ClipboardList, Package, PieChart, Wrench,
-  ChevronDown, ChevronUp, Plus, Zap, Menu, X
+  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle
 } from "lucide-react";
 import { cn, SectionLabel } from "../components/ui";
 
@@ -322,6 +322,11 @@ export default function AppLayout() {
               </div>
             </div>
           )}
+          <button onClick={() => navigate("/help")}
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+            <HelpCircle size={13}/>
+            {!collapsed && <span>Help & Training</span>}
+          </button>
           <button onClick={toggleTheme}
             className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
             <span style={{fontSize:13}}>{theme === "dark" ? "☀️" : "🌙"}</span>
