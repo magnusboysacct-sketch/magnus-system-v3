@@ -8,7 +8,8 @@ import {
   Search, BookOpen, ChevronRight, Play,
   ArrowLeft, Edit, Plus, Trash2, Save,
   Home, Layers, FileText, DollarSign,
-  BarChart, Settings, HardHat, Ruler
+  BarChart, Settings, HardHat, Ruler,
+  Volume2, Pause, Square
 } from "lucide-react";
 
 // ─── Default articles seeded into DB ────────────────────────────────────────
@@ -1122,6 +1123,142 @@ function renderMarkdown(content: string): React.ReactNode {
   return elements;
 }
 
+// ─── Text-to-speech player ─────────────────────────────────────────────────
+function SpeechPlayer({ text }: { text: string }) {
+  const [speaking, setSpeaking] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [rate, setRate] = useState(1);
+  const [supported] = useState(() => "speechSynthesis" in window);
+
+  // Clean text for speech — remove markdown symbols
+  function cleanText(raw: string): string {
+    return raw
+      .replace(/#{1,6}\s/g, "") // headings
+      .replace(/\*\*(.*?)\*\*/g, "$1") // bold
+      .replace(/\*(.*?)\*/g, "$1") // italic
+      .replace(/`{1,3}[^`]*`{1,3}/g, "") // code
+      .replace(/\|.*\|/g, "") // tables
+      .replace(/[-─═]/g, "") // dividers
+      .replace(/\[.*?\]\(.*?\)/g, "") // links
+      .replace(/⚠️|💡|✅|▸|📏|📐|🔢|📦|🧱/g, "") // emojis
+      .replace(/\n{2,}/g, ". ") // paragraph breaks
+      .replace(/\n/g, " ") // line breaks
+      .trim();
+  }
+
+  function play() {
+    if (!supported) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(cleanText(text));
+    utterance.rate = rate;
+    utterance.lang = "en-US";
+    // Pick a clear voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v =>
+      v.name.includes("Google") || v.name.includes("Daniel") || v.name.includes("Samantha")
+    );
+    if (preferred) utterance.voice = preferred;
+    utterance.onstart = () => { setSpeaking(true); setPaused(false); };
+    utterance.onend = () => { setSpeaking(false); setPaused(false); };
+    utterance.onpause = () => setPaused(true);
+    utterance.onresume = () => setPaused(false);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function pause() {
+    if (speaking && !paused) {
+      window.speechSynthesis.pause();
+      setPaused(true);
+    } else if (paused) {
+      window.speechSynthesis.resume();
+      setPaused(false);
+    }
+  }
+
+  function stop() {
+    window.speechSynthesis.cancel();
+    setSpeaking(false);
+    setPaused(false);
+  }
+
+  // Stop when component unmounts
+  useEffect(() => {
+    return () => window.speechSynthesis.cancel();
+  }, []);
+
+  // Restart with new rate
+  function changeRate(newRate: number) {
+    setRate(newRate);
+    if (speaking) {
+      stop();
+      setTimeout(() => {
+        const utterance = new SpeechSynthesisUtterance(cleanText(text));
+        utterance.rate = newRate;
+        utterance.lang = "en-US";
+        utterance.onstart = () => { setSpeaking(true); setPaused(false); };
+        utterance.onend = () => { setSpeaking(false); setPaused(false); };
+        window.speechSynthesis.speak(utterance);
+      }, 100);
+    }
+  }
+
+  if (!supported) return null;
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 mb-6">
+      {/* Play / Pause button */}
+      {!speaking ? (
+        <button onClick={play}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">
+          <Volume2 size={15}/> Listen
+        </button>
+      ) : (
+        <button onClick={pause}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold transition-colors">
+          {paused ? <Play size={15}/> : <Pause size={15}/>}
+          {paused ? "Resume" : "Pause"}
+        </button>
+      )}
+
+      {/* Stop button */}
+      {speaking && (
+        <button onClick={stop}
+          className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+          <Square size={13}/> Stop
+        </button>
+      )}
+
+      {/* Speaking indicator */}
+      {speaking && !paused && (
+        <div className="flex items-center gap-1.5">
+          <div className="flex gap-0.5">
+            {[0,1,2].map(i => (
+              <div key={i} className="w-1 bg-blue-500 rounded-full animate-bounce"
+                style={{ height: `${8 + i * 4}px`, animationDelay: `${i * 0.15}s` }}/>
+            ))}
+          </div>
+          <span className="text-xs text-blue-500 font-medium">Reading...</span>
+        </div>
+      )}
+
+      {/* Speed controls */}
+      <div className="flex items-center gap-1 ml-auto">
+        <span className="text-xs text-slate-400 mr-1">Speed:</span>
+        {[0.75, 1, 1.25, 1.5, 2].map(r => (
+          <button key={r} onClick={() => changeRate(r)}
+            className={`px-2 py-1 rounded-lg text-xs font-semibold transition-colors ${
+              rate === r
+                ? "bg-blue-600 text-white"
+                : "text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+            }`}>
+            {r}x
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────
 export default function HelpCenterPage() {
   const { userRole } = useProjectContext();
@@ -1328,6 +1465,9 @@ export default function HelpCenterPage() {
                   <p className="text-xs text-slate-400">No video yet. Click Edit to add a YouTube URL.</p>
                 </div>
               )}
+
+              {/* Text to speech */}
+              <SpeechPlayer text={activeArticle.content || ""} />
 
               {/* Article content */}
               <div className="prose max-w-none">
