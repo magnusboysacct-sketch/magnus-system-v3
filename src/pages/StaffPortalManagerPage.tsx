@@ -159,22 +159,35 @@ export default function StaffPortalManagerPage() {
   }
 
   async function sendReply() {
-    if (!replyText.trim() || !selectedWorkerId || !companyId || !userId || sendingReply) return;
+    if (!replyText.trim() || !selectedWorkerId || sendingReply) return;
+    if (!companyId || !userId) {
+      alert("Not ready yet — please wait a moment and try again.");
+      return;
+    }
     setSendingReply(true);
-    const { error } = await supabase.from("worker_portal_messages").insert({
-      company_id: companyId,
-      worker_user_id: selectedWorkerId,
-      sender_type: "management",
-      sender_id: userId,
-      body: replyText.trim(),
-      read_by_worker: false,
-      read_by_management: true,
-    });
-    if (!error) {
+    try {
+      const { error } = await supabase.from("worker_portal_messages").insert({
+        company_id: companyId,
+        worker_user_id: selectedWorkerId,
+        sender_type: "management",
+        sender_id: userId,
+        body: replyText.trim(),
+        read_by_worker: false,
+        read_by_management: true,
+      });
+      if (error) {
+        console.error("Error sending reply:", error);
+        alert("Failed to send message: " + error.message);
+        return;
+      }
       setReplyText("");
       await loadMessages();
+    } catch (e: any) {
+      console.error("Exception sending reply:", e);
+      alert("Unexpected error: " + e.message);
+    } finally {
+      setSendingReply(false);
     }
-    setSendingReply(false);
   }
 
   function openCreateModal() {
@@ -196,23 +209,36 @@ export default function StaffPortalManagerPage() {
   }
 
   async function saveNotice() {
-    if (!form.title.trim() || !form.body.trim() || !companyId || saving) return;
-    setSaving(true);
-    const payload = {
-      title: form.title.trim(),
-      body: form.body.trim(),
-      pinned: form.pinned,
-      visible_to: form.visible_to,
-      expires_at: form.expires_at || null,
-    };
-    if (editingId) {
-      await supabase.from("worker_portal_notices").update(payload).eq("id", editingId);
-    } else {
-      await supabase.from("worker_portal_notices").insert({ ...payload, company_id: companyId, posted_by: userId });
+    if (!form.title.trim() || !form.body.trim() || saving) return;
+    if (!companyId) {
+      alert("Company not loaded yet — please wait a moment and try again.");
+      return;
     }
-    await loadNotices();
-    setModalOpen(false);
-    setSaving(false);
+    setSaving(true);
+    try {
+      const payload = {
+        title: form.title.trim(),
+        body: form.body.trim(),
+        pinned: form.pinned,
+        visible_to: form.visible_to,
+        expires_at: form.expires_at || null,
+      };
+      const { error } = editingId
+        ? await supabase.from("worker_portal_notices").update(payload).eq("id", editingId)
+        : await supabase.from("worker_portal_notices").insert({ ...payload, company_id: companyId, posted_by: userId });
+      if (error) {
+        console.error("Error saving notice:", error);
+        alert("Failed to save notice: " + error.message);
+        return;
+      }
+      await loadNotices();
+      setModalOpen(false);
+    } catch (e: any) {
+      console.error("Exception saving notice:", e);
+      alert("Unexpected error: " + e.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function deleteNotice(id: string) {
