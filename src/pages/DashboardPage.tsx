@@ -10,10 +10,19 @@ function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 }
 
+type RemittanceAlert = { periodLabel: string; dueDate: string; totalDue: number; urgency: "soon" | "week" | "overdue" };
+
+const REMITTANCE_URGENCY_STYLE: Record<string, { icon: string; label: string; cls: string }> = {
+  soon: { icon: "🟡", label: "Remittance due soon", cls: "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-800 dark:text-amber-300" },
+  week: { icon: "🔴", label: "Pay this week", cls: "bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20 text-red-800 dark:text-red-300" },
+  overdue: { icon: "🚨", label: "OVERDUE — penalties may apply", cls: "bg-red-100 dark:bg-red-500/20 border-red-300 dark:border-red-500/30 text-red-900 dark:text-red-200" },
+};
+
 export default function DashboardPage() {
-  const { projects, loadingProjects } = useProjectContext();
+  const { projects, loadingProjects, userRole } = useProjectContext();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ active: 0, budget: 0, openPOs: 0, workers: 0 });
+  const [remittanceAlert, setRemittanceAlert] = useState<RemittanceAlert | null>(null);
   const nav = useNavigate();
 
   useEffect(() => {
@@ -31,11 +40,35 @@ export default function DashboardPage() {
         ]);
         const active = (pr.data || []).filter((p: any) => p.status === "active");
         setStats({ active: active.length, budget: active.reduce((s: number, p: any) => s + (p.budget || 0), 0), openPOs: (po.data || []).length, workers: (wr.data || []).length });
+
+        if (["director", "admin", "accounts"].includes(userRole || "")) {
+          const { data: remittances } = await supabase
+            .from("government_remittances")
+            .select("period_month, period_year, due_date, total_due")
+            .eq("company_id", cid)
+            .eq("status", "pending")
+            .order("due_date", { ascending: true })
+            .limit(1);
+          const r = remittances?.[0];
+          if (r) {
+            const days = Math.ceil((new Date(r.due_date).getTime() - Date.now()) / 86400000);
+            const urgency = days < 0 ? "overdue" : days < 7 ? "week" : days <= 14 ? "soon" : null;
+            if (urgency) {
+              const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+              setRemittanceAlert({
+                periodLabel: `${monthNames[r.period_month - 1]} ${r.period_year}`,
+                dueDate: r.due_date,
+                totalDue: Number(r.total_due) || 0,
+                urgency,
+              });
+            }
+          }
+        }
       } catch {}
       finally { setLoading(false); }
     }
     load();
-  }, []);
+  }, [userRole]);
 
   const activeProjects = projects.filter(p => p.status === "active").slice(0, 6);
 
@@ -69,6 +102,19 @@ export default function DashboardPage() {
         actions={<Btn variant="primary" icon={<Plus size={13}/>} onClick={() => nav("/projects")}>New Project</Btn>}
       />
       <div className="p-6 space-y-6">
+        {remittanceAlert && (
+          <div className={cn("flex items-center gap-3 px-4 py-3 rounded-xl border flex-wrap", REMITTANCE_URGENCY_STYLE[remittanceAlert.urgency].cls)}>
+            <span className="text-lg">{REMITTANCE_URGENCY_STYLE[remittanceAlert.urgency].icon}</span>
+            <div className="flex-1 min-w-[200px]">
+              <div className="text-sm font-semibold">{REMITTANCE_URGENCY_STYLE[remittanceAlert.urgency].label}</div>
+              <div className="text-xs opacity-80 mt-0.5">
+                {remittanceAlert.periodLabel} — JMD {remittanceAlert.totalDue.toLocaleString("en-US", { minimumFractionDigits: 2 })} due {new Date(remittanceAlert.dueDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+              </div>
+            </div>
+            <Btn variant="secondary" size="sm" onClick={() => nav("/payroll")}>View Remittances</Btn>
+          </div>
+        )}
+
         {/* KPI row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard label="Active Projects" value={stats.active} icon={<FolderOpen size={15}/>} color="text-cyan-300" trend={{ value: 8, label: "vs last month" }}/>

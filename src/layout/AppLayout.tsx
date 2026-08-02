@@ -65,6 +65,7 @@ const NAV: NavItem[] = [
       { label: "Cash Flow",        icon: <BarChart3 size={14}/>,   to: "/cash-flow" },
       { label: "Accounts Recv.",   icon: <FileText size={14}/>,    to: "/accounts-receivable" },
       { label: "Field Payments",   icon: <Banknote size={14}/>,    to: "/field-payments" },
+      { label: "Payroll",          icon: <Banknote size={14}/>,    to: "/payroll" },
     ]
   },
   {
@@ -245,6 +246,7 @@ export default function AppLayout() {
   const isDirector = userRole === "director";
   const canSeeWorkers = isDirector || userRole === "site_supervisor";
   const canSeeFieldPayments = isDirector || userRole === "site_supervisor" || userRole === "accounts";
+  const canSeePayroll = isDirector || userRole === "admin" || userRole === "accounts";
 
   // Filter the nav by role — hide items the current user can't act on rather
   // than showing a destination that just 403s. Groups left with no visible
@@ -253,9 +255,11 @@ export default function AppLayout() {
     return NAV
       .map(item => {
         if (item.label === "Finance") {
-          const children = item.children?.filter(c =>
-            c.to === "/field-payments" ? canSeeFieldPayments : canAccessFullFinance
-          );
+          const children = item.children?.filter(c => {
+            if (c.to === "/field-payments") return canSeeFieldPayments;
+            if (c.to === "/payroll") return canSeePayroll;
+            return canAccessFullFinance;
+          });
           return children?.length ? { ...item, children } : null;
         }
         if (item.label === "People") {
@@ -279,7 +283,7 @@ export default function AppLayout() {
         return item;
       })
       .filter((item): item is NavItem => item !== null);
-  }, [canAccessFullFinance, canSeeFieldPayments, canSeeWorkers, isDirector, userRole, staffPortalUnread]);
+  }, [canAccessFullFinance, canSeeFieldPayments, canSeePayroll, canSeeWorkers, isDirector, userRole, staffPortalUnread]);
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#080b10] overflow-hidden">

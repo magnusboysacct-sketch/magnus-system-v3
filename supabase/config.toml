@@ -26,3 +26,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/send-payment-reminders/deno.json"
 entrypoint = "./functions/send-payment-reminders/index.ts"
+
+[functions.send-payslip-email]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-payslip-email/deno.json"
+entrypoint = "./functions/send-payslip-email/index.ts"

@@ -54,6 +54,7 @@ import ReportsPage            from "./pages/ReportsPage";
 import ContractsPage          from "./pages/ContractsPage";
 import HelpCenterPage         from "./pages/HelpCenterPage";
 import StaffPortalManagerPage from "./pages/StaffPortalManagerPage";
+import PayrollPage            from "./pages/PayrollPage";
 
 import SettingsPage           from "./pages/SettingsPage";
 import SettingsEstimatesPage   from "./pages/SettingsEstimatesPage";
@@ -274,6 +275,7 @@ export default function App() {
               <Route path="/finance/upload-statement" element={<FinanceGuard level="full"><UploadStatementPage /></FinanceGuard>} />
               <Route path="/accounts-receivable"     element={<FinanceGuard level="full"><AccountsReceivablePage /></FinanceGuard>} />
               <Route path="/field-payments"          element={<RoleGuard allowedRoles={["director","site_supervisor","accounts"]}><FieldPaymentsPage /></RoleGuard>} />
+              <Route path="/payroll"                 element={<RoleGuard allowedRoles={["director","admin","accounts"]}><PayrollPage /></RoleGuard>} />
 
               {/* People */}
               <Route path="/workers"                 element={<RoleGuard allowedRoles={["director","site_supervisor"]}><WorkersPage /></RoleGuard>} />
