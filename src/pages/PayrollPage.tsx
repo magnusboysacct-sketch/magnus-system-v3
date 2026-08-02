@@ -3,7 +3,6 @@
 // (worker_id FK's to workers(id)) — see staff_payroll_runs migration notes.
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { jamaicanPayrollCalculator, type JamaicanPayrollResult } from "../lib/jamaicanPayroll";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field, Empty, Tabs, Alert, cn
 } from "../components/ui";
@@ -66,6 +65,75 @@ interface CompanyBranding {
   phone: string | null;
 }
 
+// Fallback used until payroll_tax_settings loads, or if a company has no
+// row yet — same values that used to be hardcoded in jamaicanPayroll.ts,
+// now editable per-company at /settings/payroll-rates.
+const DEFAULT_RATES = {
+  nis_employee_rate: 0.0275,
+  nht_employee_rate: 0.0200,
+  education_tax_employee_rate: 0.0225,
+  paye_threshold_annual: 1500096,
+  paye_rate_band1: 0.25,
+  paye_rate_band2: 0.30,
+  paye_band1_ceiling: 6000000,
+  nis_employer_rate: 0.0250,
+  nht_employer_rate: 0.0300,
+  education_tax_employer_rate: 0.0350,
+  heart_trust_rate: 0.0300,
+  nht_monthly_cap: 125000,
+};
+
+type TaxRates = typeof DEFAULT_RATES;
+
+interface PayrollCalcResult {
+  nisDeduction: number;
+  nhtDeduction: number;
+  educationTaxDeduction: number;
+  payeDeduction: number;
+  totalEmployeeDeductions: number;
+  netPay: number;
+  employerNISContribution: number;
+  employerNHTContribution: number;
+  employerEducationTaxContribution: number;
+  employerHeartContribution: number;
+  totalEmployerContributions: number;
+}
+
+// jamaicanPayrollCalculator has these rates hardcoded inside its class
+// methods (no way to pass custom rates in), so this replaces the call to
+// it entirely rather than trying to parameterize it.
+function calculateWithRates(grossPay: number, r: TaxRates): PayrollCalcResult {
+  const nisDeduction = Math.round(grossPay * r.nis_employee_rate * 100) / 100;
+  const nhtDeduction = Math.round(Math.min(grossPay * r.nht_employee_rate, r.nht_monthly_cap) * 100) / 100;
+  const educationTaxDeduction = Math.round(grossPay * r.education_tax_employee_rate * 100) / 100;
+
+  const annualGross = grossPay * 12;
+  const taxableAnnual = Math.max(0, annualGross - r.paye_threshold_annual);
+  let annualPAYE = 0;
+  if (taxableAnnual > 0) {
+    const band1Amount = Math.min(taxableAnnual, r.paye_band1_ceiling - r.paye_threshold_annual);
+    const band2Amount = Math.max(0, taxableAnnual - (r.paye_band1_ceiling - r.paye_threshold_annual));
+    annualPAYE = (band1Amount * r.paye_rate_band1) + (band2Amount * r.paye_rate_band2);
+  }
+  const payeDeduction = Math.round((annualPAYE / 12) * 100) / 100;
+
+  const totalEmployeeDeductions = nisDeduction + nhtDeduction + educationTaxDeduction + payeDeduction;
+  const netPay = grossPay - totalEmployeeDeductions;
+
+  const employerNISContribution = Math.round(grossPay * r.nis_employer_rate * 100) / 100;
+  const employerNHTContribution = Math.round(grossPay * r.nht_employer_rate * 100) / 100;
+  const employerEducationTaxContribution = Math.round(grossPay * r.education_tax_employer_rate * 100) / 100;
+  const employerHeartContribution = Math.round(grossPay * r.heart_trust_rate * 100) / 100;
+  const totalEmployerContributions = employerNISContribution + employerNHTContribution + employerEducationTaxContribution + employerHeartContribution;
+
+  return {
+    nisDeduction, nhtDeduction, educationTaxDeduction, payeDeduction,
+    totalEmployeeDeductions, netPay,
+    employerNISContribution, employerNHTContribution, employerEducationTaxContribution, employerHeartContribution,
+    totalEmployerContributions,
+  };
+}
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -77,6 +145,14 @@ function fmtJMD(n: number) {
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+// Reconstructs the rate actually applied to a saved run from its own stored
+// amounts, rather than showing today's configured rate — payroll_tax_settings
+// can change between pay runs, so a fixed label would go stale on old payslips.
+function pctOf(amount: number, gross: number) {
+  if (!gross) return "0.00";
+  return ((amount / gross) * 100).toFixed(2);
 }
 
 function generatePayslipHTML(staff: { full_name: string | null; role: string; trn: string | null }, run: Pick<PayrollRun,
@@ -132,9 +208,9 @@ function generatePayslipHTML(staff: { full_name: string | null; role: string; tr
   <div class="section">
     <div class="section-title">Employee Deductions</div>
     <table>
-      <tr><td>NIS (2.75%)</td><td>JMD ${fmtJMD(run.nis_deduction)}</td></tr>
-      <tr><td>NHT (2%)</td><td>JMD ${fmtJMD(run.nht_deduction)}</td></tr>
-      <tr><td>Education Tax (2.25%)</td><td>JMD ${fmtJMD(run.education_tax_deduction)}</td></tr>
+      <tr><td>NIS (${pctOf(run.nis_deduction, run.gross_pay)}%)</td><td>JMD ${fmtJMD(run.nis_deduction)}</td></tr>
+      <tr><td>NHT (${pctOf(run.nht_deduction, run.gross_pay)}%)</td><td>JMD ${fmtJMD(run.nht_deduction)}</td></tr>
+      <tr><td>Education Tax (${pctOf(run.education_tax_deduction, run.gross_pay)}%)</td><td>JMD ${fmtJMD(run.education_tax_deduction)}</td></tr>
       <tr><td>PAYE Income Tax</td><td>JMD ${fmtJMD(run.paye_deduction)}</td></tr>
       <tr><td><strong>Total Deductions</strong></td><td><strong>JMD ${fmtJMD(run.total_employee_deductions)}</strong></td></tr>
     </table>
@@ -147,10 +223,10 @@ function generatePayslipHTML(staff: { full_name: string | null; role: string; tr
   <div class="section" style="margin-top:20px">
     <div class="section-title">Employer Contributions (Company Record Only)</div>
     <table>
-      <tr class="employer-row"><td>NIS Employer (2.5%)</td><td>JMD ${fmtJMD(run.employer_nis_contribution)}</td></tr>
-      <tr class="employer-row"><td>NHT Employer (3%)</td><td>JMD ${fmtJMD(run.employer_nht_contribution)}</td></tr>
-      <tr class="employer-row"><td>Education Tax Employer (3.5%)</td><td>JMD ${fmtJMD(run.employer_education_tax_contribution)}</td></tr>
-      <tr class="employer-row"><td>HEART Trust (3%)</td><td>JMD ${fmtJMD(run.employer_heart_contribution)}</td></tr>
+      <tr class="employer-row"><td>NIS Employer (${pctOf(run.employer_nis_contribution, run.gross_pay)}%)</td><td>JMD ${fmtJMD(run.employer_nis_contribution)}</td></tr>
+      <tr class="employer-row"><td>NHT Employer (${pctOf(run.employer_nht_contribution, run.gross_pay)}%)</td><td>JMD ${fmtJMD(run.employer_nht_contribution)}</td></tr>
+      <tr class="employer-row"><td>Education Tax Employer (${pctOf(run.employer_education_tax_contribution, run.gross_pay)}%)</td><td>JMD ${fmtJMD(run.employer_education_tax_contribution)}</td></tr>
+      <tr class="employer-row"><td>HEART Trust (${pctOf(run.employer_heart_contribution, run.gross_pay)}%)</td><td>JMD ${fmtJMD(run.employer_heart_contribution)}</td></tr>
     </table>
   </div>
   <div class="sig">
@@ -200,6 +276,8 @@ export default function PayrollPage() {
   const [remittances, setRemittances] = useState<Remittance[]>([]);
   const [loadingRemittances, setLoadingRemittances] = useState(true);
 
+  const [taxRates, setTaxRates] = useState<TaxRates | null>(null);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -215,7 +293,32 @@ export default function PayrollPage() {
     loadHistory();
     loadRemittances();
     loadCompany();
+    loadTaxRates();
   }, [companyId]);
+
+  async function loadTaxRates() {
+    if (!companyId) return;
+    const { data, error } = await supabase
+      .from("payroll_tax_settings")
+      .select("*")
+      .eq("company_id", companyId)
+      .maybeSingle();
+    if (error) { console.error("loadTaxRates error:", error); return; }
+    setTaxRates(data ? {
+      nis_employee_rate: Number(data.nis_employee_rate),
+      nht_employee_rate: Number(data.nht_employee_rate),
+      education_tax_employee_rate: Number(data.education_tax_employee_rate),
+      paye_threshold_annual: Number(data.paye_threshold_annual),
+      paye_rate_band1: Number(data.paye_rate_band1),
+      paye_rate_band2: Number(data.paye_rate_band2),
+      paye_band1_ceiling: Number(data.paye_band1_ceiling),
+      nis_employer_rate: Number(data.nis_employer_rate),
+      nht_employer_rate: Number(data.nht_employer_rate),
+      education_tax_employer_rate: Number(data.education_tax_employer_rate),
+      heart_trust_rate: Number(data.heart_trust_rate),
+      nht_monthly_cap: Number(data.nht_monthly_cap),
+    } : null);
+  }
 
   async function loadCompany() {
     if (!companyId) return;
@@ -287,19 +390,12 @@ export default function PayrollPage() {
   const selectedStaff = staffList.find(s => s.id === selectedStaffId) || null;
   const periodLabel = `${MONTH_NAMES[periodMonth - 1]} ${periodYear}`;
 
-  const calcResult: JamaicanPayrollResult | null = useMemo(() => {
-    if (!companyId || !selectedStaffId || grossNum <= 0) return null;
-    return jamaicanPayrollCalculator.calculateJamaicanPayroll({
-      employeeId: selectedStaffId,
-      companyId,
-      grossPay: grossNum,
-      payrollFrequency: "monthly",
-      taxInfo: { isExemptNIS: false, isExemptNHT: false, isExemptEducationTax: false, isExemptPAYE: false },
-    });
-  }, [companyId, selectedStaffId, grossNum]);
+  const effectiveRates = taxRates || DEFAULT_RATES;
 
-  // No calculator method for HEART Trust (employer-only, 3% of gross, no cap).
-  const heartAmount = Math.round(grossNum * 0.03 * 100) / 100;
+  const calcResult: PayrollCalcResult | null = useMemo(() => {
+    if (!selectedStaffId || grossNum <= 0) return null;
+    return calculateWithRates(grossNum, effectiveRates);
+  }, [selectedStaffId, grossNum, effectiveRates]);
 
   async function updateRemittances(cid: string, month: number, year: number) {
     const { data: runs, error } = await supabase
@@ -371,8 +467,8 @@ export default function PayrollPage() {
         employer_nis_contribution: calcResult.employerNISContribution,
         employer_nht_contribution: calcResult.employerNHTContribution,
         employer_education_tax_contribution: calcResult.employerEducationTaxContribution,
-        employer_heart_contribution: heartAmount,
-        total_employer_contributions: calcResult.totalEmployerContributions + heartAmount,
+        employer_heart_contribution: calcResult.employerHeartContribution,
+        total_employer_contributions: calcResult.totalEmployerContributions,
         net_pay: calcResult.netPay,
         notes: notes.trim() || null,
         paid_by: userId,
@@ -561,9 +657,9 @@ export default function PayrollPage() {
                   <div className="border-t border-slate-200 dark:border-slate-800 pt-3">
                     <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-2">Employee Deductions</div>
                     <div className="space-y-1.5">
-                      <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>NIS (2.75%)</span><span>-JMD {fmtJMD(calcResult.nisDeduction)}</span></div>
-                      <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>NHT (2%)</span><span>-JMD {fmtJMD(calcResult.nhtDeduction)}</span></div>
-                      <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>Education Tax (2.25%)</span><span>-JMD {fmtJMD(calcResult.educationTaxDeduction)}</span></div>
+                      <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>NIS ({(effectiveRates.nis_employee_rate * 100).toFixed(2)}%)</span><span>-JMD {fmtJMD(calcResult.nisDeduction)}</span></div>
+                      <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>NHT ({(effectiveRates.nht_employee_rate * 100).toFixed(2)}%)</span><span>-JMD {fmtJMD(calcResult.nhtDeduction)}</span></div>
+                      <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>Education Tax ({(effectiveRates.education_tax_employee_rate * 100).toFixed(2)}%)</span><span>-JMD {fmtJMD(calcResult.educationTaxDeduction)}</span></div>
                       <div className="flex justify-between text-slate-600 dark:text-slate-400"><span>PAYE Income Tax</span><span>-JMD {fmtJMD(calcResult.payeDeduction)}</span></div>
                     </div>
                     <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300 border-t border-slate-200 dark:border-slate-800 mt-2 pt-2">
@@ -579,13 +675,13 @@ export default function PayrollPage() {
                   <div className="border-t border-slate-200 dark:border-slate-800 pt-3">
                     <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-2">Employer Contributions (company pays extra)</div>
                     <div className="space-y-1.5">
-                      <div className="flex justify-between text-slate-500 dark:text-slate-500"><span>NIS (2.5%)</span><span>JMD {fmtJMD(calcResult.employerNISContribution)}</span></div>
-                      <div className="flex justify-between text-slate-500 dark:text-slate-500"><span>NHT (3%)</span><span>JMD {fmtJMD(calcResult.employerNHTContribution)}</span></div>
-                      <div className="flex justify-between text-slate-500 dark:text-slate-500"><span>Education Tax (3.5%)</span><span>JMD {fmtJMD(calcResult.employerEducationTaxContribution)}</span></div>
-                      <div className="flex justify-between text-slate-500 dark:text-slate-500"><span>HEART Trust (3%)</span><span>JMD {fmtJMD(heartAmount)}</span></div>
+                      <div className="flex justify-between text-slate-500 dark:text-slate-500"><span>NIS ({(effectiveRates.nis_employer_rate * 100).toFixed(2)}%)</span><span>JMD {fmtJMD(calcResult.employerNISContribution)}</span></div>
+                      <div className="flex justify-between text-slate-500 dark:text-slate-500"><span>NHT ({(effectiveRates.nht_employer_rate * 100).toFixed(2)}%)</span><span>JMD {fmtJMD(calcResult.employerNHTContribution)}</span></div>
+                      <div className="flex justify-between text-slate-500 dark:text-slate-500"><span>Education Tax ({(effectiveRates.education_tax_employer_rate * 100).toFixed(2)}%)</span><span>JMD {fmtJMD(calcResult.employerEducationTaxContribution)}</span></div>
+                      <div className="flex justify-between text-slate-500 dark:text-slate-500"><span>HEART Trust ({(effectiveRates.heart_trust_rate * 100).toFixed(2)}%)</span><span>JMD {fmtJMD(calcResult.employerHeartContribution)}</span></div>
                     </div>
                     <div className="flex justify-between font-semibold text-slate-700 dark:text-slate-300 border-t border-slate-200 dark:border-slate-800 mt-2 pt-2">
-                      <span>Total Employer Cost</span><span>JMD {fmtJMD(grossNum + calcResult.totalEmployerContributions + heartAmount)}</span>
+                      <span>Total Employer Cost</span><span>JMD {fmtJMD(grossNum + calcResult.totalEmployerContributions)}</span>
                     </div>
                   </div>
                 </div>

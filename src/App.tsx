@@ -55,6 +55,7 @@ import ContractsPage          from "./pages/ContractsPage";
 import HelpCenterPage         from "./pages/HelpCenterPage";
 import StaffPortalManagerPage from "./pages/StaffPortalManagerPage";
 import PayrollPage            from "./pages/PayrollPage";
+import SettingsPayrollPage    from "./pages/SettingsPayrollPage";
 
 import SettingsPage           from "./pages/SettingsPage";
 import SettingsEstimatesPage   from "./pages/SettingsEstimatesPage";
@@ -292,6 +293,7 @@ export default function App() {
               <Route path="/settings"                      element={<RoleGuard allowedRoles={["director"]}><SettingsPage /></RoleGuard>} />
               <Route path="/settings/company"              element={<RoleGuard allowedRoles={["director"]}><SettingsCompanyPage /></RoleGuard>} />
               <Route path="/settings/estimates"            element={<RoleGuard allowedRoles={["director"]}><SettingsEstimatesPage /></RoleGuard>} />
+              <Route path="/settings/payroll-rates"        element={<RoleGuard allowedRoles={["director"]}><SettingsPayrollPage /></RoleGuard>} />
               <Route path="/settings/master-lists"         element={<RoleGuard allowedRoles={["director"]}><SettingsMasterListsPage /></RoleGuard>} />
               <Route path="/settings/master-categories"    element={<RoleGuard allowedRoles={["director"]}><SettingsMasterCategoriesPage /></RoleGuard>} />
               <Route path="/settings/cost-codes"           element={<RoleGuard allowedRoles={["director"]}><SettingsCostCodesPage /></RoleGuard>} />

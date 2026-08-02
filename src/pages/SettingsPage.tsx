@@ -2,12 +2,13 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader, Card, Btn, cn } from "../components/ui";
-import { Settings, BookOpen, Users, Building2, CreditCard, ArrowRight, FileText, Percent } from "lucide-react";
+import { Settings, BookOpen, Users, Building2, CreditCard, ArrowRight, FileText, Percent, Banknote } from "lucide-react";
 import { useProjectContext } from "../context/ProjectContext";
 
 const SETTINGS_SECTIONS = [
   { title: "Company", desc: "Company name, logo, address", icon: <Building2 size={18}/>, to: "/settings/company", color: "text-blue-400 bg-blue-500/10 border-blue-500/20" },
   { title: "Estimates", desc: "Markup, contingency, payment terms", icon: <Percent size={18}/>, to: "/settings/estimates", color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
+  { title: "Payroll & Tax Rates", desc: "Jamaican statutory deduction rates — update when government changes rates", icon: <Banknote size={18}/>, to: "/settings/payroll-rates", color: "text-green-400 bg-green-500/10 border-green-500/20" },
   { title: "Records & IDs", desc: "Print worker files and ID cards", icon: <FileText size={18}/>, to: "/settings/records", color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
   { title: "Users & Permissions", desc: "Team members, roles, invites", icon: <Users size={18}/>, to: "/settings/users", color: "text-violet-400 bg-violet-500/10 border-violet-500/20" },
   { title: "Master Lists", desc: "Materials, labour, equipment items", icon: <BookOpen size={18}/>, to: "/settings/master-lists", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
