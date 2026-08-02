@@ -209,7 +209,6 @@ export default function StaffPortalManagerPage() {
   }
 
   async function saveNotice() {
-    alert("saveNotice fired — companyId: " + companyId);
     if (!form.title.trim() || !form.body.trim() || saving) return;
     if (!companyId) {
       alert("Company not loaded yet — please wait a moment and try again.");
@@ -224,12 +223,15 @@ export default function StaffPortalManagerPage() {
         visible_to: form.visible_to,
         expires_at: form.expires_at || null,
       };
-      const { error } = editingId
-        ? await supabase.from("worker_portal_notices").update(payload).eq("id", editingId)
-        : await supabase.from("worker_portal_notices").insert({ ...payload, company_id: companyId, posted_by: userId });
+      const { error, data } = editingId
+        ? await supabase.from("worker_portal_notices").update(payload).eq("id", editingId).select()
+        : await supabase.from("worker_portal_notices").insert({ ...payload, company_id: companyId, posted_by: userId }).select();
+
+      console.log("SAVE NOTICE RESULT — error:", JSON.stringify(error), "data:", JSON.stringify(data));
+
       if (error) {
         console.error("Error saving notice:", error);
-        alert("Failed to save notice: " + error.message);
+        alert("Insert failed: " + error.message + " | code: " + error.code + " | details: " + error.details);
         return;
       }
       await loadNotices();
