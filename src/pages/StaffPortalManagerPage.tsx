@@ -209,6 +209,7 @@ export default function StaffPortalManagerPage() {
   }
 
   async function saveNotice() {
+    alert("saveNotice fired — companyId: " + companyId);
     if (!form.title.trim() || !form.body.trim() || saving) return;
     if (!companyId) {
       alert("Company not loaded yet — please wait a moment and try again.");
@@ -418,7 +419,7 @@ export default function StaffPortalManagerPage() {
           <div className="flex justify-end gap-2 pt-2">
             <Btn variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Btn>
             <Btn variant="primary" disabled={!form.title.trim() || !form.body.trim() || saving} onClick={saveNotice}>
-              {editingId ? "Save Changes" : "Post Notice"}
+              {saving ? "Saving..." : editingId ? "Save Changes" : "Post Notice"}
             </Btn>
           </div>
         </div>
