@@ -98,22 +98,35 @@ export default function StaffPortalManagerPage() {
     threadEndRef.current?.scrollIntoView({ behavior: "auto" });
   }, [selectedWorkerId, messages]);
 
+  // PostgREST embedded joins (poster:posted_by(...)) require it to have
+  // discovered the FK in its schema cache, which isn't guaranteed right
+  // after DDL run by hand in the SQL editor. Fetch plain rows and resolve
+  // names via a separate user_profiles lookup instead, so this doesn't
+  // depend on schema cache state.
   async function loadNotices() {
     if (!companyId) return;
     setLoadingNotices(true);
     setNoticesError(null);
     const { data, error } = await supabase
       .from("worker_portal_notices")
-      .select("*, poster:posted_by(full_name)")
+      .select("*")
       .eq("company_id", companyId)
       .order("pinned", { ascending: false })
       .order("created_at", { ascending: false });
     if (error) {
       console.error("loadNotices error:", error);
       setNoticesError(`${error.message}${(error as any).hint ? ` — ${(error as any).hint}` : ""}`);
-    } else {
-      setNotices((data || []) as unknown as Notice[]);
+      setLoadingNotices(false);
+      return;
     }
+    const rows = (data || []) as Notice[];
+    const posterIds = Array.from(new Set(rows.map(n => n.posted_by).filter((id): id is string => !!id)));
+    const posterNames: Record<string, string | null> = {};
+    if (posterIds.length > 0) {
+      const { data: profiles } = await supabase.from("user_profiles").select("id, full_name").in("id", posterIds);
+      (profiles || []).forEach((p: any) => { posterNames[p.id] = p.full_name; });
+    }
+    setNotices(rows.map(n => ({ ...n, poster: n.posted_by ? { full_name: posterNames[n.posted_by] ?? null } : null })));
     setLoadingNotices(false);
   }
 
@@ -123,15 +136,23 @@ export default function StaffPortalManagerPage() {
     setMessagesError(null);
     const { data, error } = await supabase
       .from("worker_portal_messages")
-      .select("*, worker_profile:worker_user_id(full_name, email)")
+      .select("*")
       .eq("company_id", companyId)
       .order("created_at", { ascending: false });
     if (error) {
       console.error("loadMessages error:", error);
       setMessagesError(`${error.message}${(error as any).hint ? ` — ${(error as any).hint}` : ""}`);
-    } else {
-      setMessages((data || []) as unknown as Message[]);
+      setLoadingMessages(false);
+      return;
     }
+    const rows = (data || []) as Message[];
+    const workerIds = Array.from(new Set(rows.map(m => m.worker_user_id)));
+    const workerProfiles: Record<string, { full_name: string | null; email: string | null }> = {};
+    if (workerIds.length > 0) {
+      const { data: profiles } = await supabase.from("user_profiles").select("id, full_name, email").in("id", workerIds);
+      (profiles || []).forEach((p: any) => { workerProfiles[p.id] = { full_name: p.full_name, email: p.email }; });
+    }
+    setMessages(rows.map(m => ({ ...m, worker_profile: workerProfiles[m.worker_user_id] ?? null })));
     setLoadingMessages(false);
   }
 
