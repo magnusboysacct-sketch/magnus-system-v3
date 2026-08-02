@@ -79,6 +79,12 @@ export default function StaffPortalManagerPage() {
   const [sendingReply, setSendingReply] = useState(false);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
+  const [staffList, setStaffList] = useState<{ id: string; full_name: string | null; email: string | null; role: string | null }[]>([]);
+  const [showNewMessage, setShowNewMessage] = useState(false);
+  const [newMessageWorker, setNewMessageWorker] = useState("");
+  const [newMessageBody, setNewMessageBody] = useState("");
+  const [sendingNew, setSendingNew] = useState(false);
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -92,6 +98,7 @@ export default function StaffPortalManagerPage() {
     if (!companyId) return;
     loadNotices();
     loadMessages();
+    loadStaffList();
   }, [companyId]);
 
   useEffect(() => {
@@ -154,6 +161,58 @@ export default function StaffPortalManagerPage() {
     }
     setMessages(rows.map(m => ({ ...m, worker_profile: workerProfiles[m.worker_user_id] ?? null })));
     setLoadingMessages(false);
+  }
+
+  // Recipients for a new message must be user_profiles rows, not workers
+  // rows — worker_portal_messages.worker_user_id is FK'd to user_profiles(id)
+  // (the auth user id). workers.id is a separate id space (payroll/HR record,
+  // not necessarily tied to a login), so a worker without a portal account
+  // has no valid target here at all — only staff who've signed in can be
+  // messaged in-app.
+  async function loadStaffList() {
+    if (!companyId) return;
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("id, full_name, email, role")
+      .eq("company_id", companyId)
+      .order("full_name");
+    if (error) {
+      console.error("loadStaffList error:", error);
+      return;
+    }
+    setStaffList((data || []).filter((p: any) => p.id !== userId));
+  }
+
+  async function sendNewMessage() {
+    if (!companyId || !userId || !newMessageWorker || !newMessageBody.trim() || sendingNew) return;
+    setSendingNew(true);
+    try {
+      const { error } = await supabase.from("worker_portal_messages").insert({
+        company_id: companyId,
+        worker_user_id: newMessageWorker,
+        sender_type: "management",
+        sender_id: userId,
+        body: newMessageBody.trim(),
+        read_by_worker: false,
+        read_by_management: true,
+      });
+      if (error) {
+        console.error("Error sending new message:", error);
+        alert("Failed to send: " + error.message);
+        return;
+      }
+      const target = newMessageWorker;
+      setShowNewMessage(false);
+      setNewMessageBody("");
+      setNewMessageWorker("");
+      await loadMessages();
+      setSelectedWorkerId(target);
+    } catch (e: any) {
+      console.error("Exception sending new message:", e);
+      alert("Unexpected error: " + e.message);
+    } finally {
+      setSendingNew(false);
+    }
   }
 
   const threads: Thread[] = useMemo(() => {
@@ -293,9 +352,13 @@ export default function StaffPortalManagerPage() {
       <PageHeader
         title="Staff Portal"
         subtitle="Notices and messages for your worker portal"
-        actions={tab === "notices" && (
+        actions={tab === "notices" ? (
           <Btn variant="primary" size="sm" icon={<Plus size={13} />} onClick={openCreateModal}>
             Post Notice
+          </Btn>
+        ) : (
+          <Btn variant="primary" size="sm" icon={<Plus size={13} />} onClick={() => setShowNewMessage(true)}>
+            New Message
           </Btn>
         )}
       />
@@ -366,7 +429,12 @@ export default function StaffPortalManagerPage() {
           loadingMessages ? (
             <div className="text-sm text-slate-500 dark:text-slate-600 py-8 text-center">Loading…</div>
           ) : threads.length === 0 ? (
-            <Empty icon={<MessageSquare size={22} />} title="No messages yet" body="Worker messages will appear here." />
+            <Empty
+              icon={<MessageSquare size={22} />}
+              title="No messages yet"
+              body="Start a conversation with a staff member."
+              action={<Btn variant="primary" size="sm" icon={<Plus size={13} />} onClick={() => setShowNewMessage(true)}>New Message</Btn>}
+            />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-4" style={{ height: "65vh" }}>
               <Card padding={false} className="overflow-y-auto">
@@ -464,6 +532,41 @@ export default function StaffPortalManagerPage() {
             <Btn variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Btn>
             <Btn variant="primary" disabled={!form.title.trim() || !form.body.trim() || saving} onClick={saveNotice}>
               {saving ? "Saving..." : editingId ? "Save Changes" : "Post Notice"}
+            </Btn>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showNewMessage}
+        onClose={() => { setShowNewMessage(false); setNewMessageBody(""); setNewMessageWorker(""); }}
+        title="New Message"
+        subtitle="Send a message to a staff member"
+        width="max-w-lg"
+      >
+        <div className="space-y-4">
+          <Field label="Send To">
+            <Select value={newMessageWorker} onChange={e => setNewMessageWorker(e.target.value)}>
+              <option value="">Select staff member...</option>
+              {staffList.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.full_name || s.email || s.id}{s.role ? ` — ${s.role}` : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Message">
+            <Textarea
+              rows={4}
+              value={newMessageBody}
+              onChange={e => setNewMessageBody(e.target.value)}
+              placeholder="Type your message..."
+            />
+          </Field>
+          <div className="flex justify-end gap-2 pt-2">
+            <Btn variant="secondary" onClick={() => { setShowNewMessage(false); setNewMessageBody(""); setNewMessageWorker(""); }}>Cancel</Btn>
+            <Btn variant="primary" icon={<Send size={13} />} disabled={!newMessageWorker || !newMessageBody.trim() || sendingNew} onClick={sendNewMessage}>
+              {sendingNew ? "Sending..." : "Send Message"}
             </Btn>
           </div>
         </div>
