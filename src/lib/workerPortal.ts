@@ -34,6 +34,7 @@ export interface WorkerInfo {
   pay_type: "hourly" | "salary";
   hire_date: string | null;
   status: "active" | "inactive" | "terminated";
+  worker_type: string | null;
 }
 
 export async function checkWorkerPortalAccess(): Promise<{
@@ -100,7 +101,7 @@ export async function fetchWorkerInfo(workerId: string) {
   try {
     const { data, error } = await supabase
       .from("workers")
-      .select("id, first_name, last_name, email, phone, pay_rate, pay_type, hire_date, status")
+      .select("id, first_name, last_name, email, phone, pay_rate, pay_type, hire_date, status, worker_type")
       .eq("id", workerId)
       .single();
 
@@ -183,6 +184,136 @@ export async function fetchWorkerPayslips(workerId: string, limit: number = 12) 
     console.error("Exception fetching worker payslips:", e);
     return { success: false, data: [], error: e };
   }
+}
+
+export interface WorkerNotice {
+  id: string;
+  company_id: string;
+  title: string;
+  body: string;
+  pinned: boolean;
+  visible_to: "all" | "internal_staff" | "site_workers";
+  expires_at: string | null;
+  posted_by: string | null;
+  created_at: string;
+}
+
+export interface WorkerMessage {
+  id: string;
+  company_id: string;
+  worker_user_id: string;
+  sender_type: "worker" | "management";
+  sender_id: string;
+  body: string;
+  read_by_worker: boolean;
+  read_by_management: boolean;
+  created_at: string;
+}
+
+export interface CompanyBranding {
+  company_name: string | null;
+  logo_url: string | null;
+}
+
+export async function fetchCompanyBranding(companyId: string) {
+  try {
+    const { data, error } = await supabase
+      .from("company_settings")
+      .select("company_name, logo_url")
+      .eq("company_id", companyId)
+      .maybeSingle();
+    if (error) throw error;
+    return { success: true, data: data as CompanyBranding | null, error: null };
+  } catch (e) {
+    console.error("Exception fetching company branding:", e);
+    return { success: false, data: null, error: e };
+  }
+}
+
+// Notices visible to a worker of the given worker_type (see
+// worker_portal_notices.visible_to check constraint). Site-facing roles
+// (subcontractor/crew_lead) count as "site_workers"; 'employee' as
+// "internal_staff" — the only signal the workers table offers for this split.
+export async function fetchNoticesForWorker(companyId: string, workerType: string | null) {
+  try {
+    const category = workerType === "employee" ? "internal_staff" : "site_workers";
+    const { data, error } = await supabase
+      .from("worker_portal_notices")
+      .select("*")
+      .eq("company_id", companyId)
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .or(`visible_to.eq.all,visible_to.eq.${category}`)
+      .order("pinned", { ascending: false })
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return { success: true, data: (data || []) as WorkerNotice[], error: null };
+  } catch (e) {
+    console.error("Exception fetching notices:", e);
+    return { success: false, data: [] as WorkerNotice[], error: e };
+  }
+}
+
+export async function fetchNoticeReadIds(workerId: string) {
+  try {
+    const { data, error } = await supabase
+      .from("worker_portal_notice_reads")
+      .select("notice_id")
+      .eq("worker_id", workerId);
+    if (error) throw error;
+    return new Set((data || []).map((r: any) => r.notice_id as string));
+  } catch (e) {
+    console.error("Exception fetching notice reads:", e);
+    return new Set<string>();
+  }
+}
+
+export async function markNoticeRead(noticeId: string, workerId: string) {
+  const { error } = await supabase.from("worker_portal_notice_reads").upsert(
+    { notice_id: noticeId, worker_id: workerId, read_at: new Date().toISOString() },
+    { onConflict: "notice_id,worker_id" }
+  );
+  if (error) console.error("Error marking notice read:", error);
+  return !error;
+}
+
+export async function fetchWorkerMessages(companyId: string, workerUserId: string) {
+  try {
+    const { data, error } = await supabase
+      .from("worker_portal_messages")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("worker_user_id", workerUserId)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return { success: true, data: (data || []) as WorkerMessage[], error: null };
+  } catch (e) {
+    console.error("Exception fetching messages:", e);
+    return { success: false, data: [] as WorkerMessage[], error: e };
+  }
+}
+
+export async function markMessagesReadByWorker(workerUserId: string) {
+  const { error } = await supabase
+    .from("worker_portal_messages")
+    .update({ read_by_worker: true })
+    .eq("worker_user_id", workerUserId)
+    .eq("sender_type", "management")
+    .eq("read_by_worker", false);
+  if (error) console.error("Error marking messages read:", error);
+}
+
+export async function sendWorkerMessage(companyId: string, workerUserId: string, body: string) {
+  const { error } = await supabase.from("worker_portal_messages").insert({
+    company_id: companyId,
+    worker_user_id: workerUserId,
+    sender_type: "worker",
+    sender_id: workerUserId,
+    body: body.trim(),
+    read_by_management: false,
+    read_by_worker: true,
+  });
+  if (error) console.error("Error sending message:", error);
+  return !error;
 }
 
 export async function fetchWorkerYTDSummary(workerId: string, year?: number) {

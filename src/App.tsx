@@ -53,6 +53,7 @@ import WorkersPage            from "./pages/WorkersPage";
 import ReportsPage            from "./pages/ReportsPage";
 import ContractsPage          from "./pages/ContractsPage";
 import HelpCenterPage         from "./pages/HelpCenterPage";
+import StaffPortalManagerPage from "./pages/StaffPortalManagerPage";
 
 import SettingsPage           from "./pages/SettingsPage";
 import SettingsEstimatesPage   from "./pages/SettingsEstimatesPage";
@@ -276,6 +277,7 @@ export default function App() {
 
               {/* People */}
               <Route path="/workers"                 element={<RoleGuard allowedRoles={["director","site_supervisor"]}><WorkersPage /></RoleGuard>} />
+              <Route path="/staff-portal"            element={<RoleGuard allowedRoles={["director","admin"]}><StaffPortalManagerPage /></RoleGuard>} />
 
               {/* Help */}
               <Route path="/help"                          element={<HelpCenterPage />} />

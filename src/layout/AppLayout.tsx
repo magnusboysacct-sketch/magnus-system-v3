@@ -14,7 +14,7 @@ import {
   ChevronLeft, ChevronRight, Building2, Layers,
   Receipt, Truck, HardHat, Banknote, BookOpen,
   ClipboardList, Package, PieChart, Wrench,
-  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle
+  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare
 } from "lucide-react";
 import { cn, SectionLabel } from "../components/ui";
 
@@ -127,6 +127,11 @@ function NavGroup({ item, collapsed, defaultOpen, onNavigate }: { item: NavItem;
               )}>
               <span className="flex-shrink-0 opacity-70">{child.icon}</span>
               <span className="truncate">{child.label}</span>
+              {child.badge && (
+                <span className="ml-auto flex-shrink-0 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                  {child.badge}
+                </span>
+              )}
             </NavLink>
           ))}
         </div>
@@ -213,6 +218,18 @@ export default function AppLayout() {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
   }, []);
 
+  const [staffPortalUnread, setStaffPortalUnread] = useState(0);
+  useEffect(() => {
+    if (!co?.company_id) return;
+    if (!(userRole === "director" || userRole === "admin")) return;
+    supabase.from("worker_portal_messages")
+      .select("*", { count: "exact", head: true })
+      .eq("company_id", co.company_id)
+      .eq("sender_type", "worker")
+      .eq("read_by_management", false)
+      .then(({ count }) => setStaffPortalUnread(count || 0));
+  }, [co?.company_id, userRole]);
+
   async function handleLogout() {
     await supabase.auth.signOut();
     navigate("/login");
@@ -242,10 +259,19 @@ export default function AppLayout() {
           return children?.length ? { ...item, children } : null;
         }
         if (item.label === "People") {
-          const children = item.children?.filter(c =>
+          const children = (item.children?.filter(c =>
             c.to === "/workers" ? canSeeWorkers : true
-          );
-          return children?.length ? { ...item, children } : null;
+          ) || []);
+          const canManageStaffPortal = isDirector || userRole === "admin";
+          const withStaffPortal = canManageStaffPortal
+            ? [...children, {
+                label: "Staff Portal",
+                icon: <MessageSquare size={14}/>,
+                to: "/staff-portal",
+                badge: staffPortalUnread > 0 ? String(staffPortalUnread) : undefined,
+              }]
+            : children;
+          return withStaffPortal.length ? { ...item, children: withStaffPortal } : null;
         }
         if (item.label === "Settings") {
           return isDirector ? item : null;
@@ -253,7 +279,7 @@ export default function AppLayout() {
         return item;
       })
       .filter((item): item is NavItem => item !== null);
-  }, [canAccessFullFinance, canSeeFieldPayments, canSeeWorkers, isDirector]);
+  }, [canAccessFullFinance, canSeeFieldPayments, canSeeWorkers, isDirector, userRole, staffPortalUnread]);
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#080b10] overflow-hidden">
