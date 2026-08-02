@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { cn } from "../components/ui";
-import { Download, Send, Pin } from "lucide-react";
+import { Download, Send, Pin, Bell } from "lucide-react";
 import {
   checkWorkerPortalAccess,
   fetchWorkerInfo,
@@ -303,6 +303,38 @@ export default function WorkerPortalPage() {
       </div>
 
       <div className="p-6 space-y-4 max-w-7xl mx-auto">
+        {(unreadNotices > 0 || unreadMessages > 0) && (
+          <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 flex items-center gap-3 flex-wrap">
+            <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+              <Bell size={16} className="text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="flex-1 min-w-[160px]">
+              <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">
+                You have updates waiting
+              </p>
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                {unreadNotices > 0 && `${unreadNotices} new notice${unreadNotices > 1 ? "s" : ""}`}
+                {unreadNotices > 0 && unreadMessages > 0 && " · "}
+                {unreadMessages > 0 && `${unreadMessages} new message${unreadMessages > 1 ? "s" : ""} from management`}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {unreadNotices > 0 && (
+                <button onClick={() => setTab("notices")}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition">
+                  View Notices
+                </button>
+              )}
+              {unreadMessages > 0 && (
+                <button onClick={() => setTab("messages")}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition">
+                  View Messages
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
           {TABS.map(t => (
             <button
