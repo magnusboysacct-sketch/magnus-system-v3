@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field, Textarea,
-  Empty, Modal, Tabs, cn
+  Empty, Modal, Tabs, Alert, cn
 } from "../components/ui";
 import { Plus, Pin, Edit2, Trash2, Send, MessageSquare, Megaphone } from "lucide-react";
 
@@ -65,6 +65,7 @@ export default function StaffPortalManagerPage() {
 
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loadingNotices, setLoadingNotices] = useState(true);
+  const [noticesError, setNoticesError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -72,6 +73,7 @@ export default function StaffPortalManagerPage() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(true);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [sendingReply, setSendingReply] = useState(false);
@@ -99,25 +101,37 @@ export default function StaffPortalManagerPage() {
   async function loadNotices() {
     if (!companyId) return;
     setLoadingNotices(true);
+    setNoticesError(null);
     const { data, error } = await supabase
       .from("worker_portal_notices")
       .select("*, poster:posted_by(full_name)")
       .eq("company_id", companyId)
       .order("pinned", { ascending: false })
       .order("created_at", { ascending: false });
-    if (!error) setNotices((data || []) as unknown as Notice[]);
+    if (error) {
+      console.error("loadNotices error:", error);
+      setNoticesError(`${error.message}${(error as any).hint ? ` — ${(error as any).hint}` : ""}`);
+    } else {
+      setNotices((data || []) as unknown as Notice[]);
+    }
     setLoadingNotices(false);
   }
 
   async function loadMessages() {
     if (!companyId) return;
     setLoadingMessages(true);
+    setMessagesError(null);
     const { data, error } = await supabase
       .from("worker_portal_messages")
       .select("*, worker_profile:worker_user_id(full_name, email)")
       .eq("company_id", companyId)
       .order("created_at", { ascending: false });
-    if (!error) setMessages((data || []) as unknown as Message[]);
+    if (error) {
+      console.error("loadMessages error:", error);
+      setMessagesError(`${error.message}${(error as any).hint ? ` — ${(error as any).hint}` : ""}`);
+    } else {
+      setMessages((data || []) as unknown as Message[]);
+    }
     setLoadingMessages(false);
   }
 
@@ -274,6 +288,13 @@ export default function StaffPortalManagerPage() {
           active={tab}
           onChange={setTab}
         />
+
+        {tab === "notices" && noticesError && (
+          <Alert type="error">Couldn't load notices: {noticesError}</Alert>
+        )}
+        {tab === "messages" && messagesError && (
+          <Alert type="error">Couldn't load messages: {messagesError}</Alert>
+        )}
 
         {tab === "notices" && (
           loadingNotices ? (
