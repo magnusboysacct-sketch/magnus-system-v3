@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from "react";
 import QRCode from "qrcode";
 import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
-import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Briefcase, IdCard } from "lucide-react";
+import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Briefcase, IdCard, Camera, X } from "lucide-react";
 import { StaffIDCard } from "../components/StaffIDCard";
 
 function fmtJMD(n: number) {
@@ -29,6 +29,13 @@ export default function SettingsRecordsPage() {
   const [fieldPayments, setFieldPayments] = useState<any[]>([]);
   const [staffProfiles, setStaffProfiles] = useState<any[]>([]);
   const [idCardStaffId, setIdCardStaffId] = useState<string|null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState<any|null>(null);
+  const [staffForm, setStaffForm] = useState({ full_name:"", employee_number:"", trn:"", id_issued_date:"", id_expiry_date:"" });
+  const [newPhotoUrl, setNewPhotoUrl] = useState<string|null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [savingStaff, setSavingStaff] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   // Auth check — director only
   useEffect(()=>{
@@ -63,11 +70,9 @@ export default function SettingsRecordsPage() {
     Promise.all([
       supabase.from("workers").select("*").eq("company_id",companyId).order("last_name"),
       supabase.from("field_payments").select("*").eq("company_id",companyId).order("created_at",{ascending:false}),
-      supabase.from("user_profiles").select("id, full_name, email, role, avatar_url, employee_number").eq("company_id",companyId).order("full_name"),
-    ]).then(([{data:w},{data:fp},{data:sp}])=>{
+    ]).then(([{data:w},{data:fp}])=>{
       setCompanyWorkers(w||[]);
       setFieldPayments(fp||[]);
-      setStaffProfiles(sp||[]);
       // Group field payments by worker_ref
       const workerMap: Record<string,any> = {};
       (fp||[]).forEach((p:any)=>{
@@ -87,7 +92,87 @@ export default function SettingsRecordsPage() {
       setFieldWorkers(Object.values(workerMap));
       setLoadingWorkers(false);
     });
+    loadStaff();
   },[companyId]);
+
+  async function loadStaff() {
+    if(!companyId) return;
+    const {data} = await supabase.from("user_profiles")
+      .select("id, full_name, email, role, avatar_url, employee_number, trn, id_issued_date, id_expiry_date")
+      .eq("company_id",companyId).order("full_name");
+    setStaffProfiles(data||[]);
+  }
+
+  function openEditModal(s: any) {
+    setSelectedStaff(s);
+    setStaffForm({
+      full_name: s.full_name || "",
+      employee_number: s.employee_number || "",
+      trn: s.trn || "",
+      id_issued_date: s.id_issued_date || "",
+      id_expiry_date: s.id_expiry_date || "",
+    });
+    setNewPhotoUrl(null);
+    setEditModalOpen(true);
+  }
+
+  async function uploadStaffPhoto(file: File, userId: string): Promise<string | null> {
+    const ext = file.name.split(".").pop();
+    const path = `staff-photos/${userId}.${ext}`;
+    const { error } = await supabase.storage
+      .from("project-files")
+      .upload(path, file, { upsert: true });
+    if (error) { console.error("Photo upload error:", error); return null; }
+    const { data } = supabase.storage
+      .from("project-files")
+      .getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  async function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !selectedStaff) return;
+    setUploadingPhoto(true);
+    const url = await uploadStaffPhoto(file, selectedStaff.id);
+    if (url) setNewPhotoUrl(`${url}?t=${Date.now()}`); // cache-bust so the preview updates immediately on re-upload
+    else alert("Failed to upload photo.");
+    setUploadingPhoto(false);
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  }
+
+  function addYears(years: number) {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + years);
+    setStaffForm(prev => ({ ...prev, id_expiry_date: d.toISOString().split("T")[0] }));
+  }
+
+  async function saveStaffDetails() {
+    if (!selectedStaff) return;
+    setSavingStaff(true);
+    try {
+      const updates: any = {
+        full_name: staffForm.full_name.trim(),
+        employee_number: staffForm.employee_number.trim() || null,
+        trn: staffForm.trn.trim() || null,
+        id_issued_date: staffForm.id_issued_date || null,
+        id_expiry_date: staffForm.id_expiry_date || null,
+      };
+      if (newPhotoUrl) updates.avatar_url = newPhotoUrl;
+
+      const { error } = await supabase
+        .from("user_profiles")
+        .update(updates)
+        .eq("id", selectedStaff.id);
+
+      if (error) { alert("Failed to save: " + error.message); return; }
+      await loadStaff();
+      setEditModalOpen(false);
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    } finally {
+      setSavingStaff(false);
+    }
+  }
 
   function printCompanyWorkerFile(worker: any) {
     const html = `<!DOCTYPE html><html><head><title>Worker File - ${worker.first_name} ${worker.last_name}</title>
@@ -462,10 +547,16 @@ export default function SettingsRecordsPage() {
                   {(s.role||"staff").replace(/_/g," ")}{s.employee_number?` · Emp No. ${s.employee_number}`:""}
                 </div>
               </div>
-              <button onClick={()=>setIdCardStaffId(s.id)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#C9A84C]/10 border border-[#C9A84C]/30 text-[#C9A84C] text-xs font-semibold hover:bg-[#C9A84C]/20 transition">
-                <IdCard size={12}/> ID Card
-              </button>
+              <div className="flex gap-2">
+                <button onClick={()=>openEditModal(s)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-500/10 border border-slate-400/30 dark:border-white/[0.12] text-slate-600 dark:text-slate-300 text-xs font-semibold hover:bg-slate-500/20 transition">
+                  <User size={12}/> Edit Details
+                </button>
+                <button onClick={()=>setIdCardStaffId(s.id)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#C9A84C]/10 border border-[#C9A84C]/30 text-[#C9A84C] text-xs font-semibold hover:bg-[#C9A84C]/20 transition">
+                  <IdCard size={12}/> ID Card
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -473,6 +564,94 @@ export default function SettingsRecordsPage() {
 
       {idCardStaffId && (
         <StaffIDCard userId={idCardStaffId} onClose={()=>setIdCardStaffId(null)}/>
+      )}
+
+      {editModalOpen && selectedStaff && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 w-full max-w-sm my-8">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-slate-800 dark:text-white">Edit Staff Details</h2>
+                <p className="text-xs text-slate-500 mt-0.5">{selectedStaff.full_name || selectedStaff.email}</p>
+              </div>
+              <button onClick={()=>setEditModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X size={18}/>
+              </button>
+            </div>
+
+            {/* Photo */}
+            <div className="flex flex-col items-center mb-5">
+              <button onClick={()=>photoInputRef.current?.click()} disabled={uploadingPhoto}
+                className="relative w-20 h-20 rounded-full overflow-hidden border-2 border-slate-200 dark:border-white/[0.1] group">
+                {(newPhotoUrl || selectedStaff.avatar_url) ? (
+                  <img src={newPhotoUrl || selectedStaff.avatar_url} alt="" className="w-full h-full object-cover"/>
+                ) : (
+                  <div className="w-full h-full bg-[#0f2744]/10 dark:bg-[#0f2744]/40 flex items-center justify-center text-[#C9A84C] font-bold text-xl">
+                    {selectedStaff.full_name?.[0]?.toUpperCase()||"?"}
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <Camera size={18} className="text-white"/>
+                </div>
+              </button>
+              <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoSelect} className="hidden"/>
+              <span className="text-[10px] text-slate-400 mt-1.5">{uploadingPhoto?"Uploading...":"Click photo to change"}</span>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-1">Full Name</label>
+                <input value={staffForm.full_name} onChange={e=>setStaffForm(f=>({...f, full_name:e.target.value}))}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500/50"/>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-1">Job Title / Role</label>
+                <div className="w-full px-3 py-2 bg-slate-100 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06] rounded-lg text-sm text-slate-500 dark:text-slate-500 capitalize">
+                  {(selectedStaff.role||"staff").replace(/_/g," ")}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-1">Employee No.</label>
+                <input value={staffForm.employee_number} onChange={e=>setStaffForm(f=>({...f, employee_number:e.target.value}))} placeholder="e.g. MB-001"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500/50"/>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-1">TRN</label>
+                <input value={staffForm.trn} onChange={e=>setStaffForm(f=>({...f, trn:e.target.value}))} placeholder="123-456-789"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500/50"/>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-1">ID Issue Date</label>
+                <input type="date" value={staffForm.id_issued_date} onChange={e=>setStaffForm(f=>({...f, id_issued_date:e.target.value}))}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500/50"/>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-1">ID Expiry Date</label>
+                <input type="date" value={staffForm.id_expiry_date} onChange={e=>setStaffForm(f=>({...f, id_expiry_date:e.target.value}))}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500/50 mb-2"/>
+                <div className="flex gap-2">
+                  {[1,2,3].map(y=>(
+                    <button key={y} onClick={()=>addYears(y)}
+                      className="flex-1 px-2 py-1.5 rounded-lg bg-[#C9A84C]/10 border border-[#C9A84C]/30 text-[#C9A84C] text-xs font-semibold hover:bg-[#C9A84C]/20 transition">
+                      +{y} yr
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={()=>setEditModalOpen(false)}
+                className="flex-1 px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                Cancel
+              </button>
+              <button onClick={saveStaffDetails} disabled={savingStaff || !staffForm.full_name.trim()}
+                className="flex-1 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition-colors">
+                {savingStaff?"Saving...":"Save"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
