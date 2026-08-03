@@ -33,14 +33,15 @@ interface Props {
 // tint of the same hue rather than a separate light paper tone, so the two
 // faces read as one card rather than two clashing designs.
 const NAVY_BASE = "#15315A";   // lightened front base (was near-black #0A2342)
-const NAVY_PANEL = "#1C3D6B";  // header band
 const NAVY_TINT = "#E7EDF6";   // back face — pale tint of the same navy hue
 const NAVY_TINT_LINE = "#C7D4E6";
-const AMBER = "#F2A93B";
-const AMBER_DIM = "rgba(242,169,59,0.18)";
-const STEEL = "#7FA8C9";
+const AMBER = "#F2A93B";       // back face only now — front switched to GOLD below
 const INK = "#15315A"; // back-face text uses the same navy as ink, for unity
 const ALERT_RED = "#DC2626";
+// Front-face-only accent, matching StaffIDCard.tsx's navy/gold scheme. The
+// back face keeps its existing AMBER-based "card stock" — see file header —
+// which this redesign was not asked to touch.
+const GOLD = "#C9A84C";
 
 function fmtDate(d?: string | null) {
   return (d ? new Date(d) : new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -105,6 +106,10 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
   }, [workerId]);
 
   // ── Front face (canvas) ────────────────────────────────────────────────
+  // Redesigned to match StaffIDCard.tsx's navy/gold layout: no separate
+  // header band — logo+company name live inside the info column instead,
+  // directly above the name/subtitle, freeing up the top of the card for
+  // the photo to start right under the gold stripe.
   function drawFront(ctx: CanvasRenderingContext2D, ox: number, oy: number, S: number, photo?: HTMLImageElement, logoImage?: HTMLImageElement, qrCanvas?: HTMLCanvasElement, watermarkImg?: HTMLImageElement) {
     const W = CARD_W * S, H = CARD_H * S;
     ctx.save();
@@ -114,63 +119,37 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.fillStyle = NAVY_BASE;
     ctx.beginPath(); ctx.roundRect(0, 0, W, H, 10 * S); ctx.fill();
 
-    // Watermark — sits behind all content, clipped to card bounds
-    if (watermarkEnabled && watermarkImg) {
-      ctx.save();
-      ctx.beginPath(); ctx.roundRect(0, 0, W, H, 10 * S); ctx.clip();
-      drawWatermark(ctx, W, H, S, watermarkImg, watermarkOpacity * 1.6, -0.14); // slightly stronger on dark navy, nudged left of QR
-      ctx.restore();
-    }
+    // Gold top stripe
+    ctx.fillStyle = GOLD;
+    ctx.fillRect(0, 0, W, 5 * S);
 
-    // Header band
-    ctx.fillStyle = NAVY_PANEL;
-    ctx.fillRect(0, 0, W, 46 * S);
-    ctx.strokeStyle = "rgba(255,255,255,0.08)";
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(0, 46 * S); ctx.lineTo(W, 46 * S); ctx.stroke();
-
-    // Amber accent strip under header
-    ctx.fillStyle = AMBER;
-    ctx.fillRect(0, 46 * S, W, 2.5 * S);
-
-    // Logo circle
+    // Watermark — company name, huge diagonal text, behind all content
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(0, 0, W, H, 10 * S); ctx.clip();
+    ctx.globalAlpha = 0.04;
     ctx.fillStyle = "#ffffff";
-    ctx.beginPath(); ctx.arc(22 * S, 23 * S, 13 * S, 0, Math.PI * 2); ctx.fill();
-    if (logoImage) {
-      ctx.save();
-      ctx.beginPath(); ctx.arc(22 * S, 23 * S, 12 * S, 0, Math.PI * 2); ctx.clip();
-      ctx.drawImage(logoImage, 10 * S, 11 * S, 24 * S, 24 * S);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = NAVY_BASE;
-      ctx.font = `bold ${8 * S}px sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("MB", 22 * S, 23 * S);
-    }
-
-    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `bold ${10 * S}px sans-serif`;
-    ctx.fillText(companyName.toUpperCase(), 40 * S, 20 * S);
-    ctx.fillStyle = AMBER;
-    ctx.font = `${6 * S}px sans-serif`;
-    ctx.fillText("SITE IDENTIFICATION", 40 * S, 31 * S);
-
-    // OFFICIAL badge
-    ctx.fillStyle = AMBER_DIM;
-    ctx.strokeStyle = "rgba(242,169,59,0.5)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(283 * S, 11 * S, 46 * S, 24 * S, 3 * S); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = AMBER;
-    ctx.font = `bold ${5.5 * S}px sans-serif`;
+    ctx.font = `900 ${40 * S}px sans-serif`;
     ctx.textAlign = "center";
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(-30 * Math.PI / 180);
+    ctx.fillText(companyName.toUpperCase(), 0, 0);
+    ctx.restore();
+
+    // OFFICIAL badge — top right
+    ctx.fillStyle = "rgba(201,168,76,0.15)";
+    ctx.strokeStyle = "rgba(201,168,76,0.4)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(283 * S, 11 * S, 46 * S, 24 * S, 3 * S); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = GOLD;
+    ctx.font = `bold ${5.5 * S}px sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
     ctx.fillText("OFFICIAL", 306 * S, 21 * S);
     ctx.fillText("ID", 306 * S, 29 * S);
 
-    // Photo frame
-    const px = 12 * S, py = 55 * S, pw = 68 * S, ph = 86 * S;
-    ctx.fillStyle = "#1a3a5c";
+    // Photo frame — starts right under the gold stripe
+    const px = 12 * S, py = 14 * S, pw = 68 * S, ph = 86 * S;
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
     ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 5 * S); ctx.fill();
-    ctx.strokeStyle = "rgba(242,169,59,0.4)"; ctx.lineWidth = 2 * S;
+    ctx.strokeStyle = "rgba(201,168,76,0.6)"; ctx.lineWidth = 1.5 * S;
     ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 5 * S); ctx.stroke();
     if (photo) {
       ctx.save();
@@ -179,15 +158,49 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
       ctx.restore();
     }
 
-    // Worker info
+    // Worker type badge — below photo, centered
+    ctx.fillStyle = GOLD;
+    ctx.font = `${6.5 * S}px sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.fillText(displayTitle(worker!).toUpperCase(), (px + pw / 2), 112 * S);
+
+    // Info column
     const ix = 90 * S;
-    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+
+    // Company logo + name row
+    ctx.fillStyle = GOLD;
+    ctx.beginPath(); ctx.roundRect(ix, 14 * S, 16 * S, 16 * S, 4 * S); ctx.fill();
+    if (logoImage) {
+      ctx.save();
+      ctx.beginPath(); ctx.roundRect(ix, 14 * S, 16 * S, 16 * S, 4 * S); ctx.clip();
+      ctx.drawImage(logoImage, ix, 14 * S, 16 * S, 16 * S);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = NAVY_BASE;
+      ctx.font = `bold ${8 * S}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.fillText(companyName.charAt(0).toUpperCase(), ix + 8 * S, 22 * S);
+      ctx.textAlign = "left";
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `600 ${8 * S}px sans-serif`;
+    ctx.fillText(companyName.toUpperCase(), ix + 22 * S, 22 * S);
+
+    ctx.textBaseline = "alphabetic";
+    ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(ix, 36 * S); ctx.lineTo(328 * S, 36 * S); ctx.stroke();
+
+    // Name + subtitle
     ctx.fillStyle = "#ffffff";
     ctx.font = `bold ${13 * S}px sans-serif`;
-    ctx.fillText(`${worker!.first_name} ${worker!.last_name}`.toUpperCase(), ix, 68 * S);
-    ctx.fillStyle = STEEL;
+    ctx.fillText(`${worker!.first_name} ${worker!.last_name}`.toUpperCase(), ix, 54 * S);
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
     ctx.font = `${7 * S}px sans-serif`;
-    ctx.fillText(displayTitle(worker!).toUpperCase(), ix, 79 * S);
+    ctx.fillText("SITE IDENTIFICATION CARD", ix, 64 * S);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.beginPath(); ctx.moveTo(ix, 70 * S); ctx.lineTo(328 * S, 70 * S); ctx.stroke();
 
     const rows = [
       worker!.id_number ? [`${worker!.national_id_type || "ID"}`, worker!.id_number] : null,
@@ -196,12 +209,12 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ].filter(Boolean) as [string, string][];
 
     rows.forEach(([label, value], i) => {
-      const y = (90 + i * 12) * S;
+      const y = (82 + i * 12) * S;
       ctx.fillStyle = "rgba(255,255,255,0.4)";
       ctx.font = `${5.5 * S}px sans-serif`;
       ctx.fillText(label.toUpperCase(), ix, y);
       ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.font = `${7 * S}px monospace`;
+      ctx.font = `600 ${7 * S}px monospace`;
       ctx.fillText(String(value).slice(0, 26), ix + 42 * S, y);
     });
 
@@ -219,17 +232,17 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
       ctx.fillText("SCAN TO VERIFY", qrX + qrSize/2, qrY + qrSize + 8*S);
     }
 
-    // Footer
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    // Footer — gold-tinted bar
+    ctx.fillStyle = "rgba(201,168,76,0.12)";
     ctx.beginPath(); ctx.roundRect(0, 170*S, W, 43*S, [0,0,10*S,10*S]); ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(201,168,76,0.3)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, 170*S); ctx.lineTo(W, 170*S); ctx.stroke();
 
     ctx.fillStyle = "rgba(255,255,255,0.35)";
     ctx.font = `${5.5 * S}px sans-serif`;
     ctx.textAlign = "left";
     ctx.fillText("ISSUED", 12*S, 181*S);
-    ctx.fillStyle = AMBER;
+    ctx.fillStyle = GOLD;
     ctx.font = `bold ${7.5 * S}px sans-serif`;
     ctx.fillText(fmtDate(worker!.hire_date), 12*S, 193*S);
 
@@ -237,7 +250,7 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.font = `${5.5 * S}px sans-serif`;
     ctx.textAlign = "right";
     ctx.fillText(isIdExpired(worker!) ? "EXPIRED" : "EXPIRES", (CARD_W-12)*S, 181*S);
-    ctx.fillStyle = isIdExpired(worker!) ? ALERT_RED : AMBER;
+    ctx.fillStyle = isIdExpired(worker!) ? ALERT_RED : GOLD;
     ctx.font = `bold ${7.5 * S}px sans-serif`;
     ctx.fillText(expiry(worker!), (CARD_W-12)*S, 193*S);
 
@@ -245,6 +258,10 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.font = `${5.5 * S}px monospace`;
     ctx.textAlign = "center";
     ctx.fillText((worker!.employee_id || worker!.id_number || "").toUpperCase(), W/2, 190*S);
+
+    // Gold bottom stripe
+    ctx.fillStyle = GOLD;
+    ctx.fillRect(0, H - 3 * S, W, 3 * S);
 
     ctx.restore();
   }
@@ -425,35 +442,50 @@ img{width:${W/S}px;height:${H/S}px}
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
         </div>
 
-        {/* Front preview */}
+        {/* Front preview — matches StaffIDCard.tsx's navy/gold layout */}
         <div style={{ width:CARD_W, height:CARD_H, borderRadius:10, overflow:"hidden", background:NAVY_BASE, color:"#fff", display:"flex", flexDirection:"column", boxShadow:"0 4px 20px rgba(0,0,0,0.4)", margin:"0 auto", position:"relative" }}>
-          {watermarkEnabled && watermarkUrl && (
-            <div style={{ position:"absolute", inset:0, backgroundImage:`url(${watermarkUrl})`, backgroundSize:"38% auto", backgroundPosition:"38% center", backgroundRepeat:"no-repeat", opacity:watermarkOpacity * 1.6, pointerEvents:"none" }} />
-          )}
-          <div style={{ background:NAVY_PANEL, borderBottom:`2.5px solid ${AMBER}`, padding:"8px 12px", display:"flex", alignItems:"center", gap:8 }}>
-            <div style={{ width:26, height:26, borderRadius:"50%", overflow:"hidden", background:"#fff", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              {companySettings?.logo_url
-                ? <img src={companySettings.logo_url} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                : <span style={{ fontSize:8, fontWeight:800, color:NAVY_BASE }}>MB</span>}
+          <div style={{ height:5, background:GOLD, flexShrink:0 }} />
+
+          <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", pointerEvents:"none", zIndex:0 }}>
+            <div style={{ fontSize:40, fontWeight:900, color:"rgba(255,255,255,0.04)", whiteSpace:"nowrap", transform:"rotate(-30deg)", textTransform:"uppercase", letterSpacing:4 }}>
+              {companyName}
             </div>
-            <div>
-              <div style={{ fontSize:10, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:0.5 }}>{companyName}</div>
-              <div style={{ fontSize:7, color:AMBER, textTransform:"uppercase", letterSpacing:1 }}>Site Identification</div>
-            </div>
-            <div style={{ marginLeft:"auto", background:AMBER_DIM, border:`1px solid rgba(242,169,59,0.5)`, color:AMBER, fontSize:7, fontWeight:700, padding:"2px 5px", borderRadius:3, textAlign:"center", lineHeight:1.4 }}>OFFICIAL<br/>ID</div>
           </div>
 
-          <div style={{ display:"flex", flex:1, padding:"8px 12px", gap:8, alignItems:"flex-start" }}>
-            <div style={{ width:66, height:84, borderRadius:5, background:"#1a3a5c", border:`2px solid rgba(242,169,59,0.4)`, overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              {photoUrl ? <img src={photoUrl} alt="passport" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:24, opacity:0.3 }}>👤</span>}
+          <div style={{ position:"absolute", top:9, right:10, background:"rgba(201,168,76,0.15)", border:"1px solid rgba(201,168,76,0.4)", color:GOLD, fontSize:7, fontWeight:700, padding:"2px 5px", borderRadius:3, textAlign:"center", lineHeight:1.4, zIndex:1 }}>OFFICIAL<br/>ID</div>
+
+          <div style={{ display:"flex", flex:1, padding:"10px 12px", gap:10, alignItems:"flex-start", position:"relative", zIndex:1 }}>
+            <div style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center" }}>
+              <div style={{ width:66, height:84, borderRadius:5, background:"rgba(255,255,255,0.05)", border:"1.5px solid rgba(201,168,76,0.6)", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                {photoUrl ? <img src={photoUrl} alt="passport" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:24, opacity:0.3 }}>👤</span>}
+              </div>
+              <div style={{ fontSize:7, color:GOLD, textTransform:"uppercase", letterSpacing:0.5, textAlign:"center", marginTop:5, lineHeight:1.3 }}>
+                {displayTitle(worker)}
+              </div>
             </div>
-            <div style={{ flex:1, minWidth:0, paddingTop:2 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:"#fff", lineHeight:1.1, marginBottom:2 }}>{worker.first_name} {worker.last_name}</div>
-              <div style={{ fontSize:8, color:STEEL, fontWeight:600, letterSpacing:1.5, textTransform:"uppercase", marginBottom:5 }}>{displayTitle(worker)}</div>
+
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <div style={{ width:18, height:18, borderRadius:4, flexShrink:0, overflow:"hidden", background:GOLD, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  {companySettings?.logo_url
+                    ? <img src={companySettings.logo_url} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                    : <span style={{ fontSize:9, fontWeight:800, color:NAVY_BASE }}>{companyName.charAt(0).toUpperCase()}</span>}
+                </div>
+                <span style={{ fontSize:8, color:"#fff", textTransform:"uppercase", letterSpacing:1, fontWeight:600 }}>{companyName}</span>
+              </div>
+
+              <div style={{ borderTop:"1px solid rgba(255,255,255,0.12)", margin:"5px 0" }} />
+
+              <div style={{ fontSize:13, fontWeight:700, color:"#fff", lineHeight:1.15 }}>{worker.first_name} {worker.last_name}</div>
+              <div style={{ fontSize:7, color:"rgba(255,255,255,0.55)", marginTop:2, marginBottom:5 }}>SITE IDENTIFICATION CARD</div>
+
+              <div style={{ borderTop:"1px solid rgba(255,255,255,0.12)", marginBottom:5 }} />
+
               {worker.id_number && <InfoRow label={worker.national_id_type || "ID"} value={worker.id_number} />}
               {(worker.address || worker.city) && <InfoRow label="Address" value={[worker.address, worker.city].filter(Boolean).join(", ")} />}
               {worker.phone && <InfoRow label="Phone" value={worker.phone} />}
             </div>
+
             <div style={{ flexShrink:0, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
               {qrDataUrl ? (
                 <div style={{ background:"#fff", borderRadius:4, padding:2 }}>
@@ -464,11 +496,13 @@ img{width:${W/S}px;height:${H/S}px}
             </div>
           </div>
 
-          <div style={{ background:"rgba(0,0,0,0.25)", borderTop:"1px solid rgba(255,255,255,0.05)", padding:"5px 12px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div><div style={{ fontSize:6, color:"rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>Issued</div><div style={{ fontSize:8, color:AMBER, fontWeight:600 }}>{fmtDate(worker.hire_date)}</div></div>
+          <div style={{ background:"rgba(201,168,76,0.12)", borderTop:"1px solid rgba(201,168,76,0.3)", padding:"5px 12px", display:"flex", justifyContent:"space-between", alignItems:"center", position:"relative", zIndex:1 }}>
+            <div><div style={{ fontSize:6, color:"rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>Issued</div><div style={{ fontSize:8, color:GOLD, fontWeight:600 }}>{fmtDate(worker.hire_date)}</div></div>
             <div style={{ fontSize:6, color:"rgba(255,255,255,0.2)", letterSpacing:1 }}>{(worker.employee_id || worker.id_number || "").toUpperCase()}</div>
-            <div><div style={{ fontSize:6, color: isIdExpired(worker) ? ALERT_RED : "rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>{isIdExpired(worker) ? "Expired" : "Expires"}</div><div style={{ fontSize:8, color: isIdExpired(worker) ? ALERT_RED : AMBER, fontWeight:600 }}>{expiry(worker)}</div></div>
+            <div><div style={{ fontSize:6, color: isIdExpired(worker) ? ALERT_RED : "rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>{isIdExpired(worker) ? "Expired" : "Expires"}</div><div style={{ fontSize:8, color: isIdExpired(worker) ? ALERT_RED : GOLD, fontWeight:600 }}>{expiry(worker)}</div></div>
           </div>
+
+          <div style={{ height:3, background:GOLD, flexShrink:0 }} />
         </div>
 
         {/* Back preview */}
@@ -595,9 +629,9 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ display:"flex", gap:4, marginBottom:3 }}>
-      <span style={{ fontSize:6.5, color:"rgba(255,255,255,0.4)", textTransform:"uppercase", letterSpacing:1, minWidth:40 }}>{label}</span>
-      <span style={{ fontSize:7, color:"rgba(255,255,255,0.8)", wordBreak:"break-word" }}>{value}</span>
+    <div style={{ display:"flex", justifyContent:"space-between", gap:4, marginBottom:3 }}>
+      <span style={{ fontSize:7, color:"rgba(255,255,255,0.4)", textTransform:"uppercase", letterSpacing:1, flexShrink:0 }}>{label}</span>
+      <span style={{ fontSize:8, color:"rgba(255,255,255,0.85)", fontWeight:600, textAlign:"right", wordBreak:"break-word" }}>{value}</span>
     </div>
   );
 }
