@@ -4,7 +4,8 @@ import React, { useEffect, useState, useRef } from "react";
 import QRCode from "qrcode";
 import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
-import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Briefcase } from "lucide-react";
+import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Briefcase, IdCard } from "lucide-react";
+import { StaffIDCard } from "../components/StaffIDCard";
 
 function fmtJMD(n: number) {
   return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0}).format(n);
@@ -20,12 +21,14 @@ export default function SettingsRecordsPage() {
   const [company, setCompany] = useState<any>(null);
   const [logoBase64, setLogoBase64] = useState<string|null>(null);
   const [watermark, setWatermark] = useState<{url:string;opacity:number;size?:number}|null>(null);
-  const [tab, setTab] = useState<"company"|"field">("company");
+  const [tab, setTab] = useState<"company"|"field"|"staff">("company");
   const [search, setSearch] = useState("");
   const [companyWorkers, setCompanyWorkers] = useState<any[]>([]);
   const [fieldWorkers, setFieldWorkers] = useState<any[]>([]);
   const [loadingWorkers, setLoadingWorkers] = useState(false);
   const [fieldPayments, setFieldPayments] = useState<any[]>([]);
+  const [staffProfiles, setStaffProfiles] = useState<any[]>([]);
+  const [idCardStaffId, setIdCardStaffId] = useState<string|null>(null);
 
   // Auth check — director only
   useEffect(()=>{
@@ -60,9 +63,11 @@ export default function SettingsRecordsPage() {
     Promise.all([
       supabase.from("workers").select("*").eq("company_id",companyId).order("last_name"),
       supabase.from("field_payments").select("*").eq("company_id",companyId).order("created_at",{ascending:false}),
-    ]).then(([{data:w},{data:fp}])=>{
+      supabase.from("user_profiles").select("id, full_name, email, role, avatar_url, employee_number").eq("company_id",companyId).order("full_name"),
+    ]).then(([{data:w},{data:fp},{data:sp}])=>{
       setCompanyWorkers(w||[]);
       setFieldPayments(fp||[]);
+      setStaffProfiles(sp||[]);
       // Group field payments by worker_ref
       const workerMap: Record<string,any> = {};
       (fp||[]).forEach((p:any)=>{
@@ -335,6 +340,9 @@ export default function SettingsRecordsPage() {
   const filteredField = fieldWorkers.filter(w=>
     `${w.name} ${w.id_number||""} ${w.phone||""}`.toLowerCase().includes(search.toLowerCase())
   );
+  const filteredStaff = staffProfiles.filter(s=>
+    `${s.full_name||""} ${s.email||""} ${s.role||""}`.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="p-4 md:p-6 space-y-5 max-w-4xl mx-auto">
@@ -367,6 +375,9 @@ export default function SettingsRecordsPage() {
         </button>
         <button onClick={()=>setTab("field")} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition ${tab==="field"?"bg-cyan-600 text-white":"text-slate-600 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"}`}>
           <User size={12}/> Field Workers ({filteredField.length})
+        </button>
+        <button onClick={()=>setTab("staff")} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition ${tab==="staff"?"bg-cyan-600 text-white":"text-slate-600 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"}`}>
+          <IdCard size={12}/> Staff ({filteredStaff.length})
         </button>
       </div>
 
@@ -430,6 +441,38 @@ export default function SettingsRecordsPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Staff (internal, user_profiles — director/admin/accounts/etc.) */}
+      {tab==="staff"&&(
+        <div className="space-y-3">
+          {filteredStaff.length===0&&<div className="text-center py-8 text-xs text-slate-500 dark:text-slate-600">No staff found</div>}
+          {filteredStaff.map(s=>(
+            <div key={s.id} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4 flex items-center gap-4">
+              {s.avatar_url?(
+                <img src={s.avatar_url} className="w-12 h-12 rounded-full object-cover border border-slate-300 dark:border-white/[0.1]"/>
+              ):(
+                <div className="w-12 h-12 rounded-full bg-[#0f2744]/10 dark:bg-[#0f2744]/40 border border-[#C9A84C]/30 flex items-center justify-center text-[#C9A84C] font-bold text-sm">
+                  {s.full_name?.[0]?.toUpperCase()||"?"}
+                </div>
+              )}
+              <div className="flex-1">
+                <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{s.full_name||s.email}</div>
+                <div className="text-[10px] text-slate-500">
+                  {(s.role||"staff").replace(/_/g," ")}{s.employee_number?` · Emp No. ${s.employee_number}`:""}
+                </div>
+              </div>
+              <button onClick={()=>setIdCardStaffId(s.id)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#C9A84C]/10 border border-[#C9A84C]/30 text-[#C9A84C] text-xs font-semibold hover:bg-[#C9A84C]/20 transition">
+                <IdCard size={12}/> ID Card
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {idCardStaffId && (
+        <StaffIDCard userId={idCardStaffId} onClose={()=>setIdCardStaffId(null)}/>
       )}
     </div>
   );
