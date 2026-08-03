@@ -128,10 +128,14 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.fillText("OFFICIAL", 181 * S, 19 * S);
     ctx.fillText("ID", 181 * S, 26 * S);
 
-    // Logo — top-center, circular frame (matches the back's shape/style).
+    // Logo — top-center, circular frame (matches the back's shape/style,
+    // just bigger — front is the more prominent face). Sized as large as
+    // it can go without crowding the company name or photo below it; the
+    // photo is trimmed slightly (104 -> 80 tall) to absorb the difference,
+    // everything from the worker-type badge downward is untouched.
     // Uses a cover-fit draw rather than stretching the source into the
     // circle, so non-square logos aren't distorted.
-    const logoSize = 32, logoCx = (CARD_W / 2) * S, logoCy = (12 + logoSize / 2) * S, logoR = (logoSize / 2) * S;
+    const logoSize = 56, logoCx = (CARD_W / 2) * S, logoCy = (12 + logoSize / 2) * S, logoR = (logoSize / 2) * S;
     ctx.fillStyle = GOLD;
     ctx.beginPath(); ctx.arc(logoCx, logoCy, logoR, 0, Math.PI * 2); ctx.fill();
     if (logoImage) {
@@ -141,7 +145,7 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
       ctx.restore();
     } else {
       ctx.fillStyle = NAVY_BASE;
-      ctx.font = `bold ${13 * S}px sans-serif`;
+      ctx.font = `bold ${20 * S}px sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(companyName.charAt(0).toUpperCase(), logoCx, logoCy);
       ctx.textBaseline = "alphabetic";
@@ -151,13 +155,14 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.fillStyle = "#ffffff";
     ctx.font = `600 ${7 * S}px sans-serif`;
     ctx.textAlign = "center";
-    ctx.fillText(companyName.toUpperCase(), (CARD_W / 2) * S, 54 * S);
+    ctx.fillText(companyName.toUpperCase(), (CARD_W / 2) * S, 78 * S);
 
     ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(16 * S, 60 * S); ctx.lineTo((CARD_W - 16) * S, 60 * S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(16 * S, 84 * S); ctx.lineTo((CARD_W - 16) * S, 84 * S); ctx.stroke();
 
-    // Photo — centered
-    const pw = 84, ph = 104, px = (CARD_W - pw) / 2, py = 66;
+    // Photo — centered. Bottom edge fixed at 170 (unchanged from before)
+    // so the worker-type badge and everything below keeps its old position.
+    const pw = 65, ph = 80, px = (CARD_W - pw) / 2, py = 90;
     ctx.fillStyle = "rgba(255,255,255,0.05)";
     ctx.beginPath(); ctx.roundRect(px * S, py * S, pw * S, ph * S, 5 * S); ctx.fill();
     ctx.strokeStyle = "rgba(201,168,76,0.6)"; ctx.lineWidth = 1.5 * S;
@@ -265,18 +270,20 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.fillStyle = NAVY_TINT;
     ctx.beginPath(); ctx.roundRect(0, 0, W, H, 10 * S); ctx.fill();
 
-    // Logo — top-center
-    const cx = (CARD_W / 2) * S, cy = 36 * S, r = 20 * S;
+    // Logo — top-center, smaller than the front's (back is the secondary
+    // face). Also switched to the cover-fit draw so non-square logos don't
+    // stretch — this face had the same distortion issue the front used to.
+    const cx = (CARD_W / 2) * S, cy = 36 * S, r = 13 * S;
     ctx.fillStyle = NAVY_BASE;
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
     if (logoImage) {
       ctx.save();
       ctx.beginPath(); ctx.arc(cx, cy, r - S, 0, Math.PI * 2); ctx.clip();
-      ctx.drawImage(logoImage, cx - r + S, cy - r + S, (r - S) * 2, (r - S) * 2);
+      drawImageCover(ctx, logoImage, cx - r + S, cy - r + S, (r - S) * 2, (r - S) * 2);
       ctx.restore();
     } else {
       ctx.fillStyle = "#fff";
-      ctx.font = `bold ${9 * S}px sans-serif`;
+      ctx.font = `bold ${6 * S}px sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText("MB", cx, cy);
       ctx.textBaseline = "alphabetic";
@@ -429,19 +436,19 @@ img{width:${W/S}px;height:${H/S}px}
           <div style={{ position:"absolute", top:9, right:10, background:"rgba(201,168,76,0.15)", border:"1px solid rgba(201,168,76,0.4)", color:GOLD, fontSize:7, fontWeight:700, padding:"2px 5px", borderRadius:3, textAlign:"center", lineHeight:1.4, zIndex:1 }}>OFFICIAL<br/>ID</div>
 
           <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", padding:"10px 14px 0" }}>
-            {/* Logo top-center */}
-            <div style={{ width:32, height:32, borderRadius:"50%", overflow:"hidden", background:GOLD, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            {/* Logo top-center — larger/more prominent than the back's */}
+            <div style={{ width:56, height:56, borderRadius:"50%", overflow:"hidden", background:GOLD, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
               {companySettings?.logo_url
                 ? <img src={companySettings.logo_url} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                : <span style={{ fontSize:13, fontWeight:800, color:NAVY_BASE }}>{companyName.charAt(0).toUpperCase()}</span>}
+                : <span style={{ fontSize:22, fontWeight:800, color:NAVY_BASE }}>{companyName.charAt(0).toUpperCase()}</span>}
             </div>
             <div style={{ fontSize:7, fontWeight:600, color:"#fff", textTransform:"uppercase", letterSpacing:1, marginTop:6, textAlign:"center" }}>{companyName}</div>
 
             <div style={{ width:"100%", borderTop:"1px solid rgba(255,255,255,0.12)", margin:"6px 0" }} />
 
-            {/* Photo */}
-            <div style={{ width:84, height:104, borderRadius:5, background:"rgba(255,255,255,0.05)", border:"1.5px solid rgba(201,168,76,0.6)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              {photoUrl ? <img src={photoUrl} alt="passport" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:26, opacity:0.3 }}>👤</span>}
+            {/* Photo — trimmed slightly to make room for the bigger logo above */}
+            <div style={{ width:65, height:80, borderRadius:5, background:"rgba(255,255,255,0.05)", border:"1.5px solid rgba(201,168,76,0.6)", overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+              {photoUrl ? <img src={photoUrl} alt="passport" style={{ width:"100%", height:"100%", objectFit:"cover" }} /> : <span style={{ fontSize:22, opacity:0.3 }}>👤</span>}
             </div>
             <div style={{ fontSize:7, color:GOLD, textTransform:"uppercase", letterSpacing:0.5, textAlign:"center", marginTop:6 }}>
               {displayTitle(worker)}
@@ -481,10 +488,11 @@ img{width:${W/S}px;height:${H/S}px}
         {/* Back preview — portrait, logo top-center, no watermark */}
         <div style={{ width:CARD_W, height:CARD_H, borderRadius:10, overflow:"hidden", background:NAVY_TINT, color:INK, display:"flex", flexDirection:"column", boxShadow:"0 4px 20px rgba(0,0,0,0.25)", margin:"14px auto 0", position:"relative" }}>
           <div style={{ display:"flex", justifyContent:"center", padding:"14px 14px 0" }}>
-            <div style={{ width:44, height:44, borderRadius:"50%", overflow:"hidden", background:NAVY_BASE, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
+            {/* Smaller than the front's logo — back is the secondary face */}
+            <div style={{ width:26, height:26, borderRadius:"50%", overflow:"hidden", background:NAVY_BASE, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
               {companySettings?.logo_url
                 ? <img src={companySettings.logo_url} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                : <span style={{ fontSize:9, fontWeight:800, color:"#fff" }}>MB</span>}
+                : <span style={{ fontSize:6, fontWeight:800, color:"#fff" }}>MB</span>}
             </div>
           </div>
 
