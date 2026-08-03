@@ -128,20 +128,22 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.fillText("OFFICIAL", 181 * S, 19 * S);
     ctx.fillText("ID", 181 * S, 26 * S);
 
-    // Logo — top-center
-    const logoSize = 32, logoX = (CARD_W - logoSize) / 2, logoY = 12;
+    // Logo — top-center, circular frame (matches the back's shape/style).
+    // Uses a cover-fit draw rather than stretching the source into the
+    // circle, so non-square logos aren't distorted.
+    const logoSize = 32, logoCx = (CARD_W / 2) * S, logoCy = (12 + logoSize / 2) * S, logoR = (logoSize / 2) * S;
     ctx.fillStyle = GOLD;
-    ctx.beginPath(); ctx.roundRect(logoX * S, logoY * S, logoSize * S, logoSize * S, 6 * S); ctx.fill();
+    ctx.beginPath(); ctx.arc(logoCx, logoCy, logoR, 0, Math.PI * 2); ctx.fill();
     if (logoImage) {
       ctx.save();
-      ctx.beginPath(); ctx.roundRect(logoX * S, logoY * S, logoSize * S, logoSize * S, 6 * S); ctx.clip();
-      ctx.drawImage(logoImage, logoX * S, logoY * S, logoSize * S, logoSize * S);
+      ctx.beginPath(); ctx.arc(logoCx, logoCy, logoR - S, 0, Math.PI * 2); ctx.clip();
+      drawImageCover(ctx, logoImage, logoCx - logoR + S, logoCy - logoR + S, (logoR - S) * 2, (logoR - S) * 2);
       ctx.restore();
     } else {
       ctx.fillStyle = NAVY_BASE;
       ctx.font = `bold ${13 * S}px sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(companyName.charAt(0).toUpperCase(), (logoX + logoSize / 2) * S, (logoY + logoSize / 2) * S);
+      ctx.fillText(companyName.charAt(0).toUpperCase(), logoCx, logoCy);
       ctx.textBaseline = "alphabetic";
     }
 
@@ -428,7 +430,7 @@ img{width:${W/S}px;height:${H/S}px}
 
           <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", padding:"10px 14px 0" }}>
             {/* Logo top-center */}
-            <div style={{ width:32, height:32, borderRadius:6, overflow:"hidden", background:GOLD, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <div style={{ width:32, height:32, borderRadius:"50%", overflow:"hidden", background:GOLD, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
               {companySettings?.logo_url
                 ? <img src={companySettings.logo_url} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
                 : <span style={{ fontSize:13, fontWeight:800, color:NAVY_BASE }}>{companyName.charAt(0).toUpperCase()}</span>}
@@ -592,6 +594,20 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.onerror = reject;
     img.src = src;
   });
+}
+
+// Canvas equivalent of CSS object-fit: cover — scales the source so its
+// smaller dimension fills the target box, then centers and crops, instead
+// of drawImage's default behavior of stretching the source to exactly
+// dWidth x dHeight (which distorts non-square logos).
+function drawImageCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number) {
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  if (!iw || !ih) { ctx.drawImage(img, x, y, w, h); return; }
+  const scale = Math.max(w / iw, h / ih);
+  const dw = iw * scale, dh = ih * scale;
+  const dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
