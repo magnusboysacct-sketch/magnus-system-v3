@@ -107,22 +107,14 @@ export default function SettingsRecordsPage() {
   async function loadStaff() {
     if(!companyId) return;
     setStaffError(null);
-    let { data, error }: { data: any[] | null; error: any } = await supabase.from("user_profiles")
+    // job_title migration (20260806000000_add_user_profiles_job_title.sql)
+    // is confirmed applied in production — the retry-without-job_title
+    // fallback that used to live here is gone. Error surfacing itself stays:
+    // that's the actual fix for the original bug (a failed query silently
+    // becoming "no staff" instead of showing what went wrong).
+    const { data, error } = await supabase.from("user_profiles")
       .select("id, full_name, email, role, job_title, avatar_url, employee_number, trn, id_issued_date, id_expiry_date")
       .eq("company_id",companyId).order("full_name");
-    if (error && /job_title/i.test(error.message || "")) {
-      // job_title migration (20260806000000_add_user_profiles_job_title.sql)
-      // hasn't been applied to the live DB yet — that made the whole select
-      // fail (unknown column), which used to be swallowed silently and show
-      // up as "no staff". Fall back to the columns that definitely exist so
-      // the list still works, and say why job titles are missing.
-      const retry = await supabase.from("user_profiles")
-        .select("id, full_name, email, role, avatar_url, employee_number, trn, id_issued_date, id_expiry_date")
-        .eq("company_id",companyId).order("full_name");
-      data = retry.data;
-      error = retry.error;
-      if (!error) setStaffError("Job titles aren't available yet — run the latest database migration (20260806000000_add_user_profiles_job_title.sql) to enable them.");
-    }
     if (error) {
       console.error("loadStaff error:", error);
       setStaffError(error.message);
