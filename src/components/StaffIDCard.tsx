@@ -331,7 +331,7 @@ export function StaffIDCard({ userId, onClose }: Props) {
           <div style="font-size:1.5mm;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.2mm;margin-top:0.6mm">Scan to verify</div>
         </div>
         <div style="position:absolute;bottom:1.6mm;left:0;right:0;height:7mm;background:rgba(201,168,76,0.12);border-top:0.3mm solid ${GOLD};display:flex;align-items:center;justify-content:space-between;padding:0 2.6mm;z-index:1">
-          <div><div style="font-size:1.5mm;color:rgba(255,255,255,0.35);text-transform:uppercase">${expired ? "Expired" : "Issued"}</div><div style="font-size:2mm;color:${GOLD};font-weight:600">${fmtMonthYear(issued)}</div></div>
+          <div><div style="font-size:1.5mm;color:rgba(255,255,255,0.35);text-transform:uppercase">Issued</div><div style="font-size:2mm;color:${GOLD};font-weight:600">${fmtMonthYear(issued)}</div></div>
           <div style="font-size:1.5mm;color:rgba(255,255,255,0.2)">${staff.employee_number || "—"}</div>
           <div><div style="font-size:1.5mm;color:${expired ? ALERT_RED : "rgba(255,255,255,0.35)"};text-transform:uppercase">${expired ? "Expired" : "Expires"}</div><div style="font-size:2mm;color:${expiryColor};font-weight:600">${expiry ? fmtMonthYear(expiry.toISOString()) : "—"}</div></div>
         </div>
