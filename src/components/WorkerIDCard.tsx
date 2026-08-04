@@ -435,7 +435,14 @@ img{width:${W/S}px;height:${H/S}px}
 
           <div style={{ position:"absolute", top:9, right:10, background:"rgba(201,168,76,0.15)", border:"1px solid rgba(201,168,76,0.4)", color:GOLD, fontSize:7, fontWeight:700, padding:"2px 5px", borderRadius:3, textAlign:"center", lineHeight:1.4, zIndex:1 }}>OFFICIAL<br/>ID</div>
 
-          <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", padding:"10px 14px 0" }}>
+          {/* Content is intrinsically taller than the fixed CARD_H once every
+              element is stacked (logo+photo+name+up to 3 info rows+QR can
+              exceed ~300px available) — overflow:hidden here plus a
+              paddingBottom reserving the footer's own height keeps that
+              overflow from visually pushing into the pinned footer below,
+              instead of relying on flex layout alone to hold it in place
+              (it doesn't — see footer note). */}
+          <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", padding:"10px 14px 32px", overflow:"hidden" }}>
             {/* Logo top-center — larger/more prominent than the back's */}
             <div style={{ width:56, height:56, borderRadius:"50%", overflow:"hidden", background:GOLD, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
               {companySettings?.logo_url
@@ -466,7 +473,7 @@ img{width:${W/S}px;height:${H/S}px}
             </div>
 
             {/* QR — pushed down against the footer */}
-            <div style={{ marginTop:"auto", paddingTop:8, paddingBottom:10, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+            <div style={{ marginTop:"auto", paddingTop:8, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
               {qrDataUrl ? (
                 <div style={{ background:"#fff", borderRadius:4, padding:2 }}>
                   <img src={qrDataUrl} alt="QR" style={{ width:40, height:40, display:"block" }} />
@@ -476,13 +483,23 @@ img{width:${W/S}px;height:${H/S}px}
             </div>
           </div>
 
-          <div style={{ background:"rgba(201,168,76,0.12)", borderTop:"1px solid rgba(201,168,76,0.3)", padding:"6px 12px", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
+          {/* Footer — pinned to the card's true bottom with position:absolute
+              (matching how the canvas draw and StaffIDCard's print HTML place
+              the footer at a fixed coordinate). A normal flex-column sibling
+              isn't enough: this card's stacked content (up to 3 info rows) can
+              be taller than its available space, so with the outer card's
+              fixed height + overflow:hidden, a plain flow footer gets silently
+              pushed past the visible boundary and clipped — present in the
+              DOM, invisible on screen. Absolute positioning makes the
+              footer's visibility independent of how much the content above
+              it overflows. */}
+          <div style={{ position:"absolute", left:0, right:0, bottom:3, zIndex:1, background:"rgba(201,168,76,0.12)", borderTop:"1px solid rgba(201,168,76,0.3)", padding:"6px 12px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
             <div><div style={{ fontSize:6, color:"rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>Issued</div><div style={{ fontSize:8, color:GOLD, fontWeight:600 }}>{fmtDate(worker.hire_date)}</div></div>
             <div style={{ fontSize:6, color:"rgba(255,255,255,0.2)", letterSpacing:1 }}>{(worker.employee_id || worker.id_number || "").toUpperCase()}</div>
             <div><div style={{ fontSize:6, color: isIdExpired(worker) ? ALERT_RED : "rgba(255,255,255,0.35)", textTransform:"uppercase", letterSpacing:1 }}>{isIdExpired(worker) ? "Expired" : "Expires"}</div><div style={{ fontSize:8, color: isIdExpired(worker) ? ALERT_RED : GOLD, fontWeight:600 }}>{expiry(worker)}</div></div>
           </div>
 
-          <div style={{ height:3, background:GOLD, flexShrink:0 }} />
+          <div style={{ height:3, background:GOLD, position:"absolute", left:0, right:0, bottom:0 }} />
         </div>
 
         {/* Back preview — portrait, logo top-center, no watermark */}
