@@ -29,6 +29,7 @@ export default function SettingsRecordsPage() {
   const [loadingWorkers, setLoadingWorkers] = useState(false);
   const [fieldPayments, setFieldPayments] = useState<any[]>([]);
   const [staffProfiles, setStaffProfiles] = useState<any[]>([]);
+  const [staffError, setStaffError] = useState<string|null>(null);
   const [idCardStaffId, setIdCardStaffId] = useState<string|null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<any|null>(null);
@@ -105,9 +106,29 @@ export default function SettingsRecordsPage() {
 
   async function loadStaff() {
     if(!companyId) return;
-    const {data} = await supabase.from("user_profiles")
+    setStaffError(null);
+    let { data, error }: { data: any[] | null; error: any } = await supabase.from("user_profiles")
       .select("id, full_name, email, role, job_title, avatar_url, employee_number, trn, id_issued_date, id_expiry_date")
       .eq("company_id",companyId).order("full_name");
+    if (error && /job_title/i.test(error.message || "")) {
+      // job_title migration (20260806000000_add_user_profiles_job_title.sql)
+      // hasn't been applied to the live DB yet — that made the whole select
+      // fail (unknown column), which used to be swallowed silently and show
+      // up as "no staff". Fall back to the columns that definitely exist so
+      // the list still works, and say why job titles are missing.
+      const retry = await supabase.from("user_profiles")
+        .select("id, full_name, email, role, avatar_url, employee_number, trn, id_issued_date, id_expiry_date")
+        .eq("company_id",companyId).order("full_name");
+      data = retry.data;
+      error = retry.error;
+      if (!error) setStaffError("Job titles aren't available yet — run the latest database migration (20260806000000_add_user_profiles_job_title.sql) to enable them.");
+    }
+    if (error) {
+      console.error("loadStaff error:", error);
+      setStaffError(error.message);
+      setStaffProfiles([]);
+      return;
+    }
     setStaffProfiles(data||[]);
   }
 
@@ -116,10 +137,15 @@ export default function SettingsRecordsPage() {
   // "Director" (a staff title) — the two pools share one list on purpose.
   async function loadJobTitles() {
     if(!companyId) return;
-    const [{data:w},{data:sp}] = await Promise.all([
+    const [{data:w,error:werr},{data:sp,error:sperr}] = await Promise.all([
       supabase.from("workers").select("job_title").eq("company_id",companyId).not("job_title","is",null),
       supabase.from("user_profiles").select("job_title").eq("company_id",companyId).not("job_title","is",null),
     ]);
+    // Non-critical — same job_title-column-missing case as loadStaff() can
+    // hit this too (until the migration runs). Log and leave suggestions
+    // empty rather than blocking the combobox entirely.
+    if (werr) console.error("loadJobTitles (workers) error:", werr);
+    if (sperr) console.error("loadJobTitles (user_profiles) error:", sperr);
     const set = new Set<string>();
     (w||[]).forEach((r:any)=>{ if(r.job_title?.trim()) set.add(r.job_title.trim()); });
     (sp||[]).forEach((r:any)=>{ if(r.job_title?.trim()) set.add(r.job_title.trim()); });
@@ -591,6 +617,11 @@ export default function SettingsRecordsPage() {
       {/* Staff (internal, user_profiles — director/admin/accounts/etc.) */}
       {tab==="staff"&&(
         <div className="space-y-3">
+          {staffError && (
+            <div className="rounded-xl border border-red-300 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400 text-xs p-3">
+              {staffError}
+            </div>
+          )}
           {filteredStaff.length===0&&<div className="text-center py-8 text-xs text-slate-500 dark:text-slate-600">No staff found</div>}
           {filteredStaff.map(s=>(
             <div key={s.id} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4 flex items-center gap-4">

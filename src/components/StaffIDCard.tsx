@@ -262,11 +262,23 @@ export function StaffIDCard({ userId, onClose }: Props) {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data: profile } = await supabase
+      let { data: profile, error }: { data: any; error: any } = await supabase
         .from("user_profiles")
         .select("id, full_name, email, role, job_title, trn, avatar_url, employee_number, id_issued_date, id_expiry_date, company_id, created_at")
         .eq("id", userId)
         .maybeSingle();
+      if (error && /job_title/i.test(error.message || "")) {
+        // job_title migration not applied live yet — same fallback as
+        // SettingsRecordsPage's loadStaff(), so the card still opens.
+        const retry = await supabase
+          .from("user_profiles")
+          .select("id, full_name, email, role, trn, avatar_url, employee_number, id_issued_date, id_expiry_date, company_id, created_at")
+          .eq("id", userId)
+          .maybeSingle();
+        profile = retry.data;
+        error = retry.error;
+      }
+      if (error) console.error("StaffIDCard load error:", error);
       setStaff(profile as StaffProfile | null);
 
       if (profile?.company_id) {
