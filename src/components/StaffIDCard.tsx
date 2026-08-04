@@ -18,6 +18,7 @@ interface StaffProfile {
   full_name: string | null;
   email: string | null;
   role: string | null;
+  job_title: string | null;
   trn: string | null;
   avatar_url: string | null;
   employee_number: string | null;
@@ -58,6 +59,12 @@ const CARD_W = 213, CARD_H = 338;
 
 function roleLabel(role?: string | null) {
   return (role || "Staff").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// Prefers the free-text job title over the system role for display — same
+// fallback WorkerIDCard.tsx uses (job_title || roleLabel(worker_type)).
+function displayTitle(staff: StaffProfile) {
+  return staff.job_title?.trim() || roleLabel(staff.role);
 }
 
 function fmtMonthYear(d?: string | null) {
@@ -157,7 +164,7 @@ function CardFront({ staff, company, companyName }: { staff: StaffProfile; compa
             : <UserIcon size={26} color="rgba(255,255,255,0.25)" />}
         </div>
         <div style={{ fontSize: 7, color: GOLD, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center", marginTop: 6 }}>
-          {roleLabel(staff.role)}
+          {displayTitle(staff)}
         </div>
 
         <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginTop: 8, textAlign: "center", lineHeight: 1.2 }}>{staff.full_name || "—"}</div>
@@ -257,7 +264,7 @@ export function StaffIDCard({ userId, onClose }: Props) {
       setLoading(true);
       const { data: profile } = await supabase
         .from("user_profiles")
-        .select("id, full_name, email, role, trn, avatar_url, employee_number, id_issued_date, id_expiry_date, company_id, created_at")
+        .select("id, full_name, email, role, job_title, trn, avatar_url, employee_number, id_issued_date, id_expiry_date, company_id, created_at")
         .eq("id", userId)
         .maybeSingle();
       setStaff(profile as StaffProfile | null);
@@ -307,7 +314,7 @@ export function StaffIDCard({ userId, onClose }: Props) {
           <div style="width:16.5mm;height:20mm;border-radius:1.3mm;overflow:hidden;border:0.4mm solid rgba(201,168,76,0.6);background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center">
             ${staff.avatar_url ? `<img src="${staff.avatar_url}" style="width:100%;height:100%;object-fit:cover"/>` : `<span style="font-size:7mm;color:rgba(255,255,255,0.25)">👤</span>`}
           </div>
-          <div style="font-size:1.8mm;color:${GOLD};text-transform:uppercase;letter-spacing:0.2mm;text-align:center;margin-top:1.5mm">${roleLabel(staff.role)}</div>
+          <div style="font-size:1.8mm;color:${GOLD};text-transform:uppercase;letter-spacing:0.2mm;text-align:center;margin-top:1.5mm">${displayTitle(staff)}</div>
           <div style="font-size:3.5mm;font-weight:700;color:#fff;margin-top:2mm;text-align:center;line-height:1.2">${staff.full_name || "—"}</div>
           <div style="font-size:1.8mm;color:rgba(255,255,255,0.55);margin-top:0.5mm">STAFF IDENTIFICATION CARD</div>
           <div style="width:100%;border-top:0.1mm solid rgba(255,255,255,0.12);margin:1.5mm 0"></div>

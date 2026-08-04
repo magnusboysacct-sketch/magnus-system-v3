@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
 import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Briefcase, IdCard, Camera, X } from "lucide-react";
 import { StaffIDCard } from "../components/StaffIDCard";
+import EditableDropdown from "../components/common/EditableDropdown";
 
 function fmtJMD(n: number) {
   return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0}).format(n);
@@ -31,7 +32,13 @@ export default function SettingsRecordsPage() {
   const [idCardStaffId, setIdCardStaffId] = useState<string|null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<any|null>(null);
-  const [staffForm, setStaffForm] = useState({ full_name:"", employee_number:"", trn:"", id_issued_date:"", id_expiry_date:"" });
+  const [staffForm, setStaffForm] = useState({ full_name:"", job_title:"", employee_number:"", trn:"", id_issued_date:"", id_expiry_date:"" });
+  // Suggestions for the Job Title combobox — live distinct values already in
+  // use across the company (both staff and field workers), not a per-browser
+  // localStorage list like WorkersPage's job title dropdown. Once a new title
+  // is saved to a real record, it naturally shows up here on next load — no
+  // separate master list to keep in sync.
+  const [jobTitleOptions, setJobTitleOptions] = useState<string[]>([]);
   const [newPhotoUrl, setNewPhotoUrl] = useState<string|null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [savingStaff, setSavingStaff] = useState(false);
@@ -93,20 +100,62 @@ export default function SettingsRecordsPage() {
       setLoadingWorkers(false);
     });
     loadStaff();
+    loadJobTitles();
   },[companyId]);
 
   async function loadStaff() {
     if(!companyId) return;
     const {data} = await supabase.from("user_profiles")
-      .select("id, full_name, email, role, avatar_url, employee_number, trn, id_issued_date, id_expiry_date")
+      .select("id, full_name, email, role, job_title, avatar_url, employee_number, trn, id_issued_date, id_expiry_date")
       .eq("company_id",companyId).order("full_name");
     setStaffProfiles(data||[]);
+  }
+
+  // Distinct job titles already in use, across both field workers and staff,
+  // so "Carpenter" (a worker title) shows up as a suggestion right alongside
+  // "Director" (a staff title) — the two pools share one list on purpose.
+  async function loadJobTitles() {
+    if(!companyId) return;
+    const [{data:w},{data:sp}] = await Promise.all([
+      supabase.from("workers").select("job_title").eq("company_id",companyId).not("job_title","is",null),
+      supabase.from("user_profiles").select("job_title").eq("company_id",companyId).not("job_title","is",null),
+    ]);
+    const set = new Set<string>();
+    (w||[]).forEach((r:any)=>{ if(r.job_title?.trim()) set.add(r.job_title.trim()); });
+    (sp||[]).forEach((r:any)=>{ if(r.job_title?.trim()) set.add(r.job_title.trim()); });
+    setJobTitleOptions(Array.from(set).sort());
+  }
+
+  // No existing employee-ID auto-numbering pattern anywhere in the system to
+  // inherit — workers.employee_id is also free-text with no format. Falls
+  // back to the sequential MB-001 style the handoff allowed for this case.
+  function deriveIdPrefix(name: string): string {
+    const words = (name || "").trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return "STAFF";
+    return words.slice(0, 2).map(w => w[0]).join("").toUpperCase() || "STAFF";
+  }
+
+  async function generateEmployeeNumber(): Promise<string> {
+    const prefix = deriveIdPrefix(company?.company_name || "");
+    const { data } = await supabase
+      .from("user_profiles")
+      .select("employee_number")
+      .eq("company_id", companyId)
+      .not("employee_number", "is", null);
+    let maxNum = 0;
+    const re = new RegExp(`^${prefix}-(\\d+)$`, "i");
+    (data || []).forEach((row: any) => {
+      const m = re.exec(row.employee_number || "");
+      if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
+    });
+    return `${prefix}-${String(maxNum + 1).padStart(3, "0")}`;
   }
 
   function openEditModal(s: any) {
     setSelectedStaff(s);
     setStaffForm({
       full_name: s.full_name || "",
+      job_title: s.job_title || "",
       employee_number: s.employee_number || "",
       trn: s.trn || "",
       id_issued_date: s.id_issued_date || "",
@@ -114,6 +163,13 @@ export default function SettingsRecordsPage() {
     });
     setNewPhotoUrl(null);
     setEditModalOpen(true);
+    // No employee number yet — assign the next one now so it's ready by the
+    // time they hit Save. The field itself is never manually editable.
+    if (!s.employee_number) {
+      generateEmployeeNumber().then(num => {
+        setStaffForm(f => ({ ...f, employee_number: num }));
+      });
+    }
   }
 
   async function uploadStaffPhoto(file: File, userId: string): Promise<string | null> {
@@ -152,6 +208,7 @@ export default function SettingsRecordsPage() {
     try {
       const updates: any = {
         full_name: staffForm.full_name.trim(),
+        job_title: staffForm.job_title.trim() || null,
         employee_number: staffForm.employee_number.trim() || null,
         trn: staffForm.trn.trim() || null,
         id_issued_date: staffForm.id_issued_date || null,
@@ -165,7 +222,10 @@ export default function SettingsRecordsPage() {
         .eq("id", selectedStaff.id);
 
       if (error) { alert("Failed to save: " + error.message); return; }
-      await loadStaff();
+      // New job title just got saved to a real record — reload the
+      // suggestion list too so the combobox picks it up immediately, not
+      // just after the next full page load.
+      await Promise.all([loadStaff(), loadJobTitles()]);
       setEditModalOpen(false);
     } catch (e: any) {
       alert("Error: " + e.message);
@@ -426,7 +486,7 @@ export default function SettingsRecordsPage() {
     `${w.name} ${w.id_number||""} ${w.phone||""}`.toLowerCase().includes(search.toLowerCase())
   );
   const filteredStaff = staffProfiles.filter(s=>
-    `${s.full_name||""} ${s.email||""} ${s.role||""}`.toLowerCase().includes(search.toLowerCase())
+    `${s.full_name||""} ${s.email||""} ${s.role||""} ${s.job_title||""}`.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -544,7 +604,7 @@ export default function SettingsRecordsPage() {
               <div className="flex-1">
                 <div className="text-sm font-bold text-slate-800 dark:text-slate-200">{s.full_name||s.email}</div>
                 <div className="text-[10px] text-slate-500">
-                  {(s.role||"staff").replace(/_/g," ")}{s.employee_number?` · Emp No. ${s.employee_number}`:""}
+                  {s.job_title || (s.role||"staff").replace(/_/g," ")}{s.employee_number?` · Emp No. ${s.employee_number}`:""}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -605,15 +665,23 @@ export default function SettingsRecordsPage() {
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500/50"/>
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-1">Job Title / Role</label>
-                <div className="w-full px-3 py-2 bg-slate-100 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06] rounded-lg text-sm text-slate-500 dark:text-slate-500 capitalize">
-                  {(selectedStaff.role||"staff").replace(/_/g," ")}
-                </div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-1">Job Title</label>
+                <EditableDropdown
+                  value={staffForm.job_title}
+                  onChange={v=>setStaffForm(f=>({...f, job_title:v}))}
+                  options={jobTitleOptions}
+                  onAddOption={async(v)=>{ setJobTitleOptions(prev=> prev.includes(v) ? prev : [...prev, v].sort()); }}
+                  onDeleteOption={async(v)=>{ setJobTitleOptions(prev=> prev.filter(t=>t!==v)); }}
+                  placeholder="Select or type a job title..."
+                />
+                <div className="text-[10px] text-slate-400 dark:text-slate-600 mt-1 capitalize">System role: {(selectedStaff.role||"staff").replace(/_/g," ")}</div>
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-1">Employee No.</label>
-                <input value={staffForm.employee_number} onChange={e=>setStaffForm(f=>({...f, employee_number:e.target.value}))} placeholder="e.g. MB-001"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg text-sm text-slate-700 dark:text-slate-300 outline-none focus:border-cyan-500/50"/>
+                <div className="w-full px-3 py-2 bg-slate-100 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06] rounded-lg text-sm text-slate-500 dark:text-slate-500">
+                  {staffForm.employee_number || "Assigning..."}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-600 mt-1">Auto-generated — cannot be edited manually.</div>
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 block mb-1">TRN</label>
