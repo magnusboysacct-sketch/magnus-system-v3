@@ -3,11 +3,12 @@
 // WorkerIDCard.tsx, which is exclusively for the workers table (field/site
 // workers) — do not merge these, they cover different id spaces.
 //
-// Visually synced to WorkerIDCard.tsx's portrait/navy/gold/circular-logo/
-// no-watermark design. Staff keeps its own field set (Emp No., TRN, role)
-// and its own back-face content (magstripe + signature strip) rather than
-// adopting Worker's back layout — that content never existed on this card
-// and wasn't part of the sync request.
+// Visually synced to WorkerIDCard.tsx's actual current design: navy front
+// with gold stripes/accents, light front-facing... i.e. light BACK
+// (NAVY_TINT/AMBER banner, no stripes), circular logo top-center on both
+// (large front, small back), no watermark. Colors below are copied from
+// WorkerIDCard.tsx's real constants, not from memory — its front navy is
+// #15315A, not #0f2744.
 import React, { useEffect, useState } from "react";
 import { User as UserIcon, QrCode } from "lucide-react";
 import { supabase } from "../lib/supabase";
@@ -29,9 +30,13 @@ interface StaffProfile {
 interface CompanyInfo {
   company_name: string | null;
   logo_url: string | null;
+  tagline: string | null;
   address_line1: string | null;
+  address_line2: string | null;
   parish: string | null;
+  country: string | null;
   phone: string | null;
+  email: string | null;
 }
 
 interface Props {
@@ -39,7 +44,13 @@ interface Props {
   onClose: () => void;
 }
 
-const NAVY = "#0f2744";
+// ─── Palette / tokens — copied from WorkerIDCard.tsx's real constants ──────
+const NAVY = "#15315A";
+const NAVY_TINT = "#E7EDF6";   // back face
+const NAVY_TINT_LINE = "#C7D4E6";
+const AMBER = "#F2A93B";       // back banner only — front uses GOLD
+const INK = "#15315A";         // back-face text
+const ALERT_RED = "#DC2626";
 const GOLD = "#C9A84C";
 // Same portrait CR80 footprint as WorkerIDCard.tsx (213x338 px preview,
 // 54mm x 85.6mm print).
@@ -65,10 +76,19 @@ function resolveExpiry(staff: StaffProfile): Date | null {
   return dt;
 }
 
+function isExpired(expiryDate: Date | null): boolean {
+  return !!expiryDate && expiryDate.getTime() < Date.now();
+}
+
+// 3-tier (red/amber/green) rather than WorkerIDCard's 2-tier (red/gold) —
+// an existing Staff-specific enhancement (expiring-soon warning), not a
+// container/styling concern, so kept as-is per "keep whatever fields are
+// specific to Staff." The red itself is aligned to WorkerIDCard's ALERT_RED
+// for exact color parity when actually expired.
 function getExpiryColor(expiryDate: Date | null): string {
   if (!expiryDate) return "rgba(255,255,255,0.5)";
+  if (isExpired(expiryDate)) return ALERT_RED;
   const days = Math.ceil((expiryDate.getTime() - Date.now()) / 86400000);
-  if (days < 0) return "#f87171";   // red — expired
   if (days < 60) return "#fbbf24";  // amber — expiring soon
   return "#4ade80";                  // green — valid
 }
@@ -82,15 +102,22 @@ function InfoRow({ label, value, valueColor }: { label: string; value: string; v
   );
 }
 
-function Logo({ size, company, companyName }: { size: number; company: CompanyInfo | null; companyName: string }) {
+function FrontLogo({ company, companyName }: { company: CompanyInfo | null; companyName: string }) {
   return (
-    <div style={{
-      width: size, height: size, borderRadius: "50%", overflow: "hidden", flexShrink: 0,
-      background: GOLD, display: "flex", alignItems: "center", justifyContent: "center",
-    }}>
+    <div style={{ width: 56, height: 56, borderRadius: "50%", overflow: "hidden", background: GOLD, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
       {company?.logo_url
-        ? <img src={company.logo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        : <span style={{ fontSize: size * 0.4, fontWeight: 800, color: NAVY }}>{companyName.charAt(0).toUpperCase()}</span>}
+        ? <img src={company.logo_url} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        : <span style={{ fontSize: 22, fontWeight: 800, color: NAVY }}>{companyName.charAt(0).toUpperCase()}</span>}
+    </div>
+  );
+}
+
+function BackLogo({ company, companyName }: { company: CompanyInfo | null; companyName: string }) {
+  return (
+    <div style={{ width: 26, height: 26, borderRadius: "50%", overflow: "hidden", background: NAVY, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {company?.logo_url
+        ? <img src={company.logo_url} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        : <span style={{ fontSize: 9, fontWeight: 800, color: "#fff" }}>{companyName.charAt(0).toUpperCase()}</span>}
     </div>
   );
 }
@@ -99,6 +126,7 @@ function CardFront({ staff, company, companyName }: { staff: StaffProfile; compa
   const expiry = resolveExpiry(staff);
   const expiryColor = getExpiryColor(expiry);
   const issued = staff.id_issued_date || staff.created_at || null;
+  const expired = isExpired(expiry);
 
   return (
     <div style={{
@@ -108,9 +136,12 @@ function CardFront({ staff, company, companyName }: { staff: StaffProfile; compa
     }}>
       <div style={{ height: 5, background: GOLD, flexShrink: 0 }} />
 
+      {/* OFFICIAL badge — top right, matches WorkerIDCard's exactly */}
+      <div style={{ position: "absolute", top: 9, right: 10, background: "rgba(201,168,76,0.15)", border: "1px solid rgba(201,168,76,0.4)", color: GOLD, fontSize: 7, fontWeight: 700, padding: "2px 5px", borderRadius: 3, textAlign: "center", lineHeight: 1.4, zIndex: 1 }}>OFFICIAL<br/>ID</div>
+
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", padding: "10px 14px 0" }}>
         {/* Logo top-center — large/prominent, matches WorkerIDCard's front */}
-        <Logo size={56} company={company} companyName={companyName} />
+        <FrontLogo company={company} companyName={companyName} />
         <div style={{ fontSize: 7, fontWeight: 600, color: "#fff", textTransform: "uppercase", letterSpacing: 1, marginTop: 6, textAlign: "center" }}>{companyName}</div>
 
         <div style={{ width: "100%", borderTop: "1px solid rgba(255,255,255,0.12)", margin: "6px 0" }} />
@@ -152,7 +183,7 @@ function CardFront({ staff, company, companyName }: { staff: StaffProfile; compa
       }}>
         <div><div style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: 1 }}>Issued</div><div style={{ fontSize: 8, color: GOLD, fontWeight: 600 }}>{fmtMonthYear(issued)}</div></div>
         <div style={{ fontSize: 6, color: "rgba(255,255,255,0.2)", letterSpacing: 1 }}>{staff.employee_number || "—"}</div>
-        <div><div style={{ fontSize: 6, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: 1 }}>Expires</div><div style={{ fontSize: 8, color: expiryColor, fontWeight: 600 }}>{expiry ? fmtMonthYear(expiry.toISOString()) : "—"}</div></div>
+        <div><div style={{ fontSize: 6, color: expired ? ALERT_RED : "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: 1 }}>{expired ? "Expired" : "Expires"}</div><div style={{ fontSize: 8, color: expiryColor, fontWeight: 600 }}>{expiry ? fmtMonthYear(expiry.toISOString()) : "—"}</div></div>
       </div>
 
       <div style={{ height: 3, background: GOLD, flexShrink: 0 }} />
@@ -160,42 +191,57 @@ function CardFront({ staff, company, companyName }: { staff: StaffProfile; compa
   );
 }
 
+// Matches WorkerIDCard's back exactly: light NAVY_TINT face, amber "if
+// found" banner, company name/tagline, address/contact block, certification
+// paragraph, signature line + QR. No gold stripes — WorkerIDCard's back has
+// none either, only the front does.
 function CardBack({ company, companyName }: { company: CompanyInfo | null; companyName: string }) {
   return (
     <div style={{
-      width: CARD_W, height: CARD_H, background: NAVY, borderRadius: 8, overflow: "hidden",
-      display: "flex", flexDirection: "column", position: "relative", boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+      width: CARD_W, height: CARD_H, background: NAVY_TINT, color: INK, borderRadius: 8, overflow: "hidden",
+      display: "flex", flexDirection: "column", position: "relative", boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
       fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
     }}>
-      <div style={{ height: 5, background: GOLD, flexShrink: 0 }} />
-
-      {/* Logo top-center — smaller than the front's, back is the secondary face */}
-      <div style={{ display: "flex", justifyContent: "center", padding: "12px 14px 0" }}>
-        <Logo size={26} company={company} companyName={companyName} />
+      <div style={{ display: "flex", justifyContent: "center", padding: "14px 14px 0" }}>
+        <BackLogo company={company} companyName={companyName} />
       </div>
 
-      <div style={{ height: 28, background: "rgba(0,0,0,0.6)", flexShrink: 0, marginTop: 10 }} />
-
-      <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", flex: 1 }}>
-        <div style={{
-          height: 26, background: "rgba(255,255,255,0.9)", borderRadius: 3, display: "flex",
-          alignItems: "flex-end", padding: "0 8px 3px", marginBottom: 10,
-        }}>
-          <span style={{ fontSize: 6, color: "rgba(15,39,68,0.6)", letterSpacing: 0.5 }}>SIGNATURE</span>
-        </div>
-
-        <p style={{ fontSize: 7, color: "rgba(255,255,255,0.65)", lineHeight: 1.5, margin: 0 }}>
-          This card is the property of {companyName}. If found, please return.
-          Unauthorised use is prohibited.
-        </p>
-
-        <div style={{ marginTop: "auto", fontSize: 7, color: "rgba(255,255,255,0.5)", lineHeight: 1.6 }}>
-          <div>📍 {[company?.address_line1, company?.parish].filter(Boolean).join(", ") || `${companyName}, Jamaica`}</div>
-          {company?.phone && <div>📞 {company.phone}</div>}
-        </div>
+      <div style={{ background: AMBER, color: NAVY, fontSize: 7, fontWeight: 700, textAlign: "center", padding: "5px 10px", letterSpacing: 0.5, marginTop: 10, lineHeight: 1.4 }}>
+        IF FOUND, RETURN TO ISSUING COMPANY BELOW
       </div>
 
-      <div style={{ height: 3, background: GOLD, flexShrink: 0 }} />
+      <div style={{ textAlign: "center", padding: "8px 14px 0" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{companyName}</div>
+        <div style={{ fontSize: 7, opacity: 0.6, marginTop: 2 }}>{company?.tagline || "Building With Integrity"}</div>
+      </div>
+
+      <div style={{ borderTop: `1px solid ${NAVY_TINT_LINE}`, margin: "8px 14px" }} />
+
+      <div style={{ padding: "0 14px", fontSize: 7, lineHeight: 1.7, opacity: 0.75 }}>
+        {[company?.address_line1, company?.address_line2].filter(Boolean).join(", ") && (
+          <div>{[company?.address_line1, company?.address_line2].filter(Boolean).join(", ")}</div>
+        )}
+        {[company?.parish, company?.country].filter(Boolean).join(", ") && (
+          <div>{[company?.parish, company?.country].filter(Boolean).join(", ")}</div>
+        )}
+        {company?.phone && <div>Tel: {company.phone}</div>}
+        {company?.email && <div>Email: {company.email}</div>}
+      </div>
+
+      <div style={{ padding: "8px 14px 0", fontSize: 7, fontStyle: "italic", opacity: 0.85, lineHeight: 1.6 }}>
+        This card certifies the bearer is an authorized staff member of {companyName}. This card remains company property and must be surrendered upon termination.
+      </div>
+
+      <div style={{ marginTop: "auto", display: "flex", alignItems: "flex-end", justifyContent: "space-between", padding: "10px 14px 14px", borderTop: `1px solid ${NAVY_TINT_LINE}` }}>
+        <div>
+          <div style={{ width: 90, borderBottom: "1px solid rgba(28,26,20,0.4)", height: 16 }} />
+          <div style={{ fontSize: 5.5, opacity: 0.5, letterSpacing: 0.5, marginTop: 2 }}>AUTHORIZED SIGNATURE</div>
+        </div>
+        {/* Decorative placeholder — same reasoning as the front's QR */}
+        <div style={{ width: 34, height: 34, background: "#fff", borderRadius: 2, border: `1px solid ${NAVY_TINT_LINE}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <QrCode size={22} color={INK} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -219,7 +265,7 @@ export function StaffIDCard({ userId, onClose }: Props) {
       if (profile?.company_id) {
         const { data: cs } = await supabase
           .from("company_settings")
-          .select("company_name, logo_url, address_line1, parish, phone")
+          .select("company_name, logo_url, tagline, address_line1, address_line2, parish, country, phone, email")
           .eq("company_id", profile.company_id)
           .maybeSingle();
         setCompany(cs as CompanyInfo | null);
@@ -238,20 +284,23 @@ export function StaffIDCard({ userId, onClose }: Props) {
     const companyName = company?.company_name || "Company";
     const expiry = resolveExpiry(staff);
     const expiryColor = getExpiryColor(expiry);
+    const expired = isExpired(expiry);
     const issued = staff.id_issued_date || staff.created_at || null;
 
     // Portrait CR80 (54mm x 85.6mm) — matches WorkerIDCard.tsx's print size.
-    const faceStyle = `width:54mm;height:85.6mm;background:${NAVY};color:#fff;border-radius:3mm;overflow:hidden;position:relative;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;`;
-    const logoHTML = (size: string) => company?.logo_url
+    const frontFaceStyle = `width:54mm;height:85.6mm;background:${NAVY};color:#fff;border-radius:3mm;overflow:hidden;position:relative;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;`;
+    const backFaceStyle = `width:54mm;height:85.6mm;background:${NAVY_TINT};color:${INK};border-radius:3mm;overflow:hidden;position:relative;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;`;
+    const logoHTML = (size: string, bg: string, fg: string) => company?.logo_url
       ? `<img src="${company.logo_url}" style="width:100%;height:100%;object-fit:cover"/>`
-      : `<span style="font-size:${size};font-weight:800;color:${NAVY}">${companyName.charAt(0).toUpperCase()}</span>`;
+      : `<span style="font-size:${size};font-weight:800;color:${fg}">${companyName.charAt(0).toUpperCase()}</span>`;
 
     const frontHTML = `
-      <div class="card" style="${faceStyle}">
+      <div class="card" style="${frontFaceStyle}">
         <div style="height:1.3mm;background:${GOLD}"></div>
+        <div style="position:absolute;top:2.4mm;right:2.6mm;background:rgba(201,168,76,0.15);border:0.2mm solid rgba(201,168,76,0.4);color:${GOLD};font-size:1.6mm;font-weight:700;padding:0.5mm 1.3mm;border-radius:0.8mm;text-align:center;line-height:1.4;z-index:1">OFFICIAL<br/>ID</div>
         <div style="display:flex;flex-direction:column;align-items:center;padding:2.6mm 3.6mm 0;position:relative;z-index:1">
           <div style="width:14mm;height:14mm;border-radius:50%;overflow:hidden;background:${GOLD};display:flex;align-items:center;justify-content:center">
-            ${logoHTML("5.6mm")}
+            ${logoHTML("5.6mm", GOLD, NAVY)}
           </div>
           <div style="font-size:1.8mm;font-weight:600;color:#fff;text-transform:uppercase;letter-spacing:0.3mm;margin-top:1.5mm;text-align:center">${companyName}</div>
           <div style="width:100%;border-top:0.1mm solid rgba(255,255,255,0.12);margin:1.5mm 0"></div>
@@ -272,35 +321,48 @@ export function StaffIDCard({ userId, onClose }: Props) {
           <div style="font-size:1.5mm;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.2mm;margin-top:0.6mm">Scan to verify</div>
         </div>
         <div style="position:absolute;bottom:1.6mm;left:0;right:0;height:7mm;background:rgba(201,168,76,0.12);border-top:0.3mm solid ${GOLD};display:flex;align-items:center;justify-content:space-between;padding:0 2.6mm;z-index:1">
-          <div><div style="font-size:1.5mm;color:rgba(255,255,255,0.35);text-transform:uppercase">Issued</div><div style="font-size:2mm;color:${GOLD};font-weight:600">${fmtMonthYear(issued)}</div></div>
+          <div><div style="font-size:1.5mm;color:rgba(255,255,255,0.35);text-transform:uppercase">${expired ? "Expired" : "Issued"}</div><div style="font-size:2mm;color:${GOLD};font-weight:600">${fmtMonthYear(issued)}</div></div>
           <div style="font-size:1.5mm;color:rgba(255,255,255,0.2)">${staff.employee_number || "—"}</div>
-          <div><div style="font-size:1.5mm;color:rgba(255,255,255,0.35);text-transform:uppercase">Expires</div><div style="font-size:2mm;color:${expiryColor};font-weight:600">${expiry ? fmtMonthYear(expiry.toISOString()) : "—"}</div></div>
+          <div><div style="font-size:1.5mm;color:${expired ? ALERT_RED : "rgba(255,255,255,0.35)"};text-transform:uppercase">${expired ? "Expired" : "Expires"}</div><div style="font-size:2mm;color:${expiryColor};font-weight:600">${expiry ? fmtMonthYear(expiry.toISOString()) : "—"}</div></div>
         </div>
         <div style="position:absolute;bottom:0;left:0;right:0;height:1mm;background:${GOLD}"></div>
       </div>`;
 
+    const contactLines = [
+      [company?.address_line1, company?.address_line2].filter(Boolean).join(", "),
+      [company?.parish, company?.country].filter(Boolean).join(", "),
+      company?.phone ? `Tel: ${company.phone}` : null,
+      company?.email ? `Email: ${company.email}` : null,
+    ].filter(Boolean);
+
     const backHTML = `
-      <div class="card" style="${faceStyle}">
-        <div style="height:1.3mm;background:${GOLD}"></div>
-        <div style="display:flex;justify-content:center;padding:3mm 3.6mm 0;position:relative;z-index:1">
-          <div style="width:6.5mm;height:6.5mm;border-radius:50%;overflow:hidden;background:${GOLD};display:flex;align-items:center;justify-content:center">
-            ${logoHTML("2.6mm")}
+      <div class="card" style="${backFaceStyle}">
+        <div style="display:flex;justify-content:center;padding:3mm 3.6mm 0">
+          <div style="width:6.5mm;height:6.5mm;border-radius:50%;overflow:hidden;background:${NAVY};display:flex;align-items:center;justify-content:center">
+            ${logoHTML("2.6mm", NAVY, "#fff")}
           </div>
         </div>
-        <div style="height:7mm;background:rgba(0,0,0,0.6);margin-top:2.6mm"></div>
-        <div style="padding:3mm 3.6mm;position:relative;z-index:1;display:flex;flex-direction:column">
-          <div style="height:6.8mm;background:rgba(255,255,255,0.9);border-radius:0.8mm;display:flex;align-items:flex-end;padding:0 2mm 0.8mm;margin-bottom:2.6mm">
-            <span style="font-size:1.6mm;color:rgba(15,39,68,0.6);letter-spacing:0.2mm">SIGNATURE</span>
-          </div>
-          <p style="font-size:1.9mm;color:rgba(255,255,255,0.65);line-height:1.5;margin:0 0 4mm">
-            This card is the property of ${companyName}. If found, please return. Unauthorised use is prohibited.
-          </p>
-          <div style="font-size:1.9mm;color:rgba(255,255,255,0.5);line-height:1.6">
-            <div>${[company?.address_line1, company?.parish].filter(Boolean).join(", ") || `${companyName}, Jamaica`}</div>
-            ${company?.phone ? `<div>Tel: ${company.phone}</div>` : ""}
-          </div>
+        <div style="background:${AMBER};color:${NAVY};font-size:1.8mm;font-weight:700;text-align:center;padding:1.3mm 2.6mm;letter-spacing:0.15mm;margin-top:2.6mm;line-height:1.4">
+          IF FOUND, RETURN TO ISSUING COMPANY BELOW
         </div>
-        <div style="position:absolute;bottom:0;left:0;right:0;height:1mm;background:${GOLD}"></div>
+        <div style="text-align:center;padding:2mm 3.6mm 0">
+          <div style="font-size:2.8mm;font-weight:700;text-transform:uppercase;letter-spacing:0.15mm">${companyName}</div>
+          <div style="font-size:1.8mm;opacity:0.6;margin-top:0.5mm">${company?.tagline || "Building With Integrity"}</div>
+        </div>
+        <div style="border-top:0.1mm solid ${NAVY_TINT_LINE};margin:2mm 3.6mm"></div>
+        <div style="padding:0 3.6mm;font-size:1.8mm;line-height:1.7;opacity:0.75">
+          ${contactLines.map(l => `<div>${l}</div>`).join("")}
+        </div>
+        <div style="padding:2mm 3.6mm 0;font-size:1.8mm;font-style:italic;opacity:0.85;line-height:1.6">
+          This card certifies the bearer is an authorized staff member of ${companyName}. This card remains company property and must be surrendered upon termination.
+        </div>
+        <div style="position:absolute;bottom:2.6mm;left:0;right:0;display:flex;align-items:flex-end;justify-content:space-between;padding:0 3.6mm;border-top:0.1mm solid ${NAVY_TINT_LINE};padding-top:2.6mm">
+          <div>
+            <div style="width:24mm;border-bottom:0.1mm solid rgba(28,26,20,0.4);height:4mm"></div>
+            <div style="font-size:1.4mm;opacity:0.5;letter-spacing:0.15mm;margin-top:0.5mm">AUTHORIZED SIGNATURE</div>
+          </div>
+          <div style="width:9mm;height:9mm;background:#fff;border:0.1mm solid ${NAVY_TINT_LINE};border-radius:0.5mm;display:flex;align-items:center;justify-content:center;font-size:5mm;color:${INK}">▦</div>
+        </div>
       </div>`;
 
     win.document.write(`<!DOCTYPE html><html><head><title>Staff ID — ${staff.full_name || ""}</title>
