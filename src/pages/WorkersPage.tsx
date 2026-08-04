@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { useProjectContext } from "../context/ProjectContext";
+import { canManageWorkers } from "../lib/permissions";
 import EditableDropdown from "../components/common/EditableDropdown";
 import { WorkerIDCard } from "../components/WorkerIDCard";
 import { SimpleIDScanner } from "../components/SimpleIDScanner";
@@ -420,6 +421,7 @@ export default function WorkersPage() {
   const { settings: companySettings } = useCompanySettings();
   const { userRole } = useProjectContext();
   const canDelete = userRole === "director" || userRole === "site_supervisor";
+  const canAddWorker = canManageWorkers(userRole);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -683,10 +685,12 @@ export default function WorkersPage() {
             <Btn variant="ghost" size="sm"
               icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>}
               onClick={loadWorkers}/>
-            <Btn variant="primary" size="sm" icon={<Plus size={13}/>}
-              onClick={() => { setEditWorker(null); setForm(EMPTY_FORM); setShowNew(true); }}>
-              Add Worker
-            </Btn>
+            {canAddWorker && (
+              <Btn variant="primary" size="sm" icon={<Plus size={13}/>}
+                onClick={() => { setEditWorker(null); setForm(EMPTY_FORM); setShowNew(true); }}>
+                Add Worker
+              </Btn>
+            )}
           </>
         }
       />
@@ -760,7 +764,7 @@ export default function WorkersPage() {
             icon={<HardHat size={20}/>}
             title={search ? "No workers match your search" : "No workers yet"}
             body={search ? "Try a different search." : "Add your first worker to get started."}
-            action={!search ? <Btn variant="primary" icon={<Plus size={13}/>}
+            action={!search && canAddWorker ? <Btn variant="primary" icon={<Plus size={13}/>}
               onClick={() => { setEditWorker(null); setForm(EMPTY_FORM); setShowNew(true); }}>
               Add Worker</Btn> : undefined}
           />

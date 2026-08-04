@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Shield } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { canManageStaff } from "../lib/permissions";
 
 type Role =
   | "director"
@@ -179,6 +182,8 @@ async function loadPendingInvitations(): Promise<InvitationRow[]> {
 }
 
 export default function SettingsUsersPage() {
+  const nav = useNavigate();
+  const [allowed, setAllowed] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -240,10 +245,17 @@ export default function SettingsUsersPage() {
   }
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id || null);
-    });
-    load();
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      const uid = data.user?.id || null;
+      setCurrentUserId(uid);
+      if (!uid) { setAllowed(false); setLoading(false); return; }
+      const { data: profile } = await supabase
+        .from("user_profiles").select("role").eq("id", uid).maybeSingle();
+      const ok = canManageStaff(profile?.role);
+      setAllowed(ok);
+      if (ok) load(); else setLoading(false);
+    })();
   }, []);
 
   function openInvite() {
@@ -481,6 +493,22 @@ export default function SettingsUsersPage() {
     }
     return counts;
   }, [rows]);
+
+  if (allowed === null) {
+    return <div className="p-8 text-sm text-slate-500">Checking access...</div>;
+  }
+  if (allowed === false) {
+    return (
+      <div className="p-8 text-center">
+        <Shield size={40} className="mx-auto mb-4 text-red-400" />
+        <div className="text-lg font-bold text-slate-700 dark:text-slate-300">Access Restricted</div>
+        <div className="mt-2 text-sm text-slate-500">Only Directors and Admins can manage users.</div>
+        <button onClick={() => nav("/settings")} className="mt-4 rounded-lg bg-slate-200 px-4 py-2 text-sm text-slate-600 dark:bg-white/[0.06] dark:text-slate-400">
+          ← Back to Settings
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 dark:bg-[#080b10]">

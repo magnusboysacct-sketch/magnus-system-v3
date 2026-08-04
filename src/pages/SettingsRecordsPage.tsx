@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Briefcase, IdCard, Camera, X } from "lucide-react";
 import { StaffIDCard } from "../components/StaffIDCard";
 import { WorkerIDCard } from "../components/WorkerIDCard";
+import { canManageStaff } from "../lib/permissions";
 import EditableDropdown from "../components/common/EditableDropdown";
 
 function fmtJMD(n: number) {
@@ -52,7 +53,7 @@ export default function SettingsRecordsPage() {
       if(!data.user){ setAllowed(false); return; }
       const {data:p}=await supabase.from("user_profiles").select("company_id,role").eq("id",data.user.id).maybeSingle();
       if(!p){ setAllowed(false); return; }
-      const isAdmin = ["director","admin","owner"].includes(p.role||"");
+      const isAdmin = canManageStaff(p.role);
       setAllowed(isAdmin);
       if(isAdmin && p.company_id){
         setCompanyId(p.company_id);

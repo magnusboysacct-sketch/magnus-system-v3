@@ -262,7 +262,7 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
   // Keeps its existing light "card stock" scheme (NAVY_TINT bg, AMBER
   // banner, INK text) — this pass only reflows it to portrait and swaps
   // the image watermark for a top-center logo, per the brief.
-  function drawBack(ctx: CanvasRenderingContext2D, ox: number, oy: number, S: number, logoImage?: HTMLImageElement, qrCanvas?: HTMLCanvasElement) {
+  function drawBack(ctx: CanvasRenderingContext2D, ox: number, oy: number, S: number, logoImage?: HTMLImageElement, qrCanvas?: HTMLCanvasElement, signatureImage?: HTMLImageElement) {
     const W = CARD_W * S, H = CARD_H * S;
     ctx.save();
     ctx.translate(ox, oy);
@@ -337,7 +337,15 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     const authText = `This card certifies the bearer is an authorized worker of ${companyName}. This card remains company property and must be surrendered upon termination.`;
     wrapText(ctx, authText, 16 * S, ly, (CARD_W - 32) * S, 9 * S, "left");
 
-    // Signature line (left) + QR (right), bottom of card
+    // Signature line (left) + QR (right), bottom of card. If a signature
+    // image is on file, draw it sitting on the line (contain-fit, not
+    // cropped) instead of leaving the line blank for a hand signature.
+    if (signatureImage && signatureImage.width && signatureImage.height) {
+      const boxX = 16 * S, boxW = 90 * S, boxBottom = 303 * S, boxH = 24 * S;
+      const scale = Math.min(boxW / signatureImage.width, boxH / signatureImage.height);
+      const dw = signatureImage.width * scale, dh = signatureImage.height * scale;
+      ctx.drawImage(signatureImage, boxX + (boxW - dw) / 2, boxBottom - dh, dw, dh);
+    }
     ctx.strokeStyle = "rgba(28,26,20,0.4)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(16 * S, 305 * S); ctx.lineTo(106 * S, 305 * S); ctx.stroke();
     ctx.fillStyle = "rgba(28,26,20,0.45)";
@@ -384,16 +392,19 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.fillRect(0, 0, W, H);
 
     const logoUrl = companySettings?.logo_url;
+    const signatureUrl = companySettings?.signature_url;
     let photo: HTMLImageElement | undefined;
     let logo: HTMLImageElement | undefined;
+    let signature: HTMLImageElement | undefined;
     if (photoUrl) { try { photo = await loadImage(photoUrl); } catch {} }
     if (logoUrl) { try { logo = await loadImage(logoUrl); } catch {} }
+    if (signatureUrl) { try { signature = await loadImage(signatureUrl); } catch {} }
 
     const frontX = pad, frontY = pad;
     const backX = pad + CARD_W * S + gap, backY = pad;
 
     drawFront(ctx, frontX, frontY, S, photo, logo, qrCanvasFront);
-    drawBack(ctx, backX, backY, S, logo, qrCanvasBack);
+    drawBack(ctx, backX, backY, S, logo, qrCanvasBack, signature);
 
     drawCutGuide(ctx, frontX, frontY, CARD_W * S, CARD_H * S);
     drawCutGuide(ctx, backX, backY, CARD_W * S, CARD_H * S);
@@ -541,7 +552,9 @@ img{width:${W/S}px;height:${H/S}px}
 
           <div style={{ marginTop:"auto", display:"flex", alignItems:"flex-end", justifyContent:"space-between", padding:"10px 14px 14px", borderTop:`1px solid ${NAVY_TINT_LINE}` }}>
             <div>
-              <div style={{ width:90, borderBottom:"1px solid rgba(28,26,20,0.4)", height:16 }} />
+              <div style={{ width:90, height:16, borderBottom:"1px solid rgba(28,26,20,0.4)", display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+                {companySettings?.signature_url && <img src={companySettings.signature_url} alt="Authorized signature" style={{ maxWidth:86, maxHeight:14, objectFit:"contain" }} />}
+              </div>
               <div style={{ fontSize:5.5, opacity:0.5, letterSpacing:0.5, marginTop:2 }}>AUTHORIZED SIGNATURE</div>
             </div>
             {qrDataUrl && <img src={qrDataUrl} alt="verify" style={{ width:34, height:34, borderRadius:2 }} />}

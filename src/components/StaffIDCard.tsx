@@ -31,6 +31,7 @@ interface StaffProfile {
 interface CompanyInfo {
   company_name: string | null;
   logo_url: string | null;
+  signature_url: string | null;
   tagline: string | null;
   address_line1: string | null;
   address_line2: string | null;
@@ -256,7 +257,9 @@ function CardBack({ company, companyName }: { company: CompanyInfo | null; compa
 
       <div style={{ marginTop: "auto", display: "flex", alignItems: "flex-end", justifyContent: "space-between", padding: "10px 14px 14px", borderTop: `1px solid ${NAVY_TINT_LINE}` }}>
         <div>
-          <div style={{ width: 90, borderBottom: "1px solid rgba(28,26,20,0.4)", height: 16 }} />
+          <div style={{ width: 90, height: 16, borderBottom: "1px solid rgba(28,26,20,0.4)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+            {company?.signature_url && <img src={company.signature_url} alt="Authorized signature" style={{ maxWidth: 86, maxHeight: 14, objectFit: "contain" }} />}
+          </div>
           <div style={{ fontSize: 5.5, opacity: 0.5, letterSpacing: 0.5, marginTop: 2 }}>AUTHORIZED SIGNATURE</div>
         </div>
         {/* Decorative placeholder — same reasoning as the front's QR */}
@@ -290,7 +293,7 @@ export function StaffIDCard({ userId, onClose }: Props) {
       if (profile?.company_id) {
         const { data: cs } = await supabase
           .from("company_settings")
-          .select("company_name, logo_url, tagline, address_line1, address_line2, parish, country, phone, email")
+          .select("company_name, logo_url, signature_url, tagline, address_line1, address_line2, parish, country, phone, email")
           .eq("company_id", profile.company_id)
           .maybeSingle();
         setCompany(cs as CompanyInfo | null);
@@ -383,7 +386,9 @@ export function StaffIDCard({ userId, onClose }: Props) {
         </div>
         <div style="position:absolute;bottom:2.6mm;left:0;right:0;display:flex;align-items:flex-end;justify-content:space-between;padding:0 3.6mm;border-top:0.1mm solid ${NAVY_TINT_LINE};padding-top:2.6mm">
           <div>
-            <div style="width:24mm;border-bottom:0.1mm solid rgba(28,26,20,0.4);height:4mm"></div>
+            <div style="width:24mm;height:4mm;border-bottom:0.1mm solid rgba(28,26,20,0.4);display:flex;align-items:flex-end;justify-content:center">
+              ${company?.signature_url ? `<img src="${company.signature_url}" style="max-width:23mm;max-height:3.6mm;object-fit:contain"/>` : ""}
+            </div>
             <div style="font-size:1.4mm;opacity:0.5;letter-spacing:0.15mm;margin-top:0.5mm">AUTHORIZED SIGNATURE</div>
           </div>
           <div style="width:9mm;height:9mm;background:#fff;border:0.1mm solid ${NAVY_TINT_LINE};border-radius:0.5mm;display:flex;align-items:center;justify-content:center;font-size:5mm;color:${INK}">▦</div>

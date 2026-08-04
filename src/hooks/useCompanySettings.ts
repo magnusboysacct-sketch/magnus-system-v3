@@ -7,6 +7,7 @@ interface CompanySettings {
   company_name: string;
   tagline: string | null;
   logo_url: string | null;
+  signature_url: string | null;
   phone: string | null;
   email: string | null;
   website: string | null;

@@ -6,7 +6,8 @@ import {
   PageHeader, Card, CardHeader, Btn, Input, Field,
   Alert, Divider, Spinner, cn
 } from "../components/ui";
-import { Building2, Save, RefreshCw, Globe, Phone, Mail, MapPin, ImageIcon, Upload, Eye, EyeOff } from "lucide-react";
+import { Building2, Save, RefreshCw, Globe, Phone, Mail, MapPin, ImageIcon, Upload, Eye, EyeOff, PenTool } from "lucide-react";
+import SignaturePad from "../components/SignaturePad";
 
 type CompanySettings = {
   id: number;
@@ -37,6 +38,9 @@ export default function SettingsCompanyPage() {
   });
 
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+  const [showSignaturePad, setShowSignaturePad] = useState(false);
+  const [savingSignature, setSavingSignature] = useState(false);
   const [watermarkUrl, setWatermarkUrl] = useState<string | null>(null);
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [paymentNotificationsEnabled, setPaymentNotificationsEnabled] = useState(true);
@@ -77,6 +81,7 @@ export default function SettingsCompanyPage() {
 
       if (settings) {
         setLogoUrl(settings.logo_url || null);
+        setSignatureUrl((settings as any).signature_url || null);
         setWatermarkUrl((settings as any).watermark_url || null);
         setWatermarkEnabled((settings as any).watermark_enabled || false);
         setPaymentNotificationsEnabled((settings as any).payment_notifications_enabled !== false);
@@ -117,6 +122,7 @@ export default function SettingsCompanyPage() {
         email:         form.email.trim()           || null,
         website:       form.website.trim()         || null,
                 logo_url:          logoUrl || null,
+                signature_url:     signatureUrl || null,
                 watermark_url:     watermarkUrl || null,
         watermark_enabled: watermarkEnabled,
         payment_notifications_enabled: paymentNotificationsEnabled,
@@ -131,6 +137,43 @@ export default function SettingsCompanyPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  // Uploads the drawn signature PNG to storage and stores its public URL —
+  // same upload-then-getPublicUrl pattern as the logo above and as
+  // ContractsPage's signContract(), reusing the "project-files" bucket.
+  // Persisted immediately (not deferred to the main "Save Changes" button)
+  // so a director doesn't lose a freshly-drawn signature if they navigate
+  // away before hitting Save elsewhere on the page.
+  async function saveSignature(dataUrl: string) {
+    if (!companyId) return;
+    setSavingSignature(true); setMsg(null);
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const path = `signatures/${companyId}/${Date.now()}_signature.png`;
+      const { error: ue } = await supabase.storage.from("project-files").upload(path, blob, { upsert: true, contentType: "image/png" });
+      if (ue) throw ue;
+      const { data: ud } = supabase.storage.from("project-files").getPublicUrl(path);
+      setSignatureUrl(ud.publicUrl);
+      const { error } = await supabase.from("company_settings")
+        .update({ signature_url: ud.publicUrl, updated_at: new Date().toISOString() })
+        .eq("company_id", companyId);
+      if (error) throw error;
+      setShowSignaturePad(false);
+      setMsg({ type: "success", text: "Signature saved." });
+    } catch (e: any) {
+      setMsg({ type: "error", text: e.message });
+    } finally {
+      setSavingSignature(false);
+    }
+  }
+
+  async function removeSignature() {
+    if (!companyId) return;
+    setSignatureUrl(null);
+    await supabase.from("company_settings")
+      .update({ signature_url: null, updated_at: new Date().toISOString() })
+      .eq("company_id", companyId);
   }
 
   function set(key: keyof typeof form) {
@@ -207,6 +250,40 @@ export default function SettingsCompanyPage() {
               </div>
               <div className="text-[10px] text-slate-700 mt-1.5">
                 This logo appears on your dashboard, reports, and client-facing documents.
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Authorized signature — drawn once here, reused on ID card backs */}
+        <Card>
+          <CardHeader title="Authorized Signature"/>
+          <div className="flex items-center gap-4">
+            <div className="w-32 h-16 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {signatureUrl ? (
+                <img src={signatureUrl} alt="Signature" className="w-full h-full object-contain"/>
+              ) : (
+                <PenTool size={20} className="text-slate-400"/>
+              )}
+            </div>
+            <div className="flex-1">
+              <div className="text-xs text-slate-400 mb-1">
+                {signatureUrl ? "Signature saved" : "No signature saved"}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowSignaturePad(true)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-slate-300 dark:border-white/[0.1] hover:border-cyan-500/40 cursor-pointer transition text-[11px] text-slate-500"
+                >
+                  <PenTool size={13} className="text-slate-600"/>
+                  {signatureUrl ? "Redraw signature" : "Draw signature"}
+                </button>
+                {signatureUrl && (
+                  <button onClick={removeSignature} className="text-[11px] text-red-400 hover:text-red-300">Remove</button>
+                )}
+              </div>
+              <div className="text-[10px] text-slate-700 mt-1.5">
+                Appears as the "Authorized Signature" on Worker and Staff ID card backs, in place of a blank hand-sign line.
               </div>
             </div>
           </div>
@@ -370,6 +447,15 @@ export default function SettingsCompanyPage() {
           </Btn>
         </div>
       </div>
+
+      {showSignaturePad && (
+        <SignaturePad
+          title="Authorized Signature"
+          subtitle="Draw the signature that will appear on ID card backs."
+          onSave={saveSignature}
+          onCancel={() => setShowSignaturePad(false)}
+        />
+      )}
     </div>
   );
 }
