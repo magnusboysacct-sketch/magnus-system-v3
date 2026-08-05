@@ -44,6 +44,7 @@ export default function SettingsRecordsPage() {
   // separate master list to keep in sync.
   const [jobTitleOptions, setJobTitleOptions] = useState<string[]>([]);
   const [newPhotoUrl, setNewPhotoUrl] = useState<string|null>(null);
+  const [photoRemoved, setPhotoRemoved] = useState(false); // distinguishes "explicitly cleared" from "no change" (newPhotoUrl is null in both cases)
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [cropSrc, setCropSrc] = useState<string|null>(null); // object URL of the just-selected file, pending crop
   const [savingStaff, setSavingStaff] = useState(false);
@@ -184,6 +185,7 @@ export default function SettingsRecordsPage() {
       id_expiry_date: s.id_expiry_date || "",
     });
     setNewPhotoUrl(null);
+    setPhotoRemoved(false);
     setEditModalOpen(true);
     // No employee number yet — assign the next one now so it's ready by the
     // time they hit Save. The field itself is never manually editable.
@@ -199,6 +201,14 @@ export default function SettingsRecordsPage() {
   // once every photo goes through the cropper.
   async function uploadStaffPhoto(file: File | Blob, userId: string): Promise<string | null> {
     const path = `staff-photos/${userId}.png`;
+    // Explicitly remove any existing object at this path before uploading,
+    // rather than relying on upsert:true alone — the storage bucket's RLS
+    // policies were configured outside migrations (not visible here to
+    // verify), and upsert performs an UPDATE under the hood, which some
+    // bucket policies grant separately from INSERT. Deleting first turns a
+    // replace into a plain insert either way. Errors here are expected and
+    // ignored on first-ever upload, when nothing exists yet to remove.
+    await supabase.storage.from("project-files").remove([path]);
     const { error } = await supabase.storage
       .from("project-files")
       .upload(path, file, { upsert: true, contentType: "image/png" });
@@ -226,14 +236,28 @@ export default function SettingsRecordsPage() {
     if (!selectedStaff) return;
     setUploadingPhoto(true);
     const url = await uploadStaffPhoto(blob, selectedStaff.id);
-    if (url) setNewPhotoUrl(`${url}?t=${Date.now()}`); // cache-bust so the preview updates immediately on re-upload
-    else alert("Failed to upload photo.");
+    if (url) {
+      setNewPhotoUrl(`${url}?t=${Date.now()}`); // cache-bust so the preview updates immediately on re-upload
+      setPhotoRemoved(false); // a fresh upload supersedes any pending "remove" from this same edit session
+    } else {
+      alert("Failed to upload photo.");
+    }
     setUploadingPhoto(false);
   }
 
   function handleCropCancel() {
     if (cropSrc) URL.revokeObjectURL(cropSrc);
     setCropSrc(null);
+  }
+
+  async function handleRemovePhoto() {
+    if (!selectedStaff || !window.confirm("Remove this staff member's photo?")) return;
+    // Best-effort — the DB update in saveStaffDetails is what actually
+    // clears the photo from the card; a failed storage delete here (e.g.
+    // nothing at that path) shouldn't block that.
+    try { await supabase.storage.from("project-files").remove([`staff-photos/${selectedStaff.id}.png`]); } catch {}
+    setNewPhotoUrl(null);
+    setPhotoRemoved(true);
   }
 
   function addYears(years: number) {
@@ -254,7 +278,8 @@ export default function SettingsRecordsPage() {
         id_issued_date: staffForm.id_issued_date || null,
         id_expiry_date: staffForm.id_expiry_date || null,
       };
-      if (newPhotoUrl) updates.avatar_url = newPhotoUrl;
+      if (photoRemoved) updates.avatar_url = null;
+      else if (newPhotoUrl) updates.avatar_url = newPhotoUrl;
 
       const { error } = await supabase
         .from("user_profiles")
@@ -630,6 +655,9 @@ export default function SettingsRecordsPage() {
               </button>
               <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoSelect} className="hidden"/>
               <span className="text-[10px] text-slate-400 mt-1.5">{uploadingPhoto?"Uploading...":"Click photo to change"}</span>
+              {!uploadingPhoto && (newPhotoUrl || selectedStaff.avatar_url) && (
+                <button onClick={handleRemovePhoto} className="text-[10px] text-red-400 hover:text-red-300 mt-0.5">Remove photo</button>
+              )}
             </div>
 
             <div className="space-y-3">
