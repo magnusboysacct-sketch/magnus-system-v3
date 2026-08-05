@@ -8,6 +8,7 @@ import { StaffIDCard } from "../components/StaffIDCard";
 import { WorkerIDCard } from "../components/WorkerIDCard";
 import { canManageStaff } from "../lib/permissions";
 import EditableDropdown from "../components/common/EditableDropdown";
+import PhotoCropModal from "../components/PhotoCropModal";
 
 function fmtJMD(n: number) {
   return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0}).format(n);
@@ -44,6 +45,7 @@ export default function SettingsRecordsPage() {
   const [jobTitleOptions, setJobTitleOptions] = useState<string[]>([]);
   const [newPhotoUrl, setNewPhotoUrl] = useState<string|null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string|null>(null); // object URL of the just-selected file, pending crop
   const [savingStaff, setSavingStaff] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -192,12 +194,14 @@ export default function SettingsRecordsPage() {
     }
   }
 
-  async function uploadStaffPhoto(file: File, userId: string): Promise<string | null> {
-    const ext = file.name.split(".").pop();
-    const path = `staff-photos/${userId}.${ext}`;
+  // Blob (from the crop modal's canvas output) has no filename, so this
+  // always writes as .png — the original upload extension no longer matters
+  // once every photo goes through the cropper.
+  async function uploadStaffPhoto(file: File | Blob, userId: string): Promise<string | null> {
+    const path = `staff-photos/${userId}.png`;
     const { error } = await supabase.storage
       .from("project-files")
-      .upload(path, file, { upsert: true });
+      .upload(path, file, { upsert: true, contentType: "image/png" });
     if (error) { console.error("Photo upload error:", error); return null; }
     const { data } = supabase.storage
       .from("project-files")
@@ -205,15 +209,31 @@ export default function SettingsRecordsPage() {
     return data.publicUrl;
   }
 
-  async function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  // Selecting a file no longer uploads it directly — it opens the crop
+  // modal first (see cropSrc/handleCropDone below), matching the ID card
+  // photo slot's 65:80 aspect ratio so what's cropped is what actually
+  // shows on the card.
+  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !selectedStaff) return;
+    setCropSrc(URL.createObjectURL(file));
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  }
+
+  async function handleCropDone(blob: Blob) {
+    if (cropSrc) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null);
+    if (!selectedStaff) return;
     setUploadingPhoto(true);
-    const url = await uploadStaffPhoto(file, selectedStaff.id);
+    const url = await uploadStaffPhoto(blob, selectedStaff.id);
     if (url) setNewPhotoUrl(`${url}?t=${Date.now()}`); // cache-bust so the preview updates immediately on re-upload
     else alert("Failed to upload photo.");
     setUploadingPhoto(false);
-    if (photoInputRef.current) photoInputRef.current.value = "";
+  }
+
+  function handleCropCancel() {
+    if (cropSrc) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null);
   }
 
   function addYears(years: number) {
@@ -674,6 +694,10 @@ export default function SettingsRecordsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {cropSrc && (
+        <PhotoCropModal imageSrc={cropSrc} onCancel={handleCropCancel} onCropDone={handleCropDone}/>
       )}
     </div>
   );

@@ -145,13 +145,17 @@ export default function SettingsCompanyPage() {
   // Persisted immediately (not deferred to the main "Save Changes" button)
   // so a director doesn't lose a freshly-drawn signature if they navigate
   // away before hitting Save elsewhere on the page.
-  async function saveSignature(dataUrl: string) {
+  // Shared by both input methods below — drawing (SignaturePad, always a
+  // PNG data URL) and uploading a real signature photo/scan (any image
+  // type the user picks). Persisted immediately (not deferred to the main
+  // "Save Changes" button) so it isn't lost by navigating away before
+  // hitting Save elsewhere on the page.
+  async function persistSignatureBlob(blob: Blob, contentType: string, ext: string) {
     if (!companyId) return;
     setSavingSignature(true); setMsg(null);
     try {
-      const blob = await (await fetch(dataUrl)).blob();
-      const path = `signatures/${companyId}/${Date.now()}_signature.png`;
-      const { error: ue } = await supabase.storage.from("project-files").upload(path, blob, { upsert: true, contentType: "image/png" });
+      const path = `signatures/${companyId}/${Date.now()}_signature.${ext}`;
+      const { error: ue } = await supabase.storage.from("project-files").upload(path, blob, { upsert: true, contentType });
       if (ue) throw ue;
       const { data: ud } = supabase.storage.from("project-files").getPublicUrl(path);
       setSignatureUrl(ud.publicUrl);
@@ -166,6 +170,19 @@ export default function SettingsCompanyPage() {
     } finally {
       setSavingSignature(false);
     }
+  }
+
+  async function saveSignature(dataUrl: string) {
+    const blob = await (await fetch(dataUrl)).blob();
+    await persistSignatureBlob(blob, "image/png", "png");
+  }
+
+  async function handleSignatureFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.split(".").pop() || "png";
+    await persistSignatureBlob(file, file.type || "image/png", ext);
+    e.target.value = "";
   }
 
   async function removeSignature() {
@@ -270,7 +287,7 @@ export default function SettingsCompanyPage() {
               <div className="text-xs text-slate-400 mb-1">
                 {signatureUrl ? "Signature saved" : "No signature saved"}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <button
                   onClick={() => setShowSignaturePad(true)}
                   className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-slate-300 dark:border-white/[0.1] hover:border-cyan-500/40 cursor-pointer transition text-[11px] text-slate-500"
@@ -278,6 +295,12 @@ export default function SettingsCompanyPage() {
                   <PenTool size={13} className="text-slate-600"/>
                   {signatureUrl ? "Redraw signature" : "Draw signature"}
                 </button>
+                <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-slate-300 dark:border-white/[0.1] hover:border-cyan-500/40 cursor-pointer transition text-[11px] text-slate-500">
+                  <Upload size={13} className="text-slate-600"/>
+                  {savingSignature ? "Uploading..." : "Upload photo/scan"}
+                  <input type="file" accept="image/*" className="hidden" disabled={savingSignature}
+                    onChange={handleSignatureFileSelect}/>
+                </label>
                 {signatureUrl && (
                   <button onClick={removeSignature} className="text-[11px] text-red-400 hover:text-red-300">Remove</button>
                 )}
