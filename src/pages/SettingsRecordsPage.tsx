@@ -199,15 +199,23 @@ export default function SettingsRecordsPage() {
   // Blob (from the crop modal's canvas output) has no filename, so this
   // always writes as .png — the original upload extension no longer matters
   // once every photo goes through the cropper.
+  //
+  // Path is {company_id}/staff-photos/{userId}.png — company_id MUST be the
+  // first folder segment: the project-files bucket's real INSERT policy
+  // (confirmed via Supabase dashboard, not visible in migrations — it's
+  // Studio-managed) is `(storage.foldername(name))[1] IN (project_ids the
+  // uploader belongs to)`. Staff photos aren't project-scoped, so the old
+  // `staff-photos/{userId}.png` path could never pass that check — every
+  // upload was rejected by RLS regardless of upsert or a prior delete. The
+  // new company_id-scoped policy below (run separately in SQL Editor) is
+  // additive, not a replacement, so existing project-file uploads through
+  // this bucket are unaffected.
   async function uploadStaffPhoto(file: File | Blob, userId: string): Promise<string | null> {
-    const path = `staff-photos/${userId}.png`;
+    if (!companyId) return null;
+    const path = `${companyId}/staff-photos/${userId}.png`;
     // Explicitly remove any existing object at this path before uploading,
-    // rather than relying on upsert:true alone — the storage bucket's RLS
-    // policies were configured outside migrations (not visible here to
-    // verify), and upsert performs an UPDATE under the hood, which some
-    // bucket policies grant separately from INSERT. Deleting first turns a
-    // replace into a plain insert either way. Errors here are expected and
-    // ignored on first-ever upload, when nothing exists yet to remove.
+    // rather than relying on upsert:true alone — belt-and-suspenders now
+    // that the real blocker (RLS INSERT policy) is fixed separately.
     await supabase.storage.from("project-files").remove([path]);
     const { error } = await supabase.storage
       .from("project-files")
@@ -255,7 +263,9 @@ export default function SettingsRecordsPage() {
     // Best-effort — the DB update in saveStaffDetails is what actually
     // clears the photo from the card; a failed storage delete here (e.g.
     // nothing at that path) shouldn't block that.
-    try { await supabase.storage.from("project-files").remove([`staff-photos/${selectedStaff.id}.png`]); } catch {}
+    if (companyId) {
+      try { await supabase.storage.from("project-files").remove([`${companyId}/staff-photos/${selectedStaff.id}.png`]); } catch {}
+    }
     setNewPhotoUrl(null);
     setPhotoRemoved(true);
   }
