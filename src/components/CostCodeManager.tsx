@@ -143,21 +143,21 @@ export default function CostCodeManager({ companyId }: Props) {
   });
 
   if (loading) {
-    return <div className="p-8 text-center text-gray-500">Loading cost codes...</div>;
+    return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading cost codes...</div>;
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Cost Code Management</h2>
-          <p className="text-sm text-gray-600">Manage job cost codes for tracking expenses</p>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Cost Code Management</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400">Manage job cost codes for tracking expenses</p>
         </div>
         <div className="flex items-center gap-2">
           {costCodes.length === 0 && (
             <button
               onClick={handleImportStandard}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-gray-600 dark:bg-gray-500 text-white rounded hover:bg-gray-700"
             >
               <Download size={16} />
               Import Standard Codes
@@ -180,14 +180,14 @@ export default function CostCodeManager({ companyId }: Props) {
             placeholder="Search cost codes..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-white/[0.1] rounded"
           />
         </div>
         <div>
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded"
+            className="px-4 py-2 border border-gray-300 dark:border-white/[0.1] rounded"
           >
             <option value="all">All Categories</option>
             {categories.map((cat) => (
@@ -199,57 +199,57 @@ export default function CostCodeManager({ companyId }: Props) {
         </div>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="bg-white dark:bg-[#0f1520] border border-gray-200 dark:border-white/[0.08] rounded-lg overflow-hidden">
         <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-gray-50 dark:bg-white/[0.04] border-b border-gray-200 dark:border-white/[0.08]">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Code</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Description</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Category</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase">Billable</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">Budget</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase">Status</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Code</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Description</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Category</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Billable</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Budget</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Status</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {filteredCodes.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                   No cost codes found. Create one or import standard codes.
                 </td>
               </tr>
             ) : (
               filteredCodes.map((code) => (
                 <tr key={code.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm font-mono font-medium text-gray-900">
+                  <td className="px-4 py-3 text-sm font-mono font-medium text-gray-900 dark:text-gray-100">
                     {code.code}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-900">{code.description}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{code.category || "-"}</td>
+                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">{code.description}</td>
+                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{code.category || "-"}</td>
                   <td className="px-4 py-3 text-center">
                     {code.is_billable ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
+                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-300 rounded">
                         <Check size={12} />
                         Yes
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
+                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200 rounded">
                         <X size={12} />
                         No
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-right text-gray-900">
+                  <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-gray-100">
                     ${code.budget_amount.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-center">
                     {code.is_active ? (
-                      <span className="inline-flex px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
+                      <span className="inline-flex px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-300 rounded">
                         Active
                       </span>
                     ) : (
-                      <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
+                      <span className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200 rounded">
                         Inactive
                       </span>
                     )}
@@ -258,14 +258,14 @@ export default function CostCodeManager({ companyId }: Props) {
                     <div className="flex items-center justify-center gap-2">
                       <button
                         onClick={() => openEditModal(code)}
-                        className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                        className="p-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 rounded"
                         title="Edit"
                       >
                         <Edit2 size={16} />
                       </button>
                       <button
                         onClick={() => handleDelete(code.id!)}
-                        className="p-1 text-red-600 hover:bg-red-50 rounded"
+                        className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 rounded"
                         title="Delete"
                       >
                         <Trash2 size={16} />
@@ -281,9 +281,9 @@ export default function CostCodeManager({ companyId }: Props) {
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
-            <div className="border-b border-gray-200 px-6 py-4">
-              <h3 className="text-lg font-semibold text-gray-900">
+          <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow-xl max-w-2xl w-full">
+            <div className="border-b border-gray-200 dark:border-white/[0.08] px-6 py-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 {editingCode ? "Edit Cost Code" : "New Cost Code"}
               </h3>
             </div>
@@ -291,7 +291,7 @@ export default function CostCodeManager({ companyId }: Props) {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Code <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -299,18 +299,18 @@ export default function CostCodeManager({ companyId }: Props) {
                     required
                     value={formData.code}
                     onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded font-mono"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-white/[0.1] rounded font-mono"
                     placeholder="e.g., 03-3000"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category</label>
                   <input
                     type="text"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-white/[0.1] rounded"
                     placeholder="e.g., Concrete"
                     list="categories"
                   />
@@ -323,7 +323,7 @@ export default function CostCodeManager({ companyId }: Props) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Description <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -331,14 +331,14 @@ export default function CostCodeManager({ companyId }: Props) {
                   required
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-white/[0.1] rounded"
                   placeholder="e.g., Cast-in-Place Concrete"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Budget Amount
                   </label>
                   <input
@@ -347,7 +347,7 @@ export default function CostCodeManager({ companyId }: Props) {
                     min="0"
                     value={formData.budget_amount}
                     onChange={(e) => setFormData({ ...formData, budget_amount: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-white/[0.1] rounded"
                   />
                 </div>
 
@@ -361,27 +361,27 @@ export default function CostCodeManager({ companyId }: Props) {
                       }
                       className="w-4 h-4"
                     />
-                    <span className="text-sm font-medium text-gray-700">Billable to Client</span>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Billable to Client</span>
                   </label>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
                 <textarea
                   rows={3}
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-white/[0.1] rounded"
                   placeholder="Optional notes about this cost code"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-white/[0.08]">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                  className="px-4 py-2 text-sm border border-gray-300 dark:border-white/[0.1] rounded hover:bg-gray-50"
                 >
                   Cancel
                 </button>

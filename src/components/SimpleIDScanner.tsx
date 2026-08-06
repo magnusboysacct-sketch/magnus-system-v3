@@ -1,4 +1,4 @@
-﻿// src/components/SimpleIDScanner.tsx
+// src/components/SimpleIDScanner.tsx
 // AI-powered ID scanner — uses Claude Vision via Supabase Edge Function
 // Falls back to manual entry if AI unavailable
 // Crop box + zoom preview + editable fields
@@ -203,16 +203,16 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
 
   const H = "absolute w-5 h-5 bg-cyan-400 border-2 border-white rounded z-20 touch-none cursor-pointer";
 
-  const inputCls = "w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50 transition-colors";
+  const inputCls = "w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-cyan-500/50 transition-colors";
 
   return (
     <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500/10 to-violet-500/10 border border-cyan-500/20 px-3 py-2">
-        <Sparkles size={13} className="text-cyan-400 flex-shrink-0"/>
+        <Sparkles size={13} className="text-cyan-500 dark:text-cyan-400 flex-shrink-0"/>
         <div>
-          <div className="text-xs font-semibold text-cyan-300">Magnus AI — ID Scanner</div>
-          <div className="text-[10px] text-slate-500">
+          <div className="text-xs font-semibold text-cyan-700 dark:text-cyan-300">Magnus AI — ID Scanner</div>
+          <div className="text-[10px] text-slate-600 dark:text-slate-500">
             {step==="upload"   && "Upload or photograph the ID card."}
             {step==="crop"     && "Drag the box tightly around the ID, then tap Scan."}
             {step==="scanning" && progress}
@@ -220,14 +220,14 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
           </div>
         </div>
         {aiPowered && step==="review" && (
-          <div className="ml-auto text-[9px] font-bold text-cyan-500 bg-cyan-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+          <div className="ml-auto text-[9px] font-bold text-cyan-600 dark:text-cyan-500 bg-cyan-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
             <Sparkles size={9}/> AI
           </div>
         )}
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-300">
+        <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">
           <X size={12}/> {error}
           <button onClick={reset} className="ml-auto underline">Retry</button>
         </div>
@@ -237,20 +237,20 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
       {step==="upload" && (
         <div className="grid grid-cols-2 gap-3">
           <button onClick={()=>cameraInputRef.current?.click()}
-            className="flex flex-col items-center gap-2 p-5 rounded-xl border-2 border-dashed border-white/[0.1] hover:border-cyan-500/50 hover:bg-cyan-500/10 transition-all">
+            className="flex flex-col items-center gap-2 p-5 rounded-xl border-2 border-dashed border-slate-300 dark:border-white/[0.1] hover:border-cyan-500/50 hover:bg-cyan-500/10 transition-all">
             <div className="w-12 h-12 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
-              <Camera size={20} className="text-cyan-400"/>
+              <Camera size={20} className="text-cyan-500 dark:text-cyan-400"/>
             </div>
-            <div className="text-xs font-semibold text-slate-300">Take Photo</div>
-            <div className="text-[10px] text-slate-600">Use camera</div>
+            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">Take Photo</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-600">Use camera</div>
           </button>
           <button onClick={()=>fileInputRef.current?.click()}
-            className="flex flex-col items-center gap-2 p-5 rounded-xl border-2 border-dashed border-white/[0.1] hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all">
+            className="flex flex-col items-center gap-2 p-5 rounded-xl border-2 border-dashed border-slate-300 dark:border-white/[0.1] hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all">
             <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-              <Upload size={20} className="text-emerald-400"/>
+              <Upload size={20} className="text-emerald-500 dark:text-emerald-400"/>
             </div>
-            <div className="text-xs font-semibold text-slate-300">Upload Photo</div>
-            <div className="text-[10px] text-slate-600">From gallery</div>
+            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">Upload Photo</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-600">From gallery</div>
           </button>
           <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileInput} className="hidden"/>
           <input ref={fileInputRef}   type="file" accept="image/*" onChange={handleFileInput} className="hidden"/>
@@ -260,7 +260,8 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
       {/* Crop + Scan */}
       {(step==="crop"||step==="scanning") && imageSrc && (
         <div className="space-y-2">
-          {/* Main image with crop box */}
+          {/* Photo/crop viewer stays black regardless of app theme, same as a
+              camera viewfinder — this isn't a themed surface. */}
           <div ref={containerRef} className="relative w-full rounded-xl overflow-hidden bg-black select-none" style={{height:260}}>
             <img ref={imgRef} src={imageSrc} alt="ID"
               className="w-full h-full object-contain pointer-events-none" draggable={false}
@@ -312,7 +313,7 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
                 </div>
                 <div className="text-center">
                   <div className="text-sm text-cyan-300 font-medium">{progress}</div>
-                  <div className="text-[10px] text-slate-600 mt-0.5">Claude Vision AI</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Claude Vision AI</div>
                 </div>
               </div>
             )}
@@ -321,7 +322,7 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
           {/* Zoom preview */}
           {step==="crop" && (
             <div className="space-y-1">
-              <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 flex items-center gap-1.5">
+              <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse inline-block"/>
                 Zoom preview — what will be scanned
               </div>
@@ -334,9 +335,9 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
 
           {step==="crop" && (
             <>
-              <p className="text-[10px] text-slate-600 text-center">Drag corners to resize · Drag inside to move · Frame the ID card tightly</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-600 text-center">Drag corners to resize · Drag inside to move · Frame the ID card tightly</p>
               <div className="flex gap-2">
-                <button onClick={reset} className="px-4 py-2 rounded-lg border border-white/[0.08] text-xs text-slate-400 hover:text-slate-300 transition-colors">← Change</button>
+                <button onClick={reset} className="px-4 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">← Change</button>
                 <button onClick={cropAndScan} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-gradient-to-r from-cyan-600 to-violet-600 hover:from-cyan-500 hover:to-violet-500 text-xs text-white font-semibold transition-all shadow-lg shadow-cyan-500/20">
                   <Sparkles size={13}/> Zoom & Scan with AI
                 </button>
@@ -350,53 +351,53 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
       {step==="review" && (
         <div className="space-y-3">
           {!aiPowered && (
-            <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-[11px] text-amber-300">
+            <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
               <AlertCircle size={12}/> AI unavailable — fill in the fields manually
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">First Name</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">First Name</label>
               <input value={fields.firstName} onChange={e=>setFields(f=>({...f,firstName:e.target.value}))} placeholder="FELICA" className={inputCls}/>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Middle Name</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Middle Name</label>
               <input value={fields.middleName} onChange={e=>setFields(f=>({...f,middleName:e.target.value}))} placeholder="EVERETT" className={inputCls}/>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Last Name</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Last Name</label>
               <input value={fields.lastName} onChange={e=>setFields(f=>({...f,lastName:e.target.value}))} placeholder="GREEN" className={inputCls}/>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">ID Number</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">ID Number</label>
               <input value={fields.idNumber} onChange={e=>setFields(f=>({...f,idNumber:e.target.value}))} placeholder="40347280" className={inputCls}/>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Date of Birth</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Date of Birth</label>
               <input value={fields.dateOfBirth} onChange={e=>setFields(f=>({...f,dateOfBirth:e.target.value}))} placeholder="1960-12-29" className={inputCls}/>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Expiry Date</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Expiry Date</label>
               <input value={fields.expiryDate} onChange={e=>setFields(f=>({...f,expiryDate:e.target.value}))} placeholder="2031-12-31" className={inputCls}/>
             </div>
             <div className="space-y-1 col-span-2">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Address</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Address</label>
               <input value={fields.address} onChange={e=>setFields(f=>({...f,address:e.target.value}))} placeholder="Portland Cottage, Clarendon" className={inputCls}/>
             </div>
           </div>
 
           {aiPowered && fields.confidence > 0 && (
             <div className={cn("text-[10px] text-center font-medium",
-              fields.confidence > 0.8 ? "text-emerald-400" :
-              fields.confidence > 0.6 ? "text-amber-400" : "text-red-400")}>
+              fields.confidence > 0.8 ? "text-emerald-600 dark:text-emerald-400" :
+              fields.confidence > 0.6 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400")}>
               {Math.round(fields.confidence * 100)}% AI confidence
               {fields.confidence < 0.7 && " — please verify all fields"}
             </div>
           )}
 
           <div className="flex gap-2">
-            <button onClick={()=>setStep("crop")} className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-white/[0.08] text-xs text-slate-400 hover:text-slate-300 transition-colors">
+            <button onClick={()=>setStep("crop")} className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">
               <RefreshCw size={12}/> Rescan
             </button>
             <button onClick={handleUseData} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-xs text-white font-semibold transition-colors">
@@ -406,7 +407,7 @@ export function SimpleIDScanner({ onResult, onCancel }: SimpleIDScannerProps) {
         </div>
       )}
 
-      <button onClick={onCancel} className="w-full py-1.5 text-[11px] text-slate-700 hover:text-slate-500 transition-colors">Cancel</button>
+      <button onClick={onCancel} className="w-full py-1.5 text-[11px] text-slate-400 dark:text-slate-700 hover:text-slate-600 dark:hover:text-slate-500 transition-colors">Cancel</button>
     </div>
   );
 }

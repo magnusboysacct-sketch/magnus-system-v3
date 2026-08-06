@@ -1,4 +1,4 @@
-﻿// src/components/ReceiptScanner.tsx
+// src/components/ReceiptScanner.tsx
 // AI-powered receipt & invoice scanner
 // Uses Claude Vision via Supabase Edge Function
 // Falls back to manual entry if AI unavailable
@@ -198,32 +198,32 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
     });
   }
 
-  const inputCls = "w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-700 outline-none focus:border-cyan-500/50 transition-colors";
+  const inputCls = "w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-cyan-500/50 transition-colors";
   const H = "absolute w-5 h-5 bg-emerald-400 border-2 border-white rounded z-20 touch-none cursor-pointer";
 
   return (
     <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/20 px-3 py-2">
-        <Sparkles size={13} className="text-emerald-400 flex-shrink-0"/>
+        <Sparkles size={13} className="text-emerald-500 dark:text-emerald-400 flex-shrink-0"/>
         <div>
-          <div className="text-xs font-semibold text-emerald-300">Magnus AI â€” {mode === "invoice" ? "Invoice" : "Receipt"} Scanner</div>
-          <div className="text-[10px] text-slate-500">
+          <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Magnus AI — {mode === "invoice" ? "Invoice" : "Receipt"} Scanner</div>
+          <div className="text-[10px] text-slate-600 dark:text-slate-500">
             {step==="upload"   && "Upload or photograph the receipt/invoice."}
             {step==="crop"     && "Frame the document in the box, then tap Scan."}
             {step==="scanning" && progress}
-            {step==="review"   && (aiPowered ? "AI extracted these fields â€” correct anything wrong." : "Fill in the fields manually.")}
+            {step==="review"   && (aiPowered ? "AI extracted these fields — correct anything wrong." : "Fill in the fields manually.")}
           </div>
         </div>
         {aiPowered && step==="review" && (
-          <div className="ml-auto text-[9px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+          <div className="ml-auto text-[9px] font-bold text-emerald-600 dark:text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
             <Sparkles size={9}/> AI
           </div>
         )}
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-300">
+        <div className="flex items-center gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-700 dark:text-red-300">
           <X size={12}/> {error} <button onClick={reset} className="ml-auto underline">Retry</button>
         </div>
       )}
@@ -232,20 +232,20 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
       {step==="upload" && (
         <div className="grid grid-cols-2 gap-3">
           <button onClick={()=>cameraInputRef.current?.click()}
-            className="flex flex-col items-center gap-2 p-5 rounded-xl border-2 border-dashed border-white/[0.1] hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all">
+            className="flex flex-col items-center gap-2 p-5 rounded-xl border-2 border-dashed border-slate-300 dark:border-white/[0.1] hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all">
             <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-              <Camera size={20} className="text-emerald-400"/>
+              <Camera size={20} className="text-emerald-500 dark:text-emerald-400"/>
             </div>
-            <div className="text-xs font-semibold text-slate-300">Take Photo</div>
-            <div className="text-[10px] text-slate-600">Camera</div>
+            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">Take Photo</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-600">Camera</div>
           </button>
           <button onClick={()=>fileInputRef.current?.click()}
-            className="flex flex-col items-center gap-2 p-5 rounded-xl border-2 border-dashed border-white/[0.1] hover:border-cyan-500/50 hover:bg-cyan-500/10 transition-all">
+            className="flex flex-col items-center gap-2 p-5 rounded-xl border-2 border-dashed border-slate-300 dark:border-white/[0.1] hover:border-cyan-500/50 hover:bg-cyan-500/10 transition-all">
             <div className="w-12 h-12 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
-              <Upload size={20} className="text-cyan-400"/>
+              <Upload size={20} className="text-cyan-500 dark:text-cyan-400"/>
             </div>
-            <div className="text-xs font-semibold text-slate-300">Upload</div>
-            <div className="text-[10px] text-slate-600">Gallery / File</div>
+            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">Upload</div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-600">Gallery / File</div>
           </button>
           <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileInput} className="hidden"/>
           <input ref={fileInputRef}   type="file" accept="image/*,application/pdf" onChange={handleFileInput} className="hidden"/>
@@ -255,6 +255,8 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
       {/* Crop */}
       {(step==="crop"||step==="scanning") && imageSrc && (
         <div className="space-y-2">
+          {/* Photo/crop viewer stays black regardless of app theme, same as a
+              camera viewfinder — this isn't a themed surface. */}
           <div ref={containerRef} className="relative w-full rounded-xl overflow-hidden bg-black select-none" style={{height:280}}>
             <img ref={imgRef} src={imageSrc} alt="Receipt"
               className="w-full h-full object-contain pointer-events-none" draggable={false}/>
@@ -298,7 +300,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
                 </div>
                 <div className="text-center">
                   <div className="text-sm text-emerald-300 font-medium">{progress}</div>
-                  <div className="text-[10px] text-slate-600 mt-0.5">Claude Vision AI</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Claude Vision AI</div>
                 </div>
               </div>
             )}
@@ -307,7 +309,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
           {/* Zoom preview */}
           {step==="crop" && (
             <div className="space-y-1">
-              <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 flex items-center gap-1.5">
+              <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block"/>
                 Zoom preview
               </div>
@@ -320,9 +322,9 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
 
           {step==="crop" && (
             <>
-              <p className="text-[10px] text-slate-600 text-center">Frame the entire receipt Â· Drag corners to resize</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-600 text-center">Frame the entire receipt · Drag corners to resize</p>
               <div className="flex gap-2">
-                <button onClick={reset} className="px-4 py-2 rounded-lg border border-white/[0.08] text-xs text-slate-400 hover:text-slate-300 transition-colors">â† Change</button>
+                <button onClick={reset} className="px-4 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">← Change</button>
                 <button onClick={cropAndScan} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-xs text-white font-semibold transition-all shadow-lg shadow-emerald-500/20">
                   <Sparkles size={13}/> Scan with AI
                 </button>
@@ -336,37 +338,37 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
       {step==="review" && (
         <div className="space-y-3">
           {!aiPowered && (
-            <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-[11px] text-amber-300">
-              <AlertCircle size={12}/> AI unavailable â€” fill in manually
+            <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+              <AlertCircle size={12}/> AI unavailable — fill in manually
             </div>
           )}
 
           {/* Main fields */}
           <div className="grid grid-cols-2 gap-2">
             <div className="col-span-2 space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Vendor / Store Name</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Vendor / Store Name</label>
               <input value={fields.vendor} onChange={e=>setFields(f=>({...f,vendor:e.target.value}))}
                 placeholder="Store or business name" className={inputCls}/>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Date</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Date</label>
               <input value={fields.date} onChange={e=>setFields(f=>({...f,date:e.target.value}))}
                 placeholder="YYYY-MM-DD" className={inputCls}/>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Receipt #</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Receipt #</label>
               <input value={fields.receiptNumber} onChange={e=>setFields(f=>({...f,receiptNumber:e.target.value}))}
                 placeholder="Receipt number" className={inputCls}/>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Tax</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Tax</label>
               <input type="number" value={fields.tax||""} onChange={e=>setFields(f=>({...f,tax:parseFloat(e.target.value)||0}))}
                 placeholder="0.00" className={inputCls}/>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Payment Method</label>
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Payment Method</label>
               <select value={fields.paymentMethod} onChange={e=>setFields(f=>({...f,paymentMethod:e.target.value}))}
-                className={cn(inputCls, "[&>option]:bg-[#111820]")}>
+                className={cn(inputCls, "dark:[&>option]:bg-[#111820]")}>
                 <option value="">Select...</option>
                 <option value="cash">Cash</option>
                 <option value="card">Card</option>
@@ -379,16 +381,16 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
           {/* Total */}
           <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 flex items-center justify-between">
             <div>
-              <div className="text-[9px] font-bold uppercase tracking-widest text-emerald-600 mb-1">Total Amount</div>
+              <div className="text-[9px] font-bold uppercase tracking-widest text-emerald-700 dark:text-emerald-600 mb-1">Total Amount</div>
               <input type="number" value={fields.amount||""}
                 onChange={e=>setFields(f=>({...f,amount:parseFloat(e.target.value)||0}))}
                 placeholder="0.00"
-                className="bg-transparent text-2xl font-bold text-emerald-400 outline-none w-40 placeholder-emerald-800"/>
+                className="bg-transparent text-2xl font-bold text-emerald-600 dark:text-emerald-400 outline-none w-40 placeholder-emerald-300 dark:placeholder-emerald-800"/>
             </div>
             {aiPowered && fields.confidence > 0 && (
               <div className={cn("text-[10px] font-bold px-2 py-1 rounded-full",
-                fields.confidence > 0.8 ? "bg-emerald-500/15 text-emerald-400" :
-                fields.confidence > 0.6 ? "bg-amber-500/15 text-amber-400" : "bg-red-500/15 text-red-400")}>
+                fields.confidence > 0.8 ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" :
+                fields.confidence > 0.6 ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "bg-red-500/15 text-red-700 dark:text-red-400")}>
                 {Math.round(fields.confidence*100)}% AI
               </div>
             )}
@@ -397,14 +399,14 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
           {/* Line items */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Line Items</div>
+              <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Line Items</div>
               <button onClick={addLineItem}
-                className="flex items-center gap-1 text-[10px] text-cyan-500 hover:text-cyan-400 transition-colors">
+                className="flex items-center gap-1 text-[10px] text-cyan-600 dark:text-cyan-500 hover:text-cyan-700 dark:hover:text-cyan-400 transition-colors">
                 <Plus size={11}/> Add item
               </button>
             </div>
             {(fields.lineItems||[]).length === 0 && (
-              <div className="text-[10px] text-slate-700 text-center py-2">No line items extracted â€” add manually if needed</div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-700 text-center py-2">No line items extracted — add manually if needed</div>
             )}
             {(fields.lineItems||[]).map((item, i) => (
               <div key={i} className="grid grid-cols-12 gap-1.5 items-center">
@@ -416,7 +418,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
                   placeholder="Price" className={cn(inputCls,"col-span-2 text-xs py-1.5")}/>
                 <input type="number" value={item.amount||""} onChange={e=>updateLineItem(i,"amount",e.target.value)}
                   placeholder="Total" className={cn(inputCls,"col-span-2 text-xs py-1.5")}/>
-                <button onClick={()=>removeLineItem(i)} className="col-span-1 flex justify-center text-red-500/50 hover:text-red-400 transition-colors">
+                <button onClick={()=>removeLineItem(i)} className="col-span-1 flex justify-center text-red-500/70 dark:text-red-500/50 hover:text-red-600 dark:hover:text-red-400 transition-colors">
                   <Trash2 size={13}/>
                 </button>
               </div>
@@ -424,7 +426,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
           </div>
 
           <div className="flex gap-2 pt-1">
-            <button onClick={()=>setStep("crop")} className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-white/[0.08] text-xs text-slate-400 hover:text-slate-300 transition-colors">
+            <button onClick={()=>setStep("crop")} className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">
               <RefreshCw size={12}/> Rescan
             </button>
             <button onClick={handleUseData} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs text-white font-semibold transition-colors">
@@ -434,7 +436,7 @@ export function ReceiptScanner({ onResult, onCancel, mode = "receipt" }: Receipt
         </div>
       )}
 
-      <button onClick={onCancel} className="w-full py-1.5 text-[11px] text-slate-700 hover:text-slate-500 transition-colors">Cancel</button>
+      <button onClick={onCancel} className="w-full py-1.5 text-[11px] text-slate-400 dark:text-slate-700 hover:text-slate-600 dark:hover:text-slate-500 transition-colors">Cancel</button>
     </div>
   );
 }

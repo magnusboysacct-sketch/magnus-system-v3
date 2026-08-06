@@ -233,7 +233,7 @@ export default function ContractProgressBilling({
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="text-gray-500">Loading contract billing...</div>
+        <div className="text-gray-500 dark:text-gray-400">Loading contract billing...</div>
       </div>
     );
   }
@@ -241,12 +241,12 @@ export default function ContractProgressBilling({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Contract Progress Billing</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Contract Progress Billing</h2>
         <div className="flex items-center gap-2">
           <button
             onClick={handleSyncFromBOQ}
             disabled={syncing}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-gray-600 dark:bg-gray-500 text-white rounded hover:bg-gray-700 disabled:opacity-50"
           >
             <RefreshCw size={16} className={syncing ? "animate-spin" : ""} />
             Sync from BOQ
@@ -264,71 +264,71 @@ export default function ContractProgressBilling({
 
       {summary && (
         <div className="grid grid-cols-4 gap-4">
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+          <div className="bg-white dark:bg-[#0f1520] border border-gray-200 dark:border-white/[0.08] rounded-lg p-4">
+            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
               <FileText size={16} />
               Contract Amount
             </div>
-            <div className="text-2xl font-bold text-gray-900">
+            <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
               {formatCurrency(summary.contract_amount)}
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+          <div className="bg-white dark:bg-[#0f1520] border border-gray-200 dark:border-white/[0.08] rounded-lg p-4">
+            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
               <CheckCircle2 size={16} />
               Billed to Date
             </div>
-            <div className="text-2xl font-bold text-blue-600">
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
               {formatCurrency(summary.total_billed_to_date)}
             </div>
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {formatPercent(summary.percent_billed)} of contract
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+          <div className="bg-white dark:bg-[#0f1520] border border-gray-200 dark:border-white/[0.08] rounded-lg p-4">
+            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
               <Clock size={16} />
               Retainage Held
             </div>
-            <div className="text-2xl font-bold text-orange-600">
+            <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
               {formatCurrency(summary.total_retainage_held)}
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+          <div className="bg-white dark:bg-[#0f1520] border border-gray-200 dark:border-white/[0.08] rounded-lg p-4">
+            <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
               <TrendingUp size={16} />
               Remaining Balance
             </div>
-            <div className="text-2xl font-bold text-gray-900">
+            <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
               {formatCurrency(summary.remaining_contract_balance)}
             </div>
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {formatPercent(summary.percent_complete)} complete
             </div>
           </div>
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div className="bg-white dark:bg-[#0f1520] border border-gray-200 dark:border-white/[0.08] rounded-lg overflow-hidden">
         <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-gray-50 dark:bg-white/[0.04] border-b border-gray-200 dark:border-white/[0.08]">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase">Item</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">Contract Qty</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">Rate</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">Contract Amount</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase">% Complete</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">Previously Billed</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase">Remaining</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Item</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Contract Qty</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Rate</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Contract Amount</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">% Complete</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Previously Billed</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-gray-700 dark:text-gray-300 uppercase">Remaining</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {billingItems.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                   No billing items. Click "Sync from BOQ" to import items.
                 </td>
               </tr>
@@ -336,8 +336,8 @@ export default function ContractProgressBilling({
               billingItems.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-sm text-gray-900">{item.description}</div>
-                    <div className="text-xs text-gray-500">Line {item.line_no}</div>
+                    <div className="font-medium text-sm text-gray-900 dark:text-gray-100">{item.description}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">Line {item.line_no}</div>
                   </td>
                   <td className="px-4 py-3 text-right text-sm">
                     {item.contract_quantity} {item.unit}
@@ -357,15 +357,15 @@ export default function ContractProgressBilling({
                         step="0.1"
                         value={item.percent_complete}
                         onChange={(e) => handleUpdateProgress(item.id!, parseFloat(e.target.value) || 0)}
-                        className="w-20 px-2 py-1 text-sm text-center border border-gray-300 rounded"
+                        className="w-20 px-2 py-1 text-sm text-center border border-gray-300 dark:border-white/[0.1] rounded"
                       />
-                      <span className="text-xs text-gray-500">%</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">%</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-right text-sm text-gray-600">
+                  <td className="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">
                     {formatCurrency(item.previously_billed_amount)}
                   </td>
-                  <td className="px-4 py-3 text-right text-sm font-medium text-green-600">
+                  <td className="px-4 py-3 text-right text-sm font-medium text-green-600 dark:text-green-400">
                     {formatCurrency(item.remaining_contract_balance)}
                   </td>
                 </tr>
@@ -377,46 +377,46 @@ export default function ContractProgressBilling({
 
       {showBillingModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4">
+          <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-[#0f1520] border-b border-gray-200 dark:border-white/[0.08] px-6 py-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Generate Progress Invoice</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Generate Progress Invoice</h3>
                 <button
                   onClick={() => setShowBillingModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 dark:text-gray-600 hover:text-gray-600"
                 >
                   ✕
                 </button>
               </div>
               <div className="mt-3">
-                <label className="block text-sm text-gray-600 mb-1">Invoice Date</label>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Invoice Date</label>
                 <input
                   type="date"
                   value={invoiceDate}
                   onChange={(e) => setInvoiceDate(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded"
+                  className="px-3 py-2 border border-gray-300 dark:border-white/[0.1] rounded"
                 />
               </div>
             </div>
 
             <div className="p-6">
               {calculations.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   No billable items found. Update progress percentages and recalculate.
                 </div>
               ) : (
                 <>
-                  <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="mb-4 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg p-4">
                     <div className="flex items-start gap-2">
-                      <AlertCircle size={20} className="text-blue-600 mt-0.5" />
-                      <div className="text-sm text-blue-800">
+                      <AlertCircle size={20} className="text-blue-600 dark:text-blue-400 mt-0.5" />
+                      <div className="text-sm text-blue-800 dark:text-blue-300">
                         Select items to include in this invoice. Only items with progress updates will appear.
                       </div>
                     </div>
                   </div>
 
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-200">
+                    <thead className="bg-gray-50 dark:bg-white/[0.04] border-b border-gray-200 dark:border-white/[0.08]">
                       <tr>
                         <th className="px-3 py-2 text-left">
                           <input
@@ -431,12 +431,12 @@ export default function ContractProgressBilling({
                             }}
                           />
                         </th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-700">Item</th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700">% Complete</th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700">Previously Billed</th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700">Current Billing</th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700">Retainage</th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700">Net Due</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 dark:text-gray-300">Item</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700 dark:text-gray-300">% Complete</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700 dark:text-gray-300">Previously Billed</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700 dark:text-gray-300">Current Billing</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700 dark:text-gray-300">Retainage</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-700 dark:text-gray-300">Net Due</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -451,27 +451,27 @@ export default function ContractProgressBilling({
                           </td>
                           <td className="px-3 py-2">
                             <div className="font-medium">{calc.description}</div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
                               {calc.current_billing_quantity} {calc.unit} @ {formatCurrency(calc.contract_rate)}
                             </div>
                           </td>
                           <td className="px-3 py-2 text-right">{formatPercent(calc.percent_complete)}</td>
-                          <td className="px-3 py-2 text-right text-gray-600">
+                          <td className="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
                             {formatCurrency(calc.previously_billed_amount)}
                           </td>
                           <td className="px-3 py-2 text-right font-medium">
                             {formatCurrency(calc.current_billing_amount)}
                           </td>
-                          <td className="px-3 py-2 text-right text-orange-600">
+                          <td className="px-3 py-2 text-right text-orange-600 dark:text-orange-400">
                             ({formatCurrency(calc.retainage_amount)})
                           </td>
-                          <td className="px-3 py-2 text-right font-bold text-green-600">
+                          <td className="px-3 py-2 text-right font-bold text-green-600 dark:text-green-400">
                             {formatCurrency(calc.net_amount_due)}
                           </td>
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot className="bg-gray-50 border-t-2 border-gray-300">
+                    <tfoot className="bg-gray-50 dark:bg-white/[0.04] border-t-2 border-gray-300 dark:border-white/[0.1]">
                       <tr>
                         <td colSpan={4} className="px-3 py-3 text-right font-semibold">Totals:</td>
                         <td className="px-3 py-3 text-right font-bold">
@@ -481,14 +481,14 @@ export default function ContractProgressBilling({
                               .reduce((sum, c) => sum + Number(c.current_billing_amount), 0)
                           )}
                         </td>
-                        <td className="px-3 py-3 text-right font-bold text-orange-600">
+                        <td className="px-3 py-3 text-right font-bold text-orange-600 dark:text-orange-400">
                           ({formatCurrency(
                             calculations
                               .filter(c => selectedItems.has(c.billing_item_id))
                               .reduce((sum, c) => sum + Number(c.retainage_amount), 0)
                           )})
                         </td>
-                        <td className="px-3 py-3 text-right font-bold text-green-600">
+                        <td className="px-3 py-3 text-right font-bold text-green-600 dark:text-green-400">
                           {formatCurrency(
                             calculations
                               .filter(c => selectedItems.has(c.billing_item_id))
@@ -502,7 +502,7 @@ export default function ContractProgressBilling({
                   <div className="mt-6 flex justify-end gap-3">
                     <button
                       onClick={() => setShowBillingModal(false)}
-                      className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                      className="px-4 py-2 text-sm border border-gray-300 dark:border-white/[0.1] rounded hover:bg-gray-50"
                     >
                       Cancel
                     </button>
