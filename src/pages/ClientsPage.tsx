@@ -11,7 +11,7 @@ import {
 import {
   Plus, Search, Building2, Phone, Mail,
   MapPin, ArrowRight, Edit2, Trash2, RefreshCw,
-  LayoutGrid, List, User, FolderOpen
+  LayoutGrid, List, User, FolderOpen, MessageCircle, Send
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,6 +31,17 @@ type Client = {
   updated_at: string;
 };
 
+type Comment = {
+  id: string;
+  client_id: string;
+  project_id: string | null;
+  message: string;
+  sender_type: "client" | "staff";
+  sender_id: string | null;
+  read_at: string | null;
+  created_at: string;
+};
+
 type ViewMode = "grid" | "list";
 type Tab = "all" | "active" | "inactive";
 
@@ -46,12 +57,14 @@ const EMPTY_FORM = {
 
 // ─── Client Card ──────────────────────────────────────────────────────────────
 
-function ClientCard({ client, onEdit, onDelete, onPortalToggle, onResetPassword }: {
+function ClientCard({ client, unreadCount, onEdit, onDelete, onPortalToggle, onResetPassword, onMessage }: {
   client: Client;
+  unreadCount: number;
   onEdit: (c: Client) => void;
   onDelete: (id: string) => void;
   onPortalToggle: (c: Client) => void;
   onResetPassword: (c: Client) => void;
+  onMessage: (c: Client) => void;
 }) {
   const { userRole } = useProjectContext();
   const canDelete = userRole === "director";
@@ -62,6 +75,15 @@ function ClientCard({ client, onEdit, onDelete, onPortalToggle, onResetPassword 
           <Building2 size={16} className="text-blue-400" />
         </div>
         <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+          <button onClick={() => onMessage(client)} title="Messages"
+            className="relative p-2 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
+            <MessageCircle size={14}/>
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-[3px] rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center leading-none">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
           <button onClick={() => onEdit(client)}
             className="p-2 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
             <Edit2 size={14}/>
@@ -146,7 +168,77 @@ export default function ClientsPage() {
   const [copied, setCopied] = useState(false);
   const portalNoticeRef = useRef<{name:string;url:string} | null>(null);
 
-  useEffect(() => { loadClients(); }, []);
+  // Messaging — client-scoped (not project-scoped), so it works whether or
+  // not the client has a project yet. See ProjectDashboardPage.tsx for the
+  // existing per-project thread this deliberately doesn't replace; this one
+  // is the client-independent counterpart clients already have via the
+  // portal's own always-available "Messages" panel.
+  const [currentUser, setCurrentUser] = useState<{id:string; full_name?:string} | null>(null);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [messagingClient, setMessagingClient] = useState<Client | null>(null);
+  const [messages, setMessages] = useState<Comment[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [newMessage, setNewMessage] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+
+  useEffect(() => { loadClients(); loadUnreadCounts(); }, []);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        supabase.from("user_profiles").select("id, full_name").eq("id", data.user.id).maybeSingle()
+          .then(({ data: profile }) => setCurrentUser(profile));
+      }
+    });
+  }, []);
+
+  async function loadUnreadCounts() {
+    const { data } = await supabase.from("client_comments")
+      .select("client_id").eq("sender_type", "client").is("read_at", null);
+    const counts: Record<string, number> = {};
+    (data || []).forEach((row: any) => { counts[row.client_id] = (counts[row.client_id] || 0) + 1; });
+    setUnreadCounts(counts);
+  }
+
+  async function openMessages(client: Client) {
+    setMessagingClient(client);
+    setLoadingMessages(true);
+    try {
+      const { data } = await supabase.from("client_comments")
+        .select("*").eq("client_id", client.id).order("created_at", { ascending: true });
+      setMessages(data || []);
+      if (unreadCounts[client.id]) {
+        await supabase.from("client_comments").update({ read_at: new Date().toISOString() })
+          .eq("client_id", client.id).eq("sender_type", "client").is("read_at", null);
+        setUnreadCounts(prev => { const next = { ...prev }; delete next[client.id]; return next; });
+      }
+    } finally {
+      setLoadingMessages(false);
+    }
+  }
+
+  function closeMessages() {
+    setMessagingClient(null);
+    setMessages([]);
+    setNewMessage("");
+  }
+
+  async function sendMessage() {
+    if (!newMessage.trim() || !messagingClient || !currentUser) return;
+    setSendingMessage(true);
+    try {
+      const { data, error: e } = await supabase.from("client_comments").insert({
+        client_id: messagingClient.id,
+        project_id: null,
+        message: newMessage.trim(),
+        sender_type: "staff",
+        sender_id: currentUser.id,
+      }).select().single();
+      if (!e && data) { setMessages(prev => [...prev, data]); setNewMessage(""); }
+    } finally {
+      setSendingMessage(false);
+    }
+  }
 
   async function loadClients() {
     setLoading(true);
@@ -359,10 +451,12 @@ export default function ClientsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map(c => (
               <ClientCard key={c.id} client={c}
+                unreadCount={unreadCounts[c.id] || 0}
                 onPortalToggle={togglePortal}
                 onEdit={openEdit}
                 onDelete={id => setDeleteConfirm(id)}
                 onResetPassword={resetPortalPassword}
+                onMessage={openMessages}
               />
             ))}
           </div>
@@ -400,6 +494,15 @@ export default function ClientsPage() {
                     </Td>
                     <Td>
                       <div className="flex items-center gap-1">
+                        <button onClick={() => openMessages(c)} title="Messages"
+                          className="relative p-2 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
+                          <MessageCircle size={13}/>
+                          {(unreadCounts[c.id] || 0) > 0 && (
+                            <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-[3px] rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center leading-none">
+                              {unreadCounts[c.id] > 9 ? "9+" : unreadCounts[c.id]}
+                            </span>
+                          )}
+                        </button>
                         <button onClick={() => openEdit(c)}
                           className="p-2 rounded-lg hover:bg-white/10 text-slate-600 hover:text-slate-300 transition-colors">
                           <Edit2 size={13}/>
@@ -526,6 +629,51 @@ export default function ClientsPage() {
             <Btn variant="ghost" onClick={() => setDeleteConfirm(null)}>Cancel</Btn>
             <Btn variant="danger" onClick={() => deleteConfirm && deleteClient(deleteConfirm)}>
               Delete Client
+            </Btn>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Messages Modal — client-scoped, no project required. Shows the
+          full history for this client regardless of project_id, so it's
+          also the more complete view compared to a single project's
+          Messages tab (which only shows that one project's thread). */}
+      <Modal open={!!messagingClient} onClose={closeMessages}
+        title={messagingClient ? `Messages — ${messagingClient.name}` : "Messages"}
+        subtitle={messagingClient?.contact_name || messagingClient?.email || undefined}
+        width="max-w-lg">
+        <div className="flex flex-col" style={{ height: 420 }}>
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1 mb-3">
+            {loadingMessages ? (
+              <div className="flex items-center justify-center h-full text-xs text-slate-500">
+                <RefreshCw size={14} className="animate-spin mr-2"/> Loading...
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-xs text-slate-500 text-center px-6">
+                No messages yet. {messagingClient?.portal_enabled ? "Their portal is active — say hello!" : "Their portal isn't enabled yet, so they can't reply until it is."}
+              </div>
+            ) : messages.map(m => {
+              const isStaff = m.sender_type === "staff";
+              return (
+                <div key={m.id} className={cn("flex", isStaff ? "justify-end" : "justify-start")}>
+                  <div className={cn("max-w-[75%] rounded-xl px-3 py-2",
+                    isStaff ? "bg-cyan-600 text-white" : "bg-slate-100 dark:bg-white/[0.06] text-slate-800 dark:text-slate-200")}>
+                    <p className="text-sm leading-snug whitespace-pre-wrap break-words">{m.message}</p>
+                    <span className={cn("text-[10px] block mt-1", isStaff ? "text-cyan-100" : "text-slate-500")}>
+                      {isStaff ? "You" : messagingClient?.contact_name || messagingClient?.name || "Client"} · {new Date(m.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
+            <Textarea rows={2} placeholder="Type a message..." className="flex-1"
+              value={newMessage} onChange={e => setNewMessage(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}/>
+            <Btn variant="primary" icon={<Send size={13}/>} onClick={sendMessage}
+              disabled={!newMessage.trim() || sendingMessage}>
+              {sendingMessage ? "..." : "Send"}
             </Btn>
           </div>
         </div>

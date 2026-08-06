@@ -2,7 +2,6 @@
 // Same auth logic, same routes, new AppLayout replaces SidebarLayout
 
 import React, { useEffect, useState } from "react";
-import VerifyWorkerPage from './pages/VerifyWorkerPage';
 import ClientPortalPage from './pages/ClientPortalPage';
 import ClientLoginPage from './pages/ClientLoginPage';
 import ClientResetPasswordPage from './pages/ClientResetPasswordPage';
@@ -308,7 +307,6 @@ export default function App() {
               <Route path="/projects/:currentProjectId/admin/payroll-simulation-center" element={<PayrollSimulationCenterPage />} />
             </Route>
 
-            <Route path="/verify/:workerId" element={<VerifyWorkerPage />} />
             <Route path="/portal/:token" element={<ClientPortalPage />} />
             <Route path="/client-login" element={<ClientLoginPage />} />
             <Route path="/client-reset-password" element={<ClientResetPasswordPage />} />
