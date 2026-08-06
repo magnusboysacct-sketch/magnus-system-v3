@@ -1,14 +1,43 @@
-﻿// supabase/functions/magnus-ai/index.ts
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// supabase/functions/magnus-ai/index.ts
+//
+// SECURITY: this function calls Anthropic's API with a server-side
+// ANTHROPIC_API_KEY and previously had no auth check of any kind — despite
+// config.toml's verify_jwt=true, that only proves the caller holds *a*
+// valid Supabase JWT, and the public anon key (embedded in every frontend
+// bundle) is itself a validly-signed JWT. So gateway-level verify_jwt
+// doesn't distinguish a real logged-in user from anyone who loaded the
+// site. The checks below do that distinction explicitly, mirroring
+// admin-invite-user's pattern: resolve the real caller from their
+// Authorization header, confirm they belong to an active company, then
+// rate-limit per company before ever spending money on the Anthropic call.
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const CLAUDE_MODEL = "claude-sonnet-4-5";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// CORS is browser-enforced only — it does nothing against a direct scripted
+// HTTP call, so it was never the actual hole (the missing auth check was).
+// Restricting it is still reasonable defense-in-depth against a malicious
+// webpage riding a logged-in visitor's browser session. Unmatched origins
+// get no Access-Control-Allow-Origin header at all, not a fallback value,
+// so the browser blocks the preflight outright rather than silently
+// pointing it at the prod domain.
+const PROD_ORIGIN = Deno.env.get("APP_URL") || "https://app.magnusboys.com";
+const ALLOWED_ORIGINS = [PROD_ORIGIN, "http://localhost:5173"];
+
+function corsHeadersFor(origin: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+  };
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  }
+  return headers;
+}
+
+const RATE_LIMIT_PER_HOUR = 100;
 
 const PROMPTS: Record<string, string> = {
   scan_id: `You are scanning a Jamaican government ID card (National ID or Driver's Licence).
@@ -77,9 +106,18 @@ Rules:
 - never invent transactions that are not visible`,
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
+  const corsHeaders = corsHeadersFor(req.headers.get("Origin"));
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  function jsonResponse(data: unknown, status = 200) {
+    return new Response(JSON.stringify(data), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
@@ -87,11 +125,70 @@ serve(async (req) => {
       throw new Error("ANTHROPIC_API_KEY not configured in Supabase secrets");
     }
 
+    // ── Auth: resolve the real caller from their Authorization header ────────
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || Deno.env.get("PROJECT_URL") || "";
+    const SERVICE_ROLE_KEY =
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SERVICE_ROLE_KEY") || "";
+    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+      return jsonResponse({ success: false, error: "Missing Supabase secrets" }, 500);
+    }
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return jsonResponse({ success: false, error: "Missing Authorization header" }, 401);
+    }
+
+    const supabaseUser = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const { data: userData, error: userError } = await supabaseUser.auth.getUser();
+    if (userError || !userData.user) {
+      return jsonResponse({ success: false, error: "Unauthorized" }, 401);
+    }
+    const callerId = userData.user.id;
+
+    // ── Company check: must belong to an active company ──────────────────────
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from("user_profiles")
+      .select("id, status, company_id")
+      .eq("id", callerId)
+      .maybeSingle();
+
+    if (profileError || !profile) {
+      return jsonResponse({ success: false, error: "Caller profile not found" }, 403);
+    }
+    if (profile.status && profile.status !== "active") {
+      return jsonResponse({ success: false, error: "Your account is not active" }, 403);
+    }
+    if (!profile.company_id) {
+      return jsonResponse({ success: false, error: "No company associated with your account" }, 403);
+    }
+
+    // ── Rate limit: per company, before spending anything on Anthropic ───────
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: recentCalls } = await supabaseAdmin
+      .from("ai_usage_log")
+      .select("*", { count: "exact", head: true })
+      .eq("company_id", profile.company_id)
+      .gte("created_at", oneHourAgo);
+
+    if ((recentCalls || 0) >= RATE_LIMIT_PER_HOUR) {
+      return jsonResponse(
+        { success: false, error: "AI usage limit reached for your company this hour. Please try again shortly." },
+        429
+      );
+    }
+
     // Parse body
     let body: any;
     try {
       body = await req.json();
-    } catch(e) {
+    } catch (e) {
       throw new Error("Invalid JSON body");
     }
 
@@ -169,6 +266,13 @@ User: ${data?.message || ""}`,
       }),
     });
 
+    // Log the usage now — an attempt was made against Anthropic (and
+    // presumably billed) regardless of whether Claude's own response below
+    // turns out to be an error, so it counts against the company's quota
+    // either way. Requests that failed validation above (bad JSON, missing
+    // action) never reach this point and don't count.
+    await supabaseAdmin.from("ai_usage_log").insert({ company_id: profile.company_id });
+
     if (!response.ok) {
       const errText = await response.text();
       console.error("Claude API error:", response.status, errText);
@@ -185,17 +289,14 @@ User: ${data?.message || ""}`,
       try {
         const jsonMatch = rawText.match(/\{[\s\S]*\}/);
         if (jsonMatch) result = { ...JSON.parse(jsonMatch[0]), rawText };
-      } catch(e) {
+      } catch (e) {
         result = { rawText, parseError: "JSON parse failed" };
       }
     } else {
       result = { message: rawText };
     }
 
-    return new Response(
-      JSON.stringify({ success: true, data: result }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
-    );
+    return jsonResponse({ success: true, data: result }, 200);
 
   } catch (error: any) {
     console.error("Magnus AI error:", error.message);
