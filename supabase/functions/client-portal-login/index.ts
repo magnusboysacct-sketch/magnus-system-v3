@@ -1,15 +1,25 @@
 // supabase/functions/client-portal-login/index.ts
 //
-// Server-side replacement for ClientLoginPage.tsx's old direct anon-key
-// queries against `clients`. Follows the same structure as
-// client-password-reset/index.ts (service-role key, never returns
-// portal_password_hash to the caller) — that function already established
-// the correct pattern for this table; this one applies it to lookup/setup/
-// login instead of the reset flow.
+// Server-side replacement for the two client-facing entry points that used
+// to query `clients` directly with the anon key and compare
+// portal_password_hash in the browser:
+//   - ClientLoginPage.tsx's email+password flow → lookup/setup/login,
+//     identity anchored on the submitted email (re-derived server-side,
+//     never trusting a client-supplied id — mirrors client-password-reset's
+//     "confirm" action).
+//   - ClientPortalPage.tsx's /portal/:token magic-link flow → the
+//     magicLinkSetup/magicLinkLogin actions below, identity anchored on
+//     portalToken instead of email. This is deliberate, not an
+//     inconsistency: reusing the email-anchored actions here would let
+//     someone who clicked their own magic link type a *different*
+//     portal-enabled client's email during "setup" and hijack that other,
+//     not-yet-activated account. portalToken is the actual capability this
+//     entry point already depends on (equivalent sensitivity to a session
+//     token), so it — not an arbitrary submitted email — is what has to
+//     stay authoritative for who's being set up or logged in.
 //
-// Every action re-derives the client record from the submitted email via
-// the service-role key rather than trusting a client-supplied id, mirroring
-// client-password-reset's "confirm" action.
+// Both families follow the same structure as client-password-reset/index.ts
+// (service-role key, portal_password_hash never leaves this function).
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -19,9 +29,10 @@ const corsHeaders = {
 };
 
 type RequestBody = {
-  action?: "lookup" | "setup" | "login";
+  action?: "lookup" | "setup" | "login" | "magicLinkSetup" | "magicLinkLogin";
   email?: string;
   password?: string;
+  portalToken?: string;
 };
 
 function jsonResponse(data: unknown, status = 200) {
@@ -67,10 +78,20 @@ Deno.serve(async (req) => {
 
     const body = (await req.json()) as RequestBody;
     const action = body.action;
-    const email = String(body.email || "").trim().toLowerCase();
+    const isMagicLinkAction = action === "magicLinkSetup" || action === "magicLinkLogin";
 
-    if (!email || !email.includes("@")) {
+    // Email is the identity anchor for lookup/setup/login; the magic-link
+    // actions anchor on portalToken instead (magicLinkSetup still accepts
+    // an email, but only as a value to store, never to locate the row —
+    // see the header comment).
+    const email = String(body.email || "").trim().toLowerCase();
+    if (!isMagicLinkAction && (!email || !email.includes("@"))) {
       return jsonResponse({ error: "A valid email is required" }, 400);
+    }
+
+    const portalToken = String(body.portalToken || "").trim();
+    if (isMagicLinkAction && !portalToken) {
+      return jsonResponse({ error: "Missing portal link token" }, 400);
     }
 
     async function findClient() {
@@ -78,6 +99,16 @@ Deno.serve(async (req) => {
         .from("clients")
         .select("id, name, contact_name, portal_password_hash, portal_activated_at, portal_enabled")
         .or(`email.eq.${email},portal_email.eq.${email}`)
+        .eq("portal_enabled", true)
+        .maybeSingle();
+      return data;
+    }
+
+    async function findClientByToken() {
+      const { data } = await supabaseAdmin
+        .from("clients")
+        .select("id, name, contact_name, portal_password_hash, portal_activated_at, portal_enabled")
+        .eq("portal_token", portalToken)
         .eq("portal_enabled", true)
         .maybeSingle();
       return data;
@@ -147,6 +178,56 @@ Deno.serve(async (req) => {
       const client = await findClient();
       if (!client) {
         return jsonResponse({ error: "No account found with that email." }, 404);
+      }
+
+      const hash = await hashPassword(password);
+      if (hash !== client.portal_password_hash) {
+        return jsonResponse({ error: "Incorrect password. Please try again." }, 401);
+      }
+
+      const session = await createSession(client.id);
+      if ("error" in session) return jsonResponse({ error: session.error.message }, 500);
+      return jsonResponse({ sessionToken: session.sessionToken });
+    }
+
+    if (action === "magicLinkSetup") {
+      if (password.length < 6) {
+        return jsonResponse({ error: "Password must be at least 6 characters." }, 400);
+      }
+      const client = await findClientByToken();
+      if (!client) {
+        return jsonResponse({ error: "This portal link is invalid or has been disabled." }, 404);
+      }
+      if (client.portal_activated_at) {
+        return jsonResponse({ error: "This account is already set up. Please sign in instead." }, 409);
+      }
+
+      const hash = await hashPassword(password);
+      const { error: updateError } = await supabaseAdmin
+        .from("clients")
+        .update({
+          // Only when a value was actually submitted — the magic-link
+          // setup form pre-fills this from the client's existing email,
+          // but doesn't require re-typing it.
+          ...(email ? { portal_email: email } : {}),
+          portal_password_hash: hash,
+          portal_activated_at: new Date().toISOString(),
+        })
+        .eq("id", client.id);
+      if (updateError) return jsonResponse({ error: updateError.message }, 500);
+
+      const session = await createSession(client.id);
+      if ("error" in session) return jsonResponse({ error: session.error.message }, 500);
+      return jsonResponse({ sessionToken: session.sessionToken });
+    }
+
+    if (action === "magicLinkLogin") {
+      if (!password) {
+        return jsonResponse({ error: "Please enter your password." }, 400);
+      }
+      const client = await findClientByToken();
+      if (!client) {
+        return jsonResponse({ error: "This portal link is invalid or has been disabled." }, 404);
       }
 
       const hash = await hashPassword(password);

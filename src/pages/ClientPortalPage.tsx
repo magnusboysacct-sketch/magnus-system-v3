@@ -6,7 +6,9 @@ import { supabase } from "../lib/supabase";
 type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
 type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback";
 
-interface Client { id:string; name:string; contact_name:string|null; email:string|null; phone:string|null; portal_email:string|null; portal_password_hash?:string|null; portal_activated_at:string|null; company_id?:string|null; }
+// No portal_password_hash — nothing in this file selects it anymore, so it
+// was removed from the type rather than left declared-but-always-undefined.
+interface Client { id:string; name:string; contact_name:string|null; email:string|null; phone:string|null; portal_email:string|null; portal_activated_at:string|null; company_id?:string|null; }
 interface Project { id:string; name:string; status:string; start_date:string|null; end_date:string|null; site_address:string|null; notes:string|null; budget:number|null; }
 interface Invoice { id:string; invoice_number:string|null; total_amount:number; status:string; issue_date:string|null; due_date:string|null; }
 interface ChangeOrder { id:string; title:string; description:string|null; amount:number; status:string; created_at:string; }
@@ -17,12 +19,6 @@ interface Co { company_name:string|null; logo_url:string|null; phone:string|null
 const fmt = (n:number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(n);
 const fmtDate = (d:string|null) => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "…";
 const timeAgo = (d:string) => { const s=Math.floor((Date.now()-new Date(d).getTime())/1000); if(s<60)return "just now"; if(s<3600)return `${Math.floor(s/60)}m ago`; if(s<86400)return `${Math.floor(s/3600)}h ago`; return fmtDate(d); };
-
-async function hashPassword(p:string):Promise<string> {
-  const data = new TextEncoder().encode(p+"magnus_portal_2026");
-  const hash = await crypto.subtle.digest("SHA-256",data);
-  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join("");
-}
 
 function ProgressRing({pct}:{pct:number}) {
   const r=28,circ=2*Math.PI*r;
@@ -47,7 +43,7 @@ function Toast({msg,type="success",onDone}:{msg:string;type?:"success"|"error";o
     {type==="success"?"?":"?"} {msg}
   </div>;
 }
-function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|null;mode:"setup"|"login";onSuccess:()=>void}) {
+function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company:Co|null;mode:"setup"|"login";token:string;onSuccess:()=>void}) {
   const [email,setEmail]=useState(client.portal_email||client.email||"");
   const [password,setPassword]=useState("");
   const [confirm,setConfirm]=useState("");
@@ -58,17 +54,20 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
   const [forgotLoading,setForgotLoading]=useState(false);
   const [forgotError,setForgotError]=useState("");
 
+  // Identity for both actions below is anchored on the magic-link token
+  // (portalToken), not the typed email — see client-portal-login's header
+  // comment for why: keying by email here would let someone set up a
+  // *different* client's account by typing their email during this one's
+  // setup flow.
   async function handleSetup() {
     if(!email.trim()){setError("Please enter your email address.");return;}
     if(password.length<6){setError("Password must be at least 6 characters.");return;}
     if(password!==confirm){setError("Passwords do not match.");return;}
     setLoading(true);setError("");
-    const hash=await hashPassword(password);
-    const {error:e}=await supabase.from("clients").update({portal_email:email.trim(),portal_password_hash:hash,portal_activated_at:new Date().toISOString()}).eq("id",client.id);
-    if(e){setError("Failed to set up account.");setLoading(false);return;}
-    const tok=crypto.randomUUID();
-    await supabase.from("client_portal_sessions").insert({client_id:client.id,session_token:tok,device_info:navigator.userAgent.slice(0,200)});
-    localStorage.setItem(`portal_${client.id}`,tok);
+    const {data,error:invokeError}=await supabase.functions.invoke("client-portal-login",
+      {body:{action:"magicLinkSetup",portalToken:token,email:email.trim(),password}});
+    if(invokeError||data?.error){setError(data?.error||invokeError?.message||"Failed to set up account.");setLoading(false);return;}
+    localStorage.setItem(`portal_${client.id}`,data.sessionToken);
     onSuccess();setLoading(false);
   }
 
@@ -100,11 +99,10 @@ function AuthScreen({client,company,mode,onSuccess}:{client:Client;company:Co|nu
   async function handleLogin() {
     if(!password){setError("Please enter your password.");return;}
     setLoading(true);setError("");
-    const hash=await hashPassword(password);
-    if(hash!==client.portal_password_hash){setError("Incorrect password. Please try again.");setLoading(false);return;}
-    const tok=crypto.randomUUID();
-    await supabase.from("client_portal_sessions").insert({client_id:client.id,session_token:tok,device_info:navigator.userAgent.slice(0,200)});
-    localStorage.setItem(`portal_${client.id}`,tok);
+    const {data,error:invokeError}=await supabase.functions.invoke("client-portal-login",
+      {body:{action:"magicLinkLogin",portalToken:token,password}});
+    if(invokeError||data?.error){setError(data?.error||invokeError?.message||"Login failed. Please try again.");setLoading(false);return;}
+    localStorage.setItem(`portal_${client.id}`,data.sessionToken);
     onSuccess();setLoading(false);
   }
 
@@ -374,7 +372,13 @@ export default function ClientPortalPage() {
   async function checkAuth() {
     setAuthState("loading");
     try {
-      const {data:c}=await supabase.from("clients").select("*").eq("portal_token",token).eq("portal_enabled",true).single();
+      // Explicit column list, no portal_password_hash — this page never
+      // compares the hash itself anymore (AuthScreen calls the edge
+      // function for that), so there's no reason this read needs to be
+      // able to see it at all.
+      const {data:c}=await supabase.from("clients")
+        .select("id,name,contact_name,email,phone,portal_email,portal_activated_at,company_id")
+        .eq("portal_token",token).eq("portal_enabled",true).single();
       if(!c){setErrorMsg("This portal link is invalid or has been disabled.");setAuthState("error");return;}
       setClient(c);
       if(c.company_id){
@@ -386,7 +390,7 @@ export default function ClientPortalPage() {
         const {data:s}=await supabase.from("client_portal_sessions").select("id").eq("session_token",sess).eq("client_id",c.id).gt("expires_at",new Date().toISOString()).maybeSingle();
         if(s){await loadData(c);setAuthState("authenticated");return;}
       }
-      setAuthState(c.portal_password_hash?"login":"setup");
+      setAuthState(c.portal_activated_at?"login":"setup");
     } catch {setErrorMsg("Something went wrong.");setAuthState("error");}
   }
 
@@ -417,7 +421,10 @@ export default function ClientPortalPage() {
   }
 
   async function onAuthSuccess(){
-    const fresh=await supabase.from("clients").select("*").eq("portal_token",token).single();
+    // Same narrowed column list as checkAuth() — no portal_password_hash.
+    const fresh=await supabase.from("clients")
+      .select("id,name,contact_name,email,phone,portal_email,portal_activated_at,company_id")
+      .eq("portal_token",token).single();
     if(fresh.data){setClient(fresh.data);await loadData(fresh.data);}
     setAuthState("authenticated");
     setToast({msg:"Welcome to your project portal!",type:"success"});
@@ -512,7 +519,7 @@ export default function ClientPortalPage() {
 
   if(authState==="error")return <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><style>{G}</style><div style={{textAlign:"center",maxWidth:360}}><div style={{fontSize:52,marginBottom:14}}>🔒</div><h2 style={{color:"#0f172a",fontSize:20,fontWeight:700,marginBottom:8}}>Access Denied</h2><p style={{color:"#64748b",fontSize:14,lineHeight:1.6}}>{errorMsg}</p></div></div>;
 
-  if(authState==="setup"||authState==="login")return <><style>{G}</style><AuthScreen client={client!} company={company} mode={authState} onSuccess={onAuthSuccess}/></>;
+  if(authState==="setup"||authState==="login")return <><style>{G}</style><AuthScreen client={client!} company={company} mode={authState} token={token!} onSuccess={onAuthSuccess}/></>;
 
   if(!client||authState!=="authenticated")return null;
 
