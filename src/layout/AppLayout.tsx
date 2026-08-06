@@ -231,6 +231,23 @@ export default function AppLayout() {
       .then(({ count }) => setStaffPortalUnread(count || 0));
   }, [co?.company_id, userRole]);
 
+  // Client messaging is a separate system from Staff Portal above (different
+  // table, different read-tracking field, different destination page) — kept
+  // as its own badge on its own nav item rather than merged into one number,
+  // matching how Staff Portal's own badge is already scoped. No manual
+  // company_id filter needed here: the client_comments SELECT policy for
+  // `authenticated` already scopes results to the caller's own company via
+  // clients.company_id, so RLS does this for free.
+  const [clientMessagesUnread, setClientMessagesUnread] = useState(0);
+  useEffect(() => {
+    if (!co?.company_id) return;
+    supabase.from("client_comments")
+      .select("*", { count: "exact", head: true })
+      .eq("sender_type", "client")
+      .is("read_at", null)
+      .then(({ count }) => setClientMessagesUnread(count || 0));
+  }, [co?.company_id]);
+
   async function handleLogout() {
     await supabase.auth.signOut();
     navigate("/login");
@@ -254,6 +271,14 @@ export default function AppLayout() {
   const visibleNav = useMemo(() => {
     return NAV
       .map(item => {
+        if (item.label === "CRM") {
+          const children = item.children?.map(c =>
+            c.to === "/clients"
+              ? { ...c, badge: clientMessagesUnread > 0 ? String(clientMessagesUnread) : undefined }
+              : c
+          );
+          return children?.length ? { ...item, children } : null;
+        }
         if (item.label === "Finance") {
           const children = item.children?.filter(c => {
             if (c.to === "/field-payments") return canSeeFieldPayments;
@@ -283,7 +308,7 @@ export default function AppLayout() {
         return item;
       })
       .filter((item): item is NavItem => item !== null);
-  }, [canAccessFullFinance, canSeeFieldPayments, canSeePayroll, canSeeWorkers, isDirector, userRole, staffPortalUnread]);
+  }, [canAccessFullFinance, canSeeFieldPayments, canSeePayroll, canSeeWorkers, isDirector, userRole, staffPortalUnread, clientMessagesUnread]);
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#080b10] overflow-hidden">
