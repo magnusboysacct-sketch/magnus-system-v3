@@ -308,16 +308,16 @@ export function Modal({ open, onClose, title, subtitle, children, width = "max-w
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/70 backdrop-blur-sm p-4">
-      <div className={cn("w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f1520] shadow-2xl", width)}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 dark:bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+      <div className={cn("w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0f1520] shadow-2xl flex flex-col max-h-[90vh] my-auto", width)}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07] flex-shrink-0">
           <div>
             <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</div>
             {subtitle && <div className="text-[10px] text-slate-500 dark:text-slate-600 mt-0.5">{subtitle}</div>}
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"><X size={15}/></button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-5 overflow-y-auto">{children}</div>
       </div>
     </div>
   );
