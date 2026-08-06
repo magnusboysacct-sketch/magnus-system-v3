@@ -312,7 +312,15 @@ export default function App() {
             <Route path="/portal/:token" element={<ClientPortalPage />} />
             <Route path="/client-login" element={<ClientLoginPage />} />
             <Route path="/client-reset-password" element={<ClientResetPasswordPage />} />
-            <Route path="/client-portal/:clientId" element={<ClientPortalPage />} />
+            {/* Session-based login (ClientLoginPage.tsx's email+password flow)
+                is its own route with its own param name, distinct from
+                /portal/:token's magic-link flow above — the two used to
+                share this route as /client-portal/:clientId, which
+                ClientPortalPage.tsx's useParams<{token}>() could never
+                actually read (wrong param name), so a client logging in
+                via email+password landed on a page stuck in "loading"
+                forever. */}
+            <Route path="/client-portal/session/:sessionToken" element={<ClientPortalPage />} />
             <Route path="/projects/:projectId/site-visit" element={<SiteVisitPage />} />
             <Route path="/projects/:projectId/plans" element={<ProjectPlansPage />} />
             <Route path="/projects/:projectId/issues" element={<ProjectIssuesPage />} />

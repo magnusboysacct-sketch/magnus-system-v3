@@ -6,7 +6,7 @@ import { supabase } from "../lib/supabase";
 type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
 type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback";
 
-interface Client { id:string; name:string; contact_name:string|null; email:string|null; phone:string|null; portal_email:string|null; portal_password_hash:string|null; portal_activated_at:string|null; }
+interface Client { id:string; name:string; contact_name:string|null; email:string|null; phone:string|null; portal_email:string|null; portal_password_hash?:string|null; portal_activated_at:string|null; company_id?:string|null; }
 interface Project { id:string; name:string; status:string; start_date:string|null; end_date:string|null; site_address:string|null; notes:string|null; budget:number|null; }
 interface Invoice { id:string; invoice_number:string|null; total_amount:number; status:string; issue_date:string|null; due_date:string|null; }
 interface ChangeOrder { id:string; title:string; description:string|null; amount:number; status:string; created_at:string; }
@@ -296,7 +296,15 @@ function SignatureModal({contract,client,saving,onSign,onCancel}:{contract:any;c
 }
 
 export default function ClientPortalPage() {
+  // Two distinct, unrelated ways to arrive here: /portal/:token is the
+  // magic-link flow (token compared against clients.portal_token — an
+  // intentional separate feature, left as-is below); /client-portal/session/
+  // :sessionToken is the email+password flow from ClientLoginPage.tsx,
+  // compared against client_portal_sessions.session_token instead. They
+  // used to collide on one route (/client-portal/:clientId) with a param
+  // named "token" that the session flow never actually populated correctly.
   const {token}=useParams<{token:string}>();
+  const {sessionToken}=useParams<{sessionToken:string}>();
   const [authState,setAuthState]=useState<AuthState>("loading");
   const [client,setClient]=useState<Client|null>(null);
   const [project,setProject]=useState<Project|null>(null);
@@ -324,8 +332,45 @@ export default function ClientPortalPage() {
   const [photosLoading,setPhotosLoading]=useState(true);
   const [selectedPhoto,setSelectedPhoto]=useState<any|null>(null);
 
-  useEffect(()=>{if(token)checkAuth();},[token]);
+  useEffect(()=>{
+    if(sessionToken)checkAuthViaSession(sessionToken);
+    else if(token)checkAuth();
+  },[token,sessionToken]);
 
+  // New path for ClientLoginPage.tsx's email+password flow: the session
+  // token in the URL is looked up directly in client_portal_sessions, then
+  // the client row is fetched by id with an explicit column list that
+  // never includes portal_password_hash — auth already happened
+  // server-side in the client-portal-login edge function before this page
+  // was ever reached, so there's nothing left to compare here, and no
+  // reason for this browser-side query to be able to read the hash at all.
+  async function checkAuthViaSession(sessTok: string) {
+    setAuthState("loading");
+    try {
+      const {data:sess}=await supabase.from("client_portal_sessions")
+        .select("client_id,expires_at")
+        .eq("session_token",sessTok)
+        .gt("expires_at",new Date().toISOString())
+        .maybeSingle();
+      if(!sess){setErrorMsg("This session has expired. Please sign in again.");setAuthState("error");return;}
+      const {data:c}=await supabase.from("clients")
+        .select("id,name,contact_name,email,phone,portal_email,portal_activated_at,company_id")
+        .eq("id",sess.client_id)
+        .eq("portal_enabled",true)
+        .maybeSingle();
+      if(!c){setErrorMsg("This account is no longer available.");setAuthState("error");return;}
+      setClient(c);
+      if(c.company_id){
+        const {data:cs}=await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").eq("company_id",c.company_id).maybeSingle();
+        setCompany(cs);
+      }
+      await loadData(c);
+      setAuthState("authenticated");
+    } catch {setErrorMsg("Something went wrong.");setAuthState("error");}
+  }
+
+  // Unchanged below — the /portal/:token magic-link flow is an intentional
+  // separate feature, kept exactly as it was.
   async function checkAuth() {
     setAuthState("loading");
     try {

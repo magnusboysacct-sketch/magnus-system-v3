@@ -1,13 +1,17 @@
 // src/pages/ClientLoginPage.tsx — Dedicated client login portal (light theme)
+//
+// Lookup/setup/login all go through the client-portal-login edge function
+// now, instead of querying `clients` directly with the anon key — that
+// direct query used to select portal_password_hash into client-side state
+// so it could be compared in the browser, which meant the hash was
+// readable by anyone who could read the network response, independent of
+// any RLS row-level policy (RLS can't restrict columns). The edge function
+// does the lookup and the hash comparison server-side with the service-role
+// key and only ever returns a session token — see
+// supabase/functions/client-portal-login/index.ts.
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-
-async function hashPassword(p: string): Promise<string> {
-  const data = new TextEncoder().encode(p + "magnus_portal_2026");
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
 
 export default function ClientLoginPage() {
   const nav = useNavigate();
@@ -17,7 +21,7 @@ export default function ClientLoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"login"|"setup"|null>(null);
-  const [client, setClient] = useState<any>(null);
+  const [client, setClient] = useState<{displayName: string}|null>(null);
   const [company, setCompany] = useState<any>(null);
   const [step, setStep] = useState<"email"|"password"|"forgot">("email");
   const [resetSent, setResetSent] = useState(false);
@@ -31,14 +35,17 @@ export default function ClientLoginPage() {
     if (!email.trim()) { setError("Please enter your email address."); return; }
     setLoading(true); setError("");
     try {
-      const {data} = await supabase.from("clients")
-        .select("id,name,contact_name,email,portal_email,portal_password_hash,portal_activated_at,portal_enabled")
-        .or(`email.eq.${email.trim()},portal_email.eq.${email.trim()}`)
-        .eq("portal_enabled", true)
-        .maybeSingle();
-      if (!data) { setError("No account found with that email. Contact your contractor."); setLoading(false); return; }
-      setClient(data);
-      setMode(data.portal_activated_at ? "login" : "setup");
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "client-portal-login",
+        { body: { action: "lookup", email: email.trim() } }
+      );
+      if (invokeError || data?.error) {
+        setError(data?.error || invokeError?.message || "No account found with that email. Contact your contractor.");
+        setLoading(false);
+        return;
+      }
+      setClient({ displayName: data.displayName });
+      setMode(data.mode);
       setStep("password");
     } catch { setError("Something went wrong. Please try again."); }
     setLoading(false);
@@ -49,20 +56,16 @@ export default function ClientLoginPage() {
     if (password !== confirm) { setError("Passwords do not match."); return; }
     setLoading(true); setError("");
     try {
-      const hash = await hashPassword(password);
-      const tok = crypto.randomUUID();
-      await supabase.from("clients").update({
-        portal_email: email.trim(),
-        portal_password_hash: hash,
-        portal_activated_at: new Date().toISOString()
-      }).eq("id", client.id);
-      await supabase.from("client_portal_sessions").insert({
-        client_id: client.id, session_token: tok,
-        device_info: navigator.userAgent.slice(0, 200)
-      });
-      localStorage.setItem("portal_" + client.id, tok);
-      localStorage.setItem("client_portal_client_id", client.id);
-      nav("/client-portal/" + client.id);
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "client-portal-login",
+        { body: { action: "setup", email: email.trim(), password } }
+      );
+      if (invokeError || data?.error) {
+        setError(data?.error || invokeError?.message || "Failed to set up account.");
+        setLoading(false);
+        return;
+      }
+      nav("/client-portal/session/" + data.sessionToken);
     } catch { setError("Failed to set up account."); }
     setLoading(false);
   }
@@ -71,16 +74,16 @@ export default function ClientLoginPage() {
     if (!password) { setError("Please enter your password."); return; }
     setLoading(true); setError("");
     try {
-      const hash = await hashPassword(password);
-      if (hash !== client.portal_password_hash) { setError("Incorrect password. Please try again."); setLoading(false); return; }
-      const tok = crypto.randomUUID();
-      await supabase.from("client_portal_sessions").insert({
-        client_id: client.id, session_token: tok,
-        device_info: navigator.userAgent.slice(0, 200)
-      });
-      localStorage.setItem("portal_" + client.id, tok);
-      localStorage.setItem("client_portal_client_id", client.id);
-      nav("/client-portal/" + client.id);
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "client-portal-login",
+        { body: { action: "login", email: email.trim(), password } }
+      );
+      if (invokeError || data?.error) {
+        setError(data?.error || invokeError?.message || "Login failed. Please try again.");
+        setLoading(false);
+        return;
+      }
+      nav("/client-portal/session/" + data.sessionToken);
     } catch { setError("Login failed. Please try again."); }
     setLoading(false);
   }
@@ -161,7 +164,7 @@ export default function ClientLoginPage() {
             <div className="space-y-4">
               <div className="text-center">
                 <div className="text-sm font-bold text-slate-900">Set up your account</div>
-                <div className="text-xs text-slate-500 mt-1">{client?.contact_name || client?.name}</div>
+                <div className="text-xs text-slate-500 mt-1">{client?.displayName}</div>
               </div>
               <div className="rounded-lg bg-cyan-50 border border-cyan-200 px-3 py-2 text-xs text-cyan-800">
                 First time here! Create a password for your account.
@@ -194,7 +197,7 @@ export default function ClientLoginPage() {
             <div className="space-y-4">
               <div className="text-center">
                 <div className="text-sm font-bold text-slate-900">Welcome back</div>
-                <div className="text-xs text-slate-500 mt-1">{client?.contact_name || client?.name}</div>
+                <div className="text-xs text-slate-500 mt-1">{client?.displayName}</div>
               </div>
               <div>
                 <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1.5">Password</label>
