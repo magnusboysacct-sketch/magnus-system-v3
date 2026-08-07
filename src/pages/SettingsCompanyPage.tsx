@@ -8,6 +8,7 @@ import {
 } from "../components/ui";
 import { Building2, Save, RefreshCw, Globe, Phone, Mail, MapPin, ImageIcon, Upload, Eye, EyeOff, PenTool } from "lucide-react";
 import SignaturePad from "../components/SignaturePad";
+import PhotoCropModal from "../components/PhotoCropModal";
 
 type CompanySettings = {
   id: number;
@@ -41,6 +42,12 @@ export default function SettingsCompanyPage() {
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [savingSignature, setSavingSignature] = useState(false);
+  // File picked via "Upload photo/scan" goes through the crop modal before
+  // it's persisted — same PhotoCropModal used for staff photos (built
+  // earlier this session), just with a wider aspect ratio suited to a
+  // signature strip instead of a portrait headshot. Holds the picked file's
+  // object URL until the user confirms the crop or cancels.
+  const [signatureCropSrc, setSignatureCropSrc] = useState<string | null>(null);
   const [watermarkUrl, setWatermarkUrl] = useState<string | null>(null);
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [paymentNotificationsEnabled, setPaymentNotificationsEnabled] = useState(true);
@@ -177,12 +184,27 @@ export default function SettingsCompanyPage() {
     await persistSignatureBlob(blob, "image/png", "png");
   }
 
-  async function handleSignatureFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  // Selecting a file no longer uploads it directly — it opens the crop
+  // modal first (see signatureCropSrc/handleSignatureCropDone below), same
+  // pattern as the staff photo upload.
+  function handleSignatureFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const ext = file.name.split(".").pop() || "png";
-    await persistSignatureBlob(file, file.type || "image/png", ext);
+    setSignatureCropSrc(URL.createObjectURL(file));
     e.target.value = "";
+  }
+
+  // Crop modal's canvas output has no filename, so this always writes as
+  // .png — same as the drawn-signature path, which was already PNG-only.
+  async function handleSignatureCropDone(blob: Blob) {
+    if (signatureCropSrc) URL.revokeObjectURL(signatureCropSrc);
+    setSignatureCropSrc(null);
+    await persistSignatureBlob(blob, "image/png", "png");
+  }
+
+  function handleSignatureCropCancel() {
+    if (signatureCropSrc) URL.revokeObjectURL(signatureCropSrc);
+    setSignatureCropSrc(null);
   }
 
   async function removeSignature() {
@@ -477,6 +499,16 @@ export default function SettingsCompanyPage() {
           subtitle="Draw the signature that will appear on ID card backs."
           onSave={saveSignature}
           onCancel={() => setShowSignaturePad(false)}
+        />
+      )}
+
+      {signatureCropSrc && (
+        <PhotoCropModal
+          imageSrc={signatureCropSrc}
+          aspect={4 / 1} // wide strip, not the 65:80 headshot default — matches a signature's proportions
+          title="Crop Signature"
+          onCancel={handleSignatureCropCancel}
+          onCropDone={handleSignatureCropDone}
         />
       )}
     </div>

@@ -15,6 +15,7 @@ import { X, Check, ZoomIn } from "lucide-react";
 interface PhotoCropModalProps {
   imageSrc: string;
   aspect?: number; // width / height — defaults to the ID card photo slot's 65:80
+  title?: string; // header text — defaults to "Crop Photo"; e.g. "Crop Signature" for wider strips
   onCancel: () => void;
   onCropDone: (blob: Blob) => void;
 }
@@ -41,7 +42,7 @@ async function getCroppedBlob(imageSrc: string, area: Area): Promise<Blob> {
   });
 }
 
-export default function PhotoCropModal({ imageSrc, aspect = 65 / 80, onCancel, onCropDone }: PhotoCropModalProps) {
+export default function PhotoCropModal({ imageSrc, aspect = 65 / 80, title = "Crop Photo", onCancel, onCropDone }: PhotoCropModalProps) {
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedArea, setCroppedArea] = useState<Area | null>(null);
@@ -66,7 +67,7 @@ export default function PhotoCropModal({ imageSrc, aspect = 65 / 80, onCancel, o
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3 dark:border-white/10">
-          <div className="text-sm font-semibold text-slate-800 dark:text-white">Crop Photo</div>
+          <div className="text-sm font-semibold text-slate-800 dark:text-white">{title}</div>
           <button onClick={onCancel} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10">
             <X size={18} />
           </button>

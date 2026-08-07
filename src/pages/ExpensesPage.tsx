@@ -9,7 +9,7 @@ import {
 } from "../components/ui";
 import {
   Plus, Search, Download, Receipt, DollarSign,
-  RefreshCw, Filter, X, Check, Calendar
+  RefreshCw, Filter, X, Check, Calendar, Pencil, Trash2
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,11 +34,15 @@ type Category = { id: string; name: string; category_type: string };
 
 type Tab = "all" | "pending" | "approved" | "filing";
 
+// Matches the expenses.status CHECK constraint exactly: pending/approved/
+// reimbursed/rejected — "paid" was never a real status (no such value in
+// the DB constraint; see the "Mark Paid" fix below), so it's "reimbursed"
+// that needs the color, not "paid".
 const STATUS_COLOR: Record<string, any> = {
-  pending:  "amber",
-  approved: "green",
-  rejected: "red",
-  paid:     "blue",
+  pending:    "amber",
+  approved:   "green",
+  reimbursed: "blue",
+  rejected:   "red",
 };
 
 function fmt(n: number) {
@@ -55,7 +59,7 @@ function fmtDate(d: string | null) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function ExpensesPage() {
-  const { projects, currentProject } = useProjectContext();
+  const { projects, currentProject, userRole } = useProjectContext();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +70,10 @@ export default function ExpensesPage() {
   const [showExpenseScanner, setShowExpenseScanner] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Non-null while editing an existing expense — reuses the same "Log
+  // Expense" modal, pre-filled, instead of a separate edit modal. Null
+  // means the modal (if open) is in "create new" mode.
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
   function handleExpenseScan(result: any, receiptFile?: File) {
     setShowExpenseScanner(false);
@@ -119,11 +127,43 @@ export default function ExpensesPage() {
     setCategories(data || []);
   }
 
-  async function createExpense() {
+  const blankForm = { description: "", amount: "", expense_date: "", category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "" };
+
+  function openNew() {
+    setEditingExpense(null);
+    setForm(blankForm);
+    setShowNew(true);
+  }
+
+  function openEdit(exp: Expense) {
+    setEditingExpense(exp);
+    setForm({
+      description: exp.description || "",
+      amount: exp.amount != null ? String(exp.amount) : "",
+      expense_date: exp.expense_date || "",
+      category_id: exp.category_id || "",
+      project_id: exp.project_id || "",
+      status: exp.status || "pending",
+      receipt_url: exp.receipt_url || "",
+    });
+    setShowNew(true);
+  }
+
+  function closeModal() {
+    setShowNew(false);
+    setEditingExpense(null);
+    setError(null);
+    setForm(blankForm);
+  }
+
+  // Handles both create and edit — editingExpense being set is what decides
+  // insert vs. update. No status restriction on editing (matches the
+  // precedent on AccountsReceivablePage/FieldPaymentsPage: edit is allowed
+  // at any status, only delete is role-gated).
+  async function saveExpense() {
     setSaving(true); setError(null);
     try {
-      const { error: e } = await supabase.from("expenses").insert({
-        company_id: companyId,
+      const payload = {
         description: form.description.trim(),
         amount: parseFloat(form.amount) || 0,
         expense_date: form.expense_date || null,
@@ -131,15 +171,39 @@ export default function ExpensesPage() {
         project_id: form.project_id || null,
         status: form.status,
         receipt_url: form.receipt_url || null,
-      });
-      if (e) throw e;
+      };
+      if (editingExpense) {
+        const { error: e } = await supabase.from("expenses").update(payload).eq("id", editingExpense.id);
+        if (e) throw e;
+      } else {
+        const { error: e } = await supabase.from("expenses").insert({ company_id: companyId, ...payload });
+        if (e) throw e;
+      }
       await loadExpenses();
-      setShowNew(false);
-      setForm({ description: "", amount: "", expense_date: "", category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "" });
+      closeModal();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
   }
 
+  // Delete is restricted to director, matching the same role-gate used for
+  // destructive actions on ClientsPage / AccountsReceivablePage. Uses
+  // window.confirm() rather than a custom modal — ConfirmModal isn't used
+  // anywhere live in this app; window.confirm() is the dominant pattern for
+  // every other delete action (invoices, POs, contracts, field payments).
+  async function deleteExpense(exp: Expense) {
+    if (!window.confirm(`Delete expense "${exp.description || "this expense"}"? This cannot be undone.`)) return;
+    const { error: e } = await supabase.from("expenses").delete().eq("id", exp.id);
+    if (e) { setError(e.message); return; }
+    setExpenses(prev => prev.filter(x => x.id !== exp.id));
+  }
+
+  // "Mark Paid" previously called updateStatus(id, "approved") — the same
+  // target as the Approve button, a copy-paste no-op. The expenses.status
+  // CHECK constraint is pending/approved/reimbursed/rejected — "paid" was
+  // never a real value. lib/finance.ts's approveExpense()/reimburseExpense()
+  // already treat "reimbursed" as the paid-equivalent terminal state (see
+  // its `markAsPaid` param), so "reimbursed" is the correct target here too,
+  // not a new "paid" value added to the constraint.
   async function updateStatus(id: string, status: string) {
     await supabase.from("expenses").update({ status }).eq("id", id);
     setExpenses(prev => prev.map(e => e.id === id ? { ...e, status } : e));
@@ -179,7 +243,7 @@ export default function ExpensesPage() {
         actions={
           <>
             <Btn variant="ghost" size="sm" icon={<Download size={13}/>} onClick={exportCSV}>Export</Btn>
-            <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => setShowNew(true)}>Log Expense</Btn>
+            <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={openNew}>Log Expense</Btn>
           </>
         }
       />
@@ -246,7 +310,7 @@ export default function ExpensesPage() {
               ) : filtered.length === 0 ? (
                 <tr><Td colSpan={8}>
                   <Empty icon={<Receipt size={18}/>} title="No expenses found"
-                    action={<Btn variant="primary" size="sm" icon={<Plus size={12}/>} onClick={() => setShowNew(true)}>Log Expense</Btn>}/>
+                    action={<Btn variant="primary" size="sm" icon={<Plus size={12}/>} onClick={openNew}>Log Expense</Btn>}/>
                 </Td></tr>
               ) : filtered.map(e => (
                 <Tr key={e.id}>
@@ -272,9 +336,19 @@ export default function ExpensesPage() {
                         </button>
                       )}
                       {e.status === "approved" && (
-                        <button onClick={() => updateStatus(e.id, "approved")}
+                        <button onClick={() => updateStatus(e.id, "reimbursed")}
                           className="px-2 py-0.5 rounded text-[9px] font-bold bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 transition-colors">
                           Mark Paid
+                        </button>
+                      )}
+                      <button onClick={() => openEdit(e)} title="Edit"
+                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+                        <Pencil size={12}/>
+                      </button>
+                      {userRole === "director" && (
+                        <button onClick={() => deleteExpense(e)} title="Delete"
+                          className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors">
+                          <Trash2 size={12}/>
                         </button>
                       )}
                     </div>
@@ -351,8 +425,9 @@ export default function ExpensesPage() {
           })()}
         </div>
       )}
-      <Modal open={showNew} onClose={() => { setShowNew(false); setError(null); }}
-        title="Log Expense" subtitle="Record a new project expense">
+      <Modal open={showNew} onClose={closeModal}
+        title={editingExpense ? "Edit Expense" : "Log Expense"}
+        subtitle={editingExpense ? "Update this expense's details" : "Record a new project expense"}>
         <div className="space-y-4">
           {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
 
@@ -408,15 +483,15 @@ export default function ExpensesPage() {
             <Select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
-              <option value="approved">Approved / Paid</option>
+              <option value="reimbursed">Reimbursed / Paid</option>
               <option value="rejected">Rejected</option>
             </Select>
           </Field>
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
-            <Btn variant="ghost" onClick={() => { setShowNew(false); setError(null); }}>Cancel</Btn>
-            <Btn variant="primary" onClick={createExpense}
+            <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
+            <Btn variant="primary" onClick={saveExpense}
               disabled={!form.description.trim() || !form.amount || saving}>
-              {saving ? "Saving..." : "Log Expense"}
+              {saving ? "Saving..." : editingExpense ? "Save Changes" : "Log Expense"}
             </Btn>
           </div>
         </div>
