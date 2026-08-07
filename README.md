@@ -2,6 +2,10 @@
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
+## Notable dependencies
+
+- **`xlsx` (SheetJS)** is installed from SheetJS's own CDN tarball (`https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz`), not the plain npm registry — the registry's latest publish has two unpatched vulnerabilities that SheetJS fixed but never re-published to npm under this name. See the comment above the `import * as XLSX` in `src/lib/import/parseFile.ts` for the full explanation. Don't revert `package.json`'s `xlsx` entry to a normal `"^x.y.z"` version without reading that first.
+
 Currently, two official plugins are available:
 
 - [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
