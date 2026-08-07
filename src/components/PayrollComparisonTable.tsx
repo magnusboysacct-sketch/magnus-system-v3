@@ -74,37 +74,37 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
   const getValidationIcon = (status: string) => {
     switch (status) {
       case 'valid':
-        return <CheckCircle className="w-4 h-4 text-green-600" />;
+        return <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />;
       case 'warning':
-        return <AlertTriangle className="w-4 h-4 text-yellow-600" />;
+        return <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />;
       case 'error':
-        return <XCircle className="w-4 h-4 text-red-600" />;
+        return <XCircle className="w-4 h-4 text-red-600 dark:text-red-400" />;
       case 'not_available':
-        return <Clock className="w-4 h-4 text-slate-400" />;
+        return <Clock className="w-4 h-4 text-slate-400 dark:text-slate-600" />;
       default:
-        return <Clock className="w-4 h-4 text-slate-400" />;
+        return <Clock className="w-4 h-4 text-slate-400 dark:text-slate-600" />;
     }
   };
 
   const getValidationColor = (status: string) => {
     switch (status) {
       case 'valid':
-        return 'text-green-700 bg-green-100';
+        return 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-500/20';
       case 'warning':
-        return 'text-yellow-700 bg-yellow-100';
+        return 'text-yellow-700 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-500/20';
       case 'error':
-        return 'text-red-700 bg-red-100';
+        return 'text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-500/20';
       case 'not_available':
-        return 'text-slate-700 bg-slate-100';
+        return 'text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-white/[0.06]';
       default:
-        return 'text-slate-700 bg-slate-100';
+        return 'text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-white/[0.06]';
     }
   };
 
   const getDifferenceColor = (difference: number) => {
-    if (Math.abs(difference) < 1) return 'text-green-600'; // Small difference
-    if (Math.abs(difference) < 10) return 'text-yellow-600'; // Medium difference
-    return 'text-red-600'; // Large difference
+    if (Math.abs(difference) < 1) return 'text-green-600 dark:text-green-400'; // Small difference
+    if (Math.abs(difference) < 10) return 'text-yellow-600 dark:text-yellow-400'; // Medium difference
+    return 'text-red-600 dark:text-red-400'; // Large difference
   };
 
   const handleSort = (field: SortField) => {
@@ -118,11 +118,11 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
 
   const getSortIcon = (field: SortField) => {
     if (sortField !== field) {
-      return <ChevronsUpDown className="w-4 h-4 text-slate-400" />;
+      return <ChevronsUpDown className="w-4 h-4 text-slate-400 dark:text-slate-600" />;
     }
     return sortDirection === 'asc' ? 
-      <ChevronUp className="w-4 h-4 text-slate-600" /> : 
-      <ChevronDown className="w-4 h-4 text-slate-600" />;
+      <ChevronUp className="w-4 h-4 text-slate-600 dark:text-slate-400" /> : 
+      <ChevronDown className="w-4 h-4 text-slate-600 dark:text-slate-400" />;
   };
 
   // Filter and sort workers
@@ -187,13 +187,13 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
   };
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200">
+    <div className="bg-white dark:bg-[#0f1520] rounded-lg border border-slate-200 dark:border-white/[0.08]">
       {/* Table Header */}
-      <div className="p-6 border-b border-slate-200">
+      <div className="p-6 border-b border-slate-200 dark:border-white/[0.08]">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Worker Comparison Details</h2>
-            <p className="text-sm text-slate-600 mt-1">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Worker Comparison Details</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
               {periodData ? (
                 <>Payroll period: {new Date(periodData.period_start).toLocaleDateString()} - {new Date(periodData.period_end).toLocaleDateString()}</>
               ) : (
@@ -204,22 +204,22 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
           
           <div className="flex items-center gap-3">
             <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+              <Search className="w-4 h-4 text-slate-400 dark:text-slate-600 absolute left-3 top-1/2 transform -translate-y-1/2" />
               <input
                 type="text"
                 placeholder="Search workers..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-64"
+                className="pl-10 pr-4 py-2 text-sm border border-slate-300 dark:border-white/[0.1] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-64"
               />
             </div>
             
             <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-slate-500" />
+              <Filter className="w-4 h-4 text-slate-500 dark:text-slate-400" />
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="px-3 py-2 text-sm border border-slate-300 dark:border-white/[0.1] rounded-lg bg-white dark:bg-[#0f1520] text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="all">All Status ({validationStatusCounts.all})</option>
                 <option value="valid">Valid ({validationStatusCounts.valid})</option>
@@ -235,12 +235,12 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-slate-50 dark:bg-white/[0.04] border-b border-slate-200 dark:border-white/[0.08]">
             <tr>
               <th className="px-6 py-3 text-left">
                 <button
                   onClick={() => handleSort('workerName')}
-                  className="flex items-center gap-1 text-xs font-medium text-slate-700 uppercase tracking-wider hover:text-slate-900"
+                  className="flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider hover:text-slate-900"
                 >
                   Worker
                   {getSortIcon('workerName')}
@@ -249,7 +249,7 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
               <th className="px-6 py-3 text-right">
                 <button
                   onClick={() => handleSort('usNetPay')}
-                  className="flex items-center gap-1 text-xs font-medium text-slate-700 uppercase tracking-wider hover:text-slate-900 justify-end"
+                  className="flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider hover:text-slate-900 justify-end"
                 >
                   US Net Pay
                   {getSortIcon('usNetPay')}
@@ -258,7 +258,7 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
               <th className="px-6 py-3 text-right">
                 <button
                   onClick={() => handleSort('jamaicanNetPay')}
-                  className="flex items-center gap-1 text-xs font-medium text-slate-700 uppercase tracking-wider hover:text-slate-900 justify-end"
+                  className="flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider hover:text-slate-900 justify-end"
                 >
                   Jamaican Net Pay
                   {getSortIcon('jamaicanNetPay')}
@@ -267,7 +267,7 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
               <th className="px-6 py-3 text-right">
                 <button
                   onClick={() => handleSort('difference')}
-                  className="flex items-center gap-1 text-xs font-medium text-slate-700 uppercase tracking-wider hover:text-slate-900 justify-end"
+                  className="flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider hover:text-slate-900 justify-end"
                 >
                   Difference
                   {getSortIcon('difference')}
@@ -276,26 +276,26 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
               <th className="px-6 py-3 text-right">
                 <button
                   onClick={() => handleSort('differencePercentage')}
-                  className="flex items-center gap-1 text-xs font-medium text-slate-700 uppercase tracking-wider hover:text-slate-900 justify-end"
+                  className="flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider hover:text-slate-900 justify-end"
                 >
                   Difference %
                   {getSortIcon('differencePercentage')}
                 </button>
               </th>
               <th className="px-6 py-3 text-center">
-                <span className="text-xs font-medium text-slate-700 uppercase tracking-wider">Status</span>
+                <span className="text-xs font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider">Status</span>
               </th>
               <th className="px-6 py-3 text-center">
                 <button
                   onClick={() => handleSort('warningCount')}
-                  className="flex items-center gap-1 text-xs font-medium text-slate-700 uppercase tracking-wider hover:text-slate-900 justify-center"
+                  className="flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider hover:text-slate-900 justify-center"
                 >
                   Warnings
                   {getSortIcon('warningCount')}
                 </button>
               </th>
               <th className="px-6 py-3 text-left">
-                <span className="text-xs font-medium text-slate-700 uppercase tracking-wider">Payroll Country</span>
+                <span className="text-xs font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider">Payroll Country</span>
               </th>
             </tr>
           </thead>
@@ -309,19 +309,19 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
                     <div>
-                      <div className="text-sm font-medium text-slate-900">{worker.workerName}</div>
-                      <div className="text-xs text-slate-500">{worker.employeeId || 'No ID'}</div>
+                      <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{worker.workerName}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">{worker.employeeId || 'No ID'}</div>
                     </div>
                     {onWorkerClick && (
-                      <Eye className="w-4 h-4 text-slate-400" />
+                      <Eye className="w-4 h-4 text-slate-400 dark:text-slate-600" />
                     )}
                   </div>
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <div className="text-sm text-slate-900">{formatCurrency(worker.usNetPay)}</div>
+                  <div className="text-sm text-slate-900 dark:text-slate-100">{formatCurrency(worker.usNetPay)}</div>
                 </td>
                 <td className="px-6 py-4 text-right">
-                  <div className="text-sm text-slate-900">{formatCurrency(worker.jamaicanNetPay)}</div>
+                  <div className="text-sm text-slate-900 dark:text-slate-100">{formatCurrency(worker.jamaicanNetPay)}</div>
                 </td>
                 <td className="px-6 py-4 text-right">
                   <div className={`text-sm font-medium ${getDifferenceColor(worker.difference)}`}>
@@ -345,16 +345,16 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
                   <div className="flex items-center justify-center">
                     {worker.warningCount > 0 ? (
                       <div className="flex items-center gap-1">
-                        <AlertTriangle className="w-4 h-4 text-yellow-600" />
-                        <span className="text-sm font-medium text-yellow-600">{worker.warningCount}</span>
+                        <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                        <span className="text-sm font-medium text-yellow-600 dark:text-yellow-400">{worker.warningCount}</span>
                       </div>
                     ) : (
-                      <span className="text-sm text-slate-400">0</span>
+                      <span className="text-sm text-slate-400 dark:text-slate-600">0</span>
                     )}
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                  <div className="text-sm text-slate-900">{worker.payrollCountry}</div>
+                  <div className="text-sm text-slate-900 dark:text-slate-100">{worker.payrollCountry}</div>
                 </td>
               </tr>
             ))}
@@ -365,9 +365,9 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
       {/* Empty State */}
       {filteredWorkers.length === 0 && (
         <div className="p-8 text-center">
-          <Eye className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">No Workers Found</h3>
-          <p className="text-slate-600">
+          <Eye className="w-12 h-12 text-slate-400 dark:text-slate-600 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">No Workers Found</h3>
+          <p className="text-slate-600 dark:text-slate-400">
             {searchTerm || statusFilter !== 'all' 
               ? 'Try adjusting your search or filter criteria.'
               : 'No workers with shadow calculations found for this period.'
@@ -378,8 +378,8 @@ export default function PayrollComparisonTable({ workers, periodData, onWorkerCl
 
       {/* Table Footer */}
       {filteredWorkers.length > 0 && (
-        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50">
-          <div className="flex items-center justify-between text-sm text-slate-600">
+        <div className="px-6 py-4 border-t border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04]">
+          <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400">
             <span>
               Showing {filteredWorkers.length} of {workers.length} workers
             </span>

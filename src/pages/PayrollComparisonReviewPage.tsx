@@ -271,7 +271,7 @@ export default function PayrollComparisonReviewPage() {
   // Admin access check
   if (adminLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 dark:bg-white/[0.04] flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     );
@@ -279,28 +279,28 @@ export default function PayrollComparisonReviewPage() {
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 dark:bg-white/[0.04] flex items-center justify-center">
         <div className="text-center">
           <Eye className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-slate-900 mb-2">Access Denied</h2>
-          <p className="text-slate-600">You don't have permission to access payroll comparison reviews.</p>
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-2">Access Denied</h2>
+          <p className="text-slate-600 dark:text-slate-400">You don't have permission to access payroll comparison reviews.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+    <div className="min-h-screen bg-slate-50 dark:bg-white/[0.04] dark:bg-[#080b10]">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200">
+      <div className="bg-white dark:bg-[#0f1520] border-b border-slate-200 dark:border-white/[0.08]">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-                <Eye className="w-6 h-6 text-blue-600" />
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-3">
+                <Eye className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                 Payroll Comparison Review
               </h1>
-              <p className="text-sm text-slate-600 mt-1">
+              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
                 Read-only review of shadow Jamaican payroll calculations
               </p>
             </div>
@@ -309,7 +309,7 @@ export default function PayrollComparisonReviewPage() {
               <button
                 onClick={handleRefresh}
                 disabled={refreshing}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-white dark:bg-[#0f1520] border border-slate-300 dark:border-white/[0.1] rounded-lg hover:bg-slate-50 disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
                 {refreshing ? 'Refreshing...' : 'Refresh'}
@@ -320,18 +320,18 @@ export default function PayrollComparisonReviewPage() {
       </div>
 
       {/* Period Selector */}
-      <div className="bg-white border-b border-slate-200">
+      <div className="bg-white dark:bg-[#0f1520] border-b border-slate-200 dark:border-white/[0.08]">
         <div className="px-6 py-4">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-slate-500" />
-              <label className="text-sm font-medium text-slate-700">Payroll Period:</label>
+              <Calendar className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Payroll Period:</label>
             </div>
             
             <select
               value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="px-3 py-2 text-sm border border-slate-300 dark:border-white/[0.1] rounded-lg bg-white dark:bg-[#0f1520] text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               disabled={loading}
             >
               <option value="">Select a payroll period</option>
@@ -344,11 +344,11 @@ export default function PayrollComparisonReviewPage() {
             </select>
 
             {selectedPeriodData && (
-              <div className="flex items-center gap-4 text-sm text-slate-600">
+              <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
                 <span>Workers: {selectedPeriodData.total_workers}</span>
                 <span>Status: {selectedPeriodData.status}</span>
                 {selectedPeriodData.hasShadowCalculations && (
-                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                  <span className="px-2 py-1 bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-300 rounded-full text-xs font-medium">
                     Shadow Calculations Available
                   </span>
                 )}
@@ -360,10 +360,10 @@ export default function PayrollComparisonReviewPage() {
 
       {/* Error State */}
       {error && (
-        <div className="mx-6 mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+        <div className="mx-6 mt-6 p-4 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-600" />
-            <span className="text-sm text-red-700">{error}</span>
+            <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400" />
+            <span className="text-sm text-red-700 dark:text-red-400">{error}</span>
           </div>
         </div>
       )}
@@ -372,7 +372,7 @@ export default function PayrollComparisonReviewPage() {
       {loading && (
         <div className="mx-6 mt-6 p-8 text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600">Loading payroll comparison data...</p>
+          <p className="text-slate-600 dark:text-slate-400">Loading payroll comparison data...</p>
         </div>
       )}
 
@@ -400,14 +400,14 @@ export default function PayrollComparisonReviewPage() {
 
       {/* Empty State */}
       {!loading && !error && !comparisonData && (
-        <div className="mx-6 mt-6 p-8 text-center bg-white rounded-lg border border-slate-200">
-          <Eye className="w-16 h-16 text-slate-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">No Comparison Data Available</h3>
-          <p className="text-slate-600 mb-4">
+        <div className="mx-6 mt-6 p-8 text-center bg-white dark:bg-[#0f1520] rounded-lg border border-slate-200 dark:border-white/[0.08]">
+          <Eye className="w-16 h-16 text-slate-400 dark:text-slate-600 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">No Comparison Data Available</h3>
+          <p className="text-slate-600 dark:text-slate-400 mb-4">
             Select a payroll period with shadow Jamaican calculations to view comparison data.
           </p>
           {payrollPeriods.length === 0 && (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
               No processed payroll periods found with shadow calculations.
             </p>
           )}

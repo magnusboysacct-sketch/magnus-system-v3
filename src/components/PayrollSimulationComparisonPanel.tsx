@@ -522,10 +522,10 @@ export default function PayrollSimulationComparisonPanel({
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mr-3" />
-          <span className="text-gray-600">Loading comparison data...</span>
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400 mr-3" />
+          <span className="text-gray-600 dark:text-gray-400">Loading comparison data...</span>
         </div>
       </div>
     );
@@ -534,26 +534,26 @@ export default function PayrollSimulationComparisonPanel({
   return (
     <div className="space-y-6">
       {/* Comparison Setup */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Simulation Comparison</h3>
-            <p className="text-sm text-gray-600">Compare simulation results to identify variances and trends</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Simulation Comparison</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Compare simulation results to identify variances and trends</p>
           </div>
           <div className="flex items-center space-x-2">
-            <GitCompare className="h-5 w-5 text-blue-600" />
-            <span className="text-sm font-medium text-blue-600">Shadow Safe Comparison</span>
+            <GitCompare className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm font-medium text-blue-600 dark:text-blue-400">Shadow Safe Comparison</span>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Baseline Simulation</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Baseline Simulation</label>
             <select
               value={selectedBaseline}
               onChange={(e) => setSelectedBaseline(e.target.value)}
               disabled={comparing}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Select baseline simulation</option>
               {simulations.filter(s => s.status === 'completed').map((simulation) => (
@@ -562,16 +562,16 @@ export default function PayrollSimulationComparisonPanel({
                 </option>
               ))}
             </select>
-            <p className="text-xs text-gray-500 mt-1">The baseline serves as the reference point</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">The baseline serves as the reference point</p>
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Comparison Simulation</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Comparison Simulation</label>
             <select
               value={selectedComparison}
               onChange={(e) => setSelectedComparison(e.target.value)}
               disabled={comparing}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">Select comparison simulation</option>
               {simulations.filter(s => s.status === 'completed').map((simulation) => (
@@ -580,7 +580,7 @@ export default function PayrollSimulationComparisonPanel({
                 </option>
               ))}
             </select>
-            <p className="text-xs text-gray-500 mt-1">The simulation to compare against baseline</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">The simulation to compare against baseline</p>
           </div>
         </div>
 
@@ -602,7 +602,7 @@ export default function PayrollSimulationComparisonPanel({
               </>
             )}
           </button>
-          <button className="flex items-center space-x-2 bg-gray-100 text-gray-700 px-4 py-3 rounded-lg hover:bg-gray-200">
+          <button className="flex items-center space-x-2 bg-gray-100 dark:bg-white/[0.06] text-gray-700 dark:text-gray-300 px-4 py-3 rounded-lg hover:bg-gray-200">
             <FileSearch className="h-5 w-5" />
             <span>View History</span>
           </button>
@@ -611,21 +611,21 @@ export default function PayrollSimulationComparisonPanel({
 
       {/* Comparison Results */}
       {currentComparison && (
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
+        <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Comparison Results</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Comparison Results</h3>
               <div className="flex items-center space-x-2">
                 <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                  currentComparison.summary.overallStatus === 'excellent' ? 'bg-green-100 text-green-800' :
-                  currentComparison.summary.overallStatus === 'good' ? 'bg-blue-100 text-blue-800' :
-                  currentComparison.summary.overallStatus === 'acceptable' ? 'bg-yellow-100 text-yellow-800' :
-                  currentComparison.summary.overallStatus === 'needs_attention' ? 'bg-orange-100 text-orange-800' :
-                  'bg-red-100 text-red-800'
+                  currentComparison.summary.overallStatus === 'excellent' ? 'bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-300' :
+                  currentComparison.summary.overallStatus === 'good' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300' :
+                  currentComparison.summary.overallStatus === 'acceptable' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                  currentComparison.summary.overallStatus === 'needs_attention' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300' :
+                  'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300'
                 }`}>
                   {currentComparison.summary.overallStatus.replace('_', ' ').toUpperCase()}
                 </span>
-                <button className="text-gray-600 hover:text-gray-900">
+                <button className="text-gray-600 dark:text-gray-400 hover:text-gray-900">
                   <Download className="h-5 w-5" />
                 </button>
               </div>
@@ -633,7 +633,7 @@ export default function PayrollSimulationComparisonPanel({
           </div>
 
           {/* Navigation Tabs */}
-          <div className="border-b border-gray-200">
+          <div className="border-b border-gray-200 dark:border-white/[0.08]">
             <nav className="flex space-x-8 px-6" aria-label="Tabs">
               {[
                 { id: 'overview', name: 'Overview', icon: BarChart3 },
@@ -646,8 +646,8 @@ export default function PayrollSimulationComparisonPanel({
                   onClick={() => setActiveTab(tab.id as any)}
                   className={`${
                     activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:border-gray-300'
                   } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
                 >
                   <tab.icon className="h-4 w-4" />
@@ -663,84 +663,84 @@ export default function PayrollSimulationComparisonPanel({
               <div className="space-y-6">
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-sm text-gray-600">Total Comparisons</div>
-                    <div className="text-2xl font-bold text-gray-900">{currentComparison.summary.totalComparisons}</div>
+                  <div className="text-center p-4 bg-gray-50 dark:bg-white/[0.04] rounded-lg">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Total Comparisons</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{currentComparison.summary.totalComparisons}</div>
                   </div>
-                  <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <div className="text-sm text-green-600">Matching Results</div>
-                    <div className="text-2xl font-bold text-green-900">{currentComparison.summary.matchingResults}</div>
+                  <div className="text-center p-4 bg-green-50 dark:bg-green-500/10 rounded-lg">
+                    <div className="text-sm text-green-600 dark:text-green-400">Matching Results</div>
+                    <div className="text-2xl font-bold text-green-900 dark:text-green-300">{currentComparison.summary.matchingResults}</div>
                   </div>
-                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                    <div className="text-sm text-yellow-600">Variances Detected</div>
-                    <div className="text-2xl font-bold text-yellow-900">{currentComparison.summary.varianceDetected}</div>
+                  <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-500/10 rounded-lg">
+                    <div className="text-sm text-yellow-600 dark:text-yellow-400">Variances Detected</div>
+                    <div className="text-2xl font-bold text-yellow-900 dark:text-yellow-300">{currentComparison.summary.varianceDetected}</div>
                   </div>
-                  <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <div className="text-sm text-blue-600">Accuracy Score</div>
-                    <div className="text-2xl font-bold text-blue-900">{formatPercent(currentComparison.summary.accuracyScore)}</div>
+                  <div className="text-center p-4 bg-blue-50 dark:bg-blue-500/10 rounded-lg">
+                    <div className="text-sm text-blue-600 dark:text-blue-400">Accuracy Score</div>
+                    <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">{formatPercent(currentComparison.summary.accuracyScore)}</div>
                   </div>
                 </div>
 
                 {/* Detailed Metrics */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-4">
-                    <h4 className="text-md font-semibold text-gray-900">Performance Metrics</h4>
+                    <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100">Performance Metrics</h4>
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Significant Variances</span>
-                        <span className="text-sm font-medium text-gray-900">{currentComparison.summary.significantVariances}</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Significant Variances</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{currentComparison.summary.significantVariances}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Average Variance</span>
-                        <span className="text-sm font-medium text-gray-900">{formatPercent(currentComparison.summary.averageVariance * 100)}</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Average Variance</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatPercent(currentComparison.summary.averageVariance * 100)}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Max Variance</span>
-                        <span className="text-sm font-medium text-gray-900">{formatPercent(currentComparison.summary.maxVariance * 100)}</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Max Variance</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatPercent(currentComparison.summary.maxVariance * 100)}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Confidence Score</span>
-                        <span className="text-sm font-medium text-gray-900">{formatPercent(currentComparison.summary.confidenceScore)}</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Confidence Score</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatPercent(currentComparison.summary.confidenceScore)}</span>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                    <h4 className="text-md font-semibold text-gray-900">Trend Analysis</h4>
+                    <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100">Trend Analysis</h4>
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Variance Trend</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Variance Trend</span>
                         <div className="flex items-center space-x-2">
-                          {currentComparison.summary.varianceTrend === 'improving' && <TrendingUp className="h-4 w-4 text-green-600" />}
-                          {currentComparison.summary.varianceTrend === 'declining' && <TrendingDownIcon className="h-4 w-4 text-red-600" />}
-                          {currentComparison.summary.varianceTrend === 'stable' && <ArrowRight className="h-4 w-4 text-blue-600" />}
-                          <span className="text-sm font-medium capitalize text-gray-900">
+                          {currentComparison.summary.varianceTrend === 'improving' && <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />}
+                          {currentComparison.summary.varianceTrend === 'declining' && <TrendingDownIcon className="h-4 w-4 text-red-600 dark:text-red-400" />}
+                          {currentComparison.summary.varianceTrend === 'stable' && <ArrowRight className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                          <span className="text-sm font-medium capitalize text-gray-900 dark:text-gray-100">
                             {currentComparison.summary.varianceTrend}
                           </span>
                         </div>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Compared At</span>
-                        <span className="text-sm font-medium text-gray-900">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Compared At</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                           {formatDateTime(currentComparison.metadata.comparedAt)}
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Comparison Method</span>
-                        <span className="text-sm font-medium text-gray-900">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Comparison Method</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                           {currentComparison.metadata.comparisonMethod}
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Confidence Level</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Confidence Level</span>
                         <div className="flex items-center space-x-2">
-                          <div className="w-20 bg-gray-200 rounded-full h-2">
+                          <div className="w-20 bg-gray-200 dark:bg-white/[0.08] rounded-full h-2">
                             <div 
                               className="bg-blue-600 h-2 rounded-full" 
                               style={{ width: `${currentComparison.metadata.confidence * 100}%` }}
                             ></div>
                           </div>
-                          <span className="text-sm font-medium text-gray-900">
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                             {formatPercent(currentComparison.metadata.confidence * 100)}
                           </span>
                         </div>
@@ -757,11 +757,11 @@ export default function PayrollSimulationComparisonPanel({
                 {/* Variance Filters */}
                 <div className="flex items-center space-x-4">
                   <div className="flex items-center space-x-2">
-                    <Filter className="h-4 w-4 text-gray-500" />
+                    <Filter className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                     <select
                       value={varianceFilter}
                       onChange={(e) => setVarianceFilter(e.target.value)}
-                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="all">All Variances</option>
                       <option value="significant">Significant Only</option>
@@ -775,7 +775,7 @@ export default function PayrollSimulationComparisonPanel({
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value)}
-                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="significance">Sort by Significance</option>
                       <option value="variance">Sort by Variance Amount</option>
@@ -786,66 +786,66 @@ export default function PayrollSimulationComparisonPanel({
                 </div>
 
                 {/* Variance List */}
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="border border-gray-200 dark:border-white/[0.08] rounded-lg overflow-hidden">
                   <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-gray-50 dark:bg-white/[0.04]">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Entity
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Type
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Baseline
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Current
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Variance
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           % Change
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Significance
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                           Actions
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white dark:bg-[#0f1520] divide-y divide-gray-200">
                       {sortedVariances.map((variance) => (
                         <tr key={variance.varianceId} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                             <div className="flex items-center space-x-2">
-                              {variance.type === 'worker' && <Users className="h-4 w-4 text-blue-600" />}
-                              {variance.type === 'accounting' && <Calculator className="h-4 w-4 text-green-600" />}
-                              {variance.type === 'compliance' && <Shield className="h-4 w-4 text-red-600" />}
+                              {variance.type === 'worker' && <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                              {variance.type === 'accounting' && <Calculator className="h-4 w-4 text-green-600 dark:text-green-400" />}
+                              {variance.type === 'compliance' && <Shield className="h-4 w-4 text-red-600 dark:text-red-400" />}
                               <span>{variance.entityName}</span>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                             <span className="capitalize">{variance.type}</span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                             {variance.baselineValue !== undefined ? formatCurrency(variance.baselineValue) : 'N/A'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                             {formatCurrency(variance.currentValue)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
                             <div className="flex items-center space-x-2">
                               {variance.variance > 0 ? (
-                                <ArrowUp className="h-4 w-4 text-red-600" />
+                                <ArrowUp className="h-4 w-4 text-red-600 dark:text-red-400" />
                               ) : variance.variance < 0 ? (
-                                <ArrowDown className="h-4 w-4 text-green-600" />
+                                <ArrowDown className="h-4 w-4 text-green-600 dark:text-green-400" />
                               ) : (
-                                <Minus className="h-4 w-4 text-gray-600" />
+                                <Minus className="h-4 w-4 text-gray-600 dark:text-gray-400" />
                               )}
-                              <span className={variance.variance > 0 ? 'text-red-600' : variance.variance < 0 ? 'text-green-600' : 'text-gray-600'}>
+                              <span className={variance.variance > 0 ? 'text-red-600 dark:text-red-400' : variance.variance < 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}>
                                 {formatCurrency(Math.abs(variance.variance))}
                               </span>
                             </div>
@@ -853,35 +853,35 @@ export default function PayrollSimulationComparisonPanel({
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
                             <div className="flex items-center space-x-2">
                               {variance.variancePercentage > 0 ? (
-                                <ArrowUp className="h-4 w-4 text-red-600" />
+                                <ArrowUp className="h-4 w-4 text-red-600 dark:text-red-400" />
                               ) : variance.variancePercentage < 0 ? (
-                                <ArrowDown className="h-4 w-4 text-green-600" />
+                                <ArrowDown className="h-4 w-4 text-green-600 dark:text-green-400" />
                               ) : (
-                                <Equal className="h-4 w-4 text-gray-600" />
+                                <Equal className="h-4 w-4 text-gray-600 dark:text-gray-400" />
                               )}
-                              <span className={variance.variancePercentage > 0 ? 'text-red-600' : variance.variancePercentage < 0 ? 'text-green-600' : 'text-gray-600'}>
+                              <span className={variance.variancePercentage > 0 ? 'text-red-600 dark:text-red-400' : variance.variancePercentage < 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}>
                                 {formatPercent(variance.variancePercentage)}
                               </span>
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              variance.significance === 'critical' ? 'bg-red-100 text-red-800' :
-                              variance.significance === 'high' ? 'bg-orange-100 text-orange-800' :
-                              variance.significance === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-gray-100 text-gray-800'
+                              variance.significance === 'critical' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                              variance.significance === 'high' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300' :
+                              variance.significance === 'medium' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                              'bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200'
                             }`}>
                               {variance.significance}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                             <div className="flex items-center space-x-2">
                               {variance.investigation && (
-                                <button className="text-blue-600 hover:text-blue-700">
+                                <button className="text-blue-600 dark:text-blue-400 hover:text-blue-700">
                                   <Search className="h-4 w-4" />
                                 </button>
                               )}
-                              <button className="text-gray-600 hover:text-gray-700">
+                              <button className="text-gray-600 dark:text-gray-400 hover:text-gray-700">
                                 <Eye className="h-4 w-4" />
                               </button>
                             </div>
@@ -894,9 +894,9 @@ export default function PayrollSimulationComparisonPanel({
 
                 {sortedVariances.length === 0 && (
                   <div className="text-center py-8">
-                    <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h5 className="text-lg font-medium text-gray-900 mb-2">No variances found</h5>
-                    <p className="text-sm text-gray-600">
+                    <AlertCircle className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+                    <h5 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No variances found</h5>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
                       {varianceFilter === 'all' ? 'No variances detected in this comparison' : 'No variances match the selected filter'}
                     </p>
                   </div>
@@ -907,18 +907,18 @@ export default function PayrollSimulationComparisonPanel({
             {/* Trends Tab */}
             {activeTab === 'trends' && (
               <div className="space-y-6">
-                <h4 className="text-md font-semibold text-gray-900 mb-4">Trend Analysis</h4>
+                <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4">Trend Analysis</h4>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {currentComparison.trends.map((trend, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div key={index} className="border border-gray-200 dark:border-white/[0.08] rounded-lg p-4">
                       <div className="flex items-center justify-between mb-3">
-                        <h5 className="text-md font-medium text-gray-900 capitalize">{trend.metric}</h5>
+                        <h5 className="text-md font-medium text-gray-900 dark:text-gray-100 capitalize">{trend.metric}</h5>
                         <div className="flex items-center space-x-2">
-                          {trend.trend === 'improving' && <TrendingUp className="h-4 w-4 text-green-600" />}
-                          {trend.trend === 'declining' && <TrendingDownIcon className="h-4 w-4 text-red-600" />}
-                          {trend.trend === 'stable' && <ArrowRight className="h-4 w-4 text-blue-600" />}
-                          <span className="text-sm font-medium capitalize text-gray-900">
+                          {trend.trend === 'improving' && <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />}
+                          {trend.trend === 'declining' && <TrendingDownIcon className="h-4 w-4 text-red-600 dark:text-red-400" />}
+                          {trend.trend === 'stable' && <ArrowRight className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                          <span className="text-sm font-medium capitalize text-gray-900 dark:text-gray-100">
                             {trend.trend}
                           </span>
                         </div>
@@ -926,42 +926,42 @@ export default function PayrollSimulationComparisonPanel({
                       
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Current Value</span>
-                          <span className="text-sm font-medium text-gray-900">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Current Value</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
                             {typeof trend.value === 'number' ? formatPercent(trend.value) : trend.value}
                           </span>
                         </div>
                         <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Change</span>
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Change</span>
                           <div className="flex items-center space-x-2">
                             {trend.changePercentage > 0 ? (
-                              <ArrowUp className="h-4 w-4 text-green-600" />
+                              <ArrowUp className="h-4 w-4 text-green-600 dark:text-green-400" />
                             ) : trend.changePercentage < 0 ? (
-                              <ArrowDown className="h-4 w-4 text-red-600" />
+                              <ArrowDown className="h-4 w-4 text-red-600 dark:text-red-400" />
                             ) : (
-                              <Minus className="h-4 w-4 text-gray-600" />
+                              <Minus className="h-4 w-4 text-gray-600 dark:text-gray-400" />
                             )}
                             <span className={`text-sm font-medium ${
-                              trend.changePercentage > 0 ? 'text-green-600' : 
-                              trend.changePercentage < 0 ? 'text-red-600' : 'text-gray-600'
+                              trend.changePercentage > 0 ? 'text-green-600 dark:text-green-400' : 
+                              trend.changePercentage < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'
                             }`}>
                               {formatPercent(trend.changePercentage)}
                             </span>
                           </div>
                         </div>
                         <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Significance</span>
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Significance</span>
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            trend.significance === 'high' ? 'bg-red-100 text-red-800' :
-                            trend.significance === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
+                            trend.significance === 'high' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                            trend.significance === 'medium' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                            'bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200'
                           }`}>
                             {trend.significance}
                           </span>
                         </div>
                         <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">Period</span>
-                          <span className="text-sm font-medium text-gray-900">{trend.period}</span>
+                          <span className="text-sm text-gray-600 dark:text-gray-400">Period</span>
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{trend.period}</span>
                         </div>
                       </div>
                     </div>
@@ -973,52 +973,52 @@ export default function PayrollSimulationComparisonPanel({
             {/* Details Tab */}
             {activeTab === 'details' && (
               <div className="space-y-6">
-                <h4 className="text-md font-semibold text-gray-900 mb-4">Comparison Details</h4>
+                <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4">Comparison Details</h4>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <h5 className="text-sm font-medium text-gray-900 mb-3">Comparison Information</h5>
+                    <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Comparison Information</h5>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Comparison ID</span>
-                        <span className="font-medium text-gray-900">{currentComparison.id}</span>
+                        <span className="text-gray-600 dark:text-gray-400">Comparison ID</span>
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{currentComparison.id}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Type</span>
-                        <span className="font-medium text-gray-900 capitalize">{currentComparison.comparisonType}</span>
+                        <span className="text-gray-600 dark:text-gray-400">Type</span>
+                        <span className="font-medium text-gray-900 dark:text-gray-100 capitalize">{currentComparison.comparisonType}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Status</span>
-                        <span className="font-medium text-gray-900 capitalize">{currentComparison.status}</span>
+                        <span className="text-gray-600 dark:text-gray-400">Status</span>
+                        <span className="font-medium text-gray-900 dark:text-gray-100 capitalize">{currentComparison.status}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Compared By</span>
-                        <span className="font-medium text-gray-900">{currentComparison.metadata.comparedBy}</span>
+                        <span className="text-gray-600 dark:text-gray-400">Compared By</span>
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{currentComparison.metadata.comparedBy}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Compared At</span>
-                        <span className="font-medium text-gray-900">{formatDateTime(currentComparison.metadata.comparedAt)}</span>
+                        <span className="text-gray-600 dark:text-gray-400">Compared At</span>
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{formatDateTime(currentComparison.metadata.comparedAt)}</span>
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <h5 className="text-sm font-medium text-gray-900 mb-3">Methodology</h5>
+                    <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Methodology</h5>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Method</span>
-                        <span className="font-medium text-gray-900">{currentComparison.metadata.comparisonMethod}</span>
+                        <span className="text-gray-600 dark:text-gray-400">Method</span>
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{currentComparison.metadata.comparisonMethod}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Confidence</span>
+                        <span className="text-gray-600 dark:text-gray-400">Confidence</span>
                         <div className="flex items-center space-x-2">
-                          <div className="w-20 bg-gray-200 rounded-full h-2">
+                          <div className="w-20 bg-gray-200 dark:bg-white/[0.08] rounded-full h-2">
                             <div 
                               className="bg-blue-600 h-2 rounded-full" 
                               style={{ width: `${currentComparison.metadata.confidence * 100}%` }}
                             ></div>
                           </div>
-                          <span className="font-medium text-gray-900">
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
                             {formatPercent(currentComparison.metadata.confidence * 100)}
                           </span>
                         </div>
@@ -1030,46 +1030,46 @@ export default function PayrollSimulationComparisonPanel({
                 {/* Recommendations */}
                 {currentComparison.recommendations.length > 0 && (
                   <div>
-                    <h5 className="text-sm font-medium text-gray-900 mb-3">Recommendations</h5>
+                    <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Recommendations</h5>
                     <div className="space-y-3">
                       {currentComparison.recommendations.map((rec, index) => (
-                        <div key={rec.recommendationId} className="border border-gray-200 rounded-lg p-4">
+                        <div key={rec.recommendationId} className="border border-gray-200 dark:border-white/[0.08] rounded-lg p-4">
                           <div className="flex items-start space-x-3">
                             <div className={`mt-1 w-2 h-2 rounded-full ${
                               rec.priority === 'critical' ? 'bg-red-600' :
                               rec.priority === 'high' ? 'bg-orange-600' :
                               rec.priority === 'medium' ? 'bg-yellow-600' :
-                              'bg-gray-600'
+                              'bg-gray-600 dark:bg-gray-500'
                             }`}></div>
                             <div className="flex-1">
                               <div className="flex items-center space-x-2 mb-2">
-                                <h6 className="text-sm font-medium text-gray-900">{rec.title}</h6>
+                                <h6 className="text-sm font-medium text-gray-900 dark:text-gray-100">{rec.title}</h6>
                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                  rec.priority === 'critical' ? 'bg-red-100 text-red-800' :
-                                  rec.priority === 'high' ? 'bg-orange-100 text-orange-800' :
-                                  rec.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-gray-100 text-gray-800'
+                                  rec.priority === 'critical' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                                  rec.priority === 'high' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300' :
+                                  rec.priority === 'medium' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                                  'bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200'
                                 }`}>
                                   {rec.priority}
                                 </span>
                               </div>
-                              <p className="text-sm text-gray-600 mb-2">{rec.description}</p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{rec.description}</p>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                                 <div>
-                                  <span className="text-gray-600">Impact: </span>
-                                  <span className="font-medium text-gray-900">{rec.impact}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Impact: </span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100">{rec.impact}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Effort: </span>
-                                  <span className="font-medium text-gray-900 capitalize">{rec.effort}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Effort: </span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100 capitalize">{rec.effort}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Timeline: </span>
-                                  <span className="font-medium text-gray-900">{rec.timeline}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Timeline: </span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100">{rec.timeline}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Type: </span>
-                                  <span className="font-medium text-gray-900 capitalize">{rec.type}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Type: </span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100 capitalize">{rec.type}</span>
                                 </div>
                               </div>
                             </div>
@@ -1087,9 +1087,9 @@ export default function PayrollSimulationComparisonPanel({
 
       {/* Recent Comparisons */}
       {!currentComparison && comparisons.length > 0 && (
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">Recent Comparisons</h3>
+        <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Comparisons</h3>
           </div>
           <div className="divide-y divide-gray-200">
             {comparisons.map((comparison) => (
@@ -1097,14 +1097,14 @@ export default function PayrollSimulationComparisonPanel({
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
-                      <h4 className="text-md font-medium text-gray-900">
+                      <h4 className="text-md font-medium text-gray-900 dark:text-gray-100">
                         {comparison.simulationId} vs {comparison.baselineId}
                       </h4>
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        comparison.summary.overallStatus === 'excellent' ? 'bg-green-100 text-green-800' :
-                        comparison.summary.overallStatus === 'good' ? 'bg-blue-100 text-blue-800' :
-                        comparison.summary.overallStatus === 'acceptable' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'
+                        comparison.summary.overallStatus === 'excellent' ? 'bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-300' :
+                        comparison.summary.overallStatus === 'good' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300' :
+                        comparison.summary.overallStatus === 'acceptable' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                        'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300'
                       }`}>
                         {comparison.summary.overallStatus.replace('_', ' ').toUpperCase()}
                       </span>
@@ -1112,20 +1112,20 @@ export default function PayrollSimulationComparisonPanel({
                     
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                       <div>
-                        <div className="text-gray-600">Accuracy Score</div>
-                        <div className="font-medium text-gray-900">{formatPercent(comparison.summary.accuracyScore)}</div>
+                        <div className="text-gray-600 dark:text-gray-400">Accuracy Score</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatPercent(comparison.summary.accuracyScore)}</div>
                       </div>
                       <div>
-                        <div className="text-gray-600">Variances</div>
-                        <div className="font-medium text-gray-900">{comparison.summary.varianceDetected}</div>
+                        <div className="text-gray-600 dark:text-gray-400">Variances</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{comparison.summary.varianceDetected}</div>
                       </div>
                       <div>
-                        <div className="text-gray-600">Confidence</div>
-                        <div className="font-medium text-gray-900">{formatPercent(comparison.summary.confidenceScore)}</div>
+                        <div className="text-gray-600 dark:text-gray-400">Confidence</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatPercent(comparison.summary.confidenceScore)}</div>
                       </div>
                       <div>
-                        <div className="text-gray-600">Compared</div>
-                        <div className="font-medium text-gray-900">{formatDateTime(comparison.metadata.comparedAt)}</div>
+                        <div className="text-gray-600 dark:text-gray-400">Compared</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatDateTime(comparison.metadata.comparedAt)}</div>
                       </div>
                     </div>
                   </div>
@@ -1136,11 +1136,11 @@ export default function PayrollSimulationComparisonPanel({
                         setCurrentComparison(comparison);
                         setActiveTab('overview');
                       }}
-                      className="text-blue-600 hover:text-blue-700"
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-700"
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    <button className="text-gray-600 hover:text-gray-700">
+                    <button className="text-gray-600 dark:text-gray-400 hover:text-gray-700">
                       <Download className="h-4 w-4" />
                     </button>
                   </div>
@@ -1153,10 +1153,10 @@ export default function PayrollSimulationComparisonPanel({
 
       {/* Empty State */}
       {!currentComparison && comparisons.length === 0 && (
-        <div className="bg-white rounded-lg shadow p-12 text-center">
-          <GitCompare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h5 className="text-lg font-medium text-gray-900 mb-2">No comparisons available</h5>
-          <p className="text-sm text-gray-600 mb-6">
+        <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-12 text-center">
+          <GitCompare className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+          <h5 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No comparisons available</h5>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
             Select two completed simulations to compare and identify variances
           </p>
         </div>

@@ -508,10 +508,10 @@ export default function PayrollSimulationHistoryPanel({
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mr-3" />
-          <span className="text-gray-600">Loading simulation history...</span>
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400 mr-3" />
+          <span className="text-gray-600 dark:text-gray-400">Loading simulation history...</span>
         </div>
       </div>
     );
@@ -521,77 +521,77 @@ export default function PayrollSimulationHistoryPanel({
     <div className="space-y-6">
       {/* Statistics Header */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-4">
           <div className="flex items-center">
-            <History className="h-8 w-8 text-blue-600 mr-3" />
+            <History className="h-8 w-8 text-blue-600 dark:text-blue-400 mr-3" />
             <div>
-              <p className="text-sm text-gray-600">Total Simulations</p>
-              <p className="text-xl font-bold text-gray-900">{statistics.total}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Total Simulations</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{statistics.total}</p>
             </div>
           </div>
         </div>
         
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-4">
           <div className="flex items-center">
-            <CheckCircle className="h-8 w-8 text-green-600 mr-3" />
+            <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400 mr-3" />
             <div>
-              <p className="text-sm text-gray-600">Completed</p>
-              <p className="text-xl font-bold text-green-600">{statistics.completed}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Completed</p>
+              <p className="text-xl font-bold text-green-600 dark:text-green-400">{statistics.completed}</p>
             </div>
           </div>
         </div>
         
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-4">
           <div className="flex items-center">
-            <XCircle className="h-8 w-8 text-red-600 mr-3" />
+            <XCircle className="h-8 w-8 text-red-600 dark:text-red-400 mr-3" />
             <div>
-              <p className="text-sm text-gray-600">Failed</p>
-              <p className="text-xl font-bold text-red-600">{statistics.failed}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Failed</p>
+              <p className="text-xl font-bold text-red-600 dark:text-red-400">{statistics.failed}</p>
             </div>
           </div>
         </div>
         
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-4">
           <div className="flex items-center">
-            <Shield className="h-8 w-8 text-purple-600 mr-3" />
+            <Shield className="h-8 w-8 text-purple-600 dark:text-purple-400 mr-3" />
             <div>
-              <p className="text-sm text-gray-600">Avg Safety Score</p>
-              <p className="text-xl font-bold text-purple-600">{statistics.avgSafetyScore.toFixed(1)}%</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Avg Safety Score</p>
+              <p className="text-xl font-bold text-purple-600 dark:text-purple-400">{statistics.avgSafetyScore.toFixed(1)}%</p>
             </div>
           </div>
         </div>
         
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-4">
           <div className="flex items-center">
-            <Clock className="h-8 w-8 text-orange-600 mr-3" />
+            <Clock className="h-8 w-8 text-orange-600 dark:text-orange-400 mr-3" />
             <div>
-              <p className="text-sm text-gray-600">Total Duration</p>
-              <p className="text-xl font-bold text-orange-600">{formatDuration(statistics.totalDuration)}</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Total Duration</p>
+              <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{formatDuration(statistics.totalDuration)}</p>
             </div>
           </div>
         </div>
       </div>
 
       {/* Filters and Controls */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Simulation History</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Simulation History</h3>
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setViewMode(viewMode === 'list' ? 'grid' : 'list')}
-              className="p-2 text-gray-600 hover:text-gray-900"
+              className="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900"
             >
               {viewMode === 'list' ? <Grid className="h-5 w-5" /> : <List className="h-5 w-5" />}
             </button>
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center space-x-2 p-2 text-gray-600 hover:text-gray-900"
+              className="flex items-center space-x-2 p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900"
             >
               <Filter className="h-5 w-5" />
               <span className="text-sm">Filters</span>
               <ChevronDown className={`h-4 w-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
             </button>
-            <button className="flex items-center space-x-2 p-2 text-gray-600 hover:text-gray-900">
+            <button className="flex items-center space-x-2 p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900">
               <RefreshCw className="h-5 w-5" />
               <span className="text-sm">Refresh</span>
             </button>
@@ -601,27 +601,27 @@ export default function PayrollSimulationHistoryPanel({
         {/* Search Bar */}
         <div className="mb-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-600" />
             <input
               type="text"
               placeholder="Search simulations..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-white/[0.1] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </div>
 
         {/* Expanded Filters */}
         {showFilters && (
-          <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+          <div className="mb-4 p-4 bg-gray-50 dark:bg-white/[0.04] rounded-lg">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status</label>
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">All Status</option>
                   <option value="completed">Completed</option>
@@ -633,11 +633,11 @@ export default function PayrollSimulationHistoryPanel({
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Type</label>
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">All Types</option>
                   <option value="payroll_period">Payroll Period</option>
@@ -650,11 +650,11 @@ export default function PayrollSimulationHistoryPanel({
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Date Range</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date Range</label>
                 <select
                   value={filterDateRange}
                   onChange={(e) => setFilterDateRange(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">All Time</option>
                   <option value="week">Last Week</option>
@@ -664,12 +664,12 @@ export default function PayrollSimulationHistoryPanel({
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sort By</label>
                 <div className="flex space-x-2">
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value)}
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="flex-1 border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="createdAt">Created Date</option>
                     <option value="status">Status</option>
@@ -679,7 +679,7 @@ export default function PayrollSimulationHistoryPanel({
                   </select>
                   <button
                     onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    className="p-2 border border-gray-300 dark:border-white/[0.1] rounded-lg hover:bg-gray-50"
                   >
                     {sortOrder === 'asc' ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
                   </button>
@@ -691,15 +691,15 @@ export default function PayrollSimulationHistoryPanel({
 
         {/* Selection Controls */}
         {selectedSimulations.length > 0 && (
-          <div className="mb-4 p-3 bg-blue-50 rounded-lg flex items-center justify-between">
+          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-500/10 rounded-lg flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"
                 checked={selectedSimulations.length === filteredSimulations.length}
                 onChange={(e) => e.target.checked ? selectAllSimulations() : clearSelection()}
-                className="rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                className="rounded border-blue-300 dark:border-blue-500/20 text-blue-600 dark:text-blue-400 focus:ring-blue-500"
               />
-              <span className="text-sm text-blue-900">
+              <span className="text-sm text-blue-900 dark:text-blue-300">
                 {selectedSimulations.length} of {filteredSimulations.length} selected
               </span>
             </div>
@@ -708,7 +708,7 @@ export default function PayrollSimulationHistoryPanel({
                 <Download className="h-4 w-4" />
                 Export
               </button>
-              <button className="flex items-center space-x-1 px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700">
+              <button className="flex items-center space-x-1 px-3 py-1 text-sm bg-gray-600 dark:bg-gray-500 text-white rounded hover:bg-gray-700">
                 <Archive className="h-4 w-4" />
                 Archive
               </button>
@@ -718,16 +718,16 @@ export default function PayrollSimulationHistoryPanel({
       </div>
 
       {/* Simulation List */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200">
+      <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
           <div className="flex items-center justify-between">
-            <h4 className="text-md font-semibold text-gray-900">
+            <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100">
               {filteredSimulations.length} Simulation{filteredSimulations.length !== 1 ? 's' : ''}
             </h4>
             {selectedSimulations.length > 0 && (
               <button
                 onClick={clearSelection}
-                className="text-sm text-blue-600 hover:text-blue-700"
+                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700"
               >
                 Clear selection
               </button>
@@ -746,78 +746,78 @@ export default function PayrollSimulationHistoryPanel({
                       type="checkbox"
                       checked={selectedSimulations.includes(simulation.id)}
                       onChange={() => toggleSimulationSelection(simulation.id)}
-                      className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="mt-1 rounded border-gray-300 dark:border-white/[0.1] text-blue-600 dark:text-blue-400 focus:ring-blue-500"
                     />
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
-                        <h5 className="text-md font-medium text-gray-900">
+                        <h5 className="text-md font-medium text-gray-900 dark:text-gray-100">
                           {simulation.simulationType.description}
                         </h5>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          simulation.status === 'completed' ? 'bg-green-100 text-green-800' :
-                          simulation.status === 'failed' ? 'bg-red-100 text-red-800' :
-                          simulation.status === 'running' ? 'bg-blue-100 text-blue-800' :
-                          simulation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-gray-100 text-gray-800'
+                          simulation.status === 'completed' ? 'bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-300' :
+                          simulation.status === 'failed' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                          simulation.status === 'running' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300' :
+                          simulation.status === 'pending' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                          'bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200'
                         }`}>
                           {simulation.status}
                         </span>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-300">
                           {simulation.executionMode}
                         </span>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300">
                           {simulation.simulationType.category}
                         </span>
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                         <div>
-                          <div className="text-gray-600">Created</div>
-                          <div className="font-medium text-gray-900">{formatDateTime(simulation.metadata.createdAt)}</div>
+                          <div className="text-gray-600 dark:text-gray-400">Created</div>
+                          <div className="font-medium text-gray-900 dark:text-gray-100">{formatDateTime(simulation.metadata.createdAt)}</div>
                         </div>
                         <div>
-                          <div className="text-gray-600">Duration</div>
-                          <div className="font-medium text-gray-900">
+                          <div className="text-gray-600 dark:text-gray-400">Duration</div>
+                          <div className="font-medium text-gray-900 dark:text-gray-100">
                             {simulation.metadata.duration ? formatDuration(simulation.metadata.duration) : 'N/A'}
                           </div>
                         </div>
                         <div>
-                          <div className="text-gray-600">Safety Score</div>
-                          <div className="font-medium text-gray-900">{simulation.safety.safetyScore}%</div>
+                          <div className="text-gray-600 dark:text-gray-400">Safety Score</div>
+                          <div className="font-medium text-gray-900 dark:text-gray-100">{simulation.safety.safetyScore}%</div>
                         </div>
                         <div>
-                          <div className="text-gray-600">Priority</div>
-                          <div className="font-medium text-gray-900 capitalize">{simulation.priority}</div>
+                          <div className="text-gray-600 dark:text-gray-400">Priority</div>
+                          <div className="font-medium text-gray-900 dark:text-gray-100 capitalize">{simulation.priority}</div>
                         </div>
                       </div>
 
                       {/* Expanded Details */}
                       {expandedSimulation === simulation.id && (
-                        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                        <div className="mt-4 p-4 bg-gray-50 dark:bg-white/[0.04] rounded-lg">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                             <div>
-                              <div className="text-gray-600">Execution Mode</div>
-                              <div className="font-medium text-gray-900">{simulation.executionMode}</div>
+                              <div className="text-gray-600 dark:text-gray-400">Execution Mode</div>
+                              <div className="font-medium text-gray-900 dark:text-gray-100">{simulation.executionMode}</div>
                             </div>
                             <div>
-                              <div className="text-gray-600">Safety Level</div>
-                              <div className="font-medium text-gray-900">{simulation.configuration.safetyLevel}</div>
+                              <div className="text-gray-600 dark:text-gray-400">Safety Level</div>
+                              <div className="font-medium text-gray-900 dark:text-gray-100">{simulation.configuration.safetyLevel}</div>
                             </div>
                             <div>
-                              <div className="text-gray-600">Max Workers</div>
-                              <div className="font-medium text-gray-900">{simulation.configuration.maxWorkers || 'Unlimited'}</div>
+                              <div className="text-gray-600 dark:text-gray-400">Max Workers</div>
+                              <div className="font-medium text-gray-900 dark:text-gray-100">{simulation.configuration.maxWorkers || 'Unlimited'}</div>
                             </div>
                             <div>
-                              <div className="text-gray-600">Precision Level</div>
-                              <div className="font-medium text-gray-900">{simulation.parameters.precisionLevel}</div>
+                              <div className="text-gray-600 dark:text-gray-400">Precision Level</div>
+                              <div className="font-medium text-gray-900 dark:text-gray-100">{simulation.parameters.precisionLevel}</div>
                             </div>
                             <div>
-                              <div className="text-gray-600">Created By</div>
-                              <div className="font-medium text-gray-900">{simulation.metadata.createdBy}</div>
+                              <div className="text-gray-600 dark:text-gray-400">Created By</div>
+                              <div className="font-medium text-gray-900 dark:text-gray-100">{simulation.metadata.createdBy}</div>
                             </div>
                             <div>
-                              <div className="text-gray-600">Retry Count</div>
-                              <div className="font-medium text-gray-900">
+                              <div className="text-gray-600 dark:text-gray-400">Retry Count</div>
+                              <div className="font-medium text-gray-900 dark:text-gray-100">
                                 {simulation.metadata.retryCount} / {simulation.metadata.maxRetries}
                               </div>
                             </div>
@@ -825,11 +825,11 @@ export default function PayrollSimulationHistoryPanel({
 
                           {/* Safety Warnings */}
                           {simulation.safety.warnings.length > 0 && (
-                            <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
+                            <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-500/10 rounded-lg">
                               <div className="flex items-start space-x-2">
-                                <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                                <div className="text-sm text-yellow-700">
-                                  <div className="font-medium text-yellow-900">Safety Warnings</div>
+                                <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                                <div className="text-sm text-yellow-700 dark:text-yellow-400">
+                                  <div className="font-medium text-yellow-900 dark:text-yellow-300">Safety Warnings</div>
                                   <ul className="mt-1 space-y-1">
                                     {simulation.safety.warnings.map((warning, index) => (
                                       <li key={index}>• {warning}</li>
@@ -849,23 +849,23 @@ export default function PayrollSimulationHistoryPanel({
                       onClick={() => setExpandedSimulation(
                         expandedSimulation === simulation.id ? null : simulation.id
                       )}
-                      className="text-gray-600 hover:text-gray-900"
+                      className="text-gray-600 dark:text-gray-400 hover:text-gray-900"
                     >
                       {expandedSimulation === simulation.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </button>
                     <button
                       onClick={() => onSimulationSelect && onSimulationSelect(simulation)}
-                      className="text-blue-600 hover:text-blue-700"
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-700"
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    <button className="text-gray-600 hover:text-gray-700">
+                    <button className="text-gray-600 dark:text-gray-400 hover:text-gray-700">
                       <Download className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => archiveSimulation(simulation.id)}
                       disabled={archiving === simulation.id || readOnly}
-                      className="text-orange-600 hover:text-orange-700 disabled:opacity-50"
+                      className="text-orange-600 dark:text-orange-400 hover:text-orange-700 disabled:opacity-50"
                     >
                       {archiving === simulation.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -884,46 +884,46 @@ export default function PayrollSimulationHistoryPanel({
         {viewMode === 'grid' && (
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredSimulations.map((simulation) => (
-              <div key={simulation.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-lg transition-shadow">
+              <div key={simulation.id} className="border border-gray-200 dark:border-white/[0.08] rounded-lg p-4 hover:shadow-lg transition-shadow">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center space-x-2">
                     <input
                       type="checkbox"
                       checked={selectedSimulations.includes(simulation.id)}
                       onChange={() => toggleSimulationSelection(simulation.id)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="rounded border-gray-300 dark:border-white/[0.1] text-blue-600 dark:text-blue-400 focus:ring-blue-500"
                     />
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                      simulation.status === 'completed' ? 'bg-green-100 text-green-800' :
-                      simulation.status === 'failed' ? 'bg-red-100 text-red-800' :
-                      simulation.status === 'running' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
+                      simulation.status === 'completed' ? 'bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-300' :
+                      simulation.status === 'failed' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                      simulation.status === 'running' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300' :
+                      'bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200'
                     }`}>
                       {simulation.status}
                     </span>
                   </div>
-                  <button className="text-gray-400 hover:text-gray-600">
+                  <button className="text-gray-400 dark:text-gray-600 hover:text-gray-600">
                     <MoreHorizontal className="h-4 w-4" />
                   </button>
                 </div>
 
-                <h5 className="text-md font-medium text-gray-900 mb-2">
+                <h5 className="text-md font-medium text-gray-900 dark:text-gray-100 mb-2">
                   {simulation.simulationType.description}
                 </h5>
 
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Created:</span>
+                    <span className="text-gray-600 dark:text-gray-400">Created:</span>
                     <span className="font-medium">{formatDateTime(simulation.metadata.createdAt)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Duration:</span>
+                    <span className="text-gray-600 dark:text-gray-400">Duration:</span>
                     <span className="font-medium">
                       {simulation.metadata.duration ? formatDuration(simulation.metadata.duration) : 'N/A'}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Safety:</span>
+                    <span className="text-gray-600 dark:text-gray-400">Safety:</span>
                     <span className="font-medium">{simulation.safety.safetyScore}%</span>
                   </div>
                 </div>
@@ -936,7 +936,7 @@ export default function PayrollSimulationHistoryPanel({
                     <Eye className="h-4 w-4" />
                     <span className="text-sm">View</span>
                   </button>
-                  <button className="p-2 text-gray-600 hover:text-gray-700">
+                  <button className="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-700">
                     <Download className="h-4 w-4" />
                   </button>
                 </div>
@@ -948,9 +948,9 @@ export default function PayrollSimulationHistoryPanel({
         {/* Empty State */}
         {filteredSimulations.length === 0 && (
           <div className="p-12 text-center">
-            <FileSearch className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h5 className="text-lg font-medium text-gray-900 mb-2">No simulations found</h5>
-            <p className="text-sm text-gray-600">
+            <FileSearch className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+            <h5 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No simulations found</h5>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               {searchTerm || filterStatus !== 'all' || filterType !== 'all' || filterDateRange !== 'all'
                 ? 'Try adjusting your search or filters'
                 : 'No simulations have been executed yet'

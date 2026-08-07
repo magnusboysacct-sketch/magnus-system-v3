@@ -450,8 +450,8 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
   if (currentProjectLoading || accessLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600 mr-3" />
-        <span className="text-gray-600">Loading simulation center...</span>
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400 mr-3" />
+        <span className="text-gray-600 dark:text-gray-400">Loading simulation center...</span>
       </div>
     );
   }
@@ -461,16 +461,16 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+    <div className="min-h-screen bg-slate-50 dark:bg-white/[0.04] dark:bg-[#080b10]">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200">
+      <div className="bg-white dark:bg-[#0f1520] shadow-sm border-b border-gray-200 dark:border-white/[0.08]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
-              <Brain className="h-8 w-8 text-blue-600 mr-3" />
+              <Brain className="h-8 w-8 text-blue-600 dark:text-blue-400 mr-3" />
               <div>
-                <h1 className="text-xl font-semibold text-gray-900">Payroll Simulation Center</h1>
-                <p className="text-sm text-gray-600">Shadow-safe payroll simulation execution</p>
+                <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Payroll Simulation Center</h1>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Shadow-safe payroll simulation execution</p>
               </div>
             </div>
             <div className="flex items-center space-x-3">
@@ -481,7 +481,7 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                 <PlayCircle className="h-4 w-4" />
                 <span>New Simulation</span>
               </button>
-              <button className="flex items-center space-x-2 bg-gray-100 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-200">
+              <button className="flex items-center space-x-2 bg-gray-100 dark:bg-white/[0.06] text-gray-700 dark:text-gray-300 px-3 py-2 rounded-lg hover:bg-gray-200">
                 <Settings className="h-4 w-4" />
                 <span className="text-sm">Settings</span>
               </button>
@@ -491,7 +491,7 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
       </div>
 
       {/* Navigation Tabs */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-white dark:bg-[#0f1520] border-b border-gray-200 dark:border-white/[0.08]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex space-x-8" aria-label="Tabs">
             {[
@@ -506,8 +506,8 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`${
                   activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:border-gray-300'
                 } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
               >
                 <tab.icon className="h-4 w-4" />
@@ -524,50 +524,50 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
           <div className="space-y-6">
             {/* Statistics Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white rounded-lg shadow p-6">
+              <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <Activity className="h-8 w-8 text-blue-600" />
+                    <Activity className="h-8 w-8 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Total Simulations</p>
-                    <p className="text-2xl font-bold text-gray-900">{statistics.total}</p>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Simulations</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{statistics.total}</p>
                   </div>
                 </div>
               </div>
               
-              <div className="bg-white rounded-lg shadow p-6">
+              <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <Play className="h-8 w-8 text-green-600" />
+                    <Play className="h-8 w-8 text-green-600 dark:text-green-400" />
                   </div>
                   <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Running</p>
-                    <p className="text-2xl font-bold text-green-600">{statistics.running}</p>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Running</p>
+                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">{statistics.running}</p>
                   </div>
                 </div>
               </div>
               
-              <div className="bg-white rounded-lg shadow p-6">
+              <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <CheckCircle className="h-8 w-8 text-green-600" />
+                    <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
                   </div>
                   <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Completed</p>
-                    <p className="text-2xl font-bold text-green-600">{statistics.completed}</p>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Completed</p>
+                    <p className="text-2xl font-bold text-green-600 dark:text-green-400">{statistics.completed}</p>
                   </div>
                 </div>
               </div>
               
-              <div className="bg-white rounded-lg shadow p-6">
+              <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
                 <div className="flex items-center">
                   <div className="flex-shrink-0">
-                    <Shield className="h-8 w-8 text-purple-600" />
+                    <Shield className="h-8 w-8 text-purple-600 dark:text-purple-400" />
                   </div>
                   <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Avg Safety Score</p>
-                    <p className="text-2xl font-bold text-purple-600">{statistics.avgSafetyScore.toFixed(1)}%</p>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Avg Safety Score</p>
+                    <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{statistics.avgSafetyScore.toFixed(1)}%</p>
                   </div>
                 </div>
               </div>
@@ -577,9 +577,9 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
             <PayrollSimulationAuditPanel totalSimulations={statistics.total} runningSimulations={statistics.running} completedSimulations={statistics.completed} averageSafetyScore={statistics.avgSafetyScore} />
 
             {/* Recent Simulations */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Recent Simulations</h3>
+            <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Simulations</h3>
               </div>
               <div className="divide-y divide-gray-200">
                 {filteredSimulations.slice(0, 5).map((simulation) => (
@@ -587,35 +587,35 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-2">
-                          <h4 className="text-md font-medium text-gray-900">{simulation.simulationType.description}</h4>
+                          <h4 className="text-md font-medium text-gray-900 dark:text-gray-100">{simulation.simulationType.description}</h4>
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            simulation.status === 'completed' ? 'bg-green-100 text-green-800' :
-                            simulation.status === 'running' ? 'bg-blue-100 text-blue-800' :
-                            simulation.status === 'failed' ? 'bg-red-100 text-red-800' :
-                            simulation.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
+                            simulation.status === 'completed' ? 'bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-300' :
+                            simulation.status === 'running' ? 'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300' :
+                            simulation.status === 'failed' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                            simulation.status === 'pending' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                            'bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200'
                           }`}>
                             {simulation.status}
                           </span>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-300">
                             {simulation.executionMode}
                           </span>
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                           <div>
-                            <div className="text-gray-600">Created</div>
-                            <div className="font-medium text-gray-900">{formatDateTime(simulation.metadata.createdAt)}</div>
+                            <div className="text-gray-600 dark:text-gray-400">Created</div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100">{formatDateTime(simulation.metadata.createdAt)}</div>
                           </div>
                           <div>
-                            <div className="text-gray-600">Duration</div>
-                            <div className="font-medium text-gray-900">
+                            <div className="text-gray-600 dark:text-gray-400">Duration</div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100">
                               {simulation.metadata.duration ? formatDuration(simulation.metadata.duration) : 'N/A'}
                             </div>
                           </div>
                           <div>
-                            <div className="text-gray-600">Safety Score</div>
-                            <div className="font-medium text-gray-900">{simulation.safety.safetyScore}%</div>
+                            <div className="text-gray-600 dark:text-gray-400">Safety Score</div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100">{simulation.safety.safetyScore}%</div>
                           </div>
                         </div>
                       </div>
@@ -623,11 +623,11 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                       <div className="flex items-center space-x-2 ml-4">
                         <button 
                           onClick={() => setSelectedSimulation(simulation)}
-                          className="text-blue-600 hover:text-blue-700"
+                          className="text-blue-600 dark:text-blue-400 hover:text-blue-700"
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        <button className="text-gray-600 hover:text-gray-700">
+                        <button className="text-gray-600 dark:text-gray-400 hover:text-gray-700">
                           <Download className="h-4 w-4" />
                         </button>
                       </div>
@@ -642,10 +642,10 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
         {/* Running Tab */}
         {activeTab === 'running' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Running Simulations</h3>
-                <p className="text-sm text-gray-600">Active payroll simulations in progress</p>
+            <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Running Simulations</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Active payroll simulations in progress</p>
               </div>
               <div className="divide-y divide-gray-200">
                 {filteredSimulations.filter(s => s.status === 'running').map((simulation) => (
@@ -655,11 +655,11 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                         <div className="flex items-center space-x-3 mb-4">
                           <div className="flex items-center space-x-2">
                             <div className="animate-pulse">
-                              <Play className="h-5 w-5 text-blue-600" />
+                              <Play className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                             </div>
-                            <h4 className="text-md font-medium text-gray-900">{simulation.simulationType.description}</h4>
+                            <h4 className="text-md font-medium text-gray-900 dark:text-gray-100">{simulation.simulationType.description}</h4>
                           </div>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300">
                             Running
                           </span>
                         </div>
@@ -667,24 +667,24 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                         {/* Progress Bar */}
                         <div className="mb-4">
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm text-gray-600">Progress</span>
-                            <span className="text-sm text-gray-900">65%</span>
+                            <span className="text-sm text-gray-600 dark:text-gray-400">Progress</span>
+                            <span className="text-sm text-gray-900 dark:text-gray-100">65%</span>
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div className="w-full bg-gray-200 dark:bg-white/[0.08] rounded-full h-2">
                             <div className="bg-blue-600 h-2 rounded-full" style={{ width: '65%' }}></div>
                           </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                           <div>
-                            <div className="text-gray-600">Started</div>
-                            <div className="font-medium text-gray-900">
+                            <div className="text-gray-600 dark:text-gray-400">Started</div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100">
                               {simulation.metadata.startedAt ? formatDateTime(simulation.metadata.startedAt) : 'N/A'}
                             </div>
                           </div>
                           <div>
-                            <div className="text-gray-600">Estimated Completion</div>
-                            <div className="font-medium text-gray-900">
+                            <div className="text-gray-600 dark:text-gray-400">Estimated Completion</div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100">
                               {simulation.metadata.estimatedDuration ? 
                                 formatDateTime(new Date(Date.now() + simulation.metadata.estimatedDuration * 0.35).toISOString()) : 
                                 'N/A'
@@ -692,18 +692,18 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                             </div>
                           </div>
                           <div>
-                            <div className="text-gray-600">Safety Status</div>
-                            <div className="font-medium text-green-600">Safe</div>
+                            <div className="text-gray-600 dark:text-gray-400">Safety Status</div>
+                            <div className="font-medium text-green-600 dark:text-green-400">Safe</div>
                           </div>
                         </div>
 
                         {/* Safety Warnings */}
                         {simulation.safety.warnings.length > 0 && (
-                          <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
+                          <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-500/10 rounded-lg">
                             <div className="flex items-start space-x-2">
-                              <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
-                              <div className="text-sm text-yellow-700">
-                                <div className="font-medium text-yellow-900">Safety Warnings</div>
+                              <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                              <div className="text-sm text-yellow-700 dark:text-yellow-400">
+                                <div className="font-medium text-yellow-900 dark:text-yellow-300">Safety Warnings</div>
                                 <ul className="mt-1 space-y-1">
                                   {simulation.safety.warnings.map((warning, index) => (
                                     <li key={index}>â€¢ {warning}</li>
@@ -716,10 +716,10 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                       </div>
 
                       <div className="flex items-center space-x-2 ml-4">
-                        <button className="text-yellow-600 hover:text-yellow-700">
+                        <button className="text-yellow-600 dark:text-yellow-400 hover:text-yellow-700">
                           <Pause className="h-4 w-4" />
                         </button>
-                        <button className="text-red-600 hover:text-red-700">
+                        <button className="text-red-600 dark:text-red-400 hover:text-red-700">
                           <Square className="h-4 w-4" />
                         </button>
                       </div>
@@ -735,14 +735,14 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
         {activeTab === 'history' && (
           <div className="space-y-6">
             {/* Filters */}
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-2">
-                  <Filter className="h-4 w-4 text-gray-500" />
+                  <Filter className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                   <select
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="all">All Status</option>
                     <option value="completed">Completed</option>
@@ -754,7 +754,7 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                   <select
                     value={filterType}
                     onChange={(e) => setFilterType(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="all">All Types</option>
                     <option value="payroll_period">Payroll Period</option>
@@ -769,14 +769,14 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                     placeholder="Search simulations..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div className="flex items-center space-x-2">
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="createdAt">Created Date</option>
                     <option value="status">Status</option>
@@ -788,9 +788,9 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
             </div>
 
             {/* Simulation List */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">
+            <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                   Simulation History ({filteredSimulations.length})
                 </h3>
               </div>
@@ -800,38 +800,38 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-2">
-                          <h4 className="text-md font-medium text-gray-900">{simulation.simulationType.description}</h4>
+                          <h4 className="text-md font-medium text-gray-900 dark:text-gray-100">{simulation.simulationType.description}</h4>
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            simulation.status === 'completed' ? 'bg-green-100 text-green-800' :
-                            simulation.status === 'failed' ? 'bg-red-100 text-red-800' :
-                            simulation.status === 'cancelled' ? 'bg-gray-100 text-gray-800' :
-                            'bg-yellow-100 text-yellow-800'
+                            simulation.status === 'completed' ? 'bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-300' :
+                            simulation.status === 'failed' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                            simulation.status === 'cancelled' ? 'bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200' :
+                            'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300'
                           }`}>
                             {simulation.status}
                           </span>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-500/20 text-purple-800 dark:text-purple-300">
                             {simulation.executionMode}
                           </span>
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                           <div>
-                            <div className="text-gray-600">Created</div>
-                            <div className="font-medium text-gray-900">{formatDateTime(simulation.metadata.createdAt)}</div>
+                            <div className="text-gray-600 dark:text-gray-400">Created</div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100">{formatDateTime(simulation.metadata.createdAt)}</div>
                           </div>
                           <div>
-                            <div className="text-gray-600">Duration</div>
-                            <div className="font-medium text-gray-900">
+                            <div className="text-gray-600 dark:text-gray-400">Duration</div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100">
                               {simulation.metadata.duration ? formatDuration(simulation.metadata.duration) : 'N/A'}
                             </div>
                           </div>
                           <div>
-                            <div className="text-gray-600">Safety Score</div>
-                            <div className="font-medium text-gray-900">{simulation.safety.safetyScore}%</div>
+                            <div className="text-gray-600 dark:text-gray-400">Safety Score</div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100">{simulation.safety.safetyScore}%</div>
                           </div>
                           <div>
-                            <div className="text-gray-600">Priority</div>
-                            <div className="font-medium text-gray-900 capitalize">{simulation.priority}</div>
+                            <div className="text-gray-600 dark:text-gray-400">Priority</div>
+                            <div className="font-medium text-gray-900 dark:text-gray-100 capitalize">{simulation.priority}</div>
                           </div>
                         </div>
                       </div>
@@ -839,14 +839,14 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                       <div className="flex items-center space-x-2 ml-4">
                         <button 
                           onClick={() => setSelectedSimulation(simulation)}
-                          className="text-blue-600 hover:text-blue-700"
+                          className="text-blue-600 dark:text-blue-400 hover:text-blue-700"
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        <button className="text-gray-600 hover:text-gray-700">
+                        <button className="text-gray-600 dark:text-gray-400 hover:text-gray-700">
                           <Download className="h-4 w-4" />
                         </button>
-                        <button className="text-gray-600 hover:text-gray-700">
+                        <button className="text-gray-600 dark:text-gray-400 hover:text-gray-700">
                           <Archive className="h-4 w-4" />
                         </button>
                       </div>
@@ -873,14 +873,14 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
               readOnly={true}
             />
 
-            <div className="bg-white rounded-lg shadow p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Simulation Comparison</h3>
-              <p className="text-sm text-gray-600 mb-6">Compare simulation results to identify variances and trends</p>
+            <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Simulation Comparison</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">Compare simulation results to identify variances and trends</p>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Baseline Simulation</label>
-                  <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Baseline Simulation</label>
+                  <select className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">Select baseline simulation</option>
                     {simulations.filter(s => s.status === 'completed').map((simulation) => (
                       <option key={simulation.id} value={simulation.id}>
@@ -890,8 +890,8 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Comparison Simulation</label>
-                  <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Comparison Simulation</label>
+                  <select className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">Select comparison simulation</option>
                     {simulations.filter(s => s.status === 'completed').map((simulation) => (
                       <option key={simulation.id} value={simulation.id}>
@@ -907,7 +907,7 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                   <GitCompare className="h-4 w-4" />
                   <span>Compare Simulations</span>
                 </button>
-                <button className="flex items-center space-x-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200">
+                <button className="flex items-center space-x-2 bg-gray-100 dark:bg-white/[0.06] text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg hover:bg-gray-200">
                   <FileSearch className="h-4 w-4" />
                   <span>View Comparison History</span>
                 </button>
@@ -915,12 +915,12 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
             </div>
 
             {/* Recent Comparisons */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Recent Comparisons</h3>
+            <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Comparisons</h3>
               </div>
-              <div className="p-6 text-center text-gray-500">
-                <GitCompare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+                <GitCompare className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
                 <p>No comparisons available</p>
                 <p className="text-sm">Select two completed simulations to compare</p>
               </div>
@@ -931,20 +931,20 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
         {/* Settings Tab */}
         {activeTab === 'settings' && (
           <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Simulation Settings</h3>
+            <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Simulation Settings</h3>
               </div>
               <div className="p-6 space-y-6">
                 <div>
-                  <h4 className="text-md font-medium text-gray-900 mb-4">Safety Configuration</h4>
+                  <h4 className="text-md font-medium text-gray-900 dark:text-gray-100 mb-4">Safety Configuration</h4>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-gray-900">Default Safety Level</div>
-                        <div className="text-sm text-gray-600">Safety level for new simulations</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">Default Safety Level</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Safety level for new simulations</div>
                       </div>
-                      <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <select className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="conservative">Conservative</option>
                         <option value="moderate">Moderate</option>
                         <option value="aggressive">Aggressive</option>
@@ -952,10 +952,10 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-gray-900">Isolation Level</div>
-                        <div className="text-sm text-gray-600">Production isolation strictness</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">Isolation Level</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Production isolation strictness</div>
                       </div>
-                      <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <select className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="strict">Strict</option>
                         <option value="moderate">Moderate</option>
                         <option value="relaxed">Relaxed</option>
@@ -963,77 +963,77 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-gray-900">Duplicate Prevention</div>
-                        <div className="text-sm text-gray-600">Prevent duplicate simulations</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">Duplicate Prevention</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Prevent duplicate simulations</div>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" defaultChecked className="sr-only peer" />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        <div className="w-11 h-6 bg-gray-200 dark:bg-white/[0.08] peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                       </label>
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <h4 className="text-md font-medium text-gray-900 mb-4">Performance Settings</h4>
+                  <h4 className="text-md font-medium text-gray-900 dark:text-gray-100 mb-4">Performance Settings</h4>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-gray-900">Default Timeout</div>
-                        <div className="text-sm text-gray-600">Simulation timeout in minutes</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">Default Timeout</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Simulation timeout in minutes</div>
                       </div>
                       <input
                         type="number"
                         defaultValue="60"
-                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-20"
+                        className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-20"
                       />
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-gray-900">Max Workers</div>
-                        <div className="text-sm text-gray-600">Maximum workers per simulation</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">Max Workers</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Maximum workers per simulation</div>
                       </div>
                       <input
                         type="number"
                         defaultValue="100"
-                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-20"
+                        className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-20"
                       />
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-gray-900">Retry Attempts</div>
-                        <div className="text-sm text-gray-600">Number of retry attempts</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">Retry Attempts</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Number of retry attempts</div>
                       </div>
                       <input
                         type="number"
                         defaultValue="3"
-                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-20"
+                        className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-20"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <h4 className="text-md font-medium text-gray-900 mb-4">Notification Settings</h4>
+                  <h4 className="text-md font-medium text-gray-900 dark:text-gray-100 mb-4">Notification Settings</h4>
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-gray-900">Completion Notifications</div>
-                        <div className="text-sm text-gray-600">Notify when simulations complete</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">Completion Notifications</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Notify when simulations complete</div>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" defaultChecked className="sr-only peer" />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        <div className="w-11 h-6 bg-gray-200 dark:bg-white/[0.08] peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                       </label>
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium text-gray-900">Error Notifications</div>
-                        <div className="text-sm text-gray-600">Notify on simulation errors</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">Error Notifications</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Notify on simulation errors</div>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" defaultChecked className="sr-only peer" />
-                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        <div className="w-11 h-6 bg-gray-200 dark:bg-white/[0.08] peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                       </label>
                     </div>
                   </div>
@@ -1046,13 +1046,13 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
 
       {/* New Simulation Modal */}
       {showNewSimulation && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-lg bg-white">
+        <div className="fixed inset-0 bg-gray-600 dark:bg-gray-500 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-lg bg-white dark:bg-[#0f1520]">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">New Simulation</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">New Simulation</h3>
               <button
                 onClick={() => setShowNewSimulation(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 dark:text-gray-600 hover:text-gray-600"
               >
                 <X className="h-6 w-6" />
               </button>
@@ -1060,8 +1060,8 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Simulation Type</label>
-                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Simulation Type</label>
+                <select className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="payroll_period">Payroll Period Simulation</option>
                   <option value="scenario">Scenario Testing</option>
                   <option value="worker_group">Worker Group Simulation</option>
@@ -1070,8 +1070,8 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Execution Mode</label>
-                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Execution Mode</label>
+                <select className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="shadow_only">Shadow Only (Safe)</option>
                   <option value="comparison">Comparison Mode</option>
                   <option value="scenario_test">Scenario Test</option>
@@ -1079,8 +1079,8 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Safety Level</label>
-                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Safety Level</label>
+                <select className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="conservative">Conservative</option>
                   <option value="moderate">Moderate</option>
                   <option value="aggressive">Aggressive</option>
@@ -1088,8 +1088,8 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Precision Level</label>
-                <select className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Precision Level</label>
+                <select className="w-full border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="basic">Basic</option>
                   <option value="detailed">Detailed</option>
                   <option value="comprehensive">Comprehensive</option>
@@ -1097,22 +1097,22 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
               </div>
 
               <div className="flex items-center space-x-3">
-                <input type="checkbox" id="includeAccounting" defaultChecked className="rounded border-gray-300" />
-                <label htmlFor="includeAccounting" className="text-sm text-gray-700">
+                <input type="checkbox" id="includeAccounting" defaultChecked className="rounded border-gray-300 dark:border-white/[0.1]" />
+                <label htmlFor="includeAccounting" className="text-sm text-gray-700 dark:text-gray-300">
                   Include Accounting Preview
                 </label>
               </div>
 
               <div className="flex items-center space-x-3">
-                <input type="checkbox" id="includeCompliance" defaultChecked className="rounded border-gray-300" />
-                <label htmlFor="includeCompliance" className="text-sm text-gray-700">
+                <input type="checkbox" id="includeCompliance" defaultChecked className="rounded border-gray-300 dark:border-white/[0.1]" />
+                <label htmlFor="includeCompliance" className="text-sm text-gray-700 dark:text-gray-300">
                   Include Compliance Validation
                 </label>
               </div>
 
               <div className="flex items-center space-x-3">
-                <input type="checkbox" id="includeReconciliation" defaultChecked className="rounded border-gray-300" />
-                <label htmlFor="includeReconciliation" className="text-sm text-gray-700">
+                <input type="checkbox" id="includeReconciliation" defaultChecked className="rounded border-gray-300 dark:border-white/[0.1]" />
+                <label htmlFor="includeReconciliation" className="text-sm text-gray-700 dark:text-gray-300">
                   Include Reconciliation
                 </label>
               </div>
@@ -1121,7 +1121,7 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
             <div className="flex items-center justify-end space-x-3 mt-6">
               <button
                 onClick={() => setShowNewSimulation(false)}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-white/[0.06] rounded-lg hover:bg-gray-200"
               >
                 Cancel
               </button>

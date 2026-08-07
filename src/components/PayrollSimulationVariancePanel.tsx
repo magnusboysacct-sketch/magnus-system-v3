@@ -460,10 +460,10 @@ export default function PayrollSimulationVariancePanel({
 
   if (loading) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mr-3" />
-          <span className="text-gray-600">Loading variance analysis...</span>
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600 dark:text-blue-400 mr-3" />
+          <span className="text-gray-600 dark:text-gray-400">Loading variance analysis...</span>
         </div>
       </div>
     );
@@ -472,11 +472,11 @@ export default function PayrollSimulationVariancePanel({
   return (
     <div className="space-y-6">
       {/* Variance Analysis */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Variance Analysis</h3>
-            <p className="text-sm text-gray-600">Detect and analyze simulation variances</p>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Variance Analysis</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Detect and analyze simulation variances</p>
           </div>
           <div className="flex items-center space-x-2">
             <button
@@ -501,27 +501,27 @@ export default function PayrollSimulationVariancePanel({
 
         {/* Variance Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="text-center p-4 bg-gray-50 rounded-lg">
-            <div className="text-sm text-gray-600">Total Variances</div>
-            <div className="text-2xl font-bold text-gray-900">
+          <div className="text-center p-4 bg-gray-50 dark:bg-white/[0.04] rounded-lg">
+            <div className="text-sm text-gray-600 dark:text-gray-400">Total Variances</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
               {variances.reduce((sum, v) => sum + v.summary.totalVariances, 0)}
             </div>
           </div>
-          <div className="text-center p-4 bg-yellow-50 rounded-lg">
-            <div className="text-sm text-yellow-600">Significant</div>
-            <div className="text-2xl font-bold text-yellow-900">
+          <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-500/10 rounded-lg">
+            <div className="text-sm text-yellow-600 dark:text-yellow-400">Significant</div>
+            <div className="text-2xl font-bold text-yellow-900 dark:text-yellow-300">
               {variances.reduce((sum, v) => sum + v.summary.significantVariances, 0)}
             </div>
           </div>
-          <div className="text-center p-4 bg-red-50 rounded-lg">
-            <div className="text-sm text-red-600">Critical</div>
-            <div className="text-2xl font-bold text-red-900">
+          <div className="text-center p-4 bg-red-50 dark:bg-red-500/10 rounded-lg">
+            <div className="text-sm text-red-600 dark:text-red-400">Critical</div>
+            <div className="text-2xl font-bold text-red-900 dark:text-red-300">
               {variances.reduce((sum, v) => sum + v.summary.criticalVariances, 0)}
             </div>
           </div>
-          <div className="text-center p-4 bg-blue-50 rounded-lg">
-            <div className="text-sm text-blue-600">Avg Variance</div>
-            <div className="text-2xl font-bold text-blue-900">
+          <div className="text-center p-4 bg-blue-50 dark:bg-blue-500/10 rounded-lg">
+            <div className="text-sm text-blue-600 dark:text-blue-400">Avg Variance</div>
+            <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">
               {variances.length > 0 ? formatPercent(variances.reduce((sum, v) => sum + v.summary.averageVariance, 0) / variances.length * 100) : '0%'}
             </div>
           </div>
@@ -529,27 +529,27 @@ export default function PayrollSimulationVariancePanel({
       </div>
 
       {/* Variance List */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200">
+      <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
           <div className="flex items-center justify-between">
-            <h4 className="text-md font-semibold text-gray-900">
+            <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100">
               Detected Variances ({filteredVariances.length})
             </h4>
             <div className="flex items-center space-x-2">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-600" />
                 <input
                   type="text"
                   placeholder="Search variances..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="pl-10 pr-4 py-2 border border-gray-300 dark:border-white/[0.1] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <select
                 value={varianceFilter}
                 onChange={(e) => setVarianceFilter(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Types</option>
                 <option value="calculation">Calculation</option>
@@ -560,7 +560,7 @@ export default function PayrollSimulationVariancePanel({
               <select
                 value={severityFilter}
                 onChange={(e) => setSeverityFilter(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">All Severities</option>
                 <option value="critical">Critical</option>
@@ -571,7 +571,7 @@ export default function PayrollSimulationVariancePanel({
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="border border-gray-300 dark:border-white/[0.1] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="significance">Sort by Significance</option>
                 <option value="variance">Sort by Variance</option>
@@ -588,22 +588,22 @@ export default function PayrollSimulationVariancePanel({
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center space-x-3 mb-2">
-                    <h5 className="text-md font-medium text-gray-900">
+                    <h5 className="text-md font-medium text-gray-900 dark:text-gray-100">
                       {variance.varianceType.toUpperCase()} Variance
                     </h5>
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      variance.severity === 'critical' ? 'bg-red-100 text-red-800' :
-                      variance.severity === 'high' ? 'bg-orange-100 text-orange-800' :
-                      variance.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-gray-100 text-gray-800'
+                      variance.severity === 'critical' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                      variance.severity === 'high' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300' :
+                      variance.severity === 'medium' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                      'bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200'
                     }`}>
                       {variance.severity}
                     </span>
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      variance.summary.overallImpact === 'critical' ? 'bg-red-100 text-red-800' :
-                      variance.summary.overallImpact === 'high' ? 'bg-orange-100 text-orange-800' :
-                      variance.summary.overallImpact === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-blue-100 text-blue-800'
+                      variance.summary.overallImpact === 'critical' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                      variance.summary.overallImpact === 'high' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300' :
+                      variance.summary.overallImpact === 'medium' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                      'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300'
                     }`}>
                       {variance.summary.overallImpact}
                     </span>
@@ -611,31 +611,31 @@ export default function PayrollSimulationVariancePanel({
                   
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                     <div>
-                      <div className="text-gray-600">Total Variances</div>
-                      <div className="font-medium text-gray-900">{variance.summary.totalVariances}</div>
+                      <div className="text-gray-600 dark:text-gray-400">Total Variances</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">{variance.summary.totalVariances}</div>
                     </div>
                     <div>
-                      <div className="text-gray-600">Significant</div>
-                      <div className="font-medium text-gray-900">{variance.summary.significantVariances}</div>
+                      <div className="text-gray-600 dark:text-gray-400">Significant</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">{variance.summary.significantVariances}</div>
                     </div>
                     <div>
-                      <div className="text-gray-600">Critical</div>
-                      <div className="font-medium text-gray-900">{variance.summary.criticalVariances}</div>
+                      <div className="text-gray-600 dark:text-gray-400">Critical</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">{variance.summary.criticalVariances}</div>
                     </div>
                     <div>
-                      <div className="text-gray-600">Avg Variance</div>
-                      <div className="font-medium text-gray-900">{formatPercent(variance.summary.averageVariance * 100)}</div>
+                      <div className="text-gray-600 dark:text-gray-400">Avg Variance</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">{formatPercent(variance.summary.averageVariance * 100)}</div>
                     </div>
                   </div>
 
                   {/* Trend */}
                   <div className="mt-2 flex items-center space-x-2">
-                    <span className="text-sm text-gray-600">Trend:</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Trend:</span>
                     <div className="flex items-center space-x-2">
-                      {variance.summary.varianceTrend === 'improving' && <TrendingUp className="h-4 w-4 text-green-600" />}
-                      {variance.summary.varianceTrend === 'declining' && <TrendingDownIcon className="h-4 w-4 text-green-600" />}
-                      {variance.summary.varianceTrend === 'stable' && <ArrowRight className="h-4 w-4 text-blue-600" />}
-                      <span className="text-sm font-medium capitalize text-gray-900">
+                      {variance.summary.varianceTrend === 'improving' && <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />}
+                      {variance.summary.varianceTrend === 'declining' && <TrendingDownIcon className="h-4 w-4 text-green-600 dark:text-green-400" />}
+                      {variance.summary.varianceTrend === 'stable' && <ArrowRight className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                      <span className="text-sm font-medium capitalize text-gray-900 dark:text-gray-100">
                         {variance.summary.varianceTrend}
                       </span>
                     </div>
@@ -645,11 +645,11 @@ export default function PayrollSimulationVariancePanel({
                 <div className="flex items-center space-x-2 ml-4">
                   <button
                     onClick={() => setSelectedVariance(variance)}
-                    className="text-blue-600 hover:text-blue-700"
+                    className="text-blue-600 dark:text-blue-400 hover:text-blue-700"
                   >
                     <Eye className="h-4 w-4" />
                   </button>
-                  <button className="text-gray-600 hover:text-gray-700">
+                  <button className="text-gray-600 dark:text-gray-400 hover:text-gray-700">
                     <Download className="h-4 w-4" />
                   </button>
                 </div>
@@ -661,9 +661,9 @@ export default function PayrollSimulationVariancePanel({
         {/* Empty State */}
         {filteredVariances.length === 0 && (
           <div className="p-12 text-center">
-            <Target className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h5 className="text-lg font-medium text-gray-900 mb-2">No variances detected</h5>
-            <p className="text-sm text-gray-600">
+            <Target className="h-12 w-12 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
+            <h5 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No variances detected</h5>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
               {searchTerm || varianceFilter !== 'all' || severityFilter !== 'all'
                 ? 'Try adjusting your search or filters'
                 : 'No variances have been detected yet'
@@ -675,13 +675,13 @@ export default function PayrollSimulationVariancePanel({
 
       {/* Selected Variance Details */}
       {selectedVariance && (
-        <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
+        <div className="bg-white dark:bg-[#0f1520] rounded-lg shadow">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-white/[0.08]">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Variance Details</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Variance Details</h3>
               <button
                 onClick={() => setSelectedVariance(null)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 dark:text-gray-600 hover:text-gray-600"
               >
                 <XCircle className="h-6 w-6" />
               </button>
@@ -689,7 +689,7 @@ export default function PayrollSimulationVariancePanel({
           </div>
 
           {/* Navigation Tabs */}
-          <div className="border-b border-gray-200">
+          <div className="border-b border-gray-200 dark:border-white/[0.08]">
             <nav className="flex space-x-8 px-6" aria-label="Tabs">
               {[
                 { id: 'overview', name: 'Overview', icon: BarChart3 },
@@ -702,8 +702,8 @@ export default function PayrollSimulationVariancePanel({
                   onClick={() => setActiveTab(tab.id as any)}
                   className={`${
                     activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:border-gray-300'
                   } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
                 >
                   <tab.icon className="h-4 w-4" />
@@ -719,47 +719,47 @@ export default function PayrollSimulationVariancePanel({
               <div className="space-y-6">
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-gray-50 rounded-lg">
-                    <div className="text-sm text-gray-600">Total Variances</div>
-                    <div className="text-2xl font-bold text-gray-900">{selectedVariance.summary.totalVariances}</div>
+                  <div className="text-center p-4 bg-gray-50 dark:bg-white/[0.04] rounded-lg">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Total Variances</div>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{selectedVariance.summary.totalVariances}</div>
                   </div>
-                  <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                    <div className="text-sm text-yellow-600">Significant</div>
-                    <div className="text-2xl font-bold text-yellow-900">{selectedVariance.summary.significantVariances}</div>
+                  <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-500/10 rounded-lg">
+                    <div className="text-sm text-yellow-600 dark:text-yellow-400">Significant</div>
+                    <div className="text-2xl font-bold text-yellow-900 dark:text-yellow-300">{selectedVariance.summary.significantVariances}</div>
                   </div>
-                  <div className="text-center p-4 bg-red-50 rounded-lg">
-                    <div className="text-sm text-red-600">Critical</div>
-                    <div className="text-2xl font-bold text-red-900">{selectedVariance.summary.criticalVariances}</div>
+                  <div className="text-center p-4 bg-red-50 dark:bg-red-500/10 rounded-lg">
+                    <div className="text-sm text-red-600 dark:text-red-400">Critical</div>
+                    <div className="text-2xl font-bold text-red-900 dark:text-red-300">{selectedVariance.summary.criticalVariances}</div>
                   </div>
-                  <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <div className="text-sm text-blue-600">Max Variance</div>
-                    <div className="text-2xl font-bold text-blue-900">{formatPercent(selectedVariance.summary.maxVariance * 100)}</div>
+                  <div className="text-center p-4 bg-blue-50 dark:bg-blue-500/10 rounded-lg">
+                    <div className="text-sm text-blue-600 dark:text-blue-400">Max Variance</div>
+                    <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">{formatPercent(selectedVariance.summary.maxVariance * 100)}</div>
                   </div>
                 </div>
 
                 {/* Trend Analysis */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <h4 className="text-md font-semibold text-gray-900 mb-3">Trend Analysis</h4>
+                    <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-3">Trend Analysis</h4>
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Variance Trend</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Variance Trend</span>
                         <div className="flex items-center space-x-2">
-                          {selectedVariance.summary.varianceTrend === 'improving' && <TrendingUp className="h-4 w-4 text-green-600" />}
-                          {selectedVariance.summary.varianceTrend === 'declining' && <TrendingDownIcon className="h-4 w-4 text-red-600" />}
-                          {selectedVariance.summary.varianceTrend === 'stable' && <ArrowRight className="h-4 w-4 text-blue-600" />}
-                          <span className="text-sm font-medium capitalize text-gray-900">
+                          {selectedVariance.summary.varianceTrend === 'improving' && <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />}
+                          {selectedVariance.summary.varianceTrend === 'declining' && <TrendingDownIcon className="h-4 w-4 text-red-600 dark:text-red-400" />}
+                          {selectedVariance.summary.varianceTrend === 'stable' && <ArrowRight className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                          <span className="text-sm font-medium capitalize text-gray-900 dark:text-gray-100">
                             {selectedVariance.summary.varianceTrend}
                           </span>
                         </div>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Overall Impact</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Overall Impact</span>
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          selectedVariance.summary.overallImpact === 'critical' ? 'bg-red-100 text-red-800' :
-                          selectedVariance.summary.overallImpact === 'high' ? 'bg-orange-100 text-orange-800' :
-                          selectedVariance.summary.overallImpact === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-blue-100 text-blue-800'
+                          selectedVariance.summary.overallImpact === 'critical' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                          selectedVariance.summary.overallImpact === 'high' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300' :
+                          selectedVariance.summary.overallImpact === 'medium' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                          'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300'
                         }`}>
                           {selectedVariance.summary.overallImpact}
                         </span>
@@ -768,19 +768,19 @@ export default function PayrollSimulationVariancePanel({
                   </div>
 
                   <div>
-                    <h4 className="text-md font-semibold text-gray-900 mb-3">Detection Info</h4>
+                    <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-3">Detection Info</h4>
                     <div className="space-y-3">
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Detected At</span>
-                        <span className="text-sm font-medium text-gray-900">{formatDateTime(selectedVariance.metadata.detectedAt)}</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Detected At</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatDateTime(selectedVariance.metadata.detectedAt)}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Detected By</span>
-                        <span className="text-sm font-medium text-gray-900">{selectedVariance.metadata.detectedBy}</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Detected By</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{selectedVariance.metadata.detectedBy}</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Status</span>
-                        <span className="text-sm font-medium text-gray-900 capitalize">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Status</span>
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100 capitalize">
                           {selectedVariance.metadata.acknowledged ? 'Acknowledged' : 'Pending'}
                         </span>
                       </div>
@@ -793,89 +793,89 @@ export default function PayrollSimulationVariancePanel({
             {/* Details Tab */}
             {activeTab === 'details' && (
               <div className="space-y-6">
-                <h4 className="text-md font-semibold text-gray-900 mb-4">Variance Details</h4>
+                <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4">Variance Details</h4>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <h5 className="text-sm font-medium text-gray-900 mb-3">Worker Variances</h5>
+                    <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Worker Variances</h5>
                     <div className="space-y-2">
                       {selectedVariance.details.workerVariances.map((wv, index) => (
-                        <div key={index} className="border border-gray-200 rounded-lg p-3">
+                        <div key={index} className="border border-gray-200 dark:border-white/[0.08] rounded-lg p-3">
                           <div className="flex items-start space-x-3">
-                            <Users className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                            <Users className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
                             <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">{wv.component}</div>
-                              <div className="text-sm text-gray-600 mb-2">
+                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{wv.component}</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
                                 Worker: {wv.workerId}
                               </div>
                               <div className="grid grid-cols-2 gap-4 text-xs">
                                 <div>
-                                  <span className="text-gray-600">Expected:</span>
-                                  <span className="font-medium text-gray-900">{formatCurrency(wv.expectedValue)}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Expected:</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(wv.expectedValue)}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Actual:</span>
-                                  <span className="font-medium text-gray-900">{formatCurrency(wv.actualValue)}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Actual:</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(wv.actualValue)}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Variance:</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Variance:</span>
                                   <div className="flex items-center space-x-2">
                                     {wv.variance > 0 ? (
-                                      <ArrowUp className="h-3 w-3 text-red-600" />
+                                      <ArrowUp className="h-3 w-3 text-red-600 dark:text-red-400" />
                                     ) : wv.variance < 0 ? (
-                                      <ArrowDown className="h-3 w-3 text-green-600" />
+                                      <ArrowDown className="h-3 w-3 text-green-600 dark:text-green-400" />
                                     ) : (
-                                      <Minus className="h-3 w-3 text-gray-600" />
+                                      <Minus className="h-3 w-3 text-gray-600 dark:text-gray-400" />
                                     )}
                                     <span className={`font-medium ${
-                                      wv.variance > 0 ? 'text-red-600' : 
-                                      wv.variance < 0 ? 'text-green-600' : 'text-gray-600'
+                                      wv.variance > 0 ? 'text-red-600 dark:text-red-400' : 
+                                      wv.variance < 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'
                                     }`}>
                                       {formatCurrency(Math.abs(wv.variance))}
                                     </span>
                                   </div>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">% Change:</span>
+                                  <span className="text-gray-600 dark:text-gray-400">% Change:</span>
                                   <div className="flex items-center space-x-2">
                                     {wv.variancePercentage > 0 ? (
-                                      <ArrowUp className="h-3 w-3 text-red-600" />
+                                      <ArrowUp className="h-3 w-3 text-red-600 dark:text-red-400" />
                                     ) : wv.variancePercentage < 0 ? (
-                                      <ArrowDown className="h-3 w-3 text-green-600" />
+                                      <ArrowDown className="h-3 w-3 text-green-600 dark:text-green-400" />
                                     ) : (
-                                      <Equal className="h-3 w-3 text-gray-600" />
+                                      <Equal className="h-3 w-3 text-gray-600 dark:text-gray-400" />
                                     )}
                                     <span className={`font-medium ${
-                                      wv.variancePercentage > 0 ? 'text-red-600' : 
-                                      wv.variancePercentage < 0 ? 'text-green-600' : 'text-gray-600'
+                                      wv.variancePercentage > 0 ? 'text-red-600 dark:text-red-400' : 
+                                      wv.variancePercentage < 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'
                                     }`}>
                                       {formatPercent(wv.variancePercentage)}
                                     </span>
                                   </div>
                                 </div>
                               </div>
-                              <div className="text-xs text-gray-600 mt-2">
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-2">
                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                  wv.significance === 'critical' ? 'bg-red-100 text-red-800' :
-                                  wv.significance === 'high' ? 'bg-orange-100 text-orange-800' :
-                                  wv.significance === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-gray-100 text-gray-800'
+                                  wv.significance === 'critical' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                                  wv.significance === 'high' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300' :
+                                  wv.significance === 'medium' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                                  'bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200'
                                 }`}>
                                   {wv.significance}
                                 </span>
                                 {wv.impact && (
                                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ml-2 ${
-                                    wv.impact === 'critical' ? 'bg-red-100 text-red-800' :
-                                    wv.impact === 'high' ? 'bg-orange-100 text-orange-800' :
-                                    wv.impact === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                                    'bg-blue-100 text-blue-800'
+                                    wv.impact === 'critical' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                                    wv.impact === 'high' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300' :
+                                    wv.impact === 'medium' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                                    'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300'
                                   }`}>
                                     {wv.impact}
                                   </span>
                                 )}
                               </div>
                               {wv.rootCause && (
-                                <div className="text-xs text-gray-900 mt-2">
+                                <div className="text-xs text-gray-900 dark:text-gray-100 mt-2">
                                   <strong>Root Cause:</strong> {wv.rootCause}
                                 </div>
                               )}
@@ -887,85 +887,85 @@ export default function PayrollSimulationVariancePanel({
                   </div>
 
                   <div>
-                    <h5 className="text-sm font-medium text-gray-900 mb-3">Accounting Variances</h5>
+                    <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Accounting Variances</h5>
                     <div className="space-y-2">
                       {selectedVariance.details.accountingVariances.map((av, index) => (
-                        <div key={index} className="border border-gray-200 rounded-lg p-3">
+                        <div key={index} className="border border-gray-200 dark:border-white/[0.08] rounded-lg p-3">
                           <div className="flex items-start space-x-3">
-                            <Calculator className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                            <Calculator className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
                             <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">{av.accountName}</div>
-                              <div className="text-sm text-gray-600 mb-2">
+                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{av.accountName}</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
                                 Account: {av.accountId}
                               </div>
                               <div className="grid grid-cols-2 gap-4 text-xs">
                                 <div>
-                                  <span className="text-gray-600">Expected:</span>
-                                  <span className="font-medium text-gray-900">{formatCurrency(av.expectedAmount)}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Expected:</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(av.expectedAmount)}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Actual:</span>
-                                  <span className="font-medium text-gray-900">{formatCurrency(av.actualAmount)}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Actual:</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(av.actualAmount)}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Variance:</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Variance:</span>
                                   <div className="flex items-center space-x-2">
                                     {av.variance > 0 ? (
-                                      <ArrowUp className="h-3 w-3 text-red-600" />
+                                      <ArrowUp className="h-3 w-3 text-red-600 dark:text-red-400" />
                                     ) : av.variance < 0 ? (
-                                      <ArrowDown className="h-3 w-3 text-green-600" />
+                                      <ArrowDown className="h-3 w-3 text-green-600 dark:text-green-400" />
                                     ) : (
-                                      <Minus className="h-3 w-3 text-gray-600" />
+                                      <Minus className="h-3 w-3 text-gray-600 dark:text-gray-400" />
                                     )}
                                     <span className={`font-medium ${
-                                      av.variance > 0 ? 'text-red-600' : 
-                                      av.variance < 0 ? 'text-green-600' : 'text-gray-600'
+                                      av.variance > 0 ? 'text-red-600 dark:text-red-400' : 
+                                      av.variance < 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'
                                     }`}>
                                       {formatCurrency(Math.abs(av.variance))}
                                     </span>
                                   </div>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">% Change:</span>
+                                  <span className="text-gray-600 dark:text-gray-400">% Change:</span>
                                   <div className="flex items-center space-x-2">
                                     {av.variancePercentage > 0 ? (
-                                      <ArrowUp className="h-3 w-3 text-red-600" />
+                                      <ArrowUp className="h-3 w-3 text-red-600 dark:text-red-400" />
                                     ) : av.variancePercentage < 0 ? (
-                                      <ArrowDown className="h-3 w-3 text-green-600" />
+                                      <ArrowDown className="h-3 w-3 text-green-600 dark:text-green-400" />
                                     ) : (
-                                      <Equal className="h-3 w-3 text-gray-600" />
+                                      <Equal className="h-3 w-3 text-gray-600 dark:text-gray-400" />
                                     )}
                                     <span className={`font-medium ${
-                                      av.variancePercentage > 0 ? 'text-red-600' : 
-                                      av.variancePercentage < 0 ? 'text-green-600' : 'text-gray-600'
+                                      av.variancePercentage > 0 ? 'text-red-600 dark:text-red-400' : 
+                                      av.variancePercentage < 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'
                                     }`}>
                                       {formatPercent(av.variancePercentage)}
                                     </span>
                                   </div>
                                 </div>
                               </div>
-                              <div className="text-xs text-gray-600 mt-2">
+                              <div className="text-xs text-gray-600 dark:text-gray-400 mt-2">
                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                  av.significance === 'critical' ? 'bg-red-100 text-red-800' :
-                                  av.significance === 'high' ? 'bg-orange-100 text-orange-800' :
-                                  av.significance === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-gray-100 text-gray-800'
+                                  av.significance === 'critical' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                                  av.significance === 'high' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300' :
+                                  av.significance === 'medium' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                                  'bg-gray-100 dark:bg-white/[0.06] text-gray-800 dark:text-gray-200'
                                 }`}>
                                   {av.significance}
                                 </span>
                                 {av.impact && (
                                   <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ml-2 ${
-                                    av.impact === 'critical' ? 'bg-red-100 text-red-800' :
-                                    av.impact === 'high' ? 'bg-orange-100 text-orange-800' :
-                                    av.impact === 'medium' ? 'bg-yellow-100 text-yellow-800' :
-                                    'bg-blue-100 text-blue-800'
+                                    av.impact === 'critical' ? 'bg-red-100 dark:bg-red-500/20 text-red-800 dark:text-red-300' :
+                                    av.impact === 'high' ? 'bg-orange-100 dark:bg-orange-500/20 text-orange-800 dark:text-orange-300' :
+                                    av.impact === 'medium' ? 'bg-yellow-100 dark:bg-yellow-500/20 text-yellow-800 dark:text-yellow-300' :
+                                    'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-300'
                                   }`}>
                                     {av.impact}
                                   </span>
                                 )}
                               </div>
                               {av.rootCause && (
-                                <div className="text-xs text-gray-900 mt-2">
+                                <div className="text-xs text-gray-900 dark:text-gray-100 mt-2">
                                   <strong>Root Cause:</strong> {av.rootCause}
                                 </div>
                               )}
@@ -982,33 +982,33 @@ export default function PayrollSimulationVariancePanel({
             {/* Analysis Tab */}
             {activeTab === 'analysis' && (
               <div className="space-y-6">
-                <h4 className="text-md font-semibold text-gray-900 mb-4">Variance Analysis</h4>
+                <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4">Variance Analysis</h4>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <h5 className="text-sm font-medium text-gray-900 mb-3">Detected Patterns</h5>
+                    <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Detected Patterns</h5>
                     <div className="space-y-3">
                       {selectedVariance.analysis.patterns.map((pattern, index) => (
-                        <div key={index} className="border border-gray-200 rounded-lg p-3">
+                        <div key={index} className="border border-gray-200 dark:border-white/[0.08] rounded-lg p-3">
                           <div className="flex items-start space-x-3">
-                            <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                            <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
                             <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">{pattern.description}</div>
+                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{pattern.description}</div>
                               <div className="grid grid-cols-2 gap-4 text-xs mt-2">
                                 <div>
-                                  <span className="text-gray-600">Frequency:</span>
-                                  <span className="font-medium text-gray-900">{pattern.frequency}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Frequency:</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100">{pattern.frequency}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Significance:</span>
-                                  <span className="font-medium text-gray-900 capitalize">{pattern.significance}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Significance:</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100 capitalize">{pattern.significance}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Affected:</span>
-                                  <span className="font-medium text-gray-900">{pattern.affectedComponents.length}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Affected:</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100">{pattern.affectedComponents.length}</span>
                                 </div>
                               </div>
-                              <div className="text-xs text-gray-900 mt-2">
+                              <div className="text-xs text-gray-900 dark:text-gray-100 mt-2">
                                 <strong>Suggested Action:</strong> {pattern.suggestedAction}
                               </div>
                             </div>
@@ -1019,29 +1019,29 @@ export default function PayrollSimulationVariancePanel({
                   </div>
 
                   <div>
-                    <h5 className="text-sm font-medium text-gray-900 mb-3">Root Causes</h5>
+                    <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Root Causes</h5>
                     <div className="space-y-3">
                       {selectedVariance.analysis.rootCauses.map((cause, index) => (
-                        <div key={index} className="border border-gray-200 rounded-lg p-3">
+                        <div key={index} className="border border-gray-200 dark:border-white/[0.08] rounded-lg p-3">
                           <div className="flex items-start space-x-3">
-                            <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+                            <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
                             <div className="flex-1">
-                              <div className="text-sm font-medium text-gray-900">{cause.description}</div>
+                              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{cause.description}</div>
                               <div className="grid grid-cols-2 gap-4 text-xs mt-2">
                                 <div>
-                                  <span className="text-gray-600">Category:</span>
-                                  <span className="font-medium text-gray-900 capitalize">{cause.category}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Category:</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100 capitalize">{cause.category}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Likelihood:</span>
-                                  <span className="font-medium text-gray-900">{(cause.likelihood * 100).toFixed(0)}%</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Likelihood:</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100">{(cause.likelihood * 100).toFixed(0)}%</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-600">Impact:</span>
-                                  <span className="font-medium text-gray-900 capitalize">{cause.impact}</span>
+                                  <span className="text-gray-600 dark:text-gray-400">Impact:</span>
+                                  <span className="font-medium text-gray-900 dark:text-gray-100 capitalize">{cause.impact}</span>
                                 </div>
                               </div>
-                              <div className="text-xs text-gray-900 mt-2">
+                              <div className="text-xs text-gray-900 dark:text-gray-100 mt-2">
                                 <strong>Evidence:</strong>
                                 <ul className="mt-1 space-y-1">
                                   {cause.evidence.map((evidence, index) => (
@@ -1062,22 +1062,22 @@ export default function PayrollSimulationVariancePanel({
             {/* Resolution Tab */}
             {activeTab === 'resolution' && (
               <div className="space-y-6">
-                <h4 className="text-md font-semibold text-gray-900 mb-4">Resolution Plan</h4>
+                <h4 className="text-md font-semibold text-gray-900 dark:text-gray-100 mb-4">Resolution Plan</h4>
                 
                 <div className="space-y-4">
-                  <div className="border border-gray-200 rounded-lg p-4">
+                  <div className="border border-gray-200 dark:border-white/[0.08] rounded-lg p-4">
                     <div className="flex items-center space-x-3 mb-3">
                       <div className={`w-3 h-3 rounded-full ${
                         selectedVariance.resolution.status === 'completed' ? 'bg-green-600' :
                         selectedVariance.resolution.status === 'in_progress' ? 'bg-blue-600' :
                         selectedVariance.resolution.status === 'pending' ? 'bg-yellow-600' :
-                        'bg-gray-600'
+                        'bg-gray-600 dark:bg-gray-500'
                       }`}></div>
                       <div>
-                        <h5 className="text-sm font-medium text-gray-900">
+                        <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100">
                           Resolution Status: {selectedVariance.resolution.status.replace('_', ' ').toUpperCase()}
                         </h5>
-                        <div className="text-sm text-gray-600">
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
                           Strategy: {selectedVariance.resolution.strategy}
                         </div>
                       </div>
@@ -1086,10 +1086,10 @@ export default function PayrollSimulationVariancePanel({
                     {/* Progress Bar */}
                     <div className="mb-4">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm text-gray-600">Progress</span>
-                        <span className="text-sm text-gray-900">{selectedVariance.resolution.progress}%</span>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Progress</span>
+                        <span className="text-sm text-gray-900 dark:text-gray-100">{selectedVariance.resolution.progress}%</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-gray-200 dark:bg-white/[0.08] rounded-full h-2">
                         <div 
                           className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
                           style={{ width: `${selectedVariance.resolution.progress}%` }}
@@ -1099,34 +1099,34 @@ export default function PayrollSimulationVariancePanel({
 
                     {/* Actions */}
                     <div className="space-y-3">
-                      <h6 className="text-sm font-medium text-gray-900">Resolution Actions</h6>
+                      <h6 className="text-sm font-medium text-gray-900 dark:text-gray-100">Resolution Actions</h6>
                       {selectedVariance.resolution.actions.map((action, index) => (
-                        <div key={action.actionId} className="flex items-start space-x-3 border border-gray-200 rounded-lg p-3">
+                        <div key={action.actionId} className="flex items-start space-x-3 border border-gray-200 dark:border-white/[0.08] rounded-lg p-3">
                           <div className={`w-2 h-2 rounded-full mt-1 ${
                             action.status === 'completed' ? 'bg-green-600' :
                             action.status === 'in_progress' ? 'bg-blue-600' :
-                            'bg-gray-400'
+                            'bg-gray-400 dark:bg-gray-500'
                           }`}></div>
                           <div className="flex-1">
-                            <div className="text-sm font-medium text-gray-900">{action.description}</div>
+                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{action.description}</div>
                             <div className="grid grid-cols-2 gap-4 text-xs mt-2">
                               <div>
-                                <span className="text-gray-600">Type:</span>
-                                <span className="font-medium text-gray-900 capitalize">{action.type}</span>
+                                <span className="text-gray-600 dark:text-gray-400">Type:</span>
+                                <span className="font-medium text-gray-900 dark:text-gray-100 capitalize">{action.type}</span>
                               </div>
                               <div>
-                                <span className="text-gray-600">Assigned To:</span>
-                                <span className="font-medium text-gray-900">{action.assignedTo || 'Unassigned'}</span>
+                                <span className="text-gray-600 dark:text-gray-400">Assigned To:</span>
+                                <span className="font-medium text-gray-900 dark:text-gray-100">{action.assignedTo || 'Unassigned'}</span>
                               </div>
                               <div>
-                                <span className="text-gray-600">Due Date:</span>
-                                <span className="font-medium text-gray-900">
+                                <span className="text-gray-600 dark:text-gray-400">Due Date:</span>
+                                <span className="font-medium text-gray-900 dark:text-gray-100">
                                   {action.dueDate ? formatDateTime(action.dueDate) : 'Not set'}
                                 </span>
                               </div>
                               <div>
-                                <span className="text-gray-600">Completed:</span>
-                                <span className="font-medium text-gray-900">
+                                <span className="text-gray-600 dark:text-gray-400">Completed:</span>
+                                <span className="font-medium text-gray-900 dark:text-gray-100">
                                   {action.completedAt ? formatDateTime(action.completedAt) : 'Pending'}
                                 </span>
                               </div>
