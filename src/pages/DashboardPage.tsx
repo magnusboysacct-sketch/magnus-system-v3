@@ -1,9 +1,9 @@
-﻿// src/pages/DashboardPage.tsx - Full featured dashboard
+// src/pages/DashboardPage.tsx - Full featured dashboard
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
 import { supabase } from "../lib/supabase";
-import { PageHeader, StatCard, Card, CardHeader, Badge, Btn, Empty, cn } from "../components/ui";
+import { PageHeader, Card, CardHeader, Badge, Btn, Empty, cn } from "../components/ui";
 import { FolderOpen, ShoppingCart, Users, DollarSign, ArrowRight, BarChart3, Hammer, CheckCircle2, Clock, Plus, TrendingUp } from "lucide-react";
 
 function fmt(n: number) {
@@ -21,8 +21,13 @@ const REMITTANCE_URGENCY_STYLE: Record<string, { icon: string; label: string; cl
 export default function DashboardPage() {
   const { projects, loadingProjects, userRole } = useProjectContext();
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ active: 0, budget: 0, openPOs: 0, workers: 0 });
+  const [stats, setStats] = useState({ active: 0, total: 0, budget: 0, openPOs: 0, workers: 0 });
   const [remittanceAlert, setRemittanceAlert] = useState<RemittanceAlert | null>(null);
+  // project_id -> { pct: average percent_complete across that project's tasks,
+  // taskCount: how many tasks exist } — null taskCount means "not tracked
+  // yet" (0 tasks), rendered distinctly from a genuine 0% so a brand-new
+  // project doesn't look like a broken/stalled one.
+  const [projectProgress, setProjectProgress] = useState<Record<string, { pct: number; taskCount: number }>>({});
   const nav = useNavigate();
 
   useEffect(() => {
@@ -38,8 +43,32 @@ export default function DashboardPage() {
           supabase.from("purchase_orders").select("id").eq("company_id", cid).eq("status", "pending"),
           supabase.from("workers").select("id").eq("company_id", cid).eq("is_active", true),
         ]);
-        const active = (pr.data || []).filter((p: any) => p.status === "active");
-        setStats({ active: active.length, budget: active.reduce((s: number, p: any) => s + (p.budget || 0), 0), openPOs: (po.data || []).length, workers: (wr.data || []).length });
+        const allProjects = pr.data || [];
+        const active = allProjects.filter((p: any) => p.status === "active");
+        setStats({ active: active.length, total: allProjects.length, budget: active.reduce((s: number, p: any) => s + (p.budget || 0), 0), openPOs: (po.data || []).length, workers: (wr.data || []).length });
+
+        // Milestone/task completion — one batched query for the active
+        // projects actually shown in the list below, not all projects.
+        const shownIds = active.slice(0, 6).map((p: any) => p.id);
+        if (shownIds.length) {
+          const { data: tasks } = await supabase
+            .from("project_tasks")
+            .select("project_id,percent_complete")
+            .in("project_id", shownIds);
+          const grouped: Record<string, { sum: number; count: number }> = {};
+          (tasks || []).forEach((t: any) => {
+            const g = grouped[t.project_id] || { sum: 0, count: 0 };
+            g.sum += Number(t.percent_complete) || 0;
+            g.count += 1;
+            grouped[t.project_id] = g;
+          });
+          const progress: Record<string, { pct: number; taskCount: number }> = {};
+          shownIds.forEach(id => {
+            const g = grouped[id];
+            progress[id] = g ? { pct: Math.round(g.sum / g.count), taskCount: g.count } : { pct: 0, taskCount: 0 };
+          });
+          setProjectProgress(progress);
+        }
 
         if (["director", "admin", "accounts"].includes(userRole || "")) {
           const { data: remittances } = await supabase
@@ -81,11 +110,7 @@ export default function DashboardPage() {
   if (loading || loadingProjects) return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10] p-6 space-y-6 animate-pulse">
       <div className="h-8 bg-slate-200 dark:bg-slate-800 rounded-xl w-64"/>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[1,2,3,4].map(i => (
-          <div key={i} className="h-24 bg-slate-200 dark:bg-slate-800 rounded-2xl"/>
-        ))}
-      </div>
+      <div className="h-20 bg-slate-200 dark:bg-slate-800 rounded-2xl"/>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {[1,2,3,4].map(i => (
           <div key={i} className="h-32 bg-slate-200 dark:bg-slate-800 rounded-2xl"/>
@@ -94,14 +119,25 @@ export default function DashboardPage() {
     </div>
   );
 
+  const KPIS = [
+    { label: "Active Projects", value: String(stats.active), sub: `of ${stats.total} total`, icon: <FolderOpen size={14}/>, iconBg: "bg-cyan-500/10 text-cyan-500 dark:text-cyan-300" },
+    { label: "Active Budget",   value: fmt(stats.budget),    sub: undefined,                 icon: <DollarSign size={14}/>, iconBg: "bg-emerald-500/10 text-emerald-500 dark:text-emerald-300" },
+    { label: "Open POs",        value: String(stats.openPOs),sub: undefined,                 icon: <ShoppingCart size={14}/>, iconBg: "bg-amber-500/10 text-amber-500 dark:text-amber-300" },
+    { label: "Active Workers",  value: String(stats.workers),sub: undefined,                 icon: <Users size={14}/>, iconBg: "bg-violet-500/10 text-violet-500 dark:text-violet-300" },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
+      {/* Restrained brand accent — nods to the navy/gold ID card palette
+          without re-theming the app's existing cyan/emerald accent scheme
+          used everywhere else. */}
+      <div className="h-[3px] bg-gradient-to-r from-[#C9A84C] via-[#C9A84C]/40 to-transparent"/>
       <PageHeader
         title="Dashboard"
         subtitle={new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
         actions={<Btn variant="primary" icon={<Plus size={13}/>} onClick={() => nav("/projects")}>New Project</Btn>}
       />
-      <div className="p-6 space-y-6">
+      <div className="p-6 space-y-5">
         {remittanceAlert && (
           <div className={cn("flex items-center gap-3 px-4 py-3 rounded-xl border flex-wrap", REMITTANCE_URGENCY_STYLE[remittanceAlert.urgency].cls)}>
             <span className="text-lg">{REMITTANCE_URGENCY_STYLE[remittanceAlert.urgency].icon}</span>
@@ -115,18 +151,29 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* KPI row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Active Projects" value={stats.active} icon={<FolderOpen size={15}/>} color="text-cyan-300" trend={{ value: 8, label: "vs last month" }}/>
-          <StatCard label="Active Budget" value={fmt(stats.budget)} icon={<DollarSign size={15}/>} color="text-emerald-300"/>
-          <StatCard label="Open POs" value={stats.openPOs} icon={<ShoppingCart size={15}/>} color="text-amber-300"/>
-          <StatCard label="Active Workers" value={stats.workers} icon={<Users size={15}/>} color="text-violet-300"/>
+        {/* Compact KPI strip — one bordered container with divided columns,
+            instead of 4 separate cards. Built directly here rather than
+            shrinking the shared StatCard component, since other pages use
+            StatCard at its normal size. */}
+        <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-white dark:bg-[#0c1018] shadow-sm dark:shadow-none overflow-hidden">
+          <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-y lg:divide-y-0 divide-slate-100 dark:divide-white/[0.05]">
+            {KPIS.map(k => (
+              <div key={k.label} className="p-3.5 flex items-center gap-2.5">
+                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0", k.iconBg)}>{k.icon}</div>
+                <div className="min-w-0">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">{k.label}</div>
+                  <div className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate leading-tight">{k.value}</div>
+                  {k.sub && <div className="text-[9px] text-slate-500 dark:text-slate-600 mt-0.5">{k.sub}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Projects list */}
           <div className="lg:col-span-2">
-            <Card padding={false}>
+            <Card padding={false} className="shadow-sm dark:shadow-none">
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
                 <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Active Projects</span>
                 <Btn size="xs" variant="ghost" onClick={() => nav("/projects")}>All projects <ArrowRight size={11}/></Btn>
@@ -135,20 +182,35 @@ export default function DashboardPage() {
                 <Empty icon={<FolderOpen size={18}/>} title="No active projects" action={<Btn variant="primary" size="sm" onClick={() => nav("/projects")}>Create project</Btn>}/>
               ) : (
                 <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
-                  {activeProjects.map(p => (
-                    <div key={p.id} onClick={() => nav(`/projects/${p.id}`)} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors group">
-                      <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center flex-shrink-0">
-                        <Hammer size={13} className="text-cyan-400"/>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{p.name}</div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <Badge color="green" dot>Active</Badge>
+                  {activeProjects.map(p => {
+                    const prog = projectProgress[p.id];
+                    return (
+                      <div key={p.id} onClick={() => nav(`/projects/${p.id}`)} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.02] cursor-pointer transition-colors group">
+                        <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center flex-shrink-0">
+                          <Hammer size={13} className="text-cyan-500 dark:text-cyan-400"/>
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{p.name}</div>
+                            {prog && prog.taskCount > 0 && (
+                              <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 flex-shrink-0">{prog.pct}%</span>
+                            )}
+                          </div>
+                          {prog && prog.taskCount > 0 ? (
+                            <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 dark:bg-white/[0.06] overflow-hidden">
+                              <div
+                                className={cn("h-full rounded-full transition-all", prog.pct >= 100 ? "bg-emerald-500" : "bg-gradient-to-r from-cyan-500 to-emerald-500")}
+                                style={{ width: `${Math.min(100, prog.pct)}%` }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-400 dark:text-slate-700 mt-1">No tasks tracked yet</div>
+                          )}
+                        </div>
+                        <ArrowRight size={13} className="text-slate-400 dark:text-slate-700 group-hover:text-slate-600 dark:group-hover:text-slate-400 transition-colors flex-shrink-0"/>
                       </div>
-                      <ArrowRight size={13} className="text-slate-400 dark:text-slate-700 group-hover:text-slate-600 dark:group-hover:text-slate-400 transition-colors flex-shrink-0"/>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </Card>
@@ -156,7 +218,7 @@ export default function DashboardPage() {
 
           {/* Right column */}
           <div className="space-y-4">
-            <Card>
+            <Card className="shadow-sm dark:shadow-none">
               <CardHeader title="Quick Actions"/>
               <div className="space-y-1.5">
                 {[
@@ -176,7 +238,7 @@ export default function DashboardPage() {
               </div>
             </Card>
 
-            <Card>
+            <Card className="shadow-sm dark:shadow-none">
               <CardHeader title="Status"/>
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={12}/> All services operational</div>
