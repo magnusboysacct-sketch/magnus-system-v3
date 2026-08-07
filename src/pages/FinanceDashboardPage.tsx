@@ -214,7 +214,7 @@ export default function FinanceDashboardPage() {
             {/* Recent GL Transactions */}
             <Card padding={false}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
-                <span className="text-sm font-semibold text-slate-200">Recent Journal Entries</span>
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Recent Journal Entries</span>
                 <Btn size="xs" variant="ghost" onClick={() => setTab("ledger")}>View all <ArrowRight size={11}/></Btn>
               </div>
               {transactions.length === 0 ? (
@@ -229,14 +229,14 @@ export default function FinanceDashboardPage() {
                       <Tr key={tx.id}>
                         <Td muted>{fmtDate(tx.transaction_date)}</Td>
                         <Td><span className="font-mono text-[10px] text-slate-300">{tx.transaction_number}</span></Td>
-                        <Td><span className="font-medium text-slate-200 text-xs truncate max-w-[200px] block">{tx.description}</span></Td>
+                        <Td><span className="font-medium text-slate-800 dark:text-slate-200 text-xs truncate max-w-[200px] block">{tx.description}</span></Td>
                         <Td><Badge color="slate">{tx.source_type?.replace("_"," ")}</Badge></Td>
                         <Td>
                           <Badge color={tx.status === "posted" ? "green" : tx.status === "draft" ? "amber" : "red"} dot>
                             {tx.status}
                           </Badge>
                         </Td>
-                        <Td right><span className="font-semibold text-slate-200">{fmt(tx.total_amount)}</span></Td>
+                        <Td right><span className="font-semibold text-slate-800 dark:text-slate-200">{fmt(tx.total_amount)}</span></Td>
                       </Tr>
                     ))}
                   </tbody>
@@ -269,7 +269,7 @@ export default function FinanceDashboardPage() {
                       <Badge color={ACCOUNT_TYPE_COLOR[type]}>{type}</Badge>
                       <span className="text-xs text-slate-600">{typeAccounts.length} accounts</span>
                     </div>
-                    <span className="text-sm font-bold text-slate-200">{fmt(typeTotal)}</span>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{fmt(typeTotal)}</span>
                   </div>
                   <Table>
                     <thead><tr><Th>Code</Th><Th>Account Name</Th><Th>Subtype</Th><Th>Project Linkable</Th><Th right>Balance</Th></tr></thead>
@@ -278,14 +278,14 @@ export default function FinanceDashboardPage() {
                         <Tr key={a.id}>
                           <Td><span className="font-mono text-[10px] text-slate-400">{a.code}</span></Td>
                           <Td>
-                            <span className="font-medium text-slate-200" style={{ paddingLeft: `${(a.level - 1) * 16}px` }}>
+                            <span className="font-medium text-slate-800 dark:text-slate-200" style={{ paddingLeft: `${(a.level - 1) * 16}px` }}>
                               {a.level > 1 ? "↳ " : ""}{a.name}
                             </span>
                           </Td>
                           <Td muted className="capitalize">{a.subtype?.replace(/_/g," ") || "—"}</Td>
                           <Td>{a.is_project_linkable ? <span className="text-emerald-400 text-[10px] font-semibold">✓ Yes</span> : <span className="text-slate-700 text-[10px]">—</span>}</Td>
                           <Td right>
-                            <span className={cn("font-semibold text-sm", (a.current_balance || 0) >= 0 ? "text-slate-200" : "text-red-400")}>
+                            <span className={cn("font-semibold text-sm", (a.current_balance || 0) >= 0 ? "text-slate-800 dark:text-slate-200" : "text-red-400")}>
                               {fmt(a.current_balance || 0)}
                             </span>
                           </Td>
@@ -339,7 +339,7 @@ export default function FinanceDashboardPage() {
                       <Tr key={tx.id}>
                         <Td muted>{fmtDate(tx.transaction_date)}</Td>
                         <Td><span className="font-mono text-[10px] text-cyan-400">{tx.transaction_number}</span></Td>
-                        <Td><span className="text-slate-200 text-xs">{tx.description}</span></Td>
+                        <Td><span className="text-slate-800 dark:text-slate-200 text-xs">{tx.description}</span></Td>
                         <Td><Badge color="slate">{tx.source_type?.replace(/_/g," ")}</Badge></Td>
                         <Td muted>{tx.currency || "USD"}</Td>
                         <Td>
@@ -350,7 +350,7 @@ export default function FinanceDashboardPage() {
                           </Badge>
                         </Td>
                         <Td right>
-                          <span className="font-semibold text-slate-200">{fmt(tx.total_amount)}</span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">{fmt(tx.total_amount)}</span>
                         </Td>
                       </Tr>
                     ))}
@@ -371,7 +371,7 @@ export default function FinanceDashboardPage() {
                   <CardHeader title="Profit & Loss Summary" subtitle="Revenue vs Expenses"/>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-white/[0.05]">
-                      <span className="text-sm font-semibold text-slate-200">Total Revenue</span>
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Total Revenue</span>
                       <span className="text-sm font-bold text-emerald-400">{fmt(stats.totalRevenue)}</span>
                     </div>
                     {(byType["revenue"] || []).map((a: any) => (
@@ -381,7 +381,7 @@ export default function FinanceDashboardPage() {
                       </div>
                     ))}
                     <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-white/[0.05]">
-                      <span className="text-sm font-semibold text-slate-200">Total Expenses</span>
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Total Expenses</span>
                       <span className="text-sm font-bold text-amber-400">{fmt(stats.totalExpenses)}</span>
                     </div>
                     {(byType["expense"] || []).map((a: any) => (
@@ -392,7 +392,7 @@ export default function FinanceDashboardPage() {
                     ))}
                     <div className={cn("flex items-center justify-between py-3 px-4 rounded-xl border",
                       stats.netIncome >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20")}>
-                      <span className="text-sm font-bold text-slate-200">Net {stats.netIncome >= 0 ? "Income" : "Loss"}</span>
+                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Net {stats.netIncome >= 0 ? "Income" : "Loss"}</span>
                       <span className={cn("text-lg font-bold", stats.netIncome >= 0 ? "text-emerald-400" : "text-red-400")}>
                         {fmt(Math.abs(stats.netIncome))}
                       </span>
@@ -418,7 +418,7 @@ export default function FinanceDashboardPage() {
                   <div className="border-t border-slate-200 dark:border-white/[0.06] pt-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-400">L + E</span>
-                      <span className="text-sm font-bold text-slate-200">{fmt(stats.totalLiabilities + stats.totalEquity)}</span>
+                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{fmt(stats.totalLiabilities + stats.totalEquity)}</span>
                     </div>
                   </div>
                   <Progress

@@ -288,7 +288,7 @@ export default function CashFlowPage() {
                 {(["30","90","365"] as const).map(p => (
                   <button key={p} onClick={() => setPeriod(p)}
                     className={cn("px-2.5 py-1 rounded-md text-[10px] font-bold transition-colors",
-                      period === p ? "bg-white/10 text-slate-200" : "text-slate-600 hover:text-slate-400")}>
+                      period === p ? "bg-slate-200 dark:bg-white/10 text-slate-800 dark:text-slate-200" : "text-slate-600 hover:text-slate-400")}>
                     {p === "365" ? "1Y" : `${p}D`}
                   </button>
                 ))}
@@ -340,7 +340,7 @@ export default function CashFlowPage() {
             {/* Transactions table */}
             <Card padding={false}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
-                <span className="text-sm font-semibold text-slate-200">
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                   Transactions <span className="text-slate-600 font-normal text-xs ml-2">last {period} days</span>
                 </span>
                 <span className="text-xs text-slate-600">{transactions.length} records</span>
@@ -371,7 +371,7 @@ export default function CashFlowPage() {
                       return (
                         <Tr key={t.id}>
                           <Td muted>{fmtDate(t.transaction_date || t.created_at)}</Td>
-                          <Td><span className="font-medium text-slate-200">{t.description || "—"}</span></Td>
+                          <Td><span className="font-medium text-slate-800 dark:text-slate-200">{t.description || "—"}</span></Td>
                           <Td muted>{t.bank_accounts?.account_name || "—"}</Td>
                           <Td>
                             <Badge color={TYPE_COLOR[t.transaction_type] || "slate"} dot>
@@ -418,7 +418,7 @@ export default function CashFlowPage() {
                           <Badge color="slate">{ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type}</Badge>
                         </div>
                       </div>
-                      <div className="text-sm font-semibold text-slate-200 mb-0.5">{a.account_name}</div>
+                      <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-0.5">{a.account_name}</div>
                       <div className="text-[10px] text-slate-600 mb-2">
                         {a.bank_name || "—"}{a.account_number_last_4 ? ` •••• ${a.account_number_last_4}` : ""}
                       </div>
@@ -450,7 +450,7 @@ export default function CashFlowPage() {
             )}
             <Card padding={false}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
-                <span className="text-sm font-semibold text-slate-200">
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                   Transfer Log <span className="text-slate-600 font-normal text-xs ml-2">last {period} days</span>
                 </span>
                 <span className="text-xs text-slate-600">{transferPairs.length} transfers</span>
@@ -478,8 +478,8 @@ export default function CashFlowPage() {
                     {transferPairs.map(p => (
                       <Tr key={p.reference_number}>
                         <Td muted>{fmtDateTime(p.date)}</Td>
-                        <Td><span className="font-medium text-slate-200">{p.fromAccountName}</span></Td>
-                        <Td><span className="font-medium text-slate-200">{p.toAccountName}</span></Td>
+                        <Td><span className="font-medium text-slate-800 dark:text-slate-200">{p.fromAccountName}</span></Td>
+                        <Td><span className="font-medium text-slate-800 dark:text-slate-200">{p.toAccountName}</span></Td>
                         <Td muted>{p.description || "—"}</Td>
                         <Td right><span className="font-semibold text-cyan-300">{fmt(p.amount)}</span></Td>
                       </Tr>

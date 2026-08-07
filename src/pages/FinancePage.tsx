@@ -167,7 +167,7 @@ export default function FinancePage() {
             {/* Recent expenses */}
             <Card padding={false}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
-                <span className="text-sm font-semibold text-slate-200">Recent Expenses</span>
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Recent Expenses</span>
                 <Btn size="xs" variant="ghost" onClick={() => nav("/expenses")}>View all <ArrowRight size={11}/></Btn>
               </div>
               {stats.recentExpenses.length === 0 ? (
@@ -178,11 +178,11 @@ export default function FinancePage() {
                   <tbody>
                     {stats.recentExpenses.map((e: any) => (
                       <Tr key={e.id}>
-                        <Td><span className="font-medium text-slate-200">{e.description || "—"}</span></Td>
+                        <Td><span className="font-medium text-slate-800 dark:text-slate-200">{e.description || "—"}</span></Td>
                         <Td muted>{e.expense_categories?.name || "—"}</Td>
                         <Td muted>{e.projects?.name || "—"}</Td>
                         <Td muted>{e.expense_date ? fmtDate(e.expense_date) : "—"}</Td>
-                        <Td right><span className="font-semibold text-slate-200">{fmt(e.amount)}</span></Td>
+                        <Td right><span className="font-semibold text-slate-800 dark:text-slate-200">{fmt(e.amount)}</span></Td>
                         <Td><Badge color={STATUS_COLOR[e.status || "pending"] || "slate"} dot>{e.status || "pending"}</Badge></Td>
                       </Tr>
                     ))}
@@ -197,7 +197,7 @@ export default function FinancePage() {
         {tab === "receivable" && (
           <Card padding={false}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
-              <span className="text-sm font-semibold text-slate-200">Client Invoices</span>
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Client Invoices</span>
               <Btn size="xs" variant="ghost" onClick={() => nav("/accounts-receivable")}>Full view <ArrowRight size={11}/></Btn>
             </div>
             {stats.clientInvoices.length === 0 ? (
@@ -209,7 +209,7 @@ export default function FinancePage() {
                   {stats.clientInvoices.map((inv: any) => (
                     <Tr key={inv.id}>
                       <Td><span className="font-mono text-xs text-slate-300">{inv.invoice_number}</span></Td>
-                      <Td><span className="font-medium text-slate-200">{(inv.clients as any)?.name || "—"}</span></Td>
+                      <Td><span className="font-medium text-slate-800 dark:text-slate-200">{(inv.clients as any)?.name || "—"}</span></Td>
                       <Td muted>{(inv.projects as any)?.name || "—"}</Td>
                       <Td muted className={new Date(inv.due_date) < new Date() && inv.status !== "paid" ? "text-red-400" : ""}>
                         {fmtDate(inv.due_date)}
@@ -229,7 +229,7 @@ export default function FinancePage() {
         {tab === "payable" && (
           <Card padding={false}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
-              <span className="text-sm font-semibold text-slate-200">Supplier Invoices</span>
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Supplier Invoices</span>
             </div>
             {stats.supplierInvoices.length === 0 ? (
               <Empty icon={<Package size={18}/>} title="No supplier invoices" body="Supplier invoices appear here after receiving purchase orders."/>
@@ -240,7 +240,7 @@ export default function FinancePage() {
                   {stats.supplierInvoices.map((inv: any) => (
                     <Tr key={inv.id}>
                       <Td><span className="font-mono text-xs text-slate-300">{inv.invoice_number}</span></Td>
-                      <Td><span className="font-medium text-slate-200">{(inv.suppliers as any)?.name || "—"}</span></Td>
+                      <Td><span className="font-medium text-slate-800 dark:text-slate-200">{(inv.suppliers as any)?.name || "—"}</span></Td>
                       <Td muted>{(inv.projects as any)?.name || "—"}</Td>
                       <Td muted className={new Date(inv.due_date) < new Date() && inv.status !== "paid" ? "text-red-400" : ""}>
                         {fmtDate(inv.due_date)}

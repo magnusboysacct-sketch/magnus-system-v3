@@ -188,7 +188,7 @@ export default function ExpensesPage() {
         {/* Summary cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
           {[
-            { label: "Total Expenses", value: fmt(totalAll),     color: "text-slate-200" },
+            { label: "Total Expenses", value: fmt(totalAll),     color: "text-slate-800 dark:text-slate-200" },
             { label: "Pending",        value: fmt(totalPending),  color: "text-amber-400" },
             { label: "Approved",       value: fmt(totalApproved), color: "text-emerald-400" },
           ].map(s => (
@@ -214,7 +214,7 @@ export default function ExpensesPage() {
         {/* Filters */}
         <div className="flex gap-3">
           <div className="relative flex-1 max-w-sm">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700"/>
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-700"/>
             <Input className="pl-8" placeholder="Search expenses..." value={search} onChange={e => setSearch(e.target.value)}/>
           </div>
           <Select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="w-44">
@@ -240,7 +240,7 @@ export default function ExpensesPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><Td colSpan={8} className="text-center py-10 text-slate-600">
+                <tr><Td colSpan={8} className="text-center py-10 text-slate-500 dark:text-slate-600">
                   <RefreshCw size={14} className="animate-spin inline mr-2"/>Loading...
                 </Td></tr>
               ) : filtered.length === 0 ? (
@@ -251,13 +251,13 @@ export default function ExpensesPage() {
               ) : filtered.map(e => (
                 <Tr key={e.id}>
                   <Td muted>{fmtDate(e.expense_date)}</Td>
-                  <Td><span className="font-medium text-slate-200">{e.description || "—"}</span></Td>
+                  <Td><span className="font-medium text-slate-800 dark:text-slate-200">{e.description || "—"}</span></Td>
                   <Td muted>{e.expense_categories?.name || "—"}</Td>
                   <Td muted>{e.projects?.name || "—"}</Td>
                   <Td muted>
                     {e.workers ? `${e.workers.first_name} ${e.workers.last_name}` : "—"}
                   </Td>
-                  <Td right><span className="font-semibold text-slate-200">{fmt(e.amount)}</span></Td>
+                  <Td right><span className="font-semibold text-slate-800 dark:text-slate-200">{fmt(e.amount)}</span></Td>
                   <Td>
                     <Badge color={STATUS_COLOR[e.status || "pending"] || "slate"} dot>
                       {e.status || "pending"}
@@ -314,10 +314,10 @@ export default function ExpensesPage() {
                 <div key={key} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
                   <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05] flex items-center gap-2">
                     <span>📁</span>
-                    <span className="text-xs font-bold text-slate-300">{monthName} {year}</span>
-                    <span className="text-[10px] text-slate-600 ml-auto">{items.length} receipt{items.length!==1?"s":""}</span>
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{monthName} {year}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-600 ml-auto">{items.length} receipt{items.length!==1?"s":""}</span>
                   </div>
-                  <div className="divide-y divide-white/[0.04]">
+                  <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
                     {items.map(e=>(
                       <div key={e.id} className="flex items-center gap-3 px-4 py-3">
                         <div className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] flex-shrink-0 cursor-pointer"
@@ -325,9 +325,9 @@ export default function ExpensesPage() {
                           <img src={e.receipt_url!} className="w-full h-full object-cover"/>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs font-semibold text-slate-200 truncate">{e.description||"Expense"}</div>
-                          <div className="text-[10px] text-slate-500">{e.expense_date?new Date(e.expense_date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):""}</div>
-                          <div className="text-[10px] text-slate-600">{e.projects?.name||"No project"}</div>
+                          <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{e.description||"Expense"}</div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-500">{e.expense_date?new Date(e.expense_date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):""}</div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-600">{e.projects?.name||"No project"}</div>
                         </div>
                         <div className="text-right flex-shrink-0">
                           <div className="text-sm font-bold text-emerald-400">JMD {(e.amount||0).toLocaleString()}</div>
@@ -369,10 +369,10 @@ export default function ExpensesPage() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
               </div>
               <div className="text-left">
-                <div className="text-xs font-semibold text-emerald-300">Scan Receipt with AI</div>
-                <div className="text-[10px] text-slate-600">Auto-fill from photo</div>
+                <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Scan Receipt with AI</div>
+                <div className="text-[10px] text-slate-500 dark:text-slate-600">Auto-fill from photo</div>
               </div>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-700 ml-auto"><polyline points="9 18 15 12 9 6"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400 dark:text-slate-700 ml-auto"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
           )}
 
