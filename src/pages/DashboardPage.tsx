@@ -21,7 +21,15 @@ const REMITTANCE_URGENCY_STYLE: Record<string, { icon: string; label: string; cl
 export default function DashboardPage() {
   const { projects, loadingProjects, userRole } = useProjectContext();
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ active: 0, total: 0, budget: 0, openPOs: 0, workers: 0 });
+  // active/total intentionally NOT tracked here — they're derived directly
+  // from `projects` (context) below, the same source the "Active Projects"
+  // list already uses. This used to run its own separate
+  // supabase.from("projects") query, which could (and did) disagree with
+  // the list — two independent fetches of the same underlying data, with
+  // no guarantee they'd ever agree. Only budget/openPOs/workers still need
+  // their own queries, since `projects` (context) doesn't carry budget and
+  // POs/workers aren't projects at all.
+  const [stats, setStats] = useState({ budget: 0, openPOs: 0, workers: 0 });
   const [remittanceAlert, setRemittanceAlert] = useState<RemittanceAlert | null>(null);
   // project_id -> { pct: average percent_complete across that project's tasks,
   // taskCount: how many tasks exist } — null taskCount means "not tracked
@@ -29,6 +37,14 @@ export default function DashboardPage() {
   // project doesn't look like a broken/stalled one.
   const [projectProgress, setProjectProgress] = useState<Record<string, { pct: number; taskCount: number }>>({});
   const nav = useNavigate();
+
+  // Single source of truth for "which projects are active" — the KPI count
+  // and the list below both read from this, so they can't disagree the way
+  // they did when the KPI ran its own separate supabase.from("projects")
+  // query with no guarantee of matching what ProjectContext had already
+  // loaded.
+  const activeProjectsAll = projects.filter(p => p.status === "active");
+  const activeProjects = activeProjectsAll.slice(0, 6);
 
   useEffect(() => {
     async function load() {
@@ -38,18 +54,35 @@ export default function DashboardPage() {
         const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
         if (!profile?.company_id) return;
         const cid = profile.company_id;
-        const [pr, po, wr] = await Promise.all([
-          supabase.from("projects").select("id,status,budget").eq("company_id", cid),
-          supabase.from("purchase_orders").select("id").eq("company_id", cid).eq("status", "pending"),
-          supabase.from("workers").select("id").eq("company_id", cid).eq("is_active", true),
+        const activeIds = activeProjectsAll.map(p => p.id);
+        const [bud, po, wr] = await Promise.all([
+          // Budget for the active projects context already resolved — not
+          // a fresh company-wide fetch, so it can never disagree with what
+          // "active" means here either.
+          activeIds.length
+            ? supabase.from("projects").select("id,budget").in("id", activeIds)
+            : Promise.resolve({ data: [] as any[], error: null }),
+          // 'pending' isn't a valid purchase_orders.status value (schema
+          // only allows draft/issued/part_delivered/delivered/cancelled —
+          // confirmed against the migration and ProcurementPage.tsx's own
+          // usage) — this always matched zero rows. "Open" = not yet fully
+          // delivered and not cancelled.
+          supabase.from("purchase_orders").select("id").eq("company_id", cid).in("status", ["draft", "issued", "part_delivered"]),
+          // workers has no is_active column at all (confirmed against the
+          // table's own migration and WorkersPage.tsx, which uses a
+          // three-state status column instead) — this query was erroring
+          // every time and failing silently.
+          supabase.from("workers").select("id").eq("company_id", cid).eq("status", "active"),
         ]);
-        const allProjects = pr.data || [];
-        const active = allProjects.filter((p: any) => p.status === "active");
-        setStats({ active: active.length, total: allProjects.length, budget: active.reduce((s: number, p: any) => s + (p.budget || 0), 0), openPOs: (po.data || []).length, workers: (wr.data || []).length });
+        if (bud.error) console.error("Dashboard: budget query failed:", bud.error.message);
+        if (po.error) console.error("Dashboard: open POs query failed:", po.error.message);
+        if (wr.error) console.error("Dashboard: active workers query failed:", wr.error.message);
+        const budgetTotal = (bud.data || []).reduce((s: number, p: any) => s + (p.budget || 0), 0);
+        setStats({ budget: budgetTotal, openPOs: (po.data || []).length, workers: (wr.data || []).length });
 
         // Milestone/task completion — one batched query for the active
         // projects actually shown in the list below, not all projects.
-        const shownIds = active.slice(0, 6).map((p: any) => p.id);
+        const shownIds = activeIds.slice(0, 6);
         if (shownIds.length) {
           const { data: tasks } = await supabase
             .from("project_tasks")
@@ -97,9 +130,7 @@ export default function DashboardPage() {
       finally { setLoading(false); }
     }
     load();
-  }, [userRole]);
-
-  const activeProjects = projects.filter(p => p.status === "active").slice(0, 6);
+  }, [userRole, projects]);
 
   // A single unified gate for both independent loading flags. Previously the
   // KPI row and the project list resolved at different times (one waiting on
@@ -120,7 +151,7 @@ export default function DashboardPage() {
   );
 
   const KPIS = [
-    { label: "Active Projects", value: String(stats.active), sub: `of ${stats.total} total`, icon: <FolderOpen size={14}/>, iconBg: "bg-cyan-500/10 text-cyan-500 dark:text-cyan-300" },
+    { label: "Active Projects", value: String(activeProjectsAll.length), sub: `of ${projects.length} total`, icon: <FolderOpen size={14}/>, iconBg: "bg-cyan-500/10 text-cyan-500 dark:text-cyan-300" },
     { label: "Active Budget",   value: fmt(stats.budget),    sub: undefined,                 icon: <DollarSign size={14}/>, iconBg: "bg-emerald-500/10 text-emerald-500 dark:text-emerald-300" },
     { label: "Open POs",        value: String(stats.openPOs),sub: undefined,                 icon: <ShoppingCart size={14}/>, iconBg: "bg-amber-500/10 text-amber-500 dark:text-amber-300" },
     { label: "Active Workers",  value: String(stats.workers),sub: undefined,                 icon: <Users size={14}/>, iconBg: "bg-violet-500/10 text-violet-500 dark:text-violet-300" },
