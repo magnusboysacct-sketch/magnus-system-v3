@@ -308,7 +308,22 @@ export default function SettingsUsersPage() {
 
       if (error) {
         console.error("Invite error:", error);
-        setInviteErr(error.message || "Failed to send invite.");
+        // supabase-js's functions.invoke() only ever surfaces a generic
+        // "Edge Function returned a non-2xx status code" on error.message —
+        // the edge function's actual { error: "..." } response body (the
+        // useful part) lives on error.context, the raw fetch Response,
+        // which isn't read by default. Unpack it so the modal shows the
+        // real reason instead of the useless generic wrapper text.
+        let detail = error.message || "Failed to send invite.";
+        if (error.context && typeof error.context.json === "function") {
+          try {
+            const body = await error.context.clone().json();
+            if (body?.error) detail = String(body.error);
+          } catch {
+            // Response body wasn't JSON (or already consumed) — fall back to the generic message.
+          }
+        }
+        setInviteErr(detail);
         return;
       }
 
