@@ -11,7 +11,7 @@ import AIPriceLookup from "../components/AIPriceLookup";
 import {
   Plus, Download, Upload, RefreshCw, Zap, RotateCcw,
   Edit2, Trash2, ChevronDown, Search, Package,
-  Layers, Wrench, Users, MoreHorizontal, Copy
+  Layers, Wrench, Users, MoreHorizontal, Copy, X
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -803,12 +803,24 @@ export default function RatesPage() {
             <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
             <input value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Search item, size/spec, category, unit, type, code, rate…"
-              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
+              className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg pl-8 pr-8 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50 transition"/>
+            {search&&(
+              <button onClick={()=>setSearch("")} title="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/[0.08] transition">
+                <X size={13}/>
+              </button>
+            )}
           </div>
           <button onClick={()=>companyId&&reload()}
             className="p-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">
             <RefreshCw size={13} className={loading?"animate-spin":""}/>
           </button>
+          {(search||categoryFilter!=="__ALL__")&&(
+            <button onClick={()=>{setSearch("");setCategoryFilter("__ALL__");}}
+              className="text-xs font-medium text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition">
+              Clear filters
+            </button>
+          )}
           <span className="text-xs text-slate-500 dark:text-slate-600 ml-auto">{filteredItems.length} item{filteredItems.length===1?"":"s"}</span>
         </div>
 
@@ -852,7 +864,12 @@ export default function RatesPage() {
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <Package size={20} className="text-slate-400 dark:text-slate-700"/>
               <span className="text-slate-500 text-sm">No items match your filters</span>
-              {!search&&categoryFilter==="__ALL__"&&canEdit&&(
+              {search||categoryFilter!=="__ALL__"?(
+                <button onClick={()=>{setSearch("");setCategoryFilter("__ALL__");}}
+                  className="text-xs font-medium text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition mt-1">
+                  Clear filters
+                </button>
+              ):canEdit&&(
                 <button onClick={openAdd} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition mt-1">
                   <Plus size={12}/> Add First Rate
                 </button>
