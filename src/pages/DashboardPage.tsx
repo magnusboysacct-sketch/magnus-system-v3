@@ -59,8 +59,16 @@ export default function DashboardPage() {
           // Budget for the active projects context already resolved — not
           // a fresh company-wide fetch, so it can never disagree with what
           // "active" means here either.
+          //
+          // projects has no `budget` column at all (confirmed against the
+          // schema — that was an unverified guess, unlike the other two
+          // queries below, and errored on every load). This app's real
+          // "budget" concept is BOQ-derived (sum of boq_items.amount per
+          // project), already computed by the v_project_finance_summary
+          // view and exposed as budget_total — the same source
+          // lib/finance.ts's fetchAllProjectsFinanceSummary() uses.
           activeIds.length
-            ? supabase.from("projects").select("id,budget").in("id", activeIds)
+            ? supabase.from("v_project_finance_summary").select("project_id,budget_total").in("project_id", activeIds)
             : Promise.resolve({ data: [] as any[], error: null }),
           // 'pending' isn't a valid purchase_orders.status value (schema
           // only allows draft/issued/part_delivered/delivered/cancelled —
@@ -77,7 +85,7 @@ export default function DashboardPage() {
         if (bud.error) console.error("Dashboard: budget query failed:", bud.error.message);
         if (po.error) console.error("Dashboard: open POs query failed:", po.error.message);
         if (wr.error) console.error("Dashboard: active workers query failed:", wr.error.message);
-        const budgetTotal = (bud.data || []).reduce((s: number, p: any) => s + (p.budget || 0), 0);
+        const budgetTotal = (bud.data || []).reduce((s: number, p: any) => s + (p.budget_total || 0), 0);
         setStats({ budget: budgetTotal, openPOs: (po.data || []).length, workers: (wr.data || []).length });
 
         // Milestone/task completion — one batched query for the active
