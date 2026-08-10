@@ -18,7 +18,7 @@
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Corrugated Zinc Sheet 8ft', 'Roofing', 'material', 'sheet', 17, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 3800, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -27,7 +27,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Corrugated Zinc Sheet 10ft', 'Roofing', 'material', 'sheet', 21, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 5000, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -36,7 +36,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Corrugated Zinc Sheet 12ft', 'Roofing', 'material', 'sheet', 26, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 6000, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -46,7 +46,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Colour-Coated Zinc Sheet 10ft', 'Roofing', 'material', 'sheet', 21, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 7500, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -60,7 +60,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Ridge Capping 10ft', 'Roofing', 'material', 'piece', 10, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 2800, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -70,7 +70,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Valley Flashing 10ft', 'Roofing', 'material', 'piece', 10, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 2500, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -80,7 +80,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Step Flashing per lf', 'Roofing', 'material', 'lf', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 600, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -94,7 +94,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Purlin 2×3×10', 'Roofing', 'material', 'piece', 10, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 1500, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -104,7 +104,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Purlin 2×4×10', 'Roofing', 'material', 'piece', 10, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 2200, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -114,7 +114,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Rafter 2×6×12', 'Roofing', 'material', 'piece', 12, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 3200, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -124,7 +124,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Rafter 2×8×12', 'Roofing', 'material', 'piece', 12, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 4200, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -134,7 +134,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Ridge Board 2×8×12', 'Roofing', 'material', 'piece', 12, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 4200, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -144,7 +144,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Fascia Board 1×6×12', 'Roofing', 'material', 'piece', 12, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 2000, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -154,7 +154,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Soffit Plywood 1/4" 4×8', 'Roofing', 'material', 'sheet', 32, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 3800, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -168,7 +168,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Roofing Screws Self-Tapping (100-pack)', 'Roofing', 'material', 'pack', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 1400, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -178,7 +178,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Galvanised Roofing Nails 2.5" (1lb)', 'Roofing', 'material', 'box', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 800, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -188,7 +188,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Butyl Sealant Tape 33ft roll', 'Roofing', 'material', 'roll', 33, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 2200, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -198,7 +198,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Roofing Felt 15lb (4-square roll)', 'Roofing', 'material', 'roll', 400, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 3800, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -208,7 +208,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Bitumen Waterproof Coating 4L', 'Roofing', 'material', 'can', 80, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 4500, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -218,7 +218,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Hurricane Clip (each)', 'Roofing', 'material', 'ea', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 600, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -232,7 +232,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('PVC Gutter 4" 10ft', 'Roofing', 'material', 'piece', 10, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 2800, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -242,7 +242,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('PVC Downspout 3" 10ft', 'Roofing', 'material', 'piece', 10, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 2200, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -252,7 +252,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Gutter Bracket (each)', 'Roofing', 'material', 'ea', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 500, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -265,7 +265,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Roofer Day Rate', 'Roofing', 'labor', 'day', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 11000, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -274,7 +274,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Carpenter - Roof Framing Day Rate', 'Roofing', 'labor', 'day', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 9500, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -284,7 +284,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Zinc Sheet Installation Labor (ft²)', 'Roofing', 'labor', 'ft²', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 220, 'JMD', CURRENT_DATE, 'seed_2026' FROM i
@@ -294,7 +294,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Gutter Installation Labor (lf)', 'Roofing', 'labor', 'lf', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now() RETURNING id
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now() RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
 SELECT id, 400, 'JMD', CURRENT_DATE, 'seed_2026' FROM i

@@ -352,7 +352,7 @@ export default function RatesPage() {
 
   const filteredItems=useMemo(()=>{
     const q=search.trim().toLowerCase();
-    return items.filter(it=>{
+    const result=items.filter(it=>{
       const cat=normCategory(it.category);
       if(categoryFilter!=="__ALL__"&&cat!==categoryFilter) return false;
       const type=(it.item_type||"Other").trim();
@@ -369,6 +369,13 @@ export default function RatesPage() {
         (it.cost_code||"").toLowerCase().includes(q)||
         (it.description||"").toLowerCase().includes(q);
     });
+    // The DB query already requests item_name ascending, but Postgres's sort
+    // collation isn't guaranteed to be human/case-insensitive alphabetical
+    // (e.g. "Steel Beam" sorting before "cement") — an explicit,
+    // deterministic client-side sort here guarantees correct alphabetical
+    // order regardless of server collation, independent of whatever
+    // filtering was just applied above.
+    return [...result].sort((a,b)=>(a.item_name||"").localeCompare(b.item_name||"",undefined,{sensitivity:"base"}));
   },[items,categoryFilter,search,typeFilter]);
 
   const selectedTypes=useMemo(()=>{

@@ -27,7 +27,7 @@
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Concrete Block 6" Hollow', 'Masonry & Blockwork', 'material', 'block', 0.889, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -39,7 +39,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Concrete Block 8" Hollow', 'Masonry & Blockwork', 'material', 'block', 0.889, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -51,7 +51,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Concrete Block 4" Solid (partition)', 'Masonry & Blockwork', 'material', 'block', 0.222, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -62,7 +62,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Split-Face Block 6"', 'Masonry & Blockwork', 'material', 'block', 0.889, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -73,7 +73,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Cap Block Solid 6"', 'Masonry & Blockwork', 'material', 'block', 0.889, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -89,7 +89,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Portland Cement 50kg', 'Masonry & Blockwork', 'material', 'bag', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -100,7 +100,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Masonry Sand (Fine) per ton', 'Masonry & Blockwork', 'material', 'ton', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -111,7 +111,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Pre-Mix Mortar 40lb bag', 'Masonry & Blockwork', 'material', 'bag', 12, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -122,7 +122,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Masonry Lime Type S 50lb', 'Masonry & Blockwork', 'material', 'bag', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -133,7 +133,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Block Grout (Coarse) per ft³', 'Masonry & Blockwork', 'material', 'ft³', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -148,7 +148,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Precast Lintel 4" per lf', 'Masonry & Blockwork', 'material', 'lf', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -159,7 +159,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Precast Lintel 6" per lf', 'Masonry & Blockwork', 'material', 'lf', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -170,7 +170,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('U-Block Bond Beam 6"', 'Masonry & Blockwork', 'material', 'block', 0.889, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -181,7 +181,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Half Block 6"', 'Masonry & Blockwork', 'material', 'block', 0.444, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -192,7 +192,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Corner Block 6"', 'Masonry & Blockwork', 'material', 'block', 0.889, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -208,7 +208,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Masonry Joint Reinforcement 10ft', 'Masonry & Blockwork', 'material', 'piece', 10, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -219,7 +219,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Backer Rod 1/2" 50ft roll', 'Masonry & Blockwork', 'material', 'roll', 50, 'lf', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -230,7 +230,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Masonry Sealer 4L', 'Masonry & Blockwork', 'material', 'can', 250, 'ft²', true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -241,7 +241,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Anchor Bolt 1/2"×6" (10-pack)', 'Masonry & Blockwork', 'material', 'pack', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -257,7 +257,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Mason - Block Laying (ft²)', 'Masonry & Blockwork', 'labor', 'ft²', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -268,7 +268,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Mason Day Rate', 'Masonry & Blockwork', 'labor', 'day', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -279,7 +279,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Mason Helper Day Rate', 'Masonry & Blockwork', 'labor', 'day', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -290,7 +290,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Plastering Labor (ft²)', 'Masonry & Blockwork', 'labor', 'ft²', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -301,7 +301,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Block Fill / Grout Core Labor (ft²)', 'Masonry & Blockwork', 'labor', 'ft²', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -312,7 +312,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Lintel Installation Labor (lf)', 'Masonry & Blockwork', 'labor', 'lf', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -327,7 +327,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Mortar Mixer Rental (day)', 'Masonry & Blockwork', 'equipment', 'day', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -338,7 +338,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Block Delivery (truck load ~500 blk)', 'Masonry & Blockwork', 'equipment', 'load', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
@@ -349,7 +349,7 @@ ON CONFLICT (cost_item_id, effective_date, source) DO NOTHING;
 WITH i AS (
   INSERT INTO cost_items (item_name, category, item_type, unit, coverage_factor, coverage_unit, is_active)
   VALUES ('Scaffolding Rental (bay/week)', 'Masonry & Blockwork', 'equipment', 'bay-week', NULL, NULL, true)
-  ON CONFLICT (item_name, category) DO UPDATE SET updated_at = now()
+  ON CONFLICT (item_name, category) WHERE company_id IS NULL DO UPDATE SET updated_at = now()
   RETURNING id
 )
 INSERT INTO cost_item_rates (cost_item_id, rate, currency, effective_date, source)
