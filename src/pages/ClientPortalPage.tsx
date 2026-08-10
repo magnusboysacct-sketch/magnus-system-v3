@@ -397,7 +397,17 @@ export default function ClientPortalPage() {
   async function loadData(c:Client) {
     try {
       const {data:p}=await supabase.from("projects").select("*").eq("client_id",c.id).order("created_at",{ascending:false}).limit(1);
-      const proj=p?.[0]||null; setProject(proj);
+      let proj=p?.[0]||null;
+      if(proj){
+        // projects has no `budget` column (select("*") never errored, so
+        // this was a silent bug — the Project type even declared `budget`
+        // as if it were real — instead of the loud 400s the same mistake
+        // caused on Dashboard/Reports). Real budget is BOQ-derived, from
+        // v_project_finance_summary.budget_total, same as those fixes.
+        const {data:fin}=await supabase.from("v_project_finance_summary").select("budget_total").eq("project_id",proj.id).maybeSingle();
+        proj={...proj,budget:fin?.budget_total??null};
+      }
+      setProject(proj);
       const {data:cm}=await supabase.from("client_comments").select("*").eq("client_id",c.id).order("created_at",{ascending:true});
       setComments(cm||[]);
       if(proj){

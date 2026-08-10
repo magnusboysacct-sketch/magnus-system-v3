@@ -841,10 +841,22 @@ export async function fetchProjectFinanceSummary(projectId: string) {
 }
 
 export async function fetchAllProjectsFinanceSummary(companyId: string) {
+  // v_project_finance_summary has no company_id column (confirmed live via
+  // information_schema.columns — see DashboardPage.tsx/ReportsPage.tsx for
+  // the same fix) — filter by project_id instead, scoped to this company's
+  // own project ids.
+  const { data: projects, error: projError } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("company_id", companyId);
+  if (projError) throw projError;
+  const projectIds = (projects || []).map(p => p.id);
+  if (projectIds.length === 0) return [];
+
   const { data, error } = await supabase
     .from("v_project_finance_summary")
     .select("*")
-    .eq("company_id", companyId)
+    .in("project_id", projectIds)
     .order("project_name", { ascending: true });
 
   if (error) throw error;

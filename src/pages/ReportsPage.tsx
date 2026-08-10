@@ -68,13 +68,33 @@ export default function ReportsPage() {
     let q = supabase.from("field_payments").select("*").eq("company_id",companyId).order("created_at",{ascending:false});
     if(cutoff) q = q.gte("created_at",cutoff);
     if(projectFilter!=="all") q = q.eq("project_id",projectFilter);
+    // projects has no `budget` column (same unverified-assumption bug just
+    // fixed on the Dashboard) — this app's real budget concept is
+    // BOQ-derived, computed by v_project_finance_summary and exposed as
+    // budget_total, so it's fetched separately and merged in below.
+    // project_milestones has no `planned_cost` column either — the real
+    // field is planned_total_cost (a generated sum of planned
+    // labour/material/equipment cost); aliased in the select itself so
+    // every downstream reference to `.planned_cost` on a milestone keeps
+    // working unchanged.
     const [{data:fp},{data:proj},{data:ms}] = await Promise.all([
       q,
-      supabase.from("projects").select("id,name,status,budget").eq("company_id",companyId),
-      supabase.from("project_milestones").select("id,milestone_name,planned_cost,project_id").eq("company_id",companyId),
+      supabase.from("projects").select("id,name,status").eq("company_id",companyId),
+      supabase.from("project_milestones").select("id,milestone_name,planned_cost:planned_total_cost,project_id").eq("company_id",companyId),
     ]);
+    // v_project_finance_summary has no company_id column (confirmed live
+    // via information_schema.columns — the earlier .eq("company_id",...)
+    // filter was the actual bug, not the column name) — filter by
+    // project_id instead, scoped to this company's own project ids just
+    // fetched above. Has to run after the projects fetch resolves rather
+    // than in the same Promise.all, since it depends on those ids.
+    const projectIds=(proj||[]).map((p:any)=>p.id);
+    const {data:fin}=projectIds.length
+      ? await supabase.from("v_project_finance_summary").select("project_id,budget_total").in("project_id",projectIds)
+      : {data:[] as any[]};
+    const budgetByProject = new Map((fin||[]).map((f:any)=>[f.project_id, f.budget_total||0]));
     setPayments(fp||[]);
-    setProjects(proj||[]);
+    setProjects((proj||[]).map((p:any)=>({...p, budget: budgetByProject.get(p.id)||0})));
     setMilestones(ms||[]);
     setLoading(false);
   },[companyId,dateRange,projectFilter]);
