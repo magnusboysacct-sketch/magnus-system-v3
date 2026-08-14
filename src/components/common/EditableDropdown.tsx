@@ -79,9 +79,26 @@ export default function EditableDropdown({
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg overflow-hidden">
+        // Width: decoupled from the trigger's own width (was w-full, i.e.
+        // exactly as wide as whatever container this sits in — fine on
+        // desktop, but on mobile some usages sit in narrow grid/flex cells
+        // that squeeze the "Add new" row's input+button unusably tight).
+        // min-w-full keeps existing desktop layouts unchanged when the
+        // trigger is already wide enough; the 16rem floor guarantees a
+        // usable minimum regardless of a narrow parent; the viewport-based
+        // max-width stops it overflowing a narrow phone screen either way.
+        //
+        // Height: capped to a fraction of the viewport and laid out as a
+        // column with only the options list scrolling/shrinking — Search
+        // and Add New are flex-shrink-0 so they always render in full.
+        // Two autoFocus inputs in this component (search, then the new-
+        // option field) each pop the on-screen keyboard on mobile, which
+        // can consume 40-50% of the viewport; without this, "Add new"
+        // (last in the layout) is exactly what gets pushed below the
+        // reachable area.
+        <div className="absolute z-50 mt-1 min-w-full w-72 max-w-[calc(100vw-2rem)] max-h-[min(28rem,70vh)] flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg overflow-hidden">
           {/* Search */}
-          <div className="p-2 border-b border-slate-100 dark:border-slate-800">
+          <div className="p-2 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
             <input
               type="text"
               value={search}
@@ -92,8 +109,8 @@ export default function EditableDropdown({
             />
           </div>
 
-          {/* Options */}
-          <div className="max-h-48 overflow-y-auto">
+          {/* Options — the only part that scrolls/shrinks, so Search and Add New below it are never pushed off */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {filtered.length === 0 && !adding && (
               <div className="px-3 py-2 text-xs text-slate-400 text-center">No options found</div>
             )}
@@ -115,7 +132,7 @@ export default function EditableDropdown({
           </div>
 
           {/* Add new */}
-          <div className="p-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="p-2 border-t border-slate-100 dark:border-slate-800 flex-shrink-0">
             {adding ? (
               <div className="flex gap-2">
                 <input
@@ -125,10 +142,10 @@ export default function EditableDropdown({
                   onKeyDown={e => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") { setAdding(false); setNewValue(""); } }}
                   placeholder="Type new option..."
                   autoFocus
-                  className="flex-1 px-2 py-1.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="flex-1 min-w-0 px-2 py-1.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
                 <button type="button" onClick={handleAdd}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors">
+                  className="flex-shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors">
                   Add
                 </button>
               </div>
