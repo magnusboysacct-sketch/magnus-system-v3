@@ -93,12 +93,27 @@ export interface EntityImportConfig {
 
   // Candidate normalized keys for a freshly-mapped row, checked against the
   // ExistingRecord.keys fetched above, in priority order (e.g. email before
-  // name for Clients — the stronger signal wins).
-  matchKeysFor: (values: Record<string, any>) => string[];
+  // name for Clients — the stronger signal wins). Receives lookups too, so
+  // an entity referencing another (e.g. Projects matching on name+client)
+  // can resolve that reference before building its match key.
+  matchKeysFor: (values: Record<string, any>, lookups: LookupMaps) => string[];
 
   // Per-field validation beyond plain "required" (format checks etc.).
   // Return null when valid.
   validateField?: (field: ImportFieldConfig, value: any) => string | null;
+
+  // General value-normalization hook for a field whose raw text needs
+  // mapping to one of a fixed set of canonical values that won't match
+  // verbatim what source systems actually export — e.g. Zoho's Projects
+  // export uses "Active" for status; this app's CHECK constraint expects
+  // exactly "active". Called for every non-blank mapped value on any field
+  // this hook recognizes (check `fieldKey` internally, same pattern as
+  // buildFallback below); return undefined to leave the raw value
+  // untouched. `usedFallback: true` means the raw text didn't match
+  // anything recognized and a default was substituted — flagged as a
+  // non-blocking warning in Preview, same treatment as any other optional-
+  // field format issue; it never blocks the row.
+  remapValue?: (fieldKey: string, rawValue: string) => { value: string; usedFallback: boolean } | undefined;
 
   // General robustness hook for a required field that's commonly blank in
   // real-world exports across accounting/CRM systems (not specific to any

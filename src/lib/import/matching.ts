@@ -39,3 +39,18 @@ export function headerMatchesAlias(header: string, alias: string): boolean {
   const a = normalizeForMatch(alias);
   return h === a || h.includes(a) || a.includes(h);
 }
+
+// Resolves a raw, free-typed lookup value (e.g. a client name column on a
+// Projects import row) against a LookupMaps entry — the same normalizeKey
+// used for name-based dedup elsewhere, so "Acme Construction" in the
+// uploaded file matches "Acme Construction" (or "acme construction") in
+// the DB regardless of case/whitespace differences. Returns null if the
+// map is missing (lookup not loaded yet) or nothing matches — callers
+// treat that as "couldn't resolve," not an error.
+export function resolveLookup(
+  rawValue: string | null | undefined,
+  map: Map<string, { id: string; label: string }> | undefined
+): { id: string; label: string } | null {
+  if (!rawValue || !map) return null;
+  return map.get(normalizeKey(rawValue)) || null;
+}

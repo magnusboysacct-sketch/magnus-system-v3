@@ -8,7 +8,7 @@
 import React, { useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { parseImportFile } from "../../lib/import/parseFile";
-import { headerMatchesAlias, normalizeForMatch } from "../../lib/import/matching";
+import { headerMatchesAlias, normalizeForMatch, resolveLookup } from "../../lib/import/matching";
 import type {
   EntityImportConfig, ParsedFile, ColumnMapping, PreviewRow,
   ExistingRecord, RowOutcome, DedupAction, LookupMaps,
@@ -156,7 +156,28 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
               continue;
             }
           }
-          if (v !== undefined && v !== null && String(v).trim() !== "" && config.validateField) {
+          const stillBlank = v === undefined || v === null || String(v).trim() === "";
+          if (!stillBlank && config.remapValue) {
+            // e.g. Zoho's Projects status "Active" -> this app's exact
+            // CHECK-constraint value "active". Runs before validateField so
+            // a remapped value (already canonical) isn't then flagged as
+            // invalid by a validator written against the canonical set.
+            const rawText = String(v);
+            const remapped = config.remapValue(field.key, rawText);
+            if (remapped) {
+              values[field.key] = remapped.value;
+              v = remapped.value;
+              if (remapped.usedFallback) warnings.push(`${field.label}: "${rawText}" not recognized — defaulted to "${remapped.value}"`);
+            }
+          }
+          if (!stillBlank && field.type === "lookup" && field.lookupEntityKey) {
+            // Doesn't block the row — an unresolved reference just imports
+            // with that field left null, flagged here so it's visible
+            // before committing, not discovered only after the fact.
+            const resolved = resolveLookup(String(v), lookups[field.lookupEntityKey]);
+            if (!resolved) warnings.push(`${field.label}: "${v}" didn't match any existing ${field.lookupEntityKey} — will import without a link`);
+          }
+          if (!stillBlank && config.validateField) {
             const err = config.validateField(field, v);
             if (err) {
               if (field.required) errors.push(`${field.label}: ${err}`);
@@ -167,7 +188,7 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
 
         let match: ExistingRecord | null = null;
         if (config.dedupEnabled) {
-          for (const key of config.matchKeysFor(values)) {
+          for (const key of config.matchKeysFor(values, lookups)) {
             const found = key ? existingIndex.get(key) : undefined;
             if (found) { match = found; break; }
           }
@@ -232,9 +253,15 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
             const updatePayload: Record<string, any> = {};
             for (const field of config.fields) {
               const raw = row.values[field.key];
-              if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
-                updatePayload[field.key] = payload[field.key];
-              }
+              if (raw === undefined || raw === null || String(raw).trim() === "") continue;
+              // A lookup field can have a non-blank RAW value (the typed
+              // client name, say) that still failed to resolve to a real
+              // record — already flagged as a warning in Preview. Never let
+              // that null out whatever the existing record's real link
+              // currently is; only apply it when resolution actually
+              // succeeded.
+              if (field.type === "lookup" && payload[field.key] == null) continue;
+              updatePayload[field.key] = payload[field.key];
             }
             const { error: e } = await supabase.from(config.table).update(updatePayload).eq("id", row.match.id);
             if (e) throw e;
@@ -513,7 +540,7 @@ function PreviewStep({ config, rows, counts, onRowAction, onBulkDuplicateAction,
   // address actually reads correctly) before committing rows to the DB.
   const requiredDisplay = config.fields.filter(f => f.required).slice(0, 1);
   const optionalFields = config.fields.filter(f => !f.required);
-  const priorityOptional = optionalFields.filter(f => f.multiSource).concat(optionalFields.filter(f => !f.multiSource));
+  const priorityOptional = optionalFields.filter(f => f.multiSource || f.type === "lookup").concat(optionalFields.filter(f => !f.multiSource && f.type !== "lookup"));
   const displayFields = requiredDisplay.concat(priorityOptional).slice(0, 4);
   const importCount = counts.willCreate + counts.willUpdate;
 
