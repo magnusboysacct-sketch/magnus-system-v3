@@ -8,7 +8,7 @@
 import React, { useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { parseImportFile } from "../../lib/import/parseFile";
-import { headerMatchesAlias, normalizeForMatch, resolveLookup } from "../../lib/import/matching";
+import { headerMatchesAlias, normalizeForMatch, normalizeKey, resolveLookup } from "../../lib/import/matching";
 import type {
   EntityImportConfig, ParsedFile, ColumnMapping, PreviewRow,
   ExistingRecord, RowOutcome, DedupAction, LookupMaps,
@@ -171,11 +171,19 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
             }
           }
           if (!stillBlank && field.type === "lookup" && field.lookupEntityKey) {
-            // Doesn't block the row — an unresolved reference just imports
-            // with that field left null, flagged here so it's visible
-            // before committing, not discovered only after the fact.
+            // Doesn't block the row either way — flagged here so it's
+            // visible before committing, not discovered only after the
+            // fact. createIfMissing fields (e.g. Expenses' category) will
+            // actually create a new record during the real import step
+            // (never here — Preview must stay side-effect-free); plain
+            // lookup fields (e.g. Projects' client) just import with that
+            // field left null.
             const resolved = resolveLookup(String(v), lookups[field.lookupEntityKey]);
-            if (!resolved) warnings.push(`${field.label}: "${v}" didn't match any existing ${field.lookupEntityKey} — will import without a link`);
+            if (!resolved) {
+              warnings.push(field.createIfMissing
+                ? `${field.label}: "${v}" doesn't exist yet — will be created on import`
+                : `${field.label}: "${v}" didn't match any existing ${field.lookupEntityKey} — will import without a link`);
+            }
           }
           if (!stillBlank && config.validateField) {
             const err = config.validateField(field, v);
@@ -232,6 +240,42 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
     setProgress({ done: 0, total: toProcess.length });
     const results: RowOutcome[] = [];
 
+    // Cache for createIfMissing lookup resolutions during this run, keyed
+    // by `${lookupEntityKey}::${normalizedRawValue}` -> the in-flight (or
+    // already-settled) creation. Rows are processed in parallel chunks
+    // below, so without this, two rows both referencing the same brand-new
+    // value (e.g. two expenses both say a "Fuel" category that doesn't
+    // exist yet) would race to insert it twice. The fix relies on
+    // createCache.set() happening synchronously, before resolveOrCreate's
+    // own await ever yields control — since chunk.map(async row => ...)
+    // invokes every row's callback synchronously up to ITS first await,
+    // the first row to need a given new value always wins the cache race
+    // before a second row gets a chance to check it, not just "usually."
+    const createCache = new Map<string, Promise<{ id: string; label: string } | null>>();
+
+    async function resolveOrCreate(field: EntityImportConfig["fields"][number], rawValue: string): Promise<{ id: string; label: string } | null> {
+      if (!field.lookupEntityKey) return null;
+      const existing = resolveLookup(rawValue, lookups[field.lookupEntityKey]);
+      if (existing) return existing;
+      if (!field.createIfMissing || !config.createLookupTarget) return null;
+      const cacheKey = `${field.lookupEntityKey}::${normalizeKey(rawValue)}`;
+      if (!createCache.has(cacheKey)) {
+        createCache.set(cacheKey, config.createLookupTarget(field.key, rawValue, companyId)
+          .then(created => {
+            // Merge into the shared lookups map so every later resolution —
+            // this row's own buildPayload call right after, any later row
+            // in this or a later chunk, even a second file uploaded without
+            // leaving the page — finds it via the normal lookup path
+            // instead of creating it again.
+            if (!lookups[field.lookupEntityKey!]) lookups[field.lookupEntityKey!] = new Map();
+            lookups[field.lookupEntityKey!].set(normalizeKey(rawValue), created);
+            return created;
+          })
+          .catch(() => null)); // creation failed — cache the miss so every row referencing this value this run degrades the same way (null) rather than each retrying independently
+      }
+      return createCache.get(cacheKey)!;
+    }
+
     // Sequential in small chunks — not a single bulk insert, since "update"
     // rows need individual .update().eq('id', ...) calls and per-row failure
     // reporting is the whole point (no all-or-nothing transaction).
@@ -240,6 +284,18 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
       const chunk = toProcess.slice(i, i + CHUNK);
       const chunkResults = await Promise.all(chunk.map(async (row): Promise<RowOutcome> => {
         try {
+          // Resolve (creating if needed and allowed) every createIfMissing
+          // lookup field before buildPayload runs, so buildPayload can stay
+          // simple and synchronous — it just reads the now-current lookups
+          // map, never needs to know creation happened at all.
+          for (const field of config.fields) {
+            if (field.type === "lookup" && field.createIfMissing) {
+              const raw = row.values[field.key];
+              if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
+                await resolveOrCreate(field, String(raw));
+              }
+            }
+          }
           const payload = config.buildPayload(row.values, lookups, companyId);
           if (row.action === "update" && row.match) {
             // Only overwrite fields this row actually provided a value for.
@@ -535,13 +591,17 @@ function PreviewStep({ config, rows, counts, onRowAction, onBulkDuplicateAction,
   onBulkDuplicateAction: (action: DedupAction) => void;
   onBack: () => void; onImport: () => void;
 }) {
-  // multiSource fields are always shown when present — they're the columns
-  // most worth a visual double-check (e.g. confirming a concatenated
-  // address actually reads correctly) before committing rows to the DB.
-  const requiredDisplay = config.fields.filter(f => f.required).slice(0, 1);
+  // All required fields are shown — Clients/Projects only have one (name),
+  // but Expenses has three (date, description, amount), and description in
+  // particular is exactly the field most worth a visual check given the
+  // whole buildFallback mechanism exists for it. multiSource and lookup
+  // fields are prioritized among the optional ones — they're the columns
+  // most worth double-checking (a concatenated address reading correctly,
+  // a category/client actually resolving) before committing rows to the DB.
+  const requiredDisplay = config.fields.filter(f => f.required);
   const optionalFields = config.fields.filter(f => !f.required);
   const priorityOptional = optionalFields.filter(f => f.multiSource || f.type === "lookup").concat(optionalFields.filter(f => !f.multiSource && f.type !== "lookup"));
-  const displayFields = requiredDisplay.concat(priorityOptional).slice(0, 4);
+  const displayFields = requiredDisplay.concat(priorityOptional).slice(0, 6);
   const importCount = counts.willCreate + counts.willUpdate;
 
   return (

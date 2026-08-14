@@ -37,6 +37,13 @@ export interface ImportFieldConfig {
   // before.
   multiSource?: boolean;
   joinWith?: string; // only used when multiSource is true; defaults to ", "
+  // Only meaningful when type is "lookup". Plain lookup fields (e.g.
+  // Projects' client) leave an unresolved reference null — non-blocking,
+  // but never creates anything. createIfMissing fields (e.g. Expenses'
+  // category, a simple flat list the user hasn't necessarily pre-
+  // populated) instead create a new row in the target table when nothing
+  // matches, via the config's createLookupTarget hook below.
+  createIfMissing?: boolean;
 }
 
 export interface ParsedFile {
@@ -136,4 +143,25 @@ export interface EntityImportConfig {
   // confirmed to exist on every table) — matches how every other insert path
   // in this app already works (fetch company_id once, pass it explicitly).
   buildPayload: (values: Record<string, any>, lookups: LookupMaps, companyId: string) => Record<string, any>;
+
+  // For a "lookup" field with createIfMissing: true — called (by the
+  // wizard shell, during the real import step only, never during Preview,
+  // which must stay side-effect-free) when resolution against the
+  // existing lookup map fails. Creates a new row in the target table and
+  // returns its {id, label}. The wizard shell caches in-flight creations
+  // per field+normalized-value so concurrent rows in the same processing
+  // chunk requesting the same brand-new value share one creation instead
+  // of racing to insert it twice.
+  createLookupTarget?: (fieldKey: string, rawValue: string, companyId: string) => Promise<{ id: string; label: string }>;
+}
+
+// A fetchable source of {id, label} records for lookup/create resolution.
+// Every full EntityImportConfig already satisfies this (its own
+// fetchExisting), so registering clients/projects here is free — but not
+// every lookup target is itself a directly-importable entity (Expenses'
+// category resolves against expense_categories, a simple flat list
+// Veron never separately imports as its own wizard pass). See
+// entityConfigs.ts's LOOKUP_SOURCES registry.
+export interface LookupSource {
+  fetchExisting: (companyId: string) => Promise<ExistingRecord[]>;
 }

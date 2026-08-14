@@ -11,7 +11,7 @@ import { supabase } from "../lib/supabase";
 import { PageHeader, Card, Spinner, Select } from "../components/ui";
 import { UploadCloud } from "lucide-react";
 import ImportWizard from "../components/import/ImportWizard";
-import { ENTITY_CONFIGS, getEntityConfig } from "../lib/import/entityConfigs";
+import { ENTITY_CONFIGS, LOOKUP_SOURCES } from "../lib/import/entityConfigs";
 import { normalizeKey } from "../lib/import/matching";
 import type { LookupMaps } from "../lib/import/types";
 
@@ -33,14 +33,16 @@ export default function SettingsImportPage() {
   const config = ENTITY_CONFIGS.find(c => c.key === entityKey);
 
   // Rebuilds whichever cross-entity lookup maps the selected entity's fields
-  // declare (e.g. Projects' "client" field -> Clients) every time the
-  // entity changes. Always a fresh, live query against that other entity's
-  // own fetchExisting() — the same function it uses for its own dedup — so
-  // a Projects import can resolve a client that already existed before any
-  // wizard session ever ran, not just clients created earlier in this same
-  // visit (a stale/session-only map would silently fail to link older
-  // clients, which is exactly the kind of gap this whole wizard exists to
-  // avoid elsewhere).
+  // declare (e.g. Projects' "client" field -> Clients, Expenses' "category"
+  // field -> expense_categories) every time the entity changes. Always a
+  // fresh, live query via LOOKUP_SOURCES — not every lookup target is
+  // itself a directly-importable entity (expense_categories isn't), so
+  // this is keyed separately from ENTITY_CONFIGS — so a Projects import
+  // can resolve a client that already existed before any wizard session
+  // ever ran, not just clients created earlier in this same visit (a
+  // stale/session-only map would silently fail to link older clients,
+  // which is exactly the kind of gap this whole wizard exists to avoid
+  // elsewhere).
   useEffect(() => {
     if (!companyId || !config) { setLookups({}); return; }
     const neededKeys = Array.from(new Set(
@@ -50,9 +52,9 @@ export default function SettingsImportPage() {
     let alive = true;
     setLoadingLookups(true);
     Promise.all(neededKeys.map(async (key): Promise<[string, Map<string, { id: string; label: string }>]> => {
-      const depConfig = getEntityConfig(key);
-      if (!depConfig) return [key, new Map()];
-      const records = await depConfig.fetchExisting(companyId);
+      const source = LOOKUP_SOURCES[key];
+      if (!source) return [key, new Map()];
+      const records = await source.fetchExisting(companyId);
       return [key, new Map(records.map(r => [normalizeKey(r.label), { id: r.id, label: r.label }]))];
     })).then(entries => {
       if (!alive) return;

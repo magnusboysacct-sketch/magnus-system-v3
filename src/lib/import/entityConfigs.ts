@@ -5,7 +5,7 @@
 // and Expenses). Registering a future entity is: write a config object,
 // add it to ENTITY_CONFIGS below. The wizard shell never changes.
 import { supabase } from "../supabase";
-import type { EntityImportConfig, ExistingRecord } from "./types";
+import type { EntityImportConfig, ExistingRecord, LookupSource } from "./types";
 import { normalizeEmail, normalizeKey, resolveLookup } from "./matching";
 
 // ─── Clients ────────────────────────────────────────────────────────────────
@@ -255,14 +255,153 @@ const projectsConfig: EntityImportConfig = {
   },
 };
 
+// ─── Expenses ───────────────────────────────────────────────────────────────
+//
+// Schema per the confirmed Day 1 planning findings: company_id, expense_date,
+// description, and amount are NOT NULL; project_id/category_id are nullable
+// FKs; status defaults to 'pending' and isn't user-mappable at all here —
+// every imported row lands as pending for review, matching how every other
+// expense enters this app regardless of source. No dedup (dedupEnabled:
+// false, per the Day 1 plan) — a "duplicate-looking" expense might be a
+// legitimate second identical purchase, so every row imports as new;
+// fetchExisting/matchKeysFor below are unused no-ops, only present to
+// satisfy the type.
+//
+// description's buildFallback (category + vendor) exists because real Zoho
+// exports routinely leave "Expense Description" blank (confirmed against
+// Veron's actual 258-row Expense.csv) while expenses.description is NOT
+// NULL — same mechanism already proven on Clients' name field.
+const expensesConfig: EntityImportConfig = {
+  key: "expenses",
+  label: "Expenses",
+  table: "expenses",
+  dedupEnabled: false,
+
+  fields: [
+    { key: "expense_date", label: "Date", required: true, type: "date",
+      aliases: ["date", "expense date", "transaction date", "bill date", "purchase date"] },
+    { key: "description", label: "Description", required: true, type: "text",
+      aliases: ["description", "expense description", "memo", "details", "line item"] },
+    { key: "amount", label: "Amount", required: true, type: "number",
+      aliases: ["amount", "expense amount", "total", "cost", "value", "price"] },
+    { key: "vendor", label: "Vendor", required: false, type: "text",
+      aliases: ["vendor", "payee", "supplier", "merchant", "paid to"] },
+    // createIfMissing: expense_categories is a simple flat list Veron
+    // hasn't necessarily pre-populated to match Zoho's category vocabulary
+    // — unlike Projects' client field, an unmatched category here should
+    // create a new row, not just leave category_id null. See
+    // createLookupTarget below and the ImportWizard.tsx race-safe cache
+    // that actually performs the creation during import.
+    { key: "category_id", label: "Category", required: false, type: "lookup",
+      lookupEntityKey: "expense_categories", createIfMissing: true,
+      aliases: ["category", "expense category", "expense account", "account"] },
+    { key: "project_id", label: "Project", required: false, type: "lookup",
+      lookupEntityKey: "projects",
+      aliases: ["project", "project name", "job", "job name"] },
+    { key: "payment_method", label: "Payment Method", required: false, type: "text",
+      aliases: ["payment method", "payment type", "paid via", "method"] },
+    { key: "notes", label: "Notes", required: false, type: "text",
+      aliases: ["notes", "remarks", "comments"] },
+  ],
+
+  async fetchExisting() { return []; }, // dedup disabled — never called (see the goToPreview guard), present only to satisfy the type
+  matchKeysFor() { return []; },        // same — dedup disabled, never called
+
+  validateField(field, value) {
+    if (field.key === "amount") {
+      const n = Number(String(value).replace(/[,$]/g, ""));
+      if (!isFinite(n) || isNaN(n)) return "Doesn't look like a valid number";
+    }
+    if (field.key === "expense_date" && !parseLooseDate(String(value))) {
+      return "Doesn't look like a valid date";
+    }
+    return null;
+  },
+
+  // description is often blank in real exports even though it's NOT NULL —
+  // derive something usable from category + vendor (whichever are mapped
+  // and non-blank) rather than losing the row. Both are raw typed text at
+  // this point (goToPreview builds the whole `values` object up front,
+  // before any field's fallback runs, regardless of field declaration
+  // order), which is exactly what's wanted for a readable derived
+  // description — resolving category to an id happens later, in
+  // buildPayload, and doesn't affect this.
+  buildFallback(fieldKey, values) {
+    if (fieldKey !== "description") return null;
+    const parts = [values.category_id, values.vendor].map(v => (v ? String(v).trim() : "")).filter(Boolean);
+    return parts.length ? parts.join(" - ") : null;
+  },
+
+  async createLookupTarget(fieldKey, rawValue, companyId) {
+    if (fieldKey !== "category_id") throw new Error(`No creation rule for ${fieldKey}`);
+    const name = rawValue.trim();
+    // category_type is nullable and CHECK-constrained (labor/materials/
+    // equipment/overhead/admin/other) — left null rather than guessed;
+    // lib/finance.ts already treats a null category_type as "other"
+    // elsewhere in the app, so this is a genuinely safe, already-handled
+    // state, not a gap this import introduces.
+    const { data, error } = await supabase
+      .from("expense_categories")
+      .insert({ company_id: companyId, name })
+      .select("id, name")
+      .single();
+    if (error) throw error;
+    return { id: data.id, label: data.name };
+  },
+
+  buildPayload(values, lookups, companyId) {
+    const categoryMatch = resolveLookup(values.category_id, lookups.expense_categories);
+    const projectMatch = resolveLookup(values.project_id, lookups.projects);
+    return {
+      company_id: companyId,
+      expense_date: values.expense_date ? parseLooseDate(String(values.expense_date)) : null,
+      description: String(values.description).trim(),
+      amount: Number(String(values.amount).replace(/[,$]/g, "")) || 0,
+      vendor: values.vendor ? String(values.vendor).trim() : null,
+      category_id: categoryMatch ? categoryMatch.id : null,
+      project_id: projectMatch ? projectMatch.id : null,
+      payment_method: values.payment_method ? String(values.payment_method).trim() : null,
+      notes: values.notes ? String(values.notes).trim() : null,
+      status: "pending",
+    };
+  },
+};
+
+// Lookup-only target for Expenses' category field — not a directly-
+// importable entity (Veron never runs a separate "import categories" pass),
+// just something another entity's field can resolve/create against.
+const expenseCategoriesLookup: LookupSource = {
+  async fetchExisting(companyId: string): Promise<ExistingRecord[]> {
+    const { data, error } = await supabase
+      .from("expense_categories")
+      .select("id, name")
+      .eq("company_id", companyId);
+    if (error) throw error;
+    return (data || []).map(c => ({ id: c.id, label: c.name, keys: [normalizeKey(c.name)] }));
+  },
+};
+
 // ─── Registry ───────────────────────────────────────────────────────────────
-// Expenses joins this list in the next round — the wizard's entity picker
-// walks this array, so sequencing is enforced just by array order.
+// The wizard's entity picker walks ENTITY_CONFIGS, so sequencing (Clients
+// -> Projects -> Expenses) is enforced just by array order.
 export const ENTITY_CONFIGS: EntityImportConfig[] = [
   clientsConfig,
   projectsConfig,
+  expensesConfig,
 ];
 
 export function getEntityConfig(key: string): EntityImportConfig | undefined {
   return ENTITY_CONFIGS.find(c => c.key === key);
 }
+
+// Every fetchable lookup/create source, keyed by lookupEntityKey. Every
+// full EntityImportConfig already satisfies LookupSource for free (its own
+// fetchExisting) — registering clients/projects here costs nothing — plus
+// lookup-only targets that aren't themselves importable, like
+// expense_categories. SettingsImportPage.tsx uses this (not ENTITY_CONFIGS)
+// to build the live lookup maps a wizard's fields declare.
+export const LOOKUP_SOURCES: Record<string, LookupSource> = {
+  clients: clientsConfig,
+  projects: projectsConfig,
+  expense_categories: expenseCategoriesLookup,
+};
