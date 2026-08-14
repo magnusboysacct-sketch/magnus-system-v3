@@ -24,6 +24,19 @@ export interface ImportFieldConfig {
   // resolving to a client_id via the Clients pass's lookup map. Unused by
   // Clients (the first entity in the chain, nothing to resolve against).
   lookupEntityKey?: string;
+  // Allows more than one uploaded column to be mapped to this field at
+  // once — e.g. a single "address" target built from several separate
+  // Billing Address / City / State / Country columns, which is how most
+  // accounting/CRM exports actually split address data (confirmed against
+  // a real Zoho Contacts export: 6 separate Billing-prefixed columns, no
+  // single "Address" column at all). When true, the Map Columns step lets
+  // multiple headers point at this field; their values are concatenated —
+  // in the order the columns appear in the uploaded file, skipping any
+  // blank parts — into one final string, joined by `joinWith`. Ordinary
+  // (non-multiSource) fields still only accept one source column, same as
+  // before.
+  multiSource?: boolean;
+  joinWith?: string; // only used when multiSource is true; defaults to ", "
 }
 
 export interface ParsedFile {
