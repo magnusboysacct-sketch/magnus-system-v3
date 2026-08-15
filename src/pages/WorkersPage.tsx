@@ -486,20 +486,32 @@ export default function WorkersPage() {
   async function loadWorkers() {
     setLoading(true);
     try {
-      // PostgREST silently caps an unranged .select() at its default
-      // max-rows (1000) — same bug confirmed and fixed on ExpensesPage.tsx.
-      // .range() raises that ceiling explicitly; the separate exact-count
-      // query isn't subject to the same row-return cap, so it keeps the
-      // headline total correct even past the .range() bound.
-      const [{ data, error: e }, { count }] = await Promise.all([
-        supabase.from("workers").select("*").eq("company_id", companyId!).order("first_name", { ascending: true }).range(0, 49999),
-        supabase.from("workers").select("*", { count: "exact", head: true }).eq("company_id", companyId!),
-      ]);
-      if (e) throw e;
-      setWorkers(data || []);
+      // Correction to the earlier fix here: PostgREST's max-rows cap
+      // (default 1000) is a HARD SERVER-SIDE limit — .range() only
+      // requests a window, it cannot force the server past its own
+      // configured ceiling in one response (confirmed on ExpensesPage.tsx,
+      // where the "N total" headline stayed correct via the separate
+      // count-only query, but the actual data array — and anything
+      // computed from it — was still silently capped). Real fix: loop
+      // requesting successive windows until a page comes back shorter
+      // than requested — the actual end of the data, regardless of what
+      // the server's true max-rows turns out to be.
+      const PAGE = 1000;
+      let all: any[] = [];
+      let from = 0;
+      for (let guard = 0; guard < 200; guard++) { // hard safety stop (200,000 rows) against a runaway loop, not a realistic ceiling
+        const { data: page, error: e } = await supabase
+          .from("workers").select("*").eq("company_id", companyId!).order("first_name", { ascending: true }).range(from, from + PAGE - 1);
+        if (e) throw e;
+        all = all.concat(page || []);
+        if (!page || page.length < PAGE) break;
+        from += PAGE;
+      }
+      const { count } = await supabase.from("workers").select("*", { count: "exact", head: true }).eq("company_id", companyId!);
+      setWorkers(all);
       setTotalCount(count ?? null);
-      console.log("FELICA PASSPORT:", data?.find((w:any)=>w.first_name==="FELICA")?.passport_photo_url);
-      return data || [];
+      console.log("FELICA PASSPORT:", all.find((w:any)=>w.first_name==="FELICA")?.passport_photo_url);
+      return all;
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   }

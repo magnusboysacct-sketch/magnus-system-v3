@@ -38,6 +38,32 @@ const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
 const STORAGE_KEY = "magnus_current_project_id";
 
+// PostgREST's max-rows cap (default 1000) is a HARD SERVER-SIDE limit —
+// .range() only requests a window, it cannot force the server past its
+// own configured ceiling in one response (this was the wrong assumption
+// in an earlier fix here, confirmed and corrected on ExpensesPage.tsx —
+// the "N total" headline stayed correct via a separate count-only query,
+// but the actual data array was still silently capped). Real fix: loop
+// requesting successive windows until a page comes back shorter than
+// requested — the actual end of the data, regardless of what the
+// server's true max-rows turns out to be. Shared by both query branches
+// below (director/admin company-wide, and the project_members-scoped
+// path — the latter is realistically bounded well under 1000 for any one
+// user, but paginating it too removes any lingering doubt at negligible cost).
+async function paginateAll<T>(buildQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>): Promise<{ data: T[]; error: any }> {
+  const PAGE = 1000;
+  let all: T[] = [];
+  let from = 0;
+  for (let guard = 0; guard < 200; guard++) { // hard safety stop (200,000 rows) against a runaway loop, not a realistic ceiling
+    const { data: page, error } = await buildQuery(from, from + PAGE - 1);
+    if (error) return { data: all, error };
+    all = all.concat(page || []);
+    if (!page || page.length < PAGE) break;
+    from += PAGE;
+  }
+  return { data: all, error: null };
+}
+
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [totalProjectsCount, setTotalProjectsCount] = useState<number | null>(null);
@@ -85,27 +111,27 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     let error: any = null;
     let totalCount: number | null = null;
     if (profileData.role === "director" || profileData.role === "admin") {
-      // PostgREST silently caps an unranged .select() at its default
-      // max-rows (1000) — same bug confirmed and fixed on ExpensesPage.tsx.
-      // .range() raises that ceiling explicitly; the separate exact-count
-      // query isn't subject to the same row-return cap, so ProjectsPage.tsx
-      // / DashboardPage.tsx's "N total" headline figures stay correct even
-      // past the .range() bound.
-      const [res, countRes] = await Promise.all([
-        supabase
-          .from("projects")
-          .select("id, name, client_id, status")
-          .eq("company_id", profileData.company_id)
-          .order("name", { ascending: true })
-          .range(0, 49999),
+      const [paged, countRes] = await Promise.all([
+        paginateAll<any>((from, to) =>
+          supabase
+            .from("projects")
+            .select("id, name, client_id, status")
+            .eq("company_id", profileData.company_id)
+            .order("name", { ascending: true })
+            .range(from, to)
+        ),
         supabase
           .from("projects")
           .select("id", { count: "exact", head: true })
           .eq("company_id", profileData.company_id),
       ]);
-      data = res.data;
-      error = res.error;
-      totalCount = countRes.count ?? null;
+      data = paged.data;
+      error = paged.error;
+      // Exact count is a separate, cheap query — not subject to the same
+      // row-return cap either way, but paginateAll above already gets the
+      // real total from the data itself now; kept for a second, independent
+      // confirmation and because it resolves in parallel rather than after.
+      totalCount = countRes.count ?? paged.data.length;
     } else {
       const { data: memberRows, error: memberError } = await supabase
         .from("project_members")
@@ -120,19 +146,22 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           data = [];
           totalCount = 0;
         } else {
-          const res = await supabase
-            .from("projects")
-            .select("id, name, client_id, status")
-            .in("id", projectIds)
-            .order("name", { ascending: true })
-            .range(0, 49999);
-          data = res.data;
-          error = res.error;
           // A restricted (non-director/admin) user's visible set is
           // inherently bounded by their own project_members rows, not the
-          // whole company — already accurate at this scale, no separate
-          // count query needed.
-          totalCount = res.data?.length ?? null;
+          // whole company — realistically well under 1000, but paginated
+          // via the same helper anyway rather than trusting a single
+          // .range() request not to be silently truncated.
+          const paged = await paginateAll<any>((from, to) =>
+            supabase
+              .from("projects")
+              .select("id, name, client_id, status")
+              .in("id", projectIds)
+              .order("name", { ascending: true })
+              .range(from, to)
+          );
+          data = paged.data;
+          error = paged.error;
+          totalCount = paged.data.length;
         }
       }
     }

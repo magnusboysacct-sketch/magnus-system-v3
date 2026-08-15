@@ -114,31 +114,44 @@ export default function ExpensesPage() {
   async function loadExpenses() {
     setLoading(true);
     try {
-      // PostgREST silently caps an unranged .select() at its default
-      // max-rows (1000) — this company already has 1558+ expenses after
-      // the recent bulk import, which was quietly truncated to 1000 with
-      // no error. .range() raises that ceiling explicitly; 49999 is far
-      // beyond any realistic near/medium-term row count for this app, not
-      // a number chosen to just barely cover today's data.
-      const [{ data, error: e }, { count }] = await Promise.all([
-        supabase
+      // Correction to the earlier fix here: PostgREST's max-rows cap
+      // (default 1000) is a HARD SERVER-SIDE limit — .range(0, 49999)
+      // only requests a window, it cannot force the server past its own
+      // configured ceiling. The server just silently returns up to
+      // max-rows regardless of what's asked for (HTTP 206, not an error),
+      // so that "fix" never actually worked for the real row data — it
+      // only looked like it worked because the "N total" headline number
+      // came from a separate count-only query (a response header, never
+      // subject to the row-data cap at all), while anything computed from
+      // the actual fetched array — like the Pending/Approved tab counts —
+      // was still silently capped at 1000. Confirmed by the exact split
+      // Veron reported: All correct (count-based), Pending wrong
+      // (array-based).
+      //
+      // Real fix: loop, requesting successive windows, until a page comes
+      // back shorter than requested — that's the actual end of the data,
+      // whatever the server's true max-rows turns out to be. Works
+      // regardless of that value, rather than trying to guess/out-request it.
+      const PAGE = 1000;
+      let all: any[] = [];
+      let from = 0;
+      for (let guard = 0; guard < 200; guard++) { // 200 * 1000 = 200,000 rows, a hard safety stop against a runaway loop, not a realistic ceiling
+        const { data: page, error: e } = await supabase
           .from("expenses")
           .select("*, projects(name), workers(first_name, last_name), expense_categories(name)")
           .eq("company_id", companyId!)
           .order("created_at", { ascending: false })
-          .range(0, 49999),
-        // Exact count is a separate, cheap query — not subject to the same
-        // row-return cap, so the headline total stays correct even if the
-        // company ever exceeds the .range() bound above (unlikely, but the
-        // whole point of this fix is not leaving another silent ceiling
-        // for later).
-        supabase
-          .from("expenses")
-          .select("*", { count: "exact", head: true })
-          .eq("company_id", companyId!),
-      ]);
-      if (e) throw e;
-      setExpenses(data || []);
+          .range(from, from + PAGE - 1);
+        if (e) throw e;
+        all = all.concat(page || []);
+        if (!page || page.length < PAGE) break; // short page — reached the actual end
+        from += PAGE;
+      }
+      const { count } = await supabase
+        .from("expenses")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", companyId!);
+      setExpenses(all);
       setTotalCount(count ?? null);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }

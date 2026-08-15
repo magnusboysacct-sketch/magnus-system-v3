@@ -276,6 +276,32 @@ export default function RatesPage() {
     localStorage.setItem("magnus_item_types",JSON.stringify(updated));
   }
 
+  // PostgREST's max-rows cap (default 1000) is a HARD SERVER-SIDE limit —
+  // .range() only requests a window, it cannot force the server past its
+  // own configured ceiling in one response (this was the wrong assumption
+  // in an earlier fix here, confirmed and corrected on ExpensesPage.tsx —
+  // the "N total" headline stayed correct via a separate count-only query,
+  // but the actual data array was still silently capped). Real fix: loop
+  // requesting successive windows until a page comes back shorter than
+  // requested — the actual end of the data, regardless of what the
+  // server's true max-rows turns out to be. Shared by both the initial
+  // load and reload() below (near-duplicate logic either way).
+  async function fetchAllCostItems(sel:string):Promise<{data:any[];error:any}>{
+    const PAGE=1000;
+    let all:any[]=[];
+    let from=0;
+    let lastError:any=null;
+    for(let guard=0;guard<200;guard++){ // hard safety stop (200,000 rows) against a runaway loop, not a realistic ceiling
+      const resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true}).range(from,from+PAGE-1);
+      if(resp.error){ lastError=resp.error; break; }
+      const page=resp.data as any[];
+      all=all.concat(page||[]);
+      if(!page||page.length<PAGE) break;
+      from+=PAGE;
+    }
+    return{data:all,error:lastError};
+  }
+
   useEffect(()=>{
     let alive=true;
     async function load(){
@@ -286,21 +312,12 @@ export default function RatesPage() {
         if(profile?.company_id&&alive) setCompanyId(profile.company_id);
       }
       const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-      // PostgREST silently caps an unranged .select() at its default
-      // max-rows (1000) — same bug confirmed and fixed on ExpensesPage.tsx.
-      // The global seed library alone spans a dozen+ categories plus
-      // whatever a company adds, so this view is a realistic candidate to
-      // approach or exceed that cap. .range() raises the ceiling
-      // explicitly; the separate exact-count query isn't subject to the
-      // same row-return cap, so it keeps the headline total correct even
-      // past the .range() bound.
-      let resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true}).range(0,49999);
-      if(resp.error){
-        console.error("RatesPage load error:",resp.error);
-        resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true}).range(0,49999);
+      let{data:rawItems,error:loadError}=await fetchAllCostItems(sel);
+      if(loadError){
+        console.error("RatesPage load error:",loadError);
+        ({data:rawItems,error:loadError}=await fetchAllCostItems(sel));
       }
       if(!alive) return;
-      const rawItems=resp.data as any[];
       const{count}=await supabase.from("v_cost_items_current").select("id",{count:"exact",head:true});
       if(!alive) return;
       setTotalCount(count??null);
@@ -321,9 +338,8 @@ export default function RatesPage() {
     async function load(){
       setLoading(true);
       const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-      let resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true}).range(0,49999);
+      const{data:rawItems}=await fetchAllCostItems(sel);
       if(!alive) return;
-      const rawItems=resp.data as any[];
       const{count}=await supabase.from("v_cost_items_current").select("id",{count:"exact",head:true});
       if(!alive) return;
       setTotalCount(count??null);
