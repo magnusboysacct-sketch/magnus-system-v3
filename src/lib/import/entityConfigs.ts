@@ -150,9 +150,48 @@ const PROJECT_STATUS_ALIASES: Record<string, string> = {
 // reasonably; this just centralizes the parse + reformat to the plain
 // YYYY-MM-DD Postgres date columns expect, and gives validateField/
 // buildPayload a single source of truth for "is this a usable date."
+// Excel/spreadsheet serial date numbers (e.g. "45314") arrive as bare
+// numeric strings once a CSV/XLSX cell with no format metadata gets
+// stringified. JS's Date constructor misinterprets a bare numeric string
+// as a YEAR NUMBER — new Date("45314") is January 1, year 45314, not
+// Jan 23 2024 — which still "looks valid" (passes isNaN) but produces a
+// malformed extended-year ISO string once .toISOString() runs
+// ("+045314-01-01T..." — a different format than the normal 4-digit-year
+// case), and slice(0,10) on THAT produces "+045314-01", not a real date.
+// That malformed value reaching Postgres is what "time zone displacement
+// out of range" actually was — confirmed by reproducing it directly
+// (new Date("45314").toISOString() -> "+045314-01-01T05:00:00.000Z"),
+// not guessed at.
+//
+// Fixed by detecting a bare numeric string and converting it via the
+// standard Excel epoch offset (serial 25569 = Jan 1 1970) — verified
+// against known reference points before using it, not trusted blindly:
+// serial 44927 -> Jan 1 2023, serial 45292 -> Jan 1 2024, both correct.
+// Known, understood, low-stakes gap: this offset is off by one day for
+// serials under ~60 (Jan/Feb 1900), from Excel's own well-documented
+// phantom 1900-leap-year bug — no real expense would plausibly be dated
+// there, so not worth the extra complexity to correct.
+//
+// A generous but bounded range (1-100000, roughly 1900-2173) avoids
+// misreading an unrelated all-digit date format (e.g. "20240123" for
+// YYYYMMDD) as a serial number — that falls through to the normal string
+// parsing path below instead.
 function parseLooseDate(raw: string): string | null {
-  const d = new Date(raw);
+  const trimmed = raw.trim();
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const serial = Number(trimmed);
+    if (serial >= 1 && serial <= 100000) {
+      const d = new Date((serial - 25569) * 86400 * 1000);
+      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    }
+  }
+  const d = new Date(trimmed);
   if (isNaN(d.getTime())) return null;
+  // Same bare-year misparse can't slip through the normal string-parsing
+  // path either — never trust a resulting year outside a sane 4-digit
+  // range before formatting it for the DB.
+  const year = d.getUTCFullYear();
+  if (year < 1000 || year > 9999) return null;
   return d.toISOString().slice(0, 10);
 }
 
