@@ -195,6 +195,22 @@ function parseLooseDate(raw: string): string | null {
   return d.toISOString().slice(0, 10);
 }
 
+// Shared remapValue helper for any date-typed field (Projects'
+// start_date/end_date, Expenses' expense_date) — converts via
+// parseLooseDate and writes the result back into `values`, same as any
+// other remapValue, so the Preview table shows the ACTUAL value that will
+// be sent to the DB (an Excel serial "45314" displays as "2024-01-23",
+// not the raw number) rather than only converting it later inside
+// buildPayload where the user never sees it. Returns undefined for a
+// genuinely invalid date, leaving the raw value in place so validateField's
+// existing "doesn't look like a valid date" error/warning still fires
+// exactly as before — this hook only ever reformats an already-parseable
+// value, it never changes what counts as valid.
+function remapDateField(rawValue: string): { value: string; usedFallback: boolean } | undefined {
+  const parsed = parseLooseDate(rawValue);
+  return parsed ? { value: parsed, usedFallback: false } : undefined;
+}
+
 const projectsConfig: EntityImportConfig = {
   key: "projects",
   label: "Projects",
@@ -267,6 +283,7 @@ const projectsConfig: EntityImportConfig = {
   // row, and flag the default in Preview so it's a visible, reviewable
   // choice, not a silent guess.
   remapValue(fieldKey, rawValue) {
+    if (fieldKey === "start_date" || fieldKey === "end_date") return remapDateField(rawValue);
     if (fieldKey !== "status") return undefined;
     const mapped = PROJECT_STATUS_ALIASES[rawValue.trim().toLowerCase()];
     if (mapped) return { value: mapped, usedFallback: false };
@@ -355,6 +372,14 @@ const expensesConfig: EntityImportConfig = {
       return "Doesn't look like a valid date";
     }
     return null;
+  },
+
+  // Converts expense_date (Excel serial numbers included) and writes the
+  // result back into `values`, so Preview shows the actual date that will
+  // be sent to the DB instead of a raw source number like "45314".
+  remapValue(fieldKey, rawValue) {
+    if (fieldKey !== "expense_date") return undefined;
+    return remapDateField(rawValue);
   },
 
   // description is often blank in real exports even though it's NOT NULL —
