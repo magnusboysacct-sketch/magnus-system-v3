@@ -194,6 +194,8 @@ export default function RatesPage() {
   const canDelete = userRole === "director";
   const canEdit = userRole === "director" || userRole === "estimator";
   const [items,setItems]=useState<CostItem[]>([]);
+  // Exact row count, independent of the fetch below — see load()/reload().
+  const [totalCount,setTotalCount]=useState<number|null>(null);
   const [loading,setLoading]=useState(true);
   const [companyId,setCompanyId]=useState<string>("");
   const [categoryFilter,setCategoryFilter]=useState<string>("__ALL__");
@@ -284,13 +286,24 @@ export default function RatesPage() {
         if(profile?.company_id&&alive) setCompanyId(profile.company_id);
       }
       const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-      let resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true});
+      // PostgREST silently caps an unranged .select() at its default
+      // max-rows (1000) — same bug confirmed and fixed on ExpensesPage.tsx.
+      // The global seed library alone spans a dozen+ categories plus
+      // whatever a company adds, so this view is a realistic candidate to
+      // approach or exceed that cap. .range() raises the ceiling
+      // explicitly; the separate exact-count query isn't subject to the
+      // same row-return cap, so it keeps the headline total correct even
+      // past the .range() bound.
+      let resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true}).range(0,49999);
       if(resp.error){
         console.error("RatesPage load error:",resp.error);
-        resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true});
+        resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true}).range(0,49999);
       }
       if(!alive) return;
       const rawItems=resp.data as any[];
+      const{count}=await supabase.from("v_cost_items_current").select("id",{count:"exact",head:true});
+      if(!alive) return;
+      setTotalCount(count??null);
       if(rawItems&&rawItems.length>0){
         const ids=rawItems.map(i=>i.id);
         const variants=await supabase.from("cost_items").select("id,variant,grade").in("id",ids);
@@ -308,9 +321,12 @@ export default function RatesPage() {
     async function load(){
       setLoading(true);
       const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
-      let resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true});
+      let resp=await supabase.from("v_cost_items_current").select(sel).order("item_name",{ascending:true}).range(0,49999);
       if(!alive) return;
       const rawItems=resp.data as any[];
+      const{count}=await supabase.from("v_cost_items_current").select("id",{count:"exact",head:true});
+      if(!alive) return;
+      setTotalCount(count??null);
       if(rawItems&&rawItems.length>0){
         const ids=rawItems.map(i=>i.id);
         const variants=await supabase.from("cost_items").select("id,variant,grade").in("id",ids);
@@ -386,7 +402,7 @@ export default function RatesPage() {
   const bulkTargetCount=useMemo(()=>filteredItems.filter(x=>x.current_rate!=null).length,[filteredItems]);
 
   // Stats
-  const total=items.length;
+  const total=totalCount??items.length;
   const priced=items.filter(i=>i.current_rate!=null).length;
   const coverage=total>0?Math.round((priced/total)*100):0;
   const typeCounts=useMemo(()=>{const c:Record<string,number>={};items.forEach(i=>{const t=i.item_type||"Other";c[t]=(c[t]||0)+1;});return c;},[items]);

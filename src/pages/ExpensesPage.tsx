@@ -61,6 +61,12 @@ function fmtDate(d: string | null) {
 export default function ExpensesPage() {
   const { projects, currentProject, userRole } = useProjectContext();
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  // Exact company-wide row count, independent of the fetch below — a
+  // separate { count: "exact", head: true } query isn't subject to
+  // PostgREST's row-return cap the way the actual data fetch is, so this
+  // stays correct as the headline "N total" figure even if the company
+  // ever grows past the .range() bound on the real fetch.
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -108,13 +114,32 @@ export default function ExpensesPage() {
   async function loadExpenses() {
     setLoading(true);
     try {
-      const { data, error: e } = await supabase
-        .from("expenses")
-        .select("*, projects(name), workers(first_name, last_name), expense_categories(name)")
-        .eq("company_id", companyId!)
-        .order("created_at", { ascending: false });
+      // PostgREST silently caps an unranged .select() at its default
+      // max-rows (1000) — this company already has 1558+ expenses after
+      // the recent bulk import, which was quietly truncated to 1000 with
+      // no error. .range() raises that ceiling explicitly; 49999 is far
+      // beyond any realistic near/medium-term row count for this app, not
+      // a number chosen to just barely cover today's data.
+      const [{ data, error: e }, { count }] = await Promise.all([
+        supabase
+          .from("expenses")
+          .select("*, projects(name), workers(first_name, last_name), expense_categories(name)")
+          .eq("company_id", companyId!)
+          .order("created_at", { ascending: false })
+          .range(0, 49999),
+        // Exact count is a separate, cheap query — not subject to the same
+        // row-return cap, so the headline total stays correct even if the
+        // company ever exceeds the .range() bound above (unlikely, but the
+        // whole point of this fix is not leaving another silent ceiling
+        // for later).
+        supabase
+          .from("expenses")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId!),
+      ]);
       if (e) throw e;
       setExpenses(data || []);
+      setTotalCount(count ?? null);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   }
@@ -239,7 +264,7 @@ export default function ExpensesPage() {
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader
         title="Expenses"
-        subtitle={`${expenses.length} total · ${fmt(totalAll)}`}
+        subtitle={`${totalCount ?? expenses.length} total · ${fmt(totalAll)}`}
         actions={
           <>
             <Btn variant="ghost" size="sm" icon={<Download size={13}/>} onClick={exportCSV}>Export</Btn>
@@ -266,7 +291,7 @@ export default function ExpensesPage() {
         {/* Tabs */}
         <Tabs
           tabs={[
-            { key: "all" as Tab,      label: "All",      count: expenses.length },
+            { key: "all" as Tab,      label: "All",      count: totalCount ?? expenses.length },
             { key: "pending" as Tab,  label: "Pending",  count: expenses.filter(e => e.status === "pending").length },
             { key: "approved" as Tab, label: "Approved", count: expenses.filter(e => e.status === "approved").length },
             { key: "filing" as Tab, label: "📁 Filing Cabinet", count: expenses.filter(e=>!!e.receipt_url).length },

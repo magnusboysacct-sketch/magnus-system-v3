@@ -154,6 +154,8 @@ export default function ClientsPage() {
   const { userRole } = useProjectContext();
   const canDelete = userRole === "director";
   const [clients, setClients] = useState<Client[]>([]);
+  // Exact row count, independent of the fetch below — see loadClients().
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
@@ -243,12 +245,18 @@ export default function ClientsPage() {
   async function loadClients() {
     setLoading(true);
     try {
-      const { data, error: e } = await supabase
-        .from("clients")
-        .select("*")
-        .order("name", { ascending: true });
+      // PostgREST silently caps an unranged .select() at its default
+      // max-rows (1000) — same bug confirmed and fixed on ExpensesPage.tsx.
+      // .range() raises that ceiling explicitly; the separate exact-count
+      // query isn't subject to the same row-return cap, so it keeps the
+      // headline total correct even past the .range() bound.
+      const [{ data, error: e }, { count }] = await Promise.all([
+        supabase.from("clients").select("*").order("name", { ascending: true }).range(0, 49999),
+        supabase.from("clients").select("*", { count: "exact", head: true }),
+      ]);
       if (e) throw e;
       setClients(data || []);
+      setTotalCount(count ?? null);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
   }
@@ -367,7 +375,7 @@ export default function ClientsPage() {
   });
 
   const stats = {
-    total: clients.length,
+    total: totalCount ?? clients.length,
     active: clients.filter(c => c.status === "active").length,
     inactive: clients.filter(c => c.status === "inactive").length,
   };

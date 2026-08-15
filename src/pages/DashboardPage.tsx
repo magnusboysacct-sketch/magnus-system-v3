@@ -19,7 +19,7 @@ const REMITTANCE_URGENCY_STYLE: Record<string, { icon: string; label: string; cl
 };
 
 export default function DashboardPage() {
-  const { projects, loadingProjects, userRole } = useProjectContext();
+  const { projects, totalProjectsCount, loadingProjects, userRole } = useProjectContext();
   const [loading, setLoading] = useState(true);
   // active/total intentionally NOT tracked here — they're derived directly
   // from `projects` (context) below, the same source the "Active Projects"
@@ -159,7 +159,7 @@ export default function DashboardPage() {
   );
 
   const KPIS = [
-    { label: "Active Projects", value: String(activeProjectsAll.length), sub: `of ${projects.length} total`, icon: <FolderOpen size={14}/>, iconBg: "bg-cyan-500/10 text-cyan-500 dark:text-cyan-300" },
+    { label: "Active Projects", value: String(activeProjectsAll.length), sub: `of ${totalProjectsCount ?? projects.length} total`, icon: <FolderOpen size={14}/>, iconBg: "bg-cyan-500/10 text-cyan-500 dark:text-cyan-300" },
     { label: "Active Budget",   value: fmt(stats.budget),    sub: undefined,                 icon: <DollarSign size={14}/>, iconBg: "bg-emerald-500/10 text-emerald-500 dark:text-emerald-300" },
     { label: "Open POs",        value: String(stats.openPOs),sub: undefined,                 icon: <ShoppingCart size={14}/>, iconBg: "bg-amber-500/10 text-amber-500 dark:text-amber-300" },
     { label: "Active Workers",  value: String(stats.workers),sub: undefined,                 icon: <Users size={14}/>, iconBg: "bg-violet-500/10 text-violet-500 dark:text-violet-300" },

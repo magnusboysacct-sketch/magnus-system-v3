@@ -263,7 +263,7 @@ function ProjectRow({ project, client, onClick, onCloseOut, onEdit, onDelete, on
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ProjectsPage() {
-  const { projects, loadingProjects, refreshProjects, currentProjectId, setCurrentProjectId } = useProjectContext();
+  const { projects, totalProjectsCount, loadingProjects, refreshProjects, currentProjectId, setCurrentProjectId } = useProjectContext();
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -324,7 +324,7 @@ export default function ProjectsPage() {
   });
 
   const stats = {
-    total: projects.length,
+    total: totalProjectsCount ?? projects.length,
     active: projects.filter(p => p.status === "active").length,
     completed: projects.filter(p => p.status === "completed").length,
     onHold: projects.filter(p => p.status === "on_hold").length,

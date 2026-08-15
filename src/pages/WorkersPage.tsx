@@ -423,6 +423,8 @@ export default function WorkersPage() {
   const canDelete = userRole === "director" || userRole === "site_supervisor";
   const canAddWorker = canManageWorkers(userRole);
   const [workers, setWorkers] = useState<Worker[]>([]);
+  // Exact row count, independent of the fetch above — see loadWorkers().
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
@@ -484,13 +486,18 @@ export default function WorkersPage() {
   async function loadWorkers() {
     setLoading(true);
     try {
-      const { data, error: e } = await supabase
-        .from("workers")
-        .select("*")
-        .eq("company_id", companyId!)
-        .order("first_name", { ascending: true });
+      // PostgREST silently caps an unranged .select() at its default
+      // max-rows (1000) — same bug confirmed and fixed on ExpensesPage.tsx.
+      // .range() raises that ceiling explicitly; the separate exact-count
+      // query isn't subject to the same row-return cap, so it keeps the
+      // headline total correct even past the .range() bound.
+      const [{ data, error: e }, { count }] = await Promise.all([
+        supabase.from("workers").select("*").eq("company_id", companyId!).order("first_name", { ascending: true }).range(0, 49999),
+        supabase.from("workers").select("*", { count: "exact", head: true }).eq("company_id", companyId!),
+      ]);
       if (e) throw e;
       setWorkers(data || []);
+      setTotalCount(count ?? null);
       console.log("FELICA PASSPORT:", data?.find((w:any)=>w.first_name==="FELICA")?.passport_photo_url);
       return data || [];
     } catch (e: any) { setError(e.message); }
@@ -664,7 +671,7 @@ export default function WorkersPage() {
   });
 
   const stats = {
-    total: workers.length,
+    total: totalCount ?? workers.length,
     active: workers.filter(w => w.status === "active").length,
     inactive: workers.filter(w => w.status === "inactive").length,
     terminated: workers.filter(w => w.status === "terminated").length,

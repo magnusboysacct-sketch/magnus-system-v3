@@ -17,6 +17,14 @@ export type ProjectOption = {
 
 type ProjectContextType = {
   projects: ProjectOption[];
+  // Exact company-wide project count, independent of the `projects` array
+  // above — see loadProjects(). Purely additive: existing consumers that
+  // only read `projects` (its own length included) are entirely
+  // unaffected; ProjectsPage.tsx and DashboardPage.tsx's "N total"
+  // headline figures use this instead, since projects.length is subject
+  // to the same PostgREST 1000-row cap already found and fixed elsewhere
+  // in this app.
+  totalProjectsCount: number | null;
   currentProjectId: string | null;
   currentProject: ProjectOption | null;
   loadingProjects: boolean;
@@ -32,6 +40,7 @@ const STORAGE_KEY = "magnus_current_project_id";
 
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [totalProjectsCount, setTotalProjectsCount] = useState<number | null>(null);
   const [currentProjectId, setCurrentProjectIdState] = useState<string | null>(null);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -74,14 +83,29 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     // only sees projects they've been assigned to via project_members.
     let data: any[] | null = null;
     let error: any = null;
+    let totalCount: number | null = null;
     if (profileData.role === "director" || profileData.role === "admin") {
-      const res = await supabase
-        .from("projects")
-        .select("id, name, client_id, status")
-        .eq("company_id", profileData.company_id)
-        .order("name", { ascending: true });
+      // PostgREST silently caps an unranged .select() at its default
+      // max-rows (1000) — same bug confirmed and fixed on ExpensesPage.tsx.
+      // .range() raises that ceiling explicitly; the separate exact-count
+      // query isn't subject to the same row-return cap, so ProjectsPage.tsx
+      // / DashboardPage.tsx's "N total" headline figures stay correct even
+      // past the .range() bound.
+      const [res, countRes] = await Promise.all([
+        supabase
+          .from("projects")
+          .select("id, name, client_id, status")
+          .eq("company_id", profileData.company_id)
+          .order("name", { ascending: true })
+          .range(0, 49999),
+        supabase
+          .from("projects")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", profileData.company_id),
+      ]);
       data = res.data;
       error = res.error;
+      totalCount = countRes.count ?? null;
     } else {
       const { data: memberRows, error: memberError } = await supabase
         .from("project_members")
@@ -94,14 +118,21 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         const projectIds = (memberRows || []).map((m: any) => m.project_id);
         if (projectIds.length === 0) {
           data = [];
+          totalCount = 0;
         } else {
           const res = await supabase
             .from("projects")
             .select("id, name, client_id, status")
             .in("id", projectIds)
-            .order("name", { ascending: true });
+            .order("name", { ascending: true })
+            .range(0, 49999);
           data = res.data;
           error = res.error;
+          // A restricted (non-director/admin) user's visible set is
+          // inherently bounded by their own project_members rows, not the
+          // whole company — already accurate at this scale, no separate
+          // count query needed.
+          totalCount = res.data?.length ?? null;
         }
       }
     }
@@ -109,9 +140,12 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (error) {
       console.error("Failed to load projects:", error);
       setProjects([]);
+      setTotalProjectsCount(null);
       setLoadingProjects(false);
       return;
     }
+
+    setTotalProjectsCount(totalCount);
 
     const rows: ProjectOption[] = (data || []).map((p: any) => ({
       id: p.id,
@@ -166,6 +200,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<ProjectContextType>(
     () => ({
       projects,
+      totalProjectsCount,
       currentProjectId,
       currentProject,
       loadingProjects,
@@ -174,7 +209,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       setCurrentProjectId,
       refreshProjects: loadProjects,
     }),
-    [projects, currentProjectId, currentProject, loadingProjects, userRole, userId, setCurrentProjectId, loadProjects]
+    [projects, totalProjectsCount, currentProjectId, currentProject, loadingProjects, userRole, userId, setCurrentProjectId, loadProjects]
   );
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
