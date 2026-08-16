@@ -65,6 +65,7 @@ import SettingsMasterListsPage      from "./pages/SettingsMasterListsPage";
 import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import SettingsCostCodesPage  from "./pages/SettingsCostCodesPage";
 import SettingsUsersPage      from "./pages/SettingsUsersPage";
+import SettingsImportPage     from "./pages/SettingsImportPage";
 import BillingPage            from "./pages/BillingPage";
 import UpgradePage from "./pages/UpgradePage";
 import JamaicanPayrollMonitoringPage from "./pages/JamaicanPayrollMonitoringPage";
@@ -298,6 +299,7 @@ export default function App() {
               <Route path="/settings/cost-codes"           element={<RoleGuard allowedRoles={["director"]}><SettingsCostCodesPage /></RoleGuard>} />
               <Route path="/settings/users"                element={<RoleGuard allowedRoles={["director"]}><SettingsUsersPage /></RoleGuard>} />
               <Route path="/settings/records"              element={<RoleGuard allowedRoles={["director"]}><SettingsRecordsPage /></RoleGuard>} />
+              <Route path="/settings/import"               element={<RoleGuard allowedRoles={["director"]}><SettingsImportPage /></RoleGuard>} />
               <Route path="/settings/company"              element={<Navigate to="/settings" replace />} />
 
               {/* Admin / Payroll */}
