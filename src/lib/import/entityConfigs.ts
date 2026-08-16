@@ -763,13 +763,23 @@ const suppliersConfig: EntityImportConfig = {
   async fetchExisting(companyId: string): Promise<ExistingRecord[]> {
     const { data, error } = await supabase
       .from("suppliers")
-      .select("id, supplier_name, email")
+      .select("id, supplier_name, email, contact_name")
       .eq("company_id", companyId);
     if (error) throw error;
     return (data || []).map(s => ({
       id: s.id,
       label: s.supplier_name,
-      keys: [normalizeEmail(s.email), normalizeKey(s.supplier_name)].filter(Boolean),
+      // contact_name added as a third candidate key so a Bill's Vendor
+      // Name of e.g. "CARL SIMPSON" (the real contact on file for "CARL
+      // RENTAL"/"Carl Trucking", confirmed against Veron's real Bill.csv
+      // data) resolves too, not just an exact business-name match. Only
+      // reachable via a lookup field once SettingsImportPage.tsx indexes
+      // by every key here, not just label — see that file's comment.
+      // ImportWizard.tsx's processRawRow flags a resolution that lands
+      // via a non-primary key as a distinct warning, so a contact-name
+      // match is never silently accepted without being visible in
+      // Preview.
+      keys: [normalizeEmail(s.email), normalizeKey(s.supplier_name), normalizeKey(s.contact_name)].filter(Boolean),
     }));
   },
 
@@ -824,6 +834,387 @@ const suppliersConfig: EntityImportConfig = {
   },
 };
 
+// ─── Bills (supplier_invoices table) ─────────────────────────────────────────
+//
+// Real table per the confirmed live migrations, NOT a generic "bills"
+// guess: supplier_invoices (header, in the same finance-ERP migration as
+// client_invoices) + supplier_invoice_line_items (child, added by the
+// three-way-matching migration). This is genuinely the AP/Bills concept —
+// createSupplierInvoice in finance.ts is a plain insert, no hidden side
+// effects; performThreeWayMatch/autoApproveMatchedInvoice are separate,
+// explicitly-called RPCs never triggered automatically, so leaving
+// purchase_order_id/po_matched/three_way_match_status untouched on import
+// is safe.
+//
+// Real, concrete schema differences from client_invoices/client_invoice_
+// line_items — verified against the live migrations before writing this,
+// not assumed from the Invoices precedent:
+//   - status vocabulary is different: pending/approved/partial/paid/
+//     disputed (no "draft", no "overdue", no "cancelled" here).
+//   - no tax_rate column at all on supplier_invoices (client_invoices has
+//     one) — only tax_amount needs deriving, not a rate.
+//   - supplier_invoices has a shipping_amount column client_invoices
+//     doesn't; nothing in Zoho's Bill.csv maps to it, left at its DB
+//     default (0).
+//   - supplier_invoice_line_items has NO company_id column at all (client_
+//     invoice_line_items does) — including it in the insert payload would
+//     fail outright.
+//   - supplier_invoice_line_items' CHECK constraints are stricter:
+//     quantity must be > 0 (client_invoice_line_items had no such CHECK),
+//     unit_cost/total_amount must be >= 0, and unit has NO DB default
+//     (client_invoice_line_items defaults it to 'ea') — must be set
+//     explicitly in buildLineItemPayload or every insert fails.
+//
+// Zoho's real Bill Status values (confirmed by Veron against the actual
+// 343-row Bill.csv): only "Paid" and "Overdue" ever appear. "Paid" maps
+// directly. "Overdue" has no equivalent value in this app's vocabulary at
+// all (there's no "overdue" status here) — resolved by computing
+// amount_paid the same way buildBillHeaderPayload already needs to
+// (total_amount - balance_due): if something has genuinely been paid
+// already but not the full amount, "partial" is the more accurate status
+// than "approved"; if literally nothing has been paid, "approved" (a
+// real, already-incurred bill, just not yet paid — NOT "pending", which
+// in this app's own Expenses convention means "awaiting review," not true
+// of historical migrated data). A blank or otherwise-unrecognized status
+// defaults to "pending" (confirmed) — deliberately a DIFFERENT default
+// than the confident "approved" above, since a truly unknown status
+// hasn't told us anything concrete, unlike a confirmed-Overdue-with-
+// nothing-paid bill.
+const BILL_STATUS_UNRECOGNIZED_DEFAULT = "pending";
+
+function buildBillHeaderPayload(headerValues: Record<string, any>, lookups: LookupMaps, companyId: string): Record<string, any> {
+  const supplierMatch = resolveLookup(headerValues.supplier_id, lookups.suppliers);
+  const projectMatch = resolveLookup(headerValues.project_id, lookups.projects);
+
+  const subtotalRaw = toNumber(headerValues.subtotal);
+  const subtotal = isFinite(subtotalRaw) ? subtotalRaw : 0;
+  const totalRaw = toNumber(headerValues.total_amount);
+  const total = isFinite(totalRaw) ? totalRaw : subtotal;
+  const balanceRaw = toNumber(headerValues.balance_due);
+  const balanceDue = isFinite(balanceRaw) ? balanceRaw : total;
+
+  const taxAmount = total - subtotal;
+  const amountPaid = total - balanceDue;
+
+  return {
+    company_id: companyId,
+    supplier_id: supplierMatch ? supplierMatch.id : null,
+    project_id: projectMatch ? projectMatch.id : null,
+    invoice_number: String(headerValues.invoice_number).trim(),
+    invoice_date: headerValues.invoice_date ? parseLooseDate(String(headerValues.invoice_date)) : null,
+    due_date: headerValues.due_date ? parseLooseDate(String(headerValues.due_date)) : null,
+    subtotal,
+    tax_amount: taxAmount,
+    total_amount: total,
+    amount_paid: amountPaid,
+    balance_due: balanceDue,
+    status: headerValues.status || BILL_STATUS_UNRECOGNIZED_DEFAULT,
+    notes: `Migrated from Zoho Bill.csv import (Bill ${headerValues.invoice_number ? String(headerValues.invoice_number).trim() : "?"}).`,
+  };
+}
+
+const billsConfig: EntityImportConfig = {
+  key: "bills",
+  label: "Bills",
+  table: "supplier_invoices",
+  lineItemTable: "supplier_invoice_line_items",
+  groupByField: "invoice_number",
+  dedupEnabled: true,
+  // supplier_id's own lookupEntityKey ("suppliers") only gets that one map
+  // loaded — validateFieldWithLookups on that same field separately needs
+  // lookups.workers to check for the subcontractor-routing case. Without
+  // this, lookups.workers would never be fetched at all for a Bills run,
+  // and the exclusion check would silently never trigger (resolveLookup
+  // against an undefined map just returns null) — caught while tracing
+  // the lookup-loading path end to end before shipping this.
+  additionalLookupSources: ["workers"],
+
+  fields: [
+    { key: "invoice_number", label: "Bill Number", required: true, type: "text",
+      aliases: ["bill number", "bill no", "bill #", "vendor invoice number", "invoice number"] },
+    { key: "invoice_date", label: "Bill Date", required: true, type: "date",
+      aliases: ["bill date", "invoice date", "date"] },
+    { key: "due_date", label: "Due Date", required: true, type: "date",
+      aliases: ["due date", "payment due date"] },
+    // type "lookup" (not "text") — buildGroupHeaderPayload needs a real
+    // resolved supplier_id for the FK column, unlike Field Payments'
+    // worker_name below which stores the raw text directly.
+    { key: "supplier_id", label: "Vendor", required: false, type: "lookup", lookupEntityKey: "suppliers",
+      aliases: ["vendor name", "vendor", "supplier", "supplier name"] },
+    { key: "project_id", label: "Project", required: false, type: "lookup", lookupEntityKey: "projects",
+      aliases: ["project name", "project", "job", "job name"] },
+    { key: "status", label: "Status", required: false, type: "select",
+      options: [
+        { value: "pending", label: "Pending" }, { value: "approved", label: "Approved" },
+        { value: "partial", label: "Partial" }, { value: "paid", label: "Paid" },
+        { value: "disputed", label: "Disputed" },
+      ],
+      aliases: ["bill status", "status"] },
+    { key: "subtotal", label: "Subtotal", required: false, type: "number",
+      aliases: ["subtotal", "sub total"] },
+    { key: "total_amount", label: "Total", required: false, type: "number",
+      aliases: ["total", "bill total", "grand total"] },
+    { key: "balance_due", label: "Balance Due", required: false, type: "number",
+      aliases: ["balance", "balance due", "amount due", "outstanding balance"] },
+    // Line-item fields — quantity/rate both required (a line item missing
+    // either is excluded, not defaulted, per the DB's own > 0 / >= 0
+    // constraints below); item_total optional, falls back to
+    // quantity * rate when Zoho doesn't provide it.
+    { key: "item_name", label: "Item Name", required: true, type: "text", isLineItemField: true,
+      aliases: ["item name", "item", "description", "service", "product/service"] },
+    { key: "quantity", label: "Quantity", required: true, type: "number", isLineItemField: true,
+      aliases: ["quantity", "qty"] },
+    { key: "rate", label: "Rate", required: true, type: "number", isLineItemField: true,
+      aliases: ["rate", "unit price", "item price", "price", "unit cost"] },
+    { key: "item_total", label: "Item Total", required: false, type: "number", isLineItemField: true,
+      aliases: ["item total", "line total"] },
+  ],
+
+  async fetchExisting(companyId: string): Promise<ExistingRecord[]> {
+    const { data, error } = await supabase
+      .from("supplier_invoices")
+      .select("id, invoice_number")
+      .eq("company_id", companyId);
+    if (error) throw error;
+    return (data || []).map(inv => ({ id: inv.id, label: inv.invoice_number, keys: [normalizeKey(inv.invoice_number)] }));
+  },
+
+  matchKeysFor(values) {
+    return values.invoice_number ? [normalizeKey(String(values.invoice_number))] : [];
+  },
+
+  validateField(field, value) {
+    if ((field.key === "invoice_date" || field.key === "due_date") && !parseLooseDate(String(value))) {
+      return "Doesn't look like a valid date";
+    }
+    if (field.key === "quantity") {
+      const n = toNumber(value);
+      if (!isFinite(n) || isNaN(n)) return "Doesn't look like a valid number";
+      if (n <= 0) return "Quantity must be greater than 0"; // matches the DB's own CHECK (quantity > 0)
+      return null;
+    }
+    if (field.key === "rate" || field.key === "item_total") {
+      const n = toNumber(value);
+      if (!isFinite(n) || isNaN(n)) return "Doesn't look like a valid number";
+      if (n < 0) return "Can't be negative"; // matches the DB's own CHECK (>= 0)
+      return null;
+    }
+    if (["subtotal", "total_amount", "balance_due"].includes(field.key)) {
+      const n = toNumber(value);
+      if (!isFinite(n) || isNaN(n)) return "Doesn't look like a valid number";
+    }
+    return null;
+  },
+
+  // Bills vs Field Payments both read the same uploaded Bill.csv — a
+  // vendor that positively resolves to a known Worker means this is a
+  // subcontractor labor payment (Zoho had no subcontractor concept, so
+  // these were entered as vendors), not a real Bill. Unresolved (matches
+  // neither a Supplier nor a Worker) still imports as a Bill — same
+  // non-blocking-lookup treatment every other plain lookup field gets.
+  validateFieldWithLookups(field, value, lookups) {
+    if (field.key !== "supplier_id") return null;
+    const workerMatch = resolveLookup(String(value), lookups.workers);
+    if (workerMatch) {
+      return `"${value}" matches field worker "${workerMatch.label}" — this looks like a subcontractor labor payment, not a real vendor bill. Import via Field Payments instead.`;
+    }
+    return null;
+  },
+
+  remapValue(fieldKey, rawValue, values) {
+    if (fieldKey === "invoice_date" || fieldKey === "due_date") return remapDateField(rawValue);
+    if (fieldKey !== "status") return undefined;
+    const raw = rawValue.trim().toLowerCase();
+    if (raw === "paid") return { value: "paid", usedFallback: false };
+    if (raw === "overdue") {
+      const total = toNumber(values?.total_amount);
+      const balance = toNumber(values?.balance_due);
+      const safeTotal = isFinite(total) ? total : 0;
+      const safeBalance = isFinite(balance) ? balance : safeTotal;
+      const amountPaid = safeTotal - safeBalance;
+      // Recognized either way — this isn't a fallback for an unrecognized
+      // value, it's a computed decision between two real, deliberately
+      // different mappings for the same Zoho status. usedFallback stays
+      // false for both branches; Preview already shows the resulting
+      // status directly alongside the Total/Balance columns, so the
+      // underlying arithmetic is visible without an extra warning message
+      // that would otherwise have to (incorrectly) claim "not recognized."
+      if (amountPaid > 0 && amountPaid < safeTotal) return { value: "partial", usedFallback: false };
+      return { value: "approved", usedFallback: false };
+    }
+    return { value: BILL_STATUS_UNRECOGNIZED_DEFAULT, usedFallback: true };
+  },
+
+  // No buildFallback — a bill line item's item_name has no natural
+  // fallback source in Zoho's Bill.csv, so a genuinely blank one is
+  // correctly excluded by the plain required-field check.
+
+  buildPayload(values, lookups, companyId) {
+    return buildBillHeaderPayload(values, lookups, companyId);
+  },
+
+  buildGroupHeaderPayload(headerValues, _lineItems, lookups, companyId) {
+    return buildBillHeaderPayload(headerValues, lookups, companyId);
+  },
+
+  // tax_amount is purely derived (no config.fields entry of its own) —
+  // same reasoning as Invoices' buildGroupHeaderUpdateExtras. No tax_rate
+  // here at all (supplier_invoices has no such column), so this is
+  // simpler than the Invoices version.
+  buildGroupHeaderUpdateExtras(headerValues, headerPayload) {
+    const hasRaw = (k: string) => {
+      const raw = headerValues[k];
+      return raw !== undefined && raw !== null && String(raw).trim() !== "";
+    };
+    if (hasRaw("subtotal") && hasRaw("total_amount") && hasRaw("balance_due")) {
+      return { tax_amount: headerPayload.tax_amount, amount_paid: headerPayload.amount_paid };
+    }
+    return {};
+  },
+
+  buildLineItemPayload(lineItemValues, lineNumber, headerId) {
+    const itemName = lineItemValues.item_name ? String(lineItemValues.item_name).trim() : "Item";
+    const quantity = toNumber(lineItemValues.quantity);
+    const unitCost = toNumber(lineItemValues.rate);
+    const providedTotal = toNumber(lineItemValues.item_total);
+    const totalAmount = isFinite(providedTotal) ? providedTotal : quantity * unitCost;
+    return {
+      // No company_id — supplier_invoice_line_items has no such column
+      // (confirmed against the live migration; unlike client_invoice_line_items).
+      supplier_invoice_id: headerId,
+      line_no: lineNumber,
+      item_name: itemName,
+      unit: "ea", // no DB default on this table's unit column — must be set explicitly
+      quantity,
+      unit_cost: unitCost,
+      total_amount: totalAmount,
+    };
+  },
+};
+
+// ─── Field Payments (field_payments table) ───────────────────────────────────
+//
+// Real table per the confirmed live migration — genuinely surprising
+// finding worth being explicit about: field_payments has NO foreign key
+// to workers at all (confirmed across the entire migration history, not
+// assumed). worker_name is plain `text NOT NULL`; worker_id_number is a
+// text field for an ID *document* number, not a worker_id FK. So unlike
+// every lookup field elsewhere in this wizard, worker_name below is type
+// "text", not "lookup" — buildPayload stores the raw name directly, there
+// is no id to resolve. lookupEntityKey is still set (see below) purely so
+// validateFieldWithLookups can consult the workers lookup map for
+// classification — SettingsImportPage.tsx loads a lookup by
+// lookupEntityKey presence alone now, not also gated on type === "lookup".
+//
+// No header/line-item structure at all (the only child table is
+// field_payment_signatures — signatures, unrelated to line items) — so
+// unlike Bills, this entity is NOT grouped. Each of Bill.csv's 343
+// underlying rows becomes its own field_payments record directly (one
+// line item = one payment), which is exactly the shape every ordinary
+// (non-grouped) entity already handles with zero new mechanism.
+//
+// payment_method (NOT NULL, no DB default) hardcoded to "cash" for every
+// imported record — confirmed, matches the live FieldPaymentForm.tsx's
+// own default for a brand-new payment. status hardcoded to "completed" —
+// confirmed, these are historical records of payments that already
+// happened, not new drafts awaiting a live signature capture. Neither is
+// exposed as a mappable field since both are fixed for this whole import.
+//
+// No dedup (dedupEnabled: false) — same reasoning as Expenses: multiple
+// legitimate payments to the same worker on the same day for different
+// work are completely normal, not duplicates.
+const fieldPaymentsConfig: EntityImportConfig = {
+  key: "field_payments",
+  label: "Field Payments",
+  table: "field_payments",
+  dedupEnabled: false,
+
+  fields: [
+    { key: "worker_name", label: "Vendor Name", required: true, type: "text", lookupEntityKey: "workers",
+      aliases: ["vendor name", "vendor", "worker", "worker name", "subcontractor", "subcontractor name"] },
+    { key: "work_type", label: "Work Done", required: true, type: "text",
+      aliases: ["item name", "work type", "work description", "description", "task", "service"] },
+    // Bill Date, not Due Date — a closer real-world proxy for when the
+    // work actually happened; Due Date is a payment deadline, often well
+    // after the fact.
+    { key: "work_date", label: "Work Date", required: true, type: "date",
+      aliases: ["bill date", "work date", "date"] },
+    { key: "total_amount", label: "Amount", required: true, type: "number",
+      aliases: ["item total", "amount", "total"] },
+    { key: "project_id", label: "Project", required: false, type: "lookup", lookupEntityKey: "projects",
+      aliases: ["project name", "project", "job", "job name"] },
+    // Not persisted directly (field_payments has no quantity/rate/bill-
+    // number columns) — quantity/rate exist only to let buildPayload fall
+    // back to quantity * rate on the rare row missing Item Total;
+    // bill_number exists only to build a traceable note.
+    { key: "quantity", label: "Quantity", required: false, type: "number",
+      aliases: ["quantity", "qty"] },
+    { key: "rate", label: "Rate", required: false, type: "number",
+      aliases: ["rate", "unit price", "item price", "price"] },
+    { key: "bill_number", label: "Bill Number", required: false, type: "text",
+      aliases: ["bill number", "bill no", "bill #"] },
+  ],
+
+  async fetchExisting() { return []; }, // dedup disabled — never called, present only to satisfy the type
+  matchKeysFor() { return []; },        // same — dedup disabled, never called
+
+  validateField(field, value) {
+    if (field.key === "work_date" && !parseLooseDate(String(value))) return "Doesn't look like a valid date";
+    if (["total_amount", "quantity", "rate"].includes(field.key)) {
+      const n = toNumber(value);
+      if (!isFinite(n) || isNaN(n)) return "Doesn't look like a valid number";
+    }
+    return null;
+  },
+
+  // Inverse of Bills' rule: only a POSITIVE Worker match belongs here.
+  // Resolves to a Supplier, or to nothing at all, means this isn't
+  // confirmed as a subcontractor labor payment — excluded rather than
+  // guessed, with the reason visible in Preview (it may still belong in
+  // Bills, imported via that config's own separate pass instead).
+  validateFieldWithLookups(field, value, lookups) {
+    if (field.key !== "worker_name") return null;
+    const workerMatch = resolveLookup(String(value), lookups.workers);
+    if (!workerMatch) {
+      return `"${value}" doesn't match a known field worker — not importing as a Field Payment (may belong in Bills instead).`;
+    }
+    return null;
+  },
+
+  remapValue(fieldKey, rawValue) {
+    if (fieldKey !== "work_date") return undefined;
+    return remapDateField(rawValue);
+  },
+
+  buildFallback(fieldKey) {
+    // Matches FieldPaymentForm.tsx's own live fallback convention for a
+    // payment with no specific task description.
+    if (fieldKey === "work_type") return "Work Payment";
+    return null;
+  },
+
+  buildPayload(values, lookups, companyId) {
+    const projectMatch = resolveLookup(values.project_id, lookups.projects);
+    const quantity = toNumber(values.quantity);
+    const rate = toNumber(values.rate);
+    const providedTotal = toNumber(values.total_amount);
+    const totalAmount = isFinite(providedTotal) ? providedTotal
+      : (isFinite(quantity) && isFinite(rate) ? quantity * rate : 0);
+    const billRef = values.bill_number ? String(values.bill_number).trim() : null;
+    return {
+      company_id: companyId,
+      project_id: projectMatch ? projectMatch.id : null,
+      worker_name: String(values.worker_name).trim(),
+      work_type: String(values.work_type).trim(),
+      work_date: values.work_date ? parseLooseDate(String(values.work_date)) : null,
+      total_amount: totalAmount,
+      payment_method: "cash",
+      status: "completed",
+      notes: billRef ? `Migrated from Zoho Bill.csv (Bill ${billRef}).` : "Migrated from Zoho Bill.csv import.",
+    };
+  },
+};
+
 // Lookup-only target for Expenses' category field — not a directly-
 // importable entity (Veron never runs a separate "import categories" pass),
 // just something another entity's field can resolve/create against.
@@ -838,6 +1229,26 @@ const expenseCategoriesLookup: LookupSource = {
   },
 };
 
+// Lookup-only target for Bills' vendor-type classification and Field
+// Payments' worker_name field — not a directly-importable entity via THIS
+// wizard round (workers were populated by a one-off SQL data migration,
+// not this wizard); label built from first_name + last_name since workers
+// stores them as separate NOT NULL columns rather than one combined name
+// field the way clients/suppliers do.
+const workersLookup: LookupSource = {
+  async fetchExisting(companyId: string): Promise<ExistingRecord[]> {
+    const { data, error } = await supabase
+      .from("workers")
+      .select("id, first_name, last_name")
+      .eq("company_id", companyId);
+    if (error) throw error;
+    return (data || []).map(w => {
+      const fullName = `${w.first_name || ""} ${w.last_name || ""}`.trim();
+      return { id: w.id, label: fullName || w.first_name, keys: [normalizeKey(fullName)].filter(Boolean) };
+    });
+  },
+};
+
 // ─── Registry ───────────────────────────────────────────────────────────────
 // The wizard's entity picker walks ENTITY_CONFIGS, so sequencing (Clients
 // -> Projects -> Expenses) is enforced just by array order.
@@ -847,6 +1258,8 @@ export const ENTITY_CONFIGS: EntityImportConfig[] = [
   expensesConfig,
   invoicesConfig,
   suppliersConfig,
+  billsConfig,
+  fieldPaymentsConfig,
 ];
 
 export function getEntityConfig(key: string): EntityImportConfig | undefined {
@@ -857,11 +1270,14 @@ export function getEntityConfig(key: string): EntityImportConfig | undefined {
 // full EntityImportConfig already satisfies LookupSource for free (its own
 // fetchExisting) — registering clients/projects here costs nothing — plus
 // lookup-only targets that aren't themselves importable, like
-// expense_categories. SettingsImportPage.tsx uses this (not ENTITY_CONFIGS)
+// expense_categories and workers (workers were populated by a one-off SQL
+// data migration this session, not this wizard — see the workersLookup
+// comment above). SettingsImportPage.tsx uses this (not ENTITY_CONFIGS)
 // to build the live lookup maps a wizard's fields declare.
 export const LOOKUP_SOURCES: Record<string, LookupSource> = {
   clients: clientsConfig,
   projects: projectsConfig,
   expense_categories: expenseCategoriesLookup,
   suppliers: suppliersConfig,
+  workers: workersLookup,
 };

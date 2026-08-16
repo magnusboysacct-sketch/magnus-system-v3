@@ -128,6 +128,21 @@ export interface EntityImportConfig {
   fields: ImportFieldConfig[];
   dedupEnabled: boolean; // false for Expenses per the approved plan — no dedup, always "create"
 
+  // Lookup maps this config needs loaded beyond what its own fields'
+  // lookupEntityKey values already imply — SettingsImportPage.tsx's
+  // "which lookup maps does this entity need" computation is normally
+  // driven entirely by scanning field.lookupEntityKey, but a
+  // validateFieldWithLookups check can need a DIFFERENT lookup than the
+  // field's own (e.g. Bills' supplier_id field resolves against
+  // lookups.suppliers for its own FK, via its own lookupEntityKey, but
+  // validateFieldWithLookups on that same field ALSO needs
+  // lookups.workers loaded, to check whether the vendor is actually a
+  // subcontractor rather than a real supplier — a single field can only
+  // declare one lookupEntityKey, so there's no way to express "also load
+  // this other map" without this). Omit when every lookup a config needs
+  // already comes from its own fields' lookupEntityKey values.
+  additionalLookupSources?: string[];
+
   // Fetches existing company rows and computes each one's normalized match
   // keys, for both dedup (this entity) and lookup resolution (entities
   // later in the chain that reference this one).
@@ -144,6 +159,27 @@ export interface EntityImportConfig {
   // Return null when valid.
   validateField?: (field: ImportFieldConfig, value: any) => string | null;
 
+  // Like validateField, but for a check that genuinely can't be answered
+  // without a lookup — e.g. Bills vs Field Payments both reading the same
+  // uploaded Bill.csv, split by whether a vendor name resolves to a
+  // Supplier or a Worker. plain validateField has no access to `lookups`
+  // at all, which is why this is a separate hook rather than an extra
+  // parameter bolted onto it.
+  //
+  // Deliberately does NOT follow validateField's required-vs-optional
+  // gating (a non-required field's validateField error is downgraded to a
+  // non-blocking warning with the field cleared — see processRawRow). A
+  // non-null return here is ALWAYS a blocking error, regardless of
+  // field.required, because this hook exists to answer "does this row
+  // belong in this entity's destination table at all," not "is this
+  // field's format acceptable" — those are orthogonal concerns, and a
+  // routing/classification mismatch should never be quietly downgraded to
+  // a warning just because the field itself happens to be optional (e.g.
+  // Bills' supplier field is a plain non-blocking lookup for normal
+  // resolution purposes, but a positive Worker match on it must still
+  // exclude the whole row).
+  validateFieldWithLookups?: (field: ImportFieldConfig, value: any, lookups: LookupMaps) => string | null;
+
   // General value-normalization hook for a field whose raw text needs
   // mapping to one of a fixed set of canonical values that won't match
   // verbatim what source systems actually export — e.g. Zoho's Projects
@@ -154,8 +190,14 @@ export interface EntityImportConfig {
   // untouched. `usedFallback: true` means the raw text didn't match
   // anything recognized and a default was substituted — flagged as a
   // non-blocking warning in Preview, same treatment as any other optional-
-  // field format issue; it never blocks the row.
-  remapValue?: (fieldKey: string, rawValue: string) => { value: string; usedFallback: boolean } | undefined;
+  // field format issue; it never blocks the row. `values` (the row's full
+  // mapped-values-so-far) is passed for the rare case a remap decision
+  // needs another field's value — e.g. Bills' "Overdue" Zoho status maps
+  // to this app's "partial" or "approved" depending on whether
+  // subtotal/total_amount/balance_due show a partial payment already
+  // made. Optional third parameter — every existing remapValue
+  // implementation that doesn't need it is unaffected.
+  remapValue?: (fieldKey: string, rawValue: string, values: Record<string, any>) => { value: string; usedFallback: boolean } | undefined;
 
   // General robustness hook for a required field that's commonly blank in
   // real-world exports across accounting/CRM systems (not specific to any

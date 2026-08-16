@@ -93,7 +93,7 @@ function processRawRow(
       // remapped value (already canonical) isn't then flagged as invalid by
       // a validator written against the canonical set.
       const rawText = String(v);
-      const remapped = config.remapValue(field.key, rawText);
+      const remapped = config.remapValue(field.key, rawText, values);
       if (remapped) {
         values[field.key] = remapped.value;
         v = remapped.value;
@@ -112,7 +112,23 @@ function processRawRow(
         fieldWarnings.push({ fieldKey: field.key, message: field.createIfMissing
           ? `${field.label}: "${v}" doesn't exist yet — will be created on import`
           : `${field.label}: "${v}" didn't match any existing ${field.lookupEntityKey} — will import without a link` });
+      } else if (normalizeKey(String(v)) !== normalizeKey(resolved.label)) {
+        // Resolved, but not via the record's own primary name (e.g. a
+        // Bill's Vendor Name of "CARL SIMPSON" resolving against a
+        // supplier's contact_name rather than its supplier_name) — never
+        // silently accept this without flagging it, since it's a real
+        // possibility for a different value to have matched than the one
+        // actually typed.
+        fieldWarnings.push({ fieldKey: field.key, message: `${field.label}: "${v}" matched via a secondary field on "${resolved.label}" — verify this is correct` });
       }
+    }
+    if (!stillBlank && config.validateFieldWithLookups) {
+      // Always blocking when non-null, regardless of field.required — see
+      // the EntityImportConfig.validateFieldWithLookups comment in
+      // types.ts for why this can't just reuse validateField's
+      // required-vs-optional gating below.
+      const lookupErr = config.validateFieldWithLookups(field, v, lookups);
+      if (lookupErr) fieldErrors.push({ fieldKey: field.key, message: lookupErr });
     }
     if (!stillBlank && config.validateField) {
       const err = config.validateField(field, v);
@@ -798,7 +814,16 @@ function PreviewStep({ config, rows, counts, onRowAction, onBulkDuplicateAction,
   const requiredDisplay = columnCandidates.filter(f => f.required);
   const optionalFields = columnCandidates.filter(f => !f.required);
   const priorityOptional = optionalFields.filter(f => f.multiSource || f.type === "lookup").concat(optionalFields.filter(f => !f.multiSource && f.type !== "lookup"));
-  const displayFields = requiredDisplay.concat(priorityOptional).slice(0, 6);
+  // The 6-column cap exists to keep an ordinary (one-row-per-record)
+  // entity's Preview table from getting overwhelming when there are many
+  // optional fields competing for space. A grouped entity (Invoices,
+  // Bills) doesn't have that pressure the same way — there's only one row
+  // per GROUP, not per underlying CSV row, and its header fields are
+  // often exactly the numbers worth double-checking before import (e.g.
+  // Bills' computed status needs Total/Balance visible to sanity-check —
+  // both were silently getting cut by this same cap for Invoices too,
+  // discovered while reviewing this for Bills, not something new here).
+  const displayFields = config.groupByField ? requiredDisplay.concat(priorityOptional) : requiredDisplay.concat(priorityOptional).slice(0, 6);
   const importCount = counts.willCreate + counts.willUpdate;
 
   return (
