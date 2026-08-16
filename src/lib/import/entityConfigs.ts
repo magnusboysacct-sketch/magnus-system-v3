@@ -5,7 +5,7 @@
 // and Expenses). Registering a future entity is: write a config object,
 // add it to ENTITY_CONFIGS below. The wizard shell never changes.
 import { supabase } from "../supabase";
-import type { EntityImportConfig, ExistingRecord, LookupSource } from "./types";
+import type { EntityImportConfig, ExistingRecord, LookupSource, LookupMaps } from "./types";
 import { normalizeEmail, normalizeKey, resolveLookup } from "./matching";
 
 // ─── Clients ────────────────────────────────────────────────────────────────
@@ -431,6 +431,261 @@ const expensesConfig: EntityImportConfig = {
   },
 };
 
+// ─── Invoices ───────────────────────────────────────────────────────────────
+//
+// The first grouped entity — Zoho's real Invoice.csv (confirmed by Veron:
+// 71 data rows) has one row per LINE ITEM, not one row per invoice:
+// invoice-level fields (Invoice Number, Invoice Date, Invoice Status,
+// Customer Name, Due Date, SubTotal, Total, Balance, Project Name) repeat
+// identically across every row belonging to the same invoice; Item Name/
+// Item Desc/Quantity/Item Price/Item Total vary per row. groupByField:
+// "invoice_number" tells the wizard shell to group underlying rows before
+// building one PreviewRow per invoice (see buildGroupedPreviewRows in
+// ImportWizard.tsx) and write two tables per group instead of one.
+//
+// Real tables per the confirmed live migrations (NOT the same as any
+// generic "invoices" guess): client_invoices (header) — invoice_number/
+// invoice_date/due_date NOT NULL, no UNIQUE constraint on invoice_number
+// (dedup here is app-level, same as every other entity); client_id/
+// project_id nullable FKs; status CHECK-constrained to draft/sent/partial/
+// paid/overdue/cancelled, DEFAULT 'draft'; subtotal/tax_rate/tax_amount/
+// total_amount/amount_paid/balance_due all DEFAULT 0. client_invoice_line_
+// items (child) — invoice_id NOT NULL REFERENCES client_invoices(id) ON
+// DELETE CASCADE, description NOT NULL, quantity/rate/amount NOT NULL with
+// DB-level defaults, line_number NOT NULL DEFAULT 1.
+//
+// Aggregate math, confirmed by Veron: use Zoho's own SubTotal/Total/Balance
+// directly rather than recomputing from line items (which could drift —
+// Zoho's real totals may reflect tax/discount/shipping fields this import
+// never sees). tax_amount/tax_rate/amount_paid are then derived
+// arithmetically from those three real numbers so this app's own fields
+// stay internally consistent (tax_amount = total - subtotal; tax_rate is a
+// RECONSTRUCTED APPROXIMATION back-calculated from that, since Zoho's
+// export doesn't carry a stored rate directly — confirmed OK for
+// historical/migrated data; amount_paid = total - balance_due).
+//
+// Client/Project are plain non-blocking lookups, same pattern as Projects'
+// client_id and Expenses' project_id — never created, an unresolved
+// reference just imports with that field null (flagged as a warning).
+//
+// Line items: item_name is the real per-line description Zoho uses
+// (Demolition, Excavation, ...); item_desc is optional extra detail. Both
+// quantity and rate (Item Price) are required at the field level — a line
+// item missing either is excluded from import (surfaced as "N of M line
+// items — K skipped" in Preview) without blocking the rest of the invoice,
+// per Veron's explicit design. item_total is NOT required: when Zoho
+// provides it, it's trusted as-is (preserves exact historical figures,
+// any rounding included); when it's missing, buildLineItemPayload falls
+// back to quantity * rate, matching this app's own live AccountsReceivable
+// page logic (updateLineItem: amount = quantity * rate).
+const INVOICE_STATUS_ALIASES: Record<string, string> = {
+  draft: "draft",
+  sent: "sent", "not sent": "sent", pending: "sent", open: "sent", unpaid: "sent", unbilled: "sent",
+  overdue: "overdue", late: "overdue", "past due": "overdue",
+  partial: "partial", "partially paid": "partial", "part payment": "partial", "part paid": "partial",
+  paid: "paid", "payment received": "paid", closed: "paid", complete: "paid", completed: "paid",
+  cancelled: "cancelled", canceled: "cancelled", void: "cancelled", voided: "cancelled",
+};
+
+function toNumber(raw: any): number {
+  if (raw === undefined || raw === null || String(raw).trim() === "") return NaN;
+  return Number(String(raw).replace(/[,$]/g, ""));
+}
+
+// Shared by both buildPayload (never actually called by the wizard shell for
+// a grouped entity, but required by the EntityImportConfig type — kept
+// genuinely correct rather than a stub, in case anything ever calls it
+// directly) and buildGroupHeaderPayload (the one the shell really uses).
+function buildInvoiceHeaderPayload(headerValues: Record<string, any>, lookups: LookupMaps, companyId: string): Record<string, any> {
+  const clientMatch = resolveLookup(headerValues.client_id, lookups.clients);
+  const projectMatch = resolveLookup(headerValues.project_id, lookups.projects);
+
+  const subtotalRaw = toNumber(headerValues.subtotal);
+  const subtotal = isFinite(subtotalRaw) ? subtotalRaw : 0;
+  const totalRaw = toNumber(headerValues.total_amount);
+  const total = isFinite(totalRaw) ? totalRaw : subtotal;
+  const balanceRaw = toNumber(headerValues.balance_due);
+  const balanceDue = isFinite(balanceRaw) ? balanceRaw : total;
+
+  const taxAmount = total - subtotal;
+  const taxRate = subtotal > 0 ? Math.round((taxAmount / subtotal) * 10000) / 100 : 0;
+  const amountPaid = total - balanceDue;
+
+  return {
+    company_id: companyId,
+    invoice_number: String(headerValues.invoice_number).trim(),
+    invoice_date: headerValues.invoice_date ? parseLooseDate(String(headerValues.invoice_date)) : null,
+    due_date: headerValues.due_date ? parseLooseDate(String(headerValues.due_date)) : null,
+    client_id: clientMatch ? clientMatch.id : null,
+    project_id: projectMatch ? projectMatch.id : null,
+    // Historical/migrated invoices are essentially never genuinely "draft"
+    // — "sent" is the safe default both for a blank status and for any
+    // unrecognized Zoho status string (see remapValue below; a blank value
+    // never reaches remapValue at all, so it's defaulted here instead).
+    status: headerValues.status || "sent",
+    subtotal,
+    tax_rate: taxRate,
+    tax_amount: taxAmount,
+    total_amount: total,
+    amount_paid: amountPaid,
+    balance_due: balanceDue,
+  };
+}
+
+const invoicesConfig: EntityImportConfig = {
+  key: "invoices",
+  label: "Invoices",
+  table: "client_invoices",
+  lineItemTable: "client_invoice_line_items",
+  groupByField: "invoice_number",
+  dedupEnabled: true,
+
+  fields: [
+    { key: "invoice_number", label: "Invoice Number", required: true, type: "text",
+      aliases: ["invoice number", "invoice no", "invoice #", "inv number", "inv #", "number"] },
+    { key: "invoice_date", label: "Invoice Date", required: true, type: "date",
+      aliases: ["invoice date", "date"] },
+    { key: "due_date", label: "Due Date", required: true, type: "date",
+      aliases: ["due date", "payment due date"] },
+    { key: "client_id", label: "Client", required: false, type: "lookup", lookupEntityKey: "clients",
+      aliases: ["customer name", "customer", "client", "client name", "account name", "company name"] },
+    { key: "project_id", label: "Project", required: false, type: "lookup", lookupEntityKey: "projects",
+      aliases: ["project name", "project", "job", "job name"] },
+    { key: "status", label: "Status", required: false, type: "select",
+      options: [
+        { value: "draft", label: "Draft" }, { value: "sent", label: "Sent" },
+        { value: "partial", label: "Partial" }, { value: "paid", label: "Paid" },
+        { value: "overdue", label: "Overdue" }, { value: "cancelled", label: "Cancelled" },
+      ],
+      aliases: ["invoice status", "status"] },
+    { key: "subtotal", label: "Subtotal", required: false, type: "number",
+      aliases: ["subtotal", "sub total"] },
+    { key: "total_amount", label: "Total", required: false, type: "number",
+      aliases: ["total", "invoice total", "grand total"] },
+    { key: "balance_due", label: "Balance Due", required: false, type: "number",
+      aliases: ["balance", "balance due", "amount due", "outstanding balance"] },
+    // ── Line-item fields (isLineItemField: true) — one value per underlying
+    // row, collected into GroupedLineItem[] rather than a single value.
+    { key: "item_name", label: "Item Name", required: true, type: "text", isLineItemField: true,
+      aliases: ["item name", "item", "product name", "product/service"] },
+    { key: "item_desc", label: "Item Description", required: false, type: "text", isLineItemField: true,
+      aliases: ["item desc", "item description"] },
+    { key: "quantity", label: "Quantity", required: true, type: "number", isLineItemField: true,
+      aliases: ["quantity", "qty"] },
+    { key: "rate", label: "Unit Price", required: true, type: "number", isLineItemField: true,
+      aliases: ["item price", "rate", "unit price", "price"] },
+    { key: "item_total", label: "Line Total", required: false, type: "number", isLineItemField: true,
+      aliases: ["item total", "line total"] },
+  ],
+
+  async fetchExisting(companyId: string): Promise<ExistingRecord[]> {
+    const { data, error } = await supabase
+      .from("client_invoices")
+      .select("id, invoice_number")
+      .eq("company_id", companyId);
+    if (error) throw error;
+    return (data || []).map(inv => ({
+      id: inv.id,
+      label: inv.invoice_number,
+      keys: [normalizeKey(inv.invoice_number)],
+    }));
+  },
+
+  matchKeysFor(values) {
+    return values.invoice_number ? [normalizeKey(String(values.invoice_number))] : [];
+  },
+
+  validateField(field, value) {
+    if ((field.key === "invoice_date" || field.key === "due_date") && !parseLooseDate(String(value))) {
+      return "Doesn't look like a valid date";
+    }
+    if (["quantity", "rate", "item_total", "subtotal", "total_amount", "balance_due"].includes(field.key)) {
+      const n = toNumber(value);
+      if (!isFinite(n) || isNaN(n)) return "Doesn't look like a valid number";
+    }
+    return null;
+  },
+
+  remapValue(fieldKey, rawValue) {
+    if (fieldKey === "invoice_date" || fieldKey === "due_date") return remapDateField(rawValue);
+    if (fieldKey !== "status") return undefined;
+    const mapped = INVOICE_STATUS_ALIASES[rawValue.trim().toLowerCase()];
+    if (mapped) return { value: mapped, usedFallback: false };
+    return { value: "sent", usedFallback: true };
+  },
+
+  // item_name is the real per-line description; a row that only has Item
+  // Desc mapped (no Item Name) still gets a usable description instead of
+  // being excluded outright.
+  buildFallback(fieldKey, values) {
+    if (fieldKey !== "item_name") return null;
+    if (values.item_desc && String(values.item_desc).trim()) return String(values.item_desc).trim();
+    return null;
+  },
+
+  // Never actually invoked by the wizard shell for a grouped entity
+  // (runImport branches to buildGroupHeaderPayload/buildLineItemPayload
+  // before this would be called) — required by the type, kept genuinely
+  // correct rather than a stub.
+  buildPayload(values, lookups, companyId) {
+    return buildInvoiceHeaderPayload(values, lookups, companyId);
+  },
+
+  buildGroupHeaderPayload(headerValues, _lineItems, lookups, companyId) {
+    return buildInvoiceHeaderPayload(headerValues, lookups, companyId);
+  },
+
+  // tax_amount/tax_rate/amount_paid have no config.fields entry of their
+  // own (they're derived, not directly mapped) — the shell's normal
+  // update-payload loop would otherwise never touch them on a re-import,
+  // leaving stale figures if an invoice's real Total/Balance changed.
+  // Only include them when subtotal, total_amount, AND balance_due were
+  // ALL provided by this row — otherwise buildInvoiceHeaderPayload's own
+  // fallback chain (subtotal defaults to 0, total falls back to subtotal,
+  // balance falls back to total) would derive tax figures from partly-
+  // fabricated zeros and silently overwrite real existing data with them.
+  buildGroupHeaderUpdateExtras(headerValues, headerPayload) {
+    const hasRaw = (k: string) => {
+      const raw = headerValues[k];
+      return raw !== undefined && raw !== null && String(raw).trim() !== "";
+    };
+    if (hasRaw("subtotal") && hasRaw("total_amount") && hasRaw("balance_due")) {
+      return { tax_amount: headerPayload.tax_amount, tax_rate: headerPayload.tax_rate, amount_paid: headerPayload.amount_paid };
+    }
+    return {};
+  },
+
+  buildLineItemPayload(lineItemValues, lineNumber, headerId, _headerValues, companyId) {
+    const itemName = lineItemValues.item_name ? String(lineItemValues.item_name).trim() : "";
+    const itemDesc = lineItemValues.item_desc ? String(lineItemValues.item_desc).trim() : "";
+    const description = itemName || itemDesc || "Item";
+    // Only carry item_desc into notes when it's genuinely EXTRA information
+    // beyond what's already used as the description — avoids duplicating
+    // the same text into both columns when item_name was blank and
+    // buildFallback already promoted item_desc into the description slot.
+    const notes = (itemName && itemDesc) ? itemDesc : null;
+
+    const quantityRaw = toNumber(lineItemValues.quantity);
+    const quantity = isFinite(quantityRaw) ? quantityRaw : 1;
+    const rateRaw = toNumber(lineItemValues.rate);
+    const rate = isFinite(rateRaw) ? rateRaw : 0;
+    const providedAmount = toNumber(lineItemValues.item_total);
+    const amount = isFinite(providedAmount) ? providedAmount : quantity * rate;
+
+    return {
+      invoice_id: headerId,
+      company_id: companyId,
+      line_number: lineNumber,
+      description,
+      quantity,
+      unit: "ea",
+      rate,
+      amount,
+      notes,
+    };
+  },
+};
+
 // Lookup-only target for Expenses' category field — not a directly-
 // importable entity (Veron never runs a separate "import categories" pass),
 // just something another entity's field can resolve/create against.
@@ -452,6 +707,7 @@ export const ENTITY_CONFIGS: EntityImportConfig[] = [
   clientsConfig,
   projectsConfig,
   expensesConfig,
+  invoicesConfig,
 ];
 
 export function getEntityConfig(key: string): EntityImportConfig | undefined {

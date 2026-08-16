@@ -11,12 +11,216 @@ import { parseImportFile } from "../../lib/import/parseFile";
 import { headerMatchesAlias, normalizeForMatch, normalizeKey, resolveLookup } from "../../lib/import/matching";
 import type {
   EntityImportConfig, ParsedFile, ColumnMapping, PreviewRow,
-  ExistingRecord, RowOutcome, DedupAction, LookupMaps,
+  ExistingRecord, RowOutcome, DedupAction, LookupMaps, FieldIssue, GroupedLineItem,
 } from "../../lib/import/types";
 import { Card, CardHeader, Btn, Badge, Select, Alert, Table, Th, Tr, Td, Progress, Spinner, cn } from "../ui";
 import { Upload, ArrowLeft, ArrowRight, Check, AlertTriangle, RefreshCw } from "lucide-react";
 
 type Step = "upload" | "map" | "preview" | "importing" | "result";
+
+// ─── Shared per-row processing ───────────────────────────────────────────────
+//
+// Column-mapping + required/fallback/remap/lookup/validate logic for exactly
+// ONE underlying parsed row. Used directly by the ordinary (one-row-per-
+// record) Preview path below, and — per row, before grouping — by a grouped
+// entity's (e.g. Invoices) Preview path too, so the two paths can never
+// silently drift apart. Errors/warnings come back tagged with the field key
+// they belong to (FieldIssue), not as plain strings, specifically so a
+// grouped entity can tell a header-field problem (blocks the whole group)
+// apart from a line-item-field problem (excludes just that one line item)
+// without parsing formatted message strings back apart. The ordinary path
+// just maps `.message` off each issue to reproduce the exact flat-string
+// behavior it had before this was extracted.
+function processRawRow(
+  row: Record<string, string>,
+  headers: string[],
+  mapping: ColumnMapping,
+  config: EntityImportConfig,
+  lookups: LookupMaps
+): { values: Record<string, any>; fieldErrors: FieldIssue[]; fieldWarnings: FieldIssue[]; fallbackFields: string[] } {
+  const values: Record<string, any> = {};
+  // Group mapped headers by target field, preserving the uploaded file's own
+  // column order — matters for multiSource fields (e.g. address), whose
+  // parts get concatenated in that order.
+  const headersByField = new Map<string, string[]>();
+  for (const header of headers) {
+    const fieldKey = mapping[header];
+    if (!fieldKey) continue;
+    if (!headersByField.has(fieldKey)) headersByField.set(fieldKey, []);
+    headersByField.get(fieldKey)!.push(header);
+  }
+  for (const field of config.fields) {
+    const fieldHeaders = headersByField.get(field.key);
+    if (!fieldHeaders || fieldHeaders.length === 0) continue;
+    if (field.multiSource && fieldHeaders.length > 1) {
+      const joinWith = field.joinWith ?? ", ";
+      const parts = fieldHeaders.map(h => (row[h] ?? "").trim()).filter(Boolean);
+      values[field.key] = parts.join(joinWith);
+    } else {
+      values[field.key] = row[fieldHeaders[0]] ?? "";
+    }
+  }
+
+  // Format errors on a REQUIRED field block the row — there's no usable
+  // fallback. A format error on an OPTIONAL field must not block the whole
+  // row from importing — instead, drop just that field's value back to
+  // unmapped so buildPayload's own default takes over, and note it as a
+  // (non-blocking) warning surfaced in the preview table.
+  const fieldErrors: FieldIssue[] = [];
+  const fieldWarnings: FieldIssue[] = [];
+  const fallbackFields: string[] = [];
+  for (const field of config.fields) {
+    let v = values[field.key];
+    const isBlank = v === undefined || v === null || String(v).trim() === "";
+    if (field.required && isBlank) {
+      // Required-but-commonly-blank fields (e.g. expenses.description) get
+      // one chance at a config-supplied fallback derived from the row's
+      // other mapped values before this row is excluded outright.
+      const fallback = config.buildFallback?.(field.key, values);
+      if (fallback && String(fallback).trim() !== "") {
+        values[field.key] = fallback;
+        v = fallback;
+        fallbackFields.push(field.key);
+      } else {
+        fieldErrors.push({ fieldKey: field.key, message: `${field.label} is required` });
+        continue;
+      }
+    }
+    const stillBlank = v === undefined || v === null || String(v).trim() === "";
+    if (!stillBlank && config.remapValue) {
+      // e.g. Zoho's Projects status "Active" -> this app's exact
+      // CHECK-constraint value "active". Runs before validateField so a
+      // remapped value (already canonical) isn't then flagged as invalid by
+      // a validator written against the canonical set.
+      const rawText = String(v);
+      const remapped = config.remapValue(field.key, rawText);
+      if (remapped) {
+        values[field.key] = remapped.value;
+        v = remapped.value;
+        if (remapped.usedFallback) fieldWarnings.push({ fieldKey: field.key, message: `${field.label}: "${rawText}" not recognized — defaulted to "${remapped.value}"` });
+      }
+    }
+    if (!stillBlank && field.type === "lookup" && field.lookupEntityKey) {
+      // Doesn't block the row either way — flagged here so it's visible
+      // before committing, not discovered only after the fact.
+      // createIfMissing fields (e.g. Expenses' category) will actually
+      // create a new record during the real import step (never here —
+      // Preview must stay side-effect-free); plain lookup fields (e.g.
+      // Projects' client) just import with that field left null.
+      const resolved = resolveLookup(String(v), lookups[field.lookupEntityKey]);
+      if (!resolved) {
+        fieldWarnings.push({ fieldKey: field.key, message: field.createIfMissing
+          ? `${field.label}: "${v}" doesn't exist yet — will be created on import`
+          : `${field.label}: "${v}" didn't match any existing ${field.lookupEntityKey} — will import without a link` });
+      }
+    }
+    if (!stillBlank && config.validateField) {
+      const err = config.validateField(field, v);
+      if (err) {
+        if (field.required) fieldErrors.push({ fieldKey: field.key, message: `${field.label}: ${err}` });
+        else { fieldWarnings.push({ fieldKey: field.key, message: `${field.label}: ${err} — left blank` }); delete values[field.key]; }
+      }
+    }
+  }
+  return { values, fieldErrors, fieldWarnings, fallbackFields };
+}
+
+// Groups a parsed file's underlying rows into one PreviewRow per logical
+// record for a grouped entity (e.g. Invoices — one row per line item in the
+// source export, invoice-level fields repeated identically across every row
+// belonging to the same invoice). Runs processRawRow per underlying row
+// first — identical field-level handling to the ordinary path — then groups
+// by the normalized value of config.groupByField.
+function buildGroupedPreviewRows(
+  parsedFile: ParsedFile,
+  mapping: ColumnMapping,
+  config: EntityImportConfig,
+  lookups: LookupMaps,
+  existingIndex: Map<string, ExistingRecord>
+): PreviewRow[] {
+  const groupField = config.groupByField!;
+  const isLineItemKey = (key: string) => config.fields.find(f => f.key === key)?.isLineItemField === true;
+
+  const processed = parsedFile.rows.map((row, rowIndex) => ({
+    rowIndex,
+    ...processRawRow(row, parsedFile.headers, mapping, config, lookups),
+  }));
+
+  // A row whose group key comes out blank (e.g. no Invoice Number
+  // mapped/present on that row) still needs to surface as an error, not
+  // vanish silently — it becomes its own single-row group instead of being
+  // merged into (or lost from) any other group.
+  const groupOrder: string[] = [];
+  const groupsByKey = new Map<string, typeof processed>();
+  for (const r of processed) {
+    const raw = r.values[groupField];
+    const key = raw ? normalizeKey(String(raw)) : `__ungrouped_${r.rowIndex}`;
+    if (!groupsByKey.has(key)) { groupsByKey.set(key, []); groupOrder.push(key); }
+    groupsByKey.get(key)!.push(r);
+  }
+
+  return groupOrder.map(key => {
+    const groupRows = groupsByKey.get(key)!;
+    const first = groupRows[0];
+
+    // Header values: the group's first row's non-line-item field values.
+    // Header fields repeat identically across every row in a well-formed
+    // export, so the first row is representative of the whole group.
+    const headerValues: Record<string, any> = {};
+    for (const [k, v] of Object.entries(first.values)) {
+      if (!isLineItemKey(k)) headerValues[k] = v;
+    }
+
+    // Header-level errors/warnings come from the first row's field-tagged
+    // issues on non-line-item fields only — a line item's own problem (a
+    // bad quantity, say) must never block the whole invoice.
+    const headerErrors = first.fieldErrors.filter(fi => !isLineItemKey(fi.fieldKey)).map(fi => fi.message);
+    const headerWarningsFromFirst = first.fieldWarnings.filter(fi => !isLineItemKey(fi.fieldKey)).map(fi => fi.message);
+    const headerFallbackFields = first.fallbackFields.filter(k => !isLineItemKey(k));
+
+    // Line items: one entry per underlying row, holding only that row's
+    // line-item-marked field values. A row whose line-item fields have
+    // errors is still included here (so its raw data + error stays
+    // visible/traceable) but excluded from what actually gets created.
+    const lineItems: GroupedLineItem[] = groupRows.map(r => {
+      const lineValues: Record<string, any> = {};
+      for (const [k, v] of Object.entries(r.values)) {
+        if (isLineItemKey(k)) lineValues[k] = v;
+      }
+      const lineErrors = r.fieldErrors.filter(fi => isLineItemKey(fi.fieldKey)).map(fi => fi.message);
+      return { values: lineValues, errors: lineErrors, sourceRowIndex: r.rowIndex };
+    });
+
+    const validLineItems = lineItems.filter(li => li.errors.length === 0);
+    const invalidCount = lineItems.length - validLineItems.length;
+    const warnings = [...headerWarningsFromFirst];
+    if (invalidCount > 0) {
+      warnings.push(`${invalidCount} of ${lineItems.length} line item${lineItems.length === 1 ? "" : "s"} couldn't be read and will be skipped`);
+    }
+
+    let match: ExistingRecord | null = null;
+    if (config.dedupEnabled) {
+      for (const k of config.matchKeysFor(headerValues, lookups)) {
+        const found = k ? existingIndex.get(k) : undefined;
+        if (found) { match = found; break; }
+      }
+    }
+
+    const action: DedupAction = headerErrors.length > 0 ? "skip" : (match ? "skip" : "create");
+
+    return {
+      rowIndex: first.rowIndex,
+      values: headerValues,
+      errors: headerErrors,
+      warnings,
+      fallbackFields: headerFallbackFields,
+      match,
+      action,
+      lineItems,
+      groupRowIndexes: groupRows.map(r => r.rowIndex),
+    };
+  });
+}
 
 const STEPS: { key: Step; label: string }[] = [
   { key: "upload", label: "Upload" },
@@ -102,109 +306,24 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
         for (const k of rec.keys) if (k && !existingIndex.has(k)) existingIndex.set(k, rec);
       }
 
-      const rows: PreviewRow[] = parsedFile.rows.map((row, rowIndex) => {
-        const values: Record<string, any> = {};
-        // Group mapped headers by target field, preserving the uploaded
-        // file's own column order — matters for multiSource fields (e.g.
-        // address), whose parts get concatenated in that order (a real
-        // export's Billing Address/City/State/Country columns are already
-        // in a sensible left-to-right order, so this reads naturally
-        // without needing a separate explicit-ordering UI).
-        const headersByField = new Map<string, string[]>();
-        for (const header of parsedFile.headers) {
-          const fieldKey = mapping[header];
-          if (!fieldKey) continue;
-          if (!headersByField.has(fieldKey)) headersByField.set(fieldKey, []);
-          headersByField.get(fieldKey)!.push(header);
-        }
-        for (const field of config.fields) {
-          const headers = headersByField.get(field.key);
-          if (!headers || headers.length === 0) continue;
-          if (field.multiSource && headers.length > 1) {
-            const joinWith = field.joinWith ?? ", ";
-            const parts = headers.map(h => (row[h] ?? "").trim()).filter(Boolean);
-            values[field.key] = parts.join(joinWith);
-          } else {
-            values[field.key] = row[headers[0]] ?? "";
-          }
-        }
+      const rows: PreviewRow[] = config.groupByField
+        ? buildGroupedPreviewRows(parsedFile, mapping, config, lookups, existingIndex)
+        : parsedFile.rows.map((row, rowIndex) => {
+            const { values, fieldErrors, fieldWarnings, fallbackFields } = processRawRow(row, parsedFile.headers, mapping, config, lookups);
+            const errors = fieldErrors.map(fi => fi.message);
+            const warnings = fieldWarnings.map(fi => fi.message);
 
-        // Format errors on a REQUIRED field block the row — there's no
-        // usable fallback. A format error on an OPTIONAL field must not
-        // block the whole row from importing (a malformed status/email
-        // value on one row shouldn't stop everything else on that row from
-        // being saved) — instead, drop just that field's value back to
-        // unmapped so buildPayload's own default takes over, and note it as
-        // a (non-blocking) warning surfaced in the preview table.
-        const errors: string[] = [];
-        const warnings: string[] = [];
-        const fallbackFields: string[] = [];
-        for (const field of config.fields) {
-          let v = values[field.key];
-          const isBlank = v === undefined || v === null || String(v).trim() === "";
-          if (field.required && isBlank) {
-            // Required-but-commonly-blank fields (e.g. expenses.description)
-            // get one chance at a config-supplied fallback derived from the
-            // row's other mapped values before this row is excluded outright.
-            const fallback = config.buildFallback?.(field.key, values);
-            if (fallback && String(fallback).trim() !== "") {
-              values[field.key] = fallback;
-              v = fallback;
-              fallbackFields.push(field.key);
-            } else {
-              errors.push(`${field.label} is required`);
-              continue;
+            let match: ExistingRecord | null = null;
+            if (config.dedupEnabled) {
+              for (const key of config.matchKeysFor(values, lookups)) {
+                const found = key ? existingIndex.get(key) : undefined;
+                if (found) { match = found; break; }
+              }
             }
-          }
-          const stillBlank = v === undefined || v === null || String(v).trim() === "";
-          if (!stillBlank && config.remapValue) {
-            // e.g. Zoho's Projects status "Active" -> this app's exact
-            // CHECK-constraint value "active". Runs before validateField so
-            // a remapped value (already canonical) isn't then flagged as
-            // invalid by a validator written against the canonical set.
-            const rawText = String(v);
-            const remapped = config.remapValue(field.key, rawText);
-            if (remapped) {
-              values[field.key] = remapped.value;
-              v = remapped.value;
-              if (remapped.usedFallback) warnings.push(`${field.label}: "${rawText}" not recognized — defaulted to "${remapped.value}"`);
-            }
-          }
-          if (!stillBlank && field.type === "lookup" && field.lookupEntityKey) {
-            // Doesn't block the row either way — flagged here so it's
-            // visible before committing, not discovered only after the
-            // fact. createIfMissing fields (e.g. Expenses' category) will
-            // actually create a new record during the real import step
-            // (never here — Preview must stay side-effect-free); plain
-            // lookup fields (e.g. Projects' client) just import with that
-            // field left null.
-            const resolved = resolveLookup(String(v), lookups[field.lookupEntityKey]);
-            if (!resolved) {
-              warnings.push(field.createIfMissing
-                ? `${field.label}: "${v}" doesn't exist yet — will be created on import`
-                : `${field.label}: "${v}" didn't match any existing ${field.lookupEntityKey} — will import without a link`);
-            }
-          }
-          if (!stillBlank && config.validateField) {
-            const err = config.validateField(field, v);
-            if (err) {
-              if (field.required) errors.push(`${field.label}: ${err}`);
-              else { warnings.push(`${field.label}: ${err} — left blank`); delete values[field.key]; }
-            }
-          }
-        }
 
-        let match: ExistingRecord | null = null;
-        if (config.dedupEnabled) {
-          for (const key of config.matchKeysFor(values, lookups)) {
-            const found = key ? existingIndex.get(key) : undefined;
-            if (found) { match = found; break; }
-          }
-        }
-
-        const action: DedupAction = errors.length > 0 ? "skip" : (match ? "skip" : "create");
-        return { rowIndex, values, errors, warnings, fallbackFields, match, action };
-      });
+            const action: DedupAction = errors.length > 0 ? "skip" : (match ? "skip" : "create");
+            return { rowIndex, values, errors, warnings, fallbackFields, match, action };
+          });
 
       setPreviewRows(rows);
       setStep("preview");
@@ -296,6 +415,66 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
               }
             }
           }
+          if (config.groupByField) {
+            // Grouped entity (e.g. Invoices): header first, then its line
+            // items referencing the header's real id — a genuine two-step
+            // dependency within one group (different groups still process
+            // across parallel chunks as usual). Known, deliberate
+            // limitation: if the line-item insert below fails after a
+            // successful header write, the header is left in place rather
+            // than rolled back — Supabase/PostgREST has no easy client-
+            // side multi-table transaction without a dedicated RPC
+            // function, which this pass doesn't introduce. The failure is
+            // still reported below (not silent), so a header-only row is
+            // visible and fixable rather than hidden.
+            const validLineItems = (row.lineItems || []).filter(li => li.errors.length === 0);
+            const headerPayload = config.buildGroupHeaderPayload!(row.values, row.lineItems || [], lookups, companyId);
+
+            let headerId: string;
+            if (row.action === "update" && row.match) {
+              const updatePayload: Record<string, any> = {};
+              for (const field of config.fields) {
+                if (field.isLineItemField) continue;
+                const raw = row.values[field.key];
+                if (raw === undefined || raw === null || String(raw).trim() === "") continue;
+                if (field.type === "lookup" && headerPayload[field.key] == null) continue;
+                updatePayload[field.key] = headerPayload[field.key];
+              }
+              // Purely derived header keys (no 1:1 config.fields entry —
+              // e.g. Invoices' tax_amount/tax_rate/amount_paid) aren't
+              // covered by the loop above at all; the config decides for
+              // itself, from its own knowledge of what feeds them, which
+              // of those are safe to include given what this row provided.
+              Object.assign(updatePayload, config.buildGroupHeaderUpdateExtras?.(row.values, headerPayload) ?? {});
+              const { error: updErr } = await supabase.from(config.table).update(updatePayload).eq("id", row.match.id);
+              if (updErr) throw updErr;
+              headerId = row.match.id;
+              // Update = full replace of line items, matching this app's
+              // own precedent (deleteInvoice already deletes line items by
+              // invoice_id before removing the header) — simpler and more
+              // predictable than diffing/merging existing vs. re-imported
+              // line items.
+              const { error: delErr } = await supabase.from(config.lineItemTable!).delete().eq("invoice_id", headerId);
+              if (delErr) throw delErr;
+            } else {
+              const { data: newHeader, error: insErr } = await supabase.from(config.table).insert(headerPayload).select("id").single();
+              if (insErr) throw insErr;
+              headerId = newHeader.id;
+            }
+
+            if (validLineItems.length > 0) {
+              const lineItemPayloads = validLineItems.map((li, idx) =>
+                config.buildLineItemPayload!(li.values, idx + 1, headerId, row.values, companyId)
+              );
+              const { error: liErr } = await supabase.from(config.lineItemTable!).insert(lineItemPayloads);
+              if (liErr) throw liErr;
+            }
+
+            return row.action === "update" && row.match
+              ? { status: "updated", rowIndex: row.rowIndex, id: headerId }
+              : { status: "created", rowIndex: row.rowIndex, id: headerId };
+          }
+
           const payload = config.buildPayload(row.values, lookups, companyId);
           if (row.action === "update" && row.match) {
             // Only overwrite fields this row actually provided a value for.
@@ -530,7 +709,7 @@ function MapStep({ config, parsedFile, mapping, onChange, missingRequired, loadi
             <Select className="w-52 flex-shrink-0" value={mapping[header] || ""} onChange={e => onChange(header, e.target.value)}>
               <option value="">— Skip this column —</option>
               {config.fields.map(f => (
-                <option key={f.key} value={f.key}>{f.label}{f.required ? " *" : ""}{f.multiSource ? " (combines columns)" : ""}</option>
+                <option key={f.key} value={f.key}>{f.label}{f.required ? " *" : ""}{f.multiSource ? " (combines columns)" : ""}{f.isLineItemField ? " (per line item)" : ""}</option>
               ))}
             </Select>
           </div>
@@ -598,8 +777,13 @@ function PreviewStep({ config, rows, counts, onRowAction, onBulkDuplicateAction,
   // fields are prioritized among the optional ones — they're the columns
   // most worth double-checking (a concatenated address reading correctly,
   // a category/client actually resolving) before committing rows to the DB.
-  const requiredDisplay = config.fields.filter(f => f.required);
-  const optionalFields = config.fields.filter(f => !f.required);
+  // For a grouped entity (e.g. Invoices), only header-level fields make
+  // sense as flat columns — line-item fields (description, quantity, rate)
+  // vary per line item within the group and get their own dedicated "Line
+  // Items" column instead (see the grouped table branch below).
+  const columnCandidates = config.groupByField ? config.fields.filter(f => !f.isLineItemField) : config.fields;
+  const requiredDisplay = columnCandidates.filter(f => f.required);
+  const optionalFields = columnCandidates.filter(f => !f.required);
   const priorityOptional = optionalFields.filter(f => f.multiSource || f.type === "lookup").concat(optionalFields.filter(f => !f.multiSource && f.type !== "lookup"));
   const displayFields = requiredDisplay.concat(priorityOptional).slice(0, 6);
   const importCount = counts.willCreate + counts.willUpdate;
@@ -628,6 +812,7 @@ function PreviewStep({ config, rows, counts, onRowAction, onBulkDuplicateAction,
             <tr>
               <Th>#</Th>
               {displayFields.map(f => <Th key={f.key}>{f.label}</Th>)}
+              {config.groupByField && <Th>Line Items</Th>}
               <Th>Status</Th>
               <Th>Action</Th>
             </tr>
@@ -646,6 +831,17 @@ function PreviewStep({ config, rows, counts, onRowAction, onBulkDuplicateAction,
                     </Td>
                   );
                 })}
+                {config.groupByField && (
+                  <Td>
+                    {(() => {
+                      const total = row.lineItems?.length ?? 0;
+                      const valid = row.lineItems?.filter(li => li.errors.length === 0).length ?? 0;
+                      return valid === total
+                        ? <span className="text-[11px] text-slate-600 dark:text-slate-400">{total} line item{total === 1 ? "" : "s"}</span>
+                        : <span className="text-[11px] text-amber-500">{valid} of {total} line item{total === 1 ? "" : "s"} — {total - valid} skipped</span>;
+                    })()}
+                  </Td>
+                )}
                 <Td>
                   <div className="flex flex-col gap-1 items-start">
                     {row.errors.length > 0 ? (

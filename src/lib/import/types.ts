@@ -44,6 +44,26 @@ export interface ImportFieldConfig {
   // populated) instead create a new row in the target table when nothing
   // matches, via the config's createLookupTarget hook below.
   createIfMissing?: boolean;
+  // Only meaningful for a grouped entity (see EntityImportConfig.groupByField
+  // below) — e.g. Invoices, where Zoho's export has one row per line item
+  // with invoice-level fields (number, date, client) repeated identically
+  // across every row belonging to the same invoice. true = this field
+  // varies per row WITHIN a group (item description, quantity, rate) and
+  // gets collected into an array, one entry per underlying row. Unset/
+  // false (the default) = a header field — identical across every row in
+  // a well-formed group, so its value is taken from the group's first row.
+  isLineItemField?: boolean;
+}
+
+// Structured field-issue tagging — used internally so grouped entities can
+// tell a header-field problem (blocks the whole group) apart from a
+// line-item-field problem (excludes just that one line item) without
+// parsing formatted message strings back apart. Ungrouped entities never
+// see this shape directly; PreviewRow.errors/warnings stay plain string[]
+// either way.
+export interface FieldIssue {
+  fieldKey: string;
+  message: string;
 }
 
 export interface ParsedFile {
@@ -63,14 +83,29 @@ export interface ExistingRecord {
   keys: string[];   // normalized candidate match keys for this existing row
 }
 
+// One line item within a grouped PreviewRow (e.g. one row of an invoice's
+// underlying CSV rows). Kept separate from the header's own errors —
+// a line item with errors is simply excluded from what actually gets
+// created, it doesn't block the rest of the invoice.
+export interface GroupedLineItem {
+  values: Record<string, any>;
+  errors: string[];       // non-empty means this specific line item is excluded from import
+  sourceRowIndex: number; // which underlying parsed row this came from
+}
+
 export interface PreviewRow {
-  rowIndex: number;             // index into ParsedFile.rows, kept for traceability into results
-  values: Record<string, any>;  // mapped + type-coerced field values (fallback-derived values already applied)
-  errors: string[];             // validation errors on REQUIRED fields; non-empty blocks import for this row
+  rowIndex: number;             // index into ParsedFile.rows (for a grouped entity, the first underlying row in the group), kept for traceability into results
+  values: Record<string, any>;  // mapped + type-coerced field values (fallback-derived values already applied) — header-level values only for a grouped entity
+  errors: string[];             // validation errors on REQUIRED (header) fields; non-empty blocks import for this row
   warnings: string[];           // format issues on OPTIONAL fields — reported but non-blocking; that field's value is dropped, not the whole row
   fallbackFields: string[];     // required fields whose value was derived via config.buildFallback rather than the source file — flagged, not hidden
   match: ExistingRecord | null; // existing DB row this one appears to duplicate, if any
   action: DedupAction;          // what happens on import — user-adjustable per row when a match exists
+  // Populated only for a grouped entity (config.groupByField set) — every
+  // underlying row that shared this group's key, and which of them are
+  // actually valid enough to become a real line item on import.
+  lineItems?: GroupedLineItem[];
+  groupRowIndexes?: number[];
 }
 
 export type RowOutcome =
@@ -153,6 +188,51 @@ export interface EntityImportConfig {
   // chunk requesting the same brand-new value share one creation instead
   // of racing to insert it twice.
   createLookupTarget?: (fieldKey: string, rawValue: string, companyId: string) => Promise<{ id: string; label: string }>;
+
+  // For an entity whose source export has multiple rows per logical
+  // record (e.g. Zoho's Invoice.csv: one row per line item, invoice-level
+  // fields repeated identically across each invoice's rows) — the FIELD
+  // KEY (not header) whose value groups underlying parsed rows into one
+  // logical record. When set, the wizard groups rows by this field's
+  // mapped value before building Preview rows, and buildGroupHeaderPayload
+  // / buildLineItemPayload / lineItemTable below are used instead of the
+  // ordinary single-table buildPayload/table. Unset for every ordinary
+  // (one-row-per-record) entity — Clients, Projects, Expenses never touch
+  // any of this.
+  groupByField?: string;
+
+  // Builds the header (parent) row's DB payload from a group's header-
+  // level values (the fields NOT marked isLineItemField) plus the
+  // group's own line items (read-only here — useful if a header field
+  // needs to be derived from them) and resolved lookups. Only called for
+  // a grouped entity.
+  buildGroupHeaderPayload?: (headerValues: Record<string, any>, lineItems: GroupedLineItem[], lookups: LookupMaps, companyId: string) => Record<string, any>;
+
+  // Builds one line-item (child) row's DB payload, called once per VALID
+  // line item (i.e. GroupedLineItem.errors is empty) at import time, once
+  // the header's real id is known. lineNumber is 1-indexed position
+  // within the group's valid line items.
+  buildLineItemPayload?: (lineItemValues: Record<string, any>, lineNumber: number, headerId: string, headerValues: Record<string, any>, companyId: string) => Record<string, any>;
+
+  // The child table a grouped entity's line items insert into — separate
+  // from `table` above, which for a grouped entity is the HEADER table
+  // (e.g. table: "client_invoices", lineItemTable: "client_invoice_line_items").
+  lineItemTable?: string;
+
+  // Optional, grouped entities only. The shell's UPDATE-payload builder
+  // only ever overwrites a field whose config.fields entry actually got a
+  // non-blank raw value THIS row — correct for direct 1:1 fields, but a
+  // header payload can contain PURELY DERIVED keys with no config.fields
+  // entry of their own at all (e.g. Invoices' tax_amount/tax_rate/
+  // amount_paid, computed from subtotal/total_amount/balance_due). Without
+  // this hook those keys would silently never be included in an update,
+  // leaving stale figures on a re-imported record whose real inputs
+  // changed. Called only on the update path, after buildGroupHeaderPayload
+  // — receives that same header payload so the config can decide, using
+  // its own knowledge of which raw fields a derived key actually depends
+  // on, which extra keys are safe to overwrite given what this particular
+  // row provided. Return {} to add nothing.
+  buildGroupHeaderUpdateExtras?: (headerValues: Record<string, any>, headerPayload: Record<string, any>) => Record<string, any>;
 }
 
 // A fetchable source of {id, label} records for lookup/create resolution.
