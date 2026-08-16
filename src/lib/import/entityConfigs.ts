@@ -686,6 +686,144 @@ const invoicesConfig: EntityImportConfig = {
   },
 };
 
+// ─── Vendors (suppliers table) ───────────────────────────────────────────────
+//
+// Real table per the confirmed live migration (20260310121055_create_
+// suppliers.sql), NOT a vestigial/unused table — actively referenced by FK
+// from Purchase Orders, Receiving, Cost Item Rates, Procurement Items,
+// Supplier Intelligence, and Supplier Price Sync (6 later migrations, all
+// carrying supplier_id). No dedicated SuppliersPage.tsx exists — suppliers
+// are currently only managed inline from Procurement/Receiving screens via
+// src/lib/suppliers.ts's plain, side-effect-free CRUD (createSupplier is a
+// plain insert; no triggers, no auto price-sync, no linked ledger entries).
+// expenses.vendor (and vendor_name/ocr_vendor elsewhere) stay deliberately
+// separate — confirmed real free-text columns with no FK to this table —
+// so importing Vendors does not retroactively link any already-imported
+// Expense row to a real supplier_id; that would be a separate reconciliation
+// task, out of scope here.
+//
+// company_id/supplier_name NOT NULL; contact_name/email/phone/address/
+// payment_terms/notes all optional text; is_active a genuine boolean
+// (DEFAULT true) — NOT a text status enum like Clients' status, hence the
+// dedicated true/false remap below rather than reusing Clients' pattern
+// verbatim. Real DB-level UNIQUE constraint on (company_id, supplier_name)
+// — unlike Clients/Projects, dedup here isn't just a UX nicety; a
+// duplicate-name insert genuinely throws Postgres 23505 if the app-level
+// dedup check (matchKeysFor, same email-then-name priority as Clients)
+// somehow misses it — e.g. two rows in the same import batch normalizing to
+// the same name, which fetchExisting/matchKeysFor can't catch since it only
+// indexes rows that existed in the DB before this run started, not rows
+// just created earlier in the same batch. Per Veron's explicit requirement,
+// this must degrade gracefully (that one row reported as failed) rather
+// than crash the whole import — the wizard shell's per-row try/catch in
+// runImport already isolates any DB error to just that row regardless of
+// entity, so this was already safe; the accompanying ImportWizard.tsx change
+// this round just makes a 23505 specifically produce a legible message
+// instead of raw Postgres text, for every entity, not only this one.
+const SUPPLIER_ACTIVE_ALIASES: Record<string, string> = {
+  active: "true", enabled: "true", yes: "true", y: "true", true: "true", "1": "true",
+  inactive: "false", disabled: "false", no: "false", n: "false", false: "false", "0": "false",
+};
+
+const suppliersConfig: EntityImportConfig = {
+  key: "suppliers",
+  label: "Vendors",
+  table: "suppliers",
+  dedupEnabled: true,
+
+  fields: [
+    { key: "supplier_name", label: "Vendor Name", required: true, type: "text",
+      aliases: ["name", "vendor name", "supplier name", "company name", "display name", "business name", "organization", "organization name"] },
+    { key: "contact_name", label: "Contact Person", required: false, type: "text",
+      aliases: ["contact name", "contact person", "attention", "attn", "primary contact", "contact"] },
+    { key: "email", label: "Email", required: false, type: "email",
+      aliases: ["email", "email address", "e-mail", "email id", "primary email", "work email"] },
+    { key: "phone", label: "Phone", required: false, type: "phone",
+      aliases: ["phone", "phone number", "mobile", "mobile number", "telephone", "contact number", "work phone", "primary phone", "business phone"] },
+    // Same multiSource mechanism already built and shipped for Clients —
+    // Zoho's Vendors export uses the identical Billing-prefixed
+    // split-column pattern (confirmed by Veron against the real file).
+    { key: "address", label: "Address", required: false, type: "text", multiSource: true,
+      aliases: [
+        "address", "billing address", "street address", "mailing address", "full address",
+        "billing street", "billing street2", "billing address2",
+        "billing city", "billing state", "billing country", "billing code",
+        "billing zip", "billing zip code", "billing postal code",
+        "bill to address", "bill to street", "bill to city", "bill to state", "bill to country", "bill to zip",
+      ] },
+    { key: "payment_terms", label: "Payment Terms", required: false, type: "text",
+      aliases: ["payment terms", "terms", "credit terms"] },
+    { key: "notes", label: "Notes", required: false, type: "text",
+      aliases: ["notes", "description", "remarks", "comments", "memo"] },
+    { key: "is_active", label: "Status", required: false, type: "select",
+      options: [{ value: "true", label: "Active" }, { value: "false", label: "Inactive" }],
+      aliases: ["status", "vendor status", "active"] },
+  ],
+
+  async fetchExisting(companyId: string): Promise<ExistingRecord[]> {
+    const { data, error } = await supabase
+      .from("suppliers")
+      .select("id, supplier_name, email")
+      .eq("company_id", companyId);
+    if (error) throw error;
+    return (data || []).map(s => ({
+      id: s.id,
+      label: s.supplier_name,
+      keys: [normalizeEmail(s.email), normalizeKey(s.supplier_name)].filter(Boolean),
+    }));
+  },
+
+  matchKeysFor(values) {
+    const keys: string[] = [];
+    if (values.email) keys.push(normalizeEmail(values.email));
+    if (values.supplier_name) keys.push(normalizeKey(values.supplier_name));
+    return keys;
+  },
+
+  validateField(field, value) {
+    if (field.key === "email" && value) {
+      const v = String(value).trim();
+      if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return "Doesn't look like a valid email";
+    }
+    return null;
+  },
+
+  // Vendor exports sometimes carry only a contact name or email with no
+  // separate company/display name column — same reasoning, same mechanism
+  // as Clients' name fallback.
+  buildFallback(fieldKey, values) {
+    if (fieldKey !== "supplier_name") return null;
+    if (values.contact_name && String(values.contact_name).trim()) return String(values.contact_name).trim();
+    if (values.email && String(values.email).trim()) return String(values.email).trim();
+    return null;
+  },
+
+  // "Active"/similar -> true, "Inactive"/similar -> false, blank or
+  // unrecognized -> true (confirmed default — matches the suppliers table's
+  // own column default and the same "less-restrictive state for migrated
+  // historical data" reasoning used for Invoices' status default).
+  remapValue(fieldKey, rawValue) {
+    if (fieldKey !== "is_active") return undefined;
+    const mapped = SUPPLIER_ACTIVE_ALIASES[rawValue.trim().toLowerCase()];
+    if (mapped) return { value: mapped, usedFallback: false };
+    return { value: "true", usedFallback: true };
+  },
+
+  buildPayload(values, _lookups, companyId) {
+    return {
+      company_id: companyId,
+      supplier_name: String(values.supplier_name).trim(),
+      contact_name: values.contact_name ? String(values.contact_name).trim() : null,
+      email: values.email ? String(values.email).trim() : null,
+      phone: values.phone ? String(values.phone).trim() : null,
+      address: values.address ? String(values.address).trim() : null,
+      payment_terms: values.payment_terms ? String(values.payment_terms).trim() : null,
+      notes: values.notes ? String(values.notes).trim() : null,
+      is_active: values.is_active !== "false",
+    };
+  },
+};
+
 // Lookup-only target for Expenses' category field — not a directly-
 // importable entity (Veron never runs a separate "import categories" pass),
 // just something another entity's field can resolve/create against.
@@ -708,6 +846,7 @@ export const ENTITY_CONFIGS: EntityImportConfig[] = [
   projectsConfig,
   expensesConfig,
   invoicesConfig,
+  suppliersConfig,
 ];
 
 export function getEntityConfig(key: string): EntityImportConfig | undefined {
@@ -724,4 +863,5 @@ export const LOOKUP_SOURCES: Record<string, LookupSource> = {
   clients: clientsConfig,
   projects: projectsConfig,
   expense_categories: expenseCategoriesLookup,
+  suppliers: suppliersConfig,
 };

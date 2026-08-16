@@ -507,7 +507,20 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
             return { status: "created", rowIndex: row.rowIndex, id: data.id };
           }
         } catch (e: any) {
-          return { status: "failed", rowIndex: row.rowIndex, error: e.message || "Unknown error" };
+          // Postgres 23505 (unique_violation) — most entities have no
+          // DB-level uniqueness at all (dedup is purely app-level, via
+          // matchKeysFor above), but some do (e.g. suppliers' UNIQUE
+          // (company_id, supplier_name)). The app-level dedup check only
+          // catches a collision against rows that already existed in the
+          // DB before this run started — it can't catch two rows in the
+          // SAME upload that normalize to the same key, since neither
+          // exists yet when Preview builds its index. Whichever row loses
+          // that race here fails this one row with a legible message
+          // instead of raw Postgres text — never the whole import.
+          const message = e?.code === "23505"
+            ? "A record with this same name already exists — skipped to avoid a duplicate."
+            : (e.message || "Unknown error");
+          return { status: "failed", rowIndex: row.rowIndex, error: message };
         }
       }));
       results.push(...chunkResults);

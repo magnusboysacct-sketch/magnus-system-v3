@@ -68,7 +68,7 @@ export default function SettingsImportPage() {
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader
         title="Import Data"
-        subtitle="Bring in clients, projects, expenses, and invoices from another system — mapped, deduplicated, and reviewed before anything is saved."
+        subtitle="Bring in clients, projects, expenses, invoices, and vendors from another system — mapped, deduplicated, and reviewed before anything is saved."
       />
 
       <div className="p-6 max-w-4xl mx-auto space-y-5">

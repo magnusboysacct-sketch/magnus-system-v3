@@ -12,7 +12,7 @@ const SETTINGS_SECTIONS = [
   { title: "Records & IDs", desc: "Print worker files and ID cards", icon: <FileText size={18}/>, to: "/settings/records", color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
   { title: "Users & Permissions", desc: "Team members, roles, invites", icon: <Users size={18}/>, to: "/settings/users", color: "text-violet-400 bg-violet-500/10 border-violet-500/20" },
   { title: "Master Lists", desc: "Materials, labour, equipment items", icon: <BookOpen size={18}/>, to: "/settings/master-lists", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-  { title: "Import Data", desc: "Bring in clients, projects, expenses, and invoices from another system", icon: <UploadCloud size={18}/>, to: "/settings/import", color: "text-orange-400 bg-orange-500/10 border-orange-500/20" },
+  { title: "Import Data", desc: "Bring in clients, projects, expenses, invoices, and vendors from another system", icon: <UploadCloud size={18}/>, to: "/settings/import", color: "text-orange-400 bg-orange-500/10 border-orange-500/20" },
   { title: "Billing & Plan", desc: "Subscription, invoices, limits", icon: <CreditCard size={18}/>, to: "/billing", color: "text-pink-400 bg-pink-500/10 border-pink-500/20" },
 ];
 
