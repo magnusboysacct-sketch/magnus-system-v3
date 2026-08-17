@@ -214,6 +214,22 @@ function buildGroupedPreviewRows(
       warnings.push(`${invalidCount} of ${lineItems.length} line item${lineItems.length === 1 ? "" : "s"} couldn't be read and will be skipped`);
     }
 
+    // A group whose EVERY underlying line item failed validation is a
+    // real problem, not a legitimate header-only import — the source file
+    // structurally has line items for this record, so ending up with zero
+    // valid ones almost always means something's actually wrong (bad
+    // mapping, malformed source data), not that this particular record
+    // intentionally has none. Discovered as a real, silent gap: Bills'
+    // first live run produced several "successfully created" records
+    // with zero line items and no error ever surfaced for it, because the
+    // line-item insert step was simply skipped outright when there was
+    // nothing valid to insert — this makes that case a blocking header
+    // error instead, visible in Preview before anything is ever written.
+    const groupHeaderErrors = [...headerErrors];
+    if (lineItems.length > 0 && validLineItems.length === 0) {
+      groupHeaderErrors.push("Every line item on this record failed validation — nothing valid to import.");
+    }
+
     let match: ExistingRecord | null = null;
     if (config.dedupEnabled) {
       for (const k of config.matchKeysFor(headerValues, lookups)) {
@@ -222,12 +238,12 @@ function buildGroupedPreviewRows(
       }
     }
 
-    const action: DedupAction = headerErrors.length > 0 ? "skip" : (match ? "skip" : "create");
+    const action: DedupAction = groupHeaderErrors.length > 0 ? "skip" : (match ? "skip" : "create");
 
     return {
       rowIndex: first.rowIndex,
       values: headerValues,
-      errors: headerErrors,
+      errors: groupHeaderErrors,
       warnings,
       fallbackFields: headerFallbackFields,
       match,
@@ -469,8 +485,11 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
               // own precedent (deleteInvoice already deletes line items by
               // invoice_id before removing the header) — simpler and more
               // predictable than diffing/merging existing vs. re-imported
-              // line items.
-              const { error: delErr } = await supabase.from(config.lineItemTable!).delete().eq("invoice_id", headerId);
+              // line items. The parent-referencing column name is config-
+              // declared, not hardcoded — it genuinely differs between
+              // grouped entities (client_invoice_line_items.invoice_id vs
+              // supplier_invoice_line_items.supplier_invoice_id).
+              const { error: delErr } = await supabase.from(config.lineItemTable!).delete().eq(config.lineItemParentField!, headerId);
               if (delErr) throw delErr;
             } else {
               const { data: newHeader, error: insErr } = await supabase.from(config.table).insert(headerPayload).select("id").single();
@@ -543,10 +562,14 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
       setProgress({ done: results.length, total: toProcess.length });
     }
 
-    // Skipped rows (by explicit action or validation error) still get an
-    // outcome entry, so the result screen accounts for every uploaded row.
+    // Rows never attempted against the DB still get an outcome entry, so
+    // the result screen accounts for every uploaded row. A validation/
+    // routing error means "excluded before import even started" — a
+    // completely different, non-alarming outcome from "failed" (attempted
+    // and the database rejected it) — see the RowOutcome comment in
+    // types.ts for why these used to be conflated and why that mattered.
     for (const row of previewRows) {
-      if (row.errors.length > 0) results.push({ status: "failed", rowIndex: row.rowIndex, error: row.errors.join("; ") });
+      if (row.errors.length > 0) results.push({ status: "excluded", rowIndex: row.rowIndex, reason: row.errors.join("; ") });
       else if (row.action === "skip") results.push({ status: "skipped", rowIndex: row.rowIndex, reason: row.match ? "Matched an existing record" : "Skipped by user" });
     }
 
@@ -935,6 +958,7 @@ function ResultStep({ config, outcomes, onImportAnother }: {
   const created = outcomes.filter(o => o.status === "created").length;
   const updated = outcomes.filter(o => o.status === "updated").length;
   const skipped = outcomes.filter(o => o.status === "skipped").length;
+  const excluded = outcomes.filter((o): o is Extract<RowOutcome, { status: "excluded" }> => o.status === "excluded");
   const failed = outcomes.filter((o): o is Extract<RowOutcome, { status: "failed" }> => o.status === "failed");
 
   return (
@@ -949,16 +973,33 @@ function ResultStep({ config, outcomes, onImportAnother }: {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
         <ResultStat label="Created" value={created} color="text-emerald-500" />
         <ResultStat label="Updated" value={updated} color="text-blue-500" />
+        <ResultStat label="Excluded" value={excluded.length} color="text-amber-500" />
         <ResultStat label="Skipped" value={skipped} color="text-slate-500" />
         <ResultStat label="Failed" value={failed.length} color="text-red-500" />
       </div>
 
+      {excluded.length > 0 && (
+        <div className="mb-4">
+          <div className="text-xs font-semibold text-amber-500 mb-2 flex items-center gap-1.5">
+            {excluded.length} row{excluded.length === 1 ? "" : "s"} excluded before import — working as designed, not an error
+          </div>
+          <div className="rounded-lg border border-amber-200 dark:border-amber-500/20 divide-y divide-amber-100 dark:divide-amber-500/10 max-h-64 overflow-y-auto">
+            {excluded.map(x => (
+              <div key={x.rowIndex} className="px-3 py-2 text-[11px]">
+                <span className="font-semibold text-slate-600 dark:text-slate-400">Row {x.rowIndex + 1}: </span>
+                <span className="text-amber-600 dark:text-amber-400">{x.reason}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {failed.length > 0 && (
         <div className="mb-4">
-          <div className="text-xs font-semibold text-red-500 mb-2 flex items-center gap-1.5"><AlertTriangle size={13} /> Rows that failed</div>
+          <div className="text-xs font-semibold text-red-500 mb-2 flex items-center gap-1.5"><AlertTriangle size={13} /> Rows that failed — attempted, and the database rejected them</div>
           <div className="rounded-lg border border-red-200 dark:border-red-500/20 divide-y divide-red-100 dark:divide-red-500/10 max-h-64 overflow-y-auto">
             {failed.map(f => (
               <div key={f.rowIndex} className="px-3 py-2 text-[11px]">

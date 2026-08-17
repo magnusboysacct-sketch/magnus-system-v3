@@ -112,6 +112,15 @@ export type RowOutcome =
   | { status: "created"; rowIndex: number; id: string }
   | { status: "updated"; rowIndex: number; id: string }
   | { status: "skipped"; rowIndex: number; reason: string }
+  // Had a validation/routing error (required field missing, or
+  // validateFieldWithLookups excluding it) and was therefore never
+  // attempted against the DB at all — distinct from "failed" below, which
+  // means the row WAS attempted and the database itself rejected it.
+  // Conflating these two (both previously reported as "failed") is what
+  // made Bills' first real run look like 129 catastrophic failures when
+  // 120 of them were rows correctly excluded before import ever started,
+  // working exactly as designed.
+  | { status: "excluded"; rowIndex: number; reason: string }
   | { status: "failed"; rowIndex: number; error: string };
 
 // Built up as each entity pass completes — e.g. after Clients import, a
@@ -260,6 +269,19 @@ export interface EntityImportConfig {
   // from `table` above, which for a grouped entity is the HEADER table
   // (e.g. table: "client_invoices", lineItemTable: "client_invoice_line_items").
   lineItemTable?: string;
+
+  // The column on lineItemTable that references the header row's id —
+  // required whenever lineItemTable is set. Genuinely differs between
+  // grouped entities: client_invoice_line_items uses invoice_id, but
+  // supplier_invoice_line_items uses supplier_invoice_id (confirmed
+  // against the live migrations — NOT the same name, despite the
+  // superficially parallel table shapes). The shell's update-path
+  // line-item cleanup (delete existing before re-inserting) needs this
+  // column name explicitly — hardcoding "invoice_id" there was a real,
+  // latent bug found while investigating the Bills three_way_match_status
+  // failure: it happened to be correct for Invoices by coincidence, but
+  // would have broken the very next "update an existing bill" retry.
+  lineItemParentField?: string;
 
   // Optional, grouped entities only. The shell's UPDATE-payload builder
   // only ever overwrites a field whose config.fields entry actually got a

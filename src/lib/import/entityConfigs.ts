@@ -537,6 +537,7 @@ const invoicesConfig: EntityImportConfig = {
   label: "Invoices",
   table: "client_invoices",
   lineItemTable: "client_invoice_line_items",
+  lineItemParentField: "invoice_id",
   groupByField: "invoice_number",
   dedupEnabled: true,
 
@@ -918,6 +919,7 @@ const billsConfig: EntityImportConfig = {
   label: "Bills",
   table: "supplier_invoices",
   lineItemTable: "supplier_invoice_line_items",
+  lineItemParentField: "supplier_invoice_id",
   groupByField: "invoice_number",
   dedupEnabled: true,
   // supplier_id's own lookupEntityKey ("suppliers") only gets that one map
