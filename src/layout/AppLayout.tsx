@@ -54,6 +54,7 @@ const NAV: NavItem[] = [
       { label: "Purchase Orders",  icon: <Package size={14}/>,  to: "/procurement" },
       { label: "Receiving",        icon: <Truck size={14}/>,    to: "/receiving" },
       { label: "Supplier Prices",  icon: <Zap size={14}/>,      to: "/supplier-prices" },
+      { label: "Vendors",          icon: <Truck size={14}/>,    to: "/suppliers" },
     ]
   },
   {
@@ -64,6 +65,7 @@ const NAV: NavItem[] = [
       { label: "Expenses",         icon: <Banknote size={14}/>,    to: "/expenses" },
       { label: "Cash Flow",        icon: <BarChart3 size={14}/>,   to: "/cash-flow" },
       { label: "Accounts Recv.",   icon: <FileText size={14}/>,    to: "/accounts-receivable" },
+      { label: "Payables",         icon: <FileText size={14}/>,    to: "/accounts-payable" },
       { label: "Field Payments",   icon: <Banknote size={14}/>,    to: "/field-payments" },
       { label: "Payroll",          icon: <Banknote size={14}/>,    to: "/payroll" },
     ]
