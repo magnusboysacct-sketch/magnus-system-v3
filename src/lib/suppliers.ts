@@ -86,23 +86,43 @@ export async function getCurrentCompanyId(): Promise<string | null> {
  */
 export async function listSuppliers(activeOnly: boolean = false): Promise<Supplier[]> {
   try {
-    let query = supabase
-      .from("suppliers")
-      .select("*")
-      .order("supplier_name", { ascending: true });
+    // PostgREST's server-side row cap (default 1000) is a hard ceiling —
+    // .range() only requests a window, it can't push the server past its
+    // own configured max in a single response. Genuine multi-page loop
+    // instead: request successive windows, stop when a page comes back
+    // shorter than requested. Same fix already applied to Clients/
+    // Projects/Expenses/Workers/Rates earlier this session — only 24
+    // suppliers exist today, so this changes nothing yet, but it's the
+    // same class of silent-truncation bug that's bitten this app
+    // multiple times, and this is a shared function (also used by
+    // ProcurementPage.tsx's supplier picker), not just this page.
+    const PAGE = 1000;
+    let all: Supplier[] = [];
+    let from = 0;
+    for (let guard = 0; guard < 200; guard++) { // hard safety stop (200,000 rows), not a realistic ceiling
+      let query = supabase
+        .from("suppliers")
+        .select("*")
+        .order("supplier_name", { ascending: true })
+        .range(from, from + PAGE - 1);
 
-    if (activeOnly) {
-      query = query.eq("is_active", true);
+      if (activeOnly) {
+        query = query.eq("is_active", true);
+      }
+
+      const { data: page, error } = await query;
+
+      if (error) {
+        console.error("Error fetching suppliers:", error);
+        throw new Error(`Failed to fetch suppliers: ${error.message}`);
+      }
+
+      all = all.concat(page || []);
+      if (!page || page.length < PAGE) break;
+      from += PAGE;
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("Error fetching suppliers:", error);
-      throw new Error(`Failed to fetch suppliers: ${error.message}`);
-    }
-
-    return data || [];
+    return all;
   } catch (err) {
     throw new Error(`Failed to fetch suppliers: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }

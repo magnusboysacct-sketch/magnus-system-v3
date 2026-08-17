@@ -396,9 +396,12 @@ export async function updateInvoiceAfterPayment(invoiceId: string) {
 }
 
 export async function fetchSupplierInvoices(companyId: string) {
+  // suppliers' real name column is supplier_name, not name (confirmed
+  // against the live migration) — the previous suppliers(name) embed
+  // requested a nonexistent column, which PostgREST rejects outright.
   const { data, error } = await supabase
     .from("supplier_invoices")
-    .select("*, suppliers(name), projects(name), purchase_orders(po_number)")
+    .select("*, suppliers(supplier_name), projects(name), purchase_orders(po_number)")
     .eq("company_id", companyId)
     .order("invoice_date", { ascending: false });
 

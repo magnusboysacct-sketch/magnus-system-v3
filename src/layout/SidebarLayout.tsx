@@ -58,6 +58,7 @@ const navSections: NavSection[] = [
     items: [
       { to: "/procurement", label: "Purchase Orders", icon: ShoppingCart },
       { to: "/receiving", label: "Receiving", icon: PackageCheck },
+      { to: "/suppliers", label: "Vendors", icon: Truck },
     ],
   },
   {
@@ -71,6 +72,7 @@ const navSections: NavSection[] = [
       { to: "/expenses", label: "Expenses", icon: Receipt },
       { to: "/cash-flow", label: "Cash Flow", icon: TrendingUp },
       { to: "/accounts-receivable", label: "Receivables", icon: FileText },
+      { to: "/accounts-payable", label: "Payables", icon: DollarSign },
       { to: "/billing", label: "Billing", icon: CreditCard },
       { to: "/workers", label: "Payroll", icon: UserCircle },
       { to: "/access-log", label: "Access Log", icon: Shield },
@@ -310,6 +312,9 @@ export default function SidebarLayout() {
           return false;
         }
         if (item.to === "/accounts-receivable" && !financeAccess.canViewCompanyReports) {
+          return false;
+        }
+        if (item.to === "/accounts-payable" && !financeAccess.canViewCompanyReports) {
           return false;
         }
         if (item.to === "/expenses" && !financeAccess.canViewExpenses) {

@@ -47,8 +47,10 @@ import UploadStatementPage    from "./pages/UploadStatementPage";
 import ExpensesPage           from "./pages/ExpensesPage";
 import CashFlowPage           from "./pages/CashFlowPage";
 import AccountsReceivablePage from "./pages/AccountsReceivablePage";
+import AccountsPayablePage    from "./pages/AccountsPayablePage";
 import FieldPaymentsPage      from "./pages/FieldPaymentsPage";
 import WorkersPage            from "./pages/WorkersPage";
+import SuppliersPage          from "./pages/SuppliersPage";
 import ReportsPage            from "./pages/ReportsPage";
 import ContractsPage          from "./pages/ContractsPage";
 import HelpCenterPage         from "./pages/HelpCenterPage";
@@ -275,11 +277,13 @@ export default function App() {
               <Route path="/cash-flow"               element={<FinanceGuard level="full"><CashFlowPage /></FinanceGuard>} />
               <Route path="/finance/upload-statement" element={<FinanceGuard level="full"><UploadStatementPage /></FinanceGuard>} />
               <Route path="/accounts-receivable"     element={<FinanceGuard level="full"><AccountsReceivablePage /></FinanceGuard>} />
+              <Route path="/accounts-payable"        element={<FinanceGuard level="full"><AccountsPayablePage /></FinanceGuard>} />
               <Route path="/field-payments"          element={<RoleGuard allowedRoles={["director","site_supervisor","accounts"]}><FieldPaymentsPage /></RoleGuard>} />
               <Route path="/payroll"                 element={<RoleGuard allowedRoles={["director","admin","accounts"]}><PayrollPage /></RoleGuard>} />
 
               {/* People */}
               <Route path="/workers"                 element={<RoleGuard allowedRoles={["director","site_supervisor"]}><WorkersPage /></RoleGuard>} />
+              <Route path="/suppliers"               element={<RoleGuard allowedRoles={["director","site_supervisor"]}><SuppliersPage /></RoleGuard>} />
               <Route path="/staff-portal"            element={<RoleGuard allowedRoles={["director","admin"]}><StaffPortalManagerPage /></RoleGuard>} />
 
               {/* Help */}

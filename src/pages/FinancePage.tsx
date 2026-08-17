@@ -65,9 +65,15 @@ export default function FinancePage() {
           .eq("company_id", companyId!)
           .order("due_date", { ascending: true })
           .limit(20),
-        // Supplier invoices — confirmed columns
+        // Supplier invoices — confirmed columns. suppliers' real name
+        // column is supplier_name, not name (confirmed against the live
+        // migration) — the previous suppliers(name) embed requested a
+        // nonexistent column, which PostgREST rejects outright, silently
+        // emptying this whole query (siRes.data falls back to [] below,
+        // with no error surfaced anywhere) rather than just showing a
+        // blank Supplier cell.
         supabase.from("supplier_invoices")
-          .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, suppliers(name), projects(name)")
+          .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, suppliers(supplier_name), projects(name)")
           .eq("company_id", companyId!)
           .order("due_date", { ascending: true })
           .limit(20),
@@ -240,7 +246,7 @@ export default function FinancePage() {
                   {stats.supplierInvoices.map((inv: any) => (
                     <Tr key={inv.id}>
                       <Td><span className="font-mono text-xs text-slate-300">{inv.invoice_number}</span></Td>
-                      <Td><span className="font-medium text-slate-800 dark:text-slate-200">{(inv.suppliers as any)?.name || "—"}</span></Td>
+                      <Td><span className="font-medium text-slate-800 dark:text-slate-200">{(inv.suppliers as any)?.supplier_name || "—"}</span></Td>
                       <Td muted>{(inv.projects as any)?.name || "—"}</Td>
                       <Td muted className={new Date(inv.due_date) < new Date() && inv.status !== "paid" ? "text-red-400" : ""}>
                         {fmtDate(inv.due_date)}
