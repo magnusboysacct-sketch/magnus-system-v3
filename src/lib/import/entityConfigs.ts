@@ -1217,6 +1217,176 @@ const fieldPaymentsConfig: EntityImportConfig = {
   },
 };
 
+// ─── Supplier Payments (supplier_payments table) ─────────────────────────────
+//
+// Phase 1 of the Vendor_Payment.csv split (Phase 2 — enriching the 313
+// existing field_payments records with this same file's worker-routed
+// rows — is a separate, deferred design, not built here). Real table
+// confirmed via the live migration (same file that created
+// supplier_invoices): supplier_payments — a genuine transaction-level
+// ledger already existing in the schema, not something new to add.
+// company_id/payment_number/payment_date/amount NOT NULL; supplier_id/
+// invoice_id nullable FKs; payment_method nullable text CHECK (check/ach/
+// wire/credit_card/cash/other — Zoho's "Mode" needs remapping onto this);
+// check_number/reference_number/notes all nullable text. No CHECK on
+// amount's sign (unlike Bills' line-item quantity/unit_cost) — not
+// artificially constrained beyond what the DB actually enforces.
+//
+// Real side-effect finding from investigating this before building
+// anything: the app's own createSupplierPayment() (finance.ts) does two
+// things beyond a plain insert — auto-creates a cash_transactions row,
+// and RECALCULATES the linked invoice's amount_paid/balance_due/status by
+// summing every supplier_payments row for that invoice, overwriting the
+// header. Confirmed this is application-level only, not a database
+// trigger (searched every migration referencing supplier_payments; the
+// only trigger-bearing tables nearby are the general-ledger internals,
+// unrelated). Import here uses a plain, direct .insert() — same as every
+// entity this session — which deliberately does NOT go through
+// createSupplierPayment() and so does NOT touch cash_transactions or
+// recompute the invoice header. This is intentional, not an oversight:
+// the 9 real Bills' amount_paid/balance_due/status are already correct,
+// sourced directly from Zoho's own Total/Balance at Bills-import time,
+// and must not be silently overwritten by a second, different
+// computation derived from these payment rows.
+//
+// Same vendor-routing rule as Bills (not the inverted Field Payments
+// rule): exclude a row only when its vendor positively resolves to a
+// known Worker — matches Field Payments/Field Payments-enrichment
+// territory, not a real vendor payment. Unresolved (matches neither a
+// Supplier nor a Worker) still imports, same non-blocking-lookup
+// treatment as every other plain lookup field.
+//
+// invoice_id resolves "Bill Number" against billsConfig's own
+// fetchExisting — no new lookup mechanism needed at all. Every full
+// EntityImportConfig already satisfies LookupSource for free (see the
+// LOOKUP_SOURCES comment below), so registering bills there costs
+// nothing and is exactly "look up against another entity's real,
+// already-imported rows" — the generic capability this needed, already
+// built when Clients/Projects/Suppliers were.
+//
+// Zoho's "Bill Amount" column is deliberately not mapped anywhere —
+// redundant with supplier_invoices.total_amount, already captured by
+// Bills. "Bank Reference Number" and "Payment Status" have no dedicated
+// columns on supplier_payments (only one generic reference_number slot,
+// no status column at all) — folded into notes rather than silently
+// dropped, alongside a migration tag. Not used as an import-exclusion
+// filter (e.g. skipping a "Failed" status) — no confirmed real values
+// for this column yet, so nothing is assumed; flagged for review instead
+// of guessed at.
+const PAYMENT_MODE_ALIASES: Record<string, string> = {
+  cash: "cash",
+  check: "check", cheque: "check", chq: "check",
+  ach: "ach", "direct deposit": "ach", "ach transfer": "ach",
+  wire: "wire", "wire transfer": "wire", "bank transfer": "wire", bank: "wire",
+  "credit card": "credit_card", creditcard: "credit_card", card: "credit_card",
+};
+
+const supplierPaymentsConfig: EntityImportConfig = {
+  key: "supplier_payments",
+  label: "Vendor Payments",
+  table: "supplier_payments",
+  dedupEnabled: true,
+  // supplier_id's own lookupEntityKey ("suppliers") only gets that map
+  // loaded — validateFieldWithLookups on that same field separately needs
+  // lookups.workers to check for the worker-routing exclusion, same gap
+  // (and same fix) as billsConfig.
+  additionalLookupSources: ["workers"],
+
+  fields: [
+    { key: "payment_number", label: "Payment Number", required: true, type: "text",
+      aliases: ["payment number", "payment no", "payment #"] },
+    { key: "payment_date", label: "Date", required: true, type: "date",
+      aliases: ["date", "payment date"] },
+    { key: "supplier_id", label: "Vendor", required: false, type: "lookup", lookupEntityKey: "suppliers",
+      aliases: ["vendor name", "vendor", "supplier", "supplier name"] },
+    { key: "invoice_id", label: "Bill Number", required: false, type: "lookup", lookupEntityKey: "bills",
+      aliases: ["bill number", "bill no", "bill #", "invoice number"] },
+    { key: "amount", label: "Amount", required: true, type: "number",
+      aliases: ["amount", "payment amount"] },
+    { key: "payment_method", label: "Mode", required: false, type: "select",
+      options: [
+        { value: "cash", label: "Cash" }, { value: "check", label: "Check" },
+        { value: "ach", label: "ACH" }, { value: "wire", label: "Wire" },
+        { value: "credit_card", label: "Credit Card" }, { value: "other", label: "Other" },
+      ],
+      aliases: ["mode", "payment method", "payment mode"] },
+    { key: "reference_number", label: "Reference Number", required: false, type: "text",
+      aliases: ["reference number", "reference no", "ref number", "ref #"] },
+    // Not persisted as their own columns (supplier_payments has no
+    // dedicated home for either) — folded into notes by buildPayload.
+    { key: "bank_reference_number", label: "Bank Reference Number", required: false, type: "text",
+      aliases: ["bank reference number", "bank ref", "bank reference"] },
+    { key: "payment_status", label: "Payment Status", required: false, type: "text",
+      aliases: ["payment status", "status"] },
+  ],
+
+  async fetchExisting(companyId: string): Promise<ExistingRecord[]> {
+    const { data, error } = await supabase
+      .from("supplier_payments")
+      .select("id, payment_number")
+      .eq("company_id", companyId);
+    if (error) throw error;
+    return (data || []).map(p => ({ id: p.id, label: p.payment_number, keys: [normalizeKey(p.payment_number)] }));
+  },
+
+  matchKeysFor(values) {
+    return values.payment_number ? [normalizeKey(String(values.payment_number))] : [];
+  },
+
+  validateField(field, value) {
+    if (field.key === "payment_date" && !parseLooseDate(String(value))) return "Doesn't look like a valid date";
+    if (field.key === "amount") {
+      const n = toNumber(value);
+      if (!isFinite(n) || isNaN(n)) return "Doesn't look like a valid number";
+    }
+    return null;
+  },
+
+  // Mirrors Bills' rule exactly (not Field Payments' inverted rule): a
+  // vendor that positively resolves to a known Worker means this is a
+  // worker payment, not a real vendor payment — that's Field Payments/
+  // Phase 2 enrichment territory, not this entity.
+  validateFieldWithLookups(field, value, lookups) {
+    if (field.key !== "supplier_id") return null;
+    const workerMatch = resolveLookup(String(value), lookups.workers);
+    if (workerMatch) {
+      return `"${value}" matches field worker "${workerMatch.label}" — this looks like a worker payment, not a real vendor payment. Not importing here (a separate Field Payments enrichment pass will handle this data instead).`;
+    }
+    return null;
+  },
+
+  remapValue(fieldKey, rawValue) {
+    if (fieldKey === "payment_date") return remapDateField(rawValue);
+    if (fieldKey !== "payment_method") return undefined;
+    const mapped = PAYMENT_MODE_ALIASES[rawValue.trim().toLowerCase()];
+    if (mapped) return { value: mapped, usedFallback: false };
+    return { value: "other", usedFallback: true };
+  },
+
+  buildPayload(values, lookups, companyId) {
+    const supplierMatch = resolveLookup(values.supplier_id, lookups.suppliers);
+    const invoiceMatch = resolveLookup(values.invoice_id, lookups.bills);
+    const bankRef = values.bank_reference_number ? String(values.bank_reference_number).trim() : "";
+    const paymentStatus = values.payment_status ? String(values.payment_status).trim() : "";
+    const noteParts = [
+      bankRef ? `Bank Ref: ${bankRef}` : "",
+      paymentStatus ? `Zoho Payment Status: ${paymentStatus}` : "",
+      "Migrated from Zoho Vendor_Payment.csv import.",
+    ].filter(Boolean);
+    return {
+      company_id: companyId,
+      supplier_id: supplierMatch ? supplierMatch.id : null,
+      invoice_id: invoiceMatch ? invoiceMatch.id : null,
+      payment_number: String(values.payment_number).trim(),
+      payment_date: values.payment_date ? parseLooseDate(String(values.payment_date)) : null,
+      amount: (() => { const n = toNumber(values.amount); return isFinite(n) ? n : 0; })(),
+      payment_method: values.payment_method || "other",
+      reference_number: values.reference_number ? String(values.reference_number).trim() : null,
+      notes: noteParts.join(" | "),
+    };
+  },
+};
+
 // Lookup-only target for Expenses' category field — not a directly-
 // importable entity (Veron never runs a separate "import categories" pass),
 // just something another entity's field can resolve/create against.
@@ -1262,6 +1432,7 @@ export const ENTITY_CONFIGS: EntityImportConfig[] = [
   suppliersConfig,
   billsConfig,
   fieldPaymentsConfig,
+  supplierPaymentsConfig,
 ];
 
 export function getEntityConfig(key: string): EntityImportConfig | undefined {
@@ -1276,10 +1447,17 @@ export function getEntityConfig(key: string): EntityImportConfig | undefined {
 // data migration this session, not this wizard — see the workersLookup
 // comment above). SettingsImportPage.tsx uses this (not ENTITY_CONFIGS)
 // to build the live lookup maps a wizard's fields declare.
+//
+// bills: billsConfig is Supplier Payments' "look up against another
+// entity's real, already-imported rows" need (resolving a payment's Bill
+// Number against supplier_invoices.invoice_number) — no new mechanism
+// required for this at all, just this one registration, same as every
+// other full-config-as-lookup-source entry here.
 export const LOOKUP_SOURCES: Record<string, LookupSource> = {
   clients: clientsConfig,
   projects: projectsConfig,
   expense_categories: expenseCategoriesLookup,
   suppliers: suppliersConfig,
   workers: workersLookup,
+  bills: billsConfig,
 };
