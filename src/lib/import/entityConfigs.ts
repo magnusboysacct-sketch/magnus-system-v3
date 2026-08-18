@@ -1212,6 +1212,13 @@ const fieldPaymentsConfig: EntityImportConfig = {
       total_amount: totalAmount,
       payment_method: "cash",
       status: "completed",
+      // Persisted as its own column (field_payments.bill_number) so a
+      // future enrichment/matching pass against a payments file can join
+      // on it directly — not just embedded in notes text the way the
+      // first 313 records were, which needed a one-off backfill migration
+      // to recover reliably. Still also kept in notes below for a human
+      // glancing at one record, at no extra cost.
+      bill_number: billRef,
       notes: billRef ? `Migrated from Zoho Bill.csv (Bill ${billRef}).` : "Migrated from Zoho Bill.csv import.",
     };
   },
