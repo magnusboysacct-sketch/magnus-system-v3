@@ -297,6 +297,27 @@ export interface EntityImportConfig {
   // on, which extra keys are safe to overwrite given what this particular
   // row provided. Return {} to add nothing.
   buildGroupHeaderUpdateExtras?: (headerValues: Record<string, any>, headerPayload: Record<string, any>) => Record<string, any>;
+
+  // Optional. For an entity whose rows can reference OTHER ROWS IN THE
+  // SAME UPLOAD (e.g. Chart of Accounts' Parent Account — a lookup
+  // against sibling rows being imported right now, not pre-existing DB
+  // data resolvable via the normal LookupMaps built before Preview even
+  // ran). Called once, after every row in this batch has already been
+  // created/updated by the normal loop — receives the real ids just
+  // produced (only for rows that succeeded; excluded/failed rows are
+  // absent) plus every row's original mapped values (including whatever
+  // raw self-referencing field the config chose not to resolve via
+  // buildPayload), and does whatever follow-up work is needed — typically
+  // one fresh query against the live table (which now includes this
+  // batch) to resolve names to ids, then targeted UPDATE calls. Runs
+  // regardless of upload order, and naturally also resolves a reference
+  // to an account from an EARLIER import, not only ones in this same
+  // batch, since it queries live data rather than only this run's rows.
+  resolveSelfReferentialLinks?: (
+    outcomes: { rowIndex: number; id: string }[],
+    previewRows: PreviewRow[],
+    companyId: string
+  ) => Promise<void>;
 }
 
 // A fetchable source of {id, label} records for lookup/create resolution.

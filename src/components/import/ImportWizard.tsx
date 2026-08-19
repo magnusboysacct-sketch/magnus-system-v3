@@ -573,6 +573,23 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
       else if (row.action === "skip") results.push({ status: "skipped", rowIndex: row.rowIndex, reason: row.match ? "Matched an existing record" : "Skipped by user" });
     }
 
+    // Self-referencing links (e.g. Chart of Accounts' Parent Account) can
+    // only resolve once every row in this batch has a real id — runs
+    // once here, after every row has been attempted, still before the
+    // user sees "Done." A failure here doesn't retroactively undo the
+    // accounts already created above (those succeeded independently); it
+    // surfaces as a page-level error so it's visible, not silent.
+    if (config.resolveSelfReferentialLinks) {
+      const successfulOutcomes = results
+        .filter((r): r is Extract<RowOutcome, { status: "created" | "updated" }> => r.status === "created" || r.status === "updated")
+        .map(r => ({ rowIndex: r.rowIndex, id: r.id }));
+      try {
+        await config.resolveSelfReferentialLinks(successfulOutcomes, previewRows, companyId);
+      } catch (e: any) {
+        setError(`Records were created successfully, but linking parent accounts afterward failed: ${e.message || "Unknown error"}`);
+      }
+    }
+
     setOutcomes(results);
     setStep("result");
     onEntityComplete?.(results);

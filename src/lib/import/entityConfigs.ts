@@ -1428,6 +1428,214 @@ const workersLookup: LookupSource = {
   },
 };
 
+// ─── Chart of Accounts (chart_of_accounts table) ─────────────────────────────
+//
+// Real table confirmed via the live migration (20260329190000_create_
+// chart_of_accounts.sql) — company/code-unique (UNIQUE(company_id, code)),
+// code/name/type all NOT NULL, type CHECK-constrained to exactly asset/
+// liability/equity/revenue/expense, parent_id a nullable self-referencing
+// FK (with its own DB-level circular-reference guard trigger — a real
+// safety net this import deliberately doesn't try to duplicate), level
+// nullable but CHECK(level >= 1 AND level <= 10). A seed function for a
+// default construction chart of accounts exists in a later migration
+// (seed_default_chart_of_accounts) but is never called anywhere in the
+// app or any other migration — confirmed via a full-repo search, not
+// assumed — so this table is empty for every real company today; Veron's
+// 90-account file is the first real data it will ever receive.
+//
+// Parent Account is the genuinely new piece: a lookup against OTHER ROWS
+// IN THE SAME UPLOAD, not pre-existing DB data resolvable the normal way
+// via LookupMaps (which are built once, before Preview even runs, from
+// whatever already existed in the DB at that point). Two-pass design:
+// buildPayload always sends parent_id: null (Pass 1 — every account gets
+// created/updated normally, by the shell's completely unmodified loop);
+// resolveSelfReferentialLinks (Pass 2, a new shell hook — see types.ts)
+// runs once every row has a real id, does one fresh live query (which by
+// then includes everything this batch just created), and resolves both
+// parent_id AND level in the same pass, since level is just a function of
+// how many parent hops an account has once parent_id is known. This also
+// naturally handles a parent from an EARLIER import, not only ones in the
+// same batch — the resolution query is against live data, not just this
+// run's own rows. A child whose referenced parent doesn't resolve (not in
+// this upload, and not already in the DB) simply stays a root-level
+// account rather than failing outright — the DB's own circular-reference
+// trigger is the real backstop, not something duplicated here.
+//
+// type deliberately does NOT follow this wizard's usual remap-with-safe-
+// default pattern (Bills' status -> "pending", Suppliers' is_active ->
+// true on anything unrecognized). Getting an account's type wrong isn't a
+// soft workflow default — it's the literal categorization the P&L/Balance
+// Sheet math groups on, so an unrecognized value is a BLOCKING error
+// (validateField rejects it, and since type is required that excludes
+// just that one account) rather than a silent guess that could
+// miscategorize real money.
+const ACCOUNT_TYPE_ALIASES: Record<string, string> = {
+  asset: "asset", assets: "asset",
+  liability: "liability", liabilities: "liability",
+  equity: "equity",
+  revenue: "revenue", income: "revenue", revenues: "revenue",
+  expense: "expense", expenses: "expense",
+};
+
+const chartOfAccountsConfig: EntityImportConfig = {
+  key: "chart_of_accounts",
+  label: "Chart of Accounts",
+  table: "chart_of_accounts",
+  dedupEnabled: true,
+
+  fields: [
+    { key: "name", label: "Account Name", required: true, type: "text",
+      aliases: ["account name", "name"] },
+    { key: "code", label: "Account Code", required: true, type: "text",
+      aliases: ["account code", "code", "account number"] },
+    { key: "type", label: "Account Type", required: true, type: "select",
+      options: [
+        { value: "asset", label: "Asset" }, { value: "liability", label: "Liability" },
+        { value: "equity", label: "Equity" }, { value: "revenue", label: "Revenue" },
+        { value: "expense", label: "Expense" },
+      ],
+      aliases: ["account type", "type"] },
+    { key: "description", label: "Description", required: false, type: "text",
+      aliases: ["description"] },
+    // Plain text, not type "lookup" — never resolved by buildPayload at
+    // all. resolveSelfReferentialLinks (Pass 2) is the only thing that
+    // ever reads this field's value.
+    { key: "parent_account", label: "Parent Account", required: false, type: "text",
+      aliases: ["parent account", "parent", "parent account name"] },
+    { key: "is_active", label: "Status", required: false, type: "select",
+      options: [{ value: "true", label: "Active" }, { value: "false", label: "Inactive" }],
+      aliases: ["account status", "status"] },
+  ],
+
+  async fetchExisting(companyId: string): Promise<ExistingRecord[]> {
+    const { data, error } = await supabase
+      .from("chart_of_accounts")
+      .select("id, code, name")
+      .eq("company_id", companyId);
+    if (error) throw error;
+    return (data || []).map(a => ({ id: a.id, label: a.name, keys: [normalizeKey(a.code)].filter(Boolean) }));
+  },
+
+  matchKeysFor(values) {
+    return values.code ? [normalizeKey(String(values.code))] : [];
+  },
+
+  validateField(field, value) {
+    if (field.key === "type") {
+      const valid = new Set(["asset", "liability", "equity", "revenue", "expense"]);
+      if (!valid.has(String(value).toLowerCase())) {
+        return `Doesn't match a recognized account type (asset/liability/equity/revenue/expense) — got "${value}"`;
+      }
+    }
+    return null;
+  },
+
+  remapValue(fieldKey, rawValue) {
+    if (fieldKey === "type") {
+      const mapped = ACCOUNT_TYPE_ALIASES[rawValue.trim().toLowerCase()];
+      // Deliberately no fallback default here — see the header comment
+      // above. Leaving the raw text in place on a miss means
+      // validateField (which runs right after) correctly rejects it as
+      // invalid, rather than this hook silently picking something.
+      return mapped ? { value: mapped, usedFallback: false } : undefined;
+    }
+    if (fieldKey !== "is_active") return undefined;
+    const raw = rawValue.trim().toLowerCase();
+    if (["active", "enabled", "yes", "y", "true", "1"].includes(raw)) return { value: "true", usedFallback: false };
+    if (["inactive", "disabled", "no", "n", "false", "0"].includes(raw)) return { value: "false", usedFallback: false };
+    // Blank/unrecognized -> true, same "less-restrictive default for
+    // historical migrated data" reasoning as Suppliers' is_active.
+    return { value: "true", usedFallback: true };
+  },
+
+  buildPayload(values, _lookups, companyId) {
+    return {
+      company_id: companyId,
+      code: String(values.code).trim(),
+      name: String(values.name).trim(),
+      type: values.type,
+      description: values.description ? String(values.description).trim() : null,
+      is_active: values.is_active !== "false",
+      // Always null at create/update time — resolveSelfReferentialLinks
+      // (Pass 2) is the only thing that ever sets these two columns.
+      parent_id: null,
+      level: null,
+    };
+  },
+
+  async resolveSelfReferentialLinks(outcomes, previewRows, companyId) {
+    const { data: liveAccounts, error } = await supabase
+      .from("chart_of_accounts")
+      .select("id, code, name, parent_id")
+      .eq("company_id", companyId);
+    if (error) throw error;
+
+    const nameToId = new Map<string, string>();
+    const codeToId = new Map<string, string>();
+    const parentOf = new Map<string, string | null>();
+    for (const a of liveAccounts || []) {
+      const nameKey = normalizeKey(a.name);
+      if (nameKey && !nameToId.has(nameKey)) nameToId.set(nameKey, a.id);
+      const codeKey = normalizeKey(a.code);
+      if (codeKey) codeToId.set(codeKey, a.id);
+      parentOf.set(a.id, a.parent_id ?? null);
+    }
+
+    const outcomeByRowIndex = new Map(outcomes.map(o => [o.rowIndex, o.id]));
+
+    // Resolve every batch row's own id and its parent_id (if any) into
+    // our in-memory view first, so level computation below reflects the
+    // intended final state even before each row's own UPDATE round-trip
+    // completes.
+    const resolvedParent = new Map<string, string | null>(); // ownId -> resolved parent_id, or null
+    for (const row of previewRows) {
+      const ownId = outcomeByRowIndex.get(row.rowIndex)
+        ?? (row.values.code ? codeToId.get(normalizeKey(String(row.values.code))) : undefined);
+      if (!ownId) continue; // row was excluded/failed — nothing to link
+
+      const rawParent = row.values.parent_account;
+      let parentId: string | null = null;
+      if (rawParent && String(rawParent).trim() !== "") {
+        const candidate = nameToId.get(normalizeKey(String(rawParent)));
+        if (candidate && candidate !== ownId) parentId = candidate;
+      }
+      resolvedParent.set(ownId, parentId);
+      parentOf.set(ownId, parentId);
+    }
+
+    // Root accounts (no parent) are level 1, not 0 — the DB's own
+    // CHECK(level >= 1 AND level <= 10) requires it. A cycle guard is
+    // included defensively even though the DB's own trigger already
+    // prevents a real circular reference from ever being written.
+    function computeLevel(id: string): number {
+      let level = 1;
+      let current = parentOf.get(id) ?? null;
+      const seen = new Set<string>([id]);
+      while (current) {
+        if (seen.has(current)) break;
+        seen.add(current);
+        level++;
+        if (level >= 10) break;
+        current = parentOf.get(current) ?? null;
+      }
+      return Math.min(level, 10);
+    }
+
+    for (const [ownId, parentId] of resolvedParent) {
+      const payload: Record<string, any> = { level: computeLevel(ownId) };
+      if (parentId) payload.parent_id = parentId;
+      const { error: updErr } = await supabase.from("chart_of_accounts").update(payload).eq("id", ownId);
+      if (updErr) {
+        // The account itself was already created successfully — a
+        // failed parent/level link is a lesser, recoverable problem, not
+        // grounds to undo real data. Logged, not thrown, so one bad link
+        // doesn't abort linking for every other account in the batch.
+        console.error(`Failed to link parent/level for chart_of_accounts ${ownId}:`, updErr);
+      }
+    }
+  },
+};
+
 // ─── Registry ───────────────────────────────────────────────────────────────
 // The wizard's entity picker walks ENTITY_CONFIGS, so sequencing (Clients
 // -> Projects -> Expenses) is enforced just by array order.
@@ -1440,6 +1648,7 @@ export const ENTITY_CONFIGS: EntityImportConfig[] = [
   billsConfig,
   fieldPaymentsConfig,
   supplierPaymentsConfig,
+  chartOfAccountsConfig,
 ];
 
 export function getEntityConfig(key: string): EntityImportConfig | undefined {
