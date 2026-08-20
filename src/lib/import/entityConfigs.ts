@@ -1475,6 +1475,85 @@ const ACCOUNT_TYPE_ALIASES: Record<string, string> = {
   equity: "equity",
   revenue: "revenue", income: "revenue", revenues: "revenue",
   expense: "expense", expenses: "expense",
+
+  // Confirmed against every one of the 14 distinct Account Type values in
+  // Veron's real 90-row Chart_of_Accounts.csv — Zoho's own vocabulary
+  // (QuickBooks-style categories) never matches this app's 5-value CHECK
+  // verbatim, same reason every other remap in this wizard exists. This
+  // list covers 100% of his real data; anything not in it still hits the
+  // deliberate strict-reject path below, unchanged — this only widens
+  // which real-world spellings are recognized, not how strict an
+  // unrecognized one is treated.
+  bank: "asset",
+  cash: "asset",
+  "fixed asset": "asset",
+  "other current asset": "asset",
+  stock: "asset",
+  "accounts receivable": "asset",
+
+  "other current liability": "liability",
+  "other liability": "liability",
+  "accounts payable": "liability",
+
+  "cost of goods sold": "expense",
+  "other expense": "expense",
+};
+
+// Populates chart_of_accounts.subtype from the SAME raw Zoho Account Type
+// text used above for `type` — subtype has no column of its own in Veron's
+// file, it's purely derived. Confirmed against the real subtype CHECK
+// constraint in supabase/migrations/20260329190000_create_chart_of_accounts.sql
+// before mapping anything, not assumed:
+//   asset:     current_asset, fixed_asset, bank, accounts_receivable,
+//              inventory, prepaid_expense
+//   liability: current_liability, long_term_liability, accounts_payable,
+//              accrued_expense, deferred_revenue
+//   equity:    owner_equity, retained_earnings, common_stock,
+//              additional_paid_in_capital
+//   revenue:   service_revenue, product_revenue, other_revenue
+//   expense:   operating_expense, cost_of_goods_sold, selling_expense,
+//              administrative_expense, payroll_expense, other_expense
+//
+// Mapping rule, applied consistently: use the most SPECIFIC subtype when
+// Zoho's value clearly indicates one (Bank -> bank, Fixed Asset ->
+// fixed_asset, Accounts Receivable/Payable -> their exact counterparts,
+// Cost Of Goods Sold -> cost_of_goods_sold, Other Expense -> other_expense).
+// When the Zoho value gives no specific indication, fall back to that
+// type's own GENERIC/umbrella subtype ONLY IF the vocabulary actually has
+// one (current_asset, current_liability, other_revenue, other_expense are
+// genuine "unspecified" buckets, not a stretch — e.g. Cash IS truly a
+// current_asset even though there's no dedicated "cash" subtype). Where
+// NEITHER a specific nor a generic subtype honestly applies, leave it
+// unmapped so subtype stays null rather than forcing a bad fit:
+//   - Equity (bare): no generic equity subtype exists at all in the real
+//     vocabulary (owner_equity/retained_earnings/common_stock/
+//     additional_paid_in_capital are all specific) — a real structural
+//     gap, not a judgment call.
+// Two mappings below rest on Zoho's own naming convention rather than a
+// literal string match, flagged for review:
+//   - Stock -> inventory (Zoho's "Stock" account type conventionally means
+//     goods held on hand, i.e. inventory)
+//   - Other Liability -> long_term_liability (Zoho convention: "Other
+//     Liability" without a "Current" qualifier denotes the non-current/
+//     long-term bucket, distinct from "Other Current Liability")
+const ACCOUNT_SUBTYPE_ALIASES: Record<string, string> = {
+  bank: "bank",
+  cash: "current_asset",
+  "fixed asset": "fixed_asset",
+  "other current asset": "current_asset",
+  stock: "inventory",
+  "accounts receivable": "accounts_receivable",
+
+  "other current liability": "current_liability",
+  "other liability": "long_term_liability",
+  "accounts payable": "accounts_payable",
+
+  "cost of goods sold": "cost_of_goods_sold",
+  "other expense": "other_expense",
+  expense: "other_expense",
+
+  income: "other_revenue",
+  // "equity" deliberately absent — see header comment.
 };
 
 const chartOfAccountsConfig: EntityImportConfig = {
@@ -1486,7 +1565,16 @@ const chartOfAccountsConfig: EntityImportConfig = {
   fields: [
     { key: "name", label: "Account Name", required: true, type: "text",
       aliases: ["account name", "name"] },
-    { key: "code", label: "Account Code", required: true, type: "text",
+    // required: false — this must stay mappable (a future customer's
+    // file might have real codes), but must NOT block Map Columns just
+    // because a file has no code column at all, which is Veron's actual
+    // real data: confirmed every one of his 90 rows has this column
+    // present but blank (Zoho didn't require account codes). Never
+    // actually reaches buildPayload blank, though — postProcessPreviewRows
+    // below unconditionally assigns one to every row still missing it,
+    // before Preview is ever shown, so the DB's NOT NULL is always
+    // satisfied regardless of what the source file provided.
+    { key: "code", label: "Account Code", required: false, type: "text",
       aliases: ["account code", "code", "account number"] },
     { key: "type", label: "Account Type", required: true, type: "select",
       options: [
@@ -1513,11 +1601,22 @@ const chartOfAccountsConfig: EntityImportConfig = {
       .select("id, code, name")
       .eq("company_id", companyId);
     if (error) throw error;
-    return (data || []).map(a => ({ id: a.id, label: a.name, keys: [normalizeKey(a.code)].filter(Boolean) }));
+    return (data || []).map(a => ({ id: a.id, label: a.name, keys: [normalizeKey(a.code), normalizeKey(a.name)].filter(Boolean) }));
   },
 
+  // name added as a fallback key, not just code — genuinely necessary,
+  // not just extra safety: dedup match/action gets decided during the
+  // normal per-row build, which runs BEFORE postProcessPreviewRows ever
+  // assigns a code. On Veron's real file (every row blank) the code-based
+  // key alone would never fire at all, meaning a second upload of the
+  // exact same 90 accounts would be silently treated as 90 new ones
+  // instead of 90 duplicates — matching Clients' own email-then-name
+  // priority-ordered pattern, just code-then-name here.
   matchKeysFor(values) {
-    return values.code ? [normalizeKey(String(values.code))] : [];
+    const keys: string[] = [];
+    if (values.code) keys.push(normalizeKey(String(values.code)));
+    if (values.name) keys.push(normalizeKey(String(values.name)));
+    return keys;
   },
 
   validateField(field, value) {
@@ -1530,9 +1629,21 @@ const chartOfAccountsConfig: EntityImportConfig = {
     return null;
   },
 
-  remapValue(fieldKey, rawValue) {
+  remapValue(fieldKey, rawValue, values) {
     if (fieldKey === "type") {
-      const mapped = ACCOUNT_TYPE_ALIASES[rawValue.trim().toLowerCase()];
+      const raw = rawValue.trim().toLowerCase();
+      const mapped = ACCOUNT_TYPE_ALIASES[raw];
+      // Side effect: also derive subtype from this SAME raw Account Type
+      // text, right here, before it's lost. This is the only point in the
+      // pipeline that ever sees the raw Zoho value — by the time
+      // buildPayload runs, values.type has already been overwritten with
+      // the canonical value below, so several distinct raw values (Bank,
+      // Cash, Fixed Asset, ...) would all be indistinguishable "asset" by
+      // then. `values` is passed by reference, so mutating it here reaches
+      // buildPayload without needing a new field or a new wizard hook —
+      // subtype isn't a user-mappable column at all, purely derived.
+      // See ACCOUNT_SUBTYPE_ALIASES above for the full mapping + reasoning.
+      values.subtype = ACCOUNT_SUBTYPE_ALIASES[raw] ?? null;
       // Deliberately no fallback default here — see the header comment
       // above. Leaving the raw text in place on a miss means
       // validateField (which runs right after) correctly rejects it as
@@ -1554,6 +1665,10 @@ const chartOfAccountsConfig: EntityImportConfig = {
       code: String(values.code).trim(),
       name: String(values.name).trim(),
       type: values.type,
+      // Stashed onto values as a side effect inside remapValue's "type"
+      // branch (see ACCOUNT_SUBTYPE_ALIASES) — null whenever Veron's
+      // Account Type value had no clean subtype equivalent.
+      subtype: values.subtype ?? null,
       description: values.description ? String(values.description).trim() : null,
       is_active: values.is_active !== "false",
       // Always null at create/update time — resolveSelfReferentialLinks
@@ -1561,6 +1676,85 @@ const chartOfAccountsConfig: EntityImportConfig = {
       parent_id: null,
       level: null,
     };
+  },
+
+  // Auto-generates Account Code for any row still missing one, once every
+  // row's type is already fully resolved (this runs after the entire
+  // per-row pipeline, so values.type is guaranteed to be the canonical
+  // lowercase value, never the raw Zoho text). Standard accounting
+  // convention, confirmed with Veron rather than picked arbitrarily:
+  // 1000s = asset, 2000s = liability, 3000s = equity, 4000s = revenue,
+  // 5000s+ = expense, incrementing by 10 within each type to leave room
+  // for manual insertions later. Runs at Preview time specifically (not
+  // buildPayload, which runs later at import time) so the code actually
+  // shown in Preview is the real one that gets written, not a surprise
+  // discovered only after commit — same "Preview must show the truth"
+  // principle that governed remapValue from the very first entity.
+  async postProcessPreviewRows(rows, _lookups, companyId) {
+    const TYPE_BASE: Record<string, number> = {
+      asset: 1000, liability: 2000, equity: 3000, revenue: 4000, expense: 5000,
+    };
+
+    // Seed each type's starting counter past whatever's already really in
+    // the DB, not blindly from the type's base every run — otherwise a
+    // SECOND import batch of genuinely new accounts (not a re-upload of
+    // the same file — dedup above already handles that case by matching
+    // on name) would try to hand out 1000, 1010, 1020... again and collide
+    // with codes a prior batch already claimed.
+    const { data: existing, error } = await supabase
+      .from("chart_of_accounts")
+      .select("code, type")
+      .eq("company_id", companyId);
+    if (error) throw error;
+
+    const nextCode: Record<string, number> = { ...TYPE_BASE };
+    for (const acc of existing || []) {
+      const base = TYPE_BASE[acc.type];
+      if (base === undefined) continue;
+      const n = Number(acc.code);
+      if (!isFinite(n) || isNaN(n)) continue;
+      // Only a code that's genuinely within this type's own numeric
+      // range counts as evidence for where its next free slot is — an
+      // existing account with a custom/non-numeric code, or one that
+      // happens to fall in a different type's range, shouldn't shift
+      // where auto-generated codes for THIS type start.
+      const ceiling = base + 999;
+      if (n >= base && n <= ceiling && n + 10 > nextCode[acc.type]) {
+        nextCode[acc.type] = n + 10;
+      }
+    }
+
+    // Also account for codes THIS batch's own source file already
+    // explicitly provided (not blank) — an auto-generated code must
+    // never collide with one a sibling row in the same upload supplied.
+    const explicitCodes = new Set<string>();
+    for (const row of rows) {
+      if (row.values.code) explicitCodes.add(normalizeKey(String(row.values.code)));
+    }
+
+    for (const row of rows) {
+      if (row.errors.length > 0) continue; // already excluded — nothing to assign
+      // A row matched to an existing account (skip or update) already has
+      // a real code on that existing record — never overwrite it with a
+      // freshly auto-generated one just because this row's own source
+      // value happened to be blank.
+      if (row.action !== "create") continue;
+      if (row.values.code && String(row.values.code).trim() !== "") continue;
+
+      const type = row.values.type; // already remapped to canonical lowercase by this point
+      const base = TYPE_BASE[type];
+      if (base === undefined) continue; // shouldn't happen — an unrecognized type already excluded this row above
+
+      let candidate = nextCode[type];
+      while (explicitCodes.has(normalizeKey(String(candidate)))) candidate += 10;
+
+      row.values.code = String(candidate);
+      row.fallbackFields = [...row.fallbackFields, "code"]; // same "derived, not from the file" flagging Preview already gives any other buildFallback-sourced value
+      explicitCodes.add(normalizeKey(String(candidate)));
+      nextCode[type] = candidate + 10;
+    }
+
+    return rows;
   },
 
   async resolveSelfReferentialLinks(outcomes, previewRows, companyId) {

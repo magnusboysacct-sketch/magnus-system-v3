@@ -318,6 +318,29 @@ export interface EntityImportConfig {
     previewRows: PreviewRow[],
     companyId: string
   ) => Promise<void>;
+
+  // Optional. Runs once, at Preview-build time, after every row/group has
+  // already gone through the normal per-row pipeline (mapping, remap,
+  // validation, dedup match) — receives the FULL set of PreviewRows built
+  // so far, free to read and mutate them with real cross-row visibility
+  // (something no other hook has: buildFallback only ever sees one row's
+  // own values) before they're ever shown to the user or written to
+  // React state. Built for Chart of Accounts' auto-generated Account
+  // Code — assigning sequential codes per account type needs to know
+  // about every other row's resolved type in the same batch, and about
+  // what codes already exist live in the DB, neither of which a single-
+  // row hook like buildFallback can see. Also receives lookups and
+  // companyId so an implementation can query live data (e.g. the highest
+  // existing code per type) the same way resolveSelfReferentialLinks
+  // does for its own, later, post-insert pass. Must return the full rows
+  // array (mutating in place and returning it is fine — this runs before
+  // setPreviewRows ever makes them React state, so there's no
+  // immutability concern yet).
+  postProcessPreviewRows?: (
+    rows: PreviewRow[],
+    lookups: LookupMaps,
+    companyId: string
+  ) => Promise<PreviewRow[]>;
 }
 
 // A fetchable source of {id, label} records for lookup/create resolution.

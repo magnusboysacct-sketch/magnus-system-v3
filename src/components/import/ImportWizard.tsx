@@ -338,7 +338,7 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
         for (const k of rec.keys) if (k && !existingIndex.has(k)) existingIndex.set(k, rec);
       }
 
-      const rows: PreviewRow[] = config.groupByField
+      const builtRows: PreviewRow[] = config.groupByField
         ? buildGroupedPreviewRows(parsedFile, mapping, config, lookups, existingIndex)
         : parsedFile.rows.map((row, rowIndex) => {
             const { values, fieldErrors, fieldWarnings, fallbackFields } = processRawRow(row, parsedFile.headers, mapping, config, lookups);
@@ -356,6 +356,14 @@ export default function ImportWizard({ config, companyId, lookups, onEntityCompl
             const action: DedupAction = errors.length > 0 ? "skip" : (match ? "skip" : "create");
             return { rowIndex, values, errors, warnings, fallbackFields, match, action };
           });
+
+      // Cross-row / live-DB-aware Preview post-processing (e.g. Chart of
+      // Accounts' sequential Account Code assignment) — runs once, after
+      // every row already has its normal per-row result, before anything
+      // ever reaches React state.
+      const rows = config.postProcessPreviewRows
+        ? await config.postProcessPreviewRows(builtRows, lookups, companyId)
+        : builtRows;
 
       setPreviewRows(rows);
       setStep("preview");
