@@ -15,6 +15,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProjectProvider, useProjectContext } from "./context/ProjectContext";
 import { useFinanceAccess } from "./hooks/useFinanceAccess";
 import { supabase } from "./lib/supabase";
+import { canAccessDirectorDashboard } from "./lib/permissions";
 
 // --- Pages -------------------------------------------------------------------
 import LoginPage              from "./pages/LoginPage";
@@ -25,6 +26,7 @@ import WorkerPortalPage       from "./pages/WorkerPortalPage";
 import FieldOpsPage           from "./pages/FieldOpsPage";
 import FieldAppPage           from "./pages/FieldAppPage";
 import DashboardPage          from "./pages/DashboardPage";
+import DirectorDashboardPage  from "./pages/DirectorDashboardPage";
 import ClientsPage            from "./pages/ClientsPage";
 import ProjectsPage           from "./pages/ProjectsPage";
 import ProjectDashboardPage   from "./pages/ProjectDashboardPage";
@@ -198,6 +200,17 @@ function RoleGuard({
   return <>{children}</>;
 }
 
+// Root ("/") landing-page switch — NOT a block-or-allow guard like
+// RoleGuard above; every role reaches a real page here, just a different
+// one for directors. Non-directors get exactly today's DashboardPage,
+// completely unchanged — this only decides WHICH page renders, it never
+// shows AccessRestricted for "/".
+function RootRoute() {
+  const { userRole, loadingProjects } = useProjectContext();
+  if (loadingProjects) return null;
+  return canAccessDirectorDashboard(userRole) ? <DirectorDashboardPage /> : <DashboardPage />;
+}
+
 // Finance-specific guard — reuses the existing finance_access_level system
 // (useFinanceAccess) already correctly enforced on FinanceTransactionsPage,
 // rather than a second, parallel role-list check for the same feature area.
@@ -238,7 +251,7 @@ export default function App() {
 
             {/* Protected app shell */}
             <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
-              <Route path="/"                       element={<DashboardPage />} />
+              <Route path="/"                       element={<RootRoute />} />
 
               {/* CRM */}
               <Route path="/clients"                element={<ClientsPage />} />

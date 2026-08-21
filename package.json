@@ -22,6 +22,7 @@
     "react-easy-crop": "^5.5.7",
     "react-image-crop": "^11.0.10",
     "react-router-dom": "^7.13.0",
+    "recharts": "^3.10.1",
     "tesseract.js": "^7.0.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz"
   },

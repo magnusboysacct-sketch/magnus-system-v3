@@ -38,3 +38,13 @@ export function canManageWorkers(role: string | null | undefined): boolean {
 export function canManageStaff(role: string | null | undefined): boolean {
   return !!role && (STAFF_MANAGER_ROLES as readonly string[]).includes(role);
 }
+
+// Director Dashboard ceiling — deliberately director-only, not
+// director+admin like STAFF_MANAGER_ROLES above. This surfaces company-
+// wide financials (cash position, owner draws, P&L) that admin doesn't
+// otherwise have a standing view into elsewhere in the app.
+const DIRECTOR_DASHBOARD_ROLES: readonly Role[] = ["director"];
+
+export function canAccessDirectorDashboard(role: string | null | undefined): boolean {
+  return !!role && (DIRECTOR_DASHBOARD_ROLES as readonly string[]).includes(role);
+}
