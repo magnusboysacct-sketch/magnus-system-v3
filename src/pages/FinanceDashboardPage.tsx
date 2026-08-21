@@ -116,6 +116,18 @@ export default function FinanceDashboardPage() {
     return acc;
   }, {});
 
+  // The accounting equation is Assets = Liabilities + Equity + Net Income
+  // (revenue - expenses), not just Liabilities + Equity — that's only
+  // true once closing entries have moved the period's net income into
+  // retained earnings, which this app never does. Without folding net
+  // income in, the equation compares against an incomplete equity side
+  // and reports "out of balance" even when the ledger is genuinely
+  // correct. stats.totalEquity itself is left as-is (the real sum of
+  // equity-type account balances) — this is a separate, derived total
+  // used only for the equation/balance check, so "Total Equity" stat
+  // cards elsewhere keep meaning what they already mean.
+  const totalEquityAndEarnings = stats.totalEquity + stats.netIncome;
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader
@@ -172,7 +184,7 @@ export default function FinanceDashboardPage() {
 
             {/* Accounting Equation */}
             <Card>
-              <CardHeader title="Accounting Equation" subtitle="Assets = Liabilities + Equity"/>
+              <CardHeader title="Accounting Equation" subtitle="Assets = Liabilities + Equity + Net Income"/>
               <div className="flex items-center justify-between gap-2 md:gap-4">
                 <div className="flex-1 min-w-0 text-center p-3 md:p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
                   <div className="text-[9px] font-bold uppercase tracking-widest text-cyan-600 mb-1">Assets</div>
@@ -188,9 +200,17 @@ export default function FinanceDashboardPage() {
                   <div className="text-[9px] font-bold uppercase tracking-widest text-violet-600 mb-1">Equity</div>
                   <div className="text-base md:text-2xl font-bold text-violet-300 truncate">{fmt(stats.totalEquity)}</div>
                 </div>
+                <div className="text-lg md:text-xl font-bold text-slate-600 flex-shrink-0">+</div>
+                <div className="flex-1 min-w-0 text-center p-3 md:p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-emerald-600 mb-1">Current Period Earnings</div>
+                  <div className="text-base md:text-2xl font-bold text-emerald-300 truncate">{fmt(stats.netIncome)}</div>
+                </div>
               </div>
-              <div className={cn("mt-3 text-center text-[10px] font-semibold", Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "text-emerald-400" : "text-amber-400")}>
-                {Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "✓ Balanced" : "⚠ Out of balance — check your journal entries"}
+              <div className="mt-2 text-center text-[9px] text-slate-500">
+                Current Period Earnings = Revenue − Expenses, not yet closed to retained earnings
+              </div>
+              <div className={cn("mt-3 text-center text-[10px] font-semibold", Math.abs(stats.totalAssets - (stats.totalLiabilities + totalEquityAndEarnings)) < 0.01 ? "text-emerald-400" : "text-amber-400")}>
+                {Math.abs(stats.totalAssets - (stats.totalLiabilities + totalEquityAndEarnings)) < 0.01 ? "✓ Balanced" : "⚠ Out of balance — check your journal entries"}
               </div>
             </Card>
 
@@ -415,19 +435,23 @@ export default function FinanceDashboardPage() {
                       <span className={cn("text-sm font-bold", r.color)}>{fmt(r.value)}</span>
                     </div>
                   ))}
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500">Current Period Earnings</span>
+                    <span className="text-sm font-bold text-emerald-400">{fmt(stats.netIncome)}</span>
+                  </div>
                   <div className="border-t border-slate-200 dark:border-white/[0.06] pt-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-400">L + E</span>
-                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{fmt(stats.totalLiabilities + stats.totalEquity)}</span>
+                      <span className="text-xs font-semibold text-slate-400">L + E + Net Income</span>
+                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{fmt(stats.totalLiabilities + totalEquityAndEarnings)}</span>
                     </div>
                   </div>
                   <Progress
                     value={stats.totalAssets}
-                    max={Math.max(stats.totalAssets, stats.totalLiabilities + stats.totalEquity, 1)}
-                    color={Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "cyan" : "amber"}
+                    max={Math.max(stats.totalAssets, stats.totalLiabilities + totalEquityAndEarnings, 1)}
+                    color={Math.abs(stats.totalAssets - (stats.totalLiabilities + totalEquityAndEarnings)) < 0.01 ? "cyan" : "amber"}
                   />
-                  <div className={cn("text-center text-[10px] font-semibold", Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "text-emerald-400" : "text-amber-400")}>
-                    {Math.abs(stats.totalAssets - (stats.totalLiabilities + stats.totalEquity)) < 0.01 ? "✓ Balanced" : "⚠ Check entries"}
+                  <div className={cn("text-center text-[10px] font-semibold", Math.abs(stats.totalAssets - (stats.totalLiabilities + totalEquityAndEarnings)) < 0.01 ? "text-emerald-400" : "text-amber-400")}>
+                    {Math.abs(stats.totalAssets - (stats.totalLiabilities + totalEquityAndEarnings)) < 0.01 ? "✓ Balanced" : "⚠ Check entries"}
                   </div>
                 </div>
               </Card>
