@@ -1394,6 +1394,279 @@ const supplierPaymentsConfig: EntityImportConfig = {
   },
 };
 
+// ─── Customer Payments (client_payments table) ───────────────────────────────
+//
+// Architecturally identical to Supplier Payments (mirrors it field-for-
+// field) — real table confirmed via the live migration
+// (20260315125158_create_finance_erp_system.sql), unchanged since
+// original creation (no later ALTER TABLE touches it): payment_method
+// CHECK-constrained to the SAME vocabulary as supplier_payments
+// (check/ach/wire/credit_card/cash/other), so PAYMENT_MODE_ALIASES is
+// reused directly rather than duplicated. No status or deposit_to column
+// exists at all — same gap as Supplier Payments' bank_reference_number/
+// payment_status, same treatment: folded into notes, not dropped.
+const clientPaymentsConfig: EntityImportConfig = {
+  key: "client_payments",
+  label: "Customer Payments",
+  table: "client_payments",
+  dedupEnabled: true,
+
+  fields: [
+    { key: "payment_number", label: "Payment Number", required: true, type: "text",
+      aliases: ["payment number", "payment no", "payment #"] },
+    { key: "payment_date", label: "Date", required: true, type: "date",
+      aliases: ["date", "payment date"] },
+    { key: "client_id", label: "Customer Name", required: false, type: "lookup", lookupEntityKey: "clients",
+      aliases: ["customer name", "customer", "client name", "client"] },
+    { key: "invoice_id", label: "Invoice Number", required: false, type: "lookup", lookupEntityKey: "invoices",
+      aliases: ["invoice number", "invoice no", "invoice #"] },
+    { key: "amount", label: "Amount", required: true, type: "number",
+      aliases: ["amount", "payment amount"] },
+    { key: "payment_method", label: "Mode", required: false, type: "select",
+      options: [
+        { value: "cash", label: "Cash" }, { value: "check", label: "Check" },
+        { value: "ach", label: "ACH" }, { value: "wire", label: "Wire" },
+        { value: "credit_card", label: "Credit Card" }, { value: "other", label: "Other" },
+      ],
+      aliases: ["mode", "payment method", "payment mode"] },
+    { key: "reference_number", label: "Reference Number", required: false, type: "text",
+      aliases: ["reference number", "reference no", "ref number", "ref #"] },
+    // Neither has a dedicated column on client_payments — folded into
+    // notes by buildPayload, same treatment as supplier_payments' bank_
+    // reference_number/payment_status. Still genuinely mappable even
+    // though Veron's real file's Deposit To sample is always "Undeposited
+    // Funds" — a future file might vary.
+    { key: "deposit_to", label: "Deposit To", required: false, type: "text",
+      aliases: ["deposit to", "deposit account"] },
+    { key: "payment_status", label: "Payment Status", required: false, type: "text",
+      aliases: ["payment status", "status"] },
+  ],
+
+  async fetchExisting(companyId: string): Promise<ExistingRecord[]> {
+    const { data, error } = await supabase
+      .from("client_payments")
+      .select("id, payment_number")
+      .eq("company_id", companyId);
+    if (error) throw error;
+    return (data || []).map(p => ({ id: p.id, label: p.payment_number, keys: [normalizeKey(p.payment_number)] }));
+  },
+
+  matchKeysFor(values) {
+    return values.payment_number ? [normalizeKey(String(values.payment_number))] : [];
+  },
+
+  validateField(field, value) {
+    if (field.key === "payment_date" && !parseLooseDate(String(value))) return "Doesn't look like a valid date";
+    if (field.key === "amount") {
+      const n = toNumber(value);
+      if (!isFinite(n) || isNaN(n)) return "Doesn't look like a valid number";
+    }
+    return null;
+  },
+
+  remapValue(fieldKey, rawValue) {
+    if (fieldKey === "payment_date") return remapDateField(rawValue);
+    if (fieldKey !== "payment_method") return undefined;
+    // Reuses PAYMENT_MODE_ALIASES (defined above, right before
+    // supplierPaymentsConfig) — client_payments.payment_method has the
+    // exact same CHECK vocabulary as supplier_payments, confirmed against
+    // the live schema, not assumed.
+    const mapped = PAYMENT_MODE_ALIASES[rawValue.trim().toLowerCase()];
+    if (mapped) return { value: mapped, usedFallback: false };
+    return { value: "other", usedFallback: true };
+  },
+
+  buildPayload(values, lookups, companyId) {
+    const clientMatch = resolveLookup(values.client_id, lookups.clients);
+    const invoiceMatch = resolveLookup(values.invoice_id, lookups.invoices);
+    const depositTo = values.deposit_to ? String(values.deposit_to).trim() : "";
+    const paymentStatus = values.payment_status ? String(values.payment_status).trim() : "";
+    const noteParts = [
+      depositTo ? `Deposit To: ${depositTo}` : "",
+      paymentStatus ? `Zoho Payment Status: ${paymentStatus}` : "",
+      "Migrated from Zoho Customer_Payment.csv import.",
+    ].filter(Boolean);
+    return {
+      company_id: companyId,
+      client_id: clientMatch ? clientMatch.id : null,
+      invoice_id: invoiceMatch ? invoiceMatch.id : null,
+      payment_number: String(values.payment_number).trim(),
+      payment_date: values.payment_date ? parseLooseDate(String(values.payment_date)) : null,
+      amount: (() => { const n = toNumber(values.amount); return isFinite(n) ? n : 0; })(),
+      payment_method: values.payment_method || "other",
+      reference_number: values.reference_number ? String(values.reference_number).trim() : null,
+      notes: noteParts.join(" | "),
+    };
+  },
+};
+
+// ─── Transfer Fund (posts directly to gl_transactions/gl_entries) ────────────
+//
+// No dedicated business table exists for this entity — confirmed via a
+// full migration search, no fund_transfers table anywhere. Each row
+// posts directly to the general ledger: buildPayload creates the
+// gl_transactions HEADER only (status: "draft" — never posted directly,
+// same two-step draft-then-post discipline as postingEngine.ts's
+// createGLTransaction, needed so the balance-update-on-posting trigger
+// added earlier this session actually fires); resolveSelfReferentialLinks
+// (Pass 2 — built for Chart of Accounts' parent-link resolution, reused
+// here for something else entirely, but its (outcomes, previewRows,
+// companyId) signature is exactly what's needed: every header's real id,
+// plus each row's already-resolved debit/credit account ids) inserts the
+// two gl_entries lines per transaction and flips status to "posted" once
+// both are in.
+//
+// Routing is purely mechanical per Veron's confirmation: Transaction Type
+// literally "Money Paid to User" -> debit is the owner's equity account;
+// anything else -> ordinary internal transfer. Both cases resolve To
+// Account and From Account by the SAME exact-name lookup against
+// chart_of_accounts — confirmed the raw "To Account" column literally
+// contains "Enron Williams"/"Veron Williams" text for owner-draw rows, so
+// no special-cased account lookup is needed; only which side ends up
+// debit vs credit changes.
+//
+// Both From Account and To Account MUST block (not soft-skip) on an
+// unresolved name — gl_entries.account_id is NOT NULL REFERENCES
+// chart_of_accounts(id), so an unresolved lookup can't just leave the
+// row's other fields valid the way a normal non-blocking lookup does;
+// the row genuinely cannot be inserted at all without both resolving.
+// validateFieldWithLookups (blocking regardless of field.required, same
+// mechanism Bills/Supplier Payments use for their worker-routing
+// exclusion) enforces this.
+//
+// dedupEnabled: false — same reasoning as Expenses/Field Payments: no
+// natural unique identifier in the source file, and two genuinely
+// separate real transfers between the same two accounts for the same
+// amount on the same day are entirely plausible, not duplicates.
+const fundTransferConfig: EntityImportConfig = {
+  key: "fund_transfer",
+  label: "Transfer Fund",
+  table: "gl_transactions",
+  dedupEnabled: false,
+
+  fields: [
+    { key: "transaction_type", label: "Transaction Type", required: true, type: "text",
+      aliases: ["transaction type", "type"] },
+    { key: "date", label: "Date", required: true, type: "date",
+      aliases: ["date", "transaction date"] },
+    { key: "from_account", label: "From Account", required: true, type: "lookup", lookupEntityKey: "chart_of_accounts",
+      aliases: ["from account", "from", "source account"] },
+    { key: "to_account", label: "To Account", required: true, type: "lookup", lookupEntityKey: "chart_of_accounts",
+      aliases: ["to account", "to", "destination account"] },
+    { key: "amount", label: "Amount", required: true, type: "number",
+      aliases: ["amount", "transfer amount"] },
+    { key: "description", label: "Description", required: false, type: "text",
+      aliases: ["description", "notes", "memo"] },
+  ],
+
+  async fetchExisting() { return []; }, // dedup disabled — never called, present only to satisfy the type
+  matchKeysFor() { return []; },        // same
+
+  validateField(field, value) {
+    if (field.key === "date" && !parseLooseDate(String(value))) return "Doesn't look like a valid date";
+    if (field.key === "amount") {
+      const n = toNumber(value);
+      if (!isFinite(n) || isNaN(n)) return "Doesn't look like a valid number";
+      if (n <= 0) return "Amount must be greater than 0"; // matches gl_transactions' own CHECK(total_amount > 0)
+    }
+    return null;
+  },
+
+  // Both From Account and To Account must resolve — a null account_id on
+  // either side would violate gl_entries' NOT NULL FK outright, so this
+  // has to block, not soft-skip like every other entity's plain lookup.
+  validateFieldWithLookups(field, value, lookups) {
+    if (field.key !== "from_account" && field.key !== "to_account") return null;
+    const match = resolveLookup(String(value), lookups.chart_of_accounts);
+    if (!match) {
+      return `"${value}" doesn't match any account in the Chart of Accounts by exact name — cannot post a transfer without a real account on both sides.`;
+    }
+    return null;
+  },
+
+  remapValue(fieldKey, rawValue) {
+    if (fieldKey === "date") return remapDateField(rawValue);
+    return undefined;
+  },
+
+  buildPayload(values, lookups, companyId) {
+    const fromMatch = resolveLookup(values.from_account, lookups.chart_of_accounts);
+    const toMatch = resolveLookup(values.to_account, lookups.chart_of_accounts);
+    const isOwnerDraw = String(values.transaction_type || "").trim().toLowerCase() === "money paid to user";
+    const description = values.description
+      ? String(values.description).trim()
+      : `${isOwnerDraw ? "Owner draw" : "Fund transfer"}: ${values.from_account} -> ${values.to_account}`;
+    const amount = (() => { const n = toNumber(values.amount); return isFinite(n) ? n : 0; })();
+
+    // Stashed onto values as side effects — values is the same object
+    // reference that lives in previewRows, so resolveSelfReferentialLinks
+    // (Pass 2, below) can read these back directly without re-resolving
+    // the lookups a second time. Same technique Chart of Accounts uses to
+    // pass subtype from remapValue through to buildPayload.
+    values._debitAccountId = toMatch ? toMatch.id : null;
+    values._creditAccountId = fromMatch ? fromMatch.id : null;
+    values._amount = amount;
+
+    return {
+      company_id: companyId,
+      // Random suffix, not just Date.now() — the wizard processes rows in
+      // parallel chunks (see runImport in ImportWizard.tsx), so two rows'
+      // buildPayload calls landing in the same millisecond is a real
+      // possibility, not a theoretical one; a pure Date.now() scheme is
+      // exactly the collision risk already flagged as a bug in
+      // postingEngine.ts's postTransactionWithData earlier this session.
+      transaction_number: `FT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      transaction_date: values.date ? parseLooseDate(String(values.date)) : null,
+      source_type: "fund_transfer",
+      description,
+      total_amount: amount,
+      status: "draft", // Pass 2 below flips this to "posted" once entries exist
+      notes: "Migrated from Zoho Transfer_Fund.csv import.",
+    };
+  },
+
+  // Pass 2: insert the two gl_entries lines per transaction (debit/credit
+  // account ids were already resolved and stashed onto values during the
+  // main per-row pass above), then flip status to "posted" — a genuine
+  // draft -> posted transition, which the balance-update-on-posting
+  // trigger added earlier this session fires on correctly.
+  async resolveSelfReferentialLinks(outcomes, previewRows, companyId) {
+    const outcomeByRowIndex = new Map(outcomes.map(o => [o.rowIndex, o.id]));
+
+    for (const row of previewRows) {
+      const transactionId = outcomeByRowIndex.get(row.rowIndex);
+      if (!transactionId) continue; // row was excluded/failed — nothing to post
+
+      const debitAccountId = row.values._debitAccountId;
+      const creditAccountId = row.values._creditAccountId;
+      const amount = row.values._amount;
+      if (!debitAccountId || !creditAccountId || !amount) {
+        console.error(`Transfer row ${row.rowIndex}: missing resolved account/amount, skipping entries insert for transaction ${transactionId}`);
+        continue;
+      }
+
+      const { error: entriesErr } = await supabase.from("gl_entries").insert([
+        { transaction_id: transactionId, company_id: companyId, account_id: debitAccountId, debit: amount, credit: 0, line_number: 1, entry_type: "regular" },
+        { transaction_id: transactionId, company_id: companyId, account_id: creditAccountId, debit: 0, credit: amount, line_number: 2, entry_type: "regular" },
+      ]);
+      if (entriesErr) {
+        // The header stays "draft" — never posted without real entries to
+        // back it, same "logged, not thrown, one bad row doesn't abort
+        // the batch" discipline as Chart of Accounts' own Pass 2.
+        console.error(`Failed to insert entries for transfer transaction ${transactionId}:`, entriesErr);
+        continue;
+      }
+
+      const { error: postErr } = await supabase.from("gl_transactions")
+        .update({ status: "posted", posted_at: new Date().toISOString() })
+        .eq("id", transactionId);
+      if (postErr) {
+        console.error(`Failed to post transfer transaction ${transactionId}:`, postErr);
+      }
+    }
+  },
+};
+
 // Lookup-only target for Expenses' category field — not a directly-
 // importable entity (Veron never runs a separate "import categories" pass),
 // just something another entity's field can resolve/create against.
@@ -1843,6 +2116,8 @@ export const ENTITY_CONFIGS: EntityImportConfig[] = [
   fieldPaymentsConfig,
   supplierPaymentsConfig,
   chartOfAccountsConfig,
+  clientPaymentsConfig,
+  fundTransferConfig,
 ];
 
 export function getEntityConfig(key: string): EntityImportConfig | undefined {
@@ -1863,6 +2138,13 @@ export function getEntityConfig(key: string): EntityImportConfig | undefined {
 // Number against supplier_invoices.invoice_number) — no new mechanism
 // required for this at all, just this one registration, same as every
 // other full-config-as-lookup-source entry here.
+//
+// invoices: invoicesConfig is Customer Payments' equivalent (resolving a
+// payment's Invoice Number against client_invoices.invoice_number) — same
+// pattern, same zero-new-mechanism reuse.
+//
+// chart_of_accounts: chartOfAccountsConfig is Transfer Fund's From
+// Account/To Account resolution target — same reuse again.
 export const LOOKUP_SOURCES: Record<string, LookupSource> = {
   clients: clientsConfig,
   projects: projectsConfig,
@@ -1870,4 +2152,6 @@ export const LOOKUP_SOURCES: Record<string, LookupSource> = {
   suppliers: suppliersConfig,
   workers: workersLookup,
   bills: billsConfig,
+  invoices: invoicesConfig,
+  chart_of_accounts: chartOfAccountsConfig,
 };
