@@ -74,6 +74,10 @@ Deno.serve(async (req) => {
     const rawRole = String(body.role || "site_user").trim();
     // Must match user_profiles.role CHECK constraint exactly (live constraint,
     // confirmed via pg_get_constraintdef — see role-vocabulary audit).
+    // 'secretary' added after that audit, once the Secretary Workspace
+    // migration landed and the role went live — this whitelist was never
+    // updated to match at the time, so inviting anyone as Secretary
+    // silently fell back to site_user until now.
     const allowedRoles = [
       "director",
       "admin",
@@ -81,6 +85,7 @@ Deno.serve(async (req) => {
       "supervisor",
       "office_user",
       "site_user",
+      "secretary",
     ];
     const role = allowedRoles.includes(rawRole) ? rawRole : "site_user";
 

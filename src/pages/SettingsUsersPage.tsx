@@ -13,7 +13,8 @@ type Role =
   | "estimator"
   | "supervisor"
   | "office_user"
-  | "site_user";
+  | "site_user"
+  | "secretary";
 
 type Status = "active" | "disabled";
 type InviteStatus = "pending" | "accepted" | "revoked" | "expired";
@@ -44,6 +45,7 @@ const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: "supervisor", label: "Supervisor" },
   { value: "office_user", label: "Office User" },
   { value: "site_user", label: "Site User" },
+  { value: "secretary", label: "Secretary" },
 ];
 
 const ROLE_META: Record<
@@ -85,6 +87,12 @@ const ROLE_META: Record<
     dot: "bg-blue-500",
     label: "Site User",
     desc: "Field oversight, worker and field-payment access",
+  },
+  secretary: {
+    color: "bg-pink-100 text-pink-800 border-pink-300",
+    dot: "bg-pink-500",
+    label: "Secretary",
+    desc: "Correspondence, worker admin documents, compliance filing, scheduling — no financial or settings access",
   },
 };
 
