@@ -1,9 +1,10 @@
 // src/pages/SecretaryWorkspacePage.tsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useProjectContext } from "../context/ProjectContext";
 import { canAccessSecretaryWorkspace, canApproveSecretaryDocuments } from "../lib/permissions";
 import { PageHeader, Tabs, Card, Badge } from "../components/ui";
 import { AlertCircle } from "lucide-react";
+import { supabase } from "../lib/supabase";
 import CorrespondenceSection from "./secretary/CorrespondenceSection";
 import WorkerAdminSection from "./secretary/WorkerAdminSection";
 import ComplianceSection from "./secretary/ComplianceSection";
@@ -13,18 +14,33 @@ import MeetingMinutesSection from "./secretary/MeetingMinutesSection";
 
 type SecretaryTab = "correspondence" | "workers" | "compliance" | "scheduling" | "tasks" | "minutes";
 
-// TODO: Stage 2 — replace with a real count query against
-// secretary_documents WHERE status = 'pending_approval', company-scoped —
-// same placeholder-now/real-later pattern as every Director Dashboard
-// card's Stage 1 round. Also drives the nav badge in AppLayout.tsx,
-// which currently uses the same hardcoded placeholder value — keep both
-// in sync once this is wired for real, or better, lift the real fetch
-// into one shared place both can read from.
-const PLACEHOLDER_PENDING_APPROVALS = 1;
-
 export default function SecretaryWorkspacePage() {
   const { userRole, loadingProjects } = useProjectContext();
   const [tab, setTab] = useState<SecretaryTab>("correspondence");
+
+  // Real count, replacing the Stage 1 hardcoded placeholder — covers only
+  // secretary_documents (Correspondence). AppLayout.tsx's nav badge is a
+  // separate, still-hardcoded placeholder (out of scope for this section
+  // pass, see its own TODO) — the two will disagree until that's wired too.
+  const [pendingApprovals, setPendingApprovals] = useState<number>(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
+      if (!profile?.company_id) return;
+      const { count } = await supabase
+        .from("secretary_documents")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", profile.company_id)
+        .eq("status", "pending_approval");
+      if (!cancelled) setPendingApprovals(count || 0);
+    })();
+    return () => { cancelled = true; };
+  }, [tab]);
 
   // Defense in depth — the "/secretary" route is already wrapped in a
   // RoleGuard in App.tsx, but this page also checks directly in case
@@ -50,8 +66,8 @@ export default function SecretaryWorkspacePage() {
         title="Secretary Workspace"
         subtitle="Correspondence, worker admin, compliance, scheduling, tasks, and meeting minutes"
         actions={
-          canApprove && PLACEHOLDER_PENDING_APPROVALS > 0 ? (
-            <Badge color="amber" dot>{PLACEHOLDER_PENDING_APPROVALS} pending approval{PLACEHOLDER_PENDING_APPROVALS === 1 ? "" : "s"}</Badge>
+          canApprove && pendingApprovals > 0 ? (
+            <Badge color="amber" dot>{pendingApprovals} pending approval{pendingApprovals === 1 ? "" : "s"}</Badge>
           ) : undefined
         }
       />
@@ -72,22 +88,17 @@ export default function SecretaryWorkspacePage() {
       </div>
 
       <div className="p-6 max-w-5xl mx-auto space-y-5">
-        {canApprove && (
-          <Card>
+        {canApprove && pendingApprovals > 0 && (
+          <Card onClick={() => setTab("correspondence")} className="cursor-pointer hover:border-amber-300 dark:hover:border-amber-500/30 transition-colors">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
                 <AlertCircle size={16} className="text-amber-400" />
               </div>
               <div>
-                {/* TODO: Stage 2 — real pending-approval list, filtered
-                    to secretary_documents where status='pending_approval',
-                    with Approve/Reject actions that write the status
-                    transition (validated server-side by
-                    validate_secretary_document_status_transition()). */}
                 <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  {PLACEHOLDER_PENDING_APPROVALS} document{PLACEHOLDER_PENDING_APPROVALS === 1 ? "" : "s"} awaiting your approval
+                  {pendingApprovals} document{pendingApprovals === 1 ? "" : "s"} awaiting your approval
                 </div>
-                <div className="text-xs text-slate-500">Placeholder — Stage 2 wires this to real secretary_documents rows.</div>
+                <div className="text-xs text-slate-500">Real count from secretary_documents — click to review in Correspondence.</div>
               </div>
             </div>
           </Card>

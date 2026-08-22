@@ -280,14 +280,21 @@ export default function AppLayout() {
   const canSeePayroll = isDirector || userRole === "admin";
   const canSeeSecretaryWorkspace = canAccessSecretaryWorkspace(userRole);
   const canApproveSecretaryDocs = canApproveSecretaryDocuments(userRole);
-  // TODO: Stage 2 — real count from secretary_documents where
-  // status='pending_approval', company-scoped, same fetch-into-state
-  // pattern as staffPortalUnread/clientMessagesUnread below. Hardcoded
-  // here rather than faked via a fetch, since Stage 1 has no real table
-  // data to query yet — SecretaryWorkspacePage.tsx's own placeholder
-  // badge uses this identical number; keep both in sync until Stage 2
-  // replaces both with one real shared source.
-  const secretaryPendingApprovals = 1;
+
+  // Real count from secretary_documents where status='pending_approval',
+  // company-scoped — same fetch-into-state pattern as staffPortalUnread
+  // above (role-gated, {count:"exact", head:true}). Matches the real query
+  // SecretaryWorkspacePage.tsx's own banner now runs; the two will agree.
+  const [secretaryPendingApprovals, setSecretaryPendingApprovals] = useState(0);
+  useEffect(() => {
+    if (!co?.company_id) return;
+    if (!canApproveSecretaryDocs) return;
+    supabase.from("secretary_documents")
+      .select("*", { count: "exact", head: true })
+      .eq("company_id", co.company_id)
+      .eq("status", "pending_approval")
+      .then(({ count }) => setSecretaryPendingApprovals(count || 0));
+  }, [co?.company_id, canApproveSecretaryDocs]);
 
   // Filter the nav by role — hide items the current user can't act on rather
   // than showing a destination that just 403s. Groups left with no visible
