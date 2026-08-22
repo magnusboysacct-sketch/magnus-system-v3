@@ -4,6 +4,7 @@
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { supabase } from "../lib/supabase";
@@ -72,8 +73,26 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
+  // hasLoadedRef: true once loadProjects() has gotten past BOTH the
+  // getUser() and user_profiles checks below — i.e. auth was genuinely
+  // resolved (whether the user turns out to have 0 or N projects). Stays
+  // false only when we bailed out early for "no user"/"no profile", which
+  // is ambiguous between "genuinely logged out" and "session not restored
+  // from storage yet" — see the onAuthStateChange listener below, which
+  // uses this to decide whether a later auth event should retry.
+  //
+  // loadInFlightRef: true for the duration of any in-progress call —
+  // prevents the listener from firing a redundant concurrent fetch while
+  // the mount-time call (or a previous retry) is still awaiting a response.
+  const hasLoadedRef = useRef(false);
+  const loadInFlightRef = useRef(false);
+
   const loadProjects = useCallback(async () => {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     setLoadingProjects(true);
+
+    try {
 
     // Get current authenticated user
     const { data: { user } } = await supabase.auth.getUser();
@@ -104,13 +123,18 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
     setUserRole(profileData.role ?? null);
     setUserId(profileData.id ?? null);
+    hasLoadedRef.current = true;
 
-    // Directors and admins see every project in the company. Everyone else
-    // only sees projects they've been assigned to via project_members.
+    // Directors, admins, and secretaries see every project in the company.
+    // secretary added deliberately (not a bug fix — the role didn't exist
+    // until this session, so it correctly fell through to the
+    // project_members-only path by default until now). Every other role
+    // (estimator, supervisor, office_user, site_user) is unchanged — still
+    // scoped to their own project_members assignments below.
     let data: any[] | null = null;
     let error: any = null;
     let totalCount: number | null = null;
-    if (profileData.role === "director" || profileData.role === "admin") {
+    if (profileData.role === "director" || profileData.role === "admin" || profileData.role === "secretary") {
       const [paged, countRes] = await Promise.all([
         paginateAll<any>((from, to) =>
           supabase
@@ -207,10 +231,43 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       setCurrentProjectIdState(null);
       localStorage.removeItem(STORAGE_KEY);
     }
+
+    } finally {
+      loadInFlightRef.current = false;
+    }
   }, []);
 
   useEffect(() => {
     loadProjects();
+
+    // The auth-race-condition fix: on some page loads, the Supabase
+    // client hasn't finished restoring the session from storage by the
+    // time the plain loadProjects() call above fires getUser() — it
+    // correctly (but unhelpfully) reads as "not logged in", so projects
+    // gets set to [] with no error. onAuthStateChange's INITIAL_SESSION
+    // event fires exactly once, right when the client's restore actually
+    // completes — the real "auth is now ready" signal, confirmed against
+    // the installed @supabase/supabase-js's own AuthChangeEvent type
+    // rather than assumed. SIGNED_IN/TOKEN_REFRESHED are handled the same
+    // way defensively, in case the race is lost in one of those other
+    // shapes instead. Only retries if hasLoadedRef is still false (the
+    // mount-time call above hasn't genuinely resolved auth yet) and
+    // nothing is already in flight — see the refs' own comments above
+    // loadProjects for why both checks are needed to avoid a duplicate
+    // fetch/flash in the ordinary, already-working case.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (
+        (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
+        !hasLoadedRef.current &&
+        !loadInFlightRef.current
+      ) {
+        loadProjects();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [loadProjects]);
 
   const setCurrentProjectId = useCallback((projectId: string | null) => {

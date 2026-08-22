@@ -1,6 +1,6 @@
 // src/pages/dashboard/AISummaryBanner.tsx
 import React, { useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Volume2, Square } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { aiChat } from "../../lib/magnusAI";
 
@@ -15,9 +15,18 @@ const FALLBACK_TEXT =
 // it survives this component unmounting/remounting entirely.
 const sessionCacheKey = (companyId: string) => `director-dashboard-ai-summary:${companyId}`;
 
+// Free, client-side only — window.speechSynthesis, no external API/cost.
+// Checked once per render rather than cached in state since support never
+// changes mid-session; cheap enough ("speechSynthesis" in window) not to
+// bother memoizing.
+function speechSupported() {
+  return typeof window !== "undefined" && "speechSynthesis" in window;
+}
+
 export default function AISummaryBanner() {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [speaking, setSpeaking] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -202,6 +211,37 @@ export default function AISummaryBanner() {
     return () => { alive = false; };
   }, []);
 
+  // Stops any in-progress speech when the summary text changes (a fresh
+  // load overwriting cached/previous text shouldn't get talked over by
+  // audio of the old text) and on unmount (navigating away). Deliberately
+  // does NOT check `speaking` in the dependency array — this only needs to
+  // run cancel() as a side effect when summary changes or the component
+  // goes away, not re-run every time speaking itself toggles.
+  useEffect(() => {
+    return () => {
+      if (speechSupported()) window.speechSynthesis.cancel();
+    };
+  }, [summary]);
+
+  function toggleSpeech() {
+    if (!speechSupported() || !summary) return;
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    // Clear any stray queued utterance first — defensive, since only one
+    // utterance should ever be active from this button, but a leftover
+    // queued item from a fast double-click could otherwise play after this
+    // one finishes.
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(summary);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+    setSpeaking(true);
+  }
+
   return (
     <div className="relative overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 via-white dark:via-[#0c1018] to-emerald-500/10 p-5">
       <div className="flex items-start gap-3">
@@ -209,8 +249,24 @@ export default function AISummaryBanner() {
           <Sparkles size={16} className="text-cyan-400" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-widest text-cyan-600 dark:text-cyan-400 mb-1">
-            Magnus AI Summary
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-cyan-600 dark:text-cyan-400">
+              Magnus AI Summary
+            </div>
+            {!loading && summary && speechSupported() && (
+              <button
+                onClick={toggleSpeech}
+                aria-label={speaking ? "Stop reading summary aloud" : "Read summary aloud"}
+                title={speaking ? "Stop" : "Read aloud"}
+                className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-colors ${
+                  speaking
+                    ? "bg-cyan-500/20 text-cyan-500"
+                    : "text-cyan-600/70 dark:text-cyan-400/70 hover:bg-cyan-500/10 hover:text-cyan-600 dark:hover:text-cyan-400"
+                }`}
+              >
+                {speaking ? <Square size={10} className="fill-current" /> : <Volume2 size={12} />}
+              </button>
+            )}
           </div>
           {loading ? (
             <div className="h-4 w-3/4 rounded bg-cyan-500/10 animate-pulse" />
