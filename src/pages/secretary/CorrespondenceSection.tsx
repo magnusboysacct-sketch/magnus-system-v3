@@ -580,13 +580,29 @@ Respond with ONLY the improved letter body text, no preamble or explanation.`
     openPreviewWindow(letterHtml(doc.content || "", settings), doc.title);
   }
 
-  // Only ever shown for status='draft' rows in the UI (RLS technically lets
-  // admin/director delete any status, but the button itself is capped to
-  // draft per the ask). Guarded to creator-or-canApprove at the call site so
-  // a secretary never sees a Delete button on someone else's draft that
-  // would just RLS-fail.
+  // Human-readable past-tense label for the non-draft delete warning below
+  // — names the letter's real current status rather than a generic phrase.
+  const NON_DRAFT_STATUS_LABEL: Record<string, string> = {
+    pending_approval: "submitted for approval",
+    approved: "approved",
+    printed: "printed",
+    rejected: "rejected",
+  };
+
+  // Draft deletes (by creator or canApprove) keep the plain confirm — no
+  // need to scare someone off deleting their own unsent draft. A non-draft
+  // delete (admin/director only — RLS itself already allowed this at any
+  // status, this was previously a UI-only restriction, now lifted per
+  // Veron's decision) gets a stronger warning naming the letter's actual
+  // current status, since deleting an already-submitted/approved/printed/
+  // rejected letter removes real history, not just a draft in progress.
   async function deleteDoc(doc: SecretaryDoc) {
-    if (!window.confirm(`Delete "${doc.title}"? This can't be undone.`)) return;
+    const confirmed = doc.status === "draft"
+      ? window.confirm(`Delete "${doc.title}"? This can't be undone.`)
+      : window.confirm(
+          `This letter has already been ${NON_DRAFT_STATUS_LABEL[doc.status] || doc.status} and may represent a real document that was issued. Deleting it removes it permanently, including any audit trail that it existed.\n\nAre you sure you want to delete "${doc.title}"?`
+        );
+    if (!confirmed) return;
     setBusyId(doc.id);
     setActionErr("");
     const { error: err } = await supabase.from("secretary_documents").delete().eq("id", doc.id);
@@ -642,10 +658,10 @@ Respond with ONLY the improved letter body text, no preamble or explanation.`
                     <div className="flex items-center justify-end gap-1.5">
                       <Btn variant="secondary" size="xs" icon={<Eye size={12} />} onClick={() => previewDoc(d)}>Preview</Btn>
                       {d.status === "draft" && (d.created_by === userId || canApprove) && (
-                        <>
-                          <Btn variant="secondary" size="xs" icon={<Pencil size={12} />} onClick={() => openEdit(d)}>Edit</Btn>
-                          <Btn variant="secondary" size="xs" icon={<Trash2 size={12} />} disabled={busyId === d.id} onClick={() => deleteDoc(d)}>Delete</Btn>
-                        </>
+                        <Btn variant="secondary" size="xs" icon={<Pencil size={12} />} onClick={() => openEdit(d)}>Edit</Btn>
+                      )}
+                      {(d.status === "draft" ? (d.created_by === userId || canApprove) : canApprove) && (
+                        <Btn variant="secondary" size="xs" icon={<Trash2 size={12} />} disabled={busyId === d.id} onClick={() => deleteDoc(d)}>Delete</Btn>
                       )}
                       {d.status === "draft" && (d.created_by === userId || canApprove) && (
                         <Btn variant="secondary" size="xs" disabled={busyId === d.id} onClick={() => { if (!blockedByBrackets(d)) updateStatus(d, "pending_approval"); }}>Submit</Btn>
