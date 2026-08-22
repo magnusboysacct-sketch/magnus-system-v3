@@ -234,7 +234,24 @@ function letterHtml(body: string, settings: CompanySettings | null) {
   </div>`;
 }
 
-export default function CorrespondenceSection() {
+// quickCreateWorkerId/onQuickCreateHandled: narrow, additive-only hook so
+// WorkerAdminSection's "Create Employment Letter" shortcut can trigger this
+// component's own existing create flow instead of duplicating it — per
+// Veron's explicit "reuse, don't duplicate" instruction for that feature.
+// Both optional, default to inert (undefined), so CorrespondenceSection's
+// own standalone behavior when rendered from its own tab is completely
+// unchanged. Flagged clearly since Veron's Worker Admin handoff said not to
+// touch this file this round — this was the smallest change that could
+// satisfy "reuse" without either duplicating the letter-creation UI in
+// WorkerAdminSection or lifting this component's entire modal state up to
+// a shared context.
+export default function CorrespondenceSection({
+  quickCreateWorkerId,
+  onQuickCreateHandled,
+}: {
+  quickCreateWorkerId?: string | null;
+  onQuickCreateHandled?: () => void;
+} = {}) {
   const { userId, userRole } = useProjectContext();
   const canApprove = canApproveSecretaryDocuments(userRole);
 
@@ -288,6 +305,36 @@ export default function CorrespondenceSection() {
   const [emailErr, setEmailErr] = useState("");
 
   useEffect(() => { init(); }, []);
+
+  // Fires once workers has actually loaded (need the real worker record,
+  // not just an id). Deliberately does NOT chain openCreate() + onSelectWorker()
+  // the way an earlier version did — setDocType() inside openCreate() is a
+  // state setter, not a synchronous mutation, so onSelectWorker() running in
+  // the same tick would still read the OLD docType from its closure (the
+  // <Select> looked right because it picks up the new state on the next
+  // render, but title/body had already been computed one render too early
+  // from the stale type). Instead this computes docType/title/body from
+  // explicit local values in one pass — the exact same title-format and
+  // starterBody() call the manual flow uses, just without relying on two
+  // state-dependent functions to run back-to-back in the same synchronous
+  // block. Result is identical to picking Employment Letter + this worker
+  // by hand.
+  useEffect(() => {
+    if (!quickCreateWorkerId || workers.length === 0) return;
+    const type: DocType = "employment_letter";
+    const w = workers.find(x => x.id === quickCreateWorkerId) || null;
+    const tpl = TEMPLATES.find(t => t.type === type)!;
+    setEditingDocId(null);
+    setDocType(type);
+    setSelectedWorkerId(quickCreateWorkerId);
+    setWorkerSearch("");
+    setTitle(w ? `${tpl.name} — ${fullName(w)}` : "");
+    setBody(starterBody(type, w, companyName));
+    setSaveErr("");
+    setAiErr("");
+    setCreateOpen(true);
+    onQuickCreateHandled?.();
+  }, [quickCreateWorkerId, workers]);
 
   async function init() {
     setLoading(true);

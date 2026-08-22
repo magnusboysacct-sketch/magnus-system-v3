@@ -18,6 +18,13 @@ export default function SecretaryWorkspacePage() {
   const { userRole, loadingProjects } = useProjectContext();
   const [tab, setTab] = useState<SecretaryTab>("correspondence");
 
+  // Shared trigger for WorkerAdminSection's "Create Employment Letter"
+  // shortcut, which switches to this tab and asks CorrespondenceSection to
+  // open its own existing create flow pre-selected to that worker — see
+  // CorrespondenceSection's own comment on quickCreateWorkerId for why this
+  // lives here rather than duplicating letter-creation UI in Worker Admin.
+  const [quickCreateWorkerId, setQuickCreateWorkerId] = useState<string | null>(null);
+
   // Real count, replacing the Stage 1 hardcoded placeholder — covers only
   // secretary_documents (Correspondence). AppLayout.tsx's nav badge is a
   // separate, still-hardcoded placeholder (out of scope for this section
@@ -104,8 +111,17 @@ export default function SecretaryWorkspacePage() {
           </Card>
         )}
 
-        {tab === "correspondence" && <CorrespondenceSection />}
-        {tab === "workers" && <WorkerAdminSection />}
+        {tab === "correspondence" && (
+          <CorrespondenceSection
+            quickCreateWorkerId={quickCreateWorkerId}
+            onQuickCreateHandled={() => setQuickCreateWorkerId(null)}
+          />
+        )}
+        {tab === "workers" && (
+          <WorkerAdminSection
+            onQuickCreateEmploymentLetter={(workerId) => { setQuickCreateWorkerId(workerId); setTab("correspondence"); }}
+          />
+        )}
         {tab === "compliance" && <ComplianceSection />}
         {tab === "scheduling" && <SchedulingSection />}
         {tab === "tasks" && <TaskTrackerSection />}
