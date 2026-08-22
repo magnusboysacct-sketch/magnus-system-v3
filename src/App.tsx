@@ -27,6 +27,7 @@ import FieldOpsPage           from "./pages/FieldOpsPage";
 import FieldAppPage           from "./pages/FieldAppPage";
 import DashboardPage          from "./pages/DashboardPage";
 import DirectorDashboardPage  from "./pages/DirectorDashboardPage";
+import SecretaryWorkspacePage from "./pages/SecretaryWorkspacePage";
 import ClientsPage            from "./pages/ClientsPage";
 import ProjectsPage           from "./pages/ProjectsPage";
 import ProjectDashboardPage   from "./pages/ProjectDashboardPage";
@@ -291,16 +292,22 @@ export default function App() {
               <Route path="/finance/upload-statement" element={<FinanceGuard level="full"><UploadStatementPage /></FinanceGuard>} />
               <Route path="/accounts-receivable"     element={<FinanceGuard level="full"><AccountsReceivablePage /></FinanceGuard>} />
               <Route path="/accounts-payable"        element={<FinanceGuard level="full"><AccountsPayablePage /></FinanceGuard>} />
-              <Route path="/field-payments"          element={<RoleGuard allowedRoles={["director","site_supervisor","accounts"]}><FieldPaymentsPage /></RoleGuard>} />
-              <Route path="/payroll"                 element={<RoleGuard allowedRoles={["director","admin","accounts"]}><PayrollPage /></RoleGuard>} />
+              <Route path="/field-payments"          element={<RoleGuard allowedRoles={["director","supervisor","site_user"]}><FieldPaymentsPage /></RoleGuard>} />
+              <Route path="/payroll"                 element={<RoleGuard allowedRoles={["director","admin"]}><PayrollPage /></RoleGuard>} />
 
               {/* People */}
-              <Route path="/workers"                 element={<RoleGuard allowedRoles={["director","site_supervisor"]}><WorkersPage /></RoleGuard>} />
-              <Route path="/suppliers"               element={<RoleGuard allowedRoles={["director","site_supervisor"]}><SuppliersPage /></RoleGuard>} />
+              <Route path="/workers"                 element={<RoleGuard allowedRoles={["director","supervisor","site_user"]}><WorkersPage /></RoleGuard>} />
+              <Route path="/suppliers"               element={<RoleGuard allowedRoles={["director","supervisor","site_user"]}><SuppliersPage /></RoleGuard>} />
               <Route path="/staff-portal"            element={<RoleGuard allowedRoles={["director","admin"]}><StaffPortalManagerPage /></RoleGuard>} />
 
               {/* Help */}
               <Route path="/help"                          element={<HelpCenterPage />} />
+
+              {/* Secretary Workspace — accessible to secretary/admin/director,
+                  a normal route addition (not a root-route switch like the
+                  Director Dashboard, since this is an additional nav
+                  section, not a landing-page replacement). */}
+              <Route path="/secretary"                     element={<RoleGuard allowedRoles={["secretary","admin","director"]}><SecretaryWorkspacePage /></RoleGuard>} />
 
               {/* Reports + Settings */}
               <Route path="/reports"                       element={<ReportsPage />} />

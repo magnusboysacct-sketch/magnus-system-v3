@@ -71,19 +71,18 @@ Deno.serve(async (req) => {
       body.email || body.inviteEmail || body.userEmail || body.to || ""
     ).trim().toLowerCase();
 
-    const rawRole = String(body.role || "viewer").trim();
-    // Must match user_profiles.role CHECK constraint exactly
+    const rawRole = String(body.role || "site_user").trim();
+    // Must match user_profiles.role CHECK constraint exactly (live constraint,
+    // confirmed via pg_get_constraintdef — see role-vocabulary audit).
     const allowedRoles = [
       "director",
       "admin",
-      "project_manager",
-      "site_supervisor",
       "estimator",
-      "procurement",
-      "accounts",
-      "viewer",
+      "supervisor",
+      "office_user",
+      "site_user",
     ];
-    const role = allowedRoles.includes(rawRole) ? rawRole : "viewer";
+    const role = allowedRoles.includes(rawRole) ? rawRole : "site_user";
 
     if (!email) {
       return jsonResponse({ error: "Email is required", receivedBody: body }, 400);

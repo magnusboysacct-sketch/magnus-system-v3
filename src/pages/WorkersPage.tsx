@@ -136,7 +136,7 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
   onIdCard: (w: Worker) => void;
 }) {
   const { userRole } = useProjectContext();
-  const canDelete = userRole === "director" || userRole === "site_supervisor";
+  const canDelete = userRole === "director" || userRole === "supervisor" || userRole === "site_user";
     worker.worker_type === "crew_lead" ? "bg-cyan-500/20 text-cyan-300" :
     "bg-violet-500/20 text-violet-300";
 
@@ -420,7 +420,7 @@ function ImageCropper({
 export default function WorkersPage() {
   const { settings: companySettings } = useCompanySettings();
   const { userRole } = useProjectContext();
-  const canDelete = userRole === "director" || userRole === "site_supervisor";
+  const canDelete = userRole === "director" || userRole === "supervisor" || userRole === "site_user";
   const canAddWorker = canManageWorkers(userRole);
   const [workers, setWorkers] = useState<Worker[]>([]);
   // Exact row count, independent of the fetch above — see loadWorkers().

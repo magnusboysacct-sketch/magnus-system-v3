@@ -4,15 +4,16 @@ import { Shield } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { canManageStaff } from "../lib/permissions";
 
+// Role universe is the literal live user_profiles.role CHECK constraint,
+// confirmed via pg_get_constraintdef (see role-vocabulary audit) — not the
+// migration file, which is stale and doesn't reflect the live constraint.
 type Role =
   | "director"
   | "admin"
-  | "project_manager"
-  | "site_supervisor"
   | "estimator"
-  | "procurement"
-  | "accounts"
-  | "viewer";
+  | "supervisor"
+  | "office_user"
+  | "site_user";
 
 type Status = "active" | "disabled";
 type InviteStatus = "pending" | "accepted" | "revoked" | "expired";
@@ -39,12 +40,10 @@ type InvitationRow = {
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: "director", label: "Director" },
   { value: "admin", label: "Admin" },
-  { value: "project_manager", label: "Project Manager" },
-  { value: "site_supervisor", label: "Site Supervisor" },
   { value: "estimator", label: "Estimator" },
-  { value: "procurement", label: "Procurement" },
-  { value: "accounts", label: "Accounts" },
-  { value: "viewer", label: "Viewer" },
+  { value: "supervisor", label: "Supervisor" },
+  { value: "office_user", label: "Office User" },
+  { value: "site_user", label: "Site User" },
 ];
 
 const ROLE_META: Record<
@@ -63,41 +62,29 @@ const ROLE_META: Record<
     label: "Admin",
     desc: "Full access except billing",
   },
-  project_manager: {
-    color: "bg-indigo-100 text-indigo-800 border-indigo-300",
-    dot: "bg-indigo-500",
-    label: "Project Manager",
-    desc: "Manage assigned projects",
-  },
-  site_supervisor: {
-    color: "bg-emerald-100 text-emerald-800 border-emerald-300",
-    dot: "bg-emerald-500",
-    label: "Site Supervisor",
-    desc: "Field operations and workers",
-  },
   estimator: {
     color: "bg-amber-100 text-amber-800 border-amber-300",
     dot: "bg-amber-500",
     label: "Estimator",
     desc: "BOQ, estimates, rate library",
   },
-  procurement: {
+  supervisor: {
+    color: "bg-emerald-100 text-emerald-800 border-emerald-300",
+    dot: "bg-emerald-500",
+    label: "Supervisor",
+    desc: "Field operations and workers",
+  },
+  office_user: {
     color: "bg-orange-100 text-orange-800 border-orange-300",
     dot: "bg-orange-500",
-    label: "Procurement",
-    desc: "Purchase orders and suppliers",
+    label: "Office User",
+    desc: "Back-office staff — limited admin, no Finance or Settings",
   },
-  accounts: {
+  site_user: {
     color: "bg-blue-100 text-blue-800 border-blue-300",
     dot: "bg-blue-500",
-    label: "Accounts",
-    desc: "Finance and invoicing",
-  },
-  viewer: {
-    color: "bg-slate-100 text-slate-700 border-slate-300",
-    dot: "bg-slate-500",
-    label: "Viewer",
-    desc: "Read-only access",
+    label: "Site User",
+    desc: "Field oversight, worker and field-payment access",
   },
 };
 

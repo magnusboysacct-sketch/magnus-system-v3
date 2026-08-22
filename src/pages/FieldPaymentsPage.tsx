@@ -152,10 +152,10 @@ export default function FieldPaymentsPage() {
   };
 
   // Matches the roles allowed onto this page at all (see App.tsx RoleGuard for
-  // "/field-payments"). Previously excluded site_supervisor/accounts, which are
-  // the roles that actually use this page day-to-day — they could open a payment
-  // but never saw the Edit/Delete buttons.
-  const canEditDelete = ["director","site_supervisor","accounts","admin","project_manager"].includes(userRole||"");
+  // "/field-payments": director/supervisor/site_user). accounts and project_manager
+  // dropped — neither is a real user_profiles.role value (role-vocabulary audit),
+  // so this always granted Edit/Delete to nobody live regardless.
+  const canEditDelete = ["director","supervisor","site_user"].includes(userRole||"");
 
   async function saveEdit(p: Payment, updates: Partial<Payment>) {
     const {error} = await supabase.from("field_payments").update(updates).eq("id", p.id);

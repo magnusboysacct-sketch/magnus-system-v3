@@ -111,7 +111,9 @@ export default function DashboardPage() {
           setProjectProgress(progress);
         }
 
-        if (["director", "admin", "accounts"].includes(userRole || "")) {
+        // accounts dropped — not a real user_profiles.role value (role-vocabulary
+        // audit); office_user was explicitly ruled out for Finance-touching views.
+        if (["director", "admin"].includes(userRole || "")) {
           const { data: remittances } = await supabase
             .from("government_remittances")
             .select("period_month, period_year, due_date, total_due")

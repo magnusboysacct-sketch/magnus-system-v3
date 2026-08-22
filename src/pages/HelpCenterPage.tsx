@@ -20,7 +20,7 @@ const DEFAULT_ARTICLES = [
     title: "Welcome to Magnus Boys ERP",
     slug: "welcome",
     sort_order: 1,
-    roles: ["director","admin","project_manager","site_supervisor","estimator","procurement","accounts","viewer"],
+    roles: ["director","admin","estimator","supervisor","office_user","site_user"],
     content: `# Welcome to Magnus Boys Construction ERP
 
 Magnus Boys ERP is a complete construction management system built specifically for Magnus Boys Construction Limited. It manages everything from the first client meeting to the final payment.
@@ -76,7 +76,7 @@ Use the **❓ Help** button in the sidebar at any time to find guides for the pa
     title: "Navigating the System",
     slug: "navigation",
     sort_order: 2,
-    roles: ["director","admin","project_manager","site_supervisor","estimator","procurement","accounts","viewer"],
+    roles: ["director","admin","estimator","supervisor","office_user","site_user"],
     content: `# Navigating Magnus Boys ERP
 
 ## The Sidebar
@@ -114,7 +114,7 @@ At the bottom of the sidebar click **Light mode** or **Dark mode** to switch the
     title: "Creating a New Project",
     slug: "create-project",
     sort_order: 1,
-    roles: ["director","admin","project_manager"],
+    roles: ["director","admin","office_user"],
     content: `# Creating a New Project
 
 ## When to create a project
@@ -162,7 +162,7 @@ Only **Directors** and **Admins** can create and delete projects. Project Manage
     title: "Project Dashboard Overview",
     slug: "project-dashboard",
     sort_order: 2,
-    roles: ["director","admin","project_manager","site_supervisor","estimator"],
+    roles: ["director","admin","supervisor","site_user","estimator"],
     content: `# Project Dashboard
 The Project Dashboard is your command centre for a single project. Access it by clicking any project from the Projects page.
 
@@ -223,7 +223,7 @@ Chat with the client through the client portal.`,
     title: "Building a BOQ",
     slug: "building-boq",
     sort_order: 1,
-    roles: ["director","admin","estimator","project_manager"],
+    roles: ["director","admin","estimator"],
     content: `# Building a Bill of Quantities (BOQ)
 
 ## What is a BOQ?
@@ -349,7 +349,7 @@ Chain Link Fence, Ground Floor Slab, Paving, Septic Tank, Drain/Gutter
     title: "Generating an Estimate",
     slug: "generating-estimate",
     sort_order: 1,
-    roles: ["director","admin","estimator","project_manager"],
+    roles: ["director","admin","estimator"],
     content: `# Generating an Estimate
 
 ## What is an Estimate?
@@ -426,7 +426,7 @@ Markup is **never shown to the client**. Only the final total and contingency ap
     title: "Creating a Contract",
     slug: "creating-contract",
     sort_order: 1,
-    roles: ["director","admin","project_manager"],
+    roles: ["director","admin","office_user"],
     content: `# Creating a Contract
 
 ## What is a Contract?
@@ -496,7 +496,7 @@ A contract should always be signed **before** work begins. Never start a project
     title: "Recording Client Payments",
     slug: "client-payments",
     sort_order: 1,
-    roles: ["director","admin","accounts"],
+    roles: ["director","admin"],
     content: `# Recording Client Payments
 
 ## Overview
@@ -554,7 +554,7 @@ Always get a reference number for every payment. This is your proof of receipt i
     title: "Project Budget Tracking",
     slug: "project-budget",
     sort_order: 2,
-    roles: ["director","admin","project_manager","accounts"],
+    roles: ["director","admin"],
     content: `# Project Budget Tracking
 
 ## Overview
@@ -618,7 +618,7 @@ Site supervisors can see the **Available Balance** so they know if they can make
     title: "Field Payments",
     slug: "field-payments",
     sort_order: 1,
-    roles: ["director","admin","project_manager","site_supervisor"],
+    roles: ["director","admin","supervisor","site_user"],
     content: `# Field Payments
 
 ## What are field payments?
@@ -680,7 +680,7 @@ Never make a field payment if the project balance is in the red. Always check wi
     title: "Worker Management",
     slug: "worker-management",
     sort_order: 2,
-    roles: ["director","admin","site_supervisor"],
+    roles: ["director","admin","supervisor","site_user"],
     content: `# Worker Management
 
 ## Adding a worker
@@ -795,7 +795,7 @@ Only Directors and Estimators can add/edit rates. Rate Library prices directly a
     title: "Taking Off from Plans",
     slug: "takeoff",
     sort_order: 1,
-    roles: ["director","admin","estimator","project_manager"],
+    roles: ["director","admin","estimator"],
     content: `# Takeoff — Measuring from Plans
 
 ## What is Takeoff?
@@ -865,7 +865,7 @@ On mobile, use your tape measure on site:
     title: "Understanding Reports",
     slug: "reports",
     sort_order: 1,
-    roles: ["director","admin","project_manager","accounts"],
+    roles: ["director","admin"],
     content: `# Reports
 
 ## Overview
@@ -1309,7 +1309,7 @@ export default function HelpCenterPage() {
 
   // Filter articles by role
   const visibleArticles = articles.filter(a =>
-    !a.roles || a.roles.length === 0 || a.roles.includes(userRole || "viewer")
+    !a.roles || a.roles.length === 0 || a.roles.includes(userRole || "")
   );
 
   // Filter by search
@@ -1365,7 +1365,7 @@ export default function HelpCenterPage() {
         content: "# New Guide\n\nWrite your guide content here.",
         company_id: null,
         sort_order: (moduleArticles.length + 1) * 10,
-        roles: ["director","admin","project_manager","site_supervisor","estimator","procurement","accounts","viewer"],
+        roles: ["director","admin","estimator","supervisor","office_user","site_user"],
       })
       .select()
       .single();
@@ -1608,7 +1608,7 @@ export default function HelpCenterPage() {
               {MODULES.filter(m => {
                 // Filter by role
                 if (m.key === "settings" && userRole !== "director") return false;
-                if (m.key === "finance" && !["director","admin","accounts"].includes(userRole||"")) return false;
+                if (m.key === "finance" && !["director","admin"].includes(userRole||"")) return false;
                 return true;
               }).map(m => {
                 const count = visibleArticles.filter(a => a.module === m.key).length;

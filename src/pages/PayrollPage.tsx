@@ -336,7 +336,6 @@ export default function PayrollPage() {
       .from("user_profiles")
       .select("id, full_name, email, role, trn")
       .eq("company_id", companyId)
-      .neq("role", "viewer")
       .order("full_name");
     if (error) { console.error("loadStaffList error:", error); return; }
     setStaffList((data || []) as StaffMember[]);

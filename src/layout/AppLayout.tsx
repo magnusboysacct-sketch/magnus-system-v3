@@ -14,9 +14,10 @@ import {
   ChevronLeft, ChevronRight, Building2, Layers,
   Receipt, Truck, HardHat, Banknote, BookOpen,
   ClipboardList, Package, PieChart, Wrench,
-  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare
+  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase
 } from "lucide-react";
 import { cn, SectionLabel } from "../components/ui";
+import { canAccessSecretaryWorkspace, canApproveSecretaryDocuments } from "../lib/permissions";
 
 // ─── Nav structure ────────────────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ const NAV: NavItem[] = [
       { label: "Field Ops",  icon: <ClipboardList size={14}/>, to: "/field-ops" },
     ]
   },
+  { label: "Secretary Workspace", icon: <Briefcase size={15}/>, to: "/secretary" },
   { label: "Reports",  icon: <BarChart3 size={15}/>, to: "/reports" },
   { label: "Settings", icon: <Settings size={15}/>,  to: "/settings" },
 ];
@@ -97,6 +99,16 @@ function NavGroup({ item, collapsed, defaultOpen, onNavigate }: { item: NavItem;
         )}>
         <span className="flex-shrink-0">{item.icon}</span>
         {!collapsed && <span className="truncate">{item.label}</span>}
+        {/* Top-level items had no badge rendering at all before this —
+            only nested children (Staff Portal, Clients) did. Needed for
+            Secretary Workspace's pending-approvals count, added the same
+            visual style as the existing child badge below rather than a
+            new one. */}
+        {!collapsed && item.badge && (
+          <span className="ml-auto flex-shrink-0 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+            {item.badge}
+          </span>
+        )}
       </NavLink>
     );
   }
@@ -263,9 +275,19 @@ export default function AppLayout() {
   }
 
   const isDirector = userRole === "director";
-  const canSeeWorkers = isDirector || userRole === "site_supervisor";
-  const canSeeFieldPayments = isDirector || userRole === "site_supervisor" || userRole === "accounts";
-  const canSeePayroll = isDirector || userRole === "admin" || userRole === "accounts";
+  const canSeeWorkers = isDirector || userRole === "supervisor" || userRole === "site_user";
+  const canSeeFieldPayments = isDirector || userRole === "supervisor" || userRole === "site_user";
+  const canSeePayroll = isDirector || userRole === "admin";
+  const canSeeSecretaryWorkspace = canAccessSecretaryWorkspace(userRole);
+  const canApproveSecretaryDocs = canApproveSecretaryDocuments(userRole);
+  // TODO: Stage 2 — real count from secretary_documents where
+  // status='pending_approval', company-scoped, same fetch-into-state
+  // pattern as staffPortalUnread/clientMessagesUnread below. Hardcoded
+  // here rather than faked via a fetch, since Stage 1 has no real table
+  // data to query yet — SecretaryWorkspacePage.tsx's own placeholder
+  // badge uses this identical number; keep both in sync until Stage 2
+  // replaces both with one real shared source.
+  const secretaryPendingApprovals = 1;
 
   // Filter the nav by role — hide items the current user can't act on rather
   // than showing a destination that just 403s. Groups left with no visible
@@ -304,13 +326,25 @@ export default function AppLayout() {
             : children;
           return withStaffPortal.length ? { ...item, children: withStaffPortal } : null;
         }
+        if (item.label === "Secretary Workspace") {
+          if (!canSeeSecretaryWorkspace) return null;
+          // Badge only for admin/director, who approve — not for the
+          // secretary themself, since they're not the one clearing this
+          // count (same "who acts on it, not just who can see it" spirit
+          // as the Staff Portal/Clients unread badges above, just gated
+          // by role instead of by unread-message ownership).
+          const badge = canApproveSecretaryDocs && secretaryPendingApprovals > 0
+            ? String(secretaryPendingApprovals)
+            : undefined;
+          return { ...item, badge };
+        }
         if (item.label === "Settings") {
           return isDirector ? item : null;
         }
         return item;
       })
       .filter((item): item is NavItem => item !== null);
-  }, [canAccessFullFinance, canSeeFieldPayments, canSeePayroll, canSeeWorkers, isDirector, userRole, staffPortalUnread, clientMessagesUnread]);
+  }, [canAccessFullFinance, canSeeFieldPayments, canSeePayroll, canSeeWorkers, canSeeSecretaryWorkspace, canApproveSecretaryDocs, secretaryPendingApprovals, isDirector, userRole, staffPortalUnread, clientMessagesUnread]);
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#080b10] overflow-hidden">

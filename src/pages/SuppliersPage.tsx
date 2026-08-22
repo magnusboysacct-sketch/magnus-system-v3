@@ -110,7 +110,7 @@ function SupplierCard({ supplier, canDelete, onEdit, onDelete }: {
 
 export default function SuppliersPage() {
   const { userRole } = useProjectContext();
-  const canDelete = userRole === "director" || userRole === "site_supervisor";
+  const canDelete = userRole === "director" || userRole === "supervisor" || userRole === "site_user";
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
