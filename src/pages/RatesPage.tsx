@@ -11,7 +11,7 @@ import AIPriceLookup from "../components/AIPriceLookup";
 import {
   Plus, Download, Upload, RefreshCw, Zap, RotateCcw,
   Edit2, Trash2, ChevronDown, Search, Package,
-  Layers, Wrench, Users, MoreHorizontal, Copy, X
+  Layers, Wrench, Users, MoreHorizontal, Copy, X, History
 } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -29,6 +29,19 @@ const TYPE_STYLE: Record<string,{pill:string;icon:React.ReactNode}> = {
   Equipment:  {pill:"bg-amber-500/10 text-amber-400 border-amber-500/20", icon:<Wrench size={10}/>},
   Subcontract:{pill:"bg-purple-500/10 text-purple-400 border-purple-500/20",icon:<Layers size={10}/>},
   Other:      {pill:"bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20", icon:<MoreHorizontal size={10}/>},
+};
+
+// Real values confirmed directly from cost_item_rates insert calls in
+// this file: "manual" (new item / duplicate-item copy), "manual_edit"
+// (inline rate edit), "import" (CSV import). "bulk" isn't set directly
+// here — bulk_update_rates() is a server-side RPC (see applyBulk below),
+// so its exact source string isn't confirmed from this file alone;
+// falls back to showing the raw value verbatim if it doesn't match one
+// of these three, never hidden or guessed at.
+const RATE_SOURCE_LABELS: Record<string,string> = {
+  manual: "Manual entry",
+  manual_edit: "Manual edit",
+  import: "CSV import",
 };
 
 const FORMULA_BADGE: Record<string,{label:string;pill:string}> = {
@@ -72,6 +85,23 @@ type ImportRow = {
   item_type?: string;
 };
 
+// Real cost_item_rates columns, confirmed directly from every live insert
+// call site in this file (not information_schema — no DB access here —
+// see the report accompanying this change for the exact line numbers and
+// the one column, batch_id, this surfaced that wasn't in the original
+// ask): cost_item_id, rate, currency, effective_date, source, note,
+// batch_id. id assumed present by this app's universal PK convention,
+// not directly confirmed the same way.
+type RateHistoryRow = {
+  id: string;
+  rate: number;
+  currency: string;
+  effective_date: string;
+  source: string | null;
+  note: string | null;
+  batch_id: string | null;
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function normCategory(c: string | null | undefined) {
   const t = (c || "").trim();
@@ -86,6 +116,23 @@ function formatDate(iso: string | null) {
 function formatMoney(n: number | null) {
   if (n == null || !isFinite(n)) return "—";
   return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:2}).format(n);
+}
+// Local to the History modal only — NOT a fix to the shared formatDate()
+// above, which has the same issue but is used elsewhere in this file and
+// wasn't in scope to touch here. new Date(isoString) treats a bare
+// "YYYY-MM-DD" as UTC midnight; toLocaleDateString() then renders in the
+// browser's local timezone, shifting the displayed date back a day for
+// any timezone behind UTC (Jamaica is UTC-5) — same class of bug already
+// found and fixed twice in the Director Dashboard this session. Fixed
+// here for new code by parsing components directly rather than editing
+// the existing shared helper.
+function formatDateSafe(iso: string | null) {
+  if (!iso) return "—";
+  const [y,m,d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return "—";
+  const dt = new Date(y, m-1, d);
+  if (isNaN(dt.getTime())) return "—";
+  return dt.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
 }
 function csvEscape(v: any) {
   const s = v == null ? "" : String(v);
@@ -223,6 +270,17 @@ export default function RatesPage() {
   const [bulkValue,setBulkValue]=useState<string>("");
   const [lastBulkBatches,setLastBulkBatches]=useState<string[]>([]);
   const [exportOpen,setExportOpen]=useState(false);
+  // Read-only price history view — cost_item_rates is already write-only
+  // populated by every path above (manual edit, bulk update, CSV import,
+  // duplicate-item copy) but nothing in this page ever reads it back.
+  // historyItem holds just enough of the clicked row to label the modal
+  // and drive the fetch; historyRows is null while unfetched, [] once
+  // loaded with zero history (shouldn't happen given every item gets at
+  // least one row on creation, but handled rather than assumed).
+  const [historyItem,setHistoryItem]=useState<{id:string;name:string}|null>(null);
+  const [historyRows,setHistoryRows]=useState<RateHistoryRow[]|null>(null);
+  const [historyLoading,setHistoryLoading]=useState(false);
+  const [historyError,setHistoryError]=useState<string|null>(null);
   const [importOpen,setImportOpen]=useState(false);
   const [importTitle,setImportTitle]=useState("CSV import");
   const [importReason,setImportReason]=useState("");
@@ -509,6 +567,30 @@ export default function RatesPage() {
   function autoFillDescription(name:string,grade:string,size:string){
     const parts=[name.trim(),grade.trim(),size.trim()].filter(Boolean);
     if(parts.length>0) setFDesc(parts.join(", "));
+  }
+
+  // Read-only — fetches, never writes. Ordered most-recent effective_date
+  // first, matching how the modal displays it. Only fires when the user
+  // actually opens the modal for an item, not on page load, so this
+  // doesn't add a query to every row just for a feature most rows won't
+  // have opened in a given session.
+  async function openHistory(item:CostItem){
+    setHistoryItem({id:item.id,name:item.item_name});
+    setHistoryRows(null);
+    setHistoryError(null);
+    setHistoryLoading(true);
+    try{
+      const{data,error}=await supabase.from("cost_item_rates")
+        .select("id,rate,currency,effective_date,source,note,batch_id")
+        .eq("cost_item_id",item.id)
+        .order("effective_date",{ascending:false});
+      if(error){setHistoryError(error.message);return;}
+      setHistoryRows((data||[]) as RateHistoryRow[]);
+    }catch(e:any){
+      setHistoryError(e?.message||"Couldn't load price history");
+    }finally{
+      setHistoryLoading(false);
+    }
   }
 
   async function duplicateItem(item:CostItem){
@@ -1056,6 +1138,10 @@ export default function RatesPage() {
 
                 {/* Actions */}
                 <div className={`flex gap-1 transition-opacity justify-end ${activeId===item.id?"opacity-100":"md:opacity-0 md:group-hover:opacity-100"}`}>
+                  <button type="button" onClick={()=>openHistory(item)} disabled={busy}
+                    className="p-1.5 rounded-lg hover:bg-slate-500/15 text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 transition" title="Price history">
+                    <History size={13}/>
+                  </button>
                   {canEdit && (
                     <button type="button" onClick={()=>openEdit(item)} disabled={busy}
                       className={`p-1.5 rounded-lg hover:bg-blue-500/15 transition ${activeId===item.id?"text-blue-500":"text-slate-500 dark:text-slate-600 hover:text-blue-400"}`} title="Edit">
@@ -1341,8 +1427,28 @@ export default function RatesPage() {
                     if(!activeId) return;
                     const{error:updateError}=await supabase.from("cost_items").update(payload).eq("id",activeId);
                     if(updateError){console.error(updateError);setSaveError(updateError.message||"Save failed. Please try again.");return;}
+                    // Only log a new cost_item_rates row when the rate
+                    // actually changed — openEdit() pre-fills fRate from
+                    // this same item's current_rate/current_currency
+                    // (already in `items` state from the main list query,
+                    // no extra query needed), so comparing against that
+                    // tells us whether the user touched the rate field at
+                    // all versus just editing description/category/etc.
+                    // Confirmed via real data this session: every save
+                    // was inserting a row even when the rate field was
+                    // never touched (Concrete Block: 6 identical $190 rows
+                    // across 6 saves). Currency is compared too, even
+                    // though this specific form always hardcodes "JMD" —
+                    // kept for correctness in case that ever changes,
+                    // costs nothing when it doesn't.
                     if(fRate.trim()){
-                      await supabase.from("cost_item_rates").insert({cost_item_id:activeId,rate:Number(fRate),currency:"JMD",effective_date:new Date().toISOString().slice(0,10),source:"manual",note:null});
+                      const newRate=Number(fRate);
+                      const newCurrency="JMD";
+                      const original=items.find(i=>i.id===activeId);
+                      const rateChanged=!original||original.current_rate==null||original.current_rate!==newRate||(original.current_currency||"JMD")!==newCurrency;
+                      if(rateChanged){
+                        await supabase.from("cost_item_rates").insert({cost_item_id:activeId,rate:newRate,currency:newCurrency,effective_date:new Date().toISOString().slice(0,10),source:"manual",note:null});
+                      }
                     }
                   }
                   showToast(mode==="add"?"✅ Rate added!":"✅ Rate updated!");
@@ -1412,6 +1518,51 @@ export default function RatesPage() {
                 className="px-5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold transition disabled:opacity-40">
                 {busy?"Applying…":"Apply Bulk Update"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Price History Modal (read-only) ─────────────────────────────────── */}
+      {historyItem&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/[0.07]">
+              <div className="min-w-0">
+                <div className="text-base font-bold text-slate-900 dark:text-slate-100 truncate">Price History</div>
+                <div className="text-xs text-slate-500 mt-0.5 truncate">{historyItem.name}</div>
+              </div>
+              <button type="button" onClick={()=>{setHistoryItem(null);setHistoryRows(null);setHistoryError(null);}}
+                className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition flex-shrink-0">✕</button>
+            </div>
+            <div className="p-6 overflow-y-auto space-y-2">
+              {historyLoading?(
+                <div className="text-sm text-slate-400 text-center py-8">Loading…</div>
+              ):historyError?(
+                <div className="text-sm text-red-400 text-center py-8">{historyError}</div>
+              ):!historyRows||historyRows.length===0?(
+                <div className="text-sm text-slate-400 text-center py-8">No price history recorded for this item yet.</div>
+              ):(
+                historyRows.map((row,i)=>{
+                  const prev=historyRows[i+1]; // next-older entry, since sorted most-recent-first
+                  const delta=(prev&&prev.currency===row.currency&&prev.rate>0)
+                    ?`${formatMoney(prev.rate)} → ${formatMoney(row.rate)} (${row.rate>=prev.rate?"+":""}${(((row.rate-prev.rate)/prev.rate)*100).toFixed(1)}%)`
+                    :null;
+                  const sourceLabel=RATE_SOURCE_LABELS[row.source||""]||row.source||"—";
+                  return (
+                    <div key={row.id} className="flex items-start justify-between gap-3 py-2.5 px-3 rounded-lg border border-slate-200 dark:border-white/[0.06]">
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-green-400">{formatMoney(row.rate)}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{formatDateSafe(row.effective_date)} · {sourceLabel}</div>
+                        {row.note&&<div className="text-[11px] text-slate-400 dark:text-slate-600 mt-0.5 truncate">{row.note}</div>}
+                      </div>
+                      {delta&&(
+                        <div className="text-[10px] text-slate-500 dark:text-slate-600 text-right flex-shrink-0 pt-0.5">{delta}</div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
