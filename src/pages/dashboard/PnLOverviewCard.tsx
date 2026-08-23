@@ -85,18 +85,27 @@ export default function PnLOverviewCard() {
     <Card>
       <CardHeader title="P&L Overview" subtitle="Revenue vs expenses, last 6 months" />
 
-      {/* TEMP: remove this note once all GL entity types are posted — Veron
-          will ask for this specifically. Only Expenses and Fund Transfer are
-          posted to the GL so far — Invoices, Bills, Customer Payments,
-          Supplier Payments, and Field Payments still need Phase 2 posting —
-          so Revenue in particular is currently far from complete. Same
-          styling as CashPositionCard.tsx's caveat note, duplicated rather
-          than shared since that file wasn't touched for this card. */}
+      {/* TEMP: remove once Bills and Field Payments are also posted — Veron
+          will ask for this specifically. Updated once Invoices ($41.3M)
+          were confirmed posted this session — Revenue here (sum of
+          type='revenue' chart_of_accounts balances) is now complete,
+          since Invoices posting is the only one of the four originally-
+          named entities that ever touches a revenue account at all.
+          Customer Payments and Supplier Payments were dropped from this
+          note entirely, not just marked done — neither one ever posts to
+          a revenue or expense account (Customer Payments moves cash/AR,
+          Supplier Payments moves cash/AP), so they were never actually a
+          real caveat for THIS card's numbers, Phase 2 status aside. What
+          genuinely still affects this card: Bills (vendor-invoiced costs,
+          posted to expense accounts) and Field Payments (labor cost,
+          also expense-side) haven't been posted yet, so Expenses — and
+          therefore Net Income — are still incomplete on the expense side
+          specifically, not the revenue side anymore. */}
       <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06]">
         <Info size={13} className="text-slate-400 dark:text-slate-500 mt-0.5 flex-shrink-0" />
         <p className="text-[11px] text-slate-500 dark:text-slate-500 leading-snug">
-          Revenue reflects only entities posted so far (Expenses, Fund Transfer) — figures will be
-          incomplete until Invoices, Bills, Customer Payments, and Supplier Payments are posted.
+          Revenue is complete — all invoices are posted. Bills and Field Payments haven't been posted
+          to the GL yet, so expenses are understated and Net Income is likely overstated until that's done.
         </p>
       </div>
 
