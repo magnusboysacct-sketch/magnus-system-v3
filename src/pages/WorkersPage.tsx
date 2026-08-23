@@ -90,7 +90,7 @@ const DEFAULT_JOB_TITLES = [
 const JOB_TITLES_STORAGE_KEY = "magnus_job_titles";
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", maximumFractionDigits: 2 }).format(n);
 }
 
 function fullName(w: Worker) { return `${w.first_name} ${w.last_name}`; }

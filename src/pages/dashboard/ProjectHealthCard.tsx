@@ -13,7 +13,7 @@ interface ProjectHealth {
 }
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(n);
 }
 
 const SHOWN_LIMIT = 6; // same cap DashboardPage.tsx uses (activeProjectsAll.slice(0, 6))

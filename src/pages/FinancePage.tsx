@@ -17,7 +17,7 @@ type Tab = "overview" | "receivable" | "payable";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD", maximumFractionDigits: 0
+    style: "currency", currency: "JMD", maximumFractionDigits: 0
   }).format(n);
 }
 

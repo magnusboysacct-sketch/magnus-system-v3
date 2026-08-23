@@ -52,7 +52,7 @@ type TransferPair = {
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD", maximumFractionDigits: 2
+    style: "currency", currency: "JMD", maximumFractionDigits: 2
   }).format(n);
 }
 

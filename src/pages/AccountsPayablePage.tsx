@@ -52,7 +52,7 @@ const STATUS_COLOR: Record<string, any> = {
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD", maximumFractionDigits: 0
+    style: "currency", currency: "JMD", maximumFractionDigits: 0
   }).format(n || 0);
 }
 

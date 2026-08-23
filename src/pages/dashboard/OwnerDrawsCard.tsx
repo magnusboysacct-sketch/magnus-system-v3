@@ -11,7 +11,7 @@ interface OwnerDraw {
 }
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(n);
 }
 
 const OWNER_ACCOUNTS: Record<string, string> = { "3440": "Enron Williams", "3450": "Veron Williams" };

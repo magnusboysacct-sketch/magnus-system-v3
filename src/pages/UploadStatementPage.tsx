@@ -24,7 +24,7 @@ type BankAccount = {
 type Stage = "select" | "scanning" | "preview" | "saving" | "done";
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", maximumFractionDigits: 2 }).format(n);
 }
 
 // Render every page of a PDF file to JPEG Blobs using pdf.js

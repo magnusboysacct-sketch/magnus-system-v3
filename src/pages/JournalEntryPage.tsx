@@ -46,7 +46,7 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", maximumFractionDigits: 2 }).format(n);
 }
 
 function newLine(): EntryLine {
@@ -309,7 +309,15 @@ export default function JournalEntryPage() {
           source_type:        sourceType,
           description:        description.trim(),
           total_amount:       totalDebits,
-          currency:           "USD",
+          // Real company currency is JMD throughout, confirmed by every
+          // posting script this session — this was previously the only
+          // place in the app writing a hardcoded wrong currency directly
+          // into a new gl_transactions row (every posting script leaves
+          // currency unset, relying on the display-layer default; this
+          // page actually set it on insert). Flagged as a write-path
+          // change: new manual journal entries created from here will now
+          // be saved with currency='JMD', not just displayed differently.
+          currency:           "JMD",
           status,
           notes:              notes.trim() || null,
           posted_at:          status === "posted" ? new Date().toISOString() : null,

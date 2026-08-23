@@ -16,8 +16,63 @@ import {
 
 type Tab = "overview" | "accounts" | "ledger" | "reports";
 
+// ─── Date range filter — same proven pattern as ReportsPage.tsx (not
+// imported from there since it doesn't export these; ReportsPage.tsx
+// itself is untouched, this is a deliberate copy of its shape). Only
+// affects Reports' P&L and the General Ledger tab — see the header notes
+// on periodPnL/loadLedgerTransactions below for why Overview and Balance
+// Sheet are deliberately excluded. ─────────────────────────────────────
+
+type DateRange = "week" | "month" | "quarter" | "year" | "all" | "custom";
+
+const DATE_RANGES: { key: DateRange; label: string }[] = [
+  { key: "week", label: "This Week" },
+  { key: "month", label: "This Month" },
+  { key: "quarter", label: "This Quarter" },
+  { key: "year", label: "This Year" },
+  { key: "all", label: "All Time" },
+  { key: "custom", label: "Custom Range" },
+];
+
+// Presets only — "custom" is handled separately by customRangeBounds()
+// below, since a preset is always "cutoff through now" (a single lower
+// bound), while a custom range needs both an arbitrary start AND end.
+function getCutoff(range: DateRange): string | null {
+  const now = new Date();
+  if (range === "all" || range === "custom") return null;
+  if (range === "week") { now.setDate(now.getDate() - 7); }
+  else if (range === "month") { now.setMonth(now.getMonth() - 1); }
+  else if (range === "quarter") { now.setMonth(now.getMonth() - 3); }
+  else if (range === "year") { now.setFullYear(now.getFullYear() - 1); }
+  return now.toISOString();
+}
+
+// Custom range bounds — local-midnight-safe, same discipline as every
+// date field built this session: new Date("YYYY-MM-DD") alone parses as
+// UTC midnight and can shift a day depending on the browser's timezone,
+// so the time component is set explicitly rather than left implicit.
+// Empty start/end means "no bound on that side".
+function customRangeBounds(start: string, end: string): { start: string | null; end: string | null } {
+  return {
+    start: start ? new Date(`${start}T00:00:00`).toISOString() : null,
+    end: end ? new Date(`${end}T23:59:59.999`).toISOString() : null,
+  };
+}
+
+// Resolves whichever of the preset/custom shapes is active into one
+// consistent {start, end} pair — shared by both loadPeriodPnL and
+// loadLedgerTransactions below so they can't drift out of sync with each
+// other on how "custom" is interpreted.
+function resolveDateWindow(range: DateRange, customStart: string, customEnd: string): { start: string | null; end: string | null } {
+  return range === "custom" ? customRangeBounds(customStart, customEnd) : { start: getCutoff(range), end: null };
+}
+
+// Real company currency is JMD throughout — confirmed by every posting
+// script and Chart of Accounts entry this session. Same wrong-default bug
+// found in 19 other files across the app (see this round's own report) —
+// only these two spots fixed here, deliberately not touched more broadly.
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", maximumFractionDigits: 2 }).format(n);
 }
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -46,11 +101,40 @@ export default function FinanceDashboardPage() {
   const [balances, setBalances] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Summary stats
+  // Summary stats — Overview + Balance Sheet only, always all-time
+  // (chart_of_accounts.current_balance is a running cumulative total, not
+  // a time-series — there's no way to derive "as of a past date" from it,
+  // and a trailing-window Balance Sheet isn't a real accounting concept
+  // anyway, see the date-range filter's own header comment).
   const [stats, setStats] = useState({
     totalAssets: 0, totalLiabilities: 0, totalEquity: 0,
     totalRevenue: 0, totalExpenses: 0, netIncome: 0,
   });
+
+  // Default "all" — a Balance Sheet is normally a point-in-time snapshot,
+  // not period-bound the way P&L naturally is, so starting narrowed would
+  // be a strange default for a page whose Balance Sheet section can't be
+  // narrowed at all. Only actually used by Reports' P&L and the General
+  // Ledger tab.
+  const [dateRange, setDateRange] = useState<DateRange>("all");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+
+  // Reports tab's genuinely period-filtered P&L — separate from `stats`
+  // above on purpose. null while loading/unavailable, in which case the
+  // P&L card falls back to stats' all-time totals rather than showing
+  // nothing.
+  const [periodPnL, setPeriodPnL] = useState<{
+    revenue: number; expenses: number;
+    revenueAccounts: { id: string; name: string; total: number }[];
+    expenseAccounts: { id: string; name: string; total: number }[];
+  } | null>(null);
+
+  // General Ledger tab's own transaction list — deliberately separate
+  // from `transactions` above, which Overview's "Recent Transactions"
+  // preview also reads and must stay unfiltered/most-recent regardless of
+  // this page's date range control.
+  const [ledgerTransactions, setLedgerTransactions] = useState<any[]>([]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -61,6 +145,121 @@ export default function FinanceDashboardPage() {
   }, []);
 
   useEffect(() => { if (companyId) loadAll(); }, [companyId]);
+
+  // Re-run both date-filtered loads whenever the range changes. Both are
+  // cheap enough to just always run rather than gating on which tab is
+  // active — avoids the extra complexity of lazy per-tab fetching for a
+  // page this size.
+  useEffect(() => {
+    if (!companyId) return;
+    // Skip until both custom fields are actually filled in, rather than
+    // re-querying on every keystroke of a half-entered custom range (a
+    // start with no end yet would otherwise fire a query for "everything
+    // from that date onward", a real but premature/wasteful fetch).
+    if (dateRange === "custom" && (!customStart || !customEnd)) return;
+    loadPeriodPnL(dateRange, customStart, customEnd);
+    loadLedgerTransactions(dateRange, customStart, customEnd);
+  }, [companyId, dateRange, customStart, customEnd]);
+
+  // Genuinely period-bound revenue/expenses, unlike `stats` above — reads
+  // gl_entries joined through gl_transactions (for transaction_date/
+  // status) and chart_of_accounts (for type), filtered server-side via
+  // PostgREST's embedded-resource filtering (the !inner + dotted-column
+  // syntax below). This is a real, standard PostgREST feature, but it's
+  // also a genuinely more complex query shape than anything else in this
+  // file — flagged since it hasn't been exercised live from here before;
+  // if it ever errors, the fallback is a two-step fetch (transaction ids
+  // filtered by date, then entries by transaction_id IN (...)) instead.
+  async function loadPeriodPnL(range: DateRange, customStart: string, customEnd: string) {
+    if (!companyId) return;
+    const { start, end } = resolveDateWindow(range, customStart, customEnd);
+    try {
+      let q = supabase
+        .from("gl_entries")
+        .select("debit, credit, account_id, chart_of_accounts!inner(id, name, type), gl_transactions!inner(transaction_date, status, company_id)")
+        .eq("gl_transactions.company_id", companyId)
+        .eq("gl_transactions.status", "posted")
+        .in("chart_of_accounts.type", ["revenue", "expense"]);
+      if (start) q = q.gte("gl_transactions.transaction_date", start);
+      if (end) q = q.lte("gl_transactions.transaction_date", end);
+      const { data, error } = await q;
+      if (error) throw error;
+
+      const revenueByAccount = new Map<string, { name: string; total: number }>();
+      const expenseByAccount = new Map<string, { name: string; total: number }>();
+      let revenue = 0, expenses = 0;
+
+      for (const row of (data as any[]) || []) {
+        const acct = row.chart_of_accounts;
+        if (!acct) continue;
+        const debit = Number(row.debit) || 0;
+        const credit = Number(row.credit) || 0;
+        if (acct.type === "revenue") {
+          // Revenue is credit-normal.
+          const net = credit - debit;
+          revenue += net;
+          const cur = revenueByAccount.get(acct.id) || { name: acct.name, total: 0 };
+          cur.total += net;
+          revenueByAccount.set(acct.id, cur);
+        } else if (acct.type === "expense") {
+          // Expense is debit-normal.
+          const net = debit - credit;
+          expenses += net;
+          const cur = expenseByAccount.get(acct.id) || { name: acct.name, total: 0 };
+          cur.total += net;
+          expenseByAccount.set(acct.id, cur);
+        }
+      }
+
+      setPeriodPnL({
+        revenue, expenses,
+        revenueAccounts: Array.from(revenueByAccount, ([id, v]) => ({ id, ...v })),
+        expenseAccounts: Array.from(expenseByAccount, ([id, v]) => ({ id, ...v })),
+      });
+    } catch (e: any) {
+      console.error("loadPeriodPnL failed:", e);
+      setPeriodPnL(null);
+    }
+  }
+
+  // General Ledger tab's own list, filtered server-side by the same
+  // cutoff — the original loadAll() fetch is hard-capped at .limit(20)
+  // (kept as-is for Overview's "Recent Transactions" preview, which
+  // should only ever show a handful of the latest activity regardless of
+  // this page's date range). Re-querying here instead of filtering that
+  // already-capped set client-side matters now more than it used to —
+  // this session posted hundreds of real transactions (313 field
+  // payments alone), so the old top-20 slice would silently show far
+  // fewer results than a real "This Year" filter should. Same
+  // PostgREST-1000-row-cap-safe pagination loop as every other page this
+  // session that fetches a potentially large table.
+  async function loadLedgerTransactions(range: DateRange, customStart: string, customEnd: string) {
+    if (!companyId) return;
+    const { start, end } = resolveDateWindow(range, customStart, customEnd);
+    try {
+      const PAGE = 1000;
+      let all: any[] = [];
+      let from = 0;
+      for (let guard = 0; guard < 200; guard++) {
+        let q = supabase
+          .from("gl_transactions")
+          .select("id, transaction_number, transaction_date, description, total_amount, status, source_type, currency")
+          .eq("company_id", companyId)
+          .order("transaction_date", { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (start) q = q.gte("transaction_date", start);
+        if (end) q = q.lte("transaction_date", end);
+        const { data: page, error } = await q;
+        if (error) throw error;
+        all = all.concat(page || []);
+        if (!page || page.length < PAGE) break;
+        from += PAGE;
+      }
+      setLedgerTransactions(all);
+    } catch (e: any) {
+      console.error("loadLedgerTransactions failed:", e);
+    }
+  }
 
   async function loadAll() {
     setLoading(true); setError(null);
@@ -128,6 +327,18 @@ export default function FinanceDashboardPage() {
   // cards elsewhere keep meaning what they already mean.
   const totalEquityAndEarnings = stats.totalEquity + stats.netIncome;
 
+  // Reports tab's P&L display values — periodPnL once loaded (genuinely
+  // filtered by dateRange), falling back to stats' all-time totals only
+  // while periodPnL is still null (initial load / a failed query), so the
+  // card never shows a blank flash. Does NOT affect the Balance Sheet
+  // card or the "Balanced" equation above, which both stay on `stats`
+  // unconditionally, by design.
+  const pnlRevenue = periodPnL?.revenue ?? stats.totalRevenue;
+  const pnlExpenses = periodPnL?.expenses ?? stats.totalExpenses;
+  const pnlNetIncome = pnlRevenue - pnlExpenses;
+  const pnlRevenueAccounts = periodPnL?.revenueAccounts ?? (byType["revenue"] || []).map((a: any) => ({ id: a.id, name: a.name, total: a.current_balance || 0 }));
+  const pnlExpenseAccounts = periodPnL?.expenseAccounts ?? (byType["expense"] || []).map((a: any) => ({ id: a.id, name: a.name, total: a.current_balance || 0 }));
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader
@@ -153,7 +364,7 @@ export default function FinanceDashboardPage() {
         tabs={[
           { key: "overview" as Tab,  label: "Overview" },
           { key: "accounts" as Tab,  label: "Chart of Accounts", count: accounts.length },
-          { key: "ledger" as Tab,    label: "General Ledger",    count: transactions.length },
+          { key: "ledger" as Tab,    label: "General Ledger",    count: ledgerTransactions.length },
           { key: "reports" as Tab,   label: "Reports" },
         ]}
         active={tab}
@@ -322,9 +533,21 @@ export default function FinanceDashboardPage() {
         {/* ── General Ledger Tab ── */}
         {tab === "ledger" && (
           <>
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-slate-600">{transactions.length} entries</div>
-              <div className="flex gap-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="text-xs text-slate-600">{ledgerTransactions.length} entries</div>
+              <div className="flex gap-2 items-center">
+                <select value={dateRange} onChange={e => setDateRange(e.target.value as DateRange)}
+                  className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 outline-none [&>option]:bg-white dark:[&>option]:bg-[#111820]">
+                  {DATE_RANGES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                </select>
+                {dateRange === "custom" && (
+                  <>
+                    <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} aria-label="Custom range start"
+                      className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-2 text-xs text-slate-700 dark:text-slate-300 outline-none"/>
+                    <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} aria-label="Custom range end"
+                      className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-2 text-xs text-slate-700 dark:text-slate-300 outline-none"/>
+                  </>
+                )}
                 <Btn variant="secondary" size="sm" icon={<FileText size={13}/>}
                   onClick={() => nav("/finance/transactions")}>
                   Bank Transactions
@@ -337,7 +560,7 @@ export default function FinanceDashboardPage() {
             </div>
 
             <Card padding={false}>
-              {transactions.length === 0 ? (
+              {ledgerTransactions.length === 0 ? (
                 <Empty icon={<BookOpen size={18}/>} title="No journal entries"
                   body="Journal entries are created automatically when you post expenses, invoices, and payments."
                   action={<Btn variant="primary" size="sm" onClick={() => nav("/finance/journal-entry")}>New Journal Entry</Btn>}/>
@@ -355,13 +578,13 @@ export default function FinanceDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {transactions.map((tx: any) => (
+                    {ledgerTransactions.map((tx: any) => (
                       <Tr key={tx.id}>
                         <Td muted>{fmtDate(tx.transaction_date)}</Td>
                         <Td><span className="font-mono text-[10px] text-cyan-400">{tx.transaction_number}</span></Td>
                         <Td><span className="text-slate-800 dark:text-slate-200 text-xs">{tx.description}</span></Td>
                         <Td><Badge color="slate">{tx.source_type?.replace(/_/g," ")}</Badge></Td>
-                        <Td muted>{tx.currency || "USD"}</Td>
+                        <Td muted>{tx.currency || "JMD"}</Td>
                         <Td>
                           <Badge
                             color={tx.status === "posted" ? "green" : tx.status === "draft" ? "amber" : "red"}
@@ -388,42 +611,65 @@ export default function FinanceDashboardPage() {
               {/* P&L Summary */}
               <div className="md:col-span-2">
                 <Card>
-                  <CardHeader title="Profit & Loss Summary" subtitle="Revenue vs Expenses"/>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <CardHeader title="Profit & Loss Summary" subtitle="Revenue vs Expenses"/>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select value={dateRange} onChange={e => setDateRange(e.target.value as DateRange)}
+                        className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 outline-none [&>option]:bg-white dark:[&>option]:bg-[#111820]">
+                        {DATE_RANGES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                      </select>
+                      {dateRange === "custom" && (
+                        <>
+                          <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} aria-label="Custom range start"
+                            className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-2 text-xs text-slate-700 dark:text-slate-300 outline-none"/>
+                          <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} aria-label="Custom range end"
+                            className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-2 text-xs text-slate-700 dark:text-slate-300 outline-none"/>
+                        </>
+                      )}
+                    </div>
+                  </div>
                   <div className="space-y-3">
                     <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-white/[0.05]">
                       <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Total Revenue</span>
-                      <span className="text-sm font-bold text-emerald-400">{fmt(stats.totalRevenue)}</span>
+                      <span className="text-sm font-bold text-emerald-400">{fmt(pnlRevenue)}</span>
                     </div>
-                    {(byType["revenue"] || []).map((a: any) => (
+                    {pnlRevenueAccounts.map((a) => (
                       <div key={a.id} className="flex items-center justify-between pl-4">
                         <span className="text-xs text-slate-500">{a.name}</span>
-                        <span className="text-xs text-slate-300">{fmt(a.current_balance || 0)}</span>
+                        <span className="text-xs text-slate-300">{fmt(a.total)}</span>
                       </div>
                     ))}
                     <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-white/[0.05]">
                       <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Total Expenses</span>
-                      <span className="text-sm font-bold text-amber-400">{fmt(stats.totalExpenses)}</span>
+                      <span className="text-sm font-bold text-amber-400">{fmt(pnlExpenses)}</span>
                     </div>
-                    {(byType["expense"] || []).map((a: any) => (
+                    {pnlExpenseAccounts.map((a) => (
                       <div key={a.id} className="flex items-center justify-between pl-4">
                         <span className="text-xs text-slate-500">{a.name}</span>
-                        <span className="text-xs text-slate-300">{fmt(a.current_balance || 0)}</span>
+                        <span className="text-xs text-slate-300">{fmt(a.total)}</span>
                       </div>
                     ))}
                     <div className={cn("flex items-center justify-between py-3 px-4 rounded-xl border",
-                      stats.netIncome >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20")}>
-                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Net {stats.netIncome >= 0 ? "Income" : "Loss"}</span>
-                      <span className={cn("text-lg font-bold", stats.netIncome >= 0 ? "text-emerald-400" : "text-red-400")}>
-                        {fmt(Math.abs(stats.netIncome))}
+                      pnlNetIncome >= 0 ? "bg-emerald-500/10 border-emerald-500/20" : "bg-red-500/10 border-red-500/20")}>
+                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Net {pnlNetIncome >= 0 ? "Income" : "Loss"}</span>
+                      <span className={cn("text-lg font-bold", pnlNetIncome >= 0 ? "text-emerald-400" : "text-red-400")}>
+                        {fmt(Math.abs(pnlNetIncome))}
                       </span>
                     </div>
                   </div>
                 </Card>
               </div>
 
-              {/* Balance Sheet Summary */}
+              {/* Balance Sheet Summary — deliberately always all-time,
+                  unaffected by the P&L card's date range above. A Balance
+                  Sheet is a cumulative-since-inception snapshot, not a
+                  period total the way revenue/expenses are — narrowing it
+                  to a trailing window wouldn't be a real balance sheet,
+                  and chart_of_accounts.current_balance (what this reads)
+                  is a running total with no way to derive "as of a past
+                  date" from it anyway. */}
               <Card>
-                <CardHeader title="Balance Sheet" subtitle="Financial position"/>
+                <CardHeader title="Balance Sheet" subtitle="Financial position — always current, not affected by the date range above"/>
                 <div className="space-y-3">
                   {[
                     { label: "Assets",      value: stats.totalAssets,      color: "text-cyan-400" },
@@ -436,7 +682,7 @@ export default function FinanceDashboardPage() {
                     </div>
                   ))}
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">Current Period Earnings</span>
+                    <span className="text-xs text-slate-500">Retained Earnings to Date</span>
                     <span className="text-sm font-bold text-emerald-400">{fmt(stats.netIncome)}</span>
                   </div>
                   <div className="border-t border-slate-200 dark:border-white/[0.06] pt-3">

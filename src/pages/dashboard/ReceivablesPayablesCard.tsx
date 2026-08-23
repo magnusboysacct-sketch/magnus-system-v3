@@ -17,7 +17,7 @@ interface AgingBucket {
 const BUCKET_ORDER = ["Not Yet Due", "0-30", "31-60", "61-90", "90+"];
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(n);
 }
 
 export default function ReceivablesPayablesCard() {

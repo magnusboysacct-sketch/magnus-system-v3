@@ -210,7 +210,7 @@ export default function ContractProgressBilling({
     if (value === null || value === undefined) return "$0.00";
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "USD",
+      currency: "JMD",
       minimumFractionDigits: 2,
     }).format(value);
   }

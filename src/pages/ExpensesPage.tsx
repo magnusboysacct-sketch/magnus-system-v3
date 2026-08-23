@@ -12,6 +12,47 @@ import {
   RefreshCw, Filter, X, Check, Calendar, Pencil, Trash2
 } from "lucide-react";
 
+// ─── Date range filter — same proven pattern as ReportsPage.tsx (not
+// imported from there since it doesn't export these; ReportsPage.tsx
+// itself is untouched, this is a deliberate copy of its shape) ───────────
+
+type DateRange = "week" | "month" | "quarter" | "year" | "all" | "custom";
+
+const DATE_RANGES: { key: DateRange; label: string }[] = [
+  { key: "week", label: "This Week" },
+  { key: "month", label: "This Month" },
+  { key: "quarter", label: "This Quarter" },
+  { key: "year", label: "This Year" },
+  { key: "all", label: "All Time" },
+  { key: "custom", label: "Custom Range" },
+];
+
+// Presets only — "custom" is handled separately by customRangeBounds()
+// below, since a preset is always "cutoff through now" (a single lower
+// bound), while a custom range needs both an arbitrary start AND end.
+function getCutoff(range: DateRange): string | null {
+  const now = new Date();
+  if (range === "all" || range === "custom") return null;
+  if (range === "week") { now.setDate(now.getDate() - 7); }
+  else if (range === "month") { now.setMonth(now.getMonth() - 1); }
+  else if (range === "quarter") { now.setMonth(now.getMonth() - 3); }
+  else if (range === "year") { now.setFullYear(now.getFullYear() - 1); }
+  return now.toISOString();
+}
+
+// Custom range bounds — local-midnight-safe, same discipline as every
+// date field built this session: new Date("YYYY-MM-DD") alone parses as
+// UTC midnight and can shift a day depending on the browser's timezone,
+// so the time component is set explicitly rather than left implicit.
+// Empty start/end means "no bound on that side" (an open-ended custom
+// range is valid — e.g. "everything up to a specific end date").
+function customRangeBounds(start: string, end: string): { start: string | null; end: string | null } {
+  return {
+    start: start ? new Date(`${start}T00:00:00`).toISOString() : null,
+    end: end ? new Date(`${end}T23:59:59.999`).toISOString() : null,
+  };
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Expense = {
@@ -47,7 +88,7 @@ const STATUS_COLOR: Record<string, any> = {
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD", maximumFractionDigits: 2
+    style: "currency", currency: "JMD", maximumFractionDigits: 2
   }).format(n);
 }
 
@@ -72,6 +113,11 @@ export default function ExpensesPage() {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const [projectFilter, setProjectFilter] = useState("");
+  // Defaults to "month", matching ReportsPage.tsx's own default — no
+  // reason found to differ for this page.
+  const [dateRange, setDateRange] = useState<DateRange>("month");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [showExpenseScanner, setShowExpenseScanner] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -259,13 +305,35 @@ export default function ExpensesPage() {
     a.download = `expenses_${Date.now()}.csv`; a.click();
   }
 
-  // Filter
+  // Filter — client-side, same as the existing search/tab/project filters
+  // below (loadExpenses() already fetches the full company-scoped set, no
+  // separate server round-trip needed for this). Real date column is
+  // expense_date (nullable) — the cutoff check falls back to created_at
+  // when it's null, matching how this file's own display logic already
+  // does it elsewhere (e.g. the "Filing Cabinet" row date, line ~417),
+  // so a still-real expense missing expense_date doesn't just silently
+  // vanish from every range except "All Time".
+  // "custom" needs both a start AND end bound; every preset is just a
+  // single lower bound (cutoff through now) — start covers both cases,
+  // end is only ever set for custom.
+  const { start: dateStartIso, end: dateEndIso } = dateRange === "custom"
+    ? customRangeBounds(customStart, customEnd)
+    : { start: getCutoff(dateRange), end: null as string | null };
+  const dateStartMs = dateStartIso ? new Date(dateStartIso).getTime() : null;
+  const dateEndMs = dateEndIso ? new Date(dateEndIso).getTime() : null;
   const filtered = expenses.filter(e => {
     const matchSearch = (e.description || "").toLowerCase().includes(search.toLowerCase()) ||
       (e.expense_categories?.name || "").toLowerCase().includes(search.toLowerCase());
     const matchTab = tab === "all" || e.status === tab;
     const matchProject = !projectFilter || e.project_id === projectFilter;
-    return matchSearch && matchTab && matchProject;
+    // Real Date comparison, not raw string >= — expense_date is a plain
+    // "YYYY-MM-DD" (no time component), while the cutoff/created_at are
+    // full ISO datetimes; comparing those as strings is lexicographically
+    // unreliable right at the boundary (a same-day expense could wrongly
+    // fall outside the cutoff).
+    const effMs = new Date(e.expense_date || e.created_at).getTime();
+    const matchDate = (dateStartMs === null || effMs >= dateStartMs) && (dateEndMs === null || effMs <= dateEndMs);
+    return matchSearch && matchTab && matchProject && matchDate;
   });
 
   // Totals
@@ -323,6 +391,15 @@ export default function ExpensesPage() {
             <option value="">All projects</option>
             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </Select>
+          <Select value={dateRange} onChange={e => setDateRange(e.target.value as DateRange)} className="w-40">
+            {DATE_RANGES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+          </Select>
+          {dateRange === "custom" && (
+            <>
+              <Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="w-36" aria-label="Custom range start"/>
+              <Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="w-36" aria-label="Custom range end"/>
+            </>
+          )}
         </div>
 
         {/* Table */}

@@ -11,7 +11,7 @@ interface CashAccount {
 }
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(n);
 }
 
 // Liquid-cash subtypes only, out of the real asset subtype vocabulary

@@ -7,7 +7,7 @@ import { PageHeader, Card, CardHeader, Badge, Btn, Empty, cn } from "../componen
 import { FolderOpen, ShoppingCart, Users, DollarSign, ArrowRight, BarChart3, Hammer, CheckCircle2, Clock, Plus, TrendingUp } from "lucide-react";
 
 function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", maximumFractionDigits: 0 }).format(n);
 }
 
 type RemittanceAlert = { periodLabel: string; dueDate: string; totalDue: number; urgency: "soon" | "week" | "overdue" };
