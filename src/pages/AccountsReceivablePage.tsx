@@ -83,6 +83,7 @@ export default function AccountsReceivablePage() {
     notes: "",
     terms: "",
     status: "",
+    project_id: "",
   });
 
   useEffect(() => {
@@ -371,6 +372,7 @@ export default function AccountsReceivablePage() {
       notes: invoice.notes || "",
       terms: invoice.terms || "",
       status: invoice.status || "draft",
+      project_id: invoice.project_id || "",
     });
   }
 
@@ -384,6 +386,7 @@ export default function AccountsReceivablePage() {
         notes: editForm.notes.trim() || null,
         terms: editForm.terms.trim() || null,
         status: editForm.status as ClientInvoice["status"],
+        project_id: editForm.project_id || null,
       });
       await loadInvoices();
       setEditingInvoice(null);
@@ -1307,6 +1310,21 @@ ${companySettings?.company_name || "Magnus Boys Construction"}`}
                   <option value="paid">Paid</option>
                   <option value="overdue">Overdue</option>
                   <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Project</label>
+                <select value={editForm.project_id}
+                  onChange={e => setEditForm(f => ({ ...f, project_id: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none">
+                  <option value="">No Project</option>
+                  {projects
+                    .filter((p) => !editingInvoice?.client_id || p.client_id === editingInvoice.client_id)
+                    .map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
                 </select>
               </div>
               <div>
