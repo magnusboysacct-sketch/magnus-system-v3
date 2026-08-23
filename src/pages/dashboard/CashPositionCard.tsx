@@ -1,7 +1,7 @@
 // src/pages/dashboard/CashPositionCard.tsx
 import React, { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { AlertTriangle, Info } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Card, CardHeader, Spinner, Empty } from "../../components/ui";
 import { supabase } from "../../lib/supabase";
 
@@ -77,32 +77,6 @@ export default function CashPositionCard() {
   return (
     <Card>
       <CardHeader title="Cash Position" subtitle="Balances across operating accounts" />
-
-      {/* TEMP: remove once Supplier Payments and Field Payments are also
-          posted — Veron will ask for this specifically. Updated once
-          Invoices ($41.3M) and Customer Payments ($29.6M) were confirmed
-          posted this session — Invoices never actually affected this card
-          in the first place (it debits/credits Accounts Receivable and
-          Revenue, neither a bank/current_asset subtype account this card
-          sums), so it was dropped from the note rather than marked done.
-          Customer Payments DOES affect this card — it debits 1600
-          Undeposited Funds, a real cash-fund account (confirmed via
-          scripts/post-expenses.ts's own PAID_THROUGH_TO_ACCOUNT_CODE
-          mapping, which already treats 1600 as a cash source/destination
-          alongside petty cash and the bank current account) — so that
-          inflow is now correctly reflected. Direction flipped from the
-          original note: it used to warn balances "may appear lower than
-          actual" (real customer payments not yet in the GL); now the risk
-          runs the other way — Supplier Payments and Field Payments are
-          real cash OUTFLOWS not yet posted, so balances may currently
-          appear HIGHER than actual until those are done too. */}
-      <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06]">
-        <Info size={13} className="text-slate-400 dark:text-slate-500 mt-0.5 flex-shrink-0" />
-        <p className="text-[11px] text-slate-500 dark:text-slate-500 leading-snug">
-          Balances reflect posted GL transactions only. Supplier Payments and Field Payments
-          haven't been posted to the GL yet — real cash may be lower than shown here until that's complete.
-        </p>
-      </div>
 
       {loading ? (
         <div className="h-64 flex items-center justify-center">

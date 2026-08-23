@@ -181,27 +181,22 @@ export default function AISummaryBanner() {
           // real but structurally incomplete right now (not wrong, just
           // partial), and the model has no way to know that from the raw
           // numbers alone.
-          // Updated once Invoices ($41.3M) and Customer Payments ($29.6M)
-          // were confirmed posted this session. profit_and_loss and
-          // receivables_payables turned out to have genuinely different
-          // dependencies once traced through, not just different current
-          // status — receivables_payables was dropped from this array
-          // entirely (not reworded) because it's no longer a real caveat:
-          // get_ar_ap_aging()'s actual SQL
-          // (20260822040000_add_not_yet_due_aging_bucket.sql) sums
-          // client_invoices.balance_due / supplier_invoices.balance_due
-          // directly — columns that update independently of GL posting
-          // status. It was never actually GL-posting-dependent, even
-          // before this round; bundling it into the same caveat as
-          // profit_and_loss was itself the inaccuracy. Every entry left
-          // in this array below still means "the model should avoid a
-          // confident conclusion here" (per the message instruction
-          // further down) — receivables_payables no longer belongs in
-          // that category at all, so it isn't listed, rather than listed
-          // with reassuring wording that would contradict that
-          // instruction.
+          //
+          // GL Phase 2 is now genuinely complete — all 7 entities posted
+          // and verified this session (Expenses, Fund Transfer, Client
+          // Invoices, Client Payments, Bills, Supplier Payments, Field
+          // Payments). The profit_and_loss entry that lived here through
+          // the mid-arc update is removed entirely, not reworded — Bills
+          // and Field Payments (the last two things it was waiting on)
+          // are posted, so there's nothing left to caveat about net
+          // income. receivables_payables was already removed in the
+          // prior round (never actually GL-posting-dependent — see that
+          // round's own reasoning if this needs revisiting).
+          //
+          // projects.active_count is left exactly as it was — a real,
+          // separate gap (BOQ/job-costing data entry, not GL posting)
+          // that Phase 2 never touched and doesn't resolve it.
           data_caveats: [
-            "profit_and_loss: revenue is complete (all client invoices are posted to the general ledger). Net income is likely OVERSTATED, not understated — Bills and Field Payments haven't been posted yet, so real expenses are higher than what's reflected here. Do not describe profitability as strong or improving based on this figure alone.",
             "projects.active_count is real, but budget and actual-cost figures for those projects are currently $0 across the board — BOQ items and job-costing data have not been entered for them yet. This is a data gap, not a claim that projects have no budget.",
           ],
         };
