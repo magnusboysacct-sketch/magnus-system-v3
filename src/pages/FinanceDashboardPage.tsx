@@ -11,8 +11,10 @@ import {
   ArrowRight, Receipt, FileText, CreditCard, Wallet,
   PieChart, BarChart3, RefreshCw, Building2, Package,
   CheckCircle2, AlertCircle, Clock, Plus, ArrowUpRight,
-  ArrowDownRight, Layers, Settings
+  ArrowDownRight, Layers, Settings, Download, Printer
 } from "lucide-react";
+import { useCompanySettings } from "../hooks/useCompanySettings";
+import { openPrintWindow } from "../lib/printUtils";
 
 type Tab = "overview" | "accounts" | "ledger" | "reports";
 
@@ -91,6 +93,79 @@ const ACCOUNT_TYPE_BG: Record<string, string> = {
   expense: "bg-amber-500/10 border-amber-500/20 text-amber-400",
 };
 
+// ─── Export Reports — CSV mirrors ExpensesPage.tsx's own exportCSV()
+// (Blob + object URL + synthetic <a download> click), PDF reuses
+// printUtils.ts's openPrintWindow() (the same mechanism ContractsPage.tsx
+// and Secretary Workspace's Correspondence letters already use). Both
+// carry company name/branding + a generation timestamp, since these are
+// for audit/review per the section's own subtitle. ──────────────────────
+
+interface ReportTable {
+  title: string;
+  columns: string[];
+  rows: (string | number)[][];
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function generatedAtLabel(): string {
+  return new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+}
+
+// Unlike ExpensesPage.tsx's naive exportCSV() (plain .join(",") with no
+// escaping), account/report row values here are quoted when they contain a
+// comma/quote/newline — a strict superset that changes nothing for any
+// value that doesn't need it, and avoids genuinely corrupting a CSV cell
+// that does (an account or category name with a comma in it).
+function csvCell(v: string | number): string {
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function downloadReportCSV(companyName: string, table: ReportTable) {
+  const lines = [
+    csvCell(companyName),
+    csvCell(table.title),
+    csvCell(`Generated ${generatedAtLabel()}`),
+    "",
+    table.columns.map(csvCell).join(","),
+    ...table.rows.map(r => r.map(csvCell).join(",")),
+  ];
+  const csv = lines.join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = `${table.title.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_${Date.now()}.csv`;
+  a.click();
+}
+
+function downloadReportPDF(companyName: string, logoUrl: string | null, table: ReportTable) {
+  const logoImg = logoUrl
+    ? `<img src="${logoUrl}" alt="logo" style="width:64px;height:64px;border-radius:10px;object-fit:cover;display:block;margin:0 auto 14px"/>`
+    : "";
+  const headHtml = table.columns
+    .map((c, i) => `<th style="padding:8px 10px;text-align:${i === table.columns.length - 1 ? "right" : "left"};font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #1a1a1a">${escapeHtml(c)}</th>`)
+    .join("");
+  const rowsHtml = table.rows
+    .map(r => `<tr>${r.map((c, i) => `<td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;font-size:12px;${i === r.length - 1 ? "text-align:right" : ""}">${escapeHtml(String(c))}</td>`).join("")}</tr>`)
+    .join("");
+  const html = `
+    <div style="max-width:760px;margin:0 auto;padding:56px 48px">
+      <div style="text-align:center;margin-bottom:28px">
+        ${logoImg}
+        <div style="font-weight:700;font-size:17px">${escapeHtml(companyName)}</div>
+        <div style="font-size:13px;color:#555;margin-top:4px">${escapeHtml(table.title)}</div>
+        <div style="font-size:10px;color:#999;margin-top:2px">Generated ${escapeHtml(generatedAtLabel())}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>${headHtml}</tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+  openPrintWindow(html, { title: table.title });
+}
+
 export default function FinanceDashboardPage() {
   const nav = useNavigate();
   const [tab, setTab] = useState<Tab>("overview");
@@ -135,6 +210,13 @@ export default function FinanceDashboardPage() {
   // preview also reads and must stay unfiltered/most-recent regardless of
   // this page's date range control.
   const [ledgerTransactions, setLedgerTransactions] = useState<any[]>([]);
+
+  // Export Reports — company branding for CSV/PDF exports, same source
+  // Correspondence letters already use. exportingKey disables the
+  // clicked report's buttons only, not the whole card, while its export
+  // (Cash Flow's especially, which fetches live) is in flight.
+  const { settings: companySettings } = useCompanySettings();
+  const [exportingKey, setExportingKey] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -338,6 +420,141 @@ export default function FinanceDashboardPage() {
   const pnlNetIncome = pnlRevenue - pnlExpenses;
   const pnlRevenueAccounts = periodPnL?.revenueAccounts ?? (byType["revenue"] || []).map((a: any) => ({ id: a.id, name: a.name, total: a.current_balance || 0 }));
   const pnlExpenseAccounts = periodPnL?.expenseAccounts ?? (byType["expense"] || []).map((a: any) => ({ id: a.id, name: a.name, total: a.current_balance || 0 }));
+
+  // ─── Export Reports — table builders ───────────────────────────────
+  // Trial Balance & Balance Sheet: point-in-time snapshots straight from
+  // `accounts`/`stats`/`byType`, the same all-time data the Accounts tab
+  // and the Reports tab's own Balance Sheet card already show — not a
+  // separate re-fetch. Cash Flow's account list also reads straight from
+  // `accounts` (already loaded, includes `subtype`), but its movement
+  // figures need a fresh, date-scoped gl_entries query, since nothing on
+  // screen already shows this.
+
+  function buildTrialBalanceTable(): ReportTable {
+    const rows = accounts
+      .slice()
+      .sort((a, b) => String(a.code).localeCompare(String(b.code)))
+      .map(a => [a.code, a.name, a.type, fmt(a.current_balance || 0)]);
+    return { title: "Trial Balance", columns: ["Code", "Name", "Type", "Balance"], rows };
+  }
+
+  // Exports exactly what's currently on the P&L Summary card — same
+  // pnlRevenue/pnlExpenses/pnlRevenueAccounts/pnlExpenseAccounts the card
+  // itself renders, so the export can never disagree with the screen.
+  function buildPnLTable(): ReportTable {
+    const periodLabel = dateRange === "custom"
+      ? `${customStart || "…"} to ${customEnd || "…"}`
+      : DATE_RANGES.find(r => r.key === dateRange)?.label || dateRange;
+    const rows: (string | number)[][] = [];
+    rows.push(["Revenue", "", ""]);
+    for (const a of pnlRevenueAccounts) rows.push([a.name, "Revenue", fmt(a.total)]);
+    rows.push(["Total Revenue", "", fmt(pnlRevenue)]);
+    rows.push(["Expenses", "", ""]);
+    for (const a of pnlExpenseAccounts) rows.push([a.name, "Expense", fmt(a.total)]);
+    rows.push(["Total Expenses", "", fmt(pnlExpenses)]);
+    rows.push([pnlNetIncome >= 0 ? "Net Income" : "Net Loss", "", fmt(Math.abs(pnlNetIncome))]);
+    return { title: `P&L Statement — ${periodLabel}`, columns: ["Account", "Type", "Amount"], rows };
+  }
+
+  // Always current, unaffected by dateRange — same reasoning as the
+  // Reports tab's own Balance Sheet card. Account-level detail included
+  // (not just the 3 headline totals) so the export is actually useful for
+  // review, matching Trial Balance's level of detail.
+  function buildBalanceSheetTable(): ReportTable {
+    const rows: (string | number)[][] = [];
+    rows.push(["Assets", "", ""]);
+    for (const a of (byType["asset"] || [])) rows.push([a.name, "Asset", fmt(a.current_balance || 0)]);
+    rows.push(["Total Assets", "", fmt(stats.totalAssets)]);
+    rows.push(["Liabilities", "", ""]);
+    for (const a of (byType["liability"] || [])) rows.push([a.name, "Liability", fmt(a.current_balance || 0)]);
+    rows.push(["Total Liabilities", "", fmt(stats.totalLiabilities)]);
+    rows.push(["Equity", "", ""]);
+    for (const a of (byType["equity"] || [])) rows.push([a.name, "Equity", fmt(a.current_balance || 0)]);
+    rows.push(["Retained Earnings to Date", "", fmt(stats.netIncome)]);
+    rows.push(["Total Liabilities + Equity", "", fmt(stats.totalLiabilities + totalEquityAndEarnings)]);
+    return { title: `Balance Sheet — as of ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`, columns: ["Account", "Type", "Amount"], rows };
+  }
+
+  // Not CashFlowPage.tsx's data — that page is built on a separate
+  // bank_accounts/bank-transaction system (confirmed by reading it
+  // directly), unrelated to the GL this session's posting scripts wrote
+  // to. Using it here would produce an incomplete "Cash Flow" report,
+  // since virtually all real cash movement this session went through GL
+  // posting, not bank_accounts inserts. Instead: a genuine GL-derived net
+  // cash movement summary, scoped to the same dateRange as the P&L card
+  // above (consistent with the other 3 reports, all GL-derived) — sums
+  // debit-credit on every "cash" account (type=asset, subtype in
+  // bank/current_asset — CashPositionCard.tsx's own established
+  // classification) from posted gl_entries in the window. This is
+  // deliberately labeled "Net Cash Movement by Account" rather than a
+  // formal GAAP Statement of Cash Flows — it doesn't split
+  // operating/investing/financing, which would need a materially bigger
+  // classification effort this session hasn't built.
+  async function buildCashFlowTable(): Promise<ReportTable> {
+    const periodLabel = dateRange === "custom"
+      ? `${customStart || "…"} to ${customEnd || "…"}`
+      : DATE_RANGES.find(r => r.key === dateRange)?.label || dateRange;
+    const title = `Cash Flow — Net Movement by Account (${periodLabel})`;
+    if (!companyId) return { title, columns: ["Account", "Net Movement"], rows: [] };
+
+    const cashAccountIds = accounts
+      .filter(a => a.type === "asset" && ["bank", "current_asset"].includes(a.subtype))
+      .map(a => a.id);
+    if (cashAccountIds.length === 0) return { title, columns: ["Account", "Net Movement"], rows: [] };
+
+    const { start, end } = resolveDateWindow(dateRange, customStart, customEnd);
+    let q = supabase
+      .from("gl_entries")
+      .select("debit, credit, account_id, chart_of_accounts!inner(id, name), gl_transactions!inner(transaction_date, status, company_id)")
+      .eq("gl_transactions.company_id", companyId)
+      .eq("gl_transactions.status", "posted")
+      .in("account_id", cashAccountIds);
+    if (start) q = q.gte("gl_transactions.transaction_date", start);
+    if (end) q = q.lte("gl_transactions.transaction_date", end);
+    const { data, error } = await q;
+    if (error) { console.error("buildCashFlowTable failed:", error); return { title, columns: ["Account", "Net Movement"], rows: [] }; }
+
+    const byAccount = new Map<string, { name: string; net: number }>();
+    let total = 0;
+    for (const row of (data as any[]) || []) {
+      const acct = row.chart_of_accounts;
+      if (!acct) continue;
+      // Cash is an asset — debit-normal, so net inflow is debit - credit.
+      const net = (Number(row.debit) || 0) - (Number(row.credit) || 0);
+      total += net;
+      const cur = byAccount.get(acct.id) || { name: acct.name, net: 0 };
+      cur.net += net;
+      byAccount.set(acct.id, cur);
+    }
+    const rows: (string | number)[][] = Array.from(byAccount.values()).map(a => [a.name, fmt(a.net)]);
+    rows.push(["Net Cash Movement (Period)", fmt(total)]);
+    return { title, columns: ["Account", "Net Movement"], rows };
+  }
+
+  async function handleExport(reportKey: string, format: "csv" | "pdf") {
+    setExportingKey(reportKey);
+    try {
+      const table = reportKey === "trial_balance" ? buildTrialBalanceTable()
+        : reportKey === "pnl" ? buildPnLTable()
+        : reportKey === "balance_sheet" ? buildBalanceSheetTable()
+        : await buildCashFlowTable();
+      const companyName = companySettings?.company_name || "Magnus Boys Construction";
+      if (format === "csv") downloadReportCSV(companyName, table);
+      else downloadReportPDF(companyName, companySettings?.logo_url ?? null, table);
+    } catch (e: any) {
+      console.error("Export failed:", e);
+      setError("Export failed: " + (e.message || "unknown error"));
+    } finally {
+      setExportingKey(null);
+    }
+  }
+
+  const EXPORT_REPORTS: { key: string; label: string; icon: React.ReactNode }[] = [
+    { key: "trial_balance", label: "Trial Balance", icon: <BarChart3 size={14} /> },
+    { key: "pnl", label: "P&L Statement", icon: <TrendingUp size={14} /> },
+    { key: "balance_sheet", label: "Balance Sheet", icon: <Layers size={14} /> },
+    { key: "cash_flow", label: "Cash Flow", icon: <DollarSign size={14} /> },
+  ];
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
@@ -703,24 +920,33 @@ export default function FinanceDashboardPage() {
               </Card>
             </div>
 
-            {/* Export options */}
+            {/* Export options — Trial Balance & Balance Sheet are always-
+                current snapshots; P&L and Cash Flow respect the date range
+                selected above (Cash Flow fetches live on click, the others
+                read from state already on screen). Every export carries
+                company branding + a generation timestamp. */}
             <Card>
               <CardHeader title="Export Reports" subtitle="Download for audit and review"/>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[
-                  { label: "Trial Balance",  icon: <BarChart3 size={14}/> },
-                  { label: "P&L Statement",  icon: <TrendingUp size={14}/> },
-                  { label: "Balance Sheet",  icon: <Layers size={14}/> },
-                  { label: "Cash Flow",      icon: <DollarSign size={14}/> },
-                ].map(r => (
-                  <button key={r.label}
-                    className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] hover:border-slate-300 dark:hover:border-white/[0.12] hover:bg-slate-100 dark:hover:bg-white/[0.04] transition-colors text-left">
-                    <span className="text-slate-600">{r.icon}</span>
-                    <span className="text-xs text-slate-400">{r.label}</span>
-                  </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {EXPORT_REPORTS.map(r => (
+                  <div key={r.key}
+                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02]">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-slate-600">{r.icon}</span>
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{r.label}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <Btn variant="secondary" size="xs" icon={<Download size={11}/>}
+                        disabled={exportingKey === r.key}
+                        onClick={() => handleExport(r.key, "csv")}>CSV</Btn>
+                      <Btn variant="secondary" size="xs" icon={<Printer size={11}/>}
+                        disabled={exportingKey === r.key}
+                        onClick={() => handleExport(r.key, "pdf")}>PDF</Btn>
+                    </div>
+                  </div>
                 ))}
               </div>
-              <p className="text-[10px] text-slate-700 mt-3">Full export with date range filters coming in the next update.</p>
+              <p className="text-[10px] text-slate-700 mt-3">Trial Balance & Balance Sheet are always-current; P&L and Cash Flow reflect the date range selected above.</p>
             </Card>
           </div>
         )}
