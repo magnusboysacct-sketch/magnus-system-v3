@@ -502,7 +502,7 @@ export default function CashFlowPage() {
           tabs={[
             { key: "overview", label: "Overview" },
             { key: "accounts", label: "Accounts", count: accounts.length },
-            { key: "transfers", label: "Transfers", count: transferPairs.length },
+            { key: "transfers", label: "Transfers", count: glTransfers.length },
           ]}
           active={tab}
           onChange={setTab}
