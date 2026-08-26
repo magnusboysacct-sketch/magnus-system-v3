@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
-  createBankAccount, transferFunds, withdrawFunds,
+  createBankAccount, withdrawFunds,
 } from "../lib/finance";
 import {
   PageHeader, StatCard, Card, CardHeader, Badge, Btn,
@@ -48,6 +48,34 @@ type TransferPair = {
   toAccountName: string;
   fromId: string;
   toId: string;
+};
+
+// ─── GL-connected Transfer Funds ────────────────────────────────────────
+// Replaces the old bank_accounts-only transfer (transferFunds() in
+// lib/finance.ts, still used nowhere else in this file now) — that path
+// never touched gl_transactions/gl_entries, so a transfer made through it
+// was invisible to Cash Position, Trial Balance, Balance Sheet, and every
+// GL-based report built this session. This posts real gl_transactions/
+// gl_entries instead, same source_type='fund_transfer' shape as the 237
+// historical entries scripts/post-fund-transfers.ts posted, Dr [To] /
+// Cr [From], both sides drawn from chart_of_accounts — not bank_accounts.
+// bank_accounts/cash_transactions themselves are untouched by this; they
+// simply stop being this feature's data source.
+
+// Same "cash" classification CashPositionCard.tsx already uses: asset-type,
+// subtype bank or current_asset (chart_of_accounts has no separate
+// "petty_cash" subtype — confirmed against lib/accounting.ts's own
+// AccountSubtype union — Petty Cash accounts live under current_asset).
+type GLCashAccount = { id: string; code: string; name: string; current_balance: number };
+
+type GLTransferRow = {
+  id: string;
+  transaction_number: string;
+  date: string;
+  description: string | null;
+  amount: number;
+  fromName: string;
+  toName: string;
 };
 
 function fmt(n: number) {
@@ -99,8 +127,21 @@ export default function CashFlowPage() {
     bank_name: "", account_number_last_4: "", current_balance: "",
   });
 
-  // Transfer form state
-  const [transferForm, setTransferForm] = useState({ toAccountId: "", amount: "", description: "" });
+  // GL cash/bank accounts for the new Transfer picker, and the live log of
+  // GL-posted fund transfers — both queried fresh from chart_of_accounts /
+  // gl_transactions, never hardcoded.
+  const [glAccounts, setGlAccounts] = useState<GLCashAccount[]>([]);
+  const [glTransfers, setGlTransfers] = useState<GLTransferRow[]>([]);
+  const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
+
+  // Transfer form state — fromAccountId/toAccountId/date added: the old
+  // form only had "to", because "from" was implied by whichever
+  // bank_accounts card the user clicked. GL accounts aren't tied to a
+  // clicked card, so both sides are now explicit.
+  const [transferForm, setTransferForm] = useState({
+    fromAccountId: "", toAccountId: "", amount: "", description: "",
+    date: new Date().toISOString().split("T")[0],
+  });
 
   // Withdraw form state
   const [withdrawForm, setWithdrawForm] = useState({ amount: "", reason: "", category: "Withdrawal" });
@@ -159,6 +200,84 @@ export default function CashFlowPage() {
   }, []);
 
   useEffect(() => { if (companyId) loadData(); }, [companyId, period]);
+  useEffect(() => { if (companyId) { loadGLAccounts(); loadGLTransfers(); } }, [companyId]);
+
+  // Real, active, bank/current_asset chart_of_accounts — queried live, not
+  // hardcoded from any prior session's list (that list drifts as accounts
+  // are added/deactivated).
+  async function loadGLAccounts() {
+    if (!companyId) return;
+    try {
+      const { data, error } = await supabase
+        .from("chart_of_accounts")
+        .select("id, code, name, current_balance")
+        .eq("company_id", companyId)
+        .eq("type", "asset")
+        .in("subtype", ["bank", "current_asset"])
+        .eq("is_active", true)
+        .order("code", { ascending: true });
+      if (error) throw error;
+      setGlAccounts(data || []);
+    } catch (e: any) {
+      console.error("loadGLAccounts failed:", e);
+    }
+  }
+
+  // Live log of GL-posted fund transfers, for the Transfers tab — without
+  // this, a transfer made through the new modal would post correctly but
+  // never visibly confirm itself anywhere in this tab (the existing
+  // Transfer Log table below reads cash_transactions, which this feature
+  // deliberately no longer writes to). Two-step fetch (transactions, then
+  // their entries) rather than a single embedded-resource query, since
+  // debit/credit → from/to needs to be resolved per transaction in JS
+  // anyway.
+  async function loadGLTransfers() {
+    if (!companyId) return;
+    try {
+      const { data: txs, error: txErr } = await supabase
+        .from("gl_transactions")
+        .select("id, transaction_number, transaction_date, description, total_amount")
+        .eq("company_id", companyId)
+        .eq("source_type", "fund_transfer")
+        .eq("status", "posted")
+        .order("transaction_date", { ascending: false })
+        .limit(200);
+      if (txErr) throw txErr;
+
+      const ids = (txs || []).map(t => t.id);
+      if (ids.length === 0) { setGlTransfers([]); return; }
+
+      const { data: entries, error: entErr } = await supabase
+        .from("gl_entries")
+        .select("transaction_id, debit, credit, chart_of_accounts(name)")
+        .in("transaction_id", ids);
+      if (entErr) throw entErr;
+
+      const byTx = new Map<string, any[]>();
+      for (const e of (entries as any[]) || []) {
+        if (!byTx.has(e.transaction_id)) byTx.set(e.transaction_id, []);
+        byTx.get(e.transaction_id)!.push(e);
+      }
+
+      const rows: GLTransferRow[] = (txs || []).map(t => {
+        const legs = byTx.get(t.id) || [];
+        const toLeg = legs.find(l => Number(l.debit) > 0);
+        const fromLeg = legs.find(l => Number(l.credit) > 0);
+        return {
+          id: t.id,
+          transaction_number: t.transaction_number,
+          date: t.transaction_date,
+          description: t.description,
+          amount: Number(t.total_amount) || 0,
+          fromName: fromLeg?.chart_of_accounts?.name || "—",
+          toName: toLeg?.chart_of_accounts?.name || "—",
+        };
+      });
+      setGlTransfers(rows);
+    } catch (e: any) {
+      console.error("loadGLTransfers failed:", e);
+    }
+  }
 
   async function loadData() {
     setLoading(true);
@@ -186,10 +305,16 @@ export default function CashFlowPage() {
     finally { setLoading(false); }
   }
 
-  function openTransfer(account: BankAccount) {
-    setActiveAccount(account);
-    setTransferForm({ toAccountId: "", amount: "", description: "" });
+  function openTransfer() {
+    // No longer takes a BankAccount — the old flow implied "from" by
+    // whichever bank_accounts card was clicked; GL accounts aren't tied
+    // to one, so both From and To are picked explicitly in the modal.
+    setTransferForm({
+      fromAccountId: "", toAccountId: "", amount: "", description: "",
+      date: new Date().toISOString().split("T")[0],
+    });
     setFormError(null);
+    setTransferSuccess(null);
     setShowTransfer(true);
   }
 
@@ -227,23 +352,82 @@ export default function CashFlowPage() {
     }
   }
 
+  // Posts a real gl_transaction (source_type='fund_transfer', Dr [To] /
+  // Cr [From]) directly, not through lib/finance.ts's transferFunds()
+  // (bank_accounts-only, no GL). Header is inserted with its FINAL
+  // status='posted' in a single INSERT — same shape JournalEntryPage.tsx's
+  // save() already uses for a live single-transaction post — rather than
+  // insert-as-draft-then-update. Confirmed via 20260820020000_add_balance_
+  // update_trigger_on_posting.sql that this is the path that correctly
+  // triggers chart_of_accounts.current_balance via update_account_balance()
+  // (its INSERT branch on gl_entries only applies when the parent
+  // gl_transactions row is ALREADY status='posted' at insert time).
+  // Deliberately does NOT also run a manual chart_of_accounts UPDATE the
+  // way JournalEntryPage.tsx's save() does after this — that trailing
+  // update is a separate, real double-counting bug there (flagged
+  // separately, not fixed here — out of this feature's scope), not a
+  // pattern to copy.
   async function handleTransfer() {
     setFormError(null);
+    setTransferSuccess(null);
     const amount = parseFloat(transferForm.amount);
+    const fromAcct = glAccounts.find(a => a.id === transferForm.fromAccountId);
+    const toAcct = glAccounts.find(a => a.id === transferForm.toAccountId);
+
+    if (!transferForm.fromAccountId) { setFormError("Choose a source account"); return; }
     if (!transferForm.toAccountId) { setFormError("Choose a destination account"); return; }
+    if (transferForm.fromAccountId === transferForm.toAccountId) { setFormError("Source and destination must be different accounts"); return; }
     if (!amount || amount <= 0) { setFormError("Enter a valid amount"); return; }
-    if (!activeAccount) return;
+    if (!fromAcct || !toAcct) { setFormError("Selected account not found — refresh and try again"); return; }
+    if (!transferForm.date) { setFormError("Choose a date"); return; }
+    if (!companyId) { setFormError("Couldn't determine company"); return; }
 
     setSaving(true);
     try {
-      await transferFunds({
-        fromAccountId: activeAccount.id,
-        toAccountId: transferForm.toAccountId,
-        amount,
-        description: transferForm.description.trim() || undefined,
-      });
+      const { data: { user } } = await supabase.auth.getUser();
+      // Same FT- prefix as the 237 historical Fund Transfer entries
+      // (scripts/post-fund-transfers.ts) — timestamp + random suffix, not
+      // a sequence, so concurrent transfers can never collide.
+      const txNumber = `FT-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const description = transferForm.description.trim() || `Fund transfer: ${fromAcct.name} -> ${toAcct.name}`;
+
+      const { data: tx, error: txErr } = await supabase
+        .from("gl_transactions")
+        .insert({
+          company_id: companyId,
+          transaction_number: txNumber,
+          transaction_date: transferForm.date,
+          source_type: "fund_transfer",
+          description,
+          total_amount: amount,
+          currency: "JMD",
+          status: "posted",
+          posted_by: user?.id,
+          posted_at: new Date().toISOString(),
+          created_by: user?.id,
+        })
+        .select()
+        .maybeSingle();
+      if (txErr) throw txErr;
+      if (!tx) throw new Error("Failed to create transfer transaction");
+
+      const entries = [
+        { transaction_id: tx.id, company_id: companyId, account_id: toAcct.id, debit: amount, credit: 0, description, line_number: 1, entry_type: "regular", reconciled: false },
+        { transaction_id: tx.id, company_id: companyId, account_id: fromAcct.id, debit: 0, credit: amount, description, line_number: 2, entry_type: "regular", reconciled: false },
+      ];
+      const { error: entryErr } = await supabase.from("gl_entries").insert(entries);
+      if (entryErr) {
+        // Orphaned-header cleanup — same discipline as every posting
+        // script this session: a posted header with no entries is worse
+        // than no header at all (it would sit in gl_transactions with a
+        // nonzero total_amount but nothing backing it).
+        await supabase.from("gl_transactions").delete().eq("id", tx.id);
+        throw entryErr;
+      }
+
       setShowTransfer(false);
-      await loadData();
+      setTransferSuccess(`${txNumber} posted: ${fmt(amount)} from ${fromAcct.name} to ${toAcct.name}.`);
+      await Promise.all([loadGLAccounts(), loadGLTransfers()]);
     } catch (e: any) {
       setFormError(e.message || "Transfer failed");
     } finally {
@@ -303,6 +487,11 @@ export default function CashFlowPage() {
                   Add Account
                 </Btn>
               </>
+            )}
+            {tab === "transfers" && (
+              <Btn variant="primary" size="sm" icon={<ArrowLeftRight size={13}/>} onClick={openTransfer}>
+                New Transfer
+              </Btn>
             )}
           </>
         }
@@ -425,14 +614,16 @@ export default function CashFlowPage() {
                       <div className={cn("text-xl font-bold mb-3", a.current_balance >= 0 ? "text-emerald-400" : "text-red-400")}>
                         {fmt(a.current_balance)}
                       </div>
-                      <div className="flex gap-2">
-                        <Btn variant="secondary" size="sm" icon={<ArrowLeftRight size={12}/>} onClick={() => openTransfer(a)} className="flex-1">
-                          Transfer
-                        </Btn>
-                        <Btn variant="secondary" size="sm" icon={<MinusCircle size={12}/>} onClick={() => openWithdraw(a)} className="flex-1">
-                          Withdraw
-                        </Btn>
-                      </div>
+                      {/* "Transfer" removed from here — it used to pre-fill
+                          this bank_accounts row as the source, but Transfer
+                          Funds is now a GL account-to-account action
+                          (chart_of_accounts, not bank_accounts), unrelated
+                          to any specific card here. Use "New Transfer" on
+                          the Transfers tab instead. Withdraw is untouched —
+                          still a real bank_accounts-based action. */}
+                      <Btn variant="secondary" size="sm" icon={<MinusCircle size={12}/>} onClick={() => openWithdraw(a)} className="w-full">
+                        Withdraw
+                      </Btn>
                     </Card>
                   );
                 })}
@@ -443,6 +634,59 @@ export default function CashFlowPage() {
 
         {tab === "transfers" && (
           <>
+            {transferSuccess && (
+              <div className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                ✓ {transferSuccess}
+              </div>
+            )}
+
+            {/* GL-connected Fund Transfers — the new, live feature. Posts
+                directly to gl_transactions/gl_entries (source_type=
+                'fund_transfer'), so these show up in Cash Position, Trial
+                Balance, Balance Sheet, and every GL report immediately,
+                unlike the old bank_accounts-only Transfer Log below. */}
+            <Card padding={false}>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
+                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Fund Transfers <span className="text-slate-600 font-normal text-xs ml-2">GL-posted</span>
+                </span>
+                <span className="text-xs text-slate-600">{glTransfers.length} transfers</span>
+              </div>
+              {glTransfers.length === 0 ? (
+                <Empty icon={<ArrowLeftRight size={18}/>} title="No fund transfers yet"
+                  body="Transfers you post here move directly between chart_of_accounts and show up on every GL report immediately."
+                  action={<Btn variant="primary" size="sm" onClick={openTransfer}>New Transfer</Btn>}/>
+              ) : (
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>Date</Th>
+                      <Th>Reference</Th>
+                      <Th>From</Th>
+                      <Th>To</Th>
+                      <Th>Description</Th>
+                      <Th right>Amount</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {glTransfers.map(t => (
+                      <Tr key={t.id}>
+                        <Td muted>{fmtDate(t.date)}</Td>
+                        <Td muted className="font-mono text-[10px]">{t.transaction_number}</Td>
+                        <Td><span className="font-medium text-slate-800 dark:text-slate-200">{t.fromName}</span></Td>
+                        <Td><span className="font-medium text-slate-800 dark:text-slate-200">{t.toName}</span></Td>
+                        <Td muted>{t.description || "—"}</Td>
+                        <Td right><span className="font-semibold text-cyan-300">{fmt(t.amount)}</span></Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </Card>
+
+            {/* Old bank_accounts-based Transfer Log — untouched, kept for
+                whatever historical records exist there. New transfers no
+                longer write to this. */}
             {unlinkedTransferCount > 0 && (
               <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
                 {unlinkedTransferCount} older transfer record{unlinkedTransferCount !== 1 ? "s" : ""} from before this log existed {unlinkedTransferCount !== 1 ? "aren't" : "isn't"} linked and won't appear here — they're still visible in the Overview tab.
@@ -451,7 +695,7 @@ export default function CashFlowPage() {
             <Card padding={false}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
                 <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  Transfer Log <span className="text-slate-600 font-normal text-xs ml-2">last {period} days</span>
+                  Bank Account Transfer Log <span className="text-slate-600 font-normal text-xs ml-2">last {period} days, legacy</span>
                 </span>
                 <span className="text-xs text-slate-600">{transferPairs.length} transfers</span>
               </div>
@@ -529,21 +773,52 @@ export default function CashFlowPage() {
         </div>
       </Modal>
 
-      {/* Transfer modal */}
-      <Modal open={showTransfer} onClose={() => setShowTransfer(false)} title="Transfer Funds" subtitle={activeAccount ? `From ${activeAccount.account_name}` : undefined}>
+      {/* Transfer modal — GL account-to-account, posts immediately (same
+          real-time-confirmed-action standard as Log Expense: no separate
+          draft/approval step). From/To are both chart_of_accounts, not
+          bank_accounts. */}
+      <Modal open={showTransfer} onClose={() => setShowTransfer(false)} title="Transfer Funds" subtitle="Posts directly to the General Ledger">
         <div className="space-y-3">
           {formError && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{formError}</div>}
+          <Field label="From Account">
+            <Select value={transferForm.fromAccountId} onChange={e => setTransferForm(s => ({ ...s, fromAccountId: e.target.value }))}>
+              <option value="">Select source account...</option>
+              {glAccounts.filter(a => a.id !== transferForm.toAccountId).map(a => (
+                <option key={a.id} value={a.id}>{a.code} — {a.name} ({fmt(a.current_balance)})</option>
+              ))}
+            </Select>
+          </Field>
           <Field label="To Account">
             <Select value={transferForm.toAccountId} onChange={e => setTransferForm(s => ({ ...s, toAccountId: e.target.value }))}>
               <option value="">Select destination account...</option>
-              {accounts.filter(a => a.id !== activeAccount?.id).map(a => (
-                <option key={a.id} value={a.id}>{a.account_name} ({fmt(a.current_balance)})</option>
+              {glAccounts.filter(a => a.id !== transferForm.fromAccountId).map(a => (
+                <option key={a.id} value={a.id}>{a.code} — {a.name} ({fmt(a.current_balance)})</option>
               ))}
             </Select>
           </Field>
           <Field label="Amount">
             <Input type="number" placeholder="0.00" value={transferForm.amount}
               onChange={e => setTransferForm(s => ({ ...s, amount: e.target.value }))}/>
+          </Field>
+          {(() => {
+            const fromAcct = glAccounts.find(a => a.id === transferForm.fromAccountId);
+            const amount = parseFloat(transferForm.amount);
+            if (!fromAcct || !amount || amount <= 0) return null;
+            const after = fromAcct.current_balance - amount;
+            if (after >= 0) return null;
+            // Not blocked — chart_of_accounts allows asset accounts to go
+            // negative (confirmed: the current_balance >= 0 check
+            // constraint explicitly exempts type IN ('asset','expense',
+            // 'revenue')) — this is a courtesy warning only.
+            return (
+              <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                This will bring {fromAcct.name} to a negative balance ({fmt(after)}).
+              </div>
+            );
+          })()}
+          <Field label="Date">
+            <Input type="date" value={transferForm.date}
+              onChange={e => setTransferForm(s => ({ ...s, date: e.target.value }))}/>
           </Field>
           <Field label="Description (optional)">
             <Input placeholder="e.g. Moving funds for payroll" value={transferForm.description}
@@ -552,7 +827,7 @@ export default function CashFlowPage() {
           <div className="flex justify-end gap-2 pt-2">
             <Btn variant="ghost" size="sm" onClick={() => setShowTransfer(false)}>Cancel</Btn>
             <Btn variant="primary" size="sm" onClick={handleTransfer} disabled={saving}>
-              {saving ? "Transferring..." : "Transfer"}
+              {saving ? "Posting..." : "Post Transfer"}
             </Btn>
           </div>
         </div>
