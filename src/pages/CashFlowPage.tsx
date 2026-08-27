@@ -1,6 +1,5 @@
 ﻿// src/pages/CashFlowPage.tsx
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
   createBankAccount, withdrawFunds,
@@ -12,7 +11,7 @@ import {
 import {
   TrendingUp, TrendingDown, DollarSign,
   ArrowUpRight, ArrowDownRight, RefreshCw,
-  Wallet, Building2, Plus, ArrowLeftRight, MinusCircle, CreditCard, Upload
+  Wallet, Building2, ArrowLeftRight, MinusCircle, Search
 } from "lucide-react";
 
 type Transaction = {
@@ -78,6 +77,21 @@ type GLTransferRow = {
   toName: string;
 };
 
+// Overview's Transactions table, GL-derived — one row per gl_entries leg
+// touching a real cash account (not one row per gl_transactions header,
+// unlike FinanceDashboardPage.tsx's General Ledger tab; a cash movement
+// row needs to show which specific account it hit, the same shape
+// cash_transactions used to provide).
+type CashLedgerRow = {
+  id: string;
+  date: string;
+  description: string | null;
+  sourceType: string | null;
+  accountName: string;
+  debit: number;
+  credit: number;
+};
+
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency", currency: "JMD", maximumFractionDigits: 2
@@ -94,18 +108,45 @@ function fmtDateTime(d: string | null) {
   return new Date(d).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-const TYPE_COLOR: Record<string, any> = {
-  income: "green", receipt: "green", payment: "red",
-  expense: "red", transfer: "blue", adjustment: "slate",
-};
+// ─── Transfers tab date-range filter — same preset+custom pattern already
+// proven in ExpensesPage.tsx and FinanceDashboardPage.tsx (DATE_RANGES/
+// getCutoff/resolveDateWindow), copied rather than imported since none of
+// those files export this shape. Deliberately scoped to the Transfers tab
+// only — Overview already owns its own date control (the 30D/90D/1Y
+// period selector), so it gets text search only, no second date filter.
+type DateRange = "week" | "month" | "quarter" | "year" | "all" | "custom";
 
-const ACCOUNT_TYPE_LABEL: Record<string, string> = {
-  checking: "Checking", savings: "Savings",
-  credit: "Credit Card", line_of_credit: "Line of Credit",
-};
+const DATE_RANGES: { key: DateRange; label: string }[] = [
+  { key: "week", label: "This Week" },
+  { key: "month", label: "This Month" },
+  { key: "quarter", label: "This Quarter" },
+  { key: "year", label: "This Year" },
+  { key: "all", label: "All Time" },
+  { key: "custom", label: "Custom Range" },
+];
+
+function getCutoff(range: DateRange): string | null {
+  const now = new Date();
+  if (range === "all" || range === "custom") return null;
+  if (range === "week") { now.setDate(now.getDate() - 7); }
+  else if (range === "month") { now.setMonth(now.getMonth() - 1); }
+  else if (range === "quarter") { now.setMonth(now.getMonth() - 3); }
+  else if (range === "year") { now.setFullYear(now.getFullYear() - 1); }
+  return now.toISOString();
+}
+
+function customRangeBounds(start: string, end: string): { start: string | null; end: string | null } {
+  return {
+    start: start ? new Date(`${start}T00:00:00`).toISOString() : null,
+    end: end ? new Date(`${end}T23:59:59.999`).toISOString() : null,
+  };
+}
+
+function resolveDateWindow(range: DateRange, customStart: string, customEnd: string): { start: string | null; end: string | null } {
+  return range === "custom" ? customRangeBounds(customStart, customEnd) : { start: getCutoff(range), end: null };
+}
 
 export default function CashFlowPage() {
-  const navigate = useNavigate();
   const [tab, setTab] = useState<"overview" | "accounts" | "transfers">("overview");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
@@ -134,6 +175,20 @@ export default function CashFlowPage() {
   const [glTransfers, setGlTransfers] = useState<GLTransferRow[]>([]);
   const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
 
+  // Transfers tab filters — text search (From/To/Description) + date-range
+  // (preset+custom), combined together. Client-side, on the already-loaded
+  // glTransfers (capped at 200 rows — cheap to filter locally).
+  const [transferSearch, setTransferSearch] = useState("");
+  const [transferDateRange, setTransferDateRange] = useState<DateRange>("all");
+  const [transferCustomStart, setTransferCustomStart] = useState("");
+  const [transferCustomEnd, setTransferCustomEnd] = useState("");
+
+  // Overview tab filter — search only (Description/Account). No date
+  // control here on purpose: the 30D/90D/1Y period selector above already
+  // scopes this tab's data, and a second date filter would just compete
+  // with it.
+  const [overviewSearch, setOverviewSearch] = useState("");
+
   // Transfer form state — fromAccountId/toAccountId/date added: the old
   // form only had "to", because "from" was implied by whichever
   // bank_accounts card the user clicked. GL accounts aren't tied to a
@@ -146,17 +201,20 @@ export default function CashFlowPage() {
   // Withdraw form state
   const [withdrawForm, setWithdrawForm] = useState({ amount: "", reason: "", category: "Withdrawal" });
 
-  const totalIn = transactions
-    .filter(t => ["income", "receipt"].includes(t.transaction_type))
-    .reduce((s, t) => s + (t.amount || 0), 0);
-
-  const totalOut = transactions
-    .filter(t => ["expense", "payment"].includes(t.transaction_type))
-    .reduce((s, t) => s + Math.abs(t.amount || 0), 0);
-
+  // Overview KPIs — now GL-derived, same fix as last round's Transfers tab
+  // badge. totalIn/totalOut used to come from cash_transactions (the same
+  // table that had 2 fake test rows manually deleted earlier this
+  // session); totalBalance used to sum bank_accounts (0 real rows). All
+  // three now read the real chart_of_accounts/gl_entries data instead —
+  // see glAccounts (already loaded for the Transfer picker/Accounts tab)
+  // and glCashStats below.
+  const [glCashStats, setGlCashStats] = useState({ totalIn: 0, totalOut: 0 });
+  const [glLedgerEntries, setGlLedgerEntries] = useState<CashLedgerRow[]>([]);
+  const [glCashLoading, setGlCashLoading] = useState(true);
+  const totalIn = glCashStats.totalIn;
+  const totalOut = glCashStats.totalOut;
   const netFlow = totalIn - totalOut;
-
-  const totalBalance = accounts.reduce((s, a) => s + (a.current_balance || 0), 0);
+  const totalBalance = glAccounts.reduce((s, a) => s + (a.current_balance || 0), 0);
 
   // Group transfer legs into paired rows by reference_number
   const transferPairs: TransferPair[] = (() => {
@@ -191,6 +249,31 @@ export default function CashFlowPage() {
     t => t.transaction_type === "transfer" && !t.reference_number
   ).length;
 
+  // Transfers tab: search + date range combined (narrow together, not
+  // replace each other) — same as ExpensesPage.tsx's own matchSearch &&
+  // matchDate combination.
+  const transferWindow = resolveDateWindow(transferDateRange, transferCustomStart, transferCustomEnd);
+  const filteredGlTransfers = glTransfers.filter(t => {
+    const q = transferSearch.trim().toLowerCase();
+    if (q) {
+      const hit = t.fromName.toLowerCase().includes(q)
+        || t.toName.toLowerCase().includes(q)
+        || (t.description || "").toLowerCase().includes(q);
+      if (!hit) return false;
+    }
+    const time = new Date(t.date).getTime();
+    if (transferWindow.start && time < new Date(transferWindow.start).getTime()) return false;
+    if (transferWindow.end && time > new Date(transferWindow.end).getTime()) return false;
+    return true;
+  });
+
+  // Overview tab: search only, over the already period-scoped glLedgerEntries.
+  const filteredGlLedgerEntries = glLedgerEntries.filter(r => {
+    const q = overviewSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (r.description || "").toLowerCase().includes(q) || r.accountName.toLowerCase().includes(q);
+  });
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -201,6 +284,84 @@ export default function CashFlowPage() {
 
   useEffect(() => { if (companyId) loadData(); }, [companyId, period]);
   useEffect(() => { if (companyId) { loadGLAccounts(); loadGLTransfers(); } }, [companyId]);
+  // Depends on glAccounts (not just companyId/period) — needs the real
+  // cash account ids before it can query gl_entries against them. Only
+  // re-fires when glAccounts is actually re-set (a genuine reload), not on
+  // every render, since setGlAccounts is only called from loadGLAccounts().
+  useEffect(() => {
+    if (companyId && glAccounts.length > 0) loadGLCashStats(period);
+    else if (companyId) {
+      setGlCashStats({ totalIn: 0, totalOut: 0 });
+      setGlLedgerEntries([]);
+      setGlCashLoading(false);
+    }
+  }, [companyId, period, glAccounts]);
+
+  // Cash In = debits landing on real cash accounts within the period
+  // (asset accounts are debit-normal, so a debit is money arriving); Cash
+  // Out = credits leaving them. Same account set as totalBalance/
+  // CashPositionCard.tsx (glAccounts), same PostgREST embedded-resource
+  // filtering + manual pagination-safe loop already proven in
+  // FinanceDashboardPage.tsx's loadPeriodPnL/Cash Flow export.
+  //
+  // Also builds glLedgerEntries (Overview's Transactions table) from the
+  // exact same fetched rows — one pass, not a second query, since both
+  // need the identical filtered set of cash-touching gl_entries.
+  async function loadGLCashStats(p: "30" | "90" | "365") {
+    if (!companyId || glAccounts.length === 0) return;
+    setGlCashLoading(true);
+    try {
+      const since = new Date();
+      since.setDate(since.getDate() - parseInt(p));
+      const cashIds = glAccounts.map(a => a.id);
+      const accountNameById = new Map(glAccounts.map(a => [a.id, a.name]));
+
+      const PAGE = 1000;
+      let totalIn = 0, totalOut = 0;
+      let allRows: any[] = [];
+      let from = 0;
+      for (let guard = 0; guard < 200; guard++) {
+        const { data, error } = await supabase
+          .from("gl_entries")
+          .select("id, account_id, debit, credit, gl_transactions!inner(transaction_date, description, source_type, status, company_id)")
+          .eq("gl_transactions.company_id", companyId)
+          .eq("gl_transactions.status", "posted")
+          .in("account_id", cashIds)
+          .gte("gl_transactions.transaction_date", since.toISOString())
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        allRows = allRows.concat(data || []);
+        for (const row of (data as any[]) || []) {
+          totalIn += Number(row.debit) || 0;
+          totalOut += Number(row.credit) || 0;
+        }
+        if (!data || data.length < PAGE) break;
+        from += PAGE;
+      }
+      setGlCashStats({ totalIn, totalOut });
+
+      // Display cap at 200 rows, same as the old cash_transactions
+      // .limit(200) — totals above already reflect the FULL fetched set,
+      // not just this capped display slice.
+      const rows: CashLedgerRow[] = allRows
+        .map((row: any) => ({
+          id: row.id,
+          date: row.gl_transactions?.transaction_date,
+          description: row.gl_transactions?.description ?? null,
+          sourceType: row.gl_transactions?.source_type ?? null,
+          accountName: accountNameById.get(row.account_id) || "—",
+          debit: Number(row.debit) || 0,
+          credit: Number(row.credit) || 0,
+        }))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 200);
+      setGlLedgerEntries(rows);
+    } catch (e: any) {
+      console.error("loadGLCashStats failed:", e);
+    } finally {
+      setGlCashLoading(false);
+    }
+  }
 
   // Real, active, bank/current_asset chart_of_accounts — queried live, not
   // hardcoded from any prior session's list (that list drifts as accounts
@@ -466,7 +627,8 @@ export default function CashFlowPage() {
         subtitle="Bank accounts, transfers, and transaction history"
         actions={
           <>
-            <Btn variant="ghost" size="sm" icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>} onClick={loadData}/>
+            <Btn variant="ghost" size="sm" icon={<RefreshCw size={13} className={(loading || glCashLoading) ? "animate-spin" : ""}/>}
+              onClick={() => { loadData(); loadGLCashStats(period); }}/>
             {tab === "overview" && (
               <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
                 {(["30","90","365"] as const).map(p => (
@@ -478,16 +640,16 @@ export default function CashFlowPage() {
                 ))}
               </div>
             )}
-            {tab === "accounts" && (
-              <>
-                <Btn variant="secondary" size="sm" icon={<Upload size={13}/>} onClick={() => navigate("/finance/upload-statement")}>
-                  Upload Statement
-                </Btn>
-                <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => { setFormError(null); setShowAddAccount(true); }}>
-                  Add Account
-                </Btn>
-              </>
-            )}
+            {/* "Add Account" and "Upload Statement" removed from here —
+                both are bank_accounts-based (createBankAccount() /
+                UploadStatementPage.tsx's own account picker reads
+                bank_accounts directly). Now that this tab shows real
+                chart_of_accounts entries, "Add Account" would silently
+                create a bank_accounts row invisible to this list, and
+                Upload Statement's account picker would show an empty
+                list. Flagged for Veron rather than repurposed — see
+                report. Modals/functions left in place, just unreachable
+                from here. */}
             {tab === "transfers" && (
               <Btn variant="primary" size="sm" icon={<ArrowLeftRight size={13}/>} onClick={openTransfer}>
                 New Transfer
@@ -501,7 +663,7 @@ export default function CashFlowPage() {
         <Tabs
           tabs={[
             { key: "overview", label: "Overview" },
-            { key: "accounts", label: "Accounts", count: accounts.length },
+            { key: "accounts", label: "Accounts", count: glAccounts.length },
             { key: "transfers", label: "Transfers", count: glTransfers.length },
           ]}
           active={tab}
@@ -516,7 +678,7 @@ export default function CashFlowPage() {
             {/* KPIs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <StatCard label="Total Balance" value={fmt(totalBalance)}
-                icon={<Wallet size={15}/>} color="text-cyan-300" sub={`${accounts.length} account${accounts.length !== 1 ? "s" : ""}`}/>
+                icon={<Wallet size={15}/>} color="text-cyan-300" sub={`${glAccounts.length} account${glAccounts.length !== 1 ? "s" : ""}`}/>
               <StatCard label={`Cash In (${period}d)`} value={fmt(totalIn)}
                 icon={<ArrowUpRight size={15}/>} color="text-emerald-300"/>
               <StatCard label={`Cash Out (${period}d)`} value={fmt(totalOut)}
@@ -526,22 +688,38 @@ export default function CashFlowPage() {
                 color={netFlow >= 0 ? "text-emerald-300" : "text-red-300"}/>
             </div>
 
-            {/* Transactions table */}
+            {/* Transactions table — now GL-derived (gl_entries touching the
+                same real bank/current_asset cash accounts as the KPIs
+                above), not cash_transactions. One row per entry leg, same
+                general column shape (date/description/source/account/
+                amount) as FinanceDashboardPage.tsx's General Ledger tab,
+                for visual consistency, adapted to show which account each
+                leg hit — the Ledger tab shows one row per transaction
+                header instead, since that's not tied to a single account. */}
+            {/* Search only — the period selector above (30D/90D/1Y) already
+                owns date scoping for this tab; a second date filter here
+                would just compete with it. */}
+            <div className="relative max-w-sm">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-700"/>
+              <Input className="pl-8" placeholder="Search description or account..."
+                value={overviewSearch} onChange={e => setOverviewSearch(e.target.value)}/>
+            </div>
+
             <Card padding={false}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
                 <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                   Transactions <span className="text-slate-600 font-normal text-xs ml-2">last {period} days</span>
                 </span>
-                <span className="text-xs text-slate-600">{transactions.length} records</span>
+                <span className="text-xs text-slate-600">{filteredGlLedgerEntries.length} records</span>
               </div>
 
-              {loading ? (
+              {glCashLoading ? (
                 <div className="flex items-center justify-center py-12 text-xs text-slate-600">
                   <RefreshCw size={14} className="animate-spin mr-2"/> Loading...
                 </div>
-              ) : transactions.length === 0 ? (
-                <Empty icon={<DollarSign size={18}/>} title="No transactions found"
-                  body="Cash transactions will appear here as you record income, expenses, and transfers."/>
+              ) : filteredGlLedgerEntries.length === 0 ? (
+                <Empty icon={<DollarSign size={18}/>} title="No cash movement found"
+                  body={overviewSearch ? "No transactions match your search." : "Posted GL activity touching your bank/cash accounts will appear here."}/>
               ) : (
                 <Table>
                   <thead>
@@ -549,28 +727,23 @@ export default function CashFlowPage() {
                       <Th>Date</Th>
                       <Th>Description</Th>
                       <Th>Account</Th>
-                      <Th>Type</Th>
-                      <Th>Reference</Th>
+                      <Th>Source</Th>
                       <Th right>Amount</Th>
                     </tr>
                   </thead>
                   <tbody>
-                    {transactions.map(t => {
-                      const isIn = t.amount > 0;
+                    {filteredGlLedgerEntries.map(r => {
+                      const isIn = r.debit > 0;
+                      const amount = isIn ? r.debit : r.credit;
                       return (
-                        <Tr key={t.id}>
-                          <Td muted>{fmtDate(t.transaction_date || t.created_at)}</Td>
-                          <Td><span className="font-medium text-slate-800 dark:text-slate-200">{t.description || "—"}</span></Td>
-                          <Td muted>{t.bank_accounts?.account_name || "—"}</Td>
-                          <Td>
-                            <Badge color={TYPE_COLOR[t.transaction_type] || "slate"} dot>
-                              {t.transaction_type}
-                            </Badge>
-                          </Td>
-                          <Td muted className="font-mono text-[10px]">{t.reference_number || "—"}</Td>
+                        <Tr key={r.id}>
+                          <Td muted>{fmtDate(r.date)}</Td>
+                          <Td><span className="font-medium text-slate-800 dark:text-slate-200">{r.description || "—"}</span></Td>
+                          <Td muted>{r.accountName}</Td>
+                          <Td><Badge color="slate">{r.sourceType?.replace(/_/g, " ") || "—"}</Badge></Td>
                           <Td right>
                             <span className={cn("font-semibold", isIn ? "text-emerald-400" : "text-red-400")}>
-                              {isIn ? "+" : "-"}{fmt(Math.abs(t.amount))}
+                              {isIn ? "+" : "-"}{fmt(amount)}
                             </span>
                           </Td>
                         </Tr>
@@ -585,48 +758,34 @@ export default function CashFlowPage() {
 
         {tab === "accounts" && (
           <>
-            {accounts.length === 0 ? (
+            {/* Real chart_of_accounts entries now — same bank/current_asset/
+                active filter as Task 1's totalBalance and CashPositionCard.tsx
+                (glAccounts, already loaded for the Transfer picker). Replaces
+                the old bank_accounts list (0 real rows). No per-card action
+                buttons: "Transfer" lives on the Transfers tab now, and
+                Withdraw is bank_accounts-based (no valid target here — see
+                report) rather than rebuilt against the GL in this pass. */}
+            {glAccounts.length === 0 ? (
               <Card>
-                <Empty icon={<Building2 size={18}/>} title="No accounts yet"
-                  body="Add your first bank account or credit card to start tracking balances, transfers, and withdrawals."
-                  action={<Btn variant="primary" size="sm" onClick={() => setShowAddAccount(true)}>Add Account</Btn>}/>
+                <Empty icon={<Building2 size={18}/>} title="No cash/bank accounts found"
+                  body="No active chart_of_accounts entries with a bank or current-asset subtype exist yet."/>
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {accounts.map(a => {
-                  const isCredit = a.account_type === "credit" || a.account_type === "line_of_credit";
-                  return (
-                    <Card key={a.id}>
-                      <div className="flex items-start justify-between mb-3">
-                        <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center border",
-                          isCredit ? "bg-violet-500/10 border-violet-500/20" : "bg-cyan-500/10 border-cyan-500/20")}>
-                          {isCredit ? <CreditCard size={14} className="text-violet-400"/> : <Building2 size={14} className="text-cyan-400"/>}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          {a.is_primary && <Badge color="cyan">Primary</Badge>}
-                          <Badge color="slate">{ACCOUNT_TYPE_LABEL[a.account_type] || a.account_type}</Badge>
-                        </div>
+                {glAccounts.map(a => (
+                  <Card key={a.id}>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center border bg-cyan-500/10 border-cyan-500/20">
+                        <Building2 size={14} className="text-cyan-400"/>
                       </div>
-                      <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-0.5">{a.account_name}</div>
-                      <div className="text-[10px] text-slate-600 mb-2">
-                        {a.bank_name || "—"}{a.account_number_last_4 ? ` •••• ${a.account_number_last_4}` : ""}
-                      </div>
-                      <div className={cn("text-xl font-bold mb-3", a.current_balance >= 0 ? "text-emerald-400" : "text-red-400")}>
-                        {fmt(a.current_balance)}
-                      </div>
-                      {/* "Transfer" removed from here — it used to pre-fill
-                          this bank_accounts row as the source, but Transfer
-                          Funds is now a GL account-to-account action
-                          (chart_of_accounts, not bank_accounts), unrelated
-                          to any specific card here. Use "New Transfer" on
-                          the Transfers tab instead. Withdraw is untouched —
-                          still a real bank_accounts-based action. */}
-                      <Btn variant="secondary" size="sm" icon={<MinusCircle size={12}/>} onClick={() => openWithdraw(a)} className="w-full">
-                        Withdraw
-                      </Btn>
-                    </Card>
-                  );
-                })}
+                      <Badge color="slate">{a.code}</Badge>
+                    </div>
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">{a.name}</div>
+                    <div className={cn("text-xl font-bold", a.current_balance >= 0 ? "text-emerald-400" : "text-red-400")}>
+                      {fmt(a.current_balance)}
+                    </div>
+                  </Card>
+                ))}
               </div>
             )}
           </>
@@ -645,16 +804,35 @@ export default function CashFlowPage() {
                 'fund_transfer'), so these show up in Cash Position, Trial
                 Balance, Balance Sheet, and every GL report immediately,
                 unlike the old bank_accounts-only Transfer Log below. */}
+            <div className="flex flex-wrap gap-3">
+              <div className="relative flex-1 max-w-sm">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-700"/>
+                <Input className="pl-8" placeholder="Search from/to/description..."
+                  value={transferSearch} onChange={e => setTransferSearch(e.target.value)}/>
+              </div>
+              <Select value={transferDateRange} onChange={e => setTransferDateRange(e.target.value as DateRange)} className="w-40">
+                {DATE_RANGES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+              </Select>
+              {transferDateRange === "custom" && (
+                <>
+                  <Input type="date" value={transferCustomStart} onChange={e => setTransferCustomStart(e.target.value)} className="w-36" aria-label="Custom range start"/>
+                  <Input type="date" value={transferCustomEnd} onChange={e => setTransferCustomEnd(e.target.value)} className="w-36" aria-label="Custom range end"/>
+                </>
+              )}
+            </div>
+
             <Card padding={false}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
                 <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                   Fund Transfers <span className="text-slate-600 font-normal text-xs ml-2">GL-posted</span>
                 </span>
-                <span className="text-xs text-slate-600">{glTransfers.length} transfers</span>
+                <span className="text-xs text-slate-600">{filteredGlTransfers.length} transfers</span>
               </div>
-              {glTransfers.length === 0 ? (
+              {filteredGlTransfers.length === 0 ? (
                 <Empty icon={<ArrowLeftRight size={18}/>} title="No fund transfers yet"
-                  body="Transfers you post here move directly between chart_of_accounts and show up on every GL report immediately."
+                  body={transferSearch || transferDateRange !== "all"
+                    ? "No transfers match your filters."
+                    : "Transfers you post here move directly between chart_of_accounts and show up on every GL report immediately."}
                   action={<Btn variant="primary" size="sm" onClick={openTransfer}>New Transfer</Btn>}/>
               ) : (
                 <Table>
@@ -669,7 +847,7 @@ export default function CashFlowPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {glTransfers.map(t => (
+                    {filteredGlTransfers.map(t => (
                       <Tr key={t.id}>
                         <Td muted>{fmtDate(t.date)}</Td>
                         <Td muted className="font-mono text-[10px]">{t.transaction_number}</Td>
