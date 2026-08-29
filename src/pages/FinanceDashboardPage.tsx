@@ -619,25 +619,59 @@ export default function FinanceDashboardPage() {
             {/* Accounting Equation */}
             <Card>
               <CardHeader title="Accounting Equation" subtitle="Assets = Liabilities + Equity + Net Income"/>
-              <div className="flex items-center justify-between gap-2 md:gap-4">
-                <div className="flex-1 min-w-0 text-center p-3 md:p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+
+              {/* Below md: a plain 2x2 grid of the 4 pills, no inline "="/
+                  "+" glyphs — the subtitle above already states the
+                  relationship. The original single flex row (4 pills + 3
+                  operator glyphs, all sharing one line at every width,
+                  each value truncate'd) is exactly what produced the live
+                  "J...", "-J..." bug: real ellipsis-cutting a financial
+                  figure, confirmed on a phone screenshot. break-words
+                  replaces truncate everywhere in this section — a number
+                  may now wrap to a second line if it's ever still too
+                  long for its box, but it is never hidden. */}
+              <div className="grid grid-cols-2 gap-2 md:hidden">
+                <div className="text-center p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
                   <div className="text-[9px] font-bold uppercase tracking-widest text-cyan-600 mb-1">Assets</div>
-                  <div className="text-base md:text-2xl font-bold text-cyan-300 truncate">{fmt(stats.totalAssets)}</div>
+                  <div className="text-base font-bold text-cyan-300 break-words">{fmt(stats.totalAssets)}</div>
                 </div>
-                <div className="text-lg md:text-xl font-bold text-slate-600 flex-shrink-0">=</div>
-                <div className="flex-1 min-w-0 text-center p-3 md:p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                <div className="text-center p-3 rounded-xl bg-red-500/10 border border-red-500/20">
                   <div className="text-[9px] font-bold uppercase tracking-widest text-red-600 mb-1">Liabilities</div>
-                  <div className="text-base md:text-2xl font-bold text-red-300 truncate">{fmt(stats.totalLiabilities)}</div>
+                  <div className="text-base font-bold text-red-300 break-words">{fmt(stats.totalLiabilities)}</div>
                 </div>
-                <div className="text-lg md:text-xl font-bold text-slate-600 flex-shrink-0">+</div>
-                <div className="flex-1 min-w-0 text-center p-3 md:p-4 rounded-xl bg-violet-500/10 border border-violet-500/20">
+                <div className="text-center p-3 rounded-xl bg-violet-500/10 border border-violet-500/20">
                   <div className="text-[9px] font-bold uppercase tracking-widest text-violet-600 mb-1">Equity</div>
-                  <div className="text-base md:text-2xl font-bold text-violet-300 truncate">{fmt(stats.totalEquity)}</div>
+                  <div className="text-base font-bold text-violet-300 break-words">{fmt(stats.totalEquity)}</div>
                 </div>
-                <div className="text-lg md:text-xl font-bold text-slate-600 flex-shrink-0">+</div>
-                <div className="flex-1 min-w-0 text-center p-3 md:p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                <div className="text-center p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
                   <div className="text-[9px] font-bold uppercase tracking-widest text-emerald-600 mb-1">Current Period Earnings</div>
-                  <div className="text-base md:text-2xl font-bold text-emerald-300 truncate">{fmt(stats.netIncome)}</div>
+                  <div className="text-base font-bold text-emerald-300 break-words">{fmt(stats.netIncome)}</div>
+                </div>
+              </div>
+
+              {/* md+: original inline-equation layout, unchanged in shape
+                  (still 4 pills + 3 operator glyphs in one row — this
+                  width range was never reported as broken) except
+                  truncate -> break-words, same reasoning as above. */}
+              <div className="hidden md:flex items-center justify-between gap-4">
+                <div className="flex-1 min-w-0 text-center p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-cyan-600 mb-1">Assets</div>
+                  <div className="text-2xl font-bold text-cyan-300 break-words">{fmt(stats.totalAssets)}</div>
+                </div>
+                <div className="text-xl font-bold text-slate-600 flex-shrink-0">=</div>
+                <div className="flex-1 min-w-0 text-center p-4 rounded-xl bg-red-500/10 border border-red-500/20">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-red-600 mb-1">Liabilities</div>
+                  <div className="text-2xl font-bold text-red-300 break-words">{fmt(stats.totalLiabilities)}</div>
+                </div>
+                <div className="text-xl font-bold text-slate-600 flex-shrink-0">+</div>
+                <div className="flex-1 min-w-0 text-center p-4 rounded-xl bg-violet-500/10 border border-violet-500/20">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-violet-600 mb-1">Equity</div>
+                  <div className="text-2xl font-bold text-violet-300 break-words">{fmt(stats.totalEquity)}</div>
+                </div>
+                <div className="text-xl font-bold text-slate-600 flex-shrink-0">+</div>
+                <div className="flex-1 min-w-0 text-center p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-emerald-600 mb-1">Current Period Earnings</div>
+                  <div className="text-2xl font-bold text-emerald-300 break-words">{fmt(stats.netIncome)}</div>
                 </div>
               </div>
               <div className="mt-2 text-center text-[9px] text-slate-500">
