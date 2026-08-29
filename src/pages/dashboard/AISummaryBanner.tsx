@@ -23,6 +23,44 @@ function speechSupported() {
   return typeof window !== "undefined" && "speechSynthesis" in window;
 }
 
+// Minimal, dependency-free **bold** renderer for the visual display. The
+// message sent to the model never asks for markdown, but it sometimes
+// emits **bold** syntax unprompted (confirmed live — "**$1.78M in liquid
+// cash**" rendered as literal asterisks instead of bold text). Checked
+// package.json and grepped the codebase first: no markdown library exists
+// anywhere here, and no other page already solves this, so pulling in
+// react-markdown/marked for one formatting case isn't warranted — a small
+// regex split is enough for the one syntax actually observed.
+function renderBoldMarkdown(text: string | null): React.ReactNode {
+  if (!text) return null; // matches the original {summary} behavior — renders nothing
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    const m = part.match(/^\*\*([^*]+)\*\*$/);
+    return m
+      ? <strong key={i} className="font-semibold text-slate-900 dark:text-slate-100">{m[1]}</strong>
+      : <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+}
+
+// Plain-text sanitization for speech synthesis — separate from the visual
+// renderer above, since TTS needs the marker characters gone entirely, not
+// styled: the read-aloud feature was audibly saying "asterisk asterisk"
+// before this (confirmed — SpeechSynthesisUtterance was given the raw
+// summary string, "**" and all). Bold is the only syntax actually
+// observed in a real summary, but *italic*/_italic_/`code` are stripped
+// too, defensively — costs nothing and avoids the same bug recurring for
+// a different marker the model might emit later. Order matters: **bold**
+// must be stripped before the single-* pattern runs, or the single-*
+// regex could misfire on the leftover single asterisks of an
+// only-partially-processed **bold** span.
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    .replace(/`([^`]+)`/g, "$1");
+}
+
 export default function AISummaryBanner() {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -249,7 +287,7 @@ export default function AISummaryBanner() {
     // queued item from a fast double-click could otherwise play after this
     // one finishes.
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(summary);
+    const utterance = new SpeechSynthesisUtterance(stripMarkdown(summary));
     utterance.onend = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(utterance);
@@ -285,7 +323,7 @@ export default function AISummaryBanner() {
           {loading ? (
             <div className="h-4 w-3/4 rounded bg-cyan-500/10 animate-pulse" />
           ) : (
-            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{summary}</p>
+            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">{renderBoldMarkdown(summary)}</p>
           )}
         </div>
       </div>
