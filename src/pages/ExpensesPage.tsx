@@ -336,16 +336,44 @@ export default function ExpensesPage() {
     return matchSearch && matchTab && matchProject && matchDate;
   });
 
-  // Totals
-  const totalAll = expenses.reduce((s, e) => s + (e.amount || 0), 0);
-  const totalPending = expenses.filter(e => e.status === "pending").reduce((s, e) => s + (e.amount || 0), 0);
-  const totalApproved = expenses.filter(e => e.status === "approved").reduce((s, e) => s + (e.amount || 0), 0);
+  // Project + date only — reused by the 3 summary cards and all 4 Tabs
+  // badges below. Deliberately does NOT include the tab/search filters
+  // `filtered` (the actual table below) applies: the tab badges need to
+  // show each tab's own count regardless of which tab is currently
+  // active (a "Pending" badge that only counted pending rows after an
+  // "approved" tab filter was already applied would always read 0), and
+  // the 3 summary cards are meant to show a status breakdown for the
+  // current project/date selection, not just re-total whichever tab
+  // happens to be open. Same matchProject/matchDate logic as `filtered`
+  // above, not a second, differently-worded copy.
+  const projectDateFiltered = expenses.filter(e => {
+    const matchProject = !projectFilter || e.project_id === projectFilter;
+    const effMs = new Date(e.expense_date || e.created_at).getTime();
+    const matchDate = (dateStartMs === null || effMs >= dateStartMs) && (dateEndMs === null || effMs <= dateEndMs);
+    return matchProject && matchDate;
+  });
+
+  // Header subtitle's own all-time total — intentionally left unfiltered,
+  // a stable "how many expense records exist in total" reference,
+  // distinct from the summary cards below. Not part of the reported bug
+  // (which was about the 3 cards and the tab badges specifically) and
+  // left showing exactly what it showed before this fix.
+  const allTimeTotal = expenses.reduce((s, e) => s + (e.amount || 0), 0);
+
+  // Totals — THE BUG: these were computed straight from the raw,
+  // unfiltered `expenses` array, same as the Tabs badges below, while the
+  // table itself already correctly applied search/tab/project/date via
+  // `filtered`. Now derived from projectDateFiltered instead, so changing
+  // the date range or project filter actually moves these numbers.
+  const totalAll = projectDateFiltered.reduce((s, e) => s + (e.amount || 0), 0);
+  const totalPending = projectDateFiltered.filter(e => e.status === "pending").reduce((s, e) => s + (e.amount || 0), 0);
+  const totalApproved = projectDateFiltered.filter(e => e.status === "approved").reduce((s, e) => s + (e.amount || 0), 0);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader
         title="Expenses"
-        subtitle={`${totalCount ?? expenses.length} total · ${fmt(totalAll)}`}
+        subtitle={`${totalCount ?? expenses.length} total · ${fmt(allTimeTotal)}`}
         actions={
           <>
             <Btn variant="ghost" size="sm" icon={<Download size={13}/>} onClick={exportCSV}>Export</Btn>
@@ -372,10 +400,10 @@ export default function ExpensesPage() {
         {/* Tabs */}
         <Tabs
           tabs={[
-            { key: "all" as Tab,      label: "All",      count: totalCount ?? expenses.length },
-            { key: "pending" as Tab,  label: "Pending",  count: expenses.filter(e => e.status === "pending").length },
-            { key: "approved" as Tab, label: "Approved", count: expenses.filter(e => e.status === "approved").length },
-            { key: "filing" as Tab, label: "📁 Filing Cabinet", count: expenses.filter(e=>!!e.receipt_url).length },
+            { key: "all" as Tab,      label: "All",      count: projectDateFiltered.length },
+            { key: "pending" as Tab,  label: "Pending",  count: projectDateFiltered.filter(e => e.status === "pending").length },
+            { key: "approved" as Tab, label: "Approved", count: projectDateFiltered.filter(e => e.status === "approved").length },
+            { key: "filing" as Tab, label: "📁 Filing Cabinet", count: projectDateFiltered.filter(e=>!!e.receipt_url).length },
           ]}
           active={tab}
           onChange={setTab}
