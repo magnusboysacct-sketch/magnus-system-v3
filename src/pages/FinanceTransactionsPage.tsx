@@ -11,6 +11,7 @@ import {
   Search,
   Settings2,
   Sparkles,
+  Upload,
   X,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
@@ -31,7 +32,7 @@ import type {
 } from "../services/finance/automationEngine";
 import { fetchBankAccounts } from "../lib/finance";
 import { fetchBankTransactions } from "../services/finance/bankParser";
-import { fetchCreditCardTransactions } from "../services/finance/creditCard";
+import { fetchCreditCardTransactions, fetchCreditCardAccounts } from "../services/finance/creditCard";
 import { postTransactionWithData } from "../services/finance/postingEngine";
 import type { BankAccount } from "../lib/finance";
 import type { BankTransaction } from "../services/finance/bankParser";
@@ -491,17 +492,32 @@ export default function FinanceTransactionsPage() {
 
     setIsCreating(true);
     try {
+      // BUG FIX: this used to insert into cash_transactions — a table
+      // loadTransactionsData() (below) never reads at all, so a "created"
+      // transaction could never actually show up on this page. Now
+      // targets bank_transactions, matching the exact shape
+      // storeBankTransactions() (services/finance/bankParser.ts) uses for
+      // a real statement upload, so a manually-created row is structurally
+      // identical to an uploaded one — same table, same amount convention
+      // (always stored positive, direction carried by transaction_type),
+      // match_status/confidence_score/validation_status left to their real
+      // DB defaults ('unmatched'/0.50/'pending' — confirmed in
+      // 20260329190400_create_bank_integration.sql), same as the upload
+      // path does. Credit-card creation is out of scope here — this form
+      // has no bank/credit toggle or credit-card picker today (confirmed:
+      // only a "Bank Account" field), matching the credit-card gap already
+      // known from the prior investigation.
+      const amount = parseFloat(createForm.amount);
       const { data, error } = await supabase
-        .from("cash_transactions")
+        .from("bank_transactions")
         .insert({
           company_id: companyId,
           bank_account_id: createForm.bank_account_id,
           transaction_date: createForm.transaction_date,
           description: createForm.description,
-          amount: parseFloat(createForm.amount),
+          amount: Math.abs(amount),
+          transaction_type: amount >= 0 ? "credit" : "debit",
           reference_number: createForm.reference_number || null,
-          transaction_type: parseFloat(createForm.amount) >= 0 ? 'income' : 'expense',
-          created_at: new Date().toISOString(),
         })
         .select()
         .single();
@@ -622,8 +638,22 @@ export default function FinanceTransactionsPage() {
 
       // Load bank transactions and credit card transactions from intended schema
       const bankAccounts = await fetchBankAccounts(nextCompanyId || "");
+      const creditCardAccounts = await fetchCreditCardAccounts(nextCompanyId || "");
       const bankTxns = await fetchBankTransactions(nextCompanyId || "");
       const creditTxns = await fetchCreditCardTransactions(nextCompanyId || "");
+
+      // BUG FIX: bank_account_name/credit_card_name used to just be the
+      // raw id ("Will be populated via join" — never finished). Real
+      // lookups built from the SAME bankAccounts fetch already used above
+      // for the Create Transaction modal's dropdown — no new fetch
+      // function needed, just reusing that data. creditCardAccounts is a
+      // parallel lookup for the credit side (fetchCreditCardAccounts(),
+      // already exported from services/finance/creditCard.ts, just never
+      // imported here before) — real column is card_name, not
+      // account_name, confirmed against that file's own CreditCardAccount
+      // interface.
+      const bankAccountNameById = new Map(bankAccounts.map((acc: BankAccount) => [acc.id, acc.account_name]));
+      const creditCardNameById = new Map(creditCardAccounts.map((acc: any) => [acc.id, acc.card_name]));
 
       // Convert to unified format
       const combined: CombinedTransaction[] = [
@@ -638,7 +668,7 @@ export default function FinanceTransactionsPage() {
           match_status: txn.match_status,
           gl_transaction_id: txn.gl_transaction_id,
           confidence_score: txn.confidence_score,
-          bank_account_name: txn.bank_account_id, // Will be populated via join
+          bank_account_name: bankAccountNameById.get(txn.bank_account_id) || txn.bank_account_id,
           reference_number: txn.reference_number,
           created_at: txn.created_at,
           updated_at: txn.updated_at,
@@ -656,7 +686,7 @@ export default function FinanceTransactionsPage() {
           match_status: txn.match_status,
           gl_transaction_id: txn.gl_transaction_id,
           confidence_score: txn.confidence_score,
-          credit_card_name: txn.credit_card_id, // Will be populated via join
+          credit_card_name: creditCardNameById.get(txn.credit_card_id) || txn.credit_card_id,
           reference_number: txn.reference_number,
           merchant_name: txn.merchant_name,
           created_at: txn.created_at,
@@ -2409,11 +2439,36 @@ export default function FinanceTransactionsPage() {
                   </h3>
                   
                   <p className="mb-6 text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                    No bank or cash transactions have been imported yet. 
-                    Start by connecting your bank accounts or creating transactions manually from the finance workflow.
+                    No bank or credit card transactions yet. Upload a statement for a real
+                    account below, or add one manually.
                   </p>
-                  
-                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:justify-center">
+
+                  {/* Upload Statement / Bank Accounts added here — these are
+                      the two pages that actually feed this one (a real
+                      bank_transactions row only ever gets created by an
+                      upload, which itself needs a bank_accounts row to
+                      pick from), but neither was linked from here before.
+                      "Add Transaction" is the manual fallback, now fixed
+                      to actually insert into the table this page reads
+                      (bank_transactions) instead of the disconnected
+                      cash_transactions it used before. */}
+                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:justify-center sm:flex-wrap">
+                    <button
+                      onClick={() => navigate("/finance/upload-statement")}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-700"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Upload Statement
+                    </button>
+
+                    <button
+                      onClick={() => navigate("/finance/bank-accounts")}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
+                    >
+                      <Landmark className="h-4 w-4" />
+                      Bank Accounts
+                    </button>
+
                     <button
                       onClick={() => setShowCreateModal(true)}
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700"
@@ -2429,7 +2484,7 @@ export default function FinanceTransactionsPage() {
                       <Landmark className="h-4 w-4" />
                       Go to Finance Hub
                     </button>
-                    
+
                     <button
                       onClick={() => navigate(`/projects/${projectId}`)}
                       className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
