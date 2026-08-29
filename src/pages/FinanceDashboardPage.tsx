@@ -594,8 +594,14 @@ export default function FinanceDashboardPage() {
         {/* ── Overview Tab ── */}
         {tab === "overview" && (
           <>
-            {/* Trial Balance Summary */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {/* Trial Balance Summary — single column on the narrowest
+                phones: even with StatCard's own responsive text sizing
+                (see components/ui/index.tsx), 2 columns at ~375px leaves
+                too little width per card for a real 7-8 digit JMD figure
+                (confirmed via live screenshot — numbers were overflowing
+                the card edge). 2-up resumes at sm: (640px), 3-up at md:
+                (768px) as before. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               <StatCard label="Total Assets"      value={fmt(stats.totalAssets)}      color="text-cyan-300"    icon={<TrendingUp size={15}/>}/>
               <StatCard label="Total Liabilities" value={fmt(stats.totalLiabilities)} color="text-red-300"     icon={<TrendingDown size={15}/>}/>
               <StatCard label="Total Equity"      value={fmt(stats.totalEquity)}      color="text-violet-300"  icon={<Wallet size={15}/>}/>

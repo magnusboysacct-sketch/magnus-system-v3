@@ -99,7 +99,19 @@ export function StatCard({
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-2">{label}</div>
-          <div className={cn("text-2xl font-bold tracking-tight", color)}>{value}</div>
+          {/* Responsive instead of a flat text-2xl: a long comma-separated
+              currency string (e.g. "JMD 13,481,169.00") has no spaces, so
+              without help a browser treats it as one unbreakable token and
+              lets it overflow the card rather than wrap — confirmed as the
+              real cause of live mobile clipping on Finance Overview's stat
+              cards. break-words is the backstop for whatever's still too
+              long to fit on one line at any given size/breakpoint; the
+              smaller base size means it's rarely needed in practice.
+              text-2xl at md+ is unchanged from before, so every page
+              already relying on StatCard's desktop size (this is shared by
+              6 files) renders identically there — only sizes below md
+              actually change. */}
+          <div className={cn("text-lg sm:text-xl md:text-2xl font-bold tracking-tight break-words", color)}>{value}</div>
           {sub && <div className="text-[10px] text-slate-500 dark:text-slate-600 mt-1">{sub}</div>}
           {trend && (
             <div className={cn("flex items-center gap-1 mt-2 text-[10px] font-semibold", trend.value >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>
