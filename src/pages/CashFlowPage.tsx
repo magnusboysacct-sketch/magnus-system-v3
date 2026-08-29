@@ -2,12 +2,13 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import {
-  createBankAccount, withdrawFunds,
+  withdrawFunds,
 } from "../lib/finance";
 import {
   PageHeader, StatCard, Card, CardHeader, Badge, Btn,
   Table, Th, Tr, Td, Empty, Tabs, Modal, Field, Input, Select, cn
 } from "../components/ui";
+import { AddBankAccountModal } from "../components/AddBankAccountModal";
 import {
   TrendingUp, TrendingDown, DollarSign,
   ArrowUpRight, ArrowDownRight, RefreshCw,
@@ -161,12 +162,6 @@ export default function CashFlowPage() {
   const [activeAccount, setActiveAccount] = useState<BankAccount | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-
-  // Add account form state
-  const [newAccount, setNewAccount] = useState({
-    account_name: "", account_type: "checking" as BankAccount["account_type"],
-    bank_name: "", account_number_last_4: "", current_balance: "",
-  });
 
   // GL cash/bank accounts for the new Transfer picker, and the live log of
   // GL-posted fund transfers — both queried fresh from chart_of_accounts /
@@ -484,33 +479,6 @@ export default function CashFlowPage() {
     setWithdrawForm({ amount: "", reason: "", category: "Withdrawal" });
     setFormError(null);
     setShowWithdraw(true);
-  }
-
-  async function handleAddAccount() {
-    setFormError(null);
-    if (!newAccount.account_name.trim()) {
-      setFormError("Account name is required");
-      return;
-    }
-    setSaving(true);
-    try {
-      const balance = parseFloat(newAccount.current_balance) || 0;
-      await createBankAccount({
-        account_name: newAccount.account_name.trim(),
-        account_type: newAccount.account_type,
-        bank_name: newAccount.bank_name.trim() || undefined,
-        account_number_last_4: newAccount.account_number_last_4.trim() || undefined,
-        current_balance: balance,
-        available_balance: balance,
-      });
-      setShowAddAccount(false);
-      setNewAccount({ account_name: "", account_type: "checking", bank_name: "", account_number_last_4: "", current_balance: "" });
-      await loadData();
-    } catch (e: any) {
-      setFormError(e.message || "Failed to create account");
-    } finally {
-      setSaving(false);
-    }
   }
 
   // Posts a real gl_transaction (source_type='fund_transfer', Dr [To] /
@@ -914,42 +882,13 @@ export default function CashFlowPage() {
         )}
       </div>
 
-      {/* Add Account modal */}
-      <Modal open={showAddAccount} onClose={() => setShowAddAccount(false)} title="Add Bank Account" subtitle="Create a new bank account or credit card to track">
-        <div className="space-y-3">
-          {formError && <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{formError}</div>}
-          <Field label="Account Name">
-            <Input placeholder="e.g. NCB Business Checking" value={newAccount.account_name}
-              onChange={e => setNewAccount(s => ({ ...s, account_name: e.target.value }))}/>
-          </Field>
-          <Field label="Account Type">
-            <Select value={newAccount.account_type} onChange={e => setNewAccount(s => ({ ...s, account_type: e.target.value as BankAccount["account_type"] }))}>
-              <option value="checking">Checking</option>
-              <option value="savings">Savings</option>
-              <option value="credit">Credit Card</option>
-              <option value="line_of_credit">Line of Credit</option>
-            </Select>
-          </Field>
-          <Field label="Bank / Institution (optional)">
-            <Input placeholder="e.g. NCB, Scotiabank, JN Bank" value={newAccount.bank_name}
-              onChange={e => setNewAccount(s => ({ ...s, bank_name: e.target.value }))}/>
-          </Field>
-          <Field label="Last 4 Digits (optional)">
-            <Input placeholder="e.g. 4821" maxLength={4} value={newAccount.account_number_last_4}
-              onChange={e => setNewAccount(s => ({ ...s, account_number_last_4: e.target.value.replace(/\D/g, "") }))}/>
-          </Field>
-          <Field label="Opening Balance">
-            <Input type="number" placeholder="0.00" value={newAccount.current_balance}
-              onChange={e => setNewAccount(s => ({ ...s, current_balance: e.target.value }))}/>
-          </Field>
-          <div className="flex justify-end gap-2 pt-2">
-            <Btn variant="ghost" size="sm" onClick={() => setShowAddAccount(false)}>Cancel</Btn>
-            <Btn variant="primary" size="sm" onClick={handleAddAccount} disabled={saving}>
-              {saving ? "Saving..." : "Add Account"}
-            </Btn>
-          </div>
-        </div>
-      </Modal>
+      {/* Add Account modal — shared component (see components/
+          AddBankAccountModal.tsx). No trigger button here on purpose: that
+          removal a few sessions ago was intentional (this tab shows real
+          chart_of_accounts data now, see the Accounts tab's own comments)
+          and is not reversed by this extraction. showAddAccount stays
+          wired up in case anything still flips it true. */}
+      <AddBankAccountModal open={showAddAccount} onClose={() => setShowAddAccount(false)} onCreated={() => loadData()}/>
 
       {/* Transfer modal — GL account-to-account, posts immediately (same
           real-time-confirmed-action standard as Log Expense: no separate

@@ -13,7 +13,7 @@ import {
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
   ChevronLeft, ChevronRight, Building2, Layers,
   Receipt, Truck, HardHat, Banknote, BookOpen,
-  ClipboardList, Package, PieChart, Wrench,
+  ClipboardList, Package, PieChart, Wrench, Landmark,
   ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase
 } from "lucide-react";
 import { cn, SectionLabel } from "../components/ui";
@@ -65,6 +65,7 @@ const NAV: NavItem[] = [
       { label: "Transactions",     icon: <Receipt size={14}/>,     to: "/finance/transactions" },
       { label: "Expenses",         icon: <Banknote size={14}/>,    to: "/expenses" },
       { label: "Cash Flow",        icon: <BarChart3 size={14}/>,   to: "/cash-flow" },
+      { label: "Bank Accounts",    icon: <Landmark size={14}/>,    to: "/finance/bank-accounts" },
       { label: "Accounts Recv.",   icon: <FileText size={14}/>,    to: "/accounts-receivable" },
       { label: "Payables",         icon: <FileText size={14}/>,    to: "/accounts-payable" },
       { label: "Field Payments",   icon: <Banknote size={14}/>,    to: "/field-payments" },

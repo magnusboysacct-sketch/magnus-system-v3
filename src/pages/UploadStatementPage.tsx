@@ -5,12 +5,14 @@ import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { supabase } from "../lib/supabase";
 import { magnusAI, type StatementTransaction } from "../lib/magnusAI";
 import { uploadBankStatement, storeBankTransactions } from "../services/finance/bankParser";
+import type { BankAccount as FinanceBankAccount } from "../lib/finance";
+import { AddBankAccountModal } from "../components/AddBankAccountModal";
 import {
   PageHeader, Card, Badge, Btn, Table, Th, Tr, Td, Empty, Select, Field, cn
 } from "../components/ui";
 import {
   Upload, FileText, Image as ImageIcon, RefreshCw, Check, X,
-  AlertCircle, ArrowUpRight, ArrowDownRight
+  AlertCircle, ArrowUpRight, ArrowDownRight, Plus, Landmark
 } from "lucide-react";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
@@ -62,6 +64,14 @@ export default function UploadStatementPage() {
   const [statementMeta, setStatementMeta] = useState<{ period: string; last4: string } | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // "Add Bank Account" — the account picker below has no path to
+  // populate itself otherwise: bank_accounts had 0 real rows for this
+  // company, and the only button that used to create one (CashFlowPage.
+  // tsx's "Add Account") was intentionally removed a few sessions ago
+  // once that page switched to showing chart_of_accounts data instead.
+  // Reuses the exact same createBankAccount() call via the shared
+  // AddBankAccountModal — not a new/duplicate implementation.
+  const [showAddAccount, setShowAddAccount] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -71,12 +81,27 @@ export default function UploadStatementPage() {
     });
   }, []);
 
+  // Named, not just inline in the effect, so it can be re-run after a new
+  // account is created (see handleAccountCreated below) without a page
+  // reload.
+  function loadAccounts(cid: string) {
+    supabase.from("bank_accounts").select("id, account_name, bank_name")
+      .eq("company_id", cid).eq("is_active", true)
+      .then(({ data }) => setAccounts(data || []));
+  }
+
   useEffect(() => {
     if (!companyId) return;
-    supabase.from("bank_accounts").select("id, account_name, bank_name")
-      .eq("company_id", companyId).eq("is_active", true)
-      .then(({ data }) => setAccounts(data || []));
+    loadAccounts(companyId);
   }, [companyId]);
+
+  // After a successful create in the shared modal: refresh the dropdown
+  // and auto-select the new account, so the flow goes straight from
+  // "no accounts" to "ready to pick a file" without extra clicks.
+  function handleAccountCreated(account: FinanceBankAccount) {
+    if (companyId) loadAccounts(companyId);
+    setAccountId(account.id);
+  }
 
   function reset() {
     setStage("select");
@@ -177,14 +202,39 @@ export default function UploadStatementPage() {
         {stage === "select" && (
           <Card>
             <div className="space-y-4">
-              <Field label="Account">
-                <Select value={accountId} onChange={e => setAccountId(e.target.value)}>
-                  <option value="">Select account...</option>
-                  {accounts.map(a => (
-                    <option key={a.id} value={a.id}>{a.account_name}{a.bank_name ? ` — ${a.bank_name}` : ""}</option>
-                  ))}
-                </Select>
-              </Field>
+              {accounts.length === 0 ? (
+                // No bank_accounts rows exist yet — the dropdown below
+                // would otherwise just be empty with no indication of why,
+                // or what to do about it.
+                <div className="flex items-start gap-3 rounded-xl border border-dashed border-cyan-500/30 bg-cyan-500/5 px-4 py-4">
+                  <Landmark size={18} className="text-cyan-400 flex-shrink-0 mt-0.5"/>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">No bank accounts yet</div>
+                    <div className="text-xs text-slate-600 dark:text-slate-500 mt-0.5">
+                      Add one to start uploading statements against it.
+                    </div>
+                  </div>
+                  <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => setShowAddAccount(true)}>
+                    Add Bank Account
+                  </Btn>
+                </div>
+              ) : (
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Field label="Account">
+                      <Select value={accountId} onChange={e => setAccountId(e.target.value)}>
+                        <option value="">Select account...</option>
+                        {accounts.map(a => (
+                          <option key={a.id} value={a.id}>{a.account_name}{a.bank_name ? ` — ${a.bank_name}` : ""}</option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </div>
+                  <Btn variant="ghost" size="sm" icon={<Plus size={13}/>} onClick={() => setShowAddAccount(true)}>
+                    Add Account
+                  </Btn>
+                </div>
+              )}
 
               {error && (
                 <div className="flex items-start gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
@@ -326,6 +376,8 @@ export default function UploadStatementPage() {
           </Card>
         )}
       </div>
+
+      <AddBankAccountModal open={showAddAccount} onClose={() => setShowAddAccount(false)} onCreated={handleAccountCreated}/>
     </div>
   );
 }
