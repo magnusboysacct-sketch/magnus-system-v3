@@ -1066,6 +1066,39 @@ export default function FinanceTransactionsPage() {
         </button>
       </div>
 
+      {/* Persistent action toolbar — Add Transaction / Upload Statement /
+          Bank Accounts used to live only inside the empty state further
+          below, which meant they vanished the moment even one transaction
+          existed (confirmed live: a single Ignored transaction hid all
+          three, leaving no way back to any of them). Placed here, outside
+          both the loading and empty-state conditionals, so it's always
+          rendered regardless of transaction count or loading state. Same
+          handlers/routes as the empty-state versions below (untouched) —
+          this is a second render site, not new logic. */}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-700"
+        >
+          <Plus className="h-4 w-4" />
+          Add Transaction
+        </button>
+        <button
+          onClick={() => navigate("/finance/upload-statement")}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-700"
+        >
+          <Upload className="h-4 w-4" />
+          Upload Statement
+        </button>
+        <button
+          onClick={() => navigate("/finance/bank-accounts")}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/70 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-800"
+        >
+          <Landmark className="h-4 w-4" />
+          Bank Accounts
+        </button>
+      </div>
+
       {loading ? (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-8 text-center">
           <p className="text-slate-500 dark:text-slate-400">Loading transactions...</p>
