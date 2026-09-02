@@ -80,23 +80,44 @@ interface DetailFormState {
   ownerDraw: boolean;
 }
 
-function formatCurrency(value: number) {
+// Widened to accept null/undefined defensively — a CombinedTransaction
+// field can be null at runtime (a nullable DB column, e.g.
+// bank_transactions.balance_after) even where the TS interface only
+// declares `?: number` (optional, not explicitly `| null`), a mismatch
+// that let a real crash slip through here before: a transaction with
+// balance_after left NULL by handleCreateTransaction() (a manually-added
+// transaction has no real running balance to report — see that
+// function's own comment) reached formatCurrency(null), and
+// null.toLocaleString() threw, taking down the whole page via the app's
+// error boundary. Falls back to "0.00" rather than throwing.
+function formatCurrency(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "0.00";
   return value.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 }
 
-function formatDate(date: string) {
-  return new Date(date).toLocaleDateString("en-US", {
+// Same defensive widening as formatCurrency above — falls back to "—"
+// for a missing/unparseable date rather than silently showing epoch
+// (new Date(null) => Jan 1 1970) or the string "Invalid Date"
+// (new Date(undefined)).
+function formatDate(date: string | null | undefined) {
+  if (!date) return "—";
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
   });
 }
 
-function formatDateTime(date: string) {
-  return new Date(date).toLocaleString("en-US", {
+function formatDateTime(date: string | null | undefined) {
+  if (!date) return "—";
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return parsed.toLocaleString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -518,6 +539,17 @@ export default function FinanceTransactionsPage() {
           amount: Math.abs(amount),
           transaction_type: amount >= 0 ? "credit" : "debit",
           reference_number: createForm.reference_number || null,
+          // balance_after deliberately left unset (NULL). storeBankTransactions()
+          // (the real statement-upload path) always sets it from the bank's
+          // own stated running balance for that line — real, known data. A
+          // manual entry has no equivalent: there's no reliable way to know
+          // the true post-transaction account balance without recomputing it
+          // from current_balance plus every other pending transaction, and
+          // fabricating one risks showing a confidently wrong number. NULL
+          // here is honest, not a gap to fill — the detail view's Balance
+          // row (and formatCurrency() itself) are now both null-safe, so
+          // this no longer crashes the page; it just correctly shows
+          // nothing for a field that genuinely doesn't apply.
         })
         .select()
         .single();
@@ -2623,7 +2655,18 @@ export default function FinanceTransactionsPage() {
                           </div>
                         )}
 
-                        {selectedTransaction.balance !== undefined && (
+                        {/* THE ACTUAL CRASH: this guard checked !== undefined
+                            only, but a NULL bank_transactions.balance_after
+                            (real for any manually-created transaction — see
+                            handleCreateTransaction()'s own comment) comes
+                            back as null, not undefined, so null !== undefined
+                            is true and this block rendered anyway, calling
+                            formatCurrency(null) below. formatCurrency() is
+                            now itself null-safe as a backstop, but the guard
+                            is fixed too so this section correctly hides
+                            itself when there's genuinely no balance to show,
+                            same as it always intended to. */}
+                        {selectedTransaction.balance !== undefined && selectedTransaction.balance !== null && (
                           <div>
                             <div className="text-[11px] uppercase tracking-wide text-slate-500">
                               Balance
