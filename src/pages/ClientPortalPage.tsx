@@ -305,6 +305,15 @@ export default function ClientPortalPage() {
   const {sessionToken}=useParams<{sessionToken:string}>();
   const [authState,setAuthState]=useState<AuthState>("loading");
   const [client,setClient]=useState<Client|null>(null);
+  // The real credential client_comments' new RPC functions validate —
+  // NOT the magic-link `token` param. Both login paths (magic-link and
+  // email+password) converge on a client_portal_sessions.session_token
+  // before loadData() ever runs; see the lock-down migration's own header
+  // comment for the full reasoning. Threaded through explicitly to
+  // loadData() at every call site below rather than read from this state
+  // inside loadData() itself, to avoid a stale-closure read immediately
+  // after the setState call that establishes it.
+  const [portalSessionToken,setPortalSessionToken]=useState<string|null>(null);
   const [project,setProject]=useState<Project|null>(null);
   const [company,setCompany]=useState<Co|null>(null);
   const [invoices,setInvoices]=useState<Invoice[]>([]);
@@ -358,11 +367,12 @@ export default function ClientPortalPage() {
         .maybeSingle();
       if(!c){setErrorMsg("This account is no longer available.");setAuthState("error");return;}
       setClient(c);
+      setPortalSessionToken(sessTok);
       if(c.company_id){
         const {data:cs}=await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").eq("company_id",c.company_id).maybeSingle();
         setCompany(cs);
       }
-      await loadData(c);
+      await loadData(c,sessTok);
       setAuthState("authenticated");
     } catch {setErrorMsg("Something went wrong.");setAuthState("error");}
   }
@@ -388,13 +398,13 @@ export default function ClientPortalPage() {
       const sess=localStorage.getItem(`portal_${c.id}`);
       if(sess){
         const {data:s}=await supabase.from("client_portal_sessions").select("id").eq("session_token",sess).eq("client_id",c.id).gt("expires_at",new Date().toISOString()).maybeSingle();
-        if(s){await loadData(c);setAuthState("authenticated");return;}
+        if(s){setPortalSessionToken(sess);await loadData(c,sess);setAuthState("authenticated");return;}
       }
       setAuthState(c.portal_activated_at?"login":"setup");
     } catch {setErrorMsg("Something went wrong.");setAuthState("error");}
   }
 
-  async function loadData(c:Client) {
+  async function loadData(c:Client,sessionTok:string) {
     try {
       const {data:p}=await supabase.from("projects").select("*").eq("client_id",c.id).order("created_at",{ascending:false}).limit(1);
       let proj=p?.[0]||null;
@@ -408,7 +418,12 @@ export default function ClientPortalPage() {
         proj={...proj,budget:fin?.budget_total??null};
       }
       setProject(proj);
-      const {data:cm}=await supabase.from("client_comments").select("*").eq("client_id",c.id).order("created_at",{ascending:true});
+      // Replaces the direct client_comments SELECT — anon has zero
+      // policies left on that table (see the lock-down migration); this
+      // RPC validates sessionTok server-side and returns only that
+      // client's comments, same shape/ordering as the query it replaces.
+      const {data:cm,error:cmErr}=await supabase.rpc("get_portal_comments",{p_session_token:sessionTok});
+      if(cmErr)console.error("get_portal_comments failed:",cmErr);
       setComments(cm||[]);
       if(proj){
         const [inv,co,ph,boq,ct]=await Promise.all([
@@ -435,30 +450,41 @@ export default function ClientPortalPage() {
     const fresh=await supabase.from("clients")
       .select("id,name,contact_name,email,phone,portal_email,portal_activated_at,company_id")
       .eq("portal_token",token).single();
-    if(fresh.data){setClient(fresh.data);await loadData(fresh.data);}
+    if(fresh.data){
+      setClient(fresh.data);
+      // AuthScreen already wrote the freshly-minted session token to
+      // localStorage (localStorage.setItem(`portal_${client.id}`,
+      // data.sessionToken)) immediately before calling onSuccess() — same
+      // key checkAuth()'s own magic-link branch reads, so this is
+      // guaranteed present here, not a race.
+      const sessTok=localStorage.getItem(`portal_${fresh.data.id}`);
+      if(sessTok){setPortalSessionToken(sessTok);await loadData(fresh.data,sessTok);}
+    }
     setAuthState("authenticated");
     setToast({msg:"Welcome to your project portal!",type:"success"});
   }
 
   async function submitComment(){
-    if(!newComment.trim()||!client) return;
+    if(!newComment.trim()||!client||!portalSessionToken) return;
 
-    const { error } = await supabase.from("client_comments").insert({
-      client_id: client.id,
-      project_id: project?.id || null,
-      message: newComment,
-      sender_type: "client",
+    // Replaces the direct client_comments INSERT — client_id is never
+    // sent from the browser now; the RPC derives it server-side from the
+    // validated session, same as get_portal_comments above.
+    const { error } = await supabase.rpc("insert_portal_comment", {
+      p_session_token: portalSessionToken,
+      p_project_id: project?.id || null,
+      p_message: newComment,
     });
 
     if (error) {
       setToast({ msg: "Failed to send message. Please try again.", type: "error" });
-      console.error("submitComment insert error:", error);
+      console.error("insert_portal_comment error:", error);
       return;
     }
 
     setNewComment("");
     setToast({ msg: "Message sent!", type: "success" });
-    loadData(client);
+    loadData(client,portalSessionToken);
   }
 
   async function submitReview(){
@@ -515,7 +541,7 @@ export default function ClientPortalPage() {
     setRespondingTo(id);
     await supabase.from("change_orders").update({status:resp,client_response:resp,responded_at:new Date().toISOString()}).eq("id",id);
     setToast({msg:resp==="approved"?"Change approved!":"Change rejected.",type:resp==="approved"?"success":"error"});
-    setRespondingTo(null);if(client)loadData(client);
+    setRespondingTo(null);if(client&&portalSessionToken)loadData(client,portalSessionToken);
   }
 
   const totalInvoiced=invoices.reduce((s,i)=>s+Number(i.total_amount||0),0);
