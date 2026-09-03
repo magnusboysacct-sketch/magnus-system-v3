@@ -822,7 +822,14 @@ export default function RatesPage() {
 
       {/* Header */}
       <div className="border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0d1117]">
-        <div className="px-6 py-5 flex items-start justify-between gap-4">
+        {/* Stacks vertically below sm: — the button group (4 buttons:
+            Add Rate/Export/Bulk Update/Undo Bulk) has no wrap and
+            flex-shrink-0, so at mobile widths it was forcing this whole
+            row — and with it the whole page — wider than the viewport.
+            The table below already has its own overflow-x-auto wrapper
+            and was never the real problem; it just inherited the
+            page-level overflow this row was causing. */}
+        <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">Rate Library</h1>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -838,7 +845,7 @@ export default function RatesPage() {
               ))}
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-shrink-0">
             {canEdit && (
               <button onClick={openAdd} disabled={busy}
                 className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition shadow-sm disabled:opacity-50">

@@ -94,11 +94,20 @@ export default function AIPriceLookup() {
     setSaving(false);
   }
 
+  // Icon-only below sm: — the full "AI Price Lookup" label pill was a
+  // large fixed-position footprint relative to a narrow phone screen,
+  // overlapping/covering table rows underneath it. Position (bottom-20
+  // on mobile vs bottom-6 on desktop) is untouched — that offset already
+  // looks deliberately tuned for mobile chrome and there's no evidence
+  // it's wrong, only that the button's own size was too large. padding
+  // moved from the inline style into responsive Tailwind classes so it
+  // can differ by breakpoint (inline style can't do that).
   if (!open) return (
     <button onClick={()=>setOpen(true)}
-      className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[200]"
-      style={{background:"linear-gradient(135deg,#7c3aed,#4f46e5)",border:"none",borderRadius:16,padding:"12px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 8px 32px rgba(124,58,237,0.4)"}}>
-      <span style={{fontSize:16}}>✨</span> AI Price Lookup
+      className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[200] p-3 sm:py-3 sm:px-[18px]"
+      style={{background:"linear-gradient(135deg,#7c3aed,#4f46e5)",border:"none",borderRadius:16,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 8px 32px rgba(124,58,237,0.4)"}}>
+      <span style={{fontSize:16}}>✨</span>
+      <span className="hidden sm:inline">AI Price Lookup</span>
     </button>
   );
 
