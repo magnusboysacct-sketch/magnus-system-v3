@@ -298,8 +298,8 @@ export default function RatesPage() {
   const [fVariant,setFVariant]=useState("");
   const [fGrade,setFGrade]=useState("");
   const [saveError,setSaveError]=useState<string|null>(null);
-  const [toast,setToast]=useState<string|null>(null);
-  function showToast(msg:string){setToast(msg);setTimeout(()=>setToast(null),3000);}
+  const [toast,setToast]=useState<{msg:string;type:"success"|"error"}|null>(null);
+  function showToast(msg:string,type:"success"|"error"="success"){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
   const [itemTypes,setItemTypes]=useState<string[]>(()=>{
     try{const s=localStorage.getItem("magnus_item_types");return s?JSON.parse(s):["Material","Labor","Equipment","Subcontract","Other"];}
     catch{return ["Material","Labor","Equipment","Subcontract","Other"];}
@@ -1168,7 +1168,19 @@ export default function RatesPage() {
                         setBusy(true);
                         try{
                           const{error}=await supabase.from("cost_items").delete().eq("id",item.id);
-                          if(error){console.error(error);return;}
+                          if(error){
+                            console.error(error);
+                            // 23503 = Postgres foreign key violation. Confirmed live: cost_items
+                            // rows referenced by assembly_components can't be hard-deleted while
+                            // still in use — RLS/network layer reports this as a real error (not
+                            // a silent 0-row delete), so it's safe to pattern-match the code here.
+                            if((error as any).code==="23503"){
+                              showToast("This item is used in one or more Assemblies and can't be deleted. Remove it from those assemblies first.","error");
+                            }else{
+                              showToast("Failed to delete item. Please try again.","error");
+                            }
+                            return;
+                          }
                           setItems(prev=>prev.filter(r=>r.id!==item.id));
                         }finally{setBusy(false);}
                       }}
@@ -1657,8 +1669,8 @@ export default function RatesPage() {
       {!isModalOpen && <AIPriceLookup/>}
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-emerald-600 text-white text-sm font-semibold shadow-2xl">
-          {toast}
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl text-white text-sm font-semibold shadow-2xl ${toast.type==="error"?"bg-red-600":"bg-emerald-600"}`}>
+          {toast.msg}
         </div>
       )}
     </div>
