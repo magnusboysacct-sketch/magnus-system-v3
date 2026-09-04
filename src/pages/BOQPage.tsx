@@ -98,6 +98,11 @@ type Section = {
 type AssemblyRow = {
   id: string; name: string; description: string | null;
   unit: string | null; category: string | null; is_active?: boolean | null;
+  // Derived from metadata.measure_type / metadata.constants (see AssembliesPage.tsx,
+  // the source of truth for this shape). measure_type null/"linear"/"count"/etc for
+  // assemblies that predate this convention just fall back to the legacy Qty field.
+  measure_type: string | null;
+  constants: Record<string, number>;
 };
 type AssemblyComponentRow = {
   id: string; assembly_id: string; cost_item_id: string; line_type: string;
@@ -1075,8 +1080,8 @@ export default function BOQPage() {
   // Assembly modal
   const [assemblies, setAssemblies] = useState<AssemblyRow[]>([]);
   const [assemblyComponents, setAssemblyComponents] = useState<AssemblyComponentRow[]>([]);
-  type AsmModal = { open: boolean; sectionId: string | null; search: string; selectedId: string; qty: string };
-  const [asmModal, setAsmModal] = useState<AsmModal>({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" });
+  type AsmModal = { open: boolean; sectionId: string | null; search: string; selectedId: string; qty: string; length: string; height: string; width: string };
+  const [asmModal, setAsmModal] = useState<AsmModal>({ open: false, sectionId: null, search: "", selectedId: "", qty: "1", length: "", height: "", width: "" });
   // Which assembly instances currently show their component breakdown (collapsed by default).
   const [expandedAssemblies, setExpandedAssemblies] = useState<Set<string>>(new Set());
   function toggleAssemblyExpanded(instanceId: string) {
@@ -1145,13 +1150,13 @@ export default function BOQPage() {
     async function load() {
       try {
         const { data: aData } = await supabase.from("assemblies")
-          .select("id,name,description,unit,category,is_active").order("name").limit(5000);
+          .select("id,name,description,unit,category,is_active,metadata").order("name").limit(5000);
         const active = (aData || []).filter((a: any) => a?.is_active !== false);
         const { data: cData } = await supabase.from("assembly_components")
           .select("id,assembly_id,cost_item_id,line_type,quantity_factor,waste_percent,sort_order,notes")
           .order("sort_order").limit(20000);
         if (!alive) return;
-        setAssemblies(active.map((a: any) => ({ id: String(a.id), name: String(a.name ?? ""), description: a.description ? String(a.description) : null, unit: a.unit ? String(a.unit) : null, category: a.category ? String(a.category) : null, is_active: a.is_active ?? true })));
+        setAssemblies(active.map((a: any) => ({ id: String(a.id), name: String(a.name ?? ""), description: a.description ? String(a.description) : null, unit: a.unit ? String(a.unit) : null, category: a.category ? String(a.category) : null, is_active: a.is_active ?? true, measure_type: a.metadata?.measure_type ? String(a.metadata.measure_type) : null, constants: (a.metadata?.constants && typeof a.metadata.constants === "object") ? a.metadata.constants : {} })));
         setAssemblyComponents((cData || []).map((c: any) => ({ id: String(c.id), assembly_id: String(c.assembly_id), cost_item_id: String(c.cost_item_id), line_type: String(c.line_type ?? "material"), quantity_factor: numOr(c.quantity_factor, 1), waste_percent: numOr(c.waste_percent, 0), sort_order: numOr(c.sort_order, 0), notes: c.notes ? String(c.notes) : null })));
       } catch (e) { console.error("Assembly load error:", e); }
     }
@@ -1204,7 +1209,11 @@ useEffect(() => {
               rateItems,
                     usableUnits,
                     (g.length != null || g.height != null || g.width != null)
-                      ? { length: Number(g.length) || undefined, height: Number(g.height) || undefined, width: Number(g.width) || undefined }
+                      ? {
+                          ...(Number(g.length) ? { length: Number(g.length) } : {}),
+                          ...(Number(g.height) ? { height: Number(g.height) } : {}),
+                          ...(Number(g.width) ? { width: Number(g.width) } : {}),
+                        }
                       : undefined,
                     assemblies.find(a => a.id === g.assemblyId)?.name || g.name || g.groupName || "Assembly"
             );
@@ -1571,8 +1580,12 @@ useEffect(() => {
     const u = usableUnits.find((x: any) => getUnitLabel(x).toLowerCase() === unitName.toLowerCase());
     return u ? getUnitId(u) : null;
   }
-// --- Safe formula evaluator (length/height/width only, no eval/Function) ---
-type FormulaVars = { length?: number; height?: number; width?: number };
+// --- Safe formula evaluator (dictionary-driven variable lookup, no eval/Function) ---
+// Vars come from two merged sources at the call site (see explodeAssembly): the
+// per-use measurements collected in the "Add From Assembly" modal (length/height/
+// width today; Phase 2 adds more per measure_type) plus the assembly's own
+// metadata.constants (fixed properties of that specific assembly, e.g. sheet size).
+type FormulaVars = Record<string, number>;
 
 function evalAssemblyFormula(formula: string, vars: FormulaVars): number | null {
   const tokens = formula.match(/[A-Za-z_]+|\d+(\.\d+)?|[+\-*/()]/g);
@@ -1611,12 +1624,10 @@ function evalAssemblyFormula(formula: string, vars: FormulaVars): number | null 
     if (t === "-") return -parseFactor();
     if (/^[A-Za-z_]+$/.test(t)) {
       const key = t.toLowerCase();
-      if (key === "length" || key === "height" || key === "width") {
-        const v = vars[key as keyof FormulaVars];
-        if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`Missing variable: ${key}`);
-        return v;
-      }
-      throw new Error(`Unknown variable: ${t}`);
+      if (!(key in vars)) throw new Error(`Unknown variable: ${t}`);
+      const v = vars[key];
+      if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`Missing variable: ${key}`);
+      return v;
     }
     const n = parseFloat(t);
     if (!Number.isFinite(n)) throw new Error(`Bad token: ${t}`);
@@ -1638,6 +1649,17 @@ function extractFormula(notes: string | null): string | null {
   return m ? m[1].trim() : null;
 }
 
+// A blank Length/Height/Width field must stay OUT of the vars dict entirely (not
+// default to 0) so evalAssemblyFormula's "Missing variable" check can still catch
+// a formula that genuinely needs it but wasn't filled in — Number("") is 0 in JS,
+// so a plain Number() conversion would silently hide that case.
+function parseDimInput(s: string): number | undefined {
+  const t = s.trim();
+  if (t === "") return undefined;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 function explodeAssembly(
   assemblyId: string,
   qtyBase: number,
@@ -1645,7 +1667,8 @@ function explodeAssembly(
   rateItems: RateItem[],
   usableUnits: any[],
   dims?: FormulaVars,
-  assemblyName?: string
+  assemblyName?: string,
+  constants?: Record<string, number>
 ): BOQItemRow[] {
   const comps = assemblyComponents
     .filter(c => c.assembly_id === assemblyId)
@@ -1663,8 +1686,14 @@ function explodeAssembly(
       const formula = extractFormula(c.notes);
       let rawQty: number;
 
-      if (formula && dims) {
-        const evaluated = evalAssemblyFormula(formula, dims);
+      if (formula) {
+        // Per-use inputs (dims, from the modal) win over the assembly's own fixed
+        // constants on a key collision — deliberately in that order, since dims is
+        // what the user just typed for this specific use. A component whose notes
+        // don't start with "formula:" never reaches this branch at all (extractFormula
+        // returns null), so the legacy quantity_factor path below is untouched for them.
+        const mergedVars: FormulaVars = { ...constants, ...dims };
+        const evaluated = evalAssemblyFormula(formula, mergedVars);
         rawQty = evaluated !== null ? evaluated : qtyBase * numOr(c.quantity_factor, 1);
       } else {
         rawQty = qtyBase * numOr(c.quantity_factor, 1);
@@ -1730,7 +1759,7 @@ function groupBOQItems(items: BOQItemRow[]): BOQItemGroup[] {
   return groups;
 }
 
-function addAssembly(sectionId: string, assemblyId: string, qtyStr: string) {
+function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims?: FormulaVars) {
   const qtyBase = numOr(qtyStr, 0);
 
   if (!sectionId || !assemblyId || qtyBase <= 0) {
@@ -1738,14 +1767,17 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string) {
     return;
   }
 
+  const asm = assemblies.find(a => a.id === assemblyId);
+
   const newRows = explodeAssembly(
     assemblyId,
     qtyBase,
     assemblyComponents,
     rateItems,
     usableUnits,
-    undefined,
-    assemblies.find(a => a.id === assemblyId)?.name || "Assembly"
+    dims,
+    asm?.name || "Assembly",
+    asm?.constants
   );
 
   if (newRows.length === 0) {
@@ -1766,7 +1798,10 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string) {
     sectionId: null,
     search: "",
     selectedId: "",
-    qty: "1"
+    qty: "1",
+    length: "",
+    height: "",
+    width: ""
   });
 }
 // --- Generate Actions ------------------------------------------------------
@@ -2087,7 +2122,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-[10px] text-cyan-400 font-semibold transition">
                         <Plus size={10}/> Item
                       </button>
-                      <button onClick={() => setAsmModal({ open: true, sectionId: section.id, search: "", selectedId: "", qty: "1" })}
+                      <button onClick={() => setAsmModal({ open: true, sectionId: section.id, search: "", selectedId: "", qty: "1", length: "", height: "", width: "" })}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-white/[0.07] border border-slate-200 dark:border-white/[0.07] text-[10px] text-slate-600 dark:text-slate-400 transition">
                         <Boxes size={10}/> Assembly
                       </button>
@@ -2518,7 +2553,18 @@ Answer briefly and practically. If they ask to add items, explain they need to u
       )}
 
       {/* -- Assembly Modal -- */}
-      {asmModal.open && (
+      {asmModal.open && (() => {
+        // Phase 1: only linear/area/volume assemblies collect real measurements —
+        // count and legacy (no measure_type set, e.g. pre-dates this convention)
+        // keep the original flat Qty field exactly as before. Length+Height+Width
+        // are shown together whenever it's one of those three types rather than
+        // trying to detect which variables each component's formula actually
+        // references — an unused field is harmless, and Block Wall (the one real
+        // assembly today) only needs length+height anyway.
+        const selectedAssembly = assemblies.find(a => a.id === asmModal.selectedId);
+        const isFormulaMode = !!selectedAssembly &&
+          (selectedAssembly.measure_type === "linear" || selectedAssembly.measure_type === "area" || selectedAssembly.measure_type === "volume");
+        return (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-[#0d1117] rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
@@ -2526,7 +2572,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Add From Assembly</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">Explodes an assembly into individual line items</div>
               </div>
-              <button onClick={() => setAsmModal({ open: false, sectionId: null, search: "", selectedId: "", qty: "1" })} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
+              <button onClick={() => setAsmModal({ open: false, sectionId: null, search: "", selectedId: "", qty: "1", length: "", height: "", width: "" })} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
             </div>
             <div className="p-5 space-y-3 flex-1 overflow-y-auto">
               <div className="flex gap-2">
@@ -2536,10 +2582,25 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                     placeholder="Search assemblies?"
                     className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg pl-8 pr-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-500 dark:text-slate-600 outline-none focus:border-blue-500/50"/>
                 </div>
-                <input value={asmModal.qty} onChange={e => setAsmModal(p => ({ ...p, qty: e.target.value }))} type="number"
-                  className="w-20 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 text-right"
-                  placeholder="Qty"/>
+                {!isFormulaMode && (
+                  <input value={asmModal.qty} onChange={e => setAsmModal(p => ({ ...p, qty: e.target.value }))} type="number"
+                    className="w-20 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 text-right"
+                    placeholder="Qty"/>
+                )}
               </div>
+              {isFormulaMode && (
+                <div className="flex gap-2">
+                  <input value={asmModal.length} onChange={e => setAsmModal(p => ({ ...p, length: e.target.value }))} type="number"
+                    className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                    placeholder="Length"/>
+                  <input value={asmModal.height} onChange={e => setAsmModal(p => ({ ...p, height: e.target.value }))} type="number"
+                    className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                    placeholder="Height"/>
+                  <input value={asmModal.width} onChange={e => setAsmModal(p => ({ ...p, width: e.target.value }))} type="number"
+                    className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                    placeholder="Width"/>
+                </div>
+              )}
               <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden max-h-72 overflow-y-auto">
                 {assemblies.filter(a => {
                   const q = asmModal.search.trim().toLowerCase();
@@ -2562,7 +2623,19 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             </div>
             <div className="flex items-center justify-between px-5 py-4 border-t border-slate-200 dark:border-white/[0.07]">
               <span className="text-[11px] text-slate-500 dark:text-slate-600">{asmModal.selectedId ? "Ready to add" : "Select an assembly"}</span>
-              <button onClick={() => asmModal.sectionId && asmModal.selectedId && addAssembly(asmModal.sectionId, asmModal.selectedId, asmModal.qty)}
+              <button onClick={() => {
+                  if (!asmModal.sectionId || !asmModal.selectedId) return;
+                  if (isFormulaMode) {
+                    const dims: FormulaVars = {};
+                    const l = parseDimInput(asmModal.length); if (l !== undefined) dims.length = l;
+                    const h = parseDimInput(asmModal.height); if (h !== undefined) dims.height = h;
+                    const w = parseDimInput(asmModal.width); if (w !== undefined) dims.width = w;
+                    if (dims.length === undefined) { alert("Enter a length."); return; }
+                    addAssembly(asmModal.sectionId, asmModal.selectedId, "1", dims);
+                  } else {
+                    addAssembly(asmModal.sectionId, asmModal.selectedId, asmModal.qty);
+                  }
+                }}
                 disabled={!asmModal.sectionId || !asmModal.selectedId}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold disabled:opacity-40 transition">
                 <Plus size={12}/> Add Lines
@@ -2570,7 +2643,8 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* -- AI Suggestions Modal -- */}
       {aiSuggestionsModal.open && (
