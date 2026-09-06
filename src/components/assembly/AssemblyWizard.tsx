@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from "react";
-import { X, ChevronRight, ChevronLeft, Check } from "lucide-react";
+import React, { useState, useMemo, useEffect } from "react";
+import { X, ChevronRight, ChevronLeft, Check, AlertCircle } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import CostItemPicker, { type CostItem } from "../common/CostItemPicker";
 
 // ─── Bar size table ────────────────────────────────────────────────────────
 const BAR_SIZES = [
@@ -546,6 +547,17 @@ interface GeneratedComponent {
   formula: string;
   waste_percent: number;
   description: string;
+}
+
+// The review step's working copy of a generated component: still everything
+// generateComponents() produced, plus whatever the Rate Library match-finder
+// (or the user, via CostItemPicker) resolved it to. Nothing is written to the
+// database until every row is either matched or explicitly skipped — see the
+// "preview" step and handleSave below.
+interface ReviewComponent extends GeneratedComponent {
+  cost_item_id: string | null;
+  matched_item_name: string | null;
+  match_status: "auto_matched" | "user_matched" | "unmatched" | "skipped";
 }
 
 function generateComponents(elementType: string, v: WizardValues): GeneratedComponent[] {
@@ -2001,6 +2013,42 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
   );
 }
 
+// ─── Rate Library auto-match ────────────────────────────────────────────────
+// Given a generated component's name, try to find a real cost_items row for
+// it. No company_id filter — matches AssembliesPage.tsx's own item-picker
+// query (see CostItemPicker), relying on RLS (company_id IS NULL OR own
+// company) to return the right rows. Scoping this to company_id previously
+// excluded the Rate Library's seeded items entirely (almost all global,
+// company_id IS NULL), which is the real reason auto-match rates were low.
+async function findMatch(itemName: string): Promise<{ id: string; item_name: string } | null> {
+  // Strategy 1: exact item_name match
+  const { data: exact } = await supabase
+    .from("cost_items").select("id,item_name").ilike("item_name", itemName).limit(1);
+  if (exact?.[0]) return exact[0];
+
+  // Strategy 2: match base name (e.g. "Rebar" for "Rebar #4") against variant/grade
+  const baseName = itemName.split(" ")[0];
+  const sizeSpec = itemName.split(" ").slice(1).join(" ");
+  const { data: byBase } = await supabase
+    .from("cost_items").select("id,item_name,variant,grade")
+    .ilike("item_name", `%${baseName}%`).limit(10);
+  const match = (byBase as any[] | null)?.find(i =>
+    (i.variant || "").toLowerCase().includes(sizeSpec.toLowerCase()) ||
+    (i.grade || "").toLowerCase().includes(sizeSpec.toLowerCase()) ||
+    i.item_name.toLowerCase().includes(sizeSpec.toLowerCase())
+  );
+  if (match) return { id: match.id, item_name: match.item_name };
+
+  // Strategy 3: partial name match on any significant word
+  const words = itemName.split(" ").filter(w => w.length > 2);
+  for (const word of words) {
+    const { data: partial } = await supabase
+      .from("cost_items").select("id,item_name").ilike("item_name", `%${word}%`).limit(1);
+    if (partial?.[0]) return partial[0];
+  }
+  return null;
+}
+
 // ─── Main Wizard ───────────────────────────────────────────────────────────
 export default function AssemblyWizard({
   onClose,
@@ -2018,6 +2066,32 @@ export default function AssemblyWizard({
   const [values, setValues] = useState<WizardValues>(DEFAULT_VALUES);
   const [saving, setSaving] = useState(false);
 
+  // Review step (still called "preview" internally) state — populated by
+  // runReview() when the user leaves "configure", never mutated until then.
+  const [reviewComponents, setReviewComponents] = useState<ReviewComponent[]>([]);
+  const [matching, setMatching] = useState(false);
+  // Index into reviewComponents currently being (re)matched via CostItemPicker,
+  // or null when the picker is closed.
+  const [pickerOpenFor, setPickerOpenFor] = useState<number | null>(null);
+  const [costItems, setCostItems] = useState<CostItem[]>([]);
+
+  // Loaded once, not scoped to company_id — matches AssembliesPage.tsx's own
+  // item list (see CostItemPicker), relying on RLS to return global + own-
+  // company items. Needed here only for the picker; the auto-match strategies
+  // in findMatch() run their own targeted queries instead of filtering this list.
+  useEffect(() => {
+    let alive = true;
+    supabase.from("cost_items")
+      .select("id,item_name,unit,category,item_type,variant")
+      .eq("is_active", true).order("item_name").limit(5000)
+      .then(({ data }) => { if (alive) setCostItems(data || []); });
+    return () => { alive = false; };
+  }, []);
+
+  function updateReviewComponent(index: number, patch: Partial<ReviewComponent>) {
+    setReviewComponents(prev => prev.map((r, i) => i === index ? { ...r, ...patch } : r));
+  }
+
   function set<K extends keyof WizardValues>(key: K, val: WizardValues[K]) {
     setValues(prev => ({ ...prev, [key]: val }));
   }
@@ -2030,10 +2104,10 @@ export default function AssemblyWizard({
   }, [elementType, values]);
 
   // Preview vars — a 3m x 3m x 3m element, matching the variables the live
-  // formula evaluator recognizes (length/height/width), plus `count` for the
-  // count-type assemblies (doors, windows, fixtures) whose formulas use it —
-  // that one is only understood by this local preview, not yet by the real
-  // BOQ evaluator (see note below on evalAssemblyFormula's supported vars).
+  // BOQPage.tsx formula evaluator recognizes (length/height/width for
+  // linear/area/volume assemblies; count for count-type ones — the "Add From
+  // Assembly" modal now threads the typed Qty into dims.count for count-type
+  // assemblies specifically, so this preview and the real evaluator agree).
   const previewVars = { length: 3, width: 3, height: 3, count: 1 };
 
   function buildConstants(type: string, v: WizardValues): Record<string, number> {
@@ -2070,23 +2144,50 @@ export default function AssemblyWizard({
     return c;
   }
 
+  // Explicit per-type mapping (not substring matching) since "wall" now
+  // matches both block_wall (area-shaped formulas) and retaining_wall
+  // (length-shaped formulas) — those need different measure types.
+  // water_supply, drainage_piping and electrical_wiring are intentionally
+  // left out of AREA_TYPES — their formulas only reference `length` (a
+  // pipe/cable run), not `width`, so "linear" is the accurate tag; they
+  // fall through to the default below.
+  const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "paving", "rough_render", "float_coat", "skim_coat", "floor_screed", "waterproof_render", "tyrolean", "wall_tiling"]);
+  const COUNT_TYPES = new Set(["staircase", "septic_tank", "plumbing_fixtures", "electrical_fitout", "door_solid", "window_aluminum", "window_louvre"]);
+  function measureTypeFor(type: string) {
+    return AREA_TYPES.has(type) ? "area" : COUNT_TYPES.has(type) ? "count" : "linear";
+  }
+
+  // Runs the Rate Library auto-match for every generated component and moves
+  // to the review step — no database writes here. The assembly itself isn't
+  // created until the user actually clicks Save on the review step, so
+  // cancelling out of review (or coming back to reconfigure) never leaves a
+  // half-created assembly behind.
+  async function runReview() {
+    setMatching(true);
+    try {
+      const resolved = await Promise.all(components.map(async (comp): Promise<ReviewComponent> => {
+        const found = await findMatch(comp.item_name);
+        return {
+          ...comp,
+          cost_item_id: found?.id ?? null,
+          matched_item_name: found?.item_name ?? null,
+          match_status: found ? "auto_matched" : "unmatched",
+        };
+      }));
+      setReviewComponents(resolved);
+      setStep("preview");
+    } finally {
+      setMatching(false);
+    }
+  }
+
+  const unresolvedCount = reviewComponents.filter(c => c.match_status === "unmatched").length;
+
   async function handleSave() {
     if (!elementType || !values.name.trim()) return;
+    if (unresolvedCount > 0) return; // Save button is disabled for this too; belt-and-braces guard.
     setSaving(true);
     try {
-      // Explicit per-type mapping (not substring matching) since "wall" now
-      // matches both block_wall (area-shaped formulas) and retaining_wall
-      // (length-shaped formulas) — those need different measure types.
-      // water_supply, drainage_piping and electrical_wiring are intentionally
-      // left out of AREA_TYPES — their formulas only reference `length` (a
-      // pipe/cable run), not `width`, so "linear" is the accurate tag; they
-      // fall through to the default below.
-      const AREA_TYPES = new Set(["slab", "block_wall", "plastering", "tiling", "painting", "ceiling", "roofing", "blinding", "ground_slab", "drywall_partition", "drywall_painting", "paving", "rough_render", "float_coat", "skim_coat", "floor_screed", "waterproof_render", "tyrolean", "wall_tiling"]);
-      const COUNT_TYPES = new Set(["staircase", "septic_tank", "plumbing_fixtures", "electrical_fitout", "door_solid", "window_aluminum", "window_louvre"]);
-      const measureType = AREA_TYPES.has(elementType) ? "area"
-        : COUNT_TYPES.has(elementType) ? "count"
-        : "linear";
-
       // Create assembly — measure_type/constants live inside metadata (jsonb),
       // there is no top-level measure_type column on the assemblies table.
       const { data: asm, error: asmErr } = await supabase
@@ -2098,7 +2199,7 @@ export default function AssemblyWizard({
           is_active: true,
           company_id: companyId,
           metadata: {
-            measure_type: measureType,
+            measure_type: measureTypeFor(elementType),
             constants: buildConstants(elementType, values),
             wizard_type: elementType,
             wizard_values: values,
@@ -2109,74 +2210,23 @@ export default function AssemblyWizard({
 
       if (asmErr || !asm) { alert(asmErr?.message || "Failed to create assembly"); return; }
 
-      // Find a matching rate library item per component and add it — the
-      // assembly_components table stores the formula inside `notes` (prefixed
-      // "formula:") and has no item_name/component_type columns of its own.
-      const unmatched: string[] = [];
+      // Every component's fate (matched to which item, or deliberately
+      // skipped) was already resolved on the review step — this is a plain
+      // insert, no more matching or silent drops. assembly_components stores
+      // the formula inside `notes` (prefixed "formula:") and has no
+      // item_name/component_type columns of its own.
       let sortOrder = 0;
-      for (const comp of components) {
-        let costItemId: string | null = null;
-
-        // Strategy 1: exact item_name match
-        const { data: exact } = await supabase
-          .from("cost_items")
-          .select("id")
-          .eq("company_id", companyId)
-          .ilike("item_name", comp.item_name)
-          .limit(1);
-        if (exact?.[0]) costItemId = exact[0].id;
-
-        // Strategy 2: match base name (e.g. "Rebar" for "Rebar #4") against variant/grade
-        if (!costItemId) {
-          const baseName = comp.item_name.split(" ")[0];
-          const sizeSpec = comp.item_name.split(" ").slice(1).join(" ");
-          const { data: byBase } = await supabase
-            .from("cost_items")
-            .select("id, item_name, variant, grade")
-            .eq("company_id", companyId)
-            .ilike("item_name", `%${baseName}%`)
-            .limit(10);
-          const match = (byBase as any[] | null)?.find(i =>
-            (i.variant || "").toLowerCase().includes(sizeSpec.toLowerCase()) ||
-            (i.grade || "").toLowerCase().includes(sizeSpec.toLowerCase()) ||
-            i.item_name.toLowerCase().includes(sizeSpec.toLowerCase())
-          );
-          if (match) costItemId = match.id;
-        }
-
-        // Strategy 3: partial name match on any significant word
-        if (!costItemId) {
-          const words = comp.item_name.split(" ").filter(w => w.length > 2);
-          for (const word of words) {
-            const { data: partial } = await supabase
-              .from("cost_items")
-              .select("id")
-              .eq("company_id", companyId)
-              .ilike("item_name", `%${word}%`)
-              .limit(1);
-            if (partial?.[0]) { costItemId = partial[0].id; break; }
-          }
-        }
-
-        if (!costItemId) { unmatched.push(comp.item_name); continue; }
-
+      for (const comp of reviewComponents) {
+        if (comp.match_status === "skipped" || !comp.cost_item_id) continue;
         await supabase.from("assembly_components").insert({
           assembly_id: asm.id,
-          cost_item_id: costItemId,
+          cost_item_id: comp.cost_item_id,
           line_type: comp.type,
           quantity_factor: 1,
           waste_percent: comp.waste_percent,
           sort_order: sortOrder++,
           notes: `formula:${comp.formula}`,
         });
-      }
-
-      if (unmatched.length > 0) {
-        alert(
-          `Assembly created, but ${unmatched.length} of ${components.length} components couldn't be matched to a Rate Library item and were skipped:\n\n` +
-          unmatched.map(n => `• ${n}`).join("\n") +
-          `\n\nAdd these to your Rate Library, then add them to the assembly manually.`
-        );
       }
 
       onCreated();
@@ -3270,6 +3320,15 @@ export default function AssemblyWizard({
                 <p className="text-xs text-blue-500">Preview based on 3m × 3m × 3m</p>
               </div>
 
+              {unresolvedCount > 0 && (
+                <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/25 px-3 py-2.5">
+                  <AlertCircle size={13} className="text-amber-500 flex-shrink-0"/>
+                  <span className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                    {unresolvedCount} component{unresolvedCount !== 1 ? "s" : ""} still need{unresolvedCount === 1 ? "s" : ""} a Rate Library match or an explicit Skip before you can save
+                  </span>
+                </div>
+              )}
+
               <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                 <table className="w-full text-xs">
                   <thead>
@@ -3277,10 +3336,11 @@ export default function AssemblyWizard({
                       <th className="text-left px-4 py-2 text-slate-500 font-semibold">Component</th>
                       <th className="text-left px-4 py-2 text-slate-500 font-semibold hidden sm:table-cell">Formula</th>
                       <th className="text-right px-4 py-2 text-slate-500 font-semibold">Preview Qty</th>
+                      <th className="text-left px-4 py-2 text-slate-500 font-semibold">Rate Library Match</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {components.map((c, i) => (
+                    {reviewComponents.map((c, i) => (
                       <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                         <td className="px-4 py-3">
                           <div className="font-semibold text-slate-700 dark:text-slate-200">{c.item_name}</div>
@@ -3295,6 +3355,40 @@ export default function AssemblyWizard({
                           </span>
                           <span className="text-slate-400 ml-1">+{c.waste_percent}%</span>
                         </td>
+                        <td className="px-4 py-3">
+                          {c.match_status === "skipped" ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex px-2 py-1 rounded-full bg-slate-200 dark:bg-white/[0.08] text-slate-500 dark:text-slate-400 text-[10px] font-semibold whitespace-nowrap">Skipped</span>
+                              <button type="button"
+                                onClick={() => updateReviewComponent(i, { match_status: c.cost_item_id ? "auto_matched" : "unmatched" })}
+                                className="text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline">
+                                Undo
+                              </button>
+                            </div>
+                          ) : c.match_status === "auto_matched" || c.match_status === "user_matched" ? (
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="inline-flex px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold max-w-[160px] truncate" title={c.matched_item_name || ""}>
+                                Matched: {c.matched_item_name}
+                              </span>
+                              <button type="button" onClick={() => setPickerOpenFor(i)}
+                                className="text-[10px] text-blue-500 hover:text-blue-600 underline whitespace-nowrap">
+                                Change
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="inline-flex px-2 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-semibold whitespace-nowrap">Not matched</span>
+                              <button type="button" onClick={() => setPickerOpenFor(i)}
+                                className="text-[10px] text-blue-500 hover:text-blue-600 underline whitespace-nowrap">
+                                Search Rate Library
+                              </button>
+                              <button type="button" onClick={() => updateReviewComponent(i, { match_status: "skipped" })}
+                                className="text-[10px] text-slate-500 hover:text-red-500 underline whitespace-nowrap">
+                                Skip
+                              </button>
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -3302,7 +3396,7 @@ export default function AssemblyWizard({
               </div>
 
               <p className="text-xs text-slate-400 text-center">
-                These components will be added to your assembly. You can edit formulas afterwards in the Assembly Builder.
+                Matched and unskipped components will be added to your assembly. You can edit formulas afterwards in the Assembly Builder.
               </p>
             </div>
           )}
@@ -3332,24 +3426,35 @@ export default function AssemblyWizard({
 
           {step === "configure" && (
             <button
-              onClick={() => setStep("preview")}
-              disabled={!values.name.trim()}
+              onClick={runReview}
+              disabled={!values.name.trim() || matching}
               className="flex items-center gap-2 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
-              Preview
-              <ChevronRight size={16}/>
+              {matching ? "Matching against Rate Library…" : <>Preview<ChevronRight size={16}/></>}
             </button>
           )}
 
           {step === "preview" && (
             <button
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || unresolvedCount > 0}
+              title={unresolvedCount > 0 ? "Match or skip every component first" : undefined}
               className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
               {saving ? "Saving..." : <><Check size={16}/> Save Assembly</>}
             </button>
           )}
         </div>
       </div>
+
+      {pickerOpenFor !== null && (
+        <CostItemPicker
+          costItems={costItems}
+          onSelect={(item) => {
+            updateReviewComponent(pickerOpenFor, { cost_item_id: item.id, matched_item_name: item.item_name, match_status: "user_matched" });
+            setPickerOpenFor(null);
+          }}
+          onClose={() => setPickerOpenFor(null)}
+        />
+      )}
     </div>
   );
 }
