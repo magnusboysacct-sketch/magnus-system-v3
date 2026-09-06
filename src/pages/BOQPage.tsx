@@ -1694,7 +1694,27 @@ function explodeAssembly(
         // returns null), so the legacy quantity_factor path below is untouched for them.
         const mergedVars: FormulaVars = { ...constants, ...dims };
         const evaluated = evalAssemblyFormula(formula, mergedVars);
-        rawQty = evaluated !== null ? evaluated : qtyBase * numOr(c.quantity_factor, 1);
+        if (evaluated !== null) {
+          // A formula computes a PER-UNIT quantity that scales with qtyBase, the
+          // same way the legacy quantity_factor path always has — a formula like
+          // "3" (plumbing_fixtures' pre-baked WC count) means "3 per assembly
+          // instance", not "3 total regardless of how many instances you add".
+          //
+          // Exception: formulas that reference `count` directly (door_solid,
+          // window_aluminum, window_louvre) already have that scaling baked into
+          // their own math, because the modal populates dims.count from the same
+          // typed Qty that qtyBase is. Multiplying by qtyBase again on top would
+          // double-apply it (e.g. "count * 4.6" with qty=3 would come out to
+          // 3*4.6*3=41.4 instead of the correct 13.8). A formula's measure_type
+          // is exactly one of count vs linear/area/volume, never both at once —
+          // dims.count and dims.length/height/width are never populated in the
+          // same call — so this check never wrongly skips real qtyBase scaling
+          // for a length/height/width formula.
+          const usesCount = /\bcount\b/i.test(formula);
+          rawQty = usesCount ? evaluated : evaluated * qtyBase;
+        } else {
+          rawQty = qtyBase * numOr(c.quantity_factor, 1);
+        }
       } else {
         rawQty = qtyBase * numOr(c.quantity_factor, 1);
       }
@@ -2633,7 +2653,17 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                     if (dims.length === undefined) { alert("Enter a length."); return; }
                     addAssembly(asmModal.sectionId, asmModal.selectedId, "1", dims);
                   } else {
-                    addAssembly(asmModal.sectionId, asmModal.selectedId, asmModal.qty);
+                    // count-type formulas (door_solid, window_aluminum, window_louvre)
+                    // reference a bare `count` variable — the flat Qty field IS that
+                    // count, so it needs to reach the evaluator via dims too, not just
+                    // drive the legacy qtyBase*quantity_factor fallback. Assemblies with
+                    // no formula, or a non-"count" measure_type here (legacy/null), are
+                    // unaffected — dims stays undefined for them, same as before.
+                    const dims: FormulaVars | undefined =
+                      selectedAssembly?.measure_type === "count"
+                        ? { count: numOr(asmModal.qty, 0) }
+                        : undefined;
+                    addAssembly(asmModal.sectionId, asmModal.selectedId, asmModal.qty, dims);
                   }
                 }}
                 disabled={!asmModal.sectionId || !asmModal.selectedId}
