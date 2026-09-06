@@ -20,6 +20,7 @@ import { magnusAI } from "../lib/magnusAI";
 import { BOQSuggestionCard } from "../components/BOQSuggestionCard";
 import { addSuggestionToBOQ, type BOQSuggestion } from "../lib/boqSuggestions";
 import { computeQuantity } from "../lib/calculatorEngine";
+import { feetInchesToMeters } from "../lib/utils";
 
 // --- Types --------------------------------------------------------------------
 interface MeasurementRow {
@@ -1080,8 +1081,16 @@ export default function BOQPage() {
   // Assembly modal
   const [assemblies, setAssemblies] = useState<AssemblyRow[]>([]);
   const [assemblyComponents, setAssemblyComponents] = useState<AssemblyComponentRow[]>([]);
-  type AsmModal = { open: boolean; sectionId: string | null; search: string; selectedId: string; qty: string; length: string; height: string; width: string };
-  const [asmModal, setAsmModal] = useState<AsmModal>({ open: false, sectionId: null, search: "", selectedId: "", qty: "1", length: "", height: "", width: "" });
+  // Length/Height/Width are entered as feet + inches (standard Jamaican
+  // construction practice — see feetInchesToMeters) and converted to meters
+  // right before addAssembly/explodeAssembly, which still work in meters
+  // internally exactly as before; nothing downstream of this modal changes.
+  type AsmModal = {
+    open: boolean; sectionId: string | null; search: string; selectedId: string; qty: string;
+    lengthFt: string; lengthIn: string; heightFt: string; heightIn: string; widthFt: string; widthIn: string;
+  };
+  const EMPTY_ASM_DIMS = { lengthFt: "", lengthIn: "", heightFt: "", heightIn: "", widthFt: "", widthIn: "" };
+  const [asmModal, setAsmModal] = useState<AsmModal>({ open: false, sectionId: null, search: "", selectedId: "", qty: "1", ...EMPTY_ASM_DIMS });
   // Which assembly instances currently show their component breakdown (collapsed by default).
   const [expandedAssemblies, setExpandedAssemblies] = useState<Set<string>>(new Set());
   function toggleAssemblyExpanded(instanceId: string) {
@@ -1819,9 +1828,7 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims
     search: "",
     selectedId: "",
     qty: "1",
-    length: "",
-    height: "",
-    width: ""
+    ...EMPTY_ASM_DIMS
   });
 }
 // --- Generate Actions ------------------------------------------------------
@@ -2142,7 +2149,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-[10px] text-cyan-400 font-semibold transition">
                         <Plus size={10}/> Item
                       </button>
-                      <button onClick={() => setAsmModal({ open: true, sectionId: section.id, search: "", selectedId: "", qty: "1", length: "", height: "", width: "" })}
+                      <button onClick={() => setAsmModal({ open: true, sectionId: section.id, search: "", selectedId: "", qty: "1", ...EMPTY_ASM_DIMS })}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-white/[0.07] border border-slate-200 dark:border-white/[0.07] text-[10px] text-slate-600 dark:text-slate-400 transition">
                         <Boxes size={10}/> Assembly
                       </button>
@@ -2592,7 +2599,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Add From Assembly</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">Explodes an assembly into individual line items</div>
               </div>
-              <button onClick={() => setAsmModal({ open: false, sectionId: null, search: "", selectedId: "", qty: "1", length: "", height: "", width: "" })} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
+              <button onClick={() => setAsmModal({ open: false, sectionId: null, search: "", selectedId: "", qty: "1", ...EMPTY_ASM_DIMS })} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
             </div>
             <div className="p-5 space-y-3 flex-1 overflow-y-auto">
               <div className="flex gap-2">
@@ -2609,16 +2616,44 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                 )}
               </div>
               {isFormulaMode && (
-                <div className="flex gap-2">
-                  <input value={asmModal.length} onChange={e => setAsmModal(p => ({ ...p, length: e.target.value }))} type="number"
-                    className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
-                    placeholder="Length"/>
-                  <input value={asmModal.height} onChange={e => setAsmModal(p => ({ ...p, height: e.target.value }))} type="number"
-                    className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
-                    placeholder="Height"/>
-                  <input value={asmModal.width} onChange={e => setAsmModal(p => ({ ...p, width: e.target.value }))} type="number"
-                    className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
-                    placeholder="Width"/>
+                // Entered as feet + inches (not meters) — matches the Feet/Inches
+                // input pattern already used for wall height in TakeoffPage.tsx.
+                // Converted to meters at "Add Lines" time via feetInchesToMeters;
+                // the formula evaluator downstream still only ever sees meters.
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-12 flex-shrink-0 text-[11px] text-slate-500 dark:text-slate-600">Length</span>
+                    <input value={asmModal.lengthFt} onChange={e => setAsmModal(p => ({ ...p, lengthFt: e.target.value }))} type="number"
+                      className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                      placeholder="0"/>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-600 flex-shrink-0">ft</span>
+                    <input value={asmModal.lengthIn} onChange={e => setAsmModal(p => ({ ...p, lengthIn: e.target.value }))} type="number"
+                      className="w-16 flex-shrink-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                      placeholder="0"/>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-600 flex-shrink-0">in</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-12 flex-shrink-0 text-[11px] text-slate-500 dark:text-slate-600">Height</span>
+                    <input value={asmModal.heightFt} onChange={e => setAsmModal(p => ({ ...p, heightFt: e.target.value }))} type="number"
+                      className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                      placeholder="0"/>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-600 flex-shrink-0">ft</span>
+                    <input value={asmModal.heightIn} onChange={e => setAsmModal(p => ({ ...p, heightIn: e.target.value }))} type="number"
+                      className="w-16 flex-shrink-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                      placeholder="0"/>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-600 flex-shrink-0">in</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-12 flex-shrink-0 text-[11px] text-slate-500 dark:text-slate-600">Width</span>
+                    <input value={asmModal.widthFt} onChange={e => setAsmModal(p => ({ ...p, widthFt: e.target.value }))} type="number"
+                      className="flex-1 min-w-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                      placeholder="0"/>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-600 flex-shrink-0">ft</span>
+                    <input value={asmModal.widthIn} onChange={e => setAsmModal(p => ({ ...p, widthIn: e.target.value }))} type="number"
+                      className="w-16 flex-shrink-0 bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                      placeholder="0"/>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-600 flex-shrink-0">in</span>
+                  </div>
                 </div>
               )}
               <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden max-h-72 overflow-y-auto">
@@ -2646,10 +2681,21 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               <button onClick={() => {
                   if (!asmModal.sectionId || !asmModal.selectedId) return;
                   if (isFormulaMode) {
+                    // A dimension counts as "entered" if either its feet or inches
+                    // field has something in it (the other defaults to 0) — if BOTH
+                    // are blank, the dimension stays out of dims entirely, same as
+                    // before, so evalAssemblyFormula's "Missing variable" check still
+                    // catches a formula that genuinely needs it but wasn't filled in.
+                    function combineFtIn(ftStr: string, inStr: string): number | undefined {
+                      const ft = parseDimInput(ftStr);
+                      const inches = parseDimInput(inStr);
+                      if (ft === undefined && inches === undefined) return undefined;
+                      return feetInchesToMeters(ft ?? 0, inches ?? 0);
+                    }
                     const dims: FormulaVars = {};
-                    const l = parseDimInput(asmModal.length); if (l !== undefined) dims.length = l;
-                    const h = parseDimInput(asmModal.height); if (h !== undefined) dims.height = h;
-                    const w = parseDimInput(asmModal.width); if (w !== undefined) dims.width = w;
+                    const l = combineFtIn(asmModal.lengthFt, asmModal.lengthIn); if (l !== undefined) dims.length = l;
+                    const h = combineFtIn(asmModal.heightFt, asmModal.heightIn); if (h !== undefined) dims.height = h;
+                    const w = combineFtIn(asmModal.widthFt, asmModal.widthIn); if (w !== undefined) dims.width = w;
                     if (dims.length === undefined) { alert("Enter a length."); return; }
                     addAssembly(asmModal.sectionId, asmModal.selectedId, "1", dims);
                   } else {
