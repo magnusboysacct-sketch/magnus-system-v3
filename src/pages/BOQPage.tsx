@@ -6,7 +6,7 @@ import {
   FileSpreadsheet, ShoppingCart, Download, RefreshCw, AlertCircle,
   FolderOpen, DollarSign, Search, X, Check, Boxes, Sparkles,
   BookOpen, Package, Users, Wrench, Layers, AlertTriangle, Wand2,
-  Bot, ChevronLeft, Loader, Zap, Star, MessageSquare
+  Bot, ChevronLeft, Loader, Zap, Star, MessageSquare, FilePlus, History
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists";
@@ -111,6 +111,11 @@ type AssemblyComponentRow = {
 };
 type BoqHeaderRow = {
   id: string; project_id: string; status: string; version: number; updated_at: string;
+};
+// Versions picker row — no project_id needed, the whole list is already scoped
+// to one project by the query itself.
+type BoqVersionRow = {
+  id: string; version: number; status: string; updated_at: string;
 };
 
 // --- Helpers ------------------------------------------------------------------
@@ -1289,6 +1294,53 @@ useEffect(() => {
 ]);
 
   // --- BOQ Persistence -------------------------------------------------------
+  // Shared by loadLatestBoq (picks the header itself) and loadBoqVersion (the
+  // Versions picker — caller already knows exactly which header to load) so
+  // the two never drift apart on how sections/items get hydrated.
+  async function hydrateBoqFromHeader(header: BoqHeaderRow) {
+    setBoqId(header.id); setStatus(header.status as "draft" | "approved");
+    const { data: secRows, error: sErr } = await supabase.from("boq_sections")
+      .select("id,boq_id,sort_order,master_category_id,title,scope").eq("boq_id", header.id).order("sort_order");
+    if (sErr) throw sErr;
+    const secList = Array.isArray(secRows) ? secRows : [];
+    const sectionIds = secList.map((s: any) => s.id).filter(Boolean);
+    const itemsBySection = new Map<string, any[]>();
+    if (sectionIds.length > 0) {
+      const { data: itemRows, error: iErr } = await supabase.from("boq_section_items")
+        .select("id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate,measurements,assembly_instance_id,assembly_name,assembly_master_length,assembly_master_width,assembly_master_height,assembly_master_set,component_formula,component_waste_percent,measurement_overridden")
+        .in("section_id", sectionIds).order("sort_order");
+      if (iErr) throw iErr;
+      for (const r of (itemRows || [])) {
+        const sid = String((r as any).section_id ?? "");
+        if (!sid) continue;
+        if (!itemsBySection.has(sid)) itemsBySection.set(sid, []);
+        itemsBySection.get(sid)!.push(r);
+      }
+    }
+    setSections(secList.map((s: any) => ({
+      id: String(s.id), masterCategoryId: s.master_category_id ? String(s.master_category_id) : null,
+      title: String(s.title ?? "New Section"), scope: String(s.scope ?? ""), collapsed: false,
+      items: (itemsBySection.get(String(s.id)) ?? []).map((r: any) => ({
+        id: String(r.id ?? safeId()), pick_type: String(r.pick_type ?? ""),
+        pick_category: String(r.pick_category ?? ""), pick_item: String(r.pick_item ?? ""),
+        pick_variant: String(r.pick_variant ?? ""), cost_item_id: r.cost_item_id ? String(r.cost_item_id) : null,
+        item_name: String(r.item_name ?? ""), description: String(r.description ?? ""),
+        unit_id: r.unit_id ? String(r.unit_id) : null,
+        qty: numOr(r.qty, 0), rate: numOr(r.rate, 0), rate_source: "",
+        measurements: (r.measurements as MeasurementRow[]) || [],
+        assembly_instance_id: r.assembly_instance_id ? String(r.assembly_instance_id) : null,
+        assembly_name: r.assembly_name ? String(r.assembly_name) : null,
+        assembly_master_length: r.assembly_master_length != null ? Number(r.assembly_master_length) : null,
+        assembly_master_width: r.assembly_master_width != null ? Number(r.assembly_master_width) : null,
+        assembly_master_height: r.assembly_master_height != null ? Number(r.assembly_master_height) : null,
+        assembly_master_set: !!r.assembly_master_set,
+        component_formula: r.component_formula ? String(r.component_formula) : null,
+        component_waste_percent: r.component_waste_percent != null ? Number(r.component_waste_percent) : null,
+        measurement_overridden: !!r.measurement_overridden,
+      }))
+    })));
+  }
+
   async function loadLatestBoq(projectId: string) {
     setPersistLoading(true); setPersistError(null);
     try {
@@ -1298,39 +1350,99 @@ useEffect(() => {
       if (hErr) throw hErr;
       const header = (Array.isArray(headers) ? headers[0] : undefined) as BoqHeaderRow | undefined;
       if (!header) { setBoqId(null); setStatus("draft"); setSections([]); return; }
-      setBoqId(header.id); setStatus(header.status as "draft" | "approved");
-      const { data: secRows, error: sErr } = await supabase.from("boq_sections")
-        .select("id,boq_id,sort_order,master_category_id,title,scope").eq("boq_id", header.id).order("sort_order");
-      if (sErr) throw sErr;
-      const secList = Array.isArray(secRows) ? secRows : [];
-      const sectionIds = secList.map((s: any) => s.id).filter(Boolean);
-      const itemsBySection = new Map<string, any[]>();
-      if (sectionIds.length > 0) {
-        const { data: itemRows, error: iErr } = await supabase.from("boq_section_items")
-          .select("id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate,measurements")
-          .in("section_id", sectionIds).order("sort_order");
-        if (iErr) throw iErr;
-        for (const r of (itemRows || [])) {
-          const sid = String((r as any).section_id ?? "");
-          if (!sid) continue;
-          if (!itemsBySection.has(sid)) itemsBySection.set(sid, []);
-          itemsBySection.get(sid)!.push(r);
-        }
-      }
-      setSections(secList.map((s: any) => ({
-        id: String(s.id), masterCategoryId: s.master_category_id ? String(s.master_category_id) : null,
-        title: String(s.title ?? "New Section"), scope: String(s.scope ?? ""), collapsed: false,
-        items: (itemsBySection.get(String(s.id)) ?? []).map((r: any) => ({
-          id: String(r.id ?? safeId()), pick_type: String(r.pick_type ?? ""),
-          pick_category: String(r.pick_category ?? ""), pick_item: String(r.pick_item ?? ""),
-          pick_variant: String(r.pick_variant ?? ""), cost_item_id: r.cost_item_id ? String(r.cost_item_id) : null,
-          item_name: String(r.item_name ?? ""), description: String(r.description ?? ""),
-          unit_id: r.unit_id ? String(r.unit_id) : null,
-          qty: numOr(r.qty, 0), rate: numOr(r.rate, 0), rate_source: "",
-          measurements: (r.measurements as MeasurementRow[]) || [],
-        }))
-      })));
+      await hydrateBoqFromHeader(header);
     } catch (e: any) { setPersistError(e?.message ?? "Failed to load BOQ"); }
+    finally { setPersistLoading(false); }
+  }
+
+  // Versions picker — lists every boq_headers row for the project (drafts and
+  // approved alike), newest version first, so an old draft left behind by
+  // "New BOQ" (or an old approved version, kept for its own sake as a record)
+  // is reachable again instead of only ever being the single latest-updated row.
+  const [versionsModalOpen, setVersionsModalOpen] = useState(false);
+  const [versionsList, setVersionsList] = useState<BoqVersionRow[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+
+  // Shared by openVersionsModal (first open) and deleteBoqVersion (refresh
+  // after a delete) so the list re-query can't drift between the two.
+  async function fetchVersionsList(projectId: string) {
+    const { data, error } = await supabase.from("boq_headers")
+      .select("id,version,status,updated_at").eq("project_id", projectId)
+      .order("version", { ascending: false });
+    if (error) throw error;
+    setVersionsList((data || []) as BoqVersionRow[]);
+  }
+
+  async function openVersionsModal() {
+    const projectId = activeProjectId;
+    if (!projectId) return;
+    setVersionsModalOpen(true);
+    setVersionsLoading(true);
+    try {
+      await fetchVersionsList(projectId);
+    } catch (e: any) { setPersistError(e?.message ?? "Failed to load versions"); }
+    finally { setVersionsLoading(false); }
+  }
+
+  // Draft versions only — approved rows never get a delete affordance in the
+  // modal at all, so this is never called for an approved header. Deletes
+  // explicitly in dependency order (items → sections → header) rather than
+  // relying on the confirmed CASCADE, matching how saveBoq already explicitly
+  // deletes sections itself instead of trusting a higher-level cascade.
+  async function deleteBoqVersion(headerId: string, version: number) {
+    if (!window.confirm(
+      `Delete Version ${version} permanently?\n\nThis will permanently delete this saved draft and all its line items. This cannot be undone.\n\nContinue?`
+    )) return;
+    const projectId = activeProjectId;
+    setPersistLoading(true); setPersistError(null);
+    try {
+      const { data: secRows, error: secSelErr } = await supabase.from("boq_sections").select("id").eq("boq_id", headerId);
+      if (secSelErr) throw secSelErr;
+      const sectionIds = (secRows || []).map((s: any) => s.id).filter(Boolean);
+      if (sectionIds.length > 0) {
+        const { error: itemsErr } = await supabase.from("boq_section_items").delete().in("section_id", sectionIds);
+        if (itemsErr) throw itemsErr;
+      }
+      const { error: secErr } = await supabase.from("boq_sections").delete().eq("boq_id", headerId);
+      if (secErr) throw secErr;
+      const { error: hdrErr } = await supabase.from("boq_headers").delete().eq("id", headerId);
+      if (hdrErr) throw hdrErr;
+
+      // Only clear the working state if the version just deleted is the one
+      // currently loaded — deleting some other draft from the list shouldn't
+      // touch whatever's on screen. Cleared to blank, not auto-loaded to a
+      // different version — same "never silently switch what's on screen"
+      // reasoning as "New BOQ".
+      if (boqId === headerId) { setSections([]); setBoqId(null); setStatus("draft"); }
+      if (projectId) await fetchVersionsList(projectId);
+    } catch (e: any) {
+      // Delete failed — leave current state and the versions list exactly as
+      // they were; fetchVersionsList above is only reached on success, so a
+      // thrown error here never removes the row from the list.
+      setPersistError(e?.message ?? "Failed to delete that version");
+      alert(e?.message ?? "Failed to delete that version");
+    } finally {
+      setPersistLoading(false);
+    }
+  }
+
+  // Loading a specific version (rather than always "the latest") is exactly
+  // what boqId/status/canEdit already need: hydrateBoqFromHeader sets boqId to
+  // THIS header's id, so a later Save Draft updates this exact row (the
+  // existing headerId !== null → opType="UPDATE" branch in saveBoq), and sets
+  // status from this header's own status column, which canEdit (= status ===
+  // "draft") already reads — an approved version loaded this way is
+  // automatically locked with no new gating logic needed.
+  async function loadBoqVersion(headerId: string) {
+    setPersistLoading(true); setPersistError(null);
+    try {
+      const { data: header, error: hErr } = await supabase.from("boq_headers")
+        .select("id,project_id,status,version,updated_at").eq("id", headerId).single();
+      if (hErr) throw hErr;
+      if (!header) return;
+      await hydrateBoqFromHeader(header as BoqHeaderRow);
+      setVersionsModalOpen(false);
+    } catch (e: any) { setPersistError(e?.message ?? "Failed to load that version"); }
     finally { setPersistLoading(false); }
   }
 
@@ -1346,7 +1458,12 @@ useEffect(() => {
         const { data: existing } = await supabase.from("boq_headers").select("id,version,status").eq("project_id", projectId).order("version", { ascending: false }).limit(1);
         const ex = Array.isArray(existing) && existing.length > 0 ? existing[0] : null;
         if (ex) {
-          if (nextStatus === "draft" && ex.status === "draft") { headerId = String(ex.id); versionNumber = numOr(ex.version, 1); opType = "UPDATE"; }
+          // forceNewVersionRef (set by "New BOQ") deliberately skips the resume-old-
+          // draft branch even though ex is still a draft — otherwise a null boqId
+          // alone isn't enough: this same re-query would just find the old draft
+          // again and update it in place, silently overwriting whatever "New BOQ"
+          // was meant to leave untouched.
+          if (nextStatus === "draft" && ex.status === "draft" && !forceNewVersionRef.current) { headerId = String(ex.id); versionNumber = numOr(ex.version, 1); opType = "UPDATE"; }
           else { versionNumber = numOr(ex.version, 0) + 1; opType = "INSERT"; }
         }
       } else {
@@ -1379,13 +1496,17 @@ useEffect(() => {
       for (const s of sections) {
         const dbSid = sectionIdMap.get(s.id);
         if (!dbSid) throw new Error(`Section mapping failed: ${s.title}`);
-        s.items.forEach((it, i) => itemPayload.push({ section_id: dbSid, sort_order: i, pick_type: it.pick_type ?? "", pick_category: it.pick_category ?? "", pick_item: it.pick_item ?? "", pick_variant: it.pick_variant ?? "", cost_item_id: it.cost_item_id, item_name: it.item_name ?? "", description: it.description ?? "", unit_id: it.unit_id, qty: numOr(it.qty, 0), rate: numOr(it.rate, 0), measurements: it.measurements ?? [] }));
+        s.items.forEach((it, i) => itemPayload.push({ section_id: dbSid, sort_order: i, pick_type: it.pick_type ?? "", pick_category: it.pick_category ?? "", pick_item: it.pick_item ?? "", pick_variant: it.pick_variant ?? "", cost_item_id: it.cost_item_id, item_name: it.item_name ?? "", description: it.description ?? "", unit_id: it.unit_id, qty: numOr(it.qty, 0), rate: numOr(it.rate, 0), measurements: it.measurements ?? [], assembly_instance_id: it.assembly_instance_id ?? null, assembly_name: it.assembly_name ?? null, assembly_master_length: it.assembly_master_length ?? null, assembly_master_width: it.assembly_master_width ?? null, assembly_master_height: it.assembly_master_height ?? null, assembly_master_set: it.assembly_master_set ?? false, component_formula: it.component_formula ?? null, component_waste_percent: it.component_waste_percent ?? null, measurement_overridden: it.measurement_overridden ?? false }));
       }
       if (itemPayload.length > 0) {
         const { error: iErr } = await supabase.from("boq_section_items").insert(itemPayload).select("id,item_name");
         if (iErr) throw iErr;
       }
       setStatus(nextStatus);
+      // The new version (if this save just created one) is now the current draft
+      // going forward — subsequent saves on it should resume normal update-in-
+      // place behavior, not keep forcing another new version each time.
+      forceNewVersionRef.current = false;
       await supabase.rpc("sync_boq_budget_to_cost_events", { p_boq_id: headerId }).then(({ error }) => { if (error) console.error("BOQ sync error:", error); });
       await loadLatestBoq(projectId);
       setLastAutoSaveAt(new Date().toLocaleTimeString());
@@ -1402,6 +1523,11 @@ useEffect(() => {
   useEffect(() => { sectionsRef.current = sections; }, [sections]);
   const boqIdRef = useRef(boqId);
   useEffect(() => { boqIdRef.current = boqId; }, [boqId]);
+  // Set by "New BOQ" to force saveBoq()'s next call to INSERT a genuinely new
+  // boq_headers row even though boqId is null and an old draft still exists for
+  // this project — see the branch check inside saveBoq() above. Reset to false
+  // once that save succeeds, so later saves on the new draft behave normally.
+  const forceNewVersionRef = useRef(false);
   const saveBoqRef = useRef(saveBoq);
   useEffect(() => { saveBoqRef.current = saveBoq; }, [saveBoq]);
   const hasUnsavedRef = useRef(false);
@@ -1414,6 +1540,22 @@ useEffect(() => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function handleNewBoq() {
+    function reset() {
+      setSections([]);
+      setBoqId(null);
+      setStatus("draft");
+      forceNewVersionRef.current = true;
+    }
+    if (sections.length > 0) {
+      if (window.confirm(
+        "Start a new BOQ?\n\nThis will clear the sections currently shown. If you have changes here that aren't saved yet, they'll be lost — save first if you want to keep them. Continue?"
+      )) reset();
+    } else {
+      reset();
+    }
+  }
 
   useEffect(() => {
     const pid = activeProjectId;
@@ -2019,9 +2161,17 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             {saveSuccess && !persistLoading && <span className="text-[11px] text-emerald-400 flex items-center gap-1"><CheckCircle size={11}/>Saved</span>}
             {persistError && <span className="text-[11px] text-red-400 flex items-center gap-1 max-w-[160px] truncate"><AlertCircle size={11}/>{persistError}</span>}
 
+            <button onClick={handleNewBoq} disabled={!activeProjectId || persistLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium disabled:opacity-40 transition">
+              <FilePlus size={12}/> New BOQ
+            </button>
             <button onClick={() => activeProjectId && loadLatestBoq(activeProjectId)} disabled={!activeProjectId || persistLoading}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium disabled:opacity-40 transition">
               <RefreshCw size={12}/> Load
+            </button>
+            <button onClick={openVersionsModal} disabled={!activeProjectId || persistLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium disabled:opacity-40 transition">
+              <History size={12}/> Versions
             </button>
             <button onClick={() => void saveBoq("draft")} disabled={!activeProjectId || persistLoading}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-200 dark:border-white/[0.08] text-[11px] text-white font-semibold disabled:opacity-40 transition">
@@ -2577,6 +2727,57 @@ Answer briefly and practically. If they ask to add items, explain they need to u
       {/* -- Find Item Modal -- */}
       {findModal && (
         <FindItemModal rateItems={rateItems} onSelect={handleFindItem} onClose={() => setFindModal(null)}/>
+      )}
+
+      {/* -- Versions Modal -- */}
+      {versionsModalOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#0d1117] rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
+              <div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100">BOQ Versions</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Every saved version for this project</div>
+              </div>
+              <button onClick={() => setVersionsModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition"><X size={15}/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {versionsLoading ? (
+                <div className="text-center py-10 text-slate-500 dark:text-slate-600 text-sm">Loading…</div>
+              ) : versionsList.length === 0 ? (
+                <div className="text-center py-10 text-slate-500 dark:text-slate-600 text-sm">No versions found.</div>
+              ) : (
+                versionsList.map(v => (
+                  <div key={v.id} className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 dark:border-white/[0.04] last:border-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex-shrink-0">Version {v.version}</span>
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border flex-shrink-0 ${v.status === "approved" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/25" : "bg-amber-500/15 text-amber-300 border-amber-500/25"}`}>{v.status}</span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-600 truncate">Updated {new Date(v.updated_at).toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button onClick={() => loadBoqVersion(v.id)} disabled={persistLoading}
+                        className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-semibold disabled:opacity-40 transition">
+                        Load
+                      </button>
+                      {/* Approved rows never get a delete affordance at all —
+                          not even a disabled one — they're a locked historical
+                          record, same convention as canEdit already applies. */}
+                      {v.status !== "approved" && (
+                        <button onClick={() => deleteBoqVersion(v.id, v.version)} disabled={persistLoading}
+                          title="Delete this draft version"
+                          className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 dark:text-slate-600 hover:text-red-500 disabled:opacity-40 transition">
+                          <Trash2 size={13}/>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 dark:border-white/[0.07]">
+              <p className="text-[11px] text-slate-400 text-center">Approved versions are locked — approve a draft again to create a new editable version.</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* -- Assembly Modal -- */}
