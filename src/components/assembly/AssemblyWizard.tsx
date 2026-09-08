@@ -155,6 +155,7 @@ interface WizardValues {
   plaster_coats: number;
   plaster_thickness: number; // mm
   include_scratch_coat: boolean;
+  plastering_both_sides: boolean;
 
   // Tiling
   tile_size: string; // "12x12", "24x24", etc
@@ -166,6 +167,7 @@ interface WizardValues {
   paint_coats: number;
   include_primer: boolean;
   paint_coverage: number; // sf per gallon
+  painting_both_sides: boolean;
 
   // Ceiling
   ceiling_type: string; // "t-bar", "gyp-board", "wood"
@@ -203,6 +205,7 @@ interface WizardValues {
   // Drywall painting
   drywall_paint_coats: number;
   include_pva_sealer: boolean;
+  drywall_painting_both_sides: boolean;
 
   // Chain link fencing
   fence_height: number;       // mm
@@ -330,14 +333,17 @@ interface WizardValues {
   // Rough render
   rough_render_thickness: number;   // mm typically 15
   rough_render_mix: string;         // "1:3" "1:4"
+  rough_render_both_sides: boolean;
 
   // Float coat
   float_thickness: number;          // mm typically 10
   float_mix: string;                // "1:3" "1:4"
+  float_coat_both_sides: boolean;
 
   // Skim coat
   skim_thickness: number;           // mm typically 3-5
   skim_type: string;                // "cement-lime" "gypsum"
+  skim_coat_both_sides: boolean;
 
   // Floor screed
   screed_thickness: number;         // mm typically 50-75
@@ -349,10 +355,12 @@ interface WizardValues {
   waterproof_coats: number;         // typically 2
   waterproof_thickness: number;     // mm per coat
   waterproof_additive: string;      // "sika" "aquaseal" "hydrostop"
+  waterproof_render_both_sides: boolean;
 
   // Tyrolean
   tyrolean_coats: number;           // typically 2-3
   tyrolean_type: string;            // "machine" "hand"
+  tyrolean_both_sides: boolean;
 
   // Wall tiling
   wall_tile_size: string;           // "4x4" "6x6" "8x10" "12x24"
@@ -360,6 +368,7 @@ interface WizardValues {
   wall_include_adhesive: boolean;
   wall_include_grout: boolean;
   wall_include_trim: boolean;       // edge trim tiles
+  wall_tiling_both_sides: boolean;
 }
 
 const DEFAULT_VALUES: WizardValues = {
@@ -397,9 +406,11 @@ const DEFAULT_VALUES: WizardValues = {
   ret_base_bar: "#4", ret_base_spacing: 200,
   plaster_coats: 2, plaster_thickness: 15,
   include_scratch_coat: true,
+  plastering_both_sides: true,
   tile_size: "12x12", tile_waste: 10,
   include_adhesive: true, include_grout: true,
   paint_coats: 2, include_primer: true, paint_coverage: 400,
+  painting_both_sides: true,
   ceiling_type: "t-bar", ceiling_tile_size: "2x2",
   roof_sheet_type: "corrugated", roof_sheet_length: 10,
   roof_pitch: 15, include_purlins: true,
@@ -421,6 +432,7 @@ const DEFAULT_VALUES: WizardValues = {
   include_insulation: false,
   drywall_paint_coats: 2,
   include_pva_sealer: true,
+  drywall_painting_both_sides: true,
   fence_height: 1800,
   fence_post_spacing: 3000,
   chain_link_gauge: "9 gauge",
@@ -514,10 +526,13 @@ const DEFAULT_VALUES: WizardValues = {
   include_compaction: true,
   rough_render_thickness: 15,
   rough_render_mix: "1:3",
+  rough_render_both_sides: true,
   float_thickness: 10,
   float_mix: "1:4",
+  float_coat_both_sides: true,
   skim_thickness: 4,
   skim_type: "cement-lime",
+  skim_coat_both_sides: true,
   screed_thickness: 50,
   screed_mix: "1:3",
   screed_reinforced: false,
@@ -525,13 +540,16 @@ const DEFAULT_VALUES: WizardValues = {
   waterproof_coats: 2,
   waterproof_thickness: 6,
   waterproof_additive: "sika",
+  waterproof_render_both_sides: true,
   tyrolean_coats: 2,
   tyrolean_type: "machine",
+  tyrolean_both_sides: true,
   wall_tile_size: "8x10",
   wall_tile_waste: 10,
   wall_include_adhesive: true,
   wall_include_grout: true,
   wall_include_trim: true,
+  wall_tiling_both_sides: true,
 };
 
 // ─── Component generator ───────────────────────────────────────────────────
@@ -870,12 +888,12 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // face, so area is expressed as length * height.
       const comps: GeneratedComponent[] = [];
       if (v.include_scratch_coat) {
-        comps.push({ item_name: "Portland Cement", type: "material", formula: "length * height * 0.06", waste_percent: 10, description: "Scratch coat cement (bags)" });
-        comps.push({ item_name: "Sand", type: "material", formula: "length * height * 0.015", waste_percent: 10, description: "Scratch coat sand (m³)" });
+        comps.push({ item_name: "Portland Cement", type: "material", formula: "length * height * sides * 0.06", waste_percent: 10, description: "Scratch coat cement (bags)" });
+        comps.push({ item_name: "Sand", type: "material", formula: "length * height * sides * 0.015", waste_percent: 10, description: "Scratch coat sand (m³)" });
       }
-      comps.push({ item_name: "Portland Cement", type: "material", formula: `length * height * ${(v.plaster_coats * 0.08).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster cement (bags)` });
-      comps.push({ item_name: "Sand", type: "material", formula: `length * height * ${(v.plaster_coats * 0.02).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster sand (m³)` });
-      comps.push({ item_name: "Labor - Plastering", type: "labor", formula: "length * height * 0.5", waste_percent: 0, description: "Plastering labor (man-hours)" });
+      comps.push({ item_name: "Portland Cement", type: "material", formula: `length * height * sides * ${(v.plaster_coats * 0.08).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster cement (bags)` });
+      comps.push({ item_name: "Sand", type: "material", formula: `length * height * sides * ${(v.plaster_coats * 0.02).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster sand (m³)` });
+      comps.push({ item_name: "Labor - Plastering", type: "labor", formula: "length * height * sides * 0.5", waste_percent: 0, description: "Plastering labor (man-hours)" });
       return comps;
     }
 
@@ -900,9 +918,9 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // face, so area is expressed as length * height.
       const gallonsPerSqFt = 1 / v.paint_coverage;
       const comps: GeneratedComponent[] = [];
-      if (v.include_primer) comps.push({ item_name: "Primer", type: "material", formula: `length * height * ${(1/350).toFixed(5)}`, waste_percent: 5, description: "Primer (1 gal / 350 sf)" });
-      comps.push({ item_name: "Paint", type: "material", formula: `length * height * ${(gallonsPerSqFt * v.paint_coats).toFixed(5)}`, waste_percent: 5, description: `${v.paint_coats} coats paint (gallons)` });
-      comps.push({ item_name: "Labor - Painting", type: "labor", formula: "length * height * 0.2", waste_percent: 0, description: "Painting labor (man-hours)" });
+      if (v.include_primer) comps.push({ item_name: "Primer", type: "material", formula: `length * height * sides * ${(1/350).toFixed(5)}`, waste_percent: 5, description: "Primer (1 gal / 350 sf)" });
+      comps.push({ item_name: "Paint", type: "material", formula: `length * height * sides * ${(gallonsPerSqFt * v.paint_coats).toFixed(5)}`, waste_percent: 5, description: `${v.paint_coats} coats paint (gallons)` });
+      comps.push({ item_name: "Labor - Painting", type: "labor", formula: "length * height * sides * 0.2", waste_percent: 0, description: "Painting labor (man-hours)" });
       return comps;
     }
 
@@ -1044,7 +1062,6 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
 
     case "drywall_partition": {
       const studSp = v.stud_spacing / 1000;
-      const sides = v.drywall_both_sides ? 2 : 1;
       const layers = v.drywall_layers;
       const comps: GeneratedComponent[] = [
         {
@@ -1064,28 +1081,28 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Gypsum Board 4x8",
           type: "material",
-          formula: `length * height * ${sides} * ${layers} / 2.976`,
+          formula: `length * height * sides * ${layers} / 2.976`,
           waste_percent: 10,
           description: `${layers} layer${layers > 1 ? "s" : ""} each side — 4×8 sheets`,
         },
         {
           item_name: "Joint Compound",
           type: "material",
-          formula: `length * height * ${sides} * 0.02`,
+          formula: "length * height * sides * 0.02",
           waste_percent: 10,
           description: "Joint compound (bags)",
         },
         {
           item_name: "Paper Tape",
           type: "material",
-          formula: `length * height * ${sides} * 0.3`,
+          formula: "length * height * sides * 0.3",
           waste_percent: 10,
           description: "Paper tape (lf)",
         },
         {
           item_name: "Drywall Screw",
           type: "material",
-          formula: `length * height * ${sides} * 3`,
+          formula: "length * height * sides * 3",
           waste_percent: 5,
           description: "Screws (each)",
         },
@@ -1108,25 +1125,31 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     }
 
     case "drywall_painting": {
+      // Deliberately its own independent toggle, not read from
+      // drywall_partition's drywall_both_sides — these are two separate
+      // wizard runs (the partition and its paint job are each their own
+      // assembly instance) with no data link between them, so this template
+      // has no way to know how the partition it's painting was configured.
+      // The user re-states "both sides" here if that's what they're painting.
       const comps: GeneratedComponent[] = [];
       if (v.include_pva_sealer) comps.push({
         item_name: "PVA Sealer",
         type: "material",
-        formula: `length * height * ${(1/350).toFixed(5)}`,
+        formula: `length * height * sides * ${(1/350).toFixed(5)}`,
         waste_percent: 5,
         description: "PVA sealer coat (1 gal / 350 sf)",
       });
       comps.push({
         item_name: "Paint",
         type: "material",
-        formula: `length * height * ${((1/400) * v.drywall_paint_coats).toFixed(5)}`,
+        formula: `length * height * sides * ${((1/400) * v.drywall_paint_coats).toFixed(5)}`,
         waste_percent: 5,
         description: `${v.drywall_paint_coats} coats paint (gallons)`,
       });
       comps.push({
         item_name: "Labor - Painting",
         type: "labor",
-        formula: "length * height * 0.15",
+        formula: "length * height * sides * 0.15",
         waste_percent: 0,
         description: "Drywall painting labor (man-hours)",
       });
@@ -1702,21 +1725,21 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Portland Cement",
           type: "material",
-          formula: `length * height * ${(0.086 * thicknessFactor * mixFactor).toFixed(4)}`,
+          formula: `length * height * sides * ${(0.086 * thicknessFactor * mixFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for ${v.rough_render_mix} render at ${v.rough_render_thickness}mm (bags)`,
         },
         {
           item_name: "Sharp Sand",
           type: "material",
-          formula: `length * height * ${(0.028 * thicknessFactor).toFixed(4)}`,
+          formula: `length * height * sides * ${(0.028 * thicknessFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Sharp sand for rough render (m³)`,
         },
         {
           item_name: "Labor - Rendering",
           type: "labor",
-          formula: "length * height * 0.6",
+          formula: "length * height * sides * 0.6",
           waste_percent: 0,
           description: "Rough render labor (man-hours)",
         },
@@ -1730,21 +1753,21 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Portland Cement",
           type: "material",
-          formula: `length * height * ${(0.057 * thicknessFactor * mixFactor).toFixed(4)}`,
+          formula: `length * height * sides * ${(0.057 * thicknessFactor * mixFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for ${v.float_mix} float coat at ${v.float_thickness}mm (bags)`,
         },
         {
           item_name: "Fine Sand",
           type: "material",
-          formula: `length * height * ${(0.019 * thicknessFactor).toFixed(4)}`,
+          formula: `length * height * sides * ${(0.019 * thicknessFactor).toFixed(4)}`,
           waste_percent: 10,
           description: "Fine sand for float coat (m³)",
         },
         {
           item_name: "Labor - Float Coat",
           type: "labor",
-          formula: "length * height * 0.5",
+          formula: "length * height * sides * 0.5",
           waste_percent: 0,
           description: "Float coat labor (man-hours)",
         },
@@ -1757,21 +1780,21 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         ...(isGypsum ? [{
           item_name: "Gypsum Plaster",
           type: "material",
-          formula: "length * height * 0.008",
+          formula: "length * height * sides * 0.008",
           waste_percent: 10,
           description: `Gypsum skim at ${v.skim_thickness}mm (bags)`,
         }] : [
           {
             item_name: "Portland Cement",
             type: "material",
-            formula: "length * height * 0.025",
+            formula: "length * height * sides * 0.025",
             waste_percent: 10,
             description: "Cement for skim coat (bags)",
           },
           {
             item_name: "Hydrated Lime",
             type: "material",
-            formula: "length * height * 0.012",
+            formula: "length * height * sides * 0.012",
             waste_percent: 10,
             description: "Lime for skim coat (bags)",
           },
@@ -1779,7 +1802,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Labor - Skim Coat",
           type: "labor",
-          formula: "length * height * 0.4",
+          formula: "length * height * sides * 0.4",
           waste_percent: 0,
           description: "Skim coat labor (man-hours) — fine finish",
         },
@@ -1835,28 +1858,28 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Portland Cement",
           type: "material",
-          formula: `length * height * ${(0.057 * wpFactor).toFixed(4)}`,
+          formula: `length * height * sides * ${(0.057 * wpFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for waterproof render ${v.waterproof_coats} coat(s) (bags)`,
         },
         {
           item_name: "Fine Sand",
           type: "material",
-          formula: `length * height * ${(0.019 * wpFactor).toFixed(4)}`,
+          formula: `length * height * sides * ${(0.019 * wpFactor).toFixed(4)}`,
           waste_percent: 10,
           description: "Sand for waterproof render (m³)",
         },
         {
           item_name: `Waterproof Additive (${v.waterproof_additive})`,
           type: "material",
-          formula: `length * height * ${(0.15 * v.waterproof_coats).toFixed(3)}`,
+          formula: `length * height * sides * ${(0.15 * v.waterproof_coats).toFixed(3)}`,
           waste_percent: 5,
           description: `${v.waterproof_additive} waterproofing additive (litres)`,
         },
         {
           item_name: "Labor - Waterproof Render",
           type: "labor",
-          formula: `length * height * ${(0.5 * v.waterproof_coats).toFixed(2)}`,
+          formula: `length * height * sides * ${(0.5 * v.waterproof_coats).toFixed(2)}`,
           waste_percent: 0,
           description: `Waterproof render labor — ${v.waterproof_coats} coats (man-hours)`,
         },
@@ -1868,28 +1891,28 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Portland Cement",
           type: "material",
-          formula: `length * height * ${(0.04 * v.tyrolean_coats).toFixed(3)}`,
+          formula: `length * height * sides * ${(0.04 * v.tyrolean_coats).toFixed(3)}`,
           waste_percent: 15,
           description: `Cement for tyrolean ${v.tyrolean_coats} coat(s) (bags)`,
         },
         {
           item_name: "Fine Aggregate / Pea Gravel",
           type: "material",
-          formula: `length * height * ${(0.012 * v.tyrolean_coats).toFixed(4)}`,
+          formula: `length * height * sides * ${(0.012 * v.tyrolean_coats).toFixed(4)}`,
           waste_percent: 15,
           description: "Fine aggregate for tyrolean texture (m³)",
         },
         ...(v.tyrolean_type === "machine" ? [{
           item_name: "Tyrolean Machine Hire",
           type: "equipment" as const,
-          formula: `length * height * 0.05`,
+          formula: "length * height * sides * 0.05",
           waste_percent: 0,
           description: "Tyrolean projector machine hire (hours)",
         }] : []),
         {
           item_name: "Labor - Tyrolean",
           type: "labor",
-          formula: `length * height * ${v.tyrolean_type === "machine" ? 0.3 : 0.6}`,
+          formula: `length * height * sides * ${v.tyrolean_type === "machine" ? 0.3 : 0.6}`,
           waste_percent: 0,
           description: `${v.tyrolean_type === "machine" ? "Machine" : "Hand"} tyrolean labor (man-hours)`,
         },
@@ -1906,7 +1929,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: `Ceramic Wall Tile ${v.wall_tile_size}"`,
           type: "material",
-          formula: `length * height * ${tilesPerSqFt} * ${1 + v.wall_tile_waste / 100}`,
+          formula: `length * height * sides * ${tilesPerSqFt} * ${1 + v.wall_tile_waste / 100}`,
           waste_percent: 0,
           description: `${v.wall_tile_size}" wall tiles with ${v.wall_tile_waste}% waste`,
         },
@@ -1914,28 +1937,32 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       if (v.wall_include_adhesive) comps.push({
         item_name: "Wall Tile Adhesive",
         type: "material",
-        formula: "length * height * 0.05",
+        formula: "length * height * sides * 0.05",
         waste_percent: 5,
         description: "Tile adhesive (bags)",
       });
       if (v.wall_include_grout) comps.push({
         item_name: "Tile Grout",
         type: "material",
-        formula: "length * height * 0.012",
+        formula: "length * height * sides * 0.012",
         waste_percent: 5,
         description: "Tile grout (bags)",
       });
       if (v.wall_include_trim) comps.push({
+        // Not a length*height area formula (it's a perimeter), but edge trim
+        // is still needed around each tiled face separately when both sides
+        // are tiled, so it scales with `sides` the same way the area-based
+        // components do — two separate tiled faces, two separate perimeters.
         item_name: "Edge Trim / Tile Bead",
         type: "material",
-        formula: "(length + height) * 2 * 1.1",
+        formula: "(length + height) * 2 * 1.1 * sides",
         waste_percent: 10,
         description: "Perimeter edge trim (lf)",
       });
       comps.push({
         item_name: "Labor - Wall Tiling",
         type: "labor",
-        formula: "length * height * 1.0",
+        formula: "length * height * sides * 1.0",
         waste_percent: 0,
         description: "Wall tiling labor (man-hours)",
       });
@@ -2049,6 +2076,28 @@ async function findMatch(itemName: string): Promise<{ id: string; item_name: str
   return null;
 }
 
+// Element types whose generateComponents() output references a bare `sides`
+// formula variable, mapped to the WizardValues field that drives their own
+// "both sides" toggle plus that same toggle's exact existing label text (kept
+// here, not re-typed at each Toggle in the configure step below, so the
+// configure-step UI, the live preview, and metadata.configurable_options —
+// which is what the real "Add From Assembly" modal will render its own Toggle
+// from — can never drift apart on field name or label wording). "layers"
+// (drywall_partition) stays baked as a literal number, deliberately not made
+// live in this round.
+const BOTH_SIDES_OPTION: Partial<Record<string, { field: keyof WizardValues; label: string }>> = {
+  plastering: { field: "plastering_both_sides", label: "Plaster both sides" },
+  painting: { field: "painting_both_sides", label: "Paint both sides" },
+  drywall_partition: { field: "drywall_both_sides", label: "Board on both sides" },
+  drywall_painting: { field: "drywall_painting_both_sides", label: "Paint both sides" },
+  rough_render: { field: "rough_render_both_sides", label: "Render both sides" },
+  float_coat: { field: "float_coat_both_sides", label: "Float coat both sides" },
+  skim_coat: { field: "skim_coat_both_sides", label: "Skim coat both sides" },
+  waterproof_render: { field: "waterproof_render_both_sides", label: "Waterproof both sides" },
+  tyrolean: { field: "tyrolean_both_sides", label: "Apply tyrolean both sides" },
+  wall_tiling: { field: "wall_tiling_both_sides", label: "Tile both sides" },
+};
+
 // ─── Main Wizard ───────────────────────────────────────────────────────────
 export default function AssemblyWizard({
   onClose,
@@ -2108,7 +2157,18 @@ export default function AssemblyWizard({
   // linear/area/volume assemblies; count for count-type ones — the "Add From
   // Assembly" modal now threads the typed Qty into dims.count for count-type
   // assemblies specifically, so this preview and the real evaluator agree).
-  const previewVars = { length: 3, width: 3, height: 3, count: 1 };
+  //
+  // `sides` is resolved here purely for this local preview table — formulas
+  // now store the bare variable name (see BOTH_SIDES_OPTION), not a baked-in
+  // number, so this component's own preview needs to supply a value the same
+  // way the real "Add From Assembly" modal will (via its own Toggle, not this
+  // wizard's both_sides field directly — this is a separate, preview-only
+  // resolution, not what gets saved). Templates with no sides concept just
+  // get an unused sides:1 in the vars dict, harmless since it's never
+  // referenced by their formulas.
+  const bothSidesOption = elementType ? BOTH_SIDES_OPTION[elementType] : undefined;
+  const previewSides = bothSidesOption ? (values[bothSidesOption.field] ? 2 : 1) : 1;
+  const previewVars = { length: 3, width: 3, height: 3, count: 1, sides: previewSides };
 
   function buildConstants(type: string, v: WizardValues): Record<string, number> {
     const c: Record<string, number> = {};
@@ -2157,6 +2217,29 @@ export default function AssemblyWizard({
     return AREA_TYPES.has(type) ? "area" : COUNT_TYPES.has(type) ? "count" : "linear";
   }
 
+  // Built from the SAME wizard-time toggle state as previewVars.sides above —
+  // not from a fixed default — so the saved assembly's configurable_options
+  // always states what this particular assembly instance actually was
+  // configured as when created (the "Add From Assembly" modal's own Toggle
+  // still shows this as its starting default, but the value stored here is
+  // this specific save's real setting, not a hardcoded default: true).
+  function configurableOptionsFor(type: string, v: WizardValues): Array<{
+    kind: "formula_variable"; key: string; label: string; type: "boolean";
+    default: boolean; value_when_true: number; value_when_false: number;
+  }> {
+    const opt = BOTH_SIDES_OPTION[type];
+    if (!opt) return [];
+    return [{
+      kind: "formula_variable",
+      key: "sides",
+      label: opt.label,
+      type: "boolean",
+      default: !!v[opt.field],
+      value_when_true: 2,
+      value_when_false: 1,
+    }];
+  }
+
   // Runs the Rate Library auto-match for every generated component and moves
   // to the review step — no database writes here. The assembly itself isn't
   // created until the user actually clicks Save on the review step, so
@@ -2201,6 +2284,7 @@ export default function AssemblyWizard({
           metadata: {
             measure_type: measureTypeFor(elementType),
             constants: buildConstants(elementType, values),
+            configurable_options: configurableOptionsFor(elementType, values),
             wizard_type: elementType,
             wizard_values: values,
           },
@@ -2526,6 +2610,7 @@ export default function AssemblyWizard({
                     <NumInput label="Thickness per coat" value={values.plaster_thickness} onChange={v => set("plaster_thickness", v)} unit="mm"/>
                   </div>
                   <Toggle label="Include scratch coat" value={values.include_scratch_coat} onChange={v => set("include_scratch_coat", v)}/>
+                  <Toggle label="Plaster both sides" value={values.plastering_both_sides} onChange={v => set("plastering_both_sides", v)}/>
                 </>
               )}
 
@@ -2558,6 +2643,7 @@ export default function AssemblyWizard({
                     <NumInput label="Coverage" value={values.paint_coverage} onChange={v => set("paint_coverage", v)} unit="sf/gal" hint="350-400 sf per gallon"/>
                   </div>
                   <Toggle label="Include primer coat" value={values.include_primer} onChange={v => set("include_primer", v)}/>
+                  <Toggle label="Paint both sides" value={values.painting_both_sides} onChange={v => set("painting_both_sides", v)}/>
                 </>
               )}
 
@@ -2640,6 +2726,7 @@ export default function AssemblyWizard({
                       </div>
                     </div>
                   </div>
+                  <Toggle label="Render both sides" value={values.rough_render_both_sides} onChange={v => set("rough_render_both_sides", v)}/>
                 </>
               )}
 
@@ -2663,6 +2750,7 @@ export default function AssemblyWizard({
                       </div>
                     </div>
                   </div>
+                  <Toggle label="Float coat both sides" value={values.float_coat_both_sides} onChange={v => set("float_coat_both_sides", v)}/>
                 </>
               )}
 
@@ -2684,6 +2772,7 @@ export default function AssemblyWizard({
                       ))}
                     </div>
                   </div>
+                  <Toggle label="Skim coat both sides" value={values.skim_coat_both_sides} onChange={v => set("skim_coat_both_sides", v)}/>
                 </>
               )}
 
@@ -2743,6 +2832,7 @@ export default function AssemblyWizard({
                       ))}
                     </div>
                   </div>
+                  <Toggle label="Waterproof both sides" value={values.waterproof_render_both_sides} onChange={v => set("waterproof_render_both_sides", v)}/>
                 </>
               )}
 
@@ -2764,6 +2854,7 @@ export default function AssemblyWizard({
                       ))}
                     </div>
                   </div>
+                  <Toggle label="Apply tyrolean both sides" value={values.tyrolean_both_sides} onChange={v => set("tyrolean_both_sides", v)}/>
                 </>
               )}
 
@@ -2788,6 +2879,7 @@ export default function AssemblyWizard({
                   <Toggle label="Include tile adhesive" value={values.wall_include_adhesive} onChange={v => set("wall_include_adhesive", v)}/>
                   <Toggle label="Include grout" value={values.wall_include_grout} onChange={v => set("wall_include_grout", v)}/>
                   <Toggle label="Include edge trim" value={values.wall_include_trim} onChange={v => set("wall_include_trim", v)}/>
+                  <Toggle label="Tile both sides" value={values.wall_tiling_both_sides} onChange={v => set("wall_tiling_both_sides", v)}/>
                 </>
               )}
 
@@ -2826,6 +2918,7 @@ export default function AssemblyWizard({
                   </div>
                   <NumInput label="Number of paint coats" value={values.drywall_paint_coats} onChange={v => set("drywall_paint_coats", v)} hint="Typically 2 coats"/>
                   <Toggle label="Include PVA sealer coat" value={values.include_pva_sealer} onChange={v => set("include_pva_sealer", v)}/>
+                  <Toggle label="Paint both sides" value={values.drywall_painting_both_sides} onChange={v => set("drywall_painting_both_sides", v)}/>
                 </>
               )}
 

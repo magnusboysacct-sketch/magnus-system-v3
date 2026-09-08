@@ -96,6 +96,16 @@ type Section = {
   collapsed?: boolean;
 };
 
+// A "formula_variable" option resolves to a number merged into the formula
+// evaluator's vars, referenced by bare name (`key`) in a component's formula
+// text — e.g. sides. A "component_toggle" option (not built yet — future
+// scope) would instead gate whether a whole component is included at all.
+// Only formula_variable is rendered/handled in the "Add From Assembly" modal
+// this round.
+type ConfigurableOption =
+  | { kind: "formula_variable"; key: string; label: string; type: "boolean"; default: boolean; value_when_true: number; value_when_false: number }
+  | { kind: "component_toggle"; key: string; label: string; type: "boolean"; default: boolean };
+
 type AssemblyRow = {
   id: string; name: string; description: string | null;
   unit: string | null; category: string | null; is_active?: boolean | null;
@@ -104,6 +114,11 @@ type AssemblyRow = {
   // assemblies that predate this convention just fall back to the legacy Qty field.
   measure_type: string | null;
   constants: Record<string, number>;
+  // Derived from metadata.configurable_options — absent/empty for assemblies
+  // that predate this convention (or were built by hand outside the wizard),
+  // which is exactly the same "just show nothing extra" fallback measure_type
+  // and constants already use for pre-existing assemblies.
+  configurable_options: ConfigurableOption[];
 };
 type AssemblyComponentRow = {
   id: string; assembly_id: string; cost_item_id: string; line_type: string;
@@ -1090,11 +1105,16 @@ export default function BOQPage() {
   // construction practice — see feetInchesToMeters) and converted to meters
   // right before addAssembly/explodeAssembly, which still work in meters
   // internally exactly as before; nothing downstream of this modal changes.
+  // optionValues holds live formula_variable Toggle states (e.g. {sides:
+  // true}), keyed by the selected assembly's own metadata.configurable_options
+  // — read as optionValues[key] ?? option.default, so a key that hasn't been
+  // touched yet just falls back to that option's declared default.
   type AsmModal = {
     open: boolean; sectionId: string | null; search: string; selectedId: string; qty: string;
     lengthFt: string; lengthIn: string; heightFt: string; heightIn: string; widthFt: string; widthIn: string;
+    optionValues: Record<string, boolean>;
   };
-  const EMPTY_ASM_DIMS = { lengthFt: "", lengthIn: "", heightFt: "", heightIn: "", widthFt: "", widthIn: "" };
+  const EMPTY_ASM_DIMS = { lengthFt: "", lengthIn: "", heightFt: "", heightIn: "", widthFt: "", widthIn: "", optionValues: {} as Record<string, boolean> };
   const [asmModal, setAsmModal] = useState<AsmModal>({ open: false, sectionId: null, search: "", selectedId: "", qty: "1", ...EMPTY_ASM_DIMS });
   // Which assembly instances currently show their component breakdown (collapsed by default).
   const [expandedAssemblies, setExpandedAssemblies] = useState<Set<string>>(new Set());
@@ -1170,7 +1190,7 @@ export default function BOQPage() {
           .select("id,assembly_id,cost_item_id,line_type,quantity_factor,waste_percent,sort_order,notes")
           .order("sort_order").limit(20000);
         if (!alive) return;
-        setAssemblies(active.map((a: any) => ({ id: String(a.id), name: String(a.name ?? ""), description: a.description ? String(a.description) : null, unit: a.unit ? String(a.unit) : null, category: a.category ? String(a.category) : null, is_active: a.is_active ?? true, measure_type: a.metadata?.measure_type ? String(a.metadata.measure_type) : null, constants: (a.metadata?.constants && typeof a.metadata.constants === "object") ? a.metadata.constants : {} })));
+        setAssemblies(active.map((a: any) => ({ id: String(a.id), name: String(a.name ?? ""), description: a.description ? String(a.description) : null, unit: a.unit ? String(a.unit) : null, category: a.category ? String(a.category) : null, is_active: a.is_active ?? true, measure_type: a.metadata?.measure_type ? String(a.metadata.measure_type) : null, constants: (a.metadata?.constants && typeof a.metadata.constants === "object") ? a.metadata.constants : {}, configurable_options: Array.isArray(a.metadata?.configurable_options) ? a.metadata.configurable_options : [] })));
         setAssemblyComponents((cData || []).map((c: any) => ({ id: String(c.id), assembly_id: String(c.assembly_id), cost_item_id: String(c.cost_item_id), line_type: String(c.line_type ?? "material"), quantity_factor: numOr(c.quantity_factor, 1), waste_percent: numOr(c.waste_percent, 0), sort_order: numOr(c.sort_order, 0), notes: c.notes ? String(c.notes) : null })));
       } catch (e) { console.error("Assembly load error:", e); }
     }
@@ -1872,6 +1892,16 @@ function explodeAssembly(
 
       const finalQty = rawQty * (1 + numOr(c.waste_percent, 0) / 100);
 
+      // The modal only ever gates "Add Lines" on a real length being entered
+      // for linear/area/volume assemblies ("Enter a length." alert) — length
+      // is the one dimension guaranteed present in dims whenever the user
+      // actually typed real measurements, vs. count-type assemblies where
+      // dims either holds only `count` or is undefined entirely, so this
+      // check naturally stays false for that path with no extra branching.
+      // Width/height are set independently since not every measure_type
+      // collects both (area only asks length+height, for instance).
+      const hasMasterDims = dims != null && dims.length !== undefined;
+
       const unitMatch = r.unit
         ? usableUnits.find((u:any)=>
             getUnitLabel(u).toLowerCase() === (r.unit || "").toLowerCase()
@@ -1896,10 +1926,10 @@ function explodeAssembly(
         component_formula: formula,
         component_waste_percent: numOr(c.waste_percent, 0),
         measurement_overridden: false,
-        assembly_master_set: false,
-        assembly_master_length: null,
-        assembly_master_width: null,
-        assembly_master_height: null,
+        assembly_master_set: hasMasterDims,
+        assembly_master_length: hasMasterDims ? dims!.length : null,
+        assembly_master_width: hasMasterDims && dims!.width !== undefined ? dims!.width : null,
+        assembly_master_height: hasMasterDims && dims!.height !== undefined ? dims!.height : null,
       };
     })
     .filter(Boolean) as BOQItemRow[];
@@ -2162,15 +2192,15 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             {persistError && <span className="text-[11px] text-red-400 flex items-center gap-1 max-w-[160px] truncate"><AlertCircle size={11}/>{persistError}</span>}
 
             <button onClick={handleNewBoq} disabled={!activeProjectId || persistLoading}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium disabled:opacity-40 transition">
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <FilePlus size={12}/> New BOQ
             </button>
             <button onClick={() => activeProjectId && loadLatestBoq(activeProjectId)} disabled={!activeProjectId || persistLoading}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium disabled:opacity-40 transition">
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <RefreshCw size={12}/> Load
             </button>
             <button onClick={openVersionsModal} disabled={!activeProjectId || persistLoading}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.08] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium disabled:opacity-40 transition">
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <History size={12}/> Versions
             </button>
             <button onClick={() => void saveBoq("draft")} disabled={!activeProjectId || persistLoading}
@@ -2792,6 +2822,16 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         const selectedAssembly = assemblies.find(a => a.id === asmModal.selectedId);
         const isFormulaMode = !!selectedAssembly &&
           (selectedAssembly.measure_type === "linear" || selectedAssembly.measure_type === "area" || selectedAssembly.measure_type === "volume");
+        // Only formula_variable options are rendered here (component_toggle is
+        // future scope, not built yet). Gated on isFormulaMode alongside
+        // Length/Height/Width since every configurable_option that exists
+        // today (sides, on the 9 both-sides templates) only ever appears on
+        // linear/area/volume assemblies — same simplification already applied
+        // to Length/Height/Width itself (shown together rather than detecting
+        // exactly which variables a given formula references).
+        const formulaVarOptions = isFormulaMode
+          ? (selectedAssembly?.configurable_options.filter((o): o is Extract<ConfigurableOption, { kind: "formula_variable" }> => o.kind === "formula_variable") ?? [])
+          : [];
         return (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-[#0d1117] rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
@@ -2857,6 +2897,24 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                   </div>
                 </div>
               )}
+              {formulaVarOptions.length > 0 && (
+                <div className="space-y-1.5">
+                  {formulaVarOptions.map(opt => {
+                    const checked = asmModal.optionValues[opt.key] ?? opt.default;
+                    return (
+                      <label key={opt.key}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] cursor-pointer">
+                        <span className="text-[11px] text-slate-600 dark:text-slate-400 font-medium">{opt.label}</span>
+                        <button type="button"
+                          onClick={() => setAsmModal(p => ({ ...p, optionValues: { ...p.optionValues, [opt.key]: !checked } }))}
+                          className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 ${checked ? "bg-cyan-600" : "bg-slate-300 dark:bg-slate-700"}`}>
+                          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${checked ? "translate-x-4" : "translate-x-0.5"}`}/>
+                        </button>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
               <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden max-h-72 overflow-y-auto">
                 {assemblies.filter(a => {
                   const q = asmModal.search.trim().toLowerCase();
@@ -2898,6 +2956,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                     const h = combineFtIn(asmModal.heightFt, asmModal.heightIn); if (h !== undefined) dims.height = h;
                     const w = combineFtIn(asmModal.widthFt, asmModal.widthIn); if (w !== undefined) dims.width = w;
                     if (dims.length === undefined) { alert("Enter a length."); return; }
+                    // Resolve each formula_variable Toggle (e.g. sides) to the
+                    // number its formula text actually expects — the modal only
+                    // ever shows a boolean switch, never the raw number itself.
+                    for (const opt of formulaVarOptions) {
+                      const checked = asmModal.optionValues[opt.key] ?? opt.default;
+                      dims[opt.key] = checked ? opt.value_when_true : opt.value_when_false;
+                    }
                     addAssembly(asmModal.sectionId, asmModal.selectedId, "1", dims);
                   } else {
                     // count-type formulas (door_solid, window_aluminum, window_louvre)
