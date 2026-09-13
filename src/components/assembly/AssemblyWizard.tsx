@@ -602,19 +602,19 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const psp = v.profile_post_spacing / 1000;
       const comps: GeneratedComponent[] = [];
       comps.push({
-        item_name: "Timber Profile Post 2×2",
+        item_name: "Timber Post",
         type: "material",
         formula: `(length / ${psp}) * 2`,
         waste_percent: 10,
-        description: `Profile posts @ ${v.profile_post_spacing}mm — both sides of trench`,
+        description: `2×2 profile posts @ ${v.profile_post_spacing}mm — both sides of trench`,
         optional_flag: "include_profiles",
       });
       comps.push({
-        item_name: "Profile Board 1×6",
+        item_name: "Profile Board",
         type: "material",
         formula: "length * 2",
         waste_percent: 10,
-        description: "Horizontal profile boards (lf)",
+        description: "1×6 horizontal profile boards (lf)",
         optional_flag: "include_profiles",
       });
       comps.push({
@@ -708,14 +708,14 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     case "column_rect": {
       const comps: GeneratedComponent[] = [
         {
-          item_name: `Rebar ${v.main_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `${v.num_bars} * length * ${mw}`,
           waste_percent: 5,
           description: `${v.num_bars} vertical bars of ${v.main_bar} rebar`,
         },
         {
-          item_name: `Rebar ${v.link_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `(length / ${sp}) * ((${w} + ${d}) * 2 + ${hook}) * ${lw}`,
           waste_percent: 10,
@@ -723,7 +723,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         },
       ];
       comps.push({
-        item_name: "Ready Mix Concrete",
+        item_name: "Concrete",
         type: "material",
         formula: `${w} * ${d} * length`,
         waste_percent: 5,
@@ -753,28 +753,28 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const blw = barWeight(v.link_bar);
       const comps: GeneratedComponent[] = [
         {
-          item_name: `Rebar ${v.top_bar_size}`,
+          item_name: "Rebar",
           type: "material",
           formula: `${v.top_bars} * length * ${tw}`,
           waste_percent: 5,
           description: `${v.top_bars} top bars ${v.top_bar_size}`,
         },
         {
-          item_name: `Rebar ${v.bottom_bar_size}`,
+          item_name: "Rebar",
           type: "material",
           formula: `${v.bottom_bars} * length * ${btw}`,
           waste_percent: 5,
           description: `${v.bottom_bars} bottom bars ${v.bottom_bar_size}`,
         },
         {
-          item_name: `Rebar ${v.link_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `(length / ${lsp}) * ((${bw} + ${bd}) * 2 + ${hook}) * ${blw}`,
           waste_percent: 10,
-          description: `Links at ${v.link_spacing}mm centres`,
+          description: `${v.link_bar} links at ${v.link_spacing}mm centres`,
         },
       ];
-      comps.push({ item_name: "Ready Mix Concrete", type: "material", formula: `${bw} * ${bd} * length`, waste_percent: 5, description: `Concrete ${v.concrete_grade}`, optional_flag: "include_concrete" });
+      comps.push({ item_name: "Concrete", type: "material", formula: `${bw} * ${bd} * length`, waste_percent: 5, description: `Concrete ${v.concrete_grade}`, optional_flag: "include_concrete" });
       comps.push({ item_name: "Formwork", type: "material", formula: `(${bw} + ${bd}) * 2 * length`, waste_percent: 10, description: "Formwork", optional_flag: "include_formwork" });
       return comps;
     }
@@ -787,9 +787,9 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const sy = v.bar_spacing_y / 1000;
       const sw = barWeight(v.slab_bar);
       return [
-        { item_name: `Rebar ${v.slab_bar}`, type: "material", formula: `(length / ${sx}) * width * ${sw}`, waste_percent: 10, description: `Bars in X direction at ${v.bar_spacing_x}mm` },
-        { item_name: `Rebar ${v.slab_bar}`, type: "material", formula: `(width / ${sy}) * length * ${sw}`, waste_percent: 10, description: `Bars in Y direction at ${v.bar_spacing_y}mm` },
-        { item_name: "Ready Mix Concrete", type: "material", formula: `length * width * ${st}`, waste_percent: 5, description: `Slab concrete ${v.slab_thickness}mm thick`, optional_flag: "include_concrete" },
+        { item_name: "Rebar", type: "material", formula: `(length / ${sx}) * width * ${sw}`, waste_percent: 10, description: `${v.slab_bar} bars in X direction at ${v.bar_spacing_x}mm` },
+        { item_name: "Rebar", type: "material", formula: `(width / ${sy}) * length * ${sw}`, waste_percent: 10, description: `${v.slab_bar} bars in Y direction at ${v.bar_spacing_y}mm` },
+        { item_name: "Concrete", type: "material", formula: `length * width * ${st}`, waste_percent: 5, description: `Slab concrete ${v.slab_thickness}mm thick`, optional_flag: "include_concrete" },
         { item_name: "Formwork", type: "material", formula: "length * width", waste_percent: 10, description: "Soffit formwork", optional_flag: "include_formwork" },
       ];
     }
@@ -800,8 +800,8 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // to metric (length/height are meters): 1.125 / 0.09290304 = 12.1094 blocks/m².
       const blocksPerSqM = 12.1094;
       const comps: GeneratedComponent[] = [
-        { item_name: `Concrete Block ${v.block_size}`, type: "material", formula: `length * height * ${blocksPerSqM.toFixed(4)}`, waste_percent: 5, description: `${v.block_size} hollow blocks` },
-        { item_name: "Portland Cement", type: "material", formula: "length * height * 0.08", waste_percent: 10, description: "Mortar cement (bags)", optional_flag: "include_mortar" },
+        { item_name: "Block", type: "material", formula: `length * height * ${blocksPerSqM.toFixed(4)}`, waste_percent: 5, description: `${v.block_size} hollow blocks` },
+        { item_name: "Cement", type: "material", formula: "length * height * 0.08", waste_percent: 10, description: "Mortar cement (bags)", optional_flag: "include_mortar" },
         { item_name: "Sand", type: "material", formula: "length * height * 0.025", waste_percent: 10, description: "Mortar sand (m³)" },
         // Pocket/core fill — grout filling the hollow cores of the blocks,
         // standard practice for a fully-grouted reinforced block wall. A
@@ -830,14 +830,14 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         //   Cement: 0.57 bags/m²
         //   Sand:   0.039 m³/m²
         //   Gravel: 0.059 m³/m²
-        { item_name: "Portland Cement", type: "material", formula: "length * height * 0.57", waste_percent: 10, description: "Pocket/core fill cement (bags)", optional_flag: "include_pocket_fill" },
+        { item_name: "Cement", type: "material", formula: "length * height * 0.57", waste_percent: 10, description: "Pocket/core fill cement (bags)", optional_flag: "include_pocket_fill" },
         { item_name: "Sand", type: "material", formula: "length * height * 0.039", waste_percent: 10, description: "Pocket/core fill sand (m³)", optional_flag: "include_pocket_fill" },
-        { item_name: "Gravel / Aggregate", type: "material", formula: "length * height * 0.059", waste_percent: 10, description: "Pocket/core fill gravel (m³)", optional_flag: "include_pocket_fill" },
+        { item_name: "Gravel", type: "material", formula: "length * height * 0.059", waste_percent: 10, description: "Pocket/core fill gravel/aggregate (m³)", optional_flag: "include_pocket_fill" },
       ];
       const hbw = barWeight(v.horiz_bar_size);
       const hsp = v.horiz_bar_spacing / 1000;
       comps.push({
-        item_name: `Rebar ${v.horiz_bar_size}`,
+        item_name: "Rebar",
         type: "material",
         formula: `(height / ${hsp}) * length * ${hbw}`,
         waste_percent: 10,
@@ -856,28 +856,28 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const lsp = v.lintel_link_spacing / 1000;
       return [
         {
-          item_name: `Rebar ${v.lintel_top_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `${v.lintel_top_bars} * (length + 0.5) * ${ltw}`,
           waste_percent: 5,
-          description: `${v.lintel_top_bars} top bars + 250mm bearing each end`,
+          description: `${v.lintel_top_bars} ${v.lintel_top_bar} top bars + 250mm bearing each end`,
         },
         {
-          item_name: `Rebar ${v.lintel_bottom_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `${v.lintel_bottom_bars} * (length + 0.5) * ${lbw}`,
           waste_percent: 5,
-          description: `${v.lintel_bottom_bars} bottom bars + 250mm bearing each end`,
+          description: `${v.lintel_bottom_bars} ${v.lintel_bottom_bar} bottom bars + 250mm bearing each end`,
         },
         {
-          item_name: `Rebar ${v.lintel_link_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `(length / ${lsp}) * ((${lw} + ${ld}) * 2 + 0.2) * ${llw}`,
           waste_percent: 10,
-          description: `Links @ ${v.lintel_link_spacing}mm`,
+          description: `${v.lintel_link_bar} links @ ${v.lintel_link_spacing}mm`,
         },
         {
-          item_name: "Ready Mix Concrete",
+          item_name: "Concrete",
           type: "material",
           formula: `${lw} * ${ld} * (length + 0.5)`,
           waste_percent: 5,
@@ -903,10 +903,10 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const tbw = barWeight(v.tie_bottom_bar);
       const tlw = barWeight(v.tie_link_bar);
       return [
-        { item_name: `Rebar ${v.tie_top_bar}`, type: "material", formula: `${v.tie_top_bars} * length * ${ttw}`, waste_percent: 5, description: `${v.tie_top_bars} top bars` },
-        { item_name: `Rebar ${v.tie_bottom_bar}`, type: "material", formula: `${v.tie_bottom_bars} * length * ${tbw}`, waste_percent: 5, description: `${v.tie_bottom_bars} bottom bars` },
-        { item_name: `Rebar ${v.tie_link_bar}`, type: "material", formula: `(length / ${tlsp}) * ((${tbw2} + ${tbd}) * 2 + 0.2) * ${tlw}`, waste_percent: 10, description: `Links @ ${v.tie_link_spacing}mm` },
-        { item_name: "Ready Mix Concrete", type: "material", formula: `${tbw2} * ${tbd} * length`, waste_percent: 5, description: "Tie beam concrete", optional_flag: "include_concrete" },
+        { item_name: "Rebar", type: "material", formula: `${v.tie_top_bars} * length * ${ttw}`, waste_percent: 5, description: `${v.tie_top_bars} ${v.tie_top_bar} top bars` },
+        { item_name: "Rebar", type: "material", formula: `${v.tie_bottom_bars} * length * ${tbw}`, waste_percent: 5, description: `${v.tie_bottom_bars} ${v.tie_bottom_bar} bottom bars` },
+        { item_name: "Rebar", type: "material", formula: `(length / ${tlsp}) * ((${tbw2} + ${tbd}) * 2 + 0.2) * ${tlw}`, waste_percent: 10, description: `${v.tie_link_bar} links @ ${v.tie_link_spacing}mm` },
+        { item_name: "Concrete", type: "material", formula: `${tbw2} * ${tbd} * length`, waste_percent: 5, description: "Tie beam concrete", optional_flag: "include_concrete" },
         { item_name: "Formwork", type: "material", formula: `(${tbw2} + ${tbd} * 2) * length`, waste_percent: 10, description: "Formwork", optional_flag: "include_formwork" },
       ];
     }
@@ -922,9 +922,9 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const rbsp = v.ret_base_spacing / 1000;
       const rbw2 = v.ret_base_width / 1000;
       const comps: GeneratedComponent[] = [
-        { item_name: `Rebar ${v.ret_vert_bar}`, type: "material", formula: `(length / ${rvsp}) * ${rh} * ${rvw}`, waste_percent: 10, description: `Vertical bars @ ${v.ret_vert_spacing}mm` },
-        { item_name: `Rebar ${v.ret_horiz_bar}`, type: "material", formula: `(${rh} / ${rhsp}) * length * ${rhw}`, waste_percent: 10, description: `Horizontal bars @ ${v.ret_horiz_spacing}mm` },
-        { item_name: "Ready Mix Concrete", type: "material", formula: `${rt} * ${rh} * length`, waste_percent: 5, description: "Wall concrete", optional_flag: "include_concrete" },
+        { item_name: "Rebar", type: "material", formula: `(length / ${rvsp}) * ${rh} * ${rvw}`, waste_percent: 10, description: `${v.ret_vert_bar} vertical bars @ ${v.ret_vert_spacing}mm` },
+        { item_name: "Rebar", type: "material", formula: `(${rh} / ${rhsp}) * length * ${rhw}`, waste_percent: 10, description: `${v.ret_horiz_bar} horizontal bars @ ${v.ret_horiz_spacing}mm` },
+        { item_name: "Concrete", type: "material", formula: `${rt} * ${rh} * length`, waste_percent: 5, description: "Wall concrete", optional_flag: "include_concrete" },
         { item_name: "Formwork", type: "material", formula: `${rh} * length * 2`, waste_percent: 10, description: "Both faces formwork", optional_flag: "include_formwork" },
       ];
       // ret_include_base is a dependent/nested toggle (the base slab's rebar
@@ -935,8 +935,8 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // include_concrete use above (wall concrete) is unrelated to this and
       // is now always generated/tagged like any other simple flat toggle.
       if (v.ret_include_base) {
-        comps.push({ item_name: `Rebar ${v.ret_base_bar}`, type: "material", formula: `(length / ${rbsp}) * ${rbw2} * ${rbw} * 2`, waste_percent: 10, description: "Base slab bars both ways" });
-        if (v.include_concrete) comps.push({ item_name: "Ready Mix Concrete", type: "material", formula: `${rbw2} * 0.3 * length`, waste_percent: 5, description: "Base slab concrete" });
+        comps.push({ item_name: "Rebar", type: "material", formula: `(length / ${rbsp}) * ${rbw2} * ${rbw} * 2`, waste_percent: 10, description: `${v.ret_base_bar} base slab bars both ways` });
+        if (v.include_concrete) comps.push({ item_name: "Concrete", type: "material", formula: `${rbw2} * 0.3 * length`, waste_percent: 5, description: "Base slab concrete" });
       }
       return comps;
     }
@@ -945,9 +945,9 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // area isn't a recognized variable — plastering is assumed on a wall
       // face, so area is expressed as length * height.
       const comps: GeneratedComponent[] = [];
-      comps.push({ item_name: "Portland Cement", type: "material", formula: "length * height * sides * 0.06", waste_percent: 10, description: "Scratch coat cement (bags)", optional_flag: "include_scratch_coat" });
+      comps.push({ item_name: "Cement", type: "material", formula: "length * height * sides * 0.06", waste_percent: 10, description: "Scratch coat cement (bags)", optional_flag: "include_scratch_coat" });
       comps.push({ item_name: "Sand", type: "material", formula: "length * height * sides * 0.015", waste_percent: 10, description: "Scratch coat sand (m³)", optional_flag: "include_scratch_coat" });
-      comps.push({ item_name: "Portland Cement", type: "material", formula: `length * height * sides * ${(v.plaster_coats * 0.08).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster cement (bags)` });
+      comps.push({ item_name: "Cement", type: "material", formula: `length * height * sides * ${(v.plaster_coats * 0.08).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster cement (bags)` });
       comps.push({ item_name: "Sand", type: "material", formula: `length * height * sides * ${(v.plaster_coats * 0.02).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster sand (m³)` });
       comps.push({ item_name: "Labor - Plastering", type: "labor", formula: "length * height * sides * 0.5", waste_percent: 0, description: "Plastering labor (man-hours)" });
       return comps;
@@ -966,7 +966,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       };
       const tilesPerSqM = tileSizes[v.tile_size] || 10.76;
       const comps: GeneratedComponent[] = [
-        { item_name: `Ceramic Tile ${v.tile_size}`, type: "material", formula: `length * width * ${tilesPerSqM}`, waste_percent: v.tile_waste, description: `${v.tile_size} tiles with ${v.tile_waste}% waste` },
+        { item_name: "Tile", type: "material", formula: `length * width * ${tilesPerSqM}`, waste_percent: v.tile_waste, description: `${v.tile_size} tiles with ${v.tile_waste}% waste` },
       ];
       comps.push({ item_name: "Tile Adhesive", type: "material", formula: "length * width * 0.04", waste_percent: 5, description: "Tile adhesive (bags)", optional_flag: "include_adhesive" });
       comps.push({ item_name: "Tile Grout", type: "material", formula: "length * width * 0.01", waste_percent: 5, description: "Tile grout (bags)", optional_flag: "include_grout" });
@@ -995,10 +995,10 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       if (v.ceiling_type === "t-bar") {
         comps.push({ item_name: "T-Bar Grid Main Runner", type: "material", formula: "length * width / 1.2 * 0.6", waste_percent: 10, description: "Main T-bar runners" });
         comps.push({ item_name: "T-Bar Grid Cross Tee", type: "material", formula: "length * width / 0.6", waste_percent: 10, description: "Cross tees" });
-        comps.push({ item_name: `Ceiling Tile ${v.ceiling_tile_size}`, type: "material", formula: "length * width * 1.1", waste_percent: 10, description: `${v.ceiling_tile_size} ceiling tiles` });
+        comps.push({ item_name: "Ceiling Tile", type: "material", formula: "length * width * 1.1", waste_percent: 10, description: `${v.ceiling_tile_size} ceiling tiles` });
         comps.push({ item_name: "Hanger Wire", type: "material", formula: "length * width * 0.5", waste_percent: 10, description: "Hanger wire (m)" });
       } else if (v.ceiling_type === "gyp-board") {
-        comps.push({ item_name: "Gypsum Board 4x8", type: "material", formula: "length * width / 2.976", waste_percent: 10, description: "4×8 gyp board sheets" });
+        comps.push({ item_name: "Gypsum Board", type: "material", formula: "length * width / 2.976", waste_percent: 10, description: "4×8 gyp board sheets" });
         comps.push({ item_name: "Metal Furring Channel", type: "material", formula: "length * width * 1.2", waste_percent: 10, description: "Furring channels (lf)" });
         comps.push({ item_name: "Joint Compound", type: "material", formula: "length * width * 0.02", waste_percent: 5, description: "Joint compound (bags)" });
       }
@@ -1021,14 +1021,14 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const purlinSp = v.purlin_spacing / 1000; // m
       const comps: GeneratedComponent[] = [
         {
-          item_name: `${v.roof_sheet_type === "corrugated" ? "Corrugated" : "Standing Seam"} Zinc Sheet ${v.roof_sheet_length}ft`,
+          item_name: "Zinc Sheet",
           type: "material",
           formula: `length * width * 1.1 / ${sheetAreaSqM.toFixed(3)}`,
           waste_percent: 5,
-          description: `${v.roof_sheet_length}ft sheets with 10% overlap`,
+          description: `${v.roof_sheet_type === "corrugated" ? "Corrugated" : "Standing Seam"} zinc, ${v.roof_sheet_length}ft sheets with 10% overlap`,
         },
       ];
-      comps.push({ item_name: "Purlin 2×4", type: "material", formula: `(length * width / ${purlinSp.toFixed(3)}) / ${sheetWidthM.toFixed(3)}`, waste_percent: 10, description: `Purlins @ ${v.purlin_spacing}mm centres`, optional_flag: "include_purlins" });
+      comps.push({ item_name: "Purlin", type: "material", formula: `(length * width / ${purlinSp.toFixed(3)}) / ${sheetWidthM.toFixed(3)}`, waste_percent: 10, description: `2×4 purlins @ ${v.purlin_spacing}mm centres`, optional_flag: "include_purlins" });
       comps.push({ item_name: "Ridge Cap", type: "material", formula: "width * 1.1", waste_percent: 5, description: "Ridge capping", optional_flag: "include_ridge" });
       comps.push({ item_name: "Roofing Screw", type: "material", formula: "length * width * 4", waste_percent: 10, description: "Roofing screws (each)" });
       comps.push({ item_name: "Labor - Roofing", type: "labor", formula: "length * width * 0.3", waste_percent: 0, description: "Roofing labor (man-hours)" });
@@ -1042,9 +1042,9 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const ssp = v.stair_bar_spacing / 1000;
       const ssw = barWeight(v.stair_bar);
       return [
-        { item_name: `Rebar ${v.stair_bar}`, type: "material", formula: `${v.num_stairs} * (${go} + ${ri}) * (${sw2} / ${ssp}) * ${ssw}`, waste_percent: 10, description: "Main stair reinforcement" },
-        { item_name: `Rebar ${v.stair_bar}`, type: "material", formula: `${v.num_stairs} * ${sw2} * ((${go} + ${ri}) / ${ssp}) * ${ssw}`, waste_percent: 10, description: "Distribution bars" },
-        { item_name: "Ready Mix Concrete", type: "material", formula: `${v.num_stairs} * ${go} * ${ri} * ${sw2} * 0.5`, waste_percent: 5, description: "Stair concrete", optional_flag: "include_concrete" },
+        { item_name: "Rebar", type: "material", formula: `${v.num_stairs} * (${go} + ${ri}) * (${sw2} / ${ssp}) * ${ssw}`, waste_percent: 10, description: `${v.stair_bar} main stair reinforcement` },
+        { item_name: "Rebar", type: "material", formula: `${v.num_stairs} * ${sw2} * ((${go} + ${ri}) / ${ssp}) * ${ssw}`, waste_percent: 10, description: `${v.stair_bar} distribution bars` },
+        { item_name: "Concrete", type: "material", formula: `${v.num_stairs} * ${go} * ${ri} * ${sw2} * 0.5`, waste_percent: 5, description: "Stair concrete", optional_flag: "include_concrete" },
       ];
     }
 
@@ -1055,8 +1055,8 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const fsp = v.footing_spacing / 1000;
       const fsw = barWeight(v.footing_bar);
       return [
-        { item_name: `Rebar ${v.footing_bar}`, type: "material", formula: `(${fw} / ${fsp}) * ${fd} * ${fsw} * 2`, waste_percent: 10, description: "Footing bars both ways" },
-        { item_name: "Ready Mix Concrete", type: "material", formula: `${fw} * ${fd} * ${ft}`, waste_percent: 5, description: `${v.concrete_grade} footing concrete`, optional_flag: "include_concrete" },
+        { item_name: "Rebar", type: "material", formula: `(${fw} / ${fsp}) * ${fd} * ${fsw} * 2`, waste_percent: 10, description: `${v.footing_bar} footing bars both ways` },
+        { item_name: "Concrete", type: "material", formula: `${fw} * ${fd} * ${ft}`, waste_percent: 5, description: `${v.concrete_grade} footing concrete`, optional_flag: "include_concrete" },
       ];
     }
 
@@ -1068,22 +1068,22 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const slkw = barWeight(v.strip_link_bar);
       const comps: GeneratedComponent[] = [
         {
-          item_name: `Rebar ${v.strip_long_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `${v.strip_long_bars} * length * ${slw}`,
           waste_percent: 5,
-          description: `${v.strip_long_bars} longitudinal bars running along footing`,
+          description: `${v.strip_long_bars} ${v.strip_long_bar} longitudinal bars running along footing`,
         },
         {
-          item_name: `Rebar ${v.strip_link_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `(length / ${slsp}) * (${sw} * 2 + ${sd} * 2 + 0.2) * ${slkw}`,
           waste_percent: 10,
-          description: `Cross bars/links @ ${v.strip_link_spacing}mm spacing`,
+          description: `${v.strip_link_bar} cross bars/links @ ${v.strip_link_spacing}mm spacing`,
         },
       ];
       comps.push({
-        item_name: "Ready Mix Concrete",
+        item_name: "Concrete",
         type: "material",
         formula: `${sw} * ${sd} * length`,
         waste_percent: 5,
@@ -1141,14 +1141,14 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
           description: "Floor + ceiling track (lf)",
         },
         {
-          item_name: `Metal Stud ${v.stud_size}`,
+          item_name: "Metal Stud",
           type: "material",
           formula: `(length / ${studSp}) * height`,
           waste_percent: 10,
-          description: `Studs @ ${v.stud_spacing}mm centres`,
+          description: `${v.stud_size} studs @ ${v.stud_spacing}mm centres`,
         },
         {
-          item_name: "Gypsum Board 4x8",
+          item_name: "Gypsum Board",
           type: "material",
           formula: `length * height * sides * ${layers} / 2.976`,
           waste_percent: 10,
@@ -1235,11 +1235,11 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const fps = v.fence_post_spacing / 1000;
       const comps: GeneratedComponent[] = [
         {
-          item_name: `Chain Link ${v.chain_link_gauge} ${v.fence_height}mm`,
+          item_name: "Chain Link Fabric",
           type: "material",
           formula: "length * 1.05",
           waste_percent: 5,
-          description: "Chain link fabric (lf with 5% overlap)",
+          description: `${v.chain_link_gauge}, ${v.fence_height}mm high, lf with 5% overlap`,
         },
         {
           item_name: "Fence Post",
@@ -1258,7 +1258,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         optional_flag: "include_top_rail",
       });
       comps.push({
-        item_name: "Ready Mix Concrete",
+        item_name: "Concrete",
         type: "material",
         formula: `(length / ${fps} + 1) * 0.05`,
         waste_percent: 10,
@@ -1302,15 +1302,15 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // as include_compaction/ret_include_base above. Stays exactly as before.
       if (v.include_mesh) {
         comps.push({
-          item_name: `BRC Mesh ${v.mesh_type}`,
+          item_name: "Wire Mesh",
           type: "material",
           formula: "length * width * 1.1 / 14.4",
           waste_percent: 10,
-          description: "BRC mesh sheets (2.4×6m each)",
+          description: `BRC mesh ${v.mesh_type} sheets (2.4×6m each)`,
         });
       } else {
         comps.push({
-          item_name: `Rebar ${v.ground_slab_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `length * width / ${gssp} * ${gsbw} * 2`,
           waste_percent: 10,
@@ -1318,7 +1318,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         });
       }
       comps.push({
-        item_name: "Ready Mix Concrete",
+        item_name: "Concrete",
         type: "material",
         formula: `length * width * ${gst}`,
         waste_percent: 5,
@@ -1344,14 +1344,14 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const totalWallArea = (sl * sd * 2) + (sw2 * sd * 2) + (sl * sw2);
       const comps: GeneratedComponent[] = [
         {
-          item_name: `Rebar ${v.septic_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `${(totalWallArea / sbsp * sbw * 2).toFixed(3)}`,
           waste_percent: 10,
-          description: "Reinforcement for walls + base both ways",
+          description: `${v.septic_bar} reinforcement for walls + base both ways`,
         },
         {
-          item_name: "Ready Mix Concrete",
+          item_name: "Concrete",
           type: "material",
           formula: `${(totalWallArea * st).toFixed(3)}`,
           waste_percent: 5,
@@ -1366,15 +1366,15 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         },
       ];
       comps.push({
-        item_name: `Rebar ${v.septic_bar}`,
+        item_name: "Rebar",
         type: "material",
         formula: `${((sl * sw2) / sbsp * sbw * 2).toFixed(3)}`,
         waste_percent: 10,
-        description: "Cover slab reinforcement",
+        description: `${v.septic_bar} cover slab reinforcement`,
         optional_flag: "include_cover_slab",
       });
       comps.push({
-        item_name: "Ready Mix Concrete",
+        item_name: "Concrete",
         type: "material",
         formula: `${(sl * sw2 * 0.15).toFixed(3)}`,
         waste_percent: 5,
@@ -1392,14 +1392,14 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const perim = (dw + dd * 2);
       const comps: GeneratedComponent[] = [
         {
-          item_name: `Rebar ${v.drain_bar}`,
+          item_name: "Rebar",
           type: "material",
           formula: `length * ${perim} * ${dbw} * 2`,
           waste_percent: 10,
-          description: "U-shaped drain reinforcement",
+          description: `${v.drain_bar} U-shaped drain reinforcement`,
         },
         {
-          item_name: "Ready Mix Concrete",
+          item_name: "Concrete",
           type: "material",
           formula: `length * ${perim} * ${dt}`,
           waste_percent: 5,
@@ -1437,18 +1437,18 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // existence controlled by optional_flag instead.
       return [
         {
-          item_name: `${v.water_pipe_material} Pipe ${v.water_pipe_size}`,
+          item_name: "Pipe",
           type: "material",
           formula: `length * 1.1`,
           waste_percent: 10,
           description: `${v.water_pipe_size} ${v.water_pipe_material} supply pipe (lf)`,
         },
         {
-          item_name: `Pipe Fitting ${v.water_pipe_size}`,
+          item_name: "Pipe Fitting",
           type: "material",
           formula: `length * 0.3`,
           waste_percent: 10,
-          description: "Elbows, tees, couplings (est. 30% of pipe length)",
+          description: `${v.water_pipe_size} elbows, tees, couplings (est. 30% of pipe length)`,
           optional_flag: "water_include_fittings",
         },
         {
@@ -1464,26 +1464,26 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     case "drainage_piping": {
       return [
         {
-          item_name: `${v.drain_pipe_material} Soil Pipe ${v.drain_pipe_size}`,
+          item_name: "Soil Pipe",
           type: "material",
           formula: "length * 1.1",
           waste_percent: 10,
           description: `${v.drain_pipe_size} ${v.drain_pipe_material} drainage pipe (lf)`,
         },
         {
-          item_name: `Drainage Fitting ${v.drain_pipe_size}`,
+          item_name: "Drainage Fitting",
           type: "material",
           formula: "length * 0.25",
           waste_percent: 10,
-          description: "Bends, junctions, reducers",
+          description: `${v.drain_pipe_size} bends, junctions, reducers`,
           optional_flag: "drain_include_fittings",
         },
         {
-          item_name: `PVC Vent Pipe 2"`,
+          item_name: "Vent Pipe",
           type: "material",
           formula: `${v.drain_num_wc + v.drain_num_basins} * 3`,
           waste_percent: 5,
-          description: "Vent stack per fixture",
+          description: `PVC 2" vent stack per fixture`,
           optional_flag: "drain_include_vent",
         },
         {
@@ -1539,14 +1539,14 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     case "electrical_wiring": {
       return [
         {
-          item_name: `${v.wire_size} Wire`,
+          item_name: "Wire",
           type: "material",
           formula: `${v.num_circuits} * length * 1.2`,
           waste_percent: 10,
           description: `${v.wire_size} electrical wire — ${v.num_circuits} circuits`,
         },
         {
-          item_name: `${v.conduit_type} Conduit`,
+          item_name: "Conduit",
           type: "material",
           formula: `${v.num_circuits} * length * 1.1`,
           waste_percent: 10,
@@ -1621,7 +1621,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         optional_flag: "door_include_frame",
       });
       comps.push({
-        item_name: `Door ${v.door_material === "solid-wood" ? "Solid Wood" : v.door_material === "hollow-core" ? "Hollow Core" : "Steel"} ${v.door_width}×${v.door_height}`,
+        item_name: "Door",
         type: "material",
         formula: "count",
         waste_percent: 0,
@@ -1658,7 +1658,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const wh = v.win_height / 1000;
       const comps: GeneratedComponent[] = [
         {
-          item_name: `Aluminum Window ${v.win_type} ${v.win_width}×${v.win_height}`,
+          item_name: "Window",
           type: "material",
           formula: "count",
           waste_percent: 0,
@@ -1694,18 +1694,18 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const lw = v.louv_width / 1000;
       return [
         {
-          item_name: `Louvre Frame ${v.louv_width}×${v.louv_height}`,
+          item_name: "Louvre Frame",
           type: "material",
           formula: "count",
           waste_percent: 0,
           description: `${v.louv_width}×${v.louv_height}mm louvre frame`,
         },
         {
-          item_name: `Louvre ${v.louv_blade_material === "glass" ? "Glass" : "Aluminum"} Blade`,
+          item_name: "Louvre Blade",
           type: "material",
           formula: `count * ${v.louv_num_blades}`,
           waste_percent: 5,
-          description: `${v.louv_num_blades} blades per window`,
+          description: `${v.louv_num_blades} ${v.louv_blade_material === "glass" ? "glass" : "aluminum"} blades per window`,
         },
         {
           item_name: "Louvre Operator",
@@ -1734,11 +1734,11 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const purlinSp = v.truss_purlin_spacing / 1000;
       return [
         {
-          item_name: `Angle Iron ${v.truss_steel_size}`,
+          item_name: "Angle Iron",
           type: "material",
           formula: `(length / ${trussSpacingM}) * ${totalTrussLength.toFixed(3)}`,
           waste_percent: 10,
-          description: `Steel for ${v.truss_type} trusses @ ${v.truss_spacing}mm spacing`,
+          description: `${v.truss_steel_size} steel for ${v.truss_type} trusses @ ${v.truss_spacing}mm spacing`,
         },
         {
           item_name: "Bolt & Nut Set",
@@ -1755,19 +1755,19 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
           description: "Gusset plates per truss",
         },
         {
-          item_name: "Purlin 2×4",
+          item_name: "Purlin",
           type: "material",
           formula: `(${rafterLength.toFixed(3)} * 2 / ${purlinSp}) * length`,
           waste_percent: 10,
-          description: `Purlins @ ${v.truss_purlin_spacing}mm`,
+          description: `2×4 purlins @ ${v.truss_purlin_spacing}mm`,
           optional_flag: "truss_include_purlins",
         },
         {
-          item_name: `Angle Iron ${v.truss_steel_size}`,
+          item_name: "Angle Iron",
           type: "material",
           formula: "length * 1.05",
           waste_percent: 5,
-          description: "Ridge beam",
+          description: `${v.truss_steel_size} ridge beam`,
           optional_flag: "truss_include_ridge",
         },
         {
@@ -1793,8 +1793,8 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         optional_flag: "paving_sub_base",
       });
       if (v.paving_type === "concrete") {
-        comps.push({ item_name: "Ready Mix Concrete", type: "material", formula: `length * width * ${pt}`, waste_percent: 5, description: `${v.paving_thickness}mm concrete slab` });
-        comps.push({ item_name: `BRC Mesh 4x4 W4`, type: "material", formula: `length * width * 1.1 / 14.4`, waste_percent: 10, description: "BRC mesh reinforcement" });
+        comps.push({ item_name: "Concrete", type: "material", formula: `length * width * ${pt}`, waste_percent: 5, description: `${v.paving_thickness}mm concrete slab` });
+        comps.push({ item_name: "Wire Mesh", type: "material", formula: `length * width * 1.1 / 14.4`, waste_percent: 10, description: "BRC 4x4 W4 mesh reinforcement" });
       } else if (v.paving_type === "pavers") {
         comps.push({ item_name: "Concrete Paver", type: "material", formula: `length * width * 1.05 / 0.0929`, waste_percent: 5, description: "Paving blocks (each)" });
         comps.push({ item_name: "Sand Bedding", type: "material", formula: `length * width * 0.05`, waste_percent: 10, description: "50mm sand bedding (m³)" });
@@ -1825,14 +1825,14 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const mixFactor = v.rough_render_mix === "1:3" ? 1 : 0.8;
       return [
         {
-          item_name: "Portland Cement",
+          item_name: "Cement",
           type: "material",
           formula: `length * height * sides * ${(0.673 * thicknessFactor * mixFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for ${v.rough_render_mix} render at ${v.rough_render_thickness}mm (bags)`,
         },
         {
-          item_name: "Sharp Sand",
+          item_name: "Sand",
           type: "material",
           formula: `length * height * sides * ${(0.028 * thicknessFactor).toFixed(4)}`,
           waste_percent: 10,
@@ -1861,14 +1861,14 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const cementPerSqM = 0.4487;
       return [
         {
-          item_name: "Portland Cement",
+          item_name: "Cement",
           type: "material",
           formula: `length * height * sides * ${(cementPerSqM * thicknessFactor * mixFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for ${v.float_mix} float coat at ${v.float_thickness}mm (bags)`,
         },
         {
-          item_name: "Fine Sand",
+          item_name: "Sand",
           type: "material",
           formula: `length * height * sides * ${(0.019 * thicknessFactor).toFixed(4)}`,
           waste_percent: 10,
@@ -1895,7 +1895,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
           description: `Gypsum skim at ${v.skim_thickness}mm (bags)`,
         }] : [
           {
-            item_name: "Portland Cement",
+            item_name: "Cement",
             type: "material",
             formula: "length * height * sides * 0.025",
             waste_percent: 10,
@@ -1924,18 +1924,18 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const mixFactor = v.screed_mix === "1:3" ? 1 : 0.8;
       const comps: GeneratedComponent[] = [
         {
-          item_name: "Portland Cement",
+          item_name: "Cement",
           type: "material",
           formula: `length * width * ${(st * 300 * mixFactor).toFixed(3)}`,
           waste_percent: 10,
           description: `Cement for ${v.screed_mix} screed at ${v.screed_thickness}mm (bags)`,
         },
         {
-          item_name: "Sharp Sand",
+          item_name: "Sand",
           type: "material",
           formula: `length * width * ${st.toFixed(4)}`,
           waste_percent: 10,
-          description: `Sand for floor screed (m³)`,
+          description: `Sharp sand for floor screed (m³)`,
         },
       ];
       comps.push({
@@ -1976,21 +1976,21 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const cementPerSqM = 0.2692;
       return [
         {
-          item_name: "Portland Cement",
+          item_name: "Cement",
           type: "material",
           formula: `length * height * sides * ${(cementPerSqM * wpFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for waterproof render ${v.waterproof_coats} coat(s) (bags)`,
         },
         {
-          item_name: "Fine Sand",
+          item_name: "Sand",
           type: "material",
           formula: `length * height * sides * ${(0.019 * wpFactor).toFixed(4)}`,
           waste_percent: 10,
-          description: "Sand for waterproof render (m³)",
+          description: "Fine sand for waterproof render (m³)",
         },
         {
-          item_name: `Waterproof Additive (${v.waterproof_additive})`,
+          item_name: "Waterproofing Additive",
           type: "material",
           formula: `length * height * sides * ${(0.15 * v.waterproof_coats).toFixed(3)}`,
           waste_percent: 5,
@@ -2009,18 +2009,18 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     case "tyrolean": {
       return [
         {
-          item_name: "Portland Cement",
+          item_name: "Cement",
           type: "material",
           formula: `length * height * sides * ${(0.04 * v.tyrolean_coats).toFixed(3)}`,
           waste_percent: 15,
           description: `Cement for tyrolean ${v.tyrolean_coats} coat(s) (bags)`,
         },
         {
-          item_name: "Fine Aggregate / Pea Gravel",
+          item_name: "Aggregate",
           type: "material",
           formula: `length * height * sides * ${(0.012 * v.tyrolean_coats).toFixed(4)}`,
           waste_percent: 15,
-          description: "Fine aggregate for tyrolean texture (m³)",
+          description: "Fine aggregate/pea gravel for tyrolean texture (m³)",
         },
         ...(v.tyrolean_type === "machine" ? [{
           item_name: "Tyrolean Machine Hire",
@@ -2050,7 +2050,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const tilesPerSqM = tileSizeMap[v.wall_tile_size] || 19.38;
       const comps: GeneratedComponent[] = [
         {
-          item_name: `Ceramic Wall Tile ${v.wall_tile_size}"`,
+          item_name: "Wall Tile",
           type: "material",
           formula: `length * height * sides * ${tilesPerSqM} * ${1 + v.wall_tile_waste / 100}`,
           waste_percent: 0,
@@ -2164,42 +2164,6 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
       </button>
     </label>
   );
-}
-
-// ─── Rate Library auto-match ────────────────────────────────────────────────
-// Given a generated component's name, try to find a real cost_items row for
-// it. No company_id filter — matches AssembliesPage.tsx's own item-picker
-// query (see CostItemPicker), relying on RLS (company_id IS NULL OR own
-// company) to return the right rows. Scoping this to company_id previously
-// excluded the Rate Library's seeded items entirely (almost all global,
-// company_id IS NULL), which is the real reason auto-match rates were low.
-async function findMatch(itemName: string): Promise<{ id: string; item_name: string } | null> {
-  // Strategy 1: exact item_name match
-  const { data: exact } = await supabase
-    .from("cost_items").select("id,item_name").ilike("item_name", itemName).limit(1);
-  if (exact?.[0]) return exact[0];
-
-  // Strategy 2: match base name (e.g. "Rebar" for "Rebar #4") against variant/grade
-  const baseName = itemName.split(" ")[0];
-  const sizeSpec = itemName.split(" ").slice(1).join(" ");
-  const { data: byBase } = await supabase
-    .from("cost_items").select("id,item_name,variant,grade")
-    .ilike("item_name", `%${baseName}%`).limit(10);
-  const match = (byBase as any[] | null)?.find(i =>
-    (i.variant || "").toLowerCase().includes(sizeSpec.toLowerCase()) ||
-    (i.grade || "").toLowerCase().includes(sizeSpec.toLowerCase()) ||
-    i.item_name.toLowerCase().includes(sizeSpec.toLowerCase())
-  );
-  if (match) return { id: match.id, item_name: match.item_name };
-
-  // Strategy 3: partial name match on any significant word
-  const words = itemName.split(" ").filter(w => w.length > 2);
-  for (const word of words) {
-    const { data: partial } = await supabase
-      .from("cost_items").select("id,item_name").ilike("item_name", `%${word}%`).limit(1);
-    if (partial?.[0]) return partial[0];
-  }
-  return null;
 }
 
 // Element types whose generateComponents() output references a bare `sides`
@@ -2401,7 +2365,6 @@ export default function AssemblyWizard({
   // Review step (still called "preview" internally) state — populated by
   // runReview() when the user leaves "configure", never mutated until then.
   const [reviewComponents, setReviewComponents] = useState<ReviewComponent[]>([]);
-  const [matching, setMatching] = useState(false);
   // Index into reviewComponents currently being (re)matched via CostItemPicker,
   // or null when the picker is closed.
   const [pickerOpenFor, setPickerOpenFor] = useState<number | null>(null);
@@ -2409,8 +2372,9 @@ export default function AssemblyWizard({
 
   // Loaded once, not scoped to company_id — matches AssembliesPage.tsx's own
   // item list (see CostItemPicker), relying on RLS to return global + own-
-  // company items. Needed here only for the picker; the auto-match strategies
-  // in findMatch() run their own targeted queries instead of filtering this list.
+  // company items. This is now the ONLY path to matching a component to a
+  // real Rate Library item (auto-matching was removed entirely — every
+  // component starts unmatched and must be resolved here, manually).
   useEffect(() => {
     let alive = true;
     supabase.from("cost_items")
@@ -2543,28 +2507,25 @@ export default function AssemblyWizard({
     return options;
   }
 
-  // Runs the Rate Library auto-match for every generated component and moves
-  // to the review step — no database writes here. The assembly itself isn't
-  // created until the user actually clicks Save on the review step, so
-  // cancelling out of review (or coming back to reconfigure) never leaves a
-  // half-created assembly behind.
-  async function runReview() {
-    setMatching(true);
-    try {
-      const resolved = await Promise.all(components.map(async (comp): Promise<ReviewComponent> => {
-        const found = await findMatch(comp.item_name);
-        return {
-          ...comp,
-          cost_item_id: found?.id ?? null,
-          matched_item_name: found?.item_name ?? null,
-          match_status: found ? "auto_matched" : "unmatched",
-        };
-      }));
-      setReviewComponents(resolved);
-      setStep("preview");
-    } finally {
-      setMatching(false);
-    }
+  // Moves to the review step — no database writes here, and no auto-matching:
+  // every generated component starts fully unmatched, requiring a deliberate
+  // manual pick via CostItemPicker (Search Rate Library) or an explicit Skip
+  // before Save unlocks. Auto-matching (findMatch(), removed) used to guess a
+  // Rate Library item from the component's name via three string-matching
+  // strategies — confirmed this session to produce real wrong matches (Sand
+  // -> "Sanded Grout", Portland Cement -> "PVC Cement Solvent") that were easy
+  // to miss in the review table. The assembly itself isn't created until the
+  // user actually clicks Save on the review step, so cancelling out of review
+  // (or coming back to reconfigure) never leaves a half-created assembly
+  // behind — unchanged by this.
+  function runReview() {
+    setReviewComponents(components.map((comp): ReviewComponent => ({
+      ...comp,
+      cost_item_id: null,
+      matched_item_name: null,
+      match_status: "unmatched",
+    })));
+    setStep("preview");
   }
 
   const unresolvedCount = reviewComponents.filter(c => c.match_status === "unmatched").length;
@@ -3823,11 +3784,13 @@ export default function AssemblyWizard({
           )}
 
           {step === "configure" && (
+            // runReview() is now a plain synchronous state update (no
+            // auto-matching, no DB round trip) — no loading state needed.
             <button
               onClick={runReview}
-              disabled={!values.name.trim() || matching}
+              disabled={!values.name.trim()}
               className="flex items-center gap-2 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
-              {matching ? "Matching against Rate Library…" : <>Preview<ChevronRight size={16}/></>}
+              Preview<ChevronRight size={16}/>
             </button>
           )}
 
