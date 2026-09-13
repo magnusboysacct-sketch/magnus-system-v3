@@ -778,9 +778,11 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
 
     case "block_wall": {
       // area isn't a recognized variable — a wall's area is length * height.
-      const blocksPerSqFt = 1.125;
+      // Standard 8"x16" block face = 0.8889 sqft -> 1.125 blocks/sqft, converted
+      // to metric (length/height are meters): 1.125 / 0.09290304 = 12.1094 blocks/m².
+      const blocksPerSqM = 12.1094;
       const comps: GeneratedComponent[] = [
-        { item_name: `Concrete Block ${v.block_size}`, type: "material", formula: `length * height * ${blocksPerSqFt.toFixed(4)}`, waste_percent: 5, description: `${v.block_size} hollow blocks` },
+        { item_name: `Concrete Block ${v.block_size}`, type: "material", formula: `length * height * ${blocksPerSqM.toFixed(4)}`, waste_percent: 5, description: `${v.block_size} hollow blocks` },
         ...(v.include_mortar ? [{ item_name: "Portland Cement", type: "material", formula: "length * height * 0.08", waste_percent: 10, description: "Mortar cement (bags)" }] : []),
         { item_name: "Sand", type: "material", formula: "length * height * 0.025", waste_percent: 10, description: "Mortar sand (m³)" },
       ];
@@ -900,12 +902,17 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     case "tiling": {
       // area isn't a recognized variable — tiling is assumed on a floor
       // plan, so area is expressed as length * width.
+      // Was a flat 1.1 tiles/sqft for every size (wrong — coverage depends
+      // on actual tile face area) applied directly to metric length*width
+      // with no unit conversion at all. Now geometrically derived per size
+      // (1 / face-area-in-sqm) — e.g. 12x12in face = 1 sqft = 0.0929 sqm,
+      // so tiles/m² = 1/0.0929 = 10.76.
       const tileSizes: Record<string, number> = {
-        "12x12": 1.1, "18x18": 1.1, "24x24": 1.1, "12x24": 1.1
+        "12x12": 10.76, "18x18": 4.78, "24x24": 2.69, "12x24": 5.38
       };
-      const tilesPerSqFt = tileSizes[v.tile_size] || 1.1;
+      const tilesPerSqM = tileSizes[v.tile_size] || 10.76;
       const comps: GeneratedComponent[] = [
-        { item_name: `Ceramic Tile ${v.tile_size}`, type: "material", formula: `length * width * ${tilesPerSqFt}`, waste_percent: v.tile_waste, description: `${v.tile_size} tiles with ${v.tile_waste}% waste` },
+        { item_name: `Ceramic Tile ${v.tile_size}`, type: "material", formula: `length * width * ${tilesPerSqM}`, waste_percent: v.tile_waste, description: `${v.tile_size} tiles with ${v.tile_waste}% waste` },
       ];
       if (v.include_adhesive) comps.push({ item_name: "Tile Adhesive", type: "material", formula: "length * width * 0.04", waste_percent: 5, description: "Tile adhesive (bags)" });
       if (v.include_grout) comps.push({ item_name: "Tile Grout", type: "material", formula: "length * width * 0.01", waste_percent: 5, description: "Tile grout (bags)" });
@@ -916,10 +923,13 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     case "painting": {
       // area isn't a recognized variable — painting is assumed on a wall
       // face, so area is expressed as length * height.
-      const gallonsPerSqFt = 1 / v.paint_coverage;
+      // v.paint_coverage is entered in sf/gal (a live wizard variable — see
+      // its "sf/gal" field label), so it must be converted to gal/m² here
+      // rather than applied directly to metric length*height like before.
+      const gallonsPerSqM = 1 / (v.paint_coverage * 0.09290304);
       const comps: GeneratedComponent[] = [];
-      if (v.include_primer) comps.push({ item_name: "Primer", type: "material", formula: `length * height * sides * ${(1/350).toFixed(5)}`, waste_percent: 5, description: "Primer (1 gal / 350 sf)" });
-      comps.push({ item_name: "Paint", type: "material", formula: `length * height * sides * ${(gallonsPerSqFt * v.paint_coats).toFixed(5)}`, waste_percent: 5, description: `${v.paint_coats} coats paint (gallons)` });
+      if (v.include_primer) comps.push({ item_name: "Primer", type: "material", formula: `length * height * sides * ${(1 / (350 * 0.09290304)).toFixed(5)}`, waste_percent: 5, description: "Primer (1 gal / 350 sf)" });
+      comps.push({ item_name: "Paint", type: "material", formula: `length * height * sides * ${(gallonsPerSqM * v.paint_coats).toFixed(5)}`, waste_percent: 5, description: `${v.paint_coats} coats paint (gallons)` });
       comps.push({ item_name: "Labor - Painting", type: "labor", formula: "length * height * sides * 0.2", waste_percent: 0, description: "Painting labor (man-hours)" });
       return comps;
     }
@@ -947,19 +957,25 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // expressed as length * width.
       const sheetLength = v.roof_sheet_length; // ft
       const sheetWidthFt = 2.667; // standard 32" = 2.667ft
-      const sheetAreaSqFt = sheetLength * sheetWidthFt;
+      // The sheet's own physical dimensions are stated in feet (real sheets
+      // are sold by the foot), but length*width above is metric — divide by
+      // the sheet's area in sqm, not sqft, or the sheet count comes out
+      // ~10.76x too low.
+      const sheetLengthM = sheetLength * 0.3048;
+      const sheetWidthM = sheetWidthFt * 0.3048; // 2.667ft = 0.8128m
+      const sheetAreaSqM = sheetLengthM * sheetWidthM;
       const purlinSp = v.purlin_spacing / 1000; // m
       const comps: GeneratedComponent[] = [
         {
           item_name: `${v.roof_sheet_type === "corrugated" ? "Corrugated" : "Standing Seam"} Zinc Sheet ${v.roof_sheet_length}ft`,
           type: "material",
-          formula: `length * width * 1.1 / ${sheetAreaSqFt.toFixed(3)}`,
+          formula: `length * width * 1.1 / ${sheetAreaSqM.toFixed(3)}`,
           waste_percent: 5,
           description: `${v.roof_sheet_length}ft sheets with 10% overlap`,
         },
       ];
       if (v.include_purlins) {
-        comps.push({ item_name: "Purlin 2×4", type: "material", formula: `(length * width / ${purlinSp.toFixed(3)}) / ${sheetWidthFt.toFixed(3)}`, waste_percent: 10, description: `Purlins @ ${v.purlin_spacing}mm centres` });
+        comps.push({ item_name: "Purlin 2×4", type: "material", formula: `(length * width / ${purlinSp.toFixed(3)}) / ${sheetWidthM.toFixed(3)}`, waste_percent: 10, description: `Purlins @ ${v.purlin_spacing}mm centres` });
       }
       if (v.include_ridge) {
         comps.push({ item_name: "Ridge Cap", type: "material", formula: "width * 1.1", waste_percent: 5, description: "Ridge capping" });
@@ -1131,18 +1147,22 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // assembly instance) with no data link between them, so this template
       // has no way to know how the partition it's painting was configured.
       // The user re-states "both sides" here if that's what they're painting.
+      // Same 350/400 sf/gal coverage assumptions as "painting" — converted
+      // to gal/m² the same way (1/350 and 1/400 are sqft-denominated, so
+      // divide by 0.09290304 rather than applying them directly to metric
+      // length*height like before).
       const comps: GeneratedComponent[] = [];
       if (v.include_pva_sealer) comps.push({
         item_name: "PVA Sealer",
         type: "material",
-        formula: `length * height * sides * ${(1/350).toFixed(5)}`,
+        formula: `length * height * sides * ${(1 / (350 * 0.09290304)).toFixed(5)}`,
         waste_percent: 5,
         description: "PVA sealer coat (1 gal / 350 sf)",
       });
       comps.push({
         item_name: "Paint",
         type: "material",
-        formula: `length * height * sides * ${((1/400) * v.drywall_paint_coats).toFixed(5)}`,
+        formula: `length * height * sides * ${((1 / (400 * 0.09290304)) * v.drywall_paint_coats).toFixed(5)}`,
         waste_percent: 5,
         description: `${v.drywall_paint_coats} coats paint (gallons)`,
       });
@@ -1717,15 +1737,18 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
 
     case "rough_render": {
       // Mix ratio determines cement:sand quantities
-      // 1:3 mix — 1 bag cement covers approx 8 sf at 15mm thick
-      // Sand — approx 0.028 m³ per m² at 15mm
+      // 1:3 mix — 1 bag cement covers approx 16 sf at 15mm thick (confirmed
+      // real trade rate), converted to metric: 1/16 = 0.0625 bags/sqft,
+      // / 0.09290304 = 0.673 bags/m². Was previously a broken 0.086 constant
+      // applied directly to metric length*height with no conversion at all.
+      // Sand — approx 0.028 m³ per m² at 15mm (already metric, unaffected)
       const thicknessFactor = v.rough_render_thickness / 15;
       const mixFactor = v.rough_render_mix === "1:3" ? 1 : 0.8;
       return [
         {
           item_name: "Portland Cement",
           type: "material",
-          formula: `length * height * sides * ${(0.086 * thicknessFactor * mixFactor).toFixed(4)}`,
+          formula: `length * height * sides * ${(0.673 * thicknessFactor * mixFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for ${v.rough_render_mix} render at ${v.rough_render_thickness}mm (bags)`,
         },
@@ -1920,16 +1943,19 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     }
 
     case "wall_tiling": {
-      // Tiles per sf based on size
+      // Tiles per m² based on size (was tiles/sqft applied directly to
+      // metric length*height with no conversion — face-area-exact per
+      // size, so this is a pure unit conversion: e.g. 4x4in face = 1/9 sqft
+      // -> 9 tiles/sqft -> 9 / 0.09290304 = 96.90 tiles/m²).
       const tileSizeMap: Record<string, number> = {
-        "4x4": 9, "6x6": 4, "8x10": 1.8, "12x24": 0.5,
+        "4x4": 96.90, "6x6": 43.07, "8x10": 19.38, "12x24": 5.38,
       };
-      const tilesPerSqFt = tileSizeMap[v.wall_tile_size] || 1.8;
+      const tilesPerSqM = tileSizeMap[v.wall_tile_size] || 19.38;
       const comps: GeneratedComponent[] = [
         {
           item_name: `Ceramic Wall Tile ${v.wall_tile_size}"`,
           type: "material",
-          formula: `length * height * sides * ${tilesPerSqFt} * ${1 + v.wall_tile_waste / 100}`,
+          formula: `length * height * sides * ${tilesPerSqM} * ${1 + v.wall_tile_waste / 100}`,
           waste_percent: 0,
           description: `${v.wall_tile_size}" wall tiles with ${v.wall_tile_waste}% waste`,
         },
