@@ -1772,11 +1772,19 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     case "float_coat": {
       const thicknessFactor = v.float_thickness / 10;
       const mixFactor = v.float_mix === "1:3" ? 1 : 0.8;
+      // ESTIMATE, not a confirmed trade rate: scaled proportionally from rough_render's
+      // user-confirmed real coverage (16 sqft/bag at 15mm = 0.673 bags/m²), assuming
+      // roughly linear cement usage per mm thickness. Replace with a real confirmed
+      // rate if/when available. (0.673 / 15 * 10 = 0.4487 bags/m² at this template's
+      // 10mm reference thickness.) Was previously 0.057 — the same suspect,
+      // unconverted-looking constant found in waterproof_render, sharing no real
+      // derivation with rough_render's now-corrected rate.
+      const cementPerSqM = 0.4487;
       return [
         {
           item_name: "Portland Cement",
           type: "material",
-          formula: `length * height * sides * ${(0.057 * thicknessFactor * mixFactor).toFixed(4)}`,
+          formula: `length * height * sides * ${(cementPerSqM * thicknessFactor * mixFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for ${v.float_mix} float coat at ${v.float_thickness}mm (bags)`,
         },
@@ -1877,11 +1885,20 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
 
     case "waterproof_render": {
       const wpFactor = v.waterproof_coats * (v.waterproof_thickness / 6);
+      // ESTIMATE, not a confirmed trade rate: scaled proportionally from rough_render's
+      // user-confirmed real coverage (16 sqft/bag at 15mm = 0.673 bags/m²), assuming
+      // roughly linear cement usage per mm thickness. Replace with a real confirmed
+      // rate if/when available. (0.673 / 15 * 6 = 0.2692 bags/m² at this template's
+      // 6mm reference thickness.) Was previously 0.057 — the same suspect,
+      // unconverted-looking constant found in float_coat (this template's formula was
+      // copy-pasted from it), sharing no real derivation with rough_render's now-
+      // corrected rate.
+      const cementPerSqM = 0.2692;
       return [
         {
           item_name: "Portland Cement",
           type: "material",
-          formula: `length * height * sides * ${(0.057 * wpFactor).toFixed(4)}`,
+          formula: `length * height * sides * ${(cementPerSqM * wpFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for waterproof render ${v.waterproof_coats} coat(s) (bags)`,
         },
