@@ -97,6 +97,7 @@ interface WizardValues {
   slab_bar: string;
   block_size: string;
   include_mortar: boolean;
+  include_pocket_fill: boolean;
   num_stairs: number;
   going: number;
   riser: number;
@@ -381,7 +382,7 @@ const DEFAULT_VALUES: WizardValues = {
   bottom_bars: 3, bottom_bar_size: "#5",
   link_spacing: 150,
   slab_thickness: 150, bar_spacing_x: 200, bar_spacing_y: 200, slab_bar: "#4",
-  block_size: "6\"", include_mortar: true,
+  block_size: "6\"", include_mortar: true, include_pocket_fill: true,
   num_stairs: 12, going: 250, riser: 175, stair_width: 1200,
   stair_bar: "#4", stair_bar_spacing: 150,
   include_concrete: true, concrete_grade: "3000 PSI",
@@ -802,6 +803,36 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         { item_name: `Concrete Block ${v.block_size}`, type: "material", formula: `length * height * ${blocksPerSqM.toFixed(4)}`, waste_percent: 5, description: `${v.block_size} hollow blocks` },
         { item_name: "Portland Cement", type: "material", formula: "length * height * 0.08", waste_percent: 10, description: "Mortar cement (bags)", optional_flag: "include_mortar" },
         { item_name: "Sand", type: "material", formula: "length * height * 0.025", waste_percent: 10, description: "Mortar sand (m³)" },
+        // Pocket/core fill — grout filling the hollow cores of the blocks,
+        // standard practice for a fully-grouted reinforced block wall. A
+        // structurally separate material use from the mortar above (mortar
+        // bonds the blocks to each other; this fills their hollow interior),
+        // so it's its own set of line items rather than merged into the
+        // mortar cement/sand lines even though both draw on the same
+        // materials.
+        //
+        // No `sides` multiplier here, unlike plastering/painting/tiling's
+        // both-sides toggle — those double because you're finishing two
+        // separate FACES of the wall; pocket fill is the wall's own core
+        // volume (length × height × wall thickness), which exists exactly
+        // once regardless of how many faces get plastered/painted
+        // afterward. block_wall has no `sides` concept in its formulas at
+        // all (confirmed: it isn't one of the both-sides templates), and
+        // even if it were, sides wouldn't apply to this component.
+        //
+        // Rates are CALCULATED, not a raw unconverted guess: published
+        // industry figure of 0.93 yd³ grout per 100 sqft of wall for a
+        // fully-grouted standard 6" CMU wall, combined with the user's
+        // confirmed 1:2:3 (cement:sand:gravel) mix ratio, a standard 1.54
+        // dry-volume factor, and a standard ~0.035 m³ per 50kg cement bag —
+        // cross-checked against the user's own field experience as
+        // reasonable. Yields (per m² of wall face):
+        //   Cement: 0.57 bags/m²
+        //   Sand:   0.039 m³/m²
+        //   Gravel: 0.059 m³/m²
+        { item_name: "Portland Cement", type: "material", formula: "length * height * 0.57", waste_percent: 10, description: "Pocket/core fill cement (bags)", optional_flag: "include_pocket_fill" },
+        { item_name: "Sand", type: "material", formula: "length * height * 0.039", waste_percent: 10, description: "Pocket/core fill sand (m³)", optional_flag: "include_pocket_fill" },
+        { item_name: "Gravel / Aggregate", type: "material", formula: "length * height * 0.059", waste_percent: 10, description: "Pocket/core fill gravel (m³)", optional_flag: "include_pocket_fill" },
       ];
       const hbw = barWeight(v.horiz_bar_size);
       const hsp = v.horiz_bar_spacing / 1000;
@@ -2247,6 +2278,10 @@ const COMPONENT_TOGGLES: Partial<Record<string, Array<{ field: keyof WizardValue
   block_wall: [
     { field: "include_mortar", label: "Include mortar cement" },
     { field: "include_horiz_bars", label: "Include horizontal wall bars" },
+    // One toggle for all 3 pocket-fill components (cement/sand/gravel) —
+    // they're one conceptual material use (filling the pockets), not 3
+    // independent choices.
+    { field: "include_pocket_fill", label: "Include pocket fill" },
   ],
   lintel: [
     { field: "include_concrete", label: "Include concrete" },
@@ -2788,6 +2823,7 @@ export default function AssemblyWizard({
                     </div>
                   </div>
                   <Toggle label="Include mortar" value={values.include_mortar} onChange={v => set("include_mortar", v)}/>
+                  <Toggle label="Include pocket fill" value={values.include_pocket_fill} onChange={v => set("include_pocket_fill", v)}/>
                   <div className="border-t border-slate-100 dark:border-slate-800 pt-4">
                     <Toggle label="Include horizontal reinforcement bars" value={values.include_horiz_bars} onChange={v => set("include_horiz_bars", v)}/>
                     {values.include_horiz_bars && (
