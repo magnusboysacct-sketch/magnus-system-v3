@@ -98,10 +98,11 @@ type Section = {
 
 // A "formula_variable" option resolves to a number merged into the formula
 // evaluator's vars, referenced by bare name (`key`) in a component's formula
-// text — e.g. sides. A "component_toggle" option (not built yet — future
-// scope) would instead gate whether a whole component is included at all.
-// Only formula_variable is rendered/handled in the "Add From Assembly" modal
-// this round.
+// text — e.g. sides. A "component_toggle" option instead gates whether a
+// whole component is included at all — its `key` matches the exact
+// optional_flag string on the assembly_components row(s) it controls (see
+// AssemblyComponentRow below and explodeAssembly's optionToggles param).
+// Both kinds are rendered in the "Add From Assembly" modal.
 type ConfigurableOption =
   | { kind: "formula_variable"; key: string; label: string; type: "boolean"; default: boolean; value_when_true: number; value_when_false: number }
   | { kind: "component_toggle"; key: string; label: string; type: "boolean"; default: boolean };
@@ -123,6 +124,11 @@ type AssemblyRow = {
 type AssemblyComponentRow = {
   id: string; assembly_id: string; cost_item_id: string; line_type: string;
   quantity_factor: number; waste_percent: number; sort_order: number; notes: string | null;
+  // Set only for a component the wizard generated behind a simple flat
+  // "include_X" toggle (see AssemblyWizard.tsx's COMPONENT_TOGGLES) — null
+  // for every pre-existing row and for any component with no such toggle.
+  // Matches a component_toggle option's `key` on the parent AssemblyRow.
+  optional_flag: string | null;
 };
 type BoqHeaderRow = {
   id: string; project_id: string; status: string; version: number; updated_at: string;
@@ -1187,11 +1193,11 @@ export default function BOQPage() {
           .select("id,name,description,unit,category,is_active,metadata").order("name").limit(5000);
         const active = (aData || []).filter((a: any) => a?.is_active !== false);
         const { data: cData } = await supabase.from("assembly_components")
-          .select("id,assembly_id,cost_item_id,line_type,quantity_factor,waste_percent,sort_order,notes")
+          .select("id,assembly_id,cost_item_id,line_type,quantity_factor,waste_percent,sort_order,notes,optional_flag")
           .order("sort_order").limit(20000);
         if (!alive) return;
         setAssemblies(active.map((a: any) => ({ id: String(a.id), name: String(a.name ?? ""), description: a.description ? String(a.description) : null, unit: a.unit ? String(a.unit) : null, category: a.category ? String(a.category) : null, is_active: a.is_active ?? true, measure_type: a.metadata?.measure_type ? String(a.metadata.measure_type) : null, constants: (a.metadata?.constants && typeof a.metadata.constants === "object") ? a.metadata.constants : {}, configurable_options: Array.isArray(a.metadata?.configurable_options) ? a.metadata.configurable_options : [] })));
-        setAssemblyComponents((cData || []).map((c: any) => ({ id: String(c.id), assembly_id: String(c.assembly_id), cost_item_id: String(c.cost_item_id), line_type: String(c.line_type ?? "material"), quantity_factor: numOr(c.quantity_factor, 1), waste_percent: numOr(c.waste_percent, 0), sort_order: numOr(c.sort_order, 0), notes: c.notes ? String(c.notes) : null })));
+        setAssemblyComponents((cData || []).map((c: any) => ({ id: String(c.id), assembly_id: String(c.assembly_id), cost_item_id: String(c.cost_item_id), line_type: String(c.line_type ?? "material"), quantity_factor: numOr(c.quantity_factor, 1), waste_percent: numOr(c.waste_percent, 0), sort_order: numOr(c.sort_order, 0), notes: c.notes ? String(c.notes) : null, optional_flag: c.optional_flag ? String(c.optional_flag) : null })));
       } catch (e) { console.error("Assembly load error:", e); }
     }
     load();
@@ -1839,7 +1845,8 @@ function explodeAssembly(
   usableUnits: any[],
   dims?: FormulaVars,
   assemblyName?: string,
-  constants?: Record<string, number>
+  constants?: Record<string, number>,
+  optionToggles?: Record<string, boolean>
 ): BOQItemRow[] {
   const comps = assemblyComponents
     .filter(c => c.assembly_id === assemblyId)
@@ -1851,6 +1858,15 @@ function explodeAssembly(
 
   return comps
     .map(c => {
+      // A component behind a component_toggle is skipped entirely (not just
+      // zeroed) when the modal's resolved toggle for its optional_flag is
+      // explicitly false. A flag with no entry in optionToggles at all (an
+      // older assembly with no configurable_options, or a caller that
+      // doesn't pass the map) is left included — only an explicit false
+      // drops it, so every pre-existing call site that never passes
+      // optionToggles behaves exactly as before.
+      if (c.optional_flag && optionToggles && optionToggles[c.optional_flag] === false) return null;
+
       const r = rateItems.find(x => x.id === c.cost_item_id);
       if (!r) return null;
 
@@ -1960,7 +1976,7 @@ function groupBOQItems(items: BOQItemRow[]): BOQItemGroup[] {
   return groups;
 }
 
-function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims?: FormulaVars) {
+function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims?: FormulaVars, optionToggles?: Record<string, boolean>) {
   const qtyBase = numOr(qtyStr, 0);
 
   if (!sectionId || !assemblyId || qtyBase <= 0) {
@@ -1978,7 +1994,8 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims
     usableUnits,
     dims,
     asm?.name || "Assembly",
-    asm?.constants
+    asm?.constants,
+    optionToggles
   );
 
   if (newRows.length === 0) {
@@ -2822,16 +2839,21 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         const selectedAssembly = assemblies.find(a => a.id === asmModal.selectedId);
         const isFormulaMode = !!selectedAssembly &&
           (selectedAssembly.measure_type === "linear" || selectedAssembly.measure_type === "area" || selectedAssembly.measure_type === "volume");
-        // Only formula_variable options are rendered here (component_toggle is
-        // future scope, not built yet). Gated on isFormulaMode alongside
-        // Length/Height/Width since every configurable_option that exists
-        // today (sides, on the 9 both-sides templates) only ever appears on
-        // linear/area/volume assemblies — same simplification already applied
-        // to Length/Height/Width itself (shown together rather than detecting
-        // exactly which variables a given formula references).
+        // formula_variable options (e.g. sides) are gated on isFormulaMode
+        // alongside Length/Height/Width since every one that exists today
+        // only ever appears on linear/area/volume assemblies — same
+        // simplification already applied to Length/Height/Width itself
+        // (shown together rather than detecting exactly which variables a
+        // given formula references).
         const formulaVarOptions = isFormulaMode
           ? (selectedAssembly?.configurable_options.filter((o): o is Extract<ConfigurableOption, { kind: "formula_variable" }> => o.kind === "formula_variable") ?? [])
           : [];
+        // component_toggle options are NOT gated on isFormulaMode — a toggle
+        // like "Include door frame" needs no length/height/width to make
+        // sense, and count-type assemblies (door_solid, window_aluminum) have
+        // their own in-scope toggles too. Resolved into optionToggles (not
+        // dims) at "Add Lines" time in both branches below.
+        const componentToggleOptions = selectedAssembly?.configurable_options.filter((o): o is Extract<ConfigurableOption, { kind: "component_toggle" }> => o.kind === "component_toggle") ?? [];
         return (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-[#0d1117] rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
@@ -2897,9 +2919,9 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                   </div>
                 </div>
               )}
-              {formulaVarOptions.length > 0 && (
+              {(formulaVarOptions.length > 0 || componentToggleOptions.length > 0) && (
                 <div className="space-y-1.5">
-                  {formulaVarOptions.map(opt => {
+                  {[...formulaVarOptions, ...componentToggleOptions].map(opt => {
                     const checked = asmModal.optionValues[opt.key] ?? opt.default;
                     return (
                       <label key={opt.key}
@@ -2923,7 +2945,21 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                   const selected = asmModal.selectedId === a.id;
                   const cc = assemblyComponents.filter(c => c.assembly_id === a.id).length;
                   return (
-                    <button key={a.id} onClick={() => setAsmModal(p => ({ ...p, selectedId: a.id }))}
+                    <button key={a.id} onClick={() => setAsmModal(p => ({
+                        ...p,
+                        selectedId: a.id,
+                        // Reset toggle state on a genuine switch to a different
+                        // assembly — configurable_options keys (include_concrete,
+                        // include_formwork, sides, etc.) are reused across many
+                        // templates, so a leftover value from the PREVIOUS
+                        // assembly's toggle would otherwise silently override the
+                        // newly-selected one's own default (checked reads
+                        // optionValues[key] ?? opt.default, so an empty map here
+                        // correctly falls through to each option's real default).
+                        // Re-clicking the already-selected assembly leaves in-
+                        // progress choices alone.
+                        optionValues: a.id === p.selectedId ? p.optionValues : {},
+                      }))}
                       className={`w-full text-left px-4 py-3 border-b border-slate-100 dark:border-white/[0.04] last:border-0 flex items-center justify-between transition ${selected ? "bg-cyan-500/10" : "hover:bg-slate-50 dark:bg-white/[0.03]"}`}>
                       <div>
                         <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{a.name}</div>
@@ -2963,7 +2999,14 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                       const checked = asmModal.optionValues[opt.key] ?? opt.default;
                       dims[opt.key] = checked ? opt.value_when_true : opt.value_when_false;
                     }
-                    addAssembly(asmModal.sectionId, asmModal.selectedId, "1", dims);
+                    // Resolve each component_toggle Toggle to a plain boolean map
+                    // for explodeAssembly to skip components by — unlike
+                    // formula_variable, these never touch dims at all.
+                    const optionToggles: Record<string, boolean> = {};
+                    for (const opt of componentToggleOptions) {
+                      optionToggles[opt.key] = asmModal.optionValues[opt.key] ?? opt.default;
+                    }
+                    addAssembly(asmModal.sectionId, asmModal.selectedId, "1", dims, optionToggles);
                   } else {
                     // count-type formulas (door_solid, window_aluminum, window_louvre)
                     // reference a bare `count` variable — the flat Qty field IS that
@@ -2975,7 +3018,14 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                       selectedAssembly?.measure_type === "count"
                         ? { count: numOr(asmModal.qty, 0) }
                         : undefined;
-                    addAssembly(asmModal.sectionId, asmModal.selectedId, asmModal.qty, dims);
+                    // component_toggle options aren't gated on isFormulaMode (see
+                    // above), so door_solid/window_aluminum's toggles resolve here
+                    // too, the same way as the formula-mode branch.
+                    const optionToggles: Record<string, boolean> = {};
+                    for (const opt of componentToggleOptions) {
+                      optionToggles[opt.key] = asmModal.optionValues[opt.key] ?? opt.default;
+                    }
+                    addAssembly(asmModal.sectionId, asmModal.selectedId, asmModal.qty, dims, optionToggles);
                   }
                 }}
                 disabled={!asmModal.sectionId || !asmModal.selectedId}
