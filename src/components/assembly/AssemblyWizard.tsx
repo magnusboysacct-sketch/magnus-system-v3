@@ -153,10 +153,13 @@ interface WizardValues {
   ret_base_spacing: number;
 
   // Plastering
+  // plastering_both_sides removed — "coats" is now a live per-side pair
+  // (coats_a/coats_b, resolved at BOQ-add time in BOQPage.tsx's modal, not
+  // a wizard-time boolean) — see LAYERS_OPTION below. plaster_coats stays:
+  // it's still the wizard-time DEFAULT applied to both sides' inputs.
   plaster_coats: number;
   plaster_thickness: number; // mm
   include_scratch_coat: boolean;
-  plastering_both_sides: boolean;
 
   // Tiling
   tile_size: string; // "12x12", "24x24", etc
@@ -165,10 +168,10 @@ interface WizardValues {
   include_grout: boolean;
 
   // Painting
+  // painting_both_sides removed — same reasoning as plastering_both_sides above.
   paint_coats: number;
   include_primer: boolean;
   paint_coverage: number; // sf per gallon
-  painting_both_sides: boolean;
 
   // Ceiling
   ceiling_type: string; // "t-bar", "gyp-board", "wood"
@@ -197,16 +200,18 @@ interface WizardValues {
   blinding_grade: string;
 
   // Drywall partition
+  // drywall_both_sides removed — "layers" is now a live per-side pair
+  // (layers_a/layers_b) — see LAYERS_OPTION below. drywall_layers stays as
+  // the wizard-time default applied to both sides' inputs.
   stud_spacing: number;       // mm — 400 or 600
   stud_size: string;          // "3-5/8\"" or "2-1/2\""
   drywall_layers: number;     // 1 or 2 per side
-  drywall_both_sides: boolean;
   include_insulation: boolean;
 
   // Drywall painting
+  // drywall_painting_both_sides removed — same reasoning as drywall_both_sides above.
   drywall_paint_coats: number;
   include_pva_sealer: boolean;
-  drywall_painting_both_sides: boolean;
 
   // Chain link fencing
   fence_height: number;       // mm
@@ -353,15 +358,15 @@ interface WizardValues {
   screed_finish: string;            // "steel-trowel" "wood-float" "power-float"
 
   // Waterproof render
+  // waterproof_render_both_sides removed — same reasoning as drywall_both_sides above.
   waterproof_coats: number;         // typically 2
   waterproof_thickness: number;     // mm per coat
   waterproof_additive: string;      // "sika" "aquaseal" "hydrostop"
-  waterproof_render_both_sides: boolean;
 
   // Tyrolean
+  // tyrolean_both_sides removed — same reasoning as drywall_both_sides above.
   tyrolean_coats: number;           // typically 2-3
   tyrolean_type: string;            // "machine" "hand"
-  tyrolean_both_sides: boolean;
 
   // Wall tiling
   wall_tile_size: string;           // "4x4" "6x6" "8x10" "12x24"
@@ -407,11 +412,9 @@ const DEFAULT_VALUES: WizardValues = {
   ret_base_bar: "#4", ret_base_spacing: 200,
   plaster_coats: 2, plaster_thickness: 15,
   include_scratch_coat: true,
-  plastering_both_sides: true,
   tile_size: "12x12", tile_waste: 10,
   include_adhesive: true, include_grout: true,
   paint_coats: 2, include_primer: true, paint_coverage: 400,
-  painting_both_sides: true,
   ceiling_type: "t-bar", ceiling_tile_size: "2x2",
   roof_sheet_type: "corrugated", roof_sheet_length: 10,
   roof_pitch: 15, include_purlins: true,
@@ -429,11 +432,9 @@ const DEFAULT_VALUES: WizardValues = {
   stud_spacing: 400,
   stud_size: "3-5/8\"",
   drywall_layers: 1,
-  drywall_both_sides: true,
   include_insulation: false,
   drywall_paint_coats: 2,
   include_pva_sealer: true,
-  drywall_painting_both_sides: true,
   fence_height: 1800,
   fence_post_spacing: 3000,
   chain_link_gauge: "9 gauge",
@@ -541,10 +542,8 @@ const DEFAULT_VALUES: WizardValues = {
   waterproof_coats: 2,
   waterproof_thickness: 6,
   waterproof_additive: "sika",
-  waterproof_render_both_sides: true,
   tyrolean_coats: 2,
   tyrolean_type: "machine",
-  tyrolean_both_sides: true,
   wall_tile_size: "8x10",
   wall_tile_waste: 10,
   wall_include_adhesive: true,
@@ -973,8 +972,23 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const comps: GeneratedComponent[] = [];
       comps.push({ item_name: "Cement", type: "material", formula: "(length * height - openings) * sides * 0.06", waste_percent: 10, description: "Scratch coat cement (bags)", optional_flag: "include_scratch_coat" });
       comps.push({ item_name: "Sand", type: "material", formula: "(length * height - openings) * sides * 0.015", waste_percent: 10, description: "Scratch coat sand (m³)", optional_flag: "include_scratch_coat" });
-      comps.push({ item_name: "Cement", type: "material", formula: `(length * height - openings) * sides * ${(v.plaster_coats * 0.08).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster cement (bags)` });
-      comps.push({ item_name: "Sand", type: "material", formula: `(length * height - openings) * sides * ${(v.plaster_coats * 0.02).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster sand (m³)` });
+      // Coat count is now a live "(coats_a + coats_b)" bare-variable-pair sum
+      // (see LAYERS_OPTION), not a wizard-baked number — the 0.08/0.02
+      // per-m²-per-coat rates stay baked (they're real material constants,
+      // not user inputs). Description text no longer states a specific coat
+      // count, since it's now resolved per-BOQ-line at add time, not fixed
+      // at wizard-creation time.
+      //
+      // Deliberately NOT also multiplied by `sides` — (coats_a + coats_b)
+      // already sums each side's own coat count, so it IS the total
+      // sides×coats quantity (e.g. 2 sides × 1 coat = coats_a(1)+coats_b(1)
+      // = 2, same as the old sides*coats). Multiplying by `sides` on top
+      // would double-count — that's exactly what `sides` still means for
+      // Labor below, which genuinely doesn't scale with coat count (one
+      // labor rate per finished face, however many coats), so it correctly
+      // keeps its own separate `* sides`.
+      comps.push({ item_name: "Cement", type: "material", formula: "(length * height - openings) * 0.08 * (coats_a + coats_b)", waste_percent: 10, description: "Plaster cement (bags)" });
+      comps.push({ item_name: "Sand", type: "material", formula: "(length * height - openings) * 0.02 * (coats_a + coats_b)", waste_percent: 10, description: "Plaster sand (m³)" });
       comps.push({ item_name: "Labor - Plastering", type: "labor", formula: "(length * height - openings) * sides * 0.5", waste_percent: 0, description: "Plastering labor (man-hours)" });
       return comps;
     }
@@ -1009,7 +1023,13 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       const gallonsPerSqM = 1 / (v.paint_coverage * 0.09290304);
       const comps: GeneratedComponent[] = [];
       comps.push({ item_name: "Primer", type: "material", formula: `(length * height - openings) * sides * ${(1 / (350 * 0.09290304)).toFixed(5)}`, waste_percent: 5, description: "Primer (1 gal / 350 sf)", optional_flag: "include_primer" });
-      comps.push({ item_name: "Paint", type: "material", formula: `(length * height - openings) * sides * ${(gallonsPerSqM * v.paint_coats).toFixed(5)}`, waste_percent: 5, description: `${v.paint_coats} coats paint (gallons)` });
+      // Coat count is now a live "(coats_a + coats_b)" sum (see LAYERS_OPTION)
+      // — gallonsPerSqM (the per-coat coverage rate) stays baked, only the
+      // coat count itself is no longer. Description no longer states a fixed
+      // coat count for the same reason as plastering above. Deliberately NOT
+      // also multiplied by `sides` — see the plastering Cement/Sand comment
+      // above for why that would double-count.
+      comps.push({ item_name: "Paint", type: "material", formula: `(length * height - openings) * ${gallonsPerSqM.toFixed(5)} * (coats_a + coats_b)`, waste_percent: 5, description: "Paint (gallons)" });
       comps.push({ item_name: "Labor - Painting", type: "labor", formula: "(length * height - openings) * sides * 0.2", waste_percent: 0, description: "Painting labor (man-hours)" });
       return comps;
     }
@@ -1157,7 +1177,6 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
 
     case "drywall_partition": {
       const studSp = v.stud_spacing / 1000;
-      const layers = v.drywall_layers;
       const comps: GeneratedComponent[] = [
         {
           item_name: "Metal Floor Track",
@@ -1180,11 +1199,26 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
           // its place) in real framing, it doesn't reduce track or stud
           // count the way it reduces board/compound/paint area. Everything
           // below this point IS a pure area quantity, so gets the deduction.
+          // Layer count is now a live "(layers_a + layers_b)" bare-variable-
+          // pair sum (see LAYERS_OPTION), not a wizard-baked number — this is
+          // what actually enables asymmetric configurations (e.g. 2 layers
+          // one side, 1 the other) that the old single "layers per side" +
+          // "both sides" boolean pairing couldn't express. Description no
+          // longer states a specific layer count, since it's now resolved
+          // per-BOQ-line at add time, not fixed at wizard-creation time.
+          //
+          // Deliberately NOT also multiplied by `sides` — (layers_a +
+          // layers_b) already sums each side's own layer count, so it IS
+          // the total sides×layers quantity (e.g. both sides, 1 layer each
+          // = layers_a(1)+layers_b(1) = 2, same as the old sides(2)*layers(1)).
+          // Multiplying by `sides` on top would double it. Joint Compound/
+          // Paper Tape/Drywall Screw below correctly keep their own `* sides`
+          // — they don't scale with layer count, just face count.
           item_name: "Gypsum Board",
           type: "material",
-          formula: `(length * height - openings) * sides * ${layers} / 2.976`,
+          formula: "(length * height - openings) * (layers_a + layers_b) / 2.976",
           waste_percent: 10,
-          description: `${layers} layer${layers > 1 ? "s" : ""} each side — 4×8 sheets`,
+          description: "Gypsum board — 4×8 sheets",
         },
         {
           item_name: "Joint Compound",
@@ -1227,12 +1261,12 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     }
 
     case "drywall_painting": {
-      // Deliberately its own independent toggle, not read from
-      // drywall_partition's drywall_both_sides — these are two separate
+      // Deliberately its own independent coats_a/coats_b pair at BOQ-add
+      // time, not read from drywall_partition's — these are two separate
       // wizard runs (the partition and its paint job are each their own
       // assembly instance) with no data link between them, so this template
       // has no way to know how the partition it's painting was configured.
-      // The user re-states "both sides" here if that's what they're painting.
+      // The user re-states which sides are being painted here.
       // Same 350/400 sf/gal coverage assumptions as "painting" — converted
       // to gal/m² the same way (1/350 and 1/400 are sqft-denominated, so
       // divide by 0.09290304 rather than applying them directly to metric
@@ -1246,12 +1280,18 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         description: "PVA sealer coat (1 gal / 350 sf)",
         optional_flag: "include_pva_sealer",
       });
+      // Coat count is now a live "(coats_a + coats_b)" sum (see
+      // LAYERS_OPTION) — the per-coat coverage rate stays baked, only the
+      // coat count itself is no longer. Description no longer states a
+      // fixed coat count for the same reason as plastering/painting above.
+      // Deliberately NOT also multiplied by `sides` — see the plastering
+      // Cement/Sand comment for why that would double-count.
       comps.push({
         item_name: "Paint",
         type: "material",
-        formula: `(length * height - openings) * sides * ${((1 / (400 * 0.09290304)) * v.drywall_paint_coats).toFixed(5)}`,
+        formula: `(length * height - openings) * ${(1 / (400 * 0.09290304)).toFixed(5)} * (coats_a + coats_b)`,
         waste_percent: 5,
-        description: `${v.drywall_paint_coats} coats paint (gallons)`,
+        description: "Paint (gallons)",
       });
       comps.push({
         item_name: "Labor - Painting",
@@ -1996,7 +2036,18 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     }
 
     case "waterproof_render": {
-      const wpFactor = v.waterproof_coats * (v.waterproof_thickness / 6);
+      // Coat count is now a live "(coats_a + coats_b)" bare-variable-pair
+      // sum (see LAYERS_OPTION), not baked in — thicknessFactor stays baked
+      // (per-mm coverage scaling is still a wizard-time constant, no live
+      // control for thickness). wpFactor used to bundle coats*thickness
+      // together into one baked number; now only the thickness part stays
+      // baked, with the live coat sum multiplied in separately in each
+      // formula below. None of the 4 formulas below also multiply by
+      // `sides` — (coats_a + coats_b) already sums each side's own coat
+      // count, so it IS the total sides×coats quantity; multiplying by
+      // `sides` on top would double-count (see the plastering Cement/Sand
+      // comment in the plastering case above for the full reasoning).
+      const thicknessFactor = v.waterproof_thickness / 6;
       // ESTIMATE, not a confirmed trade rate: scaled proportionally from rough_render's
       // user-confirmed real coverage (16 sqft/bag at 15mm = 0.673 bags/m²), assuming
       // roughly linear cement usage per mm thickness. Replace with a real confirmed
@@ -2010,47 +2061,55 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Cement",
           type: "material",
-          formula: `(length * height - openings) * sides * ${(cementPerSqM * wpFactor).toFixed(4)}`,
+          formula: `(length * height - openings) * ${(cementPerSqM * thicknessFactor).toFixed(4)} * (coats_a + coats_b)`,
           waste_percent: 10,
-          description: `Cement for waterproof render ${v.waterproof_coats} coat(s) (bags)`,
+          description: "Cement for waterproof render (bags)",
         },
         {
           item_name: "Sand",
           type: "material",
-          formula: `(length * height - openings) * sides * ${(0.019 * wpFactor).toFixed(4)}`,
+          formula: `(length * height - openings) * ${(0.019 * thicknessFactor).toFixed(4)} * (coats_a + coats_b)`,
           waste_percent: 10,
           description: "Fine sand for waterproof render (m³)",
         },
         {
           item_name: "Waterproofing Additive",
           type: "material",
-          formula: `(length * height - openings) * sides * ${(0.15 * v.waterproof_coats).toFixed(3)}`,
+          formula: "(length * height - openings) * 0.15 * (coats_a + coats_b)",
           waste_percent: 5,
           description: `${v.waterproof_additive} waterproofing additive (litres)`,
         },
         {
           item_name: "Labor - Waterproof Render",
           type: "labor",
-          formula: `(length * height - openings) * sides * ${(0.5 * v.waterproof_coats).toFixed(2)}`,
+          formula: "(length * height - openings) * 0.5 * (coats_a + coats_b)",
           waste_percent: 0,
-          description: `Waterproof render labor — ${v.waterproof_coats} coats (man-hours)`,
+          description: "Waterproof render labor (man-hours)",
         },
       ];
     }
 
     case "tyrolean": {
+      // Coat count is now a live "(coats_a + coats_b)" sum (see
+      // LAYERS_OPTION), deliberately NOT also multiplied by `sides` — see
+      // the plastering Cement/Sand comment above for why that would
+      // double-count. Labor and Machine Hire below are deliberately left
+      // untouched (still `* sides` alone, no coats factor) — neither ever
+      // scaled with coat count (a flat rate per application session,
+      // confirmed unchanged from their original formulas), so they aren't
+      // part of this change.
       return [
         {
           item_name: "Cement",
           type: "material",
-          formula: `(length * height - openings) * sides * ${(0.04 * v.tyrolean_coats).toFixed(3)}`,
+          formula: "(length * height - openings) * 0.04 * (coats_a + coats_b)",
           waste_percent: 15,
-          description: `Cement for tyrolean ${v.tyrolean_coats} coat(s) (bags)`,
+          description: "Cement for tyrolean (bags)",
         },
         {
           item_name: "Aggregate",
           type: "material",
-          formula: `(length * height - openings) * sides * ${(0.012 * v.tyrolean_coats).toFixed(4)}`,
+          formula: "(length * height - openings) * 0.012 * (coats_a + coats_b)",
           waste_percent: 15,
           description: "Fine aggregate/pea gravel for tyrolean texture (m³)",
         },
@@ -2208,20 +2267,44 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
 // here, not re-typed at each Toggle in the configure step below, so the
 // configure-step UI, the live preview, and metadata.configurable_options —
 // which is what the real "Add From Assembly" modal will render its own Toggle
-// from — can never drift apart on field name or label wording). "layers"
-// (drywall_partition) stays baked as a literal number, deliberately not made
-// live in this round.
+// from — can never drift apart on field name or label wording).
+//
+// The 6 templates that ALSO had a wizard-baked coat/layer repeat-count
+// (plastering, painting, drywall_partition, drywall_painting,
+// waterproof_render, tyrolean) are deliberately NOT listed here any more —
+// see LAYERS_OPTION below. Their old "both sides" boolean is gone entirely,
+// replaced by two live per-side numeric inputs whose values also derive
+// `sides` (BOQPage.tsx's modal: sides = (side A > 0 ? 1 : 0) + (side B > 0 ?
+// 1 : 0)) — a separate "both sides?" toggle would be redundant with, and
+// could disagree with, what those two numbers already say. The remaining 4
+// templates below (rough_render, float_coat, skim_coat, wall_tiling) have no
+// coat/layer concept at all, so their simple boolean toggle is untouched.
 const BOTH_SIDES_OPTION: Partial<Record<string, { field: keyof WizardValues; label: string }>> = {
-  plastering: { field: "plastering_both_sides", label: "Plaster both sides" },
-  painting: { field: "painting_both_sides", label: "Paint both sides" },
-  drywall_partition: { field: "drywall_both_sides", label: "Board on both sides" },
-  drywall_painting: { field: "drywall_painting_both_sides", label: "Paint both sides" },
   rough_render: { field: "rough_render_both_sides", label: "Render both sides" },
   float_coat: { field: "float_coat_both_sides", label: "Float coat both sides" },
   skim_coat: { field: "skim_coat_both_sides", label: "Skim coat both sides" },
-  waterproof_render: { field: "waterproof_render_both_sides", label: "Waterproof both sides" },
-  tyrolean: { field: "tyrolean_both_sides", label: "Apply tyrolean both sides" },
   wall_tiling: { field: "wall_tiling_both_sides", label: "Tile both sides" },
+};
+
+// The 6 templates whose generateComponents() formulas now reference a live
+// "(layers_a + layers_b)" or "(coats_a + coats_b)" bare-variable-pair sum
+// instead of a wizard-time-baked repeat-count (see the matching case in
+// generateComponents below for exactly which formula(s) in each template use
+// it). `field` is the EXISTING single wizard-time NumInput each template
+// already had (drywall_layers, plaster_coats, etc.) — kept as-is, now used
+// only as the shared starting DEFAULT for both sides' live inputs, not baked
+// into the formula text any more. keyA/keyB are the configurable_options keys
+// (and therefore the bare formula-variable names — see BOQPage.tsx's
+// LAYERS_PER_SIDE_TYPES, which also derives `sides` from these same two
+// values at BOQ-add time, replacing the old both-sides boolean for exactly
+// these 6 templates).
+const LAYERS_OPTION: Partial<Record<string, { field: keyof WizardValues; keyA: string; keyB: string; labelA: string; labelB: string }>> = {
+  plastering: { field: "plaster_coats", keyA: "coats_a", keyB: "coats_b", labelA: "Coats — Side A", labelB: "Coats — Side B" },
+  painting: { field: "paint_coats", keyA: "coats_a", keyB: "coats_b", labelA: "Coats — Side A", labelB: "Coats — Side B" },
+  drywall_partition: { field: "drywall_layers", keyA: "layers_a", keyB: "layers_b", labelA: "Layers — Side A", labelB: "Layers — Side B" },
+  drywall_painting: { field: "drywall_paint_coats", keyA: "coats_a", keyB: "coats_b", labelA: "Coats — Side A", labelB: "Coats — Side B" },
+  waterproof_render: { field: "waterproof_coats", keyA: "coats_a", keyB: "coats_b", labelA: "Coats — Side A", labelB: "Coats — Side B" },
+  tyrolean: { field: "tyrolean_coats", keyA: "coats_a", keyB: "coats_b", labelA: "Coats — Side A", labelB: "Coats — Side B" },
 };
 
 // Simple flat "include_X" component-existence toggles, made live the same
@@ -2506,15 +2589,18 @@ export default function AssemblyWizard({
   // configured as when created (the "Add From Assembly" modal's own Toggle
   // still shows this as its starting default, but the value stored here is
   // this specific save's real setting, not a hardcoded default: true). Same
-  // reasoning now applies to component_toggle entries below — each one's
-  // `default` is this save's own v[field], not a hardcoded true.
+  // reasoning now applies to component_toggle and formula_number entries
+  // below — each one's `default` is this save's own v[field], not a
+  // hardcoded constant.
   function configurableOptionsFor(type: string, v: WizardValues): Array<
     | { kind: "formula_variable"; key: string; label: string; type: "boolean"; default: boolean; value_when_true: number; value_when_false: number }
     | { kind: "component_toggle"; key: string; label: string; type: "boolean"; default: boolean }
+    | { kind: "formula_number"; key: string; label: string; type: "number"; default: number; min?: number }
   > {
     const options: Array<
       | { kind: "formula_variable"; key: string; label: string; type: "boolean"; default: boolean; value_when_true: number; value_when_false: number }
       | { kind: "component_toggle"; key: string; label: string; type: "boolean"; default: boolean }
+      | { kind: "formula_number"; key: string; label: string; type: "number"; default: number; min?: number }
     > = [];
 
     const sidesOpt = BOTH_SIDES_OPTION[type];
@@ -2528,6 +2614,18 @@ export default function AssemblyWizard({
         value_when_true: 2,
         value_when_false: 1,
       });
+    }
+
+    // See LAYERS_OPTION above — the 6 templates here emit TWO live numeric
+    // options instead of (not alongside) a boolean sides option; each
+    // defaults to the same wizard-time coats/layers field, applied to both
+    // sides, matching this specific save's own configured value exactly the
+    // same way sidesOpt.default does above.
+    const layersOpt = LAYERS_OPTION[type];
+    if (layersOpt) {
+      const def = Number(v[layersOpt.field]) || 0;
+      options.push({ kind: "formula_number", key: layersOpt.keyA, label: layersOpt.labelA, type: "number", default: def, min: 0 });
+      options.push({ kind: "formula_number", key: layersOpt.keyB, label: layersOpt.labelB, type: "number", default: def, min: 0 });
     }
 
     for (const toggle of COMPONENT_TOGGLES[type] || []) {
@@ -2908,11 +3006,14 @@ export default function AssemblyWizard({
               {elementType === "plastering" && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <NumInput label="Number of coats" value={values.plaster_coats} onChange={v => set("plaster_coats", v)} hint="Typically 2 coats"/>
+                    <NumInput label="Number of coats" value={values.plaster_coats} onChange={v => set("plaster_coats", v)} hint="Default for both sides — editable per side when added to a BOQ"/>
                     <NumInput label="Thickness per coat" value={values.plaster_thickness} onChange={v => set("plaster_thickness", v)} unit="mm"/>
                   </div>
                   <Toggle label="Include scratch coat" value={values.include_scratch_coat} onChange={v => set("include_scratch_coat", v)}/>
-                  <Toggle label="Plaster both sides" value={values.plastering_both_sides} onChange={v => set("plastering_both_sides", v)}/>
+                  {/* "Plaster both sides" toggle removed — coats are now a live
+                      Side A / Side B pair, resolved at BOQ-add time (see
+                      LAYERS_OPTION), which also derives how many sides are
+                      finished. No separate both-sides control needed. */}
                 </>
               )}
 
@@ -2941,11 +3042,12 @@ export default function AssemblyWizard({
               {elementType === "painting" && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
-                    <NumInput label="Number of coats" value={values.paint_coats} onChange={v => set("paint_coats", v)} hint="Typically 2 coats"/>
+                    <NumInput label="Number of coats" value={values.paint_coats} onChange={v => set("paint_coats", v)} hint="Default for both sides — editable per side when added to a BOQ"/>
                     <NumInput label="Coverage" value={values.paint_coverage} onChange={v => set("paint_coverage", v)} unit="sf/gal" hint="350-400 sf per gallon"/>
                   </div>
                   <Toggle label="Include primer coat" value={values.include_primer} onChange={v => set("include_primer", v)}/>
-                  <Toggle label="Paint both sides" value={values.painting_both_sides} onChange={v => set("painting_both_sides", v)}/>
+                  {/* "Paint both sides" toggle removed — same reasoning as
+                      plastering's toggle above. */}
                 </>
               )}
 
@@ -3120,7 +3222,7 @@ export default function AssemblyWizard({
                     💡 Used in wet areas — bathrooms, basements, water tanks, retaining walls. Enter <strong>length × height</strong> in BOQ.
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <NumInput label="Number of coats" value={values.waterproof_coats} onChange={v => set("waterproof_coats", v)} hint="Typically 2 coats"/>
+                    <NumInput label="Number of coats" value={values.waterproof_coats} onChange={v => set("waterproof_coats", v)} hint="Default for both sides — editable per side when added to a BOQ"/>
                     <NumInput label="Thickness per coat" value={values.waterproof_thickness} onChange={v => set("waterproof_thickness", v)} unit="mm" hint="Typically 6mm per coat"/>
                   </div>
                   <div>
@@ -3134,7 +3236,8 @@ export default function AssemblyWizard({
                       ))}
                     </div>
                   </div>
-                  <Toggle label="Waterproof both sides" value={values.waterproof_render_both_sides} onChange={v => set("waterproof_render_both_sides", v)}/>
+                  {/* "Waterproof both sides" toggle removed — same reasoning
+                      as plastering's toggle above. */}
                 </>
               )}
 
@@ -3144,7 +3247,7 @@ export default function AssemblyWizard({
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400">
                     💡 Decorative textured exterior finish. Applied over float coat. Enter wall <strong>length × height</strong> in BOQ.
                   </div>
-                  <NumInput label="Number of coats" value={values.tyrolean_coats} onChange={v => set("tyrolean_coats", v)} hint="Typically 2-3 coats for full coverage"/>
+                  <NumInput label="Number of coats" value={values.tyrolean_coats} onChange={v => set("tyrolean_coats", v)} hint="Default for both sides — editable per side when added to a BOQ"/>
                   <div>
                     <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Application method</label>
                     <div className="flex gap-2">
@@ -3156,7 +3259,8 @@ export default function AssemblyWizard({
                       ))}
                     </div>
                   </div>
-                  <Toggle label="Apply tyrolean both sides" value={values.tyrolean_both_sides} onChange={v => set("tyrolean_both_sides", v)}/>
+                  {/* "Apply tyrolean both sides" toggle removed — same
+                      reasoning as plastering's toggle above. */}
                 </>
               )}
 
@@ -3205,9 +3309,12 @@ export default function AssemblyWizard({
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <NumInput label="Stud spacing" value={values.stud_spacing} onChange={v => set("stud_spacing", v)} unit="mm" hint="400mm or 600mm"/>
-                    <NumInput label="Gypsum layers per side" value={values.drywall_layers} onChange={v => set("drywall_layers", v)} hint="1 standard, 2 for fire rating"/>
+                    <NumInput label="Gypsum layers per side" value={values.drywall_layers} onChange={v => set("drywall_layers", v)} hint="Default for both sides (1 standard, 2 for fire rating) — editable per side when added to a BOQ"/>
                   </div>
-                  <Toggle label="Board on both sides" value={values.drywall_both_sides} onChange={v => set("drywall_both_sides", v)}/>
+                  {/* "Board on both sides" toggle removed — layers are now a
+                      live Side A / Side B pair, resolved at BOQ-add time
+                      (see LAYERS_OPTION), which also derives how many sides
+                      get board at all. No separate both-sides control needed. */}
                   <Toggle label="Include insulation" value={values.include_insulation} onChange={v => set("include_insulation", v)}/>
                 </>
               )}
@@ -3218,9 +3325,10 @@ export default function AssemblyWizard({
                   <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-xs text-blue-600 dark:text-blue-400">
                     💡 Drywall needs PVA sealer before painting to seal the surface. Enter wall <strong>length × height</strong> in BOQ.
                   </div>
-                  <NumInput label="Number of paint coats" value={values.drywall_paint_coats} onChange={v => set("drywall_paint_coats", v)} hint="Typically 2 coats"/>
+                  <NumInput label="Number of paint coats" value={values.drywall_paint_coats} onChange={v => set("drywall_paint_coats", v)} hint="Default for both sides — editable per side when added to a BOQ"/>
                   <Toggle label="Include PVA sealer coat" value={values.include_pva_sealer} onChange={v => set("include_pva_sealer", v)}/>
-                  <Toggle label="Paint both sides" value={values.drywall_painting_both_sides} onChange={v => set("drywall_painting_both_sides", v)}/>
+                  {/* "Paint both sides" toggle removed — same reasoning as
+                      plastering's toggle above. */}
                 </>
               )}
 

@@ -108,11 +108,15 @@ type Section = {
 // text — e.g. sides. A "component_toggle" option instead gates whether a
 // whole component is included at all — its `key` matches the exact
 // optional_flag string on the assembly_components row(s) it controls (see
-// AssemblyComponentRow below and explodeAssembly's optionToggles param).
-// Both kinds are rendered in the "Add From Assembly" modal.
+// AssemblyComponentRow below and explodeAssembly's optionToggles param). A
+// "formula_number" option is a genuine live NUMBER (not boolean-backed) —
+// e.g. layers_a/coats_a (see LAYERS_PER_SIDE_TYPES below) — merged into the
+// evaluator's vars directly under its own `key`, with no true/false mapping.
+// All three kinds are rendered in the "Add From Assembly" modal.
 type ConfigurableOption =
   | { kind: "formula_variable"; key: string; label: string; type: "boolean"; default: boolean; value_when_true: number; value_when_false: number }
-  | { kind: "component_toggle"; key: string; label: string; type: "boolean"; default: boolean };
+  | { kind: "component_toggle"; key: string; label: string; type: "boolean"; default: boolean }
+  | { kind: "formula_number"; key: string; label: string; type: "number"; default: number; min?: number; max?: number };
 
 type AssemblyRow = {
   id: string; name: string; description: string | null;
@@ -161,6 +165,29 @@ const WALL_FACE_OPENING_TYPES = new Set([
   "rough_render", "float_coat", "skim_coat", "waterproof_render",
   "tyrolean", "wall_tiling", "block_wall",
 ]);
+
+// The 6 templates whose "coats"/"layers" repeat-count is now resolved live
+// via two independent formula_number options (see AssemblyWizard.tsx's
+// LAYERS_OPTION and the matching generateComponents formulas — each now
+// contains a bare "(keyA + keyB)" expression the formula evaluator sums
+// directly, no derivation needed for that part). What IS derived here is
+// `sides` — these 6 templates used to get it from a "both sides" boolean
+// formula_variable option (see BOTH_SIDES_OPTION in AssemblyWizard.tsx),
+// which no longer exists for them: a separate toggle would be redundant
+// with, and could disagree with, what the two live numbers already say. So
+// sides = (side A > 0 ? 1 : 0) + (side B > 0 ? 1 : 0), computed once at Add
+// Lines time below and merged into dims alongside the two raw values
+// themselves (which stay in dims too, under keyA/keyB — harmless, since
+// only the templates whose formulas actually reference layers_a/layers_b or
+// coats_a/coats_b directly ever look at them).
+const LAYERS_PER_SIDE_TYPES: Partial<Record<string, { keyA: string; keyB: string }>> = {
+  plastering: { keyA: "coats_a", keyB: "coats_b" },
+  painting: { keyA: "coats_a", keyB: "coats_b" },
+  drywall_partition: { keyA: "layers_a", keyB: "layers_b" },
+  drywall_painting: { keyA: "coats_a", keyB: "coats_b" },
+  waterproof_render: { keyA: "coats_a", keyB: "coats_b" },
+  tyrolean: { keyA: "coats_a", keyB: "coats_b" },
+};
 
 // The 3 count-type templates that represent a real door/window, and which
 // WizardValues fields (both in mm) hold that assembly's actual configured
@@ -1179,6 +1206,12 @@ export default function BOQPage() {
   // — read as optionValues[key] ?? option.default, so a key that hasn't been
   // touched yet just falls back to that option's declared default.
   //
+  // numberOptionValues is the same idea for formula_number options (e.g.
+  // {layers_a: 2}) — kept as its own map, not folded into optionValues,
+  // since it holds numbers rather than booleans and the two option kinds
+  // are rendered and resolved differently. Same "?? option.default" and
+  // "reset on assembly switch" behavior as optionValues (see below).
+  //
   // openings is a list of door/window deductions for wall-face templates
   // (see WALL_FACE_OPENING_TYPES) — each row is its own width/height in
   // feet+inches, same shape and units as Length/Height/Width above.
@@ -1193,9 +1226,10 @@ export default function BOQPage() {
     open: boolean; sectionId: string | null; search: string; selectedId: string; qty: string;
     lengthFt: string; lengthIn: string; heightFt: string; heightIn: string; widthFt: string; widthIn: string;
     optionValues: Record<string, boolean>;
+    numberOptionValues: Record<string, number>;
     openings: OpeningRow[];
   };
-  const EMPTY_ASM_DIMS = { lengthFt: "", lengthIn: "", heightFt: "", heightIn: "", widthFt: "", widthIn: "", optionValues: {} as Record<string, boolean>, openings: [] as OpeningRow[] };
+  const EMPTY_ASM_DIMS = { lengthFt: "", lengthIn: "", heightFt: "", heightIn: "", widthFt: "", widthIn: "", optionValues: {} as Record<string, boolean>, numberOptionValues: {} as Record<string, number>, openings: [] as OpeningRow[] };
   const [asmModal, setAsmModal] = useState<AsmModal>({ open: false, sectionId: null, search: "", selectedId: "", qty: "1", ...EMPTY_ASM_DIMS });
   // Which assembly instances currently show their component breakdown (collapsed by default).
   const [expandedAssemblies, setExpandedAssemblies] = useState<Set<string>>(new Set());
@@ -2976,6 +3010,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         // their own in-scope toggles too. Resolved into optionToggles (not
         // dims) at "Add Lines" time in both branches below.
         const componentToggleOptions = selectedAssembly?.configurable_options.filter((o): o is Extract<ConfigurableOption, { kind: "component_toggle" }> => o.kind === "component_toggle") ?? [];
+        // formula_number options (e.g. layers_a/coats_a) are gated on
+        // isFormulaMode for the same reason formulaVarOptions is above —
+        // every one that exists today only appears on linear/area/volume
+        // (wall-face) assemblies.
+        const formulaNumberOptions = isFormulaMode
+          ? (selectedAssembly?.configurable_options.filter((o): o is Extract<ConfigurableOption, { kind: "formula_number" }> => o.kind === "formula_number") ?? [])
+          : [];
         // Precise per-template gate, deliberately narrower than isFormulaMode
         // (see WALL_FACE_OPENING_TYPES) — a door/window opening only makes
         // physical sense for a wall-covering, not for e.g. Slab or Column,
@@ -3013,6 +3054,21 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             }, 0)
           : 0;
         const liveNetAreaM2 = liveGrossAreaM2 - liveOpeningsAreaM2;
+        // For the 6 LAYERS_PER_SIDE_TYPES templates, `sides` is no longer a
+        // toggle the user sets directly — it's derived from the same two
+        // formula_number inputs the user IS setting (layers_a/coats_a etc).
+        // Computed here, live, purely so the modal can show the user what
+        // "sides" will actually resolve to (the two number inputs below
+        // otherwise give no direct indication of it) — the real, final
+        // derivation for the saved dims happens again at Add Lines time.
+        const layersPerSideCfg = selectedAssembly?.wizard_type ? LAYERS_PER_SIDE_TYPES[selectedAssembly.wizard_type] : undefined;
+        const liveLayerA = layersPerSideCfg
+          ? (asmModal.numberOptionValues[layersPerSideCfg.keyA] ?? formulaNumberOptions.find(o => o.key === layersPerSideCfg.keyA)?.default ?? 0)
+          : 0;
+        const liveLayerB = layersPerSideCfg
+          ? (asmModal.numberOptionValues[layersPerSideCfg.keyB] ?? formulaNumberOptions.find(o => o.key === layersPerSideCfg.keyB)?.default ?? 0)
+          : 0;
+        const liveDerivedSides = (liveLayerA > 0 ? 1 : 0) + (liveLayerB > 0 ? 1 : 0);
         return (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-[#0d1117] rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
@@ -3176,6 +3232,37 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                   })}
                 </div>
               )}
+              {formulaNumberOptions.length > 0 && (
+                // Plain number inputs, not toggles — formula_number options
+                // are genuine live numbers (layers_a/coats_a etc), not
+                // boolean-backed like the two kinds rendered above.
+                <div className="space-y-1.5">
+                  {formulaNumberOptions.map(opt => {
+                    const val = asmModal.numberOptionValues[opt.key] ?? opt.default;
+                    return (
+                      <label key={opt.key}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08]">
+                        <span className="text-[11px] text-slate-600 dark:text-slate-400 font-medium">{opt.label}</span>
+                        <input type="number" min={opt.min} max={opt.max} value={val}
+                          onChange={e => setAsmModal(p => ({ ...p, numberOptionValues: { ...p.numberOptionValues, [opt.key]: numOr(e.target.value, opt.default) } }))}
+                          className="w-16 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50 text-right"/>
+                      </label>
+                    );
+                  })}
+                  {layersPerSideCfg && (
+                    // Surfaces the otherwise-invisible derived `sides` value
+                    // (see liveDerivedSides above) — the two number inputs
+                    // above give no direct indication of how many faces
+                    // they'll resolve to.
+                    <p className="text-[10px] text-slate-500 dark:text-slate-600 px-1">
+                      Faces in use: {liveDerivedSides}
+                      {liveDerivedSides === 0 && " — enter a value for at least one side"}
+                      {liveDerivedSides === 1 && " (single-sided)"}
+                      {liveDerivedSides === 2 && " (both sides)"}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] overflow-hidden max-h-72 overflow-y-auto">
                 {assemblies.filter(a => {
                   const q = asmModal.search.trim().toLowerCase();
@@ -3198,6 +3285,9 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                         // Re-clicking the already-selected assembly leaves in-
                         // progress choices alone.
                         optionValues: a.id === p.selectedId ? p.optionValues : {},
+                        // Same reasoning as optionValues immediately above,
+                        // for formula_number options (layers_a/coats_a etc).
+                        numberOptionValues: a.id === p.selectedId ? p.numberOptionValues : {},
                       }))}
                       className={`w-full text-left px-4 py-3 border-b border-slate-100 dark:border-white/[0.04] last:border-0 flex items-center justify-between transition ${selected ? "bg-cyan-500/10" : "hover:bg-slate-50 dark:bg-white/[0.03]"}`}>
                       <div>
@@ -3249,6 +3339,24 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                     for (const opt of formulaVarOptions) {
                       const checked = asmModal.optionValues[opt.key] ?? opt.default;
                       dims[opt.key] = checked ? opt.value_when_true : opt.value_when_false;
+                    }
+                    // Resolve each formula_number input directly under its own
+                    // key — no true/false mapping, the typed (or defaulted)
+                    // number goes straight into dims.
+                    for (const opt of formulaNumberOptions) {
+                      dims[opt.key] = asmModal.numberOptionValues[opt.key] ?? opt.default;
+                    }
+                    // LAYERS_PER_SIDE_TYPES templates: derive `sides` (face
+                    // count) from the same two per-side values just resolved
+                    // above — replaces the old "both sides" boolean toggle
+                    // entirely for these 6 templates (see LAYERS_PER_SIDE_TYPES's
+                    // own comment for why a separate toggle isn't kept). A side
+                    // left at 0 naturally means "not finished on that side".
+                    const layersCfg = selectedAssembly?.wizard_type ? LAYERS_PER_SIDE_TYPES[selectedAssembly.wizard_type] : undefined;
+                    if (layersCfg) {
+                      const a = dims[layersCfg.keyA] ?? 0;
+                      const b = dims[layersCfg.keyB] ?? 0;
+                      dims.sides = (a > 0 ? 1 : 0) + (b > 0 ? 1 : 0);
                     }
                     // Resolve each component_toggle Toggle to a plain boolean map
                     // for explodeAssembly to skip components by — unlike
