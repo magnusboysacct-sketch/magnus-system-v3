@@ -1,0 +1,23 @@
+-- Add assembly_master_openings to boq_section_items — companion to the
+-- assembly_master_length/width/height/set columns added in
+-- 20260906000000_add_boq_assembly_grouping_fields.sql.
+--
+-- The door/window opening deduction feature (BOQPage.tsx's "Add From
+-- Assembly" modal Openings section) computes dims.openings — the total m²
+-- deducted from a wall-face assembly's gross length×height — and needs it
+-- to persist alongside the master dims it was computed against, so the
+-- Gross/Openings/Net area breakdown displays correctly after a save+reload,
+-- not just live in the modal at add-time.
+--
+-- Deliberately does NOT duplicate gross or net area as separate columns:
+-- gross is already recoverable as assembly_master_length *
+-- assembly_master_height (those store the wall's own dims, never reduced),
+-- so only the deduction amount itself needs its own column.
+--
+-- Nullable, no default — matches every other schema addition this session.
+-- null/0 both mean "no deduction" (no migration of existing rows needed —
+-- every already-saved assembly simply has no opening breakdown to show,
+-- which is exactly correct, since none of them were created with this
+-- feature).
+ALTER TABLE boq_section_items
+ADD COLUMN IF NOT EXISTS assembly_master_openings numeric;

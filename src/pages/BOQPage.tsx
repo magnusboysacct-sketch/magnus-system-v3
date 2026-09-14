@@ -82,6 +82,13 @@ type BOQItemRow = {
   assembly_master_width?: number | null;
   assembly_master_height?: number | null;
   assembly_master_set?: boolean;
+  // Total door/window opening area (m²) deducted from this assembly's gross
+  // length×height at "Add From Assembly" time — see the Openings section in
+  // that modal. null/0 both mean "no deduction"; the gross area itself is
+  // always recoverable from assembly_master_length × assembly_master_height
+  // (those store the WALL's own dims, never reduced), so this field only
+  // needs to hold the deduction amount, not a separately-tracked net area.
+  assembly_master_openings?: number | null;
   component_formula?: string | null;
   component_waste_percent?: number | null;
   measurement_overridden?: boolean;
@@ -120,7 +127,56 @@ type AssemblyRow = {
   // which is exactly the same "just show nothing extra" fallback measure_type
   // and constants already use for pre-existing assemblies.
   configurable_options: ConfigurableOption[];
+  // Derived from metadata.wizard_type / metadata.wizard_values — the raw
+  // AssemblyWizard.tsx template key (e.g. "door_solid", "plastering") and the
+  // full WizardValues object that assembly was created with. Both were
+  // already being fetched (part of the same metadata blob every other field
+  // above comes from) but never parsed out until now. null for anything
+  // hand-built outside the wizard, or predating this metadata convention.
+  // Used for: (1) identifying which saved assemblies are real doors/windows
+  // for the opening-deduction picker (see DOOR_WINDOW_SIZE_FIELDS below),
+  // (2) gating the "Openings" section to exactly the wall-face templates
+  // that support it (see WALL_FACE_OPENING_TYPES), rather than the broader
+  // isFormulaMode (which is also true for e.g. Slab, Column, Footing —
+  // structural templates an opening deduction makes no sense for).
+  wizard_type: string | null;
+  wizard_values: Record<string, any> | null;
 };
+
+// The 10 wall-face ("length * height", already using the live `sides`
+// toggle) templates whose generateComponents() formulas subtract `openings`
+// — see AssemblyWizard.tsx. Deliberately NOT the same set as isFormulaMode
+// (linear/area/volume) — that's a much broader set including structural
+// templates (Slab, Column, Footing, Retaining Wall, Block Wall, etc.) that
+// a door/window deduction has no physical meaning for.
+const WALL_FACE_OPENING_TYPES = new Set([
+  "plastering", "painting", "drywall_partition", "drywall_painting",
+  "rough_render", "float_coat", "skim_coat", "waterproof_render",
+  "tyrolean", "wall_tiling",
+]);
+
+// The 3 count-type templates that represent a real door/window, and which
+// WizardValues fields (both in mm) hold that assembly's actual configured
+// size — used by the "Pick from saved door/window" row picker to auto-fill
+// an opening row's width/height instead of the user typing them.
+const DOOR_WINDOW_SIZE_FIELDS: Record<string, { widthField: string; heightField: string }> = {
+  door_solid: { widthField: "door_width", heightField: "door_height" },
+  window_aluminum: { widthField: "win_width", heightField: "win_height" },
+  window_louvre: { widthField: "louv_width", heightField: "louv_height" },
+};
+
+// Reverse of feetInchesToMeters, for displaying a millimetre size (from a
+// saved door/window assembly's wizard_values) in the same ft/in input pair
+// every other dimension in this modal already uses. Inches rounded to 2dp —
+// these inputs are plain <input type="number">, decimals display fine, and
+// this keeps the number readable (e.g. 900mm door width -> "2" / "11.43")
+// rather than a long floating-point tail.
+function mmToFeetInches(mm: number): { ft: string; in: string } {
+  const totalInches = mm / 25.4;
+  const ft = Math.floor(totalInches / 12);
+  const inches = Math.round((totalInches - ft * 12) * 100) / 100;
+  return { ft: String(ft), in: String(inches) };
+}
 type AssemblyComponentRow = {
   id: string; assembly_id: string; cost_item_id: string; line_type: string;
   quantity_factor: number; waste_percent: number; sort_order: number; notes: string | null;
@@ -1115,12 +1171,24 @@ export default function BOQPage() {
   // true}), keyed by the selected assembly's own metadata.configurable_options
   // — read as optionValues[key] ?? option.default, so a key that hasn't been
   // touched yet just falls back to that option's declared default.
+  //
+  // openings is a list of door/window deductions for wall-face templates
+  // (see WALL_FACE_OPENING_TYPES) — each row is its own width/height in
+  // feet+inches, same shape and units as Length/Height/Width above.
+  // Deliberately NOT reset on an assembly switch the way optionValues is:
+  // a toggle's meaning is per-template, but an opening is a physical fact
+  // about the wall itself, same reasoning that already leaves Length/
+  // Height/Width untouched across a switch (e.g. plastering then painting
+  // the same wall shouldn't require re-entering its dimensions, or its
+  // openings, a second time).
+  type OpeningRow = { id: string; widthFt: string; widthIn: string; heightFt: string; heightIn: string; pickedAssemblyId: string };
   type AsmModal = {
     open: boolean; sectionId: string | null; search: string; selectedId: string; qty: string;
     lengthFt: string; lengthIn: string; heightFt: string; heightIn: string; widthFt: string; widthIn: string;
     optionValues: Record<string, boolean>;
+    openings: OpeningRow[];
   };
-  const EMPTY_ASM_DIMS = { lengthFt: "", lengthIn: "", heightFt: "", heightIn: "", widthFt: "", widthIn: "", optionValues: {} as Record<string, boolean> };
+  const EMPTY_ASM_DIMS = { lengthFt: "", lengthIn: "", heightFt: "", heightIn: "", widthFt: "", widthIn: "", optionValues: {} as Record<string, boolean>, openings: [] as OpeningRow[] };
   const [asmModal, setAsmModal] = useState<AsmModal>({ open: false, sectionId: null, search: "", selectedId: "", qty: "1", ...EMPTY_ASM_DIMS });
   // Which assembly instances currently show their component breakdown (collapsed by default).
   const [expandedAssemblies, setExpandedAssemblies] = useState<Set<string>>(new Set());
@@ -1196,7 +1264,7 @@ export default function BOQPage() {
           .select("id,assembly_id,cost_item_id,line_type,quantity_factor,waste_percent,sort_order,notes,optional_flag")
           .order("sort_order").limit(20000);
         if (!alive) return;
-        setAssemblies(active.map((a: any) => ({ id: String(a.id), name: String(a.name ?? ""), description: a.description ? String(a.description) : null, unit: a.unit ? String(a.unit) : null, category: a.category ? String(a.category) : null, is_active: a.is_active ?? true, measure_type: a.metadata?.measure_type ? String(a.metadata.measure_type) : null, constants: (a.metadata?.constants && typeof a.metadata.constants === "object") ? a.metadata.constants : {}, configurable_options: Array.isArray(a.metadata?.configurable_options) ? a.metadata.configurable_options : [] })));
+        setAssemblies(active.map((a: any) => ({ id: String(a.id), name: String(a.name ?? ""), description: a.description ? String(a.description) : null, unit: a.unit ? String(a.unit) : null, category: a.category ? String(a.category) : null, is_active: a.is_active ?? true, measure_type: a.metadata?.measure_type ? String(a.metadata.measure_type) : null, constants: (a.metadata?.constants && typeof a.metadata.constants === "object") ? a.metadata.constants : {}, configurable_options: Array.isArray(a.metadata?.configurable_options) ? a.metadata.configurable_options : [], wizard_type: a.metadata?.wizard_type ? String(a.metadata.wizard_type) : null, wizard_values: (a.metadata?.wizard_values && typeof a.metadata.wizard_values === "object") ? a.metadata.wizard_values : null })));
         setAssemblyComponents((cData || []).map((c: any) => ({ id: String(c.id), assembly_id: String(c.assembly_id), cost_item_id: String(c.cost_item_id), line_type: String(c.line_type ?? "material"), quantity_factor: numOr(c.quantity_factor, 1), waste_percent: numOr(c.waste_percent, 0), sort_order: numOr(c.sort_order, 0), notes: c.notes ? String(c.notes) : null, optional_flag: c.optional_flag ? String(c.optional_flag) : null })));
       } catch (e) { console.error("Assembly load error:", e); }
     }
@@ -1333,7 +1401,7 @@ useEffect(() => {
     const itemsBySection = new Map<string, any[]>();
     if (sectionIds.length > 0) {
       const { data: itemRows, error: iErr } = await supabase.from("boq_section_items")
-        .select("id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate,measurements,assembly_instance_id,assembly_name,assembly_master_length,assembly_master_width,assembly_master_height,assembly_master_set,component_formula,component_waste_percent,measurement_overridden")
+        .select("id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate,measurements,assembly_instance_id,assembly_name,assembly_master_length,assembly_master_width,assembly_master_height,assembly_master_set,assembly_master_openings,component_formula,component_waste_percent,measurement_overridden")
         .in("section_id", sectionIds).order("sort_order");
       if (iErr) throw iErr;
       for (const r of (itemRows || [])) {
@@ -1360,6 +1428,7 @@ useEffect(() => {
         assembly_master_width: r.assembly_master_width != null ? Number(r.assembly_master_width) : null,
         assembly_master_height: r.assembly_master_height != null ? Number(r.assembly_master_height) : null,
         assembly_master_set: !!r.assembly_master_set,
+        assembly_master_openings: r.assembly_master_openings != null ? Number(r.assembly_master_openings) : null,
         component_formula: r.component_formula ? String(r.component_formula) : null,
         component_waste_percent: r.component_waste_percent != null ? Number(r.component_waste_percent) : null,
         measurement_overridden: !!r.measurement_overridden,
@@ -1522,7 +1591,7 @@ useEffect(() => {
       for (const s of sections) {
         const dbSid = sectionIdMap.get(s.id);
         if (!dbSid) throw new Error(`Section mapping failed: ${s.title}`);
-        s.items.forEach((it, i) => itemPayload.push({ section_id: dbSid, sort_order: i, pick_type: it.pick_type ?? "", pick_category: it.pick_category ?? "", pick_item: it.pick_item ?? "", pick_variant: it.pick_variant ?? "", cost_item_id: it.cost_item_id, item_name: it.item_name ?? "", description: it.description ?? "", unit_id: it.unit_id, qty: numOr(it.qty, 0), rate: numOr(it.rate, 0), measurements: it.measurements ?? [], assembly_instance_id: it.assembly_instance_id ?? null, assembly_name: it.assembly_name ?? null, assembly_master_length: it.assembly_master_length ?? null, assembly_master_width: it.assembly_master_width ?? null, assembly_master_height: it.assembly_master_height ?? null, assembly_master_set: it.assembly_master_set ?? false, component_formula: it.component_formula ?? null, component_waste_percent: it.component_waste_percent ?? null, measurement_overridden: it.measurement_overridden ?? false }));
+        s.items.forEach((it, i) => itemPayload.push({ section_id: dbSid, sort_order: i, pick_type: it.pick_type ?? "", pick_category: it.pick_category ?? "", pick_item: it.pick_item ?? "", pick_variant: it.pick_variant ?? "", cost_item_id: it.cost_item_id, item_name: it.item_name ?? "", description: it.description ?? "", unit_id: it.unit_id, qty: numOr(it.qty, 0), rate: numOr(it.rate, 0), measurements: it.measurements ?? [], assembly_instance_id: it.assembly_instance_id ?? null, assembly_name: it.assembly_name ?? null, assembly_master_length: it.assembly_master_length ?? null, assembly_master_width: it.assembly_master_width ?? null, assembly_master_height: it.assembly_master_height ?? null, assembly_master_set: it.assembly_master_set ?? false, assembly_master_openings: it.assembly_master_openings ?? null, component_formula: it.component_formula ?? null, component_waste_percent: it.component_waste_percent ?? null, measurement_overridden: it.measurement_overridden ?? false }));
       }
       if (itemPayload.length > 0) {
         const { error: iErr } = await supabase.from("boq_section_items").insert(itemPayload).select("id,item_name");
@@ -1702,6 +1771,12 @@ useEffect(() => {
           assembly_master_width: masterWidth,
           assembly_master_height: masterHeight,
           assembly_master_set: true,
+          // This tool has no concept of openings (it's the generic multi-row
+          // deduct mechanism, not the "Add From Assembly" Openings section) —
+          // clear any prior value rather than leave it lingering, or the
+          // gross/openings/net breakdown display would keep showing a stale
+          // deduction against these newly-remeasured dims.
+          assembly_master_openings: null,
           measurements: rows,
         };
       }),
@@ -1946,6 +2021,12 @@ function explodeAssembly(
         assembly_master_length: hasMasterDims ? dims!.length : null,
         assembly_master_width: hasMasterDims && dims!.width !== undefined ? dims!.width : null,
         assembly_master_height: hasMasterDims && dims!.height !== undefined ? dims!.height : null,
+        // dims.openings is always a defined number (0 when no opening rows
+        // were added — see the "Add From Assembly" modal's Add Lines
+        // handler) whenever hasMasterDims is true, so this stores the real
+        // deduction used in the formula, 0 included — not null unless this
+        // add didn't go through the length/height flow at all (count-type).
+        assembly_master_openings: hasMasterDims && dims!.openings !== undefined ? dims!.openings : null,
       };
     })
     .filter(Boolean) as BOQItemRow[];
@@ -2524,6 +2605,23 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                     </div>
                                     <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{fmtMoney(total)}</span>
                                   </div>
+                                  {(() => {
+                                    const masterSet = group.items.find(i => i.assembly_master_set);
+                                    // Only shown when there's an actual deduction to report —
+                                    // gross === net for every assembly that never used the
+                                    // Openings section, so the line would be pure noise there.
+                                    if (!masterSet || !masterSet.assembly_master_openings) return null;
+                                    const gross = (masterSet.assembly_master_length || 0) * (masterSet.assembly_master_height || 0);
+                                    const openings = masterSet.assembly_master_openings;
+                                    const net = gross - openings;
+                                    return (
+                                      <div className="flex items-center gap-2 flex-wrap text-[10px] text-slate-500 dark:text-slate-600 mt-1">
+                                        <span>Gross {gross.toFixed(2)} m²</span>
+                                        <span className="text-red-500 dark:text-red-400">− {openings.toFixed(2)} m² openings</span>
+                                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">= {net.toFixed(2)} m² net</span>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                                 {expanded && group.items.map(it => renderMobileCard(it, true))}
                               </React.Fragment>
@@ -2725,6 +2823,23 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                     })()}
                                   </div>
                                   <div className="text-[10px] text-slate-400 mt-0.5">{group.items.length} component{group.items.length !== 1 ? "s" : ""}</div>
+                                  {(() => {
+                                    const masterSet = group.items.find(i => i.assembly_master_set);
+                                    // Only shown when there's an actual deduction to report —
+                                    // gross === net for every assembly that never used the
+                                    // Openings section, so the line would be pure noise there.
+                                    if (!masterSet || !masterSet.assembly_master_openings) return null;
+                                    const gross = (masterSet.assembly_master_length || 0) * (masterSet.assembly_master_height || 0);
+                                    const openings = masterSet.assembly_master_openings;
+                                    const net = gross - openings;
+                                    return (
+                                      <div className="flex items-center gap-2 flex-wrap text-[9px] text-slate-500 dark:text-slate-600 mt-0.5">
+                                        <span>Gross {gross.toFixed(2)} m²</span>
+                                        <span className="text-red-500 dark:text-red-400">− {openings.toFixed(2)} m² openings</span>
+                                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">= {net.toFixed(2)} m² net</span>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                                 <div/>
                                 <div/>
@@ -2854,6 +2969,43 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         // their own in-scope toggles too. Resolved into optionToggles (not
         // dims) at "Add Lines" time in both branches below.
         const componentToggleOptions = selectedAssembly?.configurable_options.filter((o): o is Extract<ConfigurableOption, { kind: "component_toggle" }> => o.kind === "component_toggle") ?? [];
+        // Precise per-template gate, deliberately narrower than isFormulaMode
+        // (see WALL_FACE_OPENING_TYPES) — a door/window opening only makes
+        // physical sense for a wall-covering, not for e.g. Slab or Column,
+        // both of which are also isFormulaMode but have nothing to deduct.
+        const wallFaceOpeningSupported = !!selectedAssembly?.wizard_type && WALL_FACE_OPENING_TYPES.has(selectedAssembly.wizard_type);
+        // Saved door/window assemblies available to auto-fill an opening
+        // row's width/height from — filtered client-side from the same
+        // `assemblies` list already loaded for the main picker, no new query.
+        const doorWindowAssemblies = assemblies.filter(a => !!a.wizard_type && a.wizard_type in DOOR_WINDOW_SIZE_FIELDS);
+        // Hoisted out of the "Add Lines" handler (which used to define its
+        // own copy) so the live Gross/Openings/Net summary below and the
+        // actual dims.openings computation at Add Lines time share the
+        // exact same ft+in -> m conversion — never two copies that could drift.
+        function combineFtIn(ftStr: string, inStr: string): number | undefined {
+          const ft = parseDimInput(ftStr);
+          const inches = parseDimInput(inStr);
+          if (ft === undefined && inches === undefined) return undefined;
+          return feetInchesToMeters(ft ?? 0, inches ?? 0);
+        }
+        // Live area breakdown — recomputed every render from whatever is
+        // currently typed, so it updates as the user types rather than only
+        // appearing after "Add Lines". m², not sqft: no existing UI in this
+        // app displays area in sqft (checked) — the one nearby precedent,
+        // the assembly group's own "📐 {length}m" chip, is already in
+        // meters, so this stays consistent with that rather than
+        // introducing a second, different unit convention next to it.
+        const liveGrossAreaM2 = wallFaceOpeningSupported
+          ? (combineFtIn(asmModal.lengthFt, asmModal.lengthIn) ?? 0) * (combineFtIn(asmModal.heightFt, asmModal.heightIn) ?? 0)
+          : 0;
+        const liveOpeningsAreaM2 = wallFaceOpeningSupported
+          ? asmModal.openings.reduce((sum, row) => {
+              const rw = combineFtIn(row.widthFt, row.widthIn);
+              const rh = combineFtIn(row.heightFt, row.heightIn);
+              return rw !== undefined && rh !== undefined ? sum + rw * rh : sum;
+            }, 0)
+          : 0;
+        const liveNetAreaM2 = liveGrossAreaM2 - liveOpeningsAreaM2;
         return (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-[#0d1117] rounded-2xl border border-slate-200 dark:border-white/[0.08] shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
@@ -2919,6 +3071,86 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                   </div>
                 </div>
               )}
+              {wallFaceOpeningSupported && (
+                // Door/window opening deductions — only shown for the 10
+                // wall-face templates whose formulas actually subtract
+                // `openings` (see AssemblyWizard.tsx). Each row nets its own
+                // width×height against the gross length×height computed
+                // above; the sum (in m²) is passed through to those
+                // formulas as dims.openings at "Add Lines" time below.
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">Openings (doors/windows)</span>
+                    <button type="button"
+                      onClick={() => setAsmModal(p => ({ ...p, openings: [...p.openings, { id: safeId(), widthFt: "", widthIn: "", heightFt: "", heightIn: "", pickedAssemblyId: "" }] }))}
+                      className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:underline font-medium">
+                      + Add opening
+                    </button>
+                  </div>
+                  {asmModal.openings.map(row => (
+                    <div key={row.id} className="rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.03] p-2 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <select value={row.pickedAssemblyId}
+                          onChange={e => {
+                            const pickedId = e.target.value;
+                            const picked = doorWindowAssemblies.find(a => a.id === pickedId);
+                            const sizeFields = picked?.wizard_type ? DOOR_WINDOW_SIZE_FIELDS[picked.wizard_type] : undefined;
+                            const widthMm = sizeFields ? Number(picked?.wizard_values?.[sizeFields.widthField]) : NaN;
+                            const heightMm = sizeFields ? Number(picked?.wizard_values?.[sizeFields.heightField]) : NaN;
+                            setAsmModal(p => ({ ...p, openings: p.openings.map(r => {
+                              if (r.id !== row.id) return r;
+                              if (!picked || !sizeFields || !Number.isFinite(widthMm) || !Number.isFinite(heightMm)) {
+                                return { ...r, pickedAssemblyId: pickedId };
+                              }
+                              const w = mmToFeetInches(widthMm);
+                              const h = mmToFeetInches(heightMm);
+                              return { ...r, pickedAssemblyId: pickedId, widthFt: w.ft, widthIn: w.in, heightFt: h.ft, heightIn: h.in };
+                            }) }));
+                          }}
+                          className="flex-1 min-w-0 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1.5 text-[11px] text-slate-700 dark:text-slate-300 outline-none focus:border-blue-500/50">
+                          <option value="">Pick from saved door/window (optional)</option>
+                          {doorWindowAssemblies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        </select>
+                        <button type="button" onClick={() => setAsmModal(p => ({ ...p, openings: p.openings.filter(r => r.id !== row.id) }))}
+                          className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors flex-shrink-0" title="Remove opening">
+                          <X size={13}/>
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-8 flex-shrink-0 text-[10px] text-slate-500 dark:text-slate-600">W</span>
+                        <input value={row.widthFt} onChange={e => setAsmModal(p => ({ ...p, openings: p.openings.map(r => r.id === row.id ? { ...r, widthFt: e.target.value, pickedAssemblyId: "" } : r) }))} type="number"
+                          className="flex-1 min-w-0 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1.5 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                          placeholder="0"/>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-600 flex-shrink-0">ft</span>
+                        <input value={row.widthIn} onChange={e => setAsmModal(p => ({ ...p, openings: p.openings.map(r => r.id === row.id ? { ...r, widthIn: e.target.value, pickedAssemblyId: "" } : r) }))} type="number"
+                          className="w-14 flex-shrink-0 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1.5 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                          placeholder="0"/>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-600 flex-shrink-0">in</span>
+                        <span className="w-8 flex-shrink-0 text-[10px] text-slate-500 dark:text-slate-600 text-right">H</span>
+                        <input value={row.heightFt} onChange={e => setAsmModal(p => ({ ...p, openings: p.openings.map(r => r.id === row.id ? { ...r, heightFt: e.target.value, pickedAssemblyId: "" } : r) }))} type="number"
+                          className="flex-1 min-w-0 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1.5 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                          placeholder="0"/>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-600 flex-shrink-0">ft</span>
+                        <input value={row.heightIn} onChange={e => setAsmModal(p => ({ ...p, openings: p.openings.map(r => r.id === row.id ? { ...r, heightIn: e.target.value, pickedAssemblyId: "" } : r) }))} type="number"
+                          className="w-14 flex-shrink-0 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-2 py-1.5 text-[11px] text-slate-800 dark:text-slate-200 outline-none focus:border-blue-500/50"
+                          placeholder="0"/>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-600 flex-shrink-0">in</span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between gap-2 flex-wrap px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.03] text-[11px]">
+                    <span className="text-slate-600 dark:text-slate-400">
+                      Gross area: <span className="font-semibold text-slate-800 dark:text-slate-200">{liveGrossAreaM2.toFixed(2)} m²</span>
+                    </span>
+                    <span className="text-slate-600 dark:text-slate-400">
+                      Openings: <span className="font-semibold text-red-500 dark:text-red-400">-{liveOpeningsAreaM2.toFixed(2)} m²</span>
+                    </span>
+                    <span className="text-slate-600 dark:text-slate-400">
+                      Net area: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{liveNetAreaM2.toFixed(2)} m²</span>
+                    </span>
+                  </div>
+                </div>
+              )}
               {(formulaVarOptions.length > 0 || componentToggleOptions.length > 0) && (
                 <div className="space-y-1.5">
                   {[...formulaVarOptions, ...componentToggleOptions].map(opt => {
@@ -2981,17 +3213,29 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                     // are blank, the dimension stays out of dims entirely, same as
                     // before, so evalAssemblyFormula's "Missing variable" check still
                     // catches a formula that genuinely needs it but wasn't filled in.
-                    function combineFtIn(ftStr: string, inStr: string): number | undefined {
-                      const ft = parseDimInput(ftStr);
-                      const inches = parseDimInput(inStr);
-                      if (ft === undefined && inches === undefined) return undefined;
-                      return feetInchesToMeters(ft ?? 0, inches ?? 0);
-                    }
+                    // combineFtIn is defined once, above, outside this handler — see
+                    // its own comment for why (shared with the live area summary).
                     const dims: FormulaVars = {};
                     const l = combineFtIn(asmModal.lengthFt, asmModal.lengthIn); if (l !== undefined) dims.length = l;
                     const h = combineFtIn(asmModal.heightFt, asmModal.heightIn); if (h !== undefined) dims.height = h;
                     const w = combineFtIn(asmModal.widthFt, asmModal.widthIn); if (w !== undefined) dims.width = w;
                     if (dims.length === undefined) { alert("Enter a length."); return; }
+                    // Always set (defaulting to 0), never left out of dims entirely
+                    // — the 10 wall-face templates' formulas now literally
+                    // reference `openings` (see AssemblyWizard.tsx), so omitting
+                    // it when no opening was added would trip evalAssemblyFormula's
+                    // "Unknown variable" check and silently fall back to the wrong
+                    // legacy quantity_factor path, not just skip the deduction. A
+                    // row missing either its width or height simply doesn't count
+                    // toward the sum, the same lenient "incomplete = ignored, not
+                    // an error" handling this modal already uses elsewhere.
+                    let openingsAreaM2 = 0;
+                    for (const row of asmModal.openings) {
+                      const rw = combineFtIn(row.widthFt, row.widthIn);
+                      const rh = combineFtIn(row.heightFt, row.heightIn);
+                      if (rw !== undefined && rh !== undefined) openingsAreaM2 += rw * rh;
+                    }
+                    dims.openings = openingsAreaM2;
                     // Resolve each formula_variable Toggle (e.g. sides) to the
                     // number its formula text actually expects — the modal only
                     // ever shows a boolean switch, never the raw number itself.

@@ -944,12 +944,16 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
     case "plastering": {
       // area isn't a recognized variable — plastering is assumed on a wall
       // face, so area is expressed as length * height.
+      // (length * height - openings) nets out door/window deductions — see
+      // BOQPage.tsx's "Add From Assembly" modal Openings section. `openings`
+      // is always present in the live evaluator's vars (defaulting to 0), so
+      // a wall with no openings computes identically to before this change.
       const comps: GeneratedComponent[] = [];
-      comps.push({ item_name: "Cement", type: "material", formula: "length * height * sides * 0.06", waste_percent: 10, description: "Scratch coat cement (bags)", optional_flag: "include_scratch_coat" });
-      comps.push({ item_name: "Sand", type: "material", formula: "length * height * sides * 0.015", waste_percent: 10, description: "Scratch coat sand (m³)", optional_flag: "include_scratch_coat" });
-      comps.push({ item_name: "Cement", type: "material", formula: `length * height * sides * ${(v.plaster_coats * 0.08).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster cement (bags)` });
-      comps.push({ item_name: "Sand", type: "material", formula: `length * height * sides * ${(v.plaster_coats * 0.02).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster sand (m³)` });
-      comps.push({ item_name: "Labor - Plastering", type: "labor", formula: "length * height * sides * 0.5", waste_percent: 0, description: "Plastering labor (man-hours)" });
+      comps.push({ item_name: "Cement", type: "material", formula: "(length * height - openings) * sides * 0.06", waste_percent: 10, description: "Scratch coat cement (bags)", optional_flag: "include_scratch_coat" });
+      comps.push({ item_name: "Sand", type: "material", formula: "(length * height - openings) * sides * 0.015", waste_percent: 10, description: "Scratch coat sand (m³)", optional_flag: "include_scratch_coat" });
+      comps.push({ item_name: "Cement", type: "material", formula: `(length * height - openings) * sides * ${(v.plaster_coats * 0.08).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster cement (bags)` });
+      comps.push({ item_name: "Sand", type: "material", formula: `(length * height - openings) * sides * ${(v.plaster_coats * 0.02).toFixed(3)}`, waste_percent: 10, description: `${v.plaster_coats} coat plaster sand (m³)` });
+      comps.push({ item_name: "Labor - Plastering", type: "labor", formula: "(length * height - openings) * sides * 0.5", waste_percent: 0, description: "Plastering labor (man-hours)" });
       return comps;
     }
 
@@ -982,9 +986,9 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // rather than applied directly to metric length*height like before.
       const gallonsPerSqM = 1 / (v.paint_coverage * 0.09290304);
       const comps: GeneratedComponent[] = [];
-      comps.push({ item_name: "Primer", type: "material", formula: `length * height * sides * ${(1 / (350 * 0.09290304)).toFixed(5)}`, waste_percent: 5, description: "Primer (1 gal / 350 sf)", optional_flag: "include_primer" });
-      comps.push({ item_name: "Paint", type: "material", formula: `length * height * sides * ${(gallonsPerSqM * v.paint_coats).toFixed(5)}`, waste_percent: 5, description: `${v.paint_coats} coats paint (gallons)` });
-      comps.push({ item_name: "Labor - Painting", type: "labor", formula: "length * height * sides * 0.2", waste_percent: 0, description: "Painting labor (man-hours)" });
+      comps.push({ item_name: "Primer", type: "material", formula: `(length * height - openings) * sides * ${(1 / (350 * 0.09290304)).toFixed(5)}`, waste_percent: 5, description: "Primer (1 gal / 350 sf)", optional_flag: "include_primer" });
+      comps.push({ item_name: "Paint", type: "material", formula: `(length * height - openings) * sides * ${(gallonsPerSqM * v.paint_coats).toFixed(5)}`, waste_percent: 5, description: `${v.paint_coats} coats paint (gallons)` });
+      comps.push({ item_name: "Labor - Painting", type: "labor", formula: "(length * height - openings) * sides * 0.2", waste_percent: 0, description: "Painting labor (man-hours)" });
       return comps;
     }
 
@@ -1148,30 +1152,36 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
           description: `${v.stud_size} studs @ ${v.stud_spacing}mm centres`,
         },
         {
+          // Metal Floor Track/Stud above are deliberately left as gross
+          // length/height — a door/window opening in a stud wall still
+          // needs full-height track around it (or a header/jack studs in
+          // its place) in real framing, it doesn't reduce track or stud
+          // count the way it reduces board/compound/paint area. Everything
+          // below this point IS a pure area quantity, so gets the deduction.
           item_name: "Gypsum Board",
           type: "material",
-          formula: `length * height * sides * ${layers} / 2.976`,
+          formula: `(length * height - openings) * sides * ${layers} / 2.976`,
           waste_percent: 10,
           description: `${layers} layer${layers > 1 ? "s" : ""} each side — 4×8 sheets`,
         },
         {
           item_name: "Joint Compound",
           type: "material",
-          formula: "length * height * sides * 0.02",
+          formula: "(length * height - openings) * sides * 0.02",
           waste_percent: 10,
           description: "Joint compound (bags)",
         },
         {
           item_name: "Paper Tape",
           type: "material",
-          formula: "length * height * sides * 0.3",
+          formula: "(length * height - openings) * sides * 0.3",
           waste_percent: 10,
           description: "Paper tape (lf)",
         },
         {
           item_name: "Drywall Screw",
           type: "material",
-          formula: "length * height * sides * 3",
+          formula: "(length * height - openings) * sides * 3",
           waste_percent: 5,
           description: "Screws (each)",
         },
@@ -1179,7 +1189,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       comps.push({
         item_name: "Insulation Batt",
         type: "material",
-        formula: "length * height",
+        formula: "length * height - openings",
         waste_percent: 5,
         description: "Wall insulation",
         optional_flag: "include_insulation",
@@ -1187,7 +1197,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       comps.push({
         item_name: "Labor - Drywall",
         type: "labor",
-        formula: "length * height * 0.8",
+        formula: "(length * height - openings) * 0.8",
         waste_percent: 0,
         description: "Drywall installation labor (man-hours)",
       });
@@ -1209,7 +1219,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       comps.push({
         item_name: "PVA Sealer",
         type: "material",
-        formula: `length * height * sides * ${(1 / (350 * 0.09290304)).toFixed(5)}`,
+        formula: `(length * height - openings) * sides * ${(1 / (350 * 0.09290304)).toFixed(5)}`,
         waste_percent: 5,
         description: "PVA sealer coat (1 gal / 350 sf)",
         optional_flag: "include_pva_sealer",
@@ -1217,14 +1227,14 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       comps.push({
         item_name: "Paint",
         type: "material",
-        formula: `length * height * sides * ${((1 / (400 * 0.09290304)) * v.drywall_paint_coats).toFixed(5)}`,
+        formula: `(length * height - openings) * sides * ${((1 / (400 * 0.09290304)) * v.drywall_paint_coats).toFixed(5)}`,
         waste_percent: 5,
         description: `${v.drywall_paint_coats} coats paint (gallons)`,
       });
       comps.push({
         item_name: "Labor - Painting",
         type: "labor",
-        formula: "length * height * sides * 0.15",
+        formula: "(length * height - openings) * sides * 0.15",
         waste_percent: 0,
         description: "Drywall painting labor (man-hours)",
       });
@@ -1827,21 +1837,21 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Cement",
           type: "material",
-          formula: `length * height * sides * ${(0.673 * thicknessFactor * mixFactor).toFixed(4)}`,
+          formula: `(length * height - openings) * sides * ${(0.673 * thicknessFactor * mixFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for ${v.rough_render_mix} render at ${v.rough_render_thickness}mm (bags)`,
         },
         {
           item_name: "Sand",
           type: "material",
-          formula: `length * height * sides * ${(0.028 * thicknessFactor).toFixed(4)}`,
+          formula: `(length * height - openings) * sides * ${(0.028 * thicknessFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Sharp sand for rough render (m³)`,
         },
         {
           item_name: "Labor - Rendering",
           type: "labor",
-          formula: "length * height * sides * 0.6",
+          formula: "(length * height - openings) * sides * 0.6",
           waste_percent: 0,
           description: "Rough render labor (man-hours)",
         },
@@ -1863,21 +1873,21 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Cement",
           type: "material",
-          formula: `length * height * sides * ${(cementPerSqM * thicknessFactor * mixFactor).toFixed(4)}`,
+          formula: `(length * height - openings) * sides * ${(cementPerSqM * thicknessFactor * mixFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for ${v.float_mix} float coat at ${v.float_thickness}mm (bags)`,
         },
         {
           item_name: "Sand",
           type: "material",
-          formula: `length * height * sides * ${(0.019 * thicknessFactor).toFixed(4)}`,
+          formula: `(length * height - openings) * sides * ${(0.019 * thicknessFactor).toFixed(4)}`,
           waste_percent: 10,
           description: "Fine sand for float coat (m³)",
         },
         {
           item_name: "Labor - Float Coat",
           type: "labor",
-          formula: "length * height * sides * 0.5",
+          formula: "(length * height - openings) * sides * 0.5",
           waste_percent: 0,
           description: "Float coat labor (man-hours)",
         },
@@ -1890,21 +1900,21 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         ...(isGypsum ? [{
           item_name: "Gypsum Plaster",
           type: "material",
-          formula: "length * height * sides * 0.008",
+          formula: "(length * height - openings) * sides * 0.008",
           waste_percent: 10,
           description: `Gypsum skim at ${v.skim_thickness}mm (bags)`,
         }] : [
           {
             item_name: "Cement",
             type: "material",
-            formula: "length * height * sides * 0.025",
+            formula: "(length * height - openings) * sides * 0.025",
             waste_percent: 10,
             description: "Cement for skim coat (bags)",
           },
           {
             item_name: "Hydrated Lime",
             type: "material",
-            formula: "length * height * sides * 0.012",
+            formula: "(length * height - openings) * sides * 0.012",
             waste_percent: 10,
             description: "Lime for skim coat (bags)",
           },
@@ -1912,7 +1922,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Labor - Skim Coat",
           type: "labor",
-          formula: "length * height * sides * 0.4",
+          formula: "(length * height - openings) * sides * 0.4",
           waste_percent: 0,
           description: "Skim coat labor (man-hours) — fine finish",
         },
@@ -1978,28 +1988,28 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Cement",
           type: "material",
-          formula: `length * height * sides * ${(cementPerSqM * wpFactor).toFixed(4)}`,
+          formula: `(length * height - openings) * sides * ${(cementPerSqM * wpFactor).toFixed(4)}`,
           waste_percent: 10,
           description: `Cement for waterproof render ${v.waterproof_coats} coat(s) (bags)`,
         },
         {
           item_name: "Sand",
           type: "material",
-          formula: `length * height * sides * ${(0.019 * wpFactor).toFixed(4)}`,
+          formula: `(length * height - openings) * sides * ${(0.019 * wpFactor).toFixed(4)}`,
           waste_percent: 10,
           description: "Fine sand for waterproof render (m³)",
         },
         {
           item_name: "Waterproofing Additive",
           type: "material",
-          formula: `length * height * sides * ${(0.15 * v.waterproof_coats).toFixed(3)}`,
+          formula: `(length * height - openings) * sides * ${(0.15 * v.waterproof_coats).toFixed(3)}`,
           waste_percent: 5,
           description: `${v.waterproof_additive} waterproofing additive (litres)`,
         },
         {
           item_name: "Labor - Waterproof Render",
           type: "labor",
-          formula: `length * height * sides * ${(0.5 * v.waterproof_coats).toFixed(2)}`,
+          formula: `(length * height - openings) * sides * ${(0.5 * v.waterproof_coats).toFixed(2)}`,
           waste_percent: 0,
           description: `Waterproof render labor — ${v.waterproof_coats} coats (man-hours)`,
         },
@@ -2011,28 +2021,28 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Cement",
           type: "material",
-          formula: `length * height * sides * ${(0.04 * v.tyrolean_coats).toFixed(3)}`,
+          formula: `(length * height - openings) * sides * ${(0.04 * v.tyrolean_coats).toFixed(3)}`,
           waste_percent: 15,
           description: `Cement for tyrolean ${v.tyrolean_coats} coat(s) (bags)`,
         },
         {
           item_name: "Aggregate",
           type: "material",
-          formula: `length * height * sides * ${(0.012 * v.tyrolean_coats).toFixed(4)}`,
+          formula: `(length * height - openings) * sides * ${(0.012 * v.tyrolean_coats).toFixed(4)}`,
           waste_percent: 15,
           description: "Fine aggregate/pea gravel for tyrolean texture (m³)",
         },
         ...(v.tyrolean_type === "machine" ? [{
           item_name: "Tyrolean Machine Hire",
           type: "equipment" as const,
-          formula: "length * height * sides * 0.05",
+          formula: "(length * height - openings) * sides * 0.05",
           waste_percent: 0,
           description: "Tyrolean projector machine hire (hours)",
         }] : []),
         {
           item_name: "Labor - Tyrolean",
           type: "labor",
-          formula: `length * height * sides * ${v.tyrolean_type === "machine" ? 0.3 : 0.6}`,
+          formula: `(length * height - openings) * sides * ${v.tyrolean_type === "machine" ? 0.3 : 0.6}`,
           waste_percent: 0,
           description: `${v.tyrolean_type === "machine" ? "Machine" : "Hand"} tyrolean labor (man-hours)`,
         },
@@ -2052,7 +2062,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         {
           item_name: "Wall Tile",
           type: "material",
-          formula: `length * height * sides * ${tilesPerSqM} * ${1 + v.wall_tile_waste / 100}`,
+          formula: `(length * height - openings) * sides * ${tilesPerSqM} * ${1 + v.wall_tile_waste / 100}`,
           waste_percent: 0,
           description: `${v.wall_tile_size}" wall tiles with ${v.wall_tile_waste}% waste`,
         },
@@ -2060,7 +2070,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       comps.push({
         item_name: "Wall Tile Adhesive",
         type: "material",
-        formula: "length * height * sides * 0.05",
+        formula: "(length * height - openings) * sides * 0.05",
         waste_percent: 5,
         description: "Tile adhesive (bags)",
         optional_flag: "wall_include_adhesive",
@@ -2068,7 +2078,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       comps.push({
         item_name: "Tile Grout",
         type: "material",
-        formula: "length * height * sides * 0.012",
+        formula: "(length * height - openings) * sides * 0.012",
         waste_percent: 5,
         description: "Tile grout (bags)",
         optional_flag: "wall_include_grout",
@@ -2078,6 +2088,10 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         // is still needed around each tiled face separately when both sides
         // are tiled, so it scales with `sides` the same way the area-based
         // components do — two separate tiled faces, two separate perimeters.
+        // Deliberately NOT deducting `openings` here either — a door/window
+        // opening in a tiled wall needs its OWN trim around the opening in
+        // reality (more trim, not less), the opposite of an area deduction,
+        // so this stays gross-perimeter-based.
         item_name: "Edge Trim / Tile Bead",
         type: "material",
         formula: "(length + height) * 2 * 1.1 * sides",
@@ -2088,7 +2102,7 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       comps.push({
         item_name: "Labor - Wall Tiling",
         type: "labor",
-        formula: "length * height * sides * 1.0",
+        formula: "(length * height - openings) * sides * 1.0",
         waste_percent: 0,
         description: "Wall tiling labor (man-hours)",
       });
