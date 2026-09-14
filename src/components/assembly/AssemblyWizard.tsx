@@ -798,11 +798,17 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
       // area isn't a recognized variable — a wall's area is length * height.
       // Standard 8"x16" block face = 0.8889 sqft -> 1.125 blocks/sqft, converted
       // to metric (length/height are meters): 1.125 / 0.09290304 = 12.1094 blocks/m².
+      // (length * height - openings) — a door/window opening means that
+      // section of wall simply isn't built, so block/mortar/pocket-fill
+      // quantities genuinely reduce, same reasoning as the 10 wall-covering
+      // templates. `openings` is always present (defaulting to 0), so a
+      // wall with none computes identically to before. See the Rebar
+      // component below for why this deduction does NOT apply there.
       const blocksPerSqM = 12.1094;
       const comps: GeneratedComponent[] = [
-        { item_name: "Block", type: "material", formula: `length * height * ${blocksPerSqM.toFixed(4)}`, waste_percent: 5, description: `${v.block_size} hollow blocks` },
-        { item_name: "Cement", type: "material", formula: "length * height * 0.08", waste_percent: 10, description: "Mortar cement (bags)", optional_flag: "include_mortar" },
-        { item_name: "Sand", type: "material", formula: "length * height * 0.025", waste_percent: 10, description: "Mortar sand (m³)" },
+        { item_name: "Block", type: "material", formula: `(length * height - openings) * ${blocksPerSqM.toFixed(4)}`, waste_percent: 5, description: `${v.block_size} hollow blocks` },
+        { item_name: "Cement", type: "material", formula: "(length * height - openings) * 0.08", waste_percent: 10, description: "Mortar cement (bags)", optional_flag: "include_mortar" },
+        { item_name: "Sand", type: "material", formula: "(length * height - openings) * 0.025", waste_percent: 10, description: "Mortar sand (m³)" },
         // Pocket/core fill — grout filling the hollow cores of the blocks,
         // standard practice for a fully-grouted reinforced block wall. A
         // structurally separate material use from the mortar above (mortar
@@ -830,13 +836,29 @@ function generateComponents(elementType: string, v: WizardValues): GeneratedComp
         //   Cement: 0.57 bags/m²
         //   Sand:   0.039 m³/m²
         //   Gravel: 0.059 m³/m²
-        { item_name: "Cement", type: "material", formula: "length * height * 0.57", waste_percent: 10, description: "Pocket/core fill cement (bags)", optional_flag: "include_pocket_fill" },
-        { item_name: "Sand", type: "material", formula: "length * height * 0.039", waste_percent: 10, description: "Pocket/core fill sand (m³)", optional_flag: "include_pocket_fill" },
-        { item_name: "Gravel", type: "material", formula: "length * height * 0.059", waste_percent: 10, description: "Pocket/core fill gravel/aggregate (m³)", optional_flag: "include_pocket_fill" },
+        { item_name: "Cement", type: "material", formula: "(length * height - openings) * 0.57", waste_percent: 10, description: "Pocket/core fill cement (bags)", optional_flag: "include_pocket_fill" },
+        { item_name: "Sand", type: "material", formula: "(length * height - openings) * 0.039", waste_percent: 10, description: "Pocket/core fill sand (m³)", optional_flag: "include_pocket_fill" },
+        { item_name: "Gravel", type: "material", formula: "(length * height - openings) * 0.059", waste_percent: 10, description: "Pocket/core fill gravel/aggregate (m³)", optional_flag: "include_pocket_fill" },
       ];
       const hbw = barWeight(v.horiz_bar_size);
       const hsp = v.horiz_bar_spacing / 1000;
       comps.push({
+        // Deliberately NOT deducting `openings` here, unlike every other
+        // component above. This formula isn't an area product at all —
+        // (height/spacing) is a COURSE COUNT (dimensionless), only then
+        // multiplied by length (meters) and bar weight (kg/m) to get a
+        // total weight. `openings` is an area (m²); subtracting an area
+        // from a course-count-times-length term is dimensionally wrong,
+        // not just physically questionable. The real-world correction
+        // would need each opening's WIDTH (not area) applied only to the
+        // courses that actually fall within that opening's height range —
+        // a genuinely different, more granular input than the single
+        // aggregate m² this feature tracks (multiple openings of different
+        // sizes can't be disaggregated back out of one summed number).
+        // Left unreduced: this can overstate horizontal bar quantity when
+        // a wall has large openings, a known limitation, not an oversight —
+        // flagged rather than force-fit into a formula shape that doesn't
+        // physically or dimensionally support it.
         item_name: "Rebar",
         type: "material",
         formula: `(height / ${hsp}) * length * ${hbw}`,

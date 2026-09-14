@@ -143,16 +143,23 @@ type AssemblyRow = {
   wizard_values: Record<string, any> | null;
 };
 
-// The 10 wall-face ("length * height", already using the live `sides`
-// toggle) templates whose generateComponents() formulas subtract `openings`
-// — see AssemblyWizard.tsx. Deliberately NOT the same set as isFormulaMode
-// (linear/area/volume) — that's a much broader set including structural
-// templates (Slab, Column, Footing, Retaining Wall, Block Wall, etc.) that
-// a door/window deduction has no physical meaning for.
+// The 11 wall-face ("length * height") templates whose generateComponents()
+// formulas subtract `openings` — see AssemblyWizard.tsx. Deliberately NOT
+// the same set as isFormulaMode (linear/area/volume) — that's a much
+// broader set including genuinely structural templates (Slab, Column,
+// Footing, Retaining Wall, etc.) that a door/window deduction has no
+// physical meaning for. Block Wall WAS excluded here too, on the reasoning
+// that it's "structural, not a covering" — corrected: an opening means
+// that section of wall simply isn't built, so block/mortar/pocket-fill
+// quantities genuinely reduce, same as every other template below (its
+// Rebar component is the one exception — see the comment on that formula
+// in AssemblyWizard.tsx for why). Block Wall also has no `sides` concept,
+// unlike the other 10 — irrelevant to this gate, which only cares whether
+// the template's formulas reference `openings` at all.
 const WALL_FACE_OPENING_TYPES = new Set([
   "plastering", "painting", "drywall_partition", "drywall_painting",
   "rough_render", "float_coat", "skim_coat", "waterproof_render",
-  "tyrolean", "wall_tiling",
+  "tyrolean", "wall_tiling", "block_wall",
 ]);
 
 // The 3 count-type templates that represent a real door/window, and which
