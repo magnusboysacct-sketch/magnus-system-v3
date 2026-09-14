@@ -75,6 +75,13 @@ type Category = { id: string; name: string; category_type: string };
 
 type Tab = "all" | "pending" | "approved" | "filing";
 
+// projectFilter sentinel for "company-level expenses only" (project_id is
+// null) — deliberately NOT the empty string, since "" already means "All
+// projects" (no filter at all, every row matches regardless of project_id).
+// An actual project's id is always a real uuid, so this literal can never
+// collide with one.
+const NO_PROJECT_FILTER = "__no_project__";
+
 // Matches the expenses.status CHECK constraint exactly: pending/approved/
 // reimbursed/rejected — "paid" was never a real status (no such value in
 // the DB constraint; see the "Mark Paid" fix below), so it's "reimbursed"
@@ -325,7 +332,9 @@ export default function ExpensesPage() {
     const matchSearch = (e.description || "").toLowerCase().includes(search.toLowerCase()) ||
       (e.expense_categories?.name || "").toLowerCase().includes(search.toLowerCase());
     const matchTab = tab === "all" || e.status === tab;
-    const matchProject = !projectFilter || e.project_id === projectFilter;
+    const matchProject = projectFilter === NO_PROJECT_FILTER
+      ? e.project_id === null
+      : !projectFilter || e.project_id === projectFilter;
     // Real Date comparison, not raw string >= — expense_date is a plain
     // "YYYY-MM-DD" (no time component), while the cutoff/created_at are
     // full ISO datetimes; comparing those as strings is lexicographically
@@ -347,7 +356,9 @@ export default function ExpensesPage() {
   // happens to be open. Same matchProject/matchDate logic as `filtered`
   // above, not a second, differently-worded copy.
   const projectDateFiltered = expenses.filter(e => {
-    const matchProject = !projectFilter || e.project_id === projectFilter;
+    const matchProject = projectFilter === NO_PROJECT_FILTER
+      ? e.project_id === null
+      : !projectFilter || e.project_id === projectFilter;
     const effMs = new Date(e.expense_date || e.created_at).getTime();
     const matchDate = (dateStartMs === null || effMs >= dateStartMs) && (dateEndMs === null || effMs <= dateEndMs);
     return matchProject && matchDate;
@@ -417,6 +428,7 @@ export default function ExpensesPage() {
           </div>
           <Select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="w-44">
             <option value="">All projects</option>
+            <option value={NO_PROJECT_FILTER}>Company / No project</option>
             {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </Select>
           <Select value={dateRange} onChange={e => setDateRange(e.target.value as DateRange)} className="w-40">
