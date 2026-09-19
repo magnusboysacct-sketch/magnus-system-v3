@@ -18,7 +18,15 @@ interface Photo { id:string; url?:string; public_url?:string; publicUrl?:string;
 interface Co { company_name:string|null; logo_url:string|null; phone:string|null; email:string|null; address_line1:string|null; }
 
 const fmt = (n:number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(n);
-const fmtDate = (d:string|null) => d ? new Date(d).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "…";
+// Date-only values (YYYY-MM-DD) are calendar dates: parsing them as UTC midnight and
+// formatting in Jamaica time showed them a day early, so format those in UTC (no shift).
+// Full timestamps display in Jamaica time.
+const fmtDate = (d:string|null) => {
+  if(!d)return "…";
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  const dt=m?new Date(Date.UTC(+m[1],+m[2]-1,+m[3])):new Date(d);
+  return dt.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:m?"UTC":"America/Jamaica"});
+};
 const timeAgo = (d:string) => { const s=Math.floor((Date.now()-new Date(d).getTime())/1000); if(s<60)return "just now"; if(s<3600)return `${Math.floor(s/60)}m ago`; if(s<86400)return `${Math.floor(s/3600)}h ago`; return fmtDate(d); };
 
 function ProgressRing({pct}:{pct:number}) {
