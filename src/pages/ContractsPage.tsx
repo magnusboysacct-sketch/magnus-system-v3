@@ -9,6 +9,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { magnusAI } from "../lib/magnusAI";
 import { useCompanySettings } from "../hooks/useCompanySettings";
+import SendToClientModal from "../components/SendToClientModal";
+import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
 import {
   Plus, FileText, Search, RefreshCw, X, Check, Edit2, Trash2,
   Save, ChevronDown, ChevronUp, AlertCircle, Bot, Sparkles,
@@ -45,6 +47,11 @@ interface Contract {
   penalty_clause: string | null;
   governing_law: string;
   created_at: string;
+  // send-to-client state
+  shared_at?: string | null;
+  shared_via?: string | null;
+  shared_by?: string | null;
+  withdrawn_at?: string | null;
   // joined
   project?: { name: string } | null;
   client?: { name: string; contact_name: string | null; email: string | null; phone: string | null; address: string | null } | null;
@@ -116,6 +123,26 @@ This contract shall be governed by the laws of Jamaica.
 9. ENTIRE AGREEMENT
 This contract constitutes the entire agreement between the parties and supersedes all prior negotiations and agreements.`;
 
+// Small "Sent to client" / "Not sent" marker driven by shared_at / withdrawn_at.
+function ShareMarker({ contract }: { contract: Contract }) {
+  const at = isSharedNow(contract.shared_at, contract.withdrawn_at);
+  return at ? (
+    <span
+      title={`Sent to client via ${shareViaLabel(contract.shared_via)} on ${formatJamaicaDateTime(at)}`}
+      className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+    >
+      Sent to client
+    </span>
+  ) : (
+    <span
+      title="Not shared with the client yet"
+      className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500"
+    >
+      Not sent
+    </span>
+  );
+}
+
 // --- Contract Card ------------------------------------------------------------
 function ContractCard({ contract, onView, onDelete, onDuplicate }: {
   contract: Contract; onView: () => void; onDelete: () => void; onDuplicate: () => void;
@@ -146,6 +173,7 @@ function ContractCard({ contract, onView, onDelete, onDuplicate }: {
         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${cfg.color} ${cfg.bg} ${cfg.border}`}>
           {cfg.icon} {cfg.label}
         </span>
+        <ShareMarker contract={contract} />
         <span className="text-[9px] text-slate-400 dark:text-slate-700">{fmtDate(contract.contract_date)}</span>
       </div>
 
@@ -555,6 +583,8 @@ export default function ContractsPage() {
   const [saving, setSaving] = useState(false);
   const [signingParty, setSigningParty] = useState<"contractor"|"client"|null>(null);
   const [savingSignature, setSavingSignature] = useState(false);
+  const [showSend, setShowSend] = useState(false);
+  const [sendClient, setSendClient] = useState<any>(null);
 
   // AI
   const [aiLoading, setAiLoading] = useState<string | null>(null);
@@ -683,10 +713,18 @@ export default function ContractsPage() {
     setSaving(false);
   }
 
-  async function updateContract(id: string, updates: Partial<Contract>) {
-    await supabase.from("client_contracts").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", id);
+  // Returns false (after showing the database's plain message) when the update is
+  // refused, and leaves local state untouched so the screen never shows a change the
+  // database rejected.
+  async function updateContract(id: string, updates: Partial<Contract>): Promise<boolean> {
+    const { error: upErr } = await supabase.from("client_contracts").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", id);
+    if (upErr) {
+      alert(upErr.message || "Could not update the contract.");
+      return false;
+    }
     setContracts(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
     if (viewingContract?.id === id) setViewingContract(prev => prev ? { ...prev, ...updates } : null);
+    return true;
   }
 
   async function deleteContract(id: string) {
@@ -703,6 +741,7 @@ export default function ContractsPage() {
       ...contract, id: undefined, contract_number: genContractNo(),
       contract_name: contract.contract_name + " (Copy)",
       status: "draft", contractor_signed_at: null, client_signed_at: null,
+      shared_at: null, shared_via: null, shared_by: null, withdrawn_at: null,
       created_at: undefined, updated_at: undefined,
     }).select().single();
     if (data) {
@@ -712,6 +751,43 @@ export default function ContractsPage() {
       }
       showToast("Contract duplicated!");
       await loadAll(companyId);
+    }
+  }
+
+  // -- Send to Client (contract) ------------------------------------------
+  async function openSend(contract: Contract) {
+    if (!contract.client_id) {
+      alert("This contract has no client assigned, so there is nobody to send it to.");
+      return;
+    }
+    try {
+      const { data: cl, error: ce } = await supabase
+        .from("clients")
+        .select("id, name, contact_name, phone, email, portal_enabled, portal_token")
+        .eq("id", contract.client_id)
+        .maybeSingle();
+      if (ce || !cl) throw new Error(ce?.message || "Client not found.");
+      setSendClient(cl);
+      setShowSend(true);
+    } catch (e: any) {
+      alert("Could not open Send to Client: " + (e?.message || "unknown error"));
+    }
+  }
+
+  // After a send/withdraw: pull the new share fields into the list and the open drawer.
+  async function refreshContractShare(id: string) {
+    try {
+      const { data } = await supabase
+        .from("client_contracts")
+        .select("shared_at, shared_via, shared_by, withdrawn_at")
+        .eq("id", id)
+        .maybeSingle();
+      if (data) {
+        setContracts(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+        setViewingContract(prev => prev && prev.id === id ? { ...prev, ...data } : prev);
+      }
+    } catch (e) {
+      console.error("Error refreshing contract share state:", e);
     }
   }
 
@@ -729,7 +805,8 @@ export default function ContractsPage() {
       const urlField = party === "contractor" ? "contractor_signature_url" : "client_signature_url";
       const updates: any = { [field]: new Date().toISOString() };
       if (sigUrl) updates[urlField] = sigUrl;
-      await updateContract(contractId, updates);
+      const saved = await updateContract(contractId, updates);
+      if (!saved) return;
       setSigningParty(null);
       showToast(`${party === "contractor" ? "Contractor" : "Client"} signature recorded!`);
     } finally { setSavingSignature(false); }
@@ -926,25 +1003,14 @@ Adjust percentages based on the project type and value. Make sure they add up to
                       {cfg.icon} {cfg.label}
                     </span>
                   ); })()}
+                  <ShareMarker contract={viewingContract} />
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-600 font-mono">{viewingContract.contract_number}</p>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => {
-                    const msg = encodeURIComponent(`Hello ${viewingContract.client?.contact_name || viewingContract.client?.name || ""},\n\nPlease find your contract details below:\n\nContract: ${viewingContract.contract_name}\nContract No: ${viewingContract.contract_number}\nValue: ${fmtJMD(viewingContract.contract_amount)}\n\nPlease contact us to review and sign.\n\nMagnus Boys Construction`);
-                    window.open(`https://wa.me/?text=${msg}`, "_blank");
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition">
-                  <Send size={12}/> WhatsApp
-                </button>
-                <button onClick={() => {
-                    const subject = encodeURIComponent(`Contract: ${viewingContract.contract_name} - ${viewingContract.contract_number}`);
-                    const body = encodeURIComponent(`Dear ${viewingContract.client?.contact_name || viewingContract.client?.name || "Client"},\n\nPlease find your contract details below:\n\nContract Name: ${viewingContract.contract_name}\nContract No: ${viewingContract.contract_number}\nContract Value: ${fmtJMD(viewingContract.contract_amount)}\nStart Date: ${fmtDate(viewingContract.start_date)}\nCompletion Date: ${fmtDate(viewingContract.completion_date)}\n\nPlease contact us to review and sign.\n\nRegards,\nMagnus Boys Construction`);
-                    const email = viewingContract.client?.email || "";
-                    window.open(`mailto:${email}?subject=${subject}&body=${body}`, "_blank");
-                  }}
+                <button onClick={() => openSend(viewingContract)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold transition">
-                  <Send size={12}/> Email
+                  <Send size={12}/> {isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at) ? "Sent to Client · Resend" : "Send to Client"}
                 </button>
                 <button onClick={() => setShowPDF(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-white/[0.06] hover:bg-white/[0.1] border border-slate-200 dark:border-white/[0.08] text-white text-xs font-bold transition">
@@ -957,6 +1023,12 @@ Adjust percentages based on the project type and value. Make sure they add up to
             </div>
 
             <div className="flex-1 p-6 space-y-5">
+              {(viewingContract.client_signed_at || isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at)) && (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">
+                  {viewingContract.client_signed_at ? "Signed by the client. Cannot be edited." : "Sent to client. Withdraw it to edit."}
+                </div>
+              )}
+
               {/* Key Details */}
               <div className="grid grid-cols-2 gap-3">
                 {[
@@ -978,7 +1050,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
               <div className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-3">Update Status</div>
                 <div className="flex flex-wrap gap-2">
-                  {Object.entries(STATUS_CFG).map(([k, cfg]) => (
+                  {Object.entries(STATUS_CFG).filter(([k]) => k !== "sent" && k !== "signed").map(([k, cfg]) => (
                     <button key={k} onClick={() => updateContract(viewingContract.id, { status: k } as any)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition ${viewingContract.status === k ? `${cfg.bg} ${cfg.border} ${cfg.color}` : "border-slate-200 dark:border-white/[0.07] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300"}`}>
                       {cfg.icon} {cfg.label}
@@ -1281,6 +1353,26 @@ Adjust percentages based on the project type and value. Make sure they add up to
           saving={savingSignature}
           onCancel={() => setSigningParty(null)}
           onSign={async (dataUrl) => { await signContract(viewingContract.id, signingParty, dataUrl); }}
+        />
+      )}
+
+      {/* Send to Client */}
+      {sendClient && viewingContract && (
+        <SendToClientModal
+          open={showSend}
+          onClose={() => setShowSend(false)}
+          itemType="contract"
+          itemId={viewingContract.id}
+          itemLabel={`Contract ${viewingContract.contract_number}`}
+          client={sendClient}
+          sharedAt={isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at)}
+          sharedVia={isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at) ? (viewingContract.shared_via || null) : null}
+          messageText={(url) =>
+            `Hello ${sendClient.contact_name || sendClient.name}, your contract ${viewingContract.contract_number} - ${viewingContract.contract_name} is ready to review and sign in your client portal: ${url}\n\nMagnus Boys Construction`
+          }
+          canWithdraw={!viewingContract.client_signed_at}
+          note={viewingContract.contractor_signed_at ? null : "You haven't signed this contract yet. The client will see it but can only sign after you do."}
+          onChanged={() => refreshContractShare(viewingContract.id)}
         />
       )}
 

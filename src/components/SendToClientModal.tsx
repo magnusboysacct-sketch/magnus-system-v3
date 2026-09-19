@@ -48,6 +48,8 @@ interface Props {
   detailOptions?: boolean;
   buildSnapshot?: (level: DetailLevel) => Promise<object> | object;
   currentDetailLevel?: DetailLevel | null;
+  // Optional heads-up shown at the top of the window (does not block sending).
+  note?: string | null;
 }
 
 type Busy = ShareVia | "enable" | "withdraw" | null;
@@ -102,6 +104,7 @@ export default function SendToClientModal({
   detailOptions,
   buildSnapshot,
   currentDetailLevel = null,
+  note = null,
 }: Props) {
   const [localClient, setLocalClient] = useState<SendToClientClient>(client);
   const [shared, setShared] = useState<{ at: string | null; via: string | null }>({ at: sharedAt, via: sharedVia });
@@ -262,6 +265,7 @@ export default function SendToClientModal({
           </div>
         )}
 
+        {note && <Alert type="warning">{note}</Alert>}
         {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
         {notice && <Alert type="success" onClose={() => setNotice(null)}>{notice}</Alert>}
 
