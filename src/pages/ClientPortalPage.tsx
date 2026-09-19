@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { logPortalEvent } from "../lib/portalActivity";
 
 type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
 type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback";
@@ -344,6 +345,22 @@ export default function ClientPortalPage() {
     else if(token)checkAuth();
   },[token,sessionToken]);
 
+  // Portal activity logging (client_portal_activity) — fire-and-forget, see
+  // src/lib/portalActivity.ts. These effects only observe existing state; they
+  // never change it, and skip the initial render (no session token yet).
+  useEffect(()=>{
+    if(portalSessionToken)logPortalEvent(portalSessionToken,"tab_view",{entityType:"tab",entityId:tab});
+  },[tab]);
+  useEffect(()=>{
+    if(lightbox)logPortalEvent(portalSessionToken,"photo_view",{entityType:"photo",entityId:lightbox.id,projectId:project?.id});
+  },[lightbox]);
+  useEffect(()=>{
+    if(selectedPhoto)logPortalEvent(portalSessionToken,"photo_view",{entityType:"photo",entityId:selectedPhoto.id,projectId:project?.id});
+  },[selectedPhoto]);
+  useEffect(()=>{
+    if(signingContract)logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:signingContract.id,projectId:project?.id});
+  },[signingContract]);
+
   // New path for ClientLoginPage.tsx's email+password flow: the session
   // token in the URL is looked up directly in client_portal_sessions, then
   // the client row is fetched by id with an explicit column list that
@@ -368,6 +385,7 @@ export default function ClientPortalPage() {
       if(!c){setErrorMsg("This account is no longer available.");setAuthState("error");return;}
       setClient(c);
       setPortalSessionToken(sessTok);
+      logPortalEvent(sessTok,"session_resume");
       if(c.company_id){
         const {data:cs}=await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").eq("company_id",c.company_id).maybeSingle();
         setCompany(cs);
@@ -398,7 +416,7 @@ export default function ClientPortalPage() {
       const sess=localStorage.getItem(`portal_${c.id}`);
       if(sess){
         const {data:s}=await supabase.from("client_portal_sessions").select("id").eq("session_token",sess).eq("client_id",c.id).gt("expires_at",new Date().toISOString()).maybeSingle();
-        if(s){setPortalSessionToken(sess);await loadData(c,sess);setAuthState("authenticated");return;}
+        if(s){setPortalSessionToken(sess);logPortalEvent(sess,"session_resume");await loadData(c,sess);setAuthState("authenticated");return;}
       }
       setAuthState(c.portal_activated_at?"login":"setup");
     } catch {setErrorMsg("Something went wrong.");setAuthState("error");}
@@ -483,6 +501,7 @@ export default function ClientPortalPage() {
     }
 
     setNewComment("");
+    logPortalEvent(portalSessionToken,"comment_sent",{projectId:project?.id});
     setToast({ msg: "Message sent!", type: "success" });
     loadData(client,portalSessionToken);
   }
@@ -490,6 +509,7 @@ export default function ClientPortalPage() {
   async function submitReview(){
     if(!rating||!client||!project)return;
     await supabase.from("client_reviews").insert({client_id:client.id,project_id:project.id,rating,comment:reviewText});
+    logPortalEvent(portalSessionToken,"review_sent",{projectId:project.id});
     setReviewSubmitted(true);setToast({msg:"Thank you for your review!",type:"success"});
   }
 
@@ -534,12 +554,14 @@ export default function ClientPortalPage() {
       a.download=photo.caption?`${photo.caption.replace(/\s+/g,"-")}.jpg`:`site-photo-${photo.id}.jpg`;
       document.body.appendChild(a);a.click();document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      logPortalEvent(portalSessionToken,"photo_download",{entityType:"photo",entityId:photo.id,projectId:project?.id});
     } catch {alert("Failed to download photo.");}
   }
 
   async function respondChange(id:string,resp:"approved"|"rejected"){
     setRespondingTo(id);
     await supabase.from("change_orders").update({status:resp,client_response:resp,responded_at:new Date().toISOString()}).eq("id",id);
+    logPortalEvent(portalSessionToken,resp==="approved"?"change_approve":"change_reject",{entityType:"change_order",entityId:id,projectId:project?.id});
     setToast({msg:resp==="approved"?"Change approved!":"Change rejected.",type:resp==="approved"?"success":"error"});
     setRespondingTo(null);if(client&&portalSessionToken)loadData(client,portalSessionToken);
   }
@@ -580,7 +602,7 @@ export default function ClientPortalPage() {
             <div style={{fontSize:12,fontWeight:600,color:"#0f172a"}}>{client.contact_name||client.name}</div>
             <div style={{fontSize:10,color:"#64748b"}}>{client.portal_email||client.email}</div>
           </div>
-          <button onClick={()=>{localStorage.removeItem(`portal_${client.id}`);setAuthState("login");}} style={{padding:"6px 12px",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",fontSize:11,cursor:"pointer",fontWeight:600}}>Sign Out</button>
+          <button onClick={()=>{logPortalEvent(portalSessionToken,"logout");localStorage.removeItem(`portal_${client.id}`);setAuthState("login");}} style={{padding:"6px 12px",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",fontSize:11,cursor:"pointer",fontWeight:600}}>Sign Out</button>
         </div>
       </div>
     </div>
@@ -773,6 +795,7 @@ export default function ClientPortalPage() {
               const{error:ue}=await supabase.storage.from("project-files").upload(path,blob,{upsert:true,contentType:"image/png"});
               const sigUrl=ue?null:supabase.storage.from("project-files").getPublicUrl(path).data.publicUrl;
               await supabase.from("client_contracts").update({client_signed_at:new Date().toISOString(),client_signature_url:sigUrl,client_signed_ip:"portal"}).eq("id",signingContract.id);
+              logPortalEvent(portalSessionToken,"contract_sign",{entityType:"contract",entityId:signingContract.id,projectId:project?.id});
               setContracts(prev=>prev.map(c=>c.id===signingContract.id?{...c,client_signed_at:new Date().toISOString()}:c));
               setSigningContract(null);
               setToast({msg:"Contract signed successfully!",type:"success"});

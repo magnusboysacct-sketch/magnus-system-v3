@@ -114,17 +114,55 @@ Deno.serve(async (req) => {
       return data;
     }
 
+    // Best-effort audit trail (client_portal_activity). Fire-and-forget: the
+    // promise below never rejects, and EdgeRuntime.waitUntil (when the runtime
+    // provides it) keeps it alive after the response is sent, so logging never
+    // delays, blocks, or alters a login response. `action` is read from the
+    // enclosing request scope.
+    function logPortalActivity(clientId: string, eventType: string, sessionId: string | null = null) {
+      const run = (async () => {
+        try {
+          const { data: c } = await supabaseAdmin
+            .from("clients")
+            .select("company_id")
+            .eq("id", clientId)
+            .maybeSingle();
+          const ip =
+            req.headers.get("cf-connecting-ip") ||
+            (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() ||
+            null;
+          await supabaseAdmin.from("client_portal_activity").insert({
+            company_id: c?.company_id ?? null,
+            client_id: clientId,
+            session_id: sessionId ? String(sessionId) : null,
+            event_type: eventType,
+            ip_address: ip,
+            user_agent: (req.headers.get("user-agent") || "").slice(0, 300),
+            metadata: { action },
+          });
+        } catch (_err) {
+          // logging must never affect the login flow
+        }
+      })();
+      try {
+        (globalThis as any).EdgeRuntime?.waitUntil?.(run);
+      } catch (_err) {
+        // ignore
+      }
+    }
+
     async function createSession(clientId: string) {
       const sessionToken = generateToken();
-      const { error } = await supabaseAdmin.from("client_portal_sessions").insert({
+      const { data: sessionRows, error } = await supabaseAdmin.from("client_portal_sessions").insert({
         client_id: clientId,
         session_token: sessionToken,
         // Read from the request itself rather than trusting a
         // client-submitted field — matches how the browser can't be
         // trusted for portal_password_hash either.
         device_info: (req.headers.get("user-agent") || "").slice(0, 200),
-      });
+      }).select("id");
       if (error) return { error };
+      logPortalActivity(clientId, "login", sessionRows?.[0]?.id ?? null);
       return { sessionToken };
     }
 
@@ -182,6 +220,7 @@ Deno.serve(async (req) => {
 
       const hash = await hashPassword(password);
       if (hash !== client.portal_password_hash) {
+        logPortalActivity(client.id, "login_failed");
         return jsonResponse({ error: "Incorrect password. Please try again." }, 401);
       }
 
@@ -232,6 +271,7 @@ Deno.serve(async (req) => {
 
       const hash = await hashPassword(password);
       if (hash !== client.portal_password_hash) {
+        logPortalActivity(client.id, "login_failed");
         return jsonResponse({ error: "Incorrect password. Please try again." }, 401);
       }
 
