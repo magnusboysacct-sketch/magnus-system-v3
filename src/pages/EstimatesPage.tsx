@@ -280,7 +280,7 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClo
         total_amount: total,
         amount_paid: 0,
         balance_due: total,
-        status: "sent",
+        status: "draft",
         notes: `Generated from estimate: ${estimate.title}`,
         terms: "Net 30",
       });

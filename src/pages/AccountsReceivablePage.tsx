@@ -16,6 +16,9 @@ import ContractProgressBilling from "../components/ContractProgressBilling";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 import { useProjectContext } from "../context/ProjectContext";
+import { Send } from "lucide-react";
+import SendToClientModal from "../components/SendToClientModal";
+import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
 
 interface LineItem {
   id?: string;
@@ -51,6 +54,8 @@ export default function AccountsReceivablePage() {
   const [companyId, setCompanyId] = useState<string>("");
   const [showProgressBilling, setShowProgressBilling] = useState(false);
   const [selectedContract, setSelectedContract] = useState<any>(null);
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [sendClient, setSendClient] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     invoice_number: "",
@@ -293,6 +298,48 @@ export default function AccountsReceivablePage() {
       setShowDetailModal(true);
     } catch (error) {
       console.error("Error loading invoice details:", error);
+    }
+  }
+
+  // -- Send to Client (invoice) -------------------------------------------
+  // The page's clients list doesn't carry portal_enabled/portal_token, so the
+  // modal's client row is fetched on demand here.
+  async function openSendModal(invoice: any) {
+    if (!invoice?.client_id) {
+      alert("This invoice has no client assigned. Edit the invoice and choose a client first.");
+      return;
+    }
+    try {
+      const { supabase } = await import("../lib/supabase");
+      const { data, error } = await supabase
+        .from("clients")
+        .select("id, name, contact_name, phone, email, portal_enabled, portal_token")
+        .eq("id", invoice.client_id)
+        .maybeSingle();
+      if (error || !data) throw new Error(error?.message || "Client not found.");
+      setSendClient(data);
+      setShowSendModal(true);
+    } catch (e: any) {
+      alert("Could not open Send to Client: " + (e?.message || "unknown error"));
+    }
+  }
+
+  // Called after a send/withdraw: pull the new share state into the open
+  // invoice, then refresh the list.
+  async function refreshSharedState() {
+    try {
+      if (selectedInvoice?.id) {
+        const { supabase } = await import("../lib/supabase");
+        const { data } = await supabase
+          .from("client_invoices")
+          .select("status, sent_date, shared_at, shared_via, shared_by, withdrawn_at")
+          .eq("id", selectedInvoice.id)
+          .maybeSingle();
+        if (data) setSelectedInvoice((prev: any) => (prev ? { ...prev, ...data } : prev));
+      }
+      await loadInvoices();
+    } catch (e) {
+      console.error("Error refreshing invoice share state:", e);
     }
   }
 
@@ -648,6 +695,23 @@ export default function AccountsReceivablePage() {
                     >
                       {inv.status}
                     </span>
+                    {inv.status !== "cancelled" && (
+                      isSharedNow(inv.shared_at, inv.withdrawn_at) ? (
+                        <span
+                          title={`Sent to client via ${shareViaLabel(inv.shared_via)} on ${formatJamaicaDateTime(inv.shared_at)}`}
+                          className="ml-1.5 inline-flex rounded-full px-2 py-1 text-[10px] font-medium bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                        >
+                          Sent
+                        </span>
+                      ) : (
+                        <span
+                          title="Not shared with the client yet"
+                          className="ml-1.5 inline-flex rounded-full px-2 py-1 text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500"
+                        >
+                          Not sent
+                        </span>
+                      )
+                    )}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -1093,6 +1157,15 @@ export default function AccountsReceivablePage() {
             </div>
 
             <div className="flex justify-end gap-3 pt-6 border-t border-slate-200 dark:border-slate-800 mt-6">
+              {selectedInvoice.status !== "cancelled" && (
+                <button
+                  onClick={() => openSendModal(selectedInvoice)}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition-colors"
+                >
+                  <Send size={14} />
+                  {isSharedNow(selectedInvoice.shared_at, selectedInvoice.withdrawn_at) ? "Sent to Client · Resend" : "Send to Client"}
+                </button>
+              )}
               <button
                 onClick={() => setShowDetailModal(false)}
                 className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -1102,6 +1175,23 @@ export default function AccountsReceivablePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {sendClient && selectedInvoice && (
+        <SendToClientModal
+          open={showSendModal}
+          onClose={() => setShowSendModal(false)}
+          itemType="invoice"
+          itemId={selectedInvoice.id}
+          itemLabel={`Invoice #${selectedInvoice.invoice_number}`}
+          client={sendClient}
+          sharedAt={isSharedNow(selectedInvoice.shared_at, selectedInvoice.withdrawn_at)}
+          sharedVia={isSharedNow(selectedInvoice.shared_at, selectedInvoice.withdrawn_at) ? (selectedInvoice.shared_via || null) : null}
+          messageText={(url) =>
+            `Hello ${sendClient.contact_name || sendClient.name}, your invoice ${selectedInvoice.invoice_number} for ${new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD" }).format(Number(selectedInvoice.total_amount) || 0)} is ready. View it in your client portal: ${url}\n\nMagnus Boys Construction`
+          }
+          onChanged={refreshSharedState}
+        />
       )}
 
       {showPaymentModal && selectedInvoice && (

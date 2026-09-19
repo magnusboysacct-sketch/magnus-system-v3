@@ -445,7 +445,7 @@ export default function ClientPortalPage() {
       setComments(cm||[]);
       if(proj){
         const [inv,co,ph,boq,ct]=await Promise.all([
-          supabase.from("invoices").select("*").eq("project_id",proj.id).order("issue_date",{ascending:false}),
+          supabase.rpc("get_portal_invoices",{p_session_token:sessionTok}),
           supabase.from("change_orders").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
           supabase.from("project_photos").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
           supabase.from("boq_items").select("status").eq("project_id",proj.id),
@@ -456,6 +456,7 @@ export default function ClientPortalPage() {
           return{...photo,url:urlData.publicUrl};
         });
         setInvoices(inv.data||[]);setChanges(co.data||[]);setPhotos(photosWithUrls);setContracts(ct.data||[]);
+        if(inv.error)console.error("get_portal_invoices failed:",inv.error);
         const items=boq.data||[];
         setProgress(items.length?Math.round(items.filter((b:any)=>b.status==="complete").length/items.length*100):0);
         await Promise.all([loadDailyLogs(proj.id),loadSitePhotos(proj.id)]);
