@@ -5,6 +5,10 @@ import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { magnusAI } from "../lib/magnusAI";
 import EstimateAdvisorPanel from "../components/EstimateAdvisorPanel";
+import SendToClientModal from "../components/SendToClientModal";
+import type { DetailLevel } from "../components/SendToClientModal";
+import { buildEstimateSnapshot } from "../lib/estimateSnapshot";
+import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
 import {
   createClientInvoice, createInvoiceLineItems,
   createClientPayment, updateInvoiceAfterPayment, fetchInvoicePayments,
@@ -41,6 +45,12 @@ type EstimateHeader = {
   total_client_price?: number | null;
   print_format?: string | null;
   invoice_id?: string | null;
+  // send-to-client state
+  shared_at?: string | null;
+  shared_via?: string | null;
+  shared_by?: string | null;
+  withdrawn_at?: string | null;
+  shared_snapshot?: { detail_level?: DetailLevel } | null;
   // joined
   projects?: { name: string } | null;
 };
@@ -90,9 +100,29 @@ function fmtDate(d: string) {
   });
 }
 
+// Small "Sent to client" / "Not sent" marker driven by shared_at.
+function ShareMarker({ estimate }: { estimate: EstimateHeader }) {
+  const at = isSharedNow(estimate.shared_at, estimate.withdrawn_at);
+  return at ? (
+    <span
+      title={`Sent to client via ${shareViaLabel(estimate.shared_via)} on ${formatJamaicaDateTime(at)}`}
+      className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+    >
+      Sent to client
+    </span>
+  ) : (
+    <span
+      title="Not shared with the client yet"
+      className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500"
+    >
+      Not sent
+    </span>
+  );
+}
+
 // --- Estimate Card ------------------------------------------------------------
 
-function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdateStatus, onAdvisor }: {
+function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdateStatus, onAdvisor, onSend }: {
   estimate: EstimateHeader;
   total: number;
   onView: () => void;
@@ -100,6 +130,7 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
   onDuplicate: () => void;
   onUpdateStatus: (status: EstimateHeader["status"]) => void;
   onAdvisor: () => void;
+  onSend: () => void;
 }) {
   return (
     <Card className="group hover:border-slate-300 dark:hover:border-white/[0.13] transition-all cursor-pointer" onClick={onView}>
@@ -135,13 +166,14 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
 
       <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/[0.05]">
         <Badge color={STATUS_COLOR[estimate.status]} dot>{estimate.status}</Badge>
+        <ShareMarker estimate={estimate} />
         <div className="text-[9px] text-slate-700">{fmtDate(estimate.updated_at)}</div>
       </div>
 
       {/* Status actions */}
       {estimate.status === "draft" && (
         <div className="mt-3 flex gap-1.5" onClick={e => e.stopPropagation()}>
-          <button onClick={() => onUpdateStatus("sent")}
+          <button onClick={onSend}
             className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-[10px] text-blue-300 font-semibold transition-colors">
             <Send size={10}/> Send
           </button>
@@ -165,11 +197,12 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
 
 // --- Detail Modal -------------------------------------------------------------
 
-function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClose }: {
+function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSend, onClose }: {
   estimate: EstimateHeader;
   items: EstimateItem[];
   companyId: string | null;
   onUpdateStatus: (status: EstimateHeader["status"]) => void;
+  onSend: (live: { markupOverall: number; contingencyPct: number }) => void;
   onClose: () => void;
 }) {
   const nav = useNavigate();
@@ -546,6 +579,7 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClo
             <div className="flex items-center gap-2 mt-1">
               <Badge color={STATUS_COLOR[estimate.status]} dot>{estimate.status}</Badge>
               <span className="text-xs text-slate-500">v{estimate.version} · {estimate.projects?.name || "No project"}</span>
+              <ShareMarker estimate={estimate} />
             </div>
           </div>
           <button onClick={onClose}
@@ -761,9 +795,15 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onClo
         {/* Footer — fixed, always visible */}
         <div className="flex-shrink-0 flex flex-wrap items-center gap-2 px-5 py-4 border-t border-slate-200 dark:border-white/[0.07] bg-white dark:bg-slate-900">
           {estimate.status === "draft" && (
-            <button onClick={() => onUpdateStatus("sent")}
+            <button onClick={() => onSend({ markupOverall, contingencyPct })}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold transition">
               <Send size={14}/> Send to Client
+            </button>
+          )}
+          {(estimate.status === "sent" || estimate.status === "approved") && (
+            <button onClick={() => onSend({ markupOverall, contingencyPct })}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-300 text-sm font-semibold transition">
+              <Send size={14}/> {isSharedNow(estimate.shared_at, estimate.withdrawn_at) ? "Sent to Client · Resend" : "Send to Client"}
             </button>
           )}
           {estimate.status === "sent" && (
@@ -928,6 +968,13 @@ export default function EstimatesPage() {
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
   const [advisorEstimate, setAdvisorEstimate] = useState<EstimateHeader | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [sendTarget, setSendTarget] = useState<{
+    estimateId: string;
+    client: any;
+    projectName: string;
+    markupOverall: number;
+    contingencyPct: number;
+  } | null>(null);
   const [form, setForm] = useState({ title: "", project_id: currentProject?.id || "", notes: "", status: "draft" });
 
   useEffect(() => {
@@ -1027,6 +1074,83 @@ export default function EstimatesPage() {
     await supabase.from("estimate_headers").update({ status }).eq("id", id);
     setEstimates(prev => prev.map(e => e.id === id ? { ...e, status } : e));
     setViewingEstimate(prev => prev && prev.id === id ? { ...prev, status } : prev);
+  }
+
+  // -- Send to Client (estimate) ------------------------------------------
+  // The client is resolved through the estimate's project (projects.client_id).
+  // live = the detail modal's current markup/contingency, so what is sent equals
+  // what Print would show; from the card it falls back to the saved header values.
+  async function openSend(est: EstimateHeader, live?: { markupOverall: number; contingencyPct: number }) {
+    try {
+      const { data: proj, error: pe } = await supabase
+        .from("projects").select("name, client_id").eq("id", est.project_id).maybeSingle();
+      if (pe) throw new Error(pe.message);
+      if (!proj?.client_id) {
+        alert("This estimate's project has no client assigned. Assign a client to the project first.");
+        return;
+      }
+      const { data: cl, error: ce } = await supabase
+        .from("clients")
+        .select("id, name, contact_name, phone, email, portal_enabled, portal_token")
+        .eq("id", proj.client_id)
+        .maybeSingle();
+      if (ce || !cl) throw new Error(ce?.message || "Client not found.");
+      setSendTarget({
+        estimateId: est.id,
+        client: cl,
+        projectName: proj.name || est.projects?.name || "",
+        markupOverall: live?.markupOverall ?? est.markup_overall ?? 25,
+        contingencyPct: live?.contingencyPct ?? est.contingency_pct ?? 5,
+      });
+    } catch (e: any) {
+      alert("Could not open Send to Client: " + (e?.message || "unknown error"));
+    }
+  }
+
+  // Runs at the moment of sending (see SendToClientModal.resolveSnapshot). Throws on
+  // failure so the modal shows the message and sends nothing.
+  async function buildSendSnapshot(level: DetailLevel) {
+    if (!sendTarget) throw new Error("Nothing to send.");
+    const est = estimates.find(x => x.id === sendTarget.estimateId);
+    if (!est) throw new Error("Estimate not found.");
+    const items = itemsByEstimate[est.id] || [];
+    if (items.length === 0) throw new Error("This estimate has no line items to send.");
+    let cs: any = null;
+    if (companyId) {
+      const { data } = await supabase.from("company_settings")
+        .select("company_name, phone, email, address_line1, parish, logo_url, estimate_validity_days")
+        .eq("company_id", companyId).maybeSingle();
+      cs = data;
+    }
+    return buildEstimateSnapshot(level, {
+      title: est.title,
+      version: est.version,
+      createdAt: est.created_at,
+      items,
+      markupOverall: sendTarget.markupOverall,
+      contingencyPct: sendTarget.contingencyPct,
+      projectName: sendTarget.projectName || null,
+      clientName: sendTarget.client?.name || null,
+      company: cs,
+    });
+  }
+
+  // After a send/withdraw: pull the new share state (and status) into the list
+  // and the open detail modal without reloading everything.
+  async function refreshEstimateShare(id: string) {
+    try {
+      const { data } = await supabase
+        .from("estimate_headers")
+        .select("status, shared_at, shared_via, shared_by, withdrawn_at, shared_snapshot")
+        .eq("id", id)
+        .maybeSingle();
+      if (data) {
+        setEstimates(prev => prev.map(e => e.id === id ? { ...e, ...data } : e));
+        setViewingEstimate(prev => prev && prev.id === id ? { ...prev, ...data } : prev);
+      }
+    } catch (e) {
+      console.error("Error refreshing estimate share state:", e);
+    }
   }
 
   async function getAISuggestion() {
@@ -1142,6 +1266,7 @@ export default function EstimatesPage() {
                 onDuplicate={() => duplicateEstimate(e)}
                 onUpdateStatus={status => updateStatus(e.id, status)}
                 onAdvisor={() => setAdvisorEstimate(e)}
+                onSend={() => openSend(e)}
               />
             ))}
           </div>
@@ -1195,9 +1320,36 @@ export default function EstimatesPage() {
           items={itemsByEstimate[viewingEstimate.id] || []}
           companyId={companyId}
           onUpdateStatus={status => updateStatus(viewingEstimate.id, status)}
+          onSend={live => openSend(viewingEstimate, live)}
           onClose={() => setViewingEstimate(null)}
         />
       )}
+
+      {/* Send to Client */}
+      {sendTarget && (() => {
+        const est = estimates.find(x => x.id === sendTarget.estimateId);
+        if (!est) return null;
+        const at = isSharedNow(est.shared_at, est.withdrawn_at);
+        return (
+          <SendToClientModal
+            open
+            onClose={() => setSendTarget(null)}
+            itemType="estimate"
+            itemId={est.id}
+            itemLabel={`Estimate "${est.title}"`}
+            client={sendTarget.client}
+            sharedAt={at}
+            sharedVia={at ? (est.shared_via || null) : null}
+            currentDetailLevel={at ? (est.shared_snapshot?.detail_level ?? null) : null}
+            detailOptions
+            buildSnapshot={buildSendSnapshot}
+            messageText={(url) =>
+              `Hello ${sendTarget.client.contact_name || sendTarget.client.name}, your estimate for ${sendTarget.projectName} is ready to view in your client portal: ${url}\n\nMagnus Boys Construction`
+            }
+            onChanged={() => refreshEstimateShare(est.id)}
+          />
+        );
+      })()}
 
       {/* AI Advisor Panel */}
       {advisorEstimate && companyId && (

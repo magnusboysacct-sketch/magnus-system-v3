@@ -5,7 +5,7 @@ import { supabase } from "../lib/supabase";
 import { logPortalEvent } from "../lib/portalActivity";
 
 type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
-type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback";
+type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback"|"estimates";
 
 // No portal_password_hash — nothing in this file selects it anymore, so it
 // was removed from the type rather than left declared-but-always-undefined.
@@ -28,6 +28,71 @@ const fmtDate = (d:string|null) => {
   return dt.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:m?"UTC":"America/Jamaica"});
 };
 const timeAgo = (d:string) => { const s=Math.floor((Date.now()-new Date(d).getTime())/1000); if(s<60)return "just now"; if(s<3600)return `${Math.floor(s/60)}m ago`; if(s<86400)return `${Math.floor(s/3600)}h ago`; return fmtDate(d); };
+
+// Whole-dollar JMD, matching how the printed proposal shows estimate prices.
+const fmt0 = (n:number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0,maximumFractionDigits:0}).format(n);
+
+// Read-only view of a shared estimate snapshot (client-facing prices only). A summary
+// snapshot has no line items at all, so none are rendered for it. No print/share/copy.
+function PortalEstimateCard({es}:{es:any}) {
+  const sn=es?.snapshot||{};
+  const full=sn.detail_level==="full";
+  const cats:any[]=Array.isArray(sn.categories)?sn.categories:[];
+  const n=(v:any)=>Number(v)||0;
+  const th:React.CSSProperties={fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",padding:"6px 8px",borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"};
+  const td:React.CSSProperties={fontSize:12,color:"#334155",padding:"7px 8px",borderBottom:"1px solid #f1f5f9",verticalAlign:"top"};
+  return <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:4}}>
+      <div style={{fontSize:15,fontWeight:700,color:"#0f172a"}}>{sn.title||es?.title||"Estimate"}</div>
+      <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,background:"rgba(59,130,246,0.12)",color:"#2563eb",whiteSpace:"nowrap"}}>v{sn.version??es?.version??1}</span>
+    </div>
+    <div style={{fontSize:11,color:"#64748b"}}>Prepared for {sn.client_name||"you"}{sn.prepared_date?` · ${fmtDate(sn.prepared_date)}`:""}</div>
+    {sn.project_name&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>Project: {sn.project_name}</div>}
+    {sn.valid_until&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>Valid until {fmtDate(sn.valid_until)}</div>}
+    <div style={{marginTop:14}}>
+      {cats.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>No items to show.</div>}
+      {!full&&cats.map((c:any,i:number)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"9px 0",borderBottom:"1px solid #f1f5f9"}}>
+        <span style={{fontSize:13,color:"#334155",fontWeight:600}}>{c?.name}</span>
+        <span style={{fontSize:13,color:"#0f172a",fontWeight:700}}>{fmt0(n(c?.total))}</span>
+      </div>)}
+      {full&&cats.map((c:any,i:number)=><div key={i} style={{marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"6px 0"}}>
+          <span style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{c?.name}</span>
+          <span style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{fmt0(n(c?.total))}</span>
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:420}}>
+            <thead><tr>
+              <th style={{...th,textAlign:"left"}}>Item</th>
+              <th style={{...th,textAlign:"right"}}>Qty</th>
+              <th style={{...th,textAlign:"left"}}>Unit</th>
+              <th style={{...th,textAlign:"right"}}>Unit price</th>
+              <th style={{...th,textAlign:"right"}}>Amount</th>
+            </tr></thead>
+            <tbody>
+              {(Array.isArray(c?.items)?c.items:[]).map((it:any,j:number)=><tr key={j}>
+                <td style={td}><div style={{fontWeight:600}}>{it?.item}</div></td>
+                <td style={{...td,textAlign:"right"}}>{n(it?.qty).toLocaleString()}</td>
+                <td style={td}>{it?.unit}</td>
+                <td style={{...td,textAlign:"right"}}>{fmt(n(it?.rate))}</td>
+                <td style={{...td,textAlign:"right",fontWeight:600}}>{fmt0(n(it?.amount))}</td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+      </div>)}
+    </div>
+    <div style={{marginTop:6,paddingTop:10,borderTop:"2px solid #e2e8f0"}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#475569",padding:"3px 0"}}><span>Subtotal</span><span>{fmt0(n(sn.subtotal))}</span></div>
+      {n(sn.contingency_amount)>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#475569",padding:"3px 0"}}><span>Contingency allowance</span><span>{fmt0(n(sn.contingency_amount))}</span></div>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6,padding:"12px 14px",background:"#0f172a",borderRadius:12}}>
+        <span style={{fontSize:13,fontWeight:700,color:"#ffffff"}}>Total</span>
+        <span style={{fontSize:17,fontWeight:800,color:"#ffffff"}}>{fmt0(n(sn.total))}</span>
+      </div>
+    </div>
+    {sn.company?.name&&<div style={{fontSize:10,color:"#94a3b8",marginTop:10}}>Prepared by {sn.company.name}</div>}
+  </div>;
+}
 
 function ProgressRing({pct}:{pct:number}) {
   const r=28,circ=2*Math.PI*r;
@@ -330,6 +395,7 @@ export default function ClientPortalPage() {
   const [comments,setComments]=useState<Comment[]>([]);
   const [photos,setPhotos]=useState<Photo[]>([]);
   const [contracts,setContracts]=useState<any[]>([]);
+  const [estimates,setEstimates]=useState<any[]>([]);
   const [signingContract,setSigningContract]=useState<any|null>(null);
   const [savingSignature,setSavingSignature]=useState(false);
   const [tab,setTab]=useState<Tab>("overview");
@@ -451,6 +517,12 @@ export default function ClientPortalPage() {
       const {data:cm,error:cmErr}=await supabase.rpc("get_portal_comments",{p_session_token:sessionTok});
       if(cmErr)console.error("get_portal_comments failed:",cmErr);
       setComments(cm||[]);
+      // Shared estimates come back per client, so this sits outside the if(proj) block.
+      try{
+        const {data:es,error:esErr}=await supabase.rpc("get_portal_estimates",{p_session_token:sessionTok});
+        if(esErr)console.error("get_portal_estimates failed:",esErr);
+        setEstimates(Array.isArray(es)?es:[]);
+      }catch(e){console.error("get_portal_estimates failed:",e);}
       if(proj){
         const [inv,co,ph,boq,ct]=await Promise.all([
           supabase.rpc("get_portal_invoices",{p_session_token:sessionTok}),
@@ -591,7 +663,7 @@ export default function ClientPortalPage() {
   if(!client||authState!=="authenticated")return null;
 
   const sColor:Record<string,string>={active:"#22c55e",planning:"#3b82f6",on_hold:"#f59e0b",completed:"#94a3b8",cancelled:"#ef4444"};
-  const TABS=[{id:"overview",label:"Overview",emoji:"📋"},{id:"contracts",label:"Contracts",emoji:"📝",badge:contracts.filter((c:any)=>!c.client_signed_at).length||undefined},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"invoices",label:"Invoices",emoji:"🧾",badge:invoices.filter(i=>i.status!=="paid").length||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined},{id:"feedback",label:"Feedback",emoji:"⭐"}] as const;
+  const TABS=[{id:"overview",label:"Overview",emoji:"📋"},...(estimates.length?[{id:"estimates",label:"Estimates",emoji:"📐",badge:estimates.length}]:[]),{id:"contracts",label:"Contracts",emoji:"📝",badge:contracts.filter((c:any)=>!c.client_signed_at).length||undefined},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"invoices",label:"Invoices",emoji:"🧾",badge:invoices.filter(i=>i.status!=="paid").length||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined},{id:"feedback",label:"Feedback",emoji:"⭐"}] as const;
 
   return <div style={{minHeight:"100vh",background:"#f8fafc",color:"#0f172a",fontFamily:"system-ui,sans-serif"}}>
     <style>{G}</style>
@@ -844,6 +916,10 @@ export default function ClientPortalPage() {
               <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,textTransform:"capitalize",background:inv.status==="paid"?"rgba(34,197,94,0.15)":inv.status==="overdue"?"rgba(239,68,68,0.15)":"rgba(245,158,11,0.15)",color:inv.status==="paid"?"#22c55e":inv.status==="overdue"?"#ef4444":"#f59e0b",border:`1px solid ${inv.status==="paid"?"rgba(34,197,94,0.3)":inv.status==="overdue"?"rgba(239,68,68,0.3)":"rgba(245,158,11,0.3)"}`}}>{inv.status}</span>
             </div>
           </div>)}
+      </div>}
+
+      {tab==="estimates"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
+        {estimates.map((es:any)=><PortalEstimateCard key={es.id} es={es}/>)}
       </div>}
 
       {tab==="changes"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>

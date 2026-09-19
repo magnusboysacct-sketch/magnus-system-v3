@@ -43,9 +43,15 @@ interface Props {
   snapshot?: Record<string, unknown> | null;
   onChanged: () => void | Promise<void>;
   canWithdraw?: boolean;
+  // Estimates: staff choose what the client sees each time it is sent. The
+  // snapshot is built at the moment of sending from the chosen level.
+  detailOptions?: boolean;
+  buildSnapshot?: (level: DetailLevel) => Promise<object> | object;
+  currentDetailLevel?: DetailLevel | null;
 }
 
 type Busy = ShareVia | "enable" | "withdraw" | null;
+export type DetailLevel = "summary" | "full";
 
 const COMPANY_NAME = "Magnus Boys Construction";
 
@@ -93,6 +99,9 @@ export default function SendToClientModal({
   snapshot,
   onChanged,
   canWithdraw = true,
+  detailOptions,
+  buildSnapshot,
+  currentDetailLevel = null,
 }: Props) {
   const [localClient, setLocalClient] = useState<SendToClientClient>(client);
   const [shared, setShared] = useState<{ at: string | null; via: string | null }>({ at: sharedAt, via: sharedVia });
@@ -100,6 +109,8 @@ export default function SendToClientModal({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const busyRef = useRef(false);
+  const [level, setLevel] = useState<DetailLevel>("summary");
+  const [sentLevel, setSentLevel] = useState<DetailLevel | null>(currentDetailLevel);
 
   useEffect(() => {
     setLocalClient(client);
@@ -112,9 +123,14 @@ export default function SendToClientModal({
     setShared({ at: sharedAt, via: sharedVia });
   }, [sharedAt, sharedVia]);
 
+  useEffect(() => {
+    setSentLevel(currentDetailLevel);
+  }, [currentDetailLevel]);
+
   const url = getPortalUrl(localClient);
   const portalReady = !!localClient.portal_enabled && !!localClient.portal_token;
   const resend = !!shared.at;
+  const showDetail = detailOptions ?? itemType === "estimate";
   const hasPhone = !!String(localClient.phone || "").replace(/\D/g, "");
   const hasEmail = !!String(localClient.email || "").trim();
 
@@ -143,6 +159,14 @@ export default function SendToClientModal({
     }
   }
 
+  // Built at the moment of sending, BEFORE the RPC: if building fails the error
+  // is shown and nothing is sent. Without buildSnapshot this is the plain
+  // snapshot prop (null for invoices), exactly as before.
+  async function resolveSnapshot(): Promise<Record<string, unknown> | null> {
+    if (buildSnapshot) return (await buildSnapshot(level)) as Record<string, unknown>;
+    return snapshot ?? null;
+  }
+
   async function share(via: ShareVia) {
     await run(via, async () => {
       if (!url) throw new Error("This client has no portal link yet. Enable the portal first.");
@@ -156,12 +180,14 @@ export default function SendToClientModal({
 
       let at: string;
       try {
-        at = await shareWithClient(itemType, itemId, via, snapshot ?? null);
+        const snap = await resolveSnapshot();
+        at = await shareWithClient(itemType, itemId, via, snap);
       } catch (e) {
         try { popup?.close(); } catch { /* ignore */ }
         throw e;
       }
       setShared({ at, via });
+      if (showDetail) setSentLevel(level);
 
       if (via === "portal") {
         setNotice("Now visible in the client's portal.");
@@ -191,8 +217,10 @@ export default function SendToClientModal({
       const updated = await enablePortalForClient(localClient);
       const next = { ...localClient, ...updated };
       setLocalClient(next);
-      const at = await shareWithClient(itemType, itemId, "portal", snapshot ?? null);
+      const snap = await resolveSnapshot();
+      const at = await shareWithClient(itemType, itemId, "portal", snap);
       setShared({ at, via: "portal" });
+      if (showDetail) setSentLevel(level);
       setNotice("Portal enabled. Now visible in the client's portal.");
       await notifyParent();
     });
@@ -204,6 +232,7 @@ export default function SendToClientModal({
     await run("withdraw", async () => {
       await withdrawFromClient(itemType, itemId);
       setShared({ at: null, via: null });
+      setSentLevel(null);
       setNotice("Withdrawn. The client can no longer see it.");
       await notifyParent();
     });
@@ -219,6 +248,11 @@ export default function SendToClientModal({
           <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 px-3.5 py-3">
             <div className="text-xs text-emerald-700 dark:text-emerald-300">
               Sent via <strong>{shareViaLabel(shared.via)}</strong> on {formatJamaicaDateTime(shared.at)}
+              {showDetail && sentLevel && (
+                <div className="mt-0.5">
+                  Currently sent as: <strong>{sentLevel === "full" ? "Full breakdown" : "Summary"}</strong>
+                </div>
+              )}
             </div>
             {canWithdraw && (
               <Btn variant="danger" size="xs" onClick={withdraw} disabled={anyBusy}>
@@ -237,6 +271,30 @@ export default function SendToClientModal({
             <Btn variant="primary" size="sm" onClick={enableAndSend} disabled={anyBusy}>
               {busy === "enable" ? "Enabling…" : "Enable portal and send"}
             </Btn>
+          </div>
+        )}
+
+        {showDetail && (
+          <div className="rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.03] px-3.5 py-3 space-y-2">
+            <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">What should the client see?</div>
+            {(["summary", "full"] as const).map((opt) => (
+              <label key={opt} className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="send-detail-level"
+                  checked={level === opt}
+                  onChange={() => setLevel(opt)}
+                  disabled={busy !== null}
+                  className="mt-0.5"
+                />
+                <span className="text-xs text-slate-700 dark:text-slate-300">
+                  {opt === "summary" ? "Summary only (category totals and the total)" : "Full breakdown (every line item)"}
+                </span>
+              </label>
+            ))}
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+              You can resend later with a different level.
+            </div>
           </div>
         )}
 
