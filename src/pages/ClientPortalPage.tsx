@@ -78,7 +78,7 @@ function PortalEstimateCard({es}:{es:any}) {
             <tbody>
               {(Array.isArray(c?.items)?c.items:[]).map((it:any,j:number)=><tr key={j}>
                 <td style={td}><div style={{fontWeight:600}}>{it?.item}</div></td>
-                <td style={{...td,textAlign:"right"}}>{n(it?.qty).toLocaleString()}</td>
+                <td style={{...td,textAlign:"right"}}>{n(it?.qty).toLocaleString(undefined,{maximumFractionDigits:4})}</td>
                 <td style={td}>{it?.unit}</td>
                 <td style={{...td,textAlign:"right"}}>{fmt(n(it?.rate))}</td>
                 <td style={{...td,textAlign:"right",fontWeight:600}}>{fmt0(n(it?.amount))}</td>
@@ -529,19 +529,24 @@ export default function ClientPortalPage() {
         if(esErr)console.error("get_portal_estimates failed:",esErr);
         setEstimates(Array.isArray(es)?es:[]);
       }catch(e){console.error("get_portal_estimates failed:",e);}
+      // Contracts the contractor has sent (per client, like estimates), so also outside if(proj).
+      try{
+        const {data:cts,error:ctErr}=await supabase.rpc("get_portal_contracts",{p_session_token:sessionTok});
+        if(ctErr)console.error("get_portal_contracts failed:",ctErr);
+        else setContracts(Array.isArray(cts)?cts:[]);
+      }catch(e){console.error("get_portal_contracts failed:",e);}
       if(proj){
-        const [inv,co,ph,boq,ct]=await Promise.all([
+        const [inv,co,ph,boq]=await Promise.all([
           supabase.rpc("get_portal_invoices",{p_session_token:sessionTok}),
           supabase.from("change_orders").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
           supabase.from("project_photos").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
           supabase.from("boq_items").select("status").eq("project_id",proj.id),
-          supabase.from("client_contracts").select("*").eq("project_id",proj.id).eq("client_id",c.id).order("created_at",{ascending:false}),
         ]);
         const photosWithUrls=(ph.data||[]).map((photo:any)=>{
           const{data:urlData}=supabase.storage.from("project-photos").getPublicUrl(photo.photo_url);
           return{...photo,url:urlData.publicUrl};
         });
-        setInvoices(inv.data||[]);setChanges(co.data||[]);setPhotos(photosWithUrls);setContracts(ct.data||[]);
+        setInvoices(inv.data||[]);setChanges(co.data||[]);setPhotos(photosWithUrls);
         if(inv.error)console.error("get_portal_invoices failed:",inv.error);
         const items=boq.data||[];
         setProgress(items.length?Math.round(items.filter((b:any)=>b.status==="complete").length/items.length*100):0);
