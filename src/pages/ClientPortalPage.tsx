@@ -31,6 +31,12 @@ const timeAgo = (d:string) => { const s=Math.floor((Date.now()-new Date(d).getTi
 
 // Whole-dollar JMD, matching how the printed proposal shows estimate prices.
 const fmt0 = (n:number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0,maximumFractionDigits:0}).format(n);
+// Same date-only handling as fmtDate, but keeps the weekday format Site Updates uses.
+const fmtLogDay = (d:string) => {
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  const dt=m?new Date(Date.UTC(+m[1],+m[2]-1,+m[3])):new Date(d);
+  return dt.toLocaleDateString("en-JM",{weekday:"short",month:"short",day:"numeric",timeZone:m?"UTC":"America/Jamaica"});
+};
 
 // Read-only view of a shared estimate snapshot (client-facing prices only). A summary
 // snapshot has no line items at all, so none are rendered for it. No print/share/copy.
@@ -759,7 +765,7 @@ export default function ClientPortalPage() {
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <span style={{fontSize:16}}>{getWeatherEmoji(log.weather||log.weather_condition||"")}</span>
                       <span style={{fontSize:13,fontWeight:700,color:"#374151"}}>
-                        {new Date(log.log_date).toLocaleDateString("en-JM",{weekday:"short",month:"short",day:"numeric"})}
+                        {fmtLogDay(log.log_date)}
                       </span>
                     </div>
                     <span style={{fontSize:11,color:"#64748b"}}>👷 {log.workers_count??0} workers</span>
