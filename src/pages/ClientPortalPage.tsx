@@ -4,6 +4,8 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { logPortalEvent } from "../lib/portalActivity";
 import { functionErrorMessage } from "../lib/portalErrors";
+import { openPrintWindow } from "../lib/printUtils";
+import { contractSummaryRows, contractLongSections, buildPortalContractHtml, formatJamaicaDateTimeFull } from "../lib/contractDocument";
 
 type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
 type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback"|"estimates";
@@ -283,12 +285,100 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
   </div>;
 }
 
-function SignatureModal({contract,client,saving,onSign,onCancel}:{contract:any;client:any;saving:boolean;onSign:(dataUrl:string)=>void;onCancel:()=>void}){
+// ---- Contract viewing (read-only) ----------------------------------------------------------
+// The contract's terms as a "paper" document. Empty fields are skipped, long text keeps its line
+// breaks, and the internal `notes` field is never shown. Used by the Read contract viewer and by
+// the read-first step of the signing flow.
+function ContractTerms({contract,company,client}:{contract:any;company:Co|null;client:any}) {
+  const rows=contractSummaryRows(contract);
+  const sections=contractLongSections(contract);
+  const pay=sections.find(s=>s.key==="payment_terms");
+  const rest=sections.filter(s=>s.key!=="payment_terms");
+  const contact=[company?.address_line1,company?.phone,company?.email].filter(Boolean).join(" · ");
+  const block=(s:{key:string;title:string;text:string})=><div key={s.key} style={{marginTop:18}}>
+    <div style={{fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"#374151",borderBottom:"1px solid #e5e7eb",paddingBottom:4,marginBottom:8}}>{s.title}</div>
+    <div style={{fontSize:13,lineHeight:1.7,color:"#374151",whiteSpace:"pre-wrap"}}>{s.text}</div>
+  </div>;
+  return <div style={{background:"#ffffff",color:"#1a1a1a",fontFamily:"Georgia,serif",border:"1px solid #e2e8f0",borderRadius:12,padding:"22px 22px 26px"}}>
+    <div style={{textAlign:"center",marginBottom:14}}>
+      <div style={{fontSize:15,fontWeight:800}}>{company?.company_name||"Magnus Boys Construction"}</div>
+      {contact&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>{contact}</div>}
+    </div>
+    <div style={{textAlign:"center",fontSize:10,letterSpacing:3,color:"#94a3b8",fontWeight:700}}>CONTRACT</div>
+    <div style={{textAlign:"center",fontSize:19,fontWeight:800,margin:"4px 0"}}>{contract.contract_name}</div>
+    <div style={{textAlign:"center",fontSize:12,color:"#64748b",marginBottom:16}}>Prepared for {client?.contact_name||client?.name||"you"}</div>
+    {rows.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
+      {rows.map(r=><tr key={r.label}>
+        <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:0.5,width:150,verticalAlign:"top"}}>{r.label}</td>
+        <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:13}}>{r.value}</td>
+      </tr>)}
+    </tbody></table>}
+    {pay&&block(pay)}
+    {/* PAYMENT SCHEDULE - PLACEHOLDER. The milestone list lives in the contract_payment_schedules table,
+        which the portal must not read directly (and get_portal_contracts does not return it). Render it
+        here, right after Payment Terms, once a session-validated server function provides it. */}
+    {rest.map(block)}
+  </div>;
+}
+
+// Signature images with their signed date and time (Jamaica), for whichever side has signed.
+function ContractSignatures({contract}:{contract:any}) {
+  const sides=[
+    {label:"Contractor",at:contract.contractor_signed_at,url:contract.contractor_signature_url},
+    {label:"You",at:contract.client_signed_at,url:contract.client_signature_url},
+  ].filter(s=>s.at);
+  if(sides.length===0)return null;
+  return <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:12,padding:"16px 22px",marginTop:12}}>
+    <div style={{fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"#374151",marginBottom:10}}>Signatures</div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:20}}>
+      {sides.map(s=><div key={s.label}>
+        <div style={{fontSize:12,fontWeight:700,marginBottom:6}}>{s.label}</div>
+        {s.url&&<img src={s.url} alt={`${s.label} signature`} style={{maxHeight:70,maxWidth:"100%",objectFit:"contain",display:"block",marginBottom:4}}/>}
+        <div style={{borderTop:"1px solid #cbd5e1",paddingTop:5,fontSize:11,color:"#475569"}}>Signed {formatJamaicaDateTimeFull(s.at)}</div>
+      </div>)}
+    </div>
+  </div>;
+}
+
+// Read-only contract viewer. A Print / Save as PDF button is offered ONLY once the client has
+// signed; an unsigned contract cannot be printed or downloaded from here.
+function PortalContractViewer({contract,company,client,onClose}:{contract:any;company:Co|null;client:any;onClose:()=>void}) {
+  const signed=!!contract.client_signed_at;
+  function printCopy(){
+    try{
+      openPrintWindow(buildPortalContractHtml({contract,company,clientName:client?.contact_name||client?.name||""}),{title:`${contract.contract_number||"Contract"} - ${contract.contract_name||""}`});
+    }catch{alert("Could not open the print window. Please allow pop-ups for this site and try again.");}
+  }
+  return <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#f8fafc",borderRadius:16,width:"100%",maxWidth:720,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.35)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"14px 18px",borderBottom:"1px solid #e2e8f0"}}>
+        <div>
+          <div style={{fontSize:14,fontWeight:700,color:"#0f172a"}}>Contract</div>
+          <div style={{fontSize:11,color:"#64748b"}}>{contract.contract_name}{contract.contract_number?` · #${contract.contract_number}`:""}</div>
+        </div>
+        <button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",fontSize:22,lineHeight:1,color:"#64748b",cursor:"pointer",padding:4}}>×</button>
+      </div>
+      <div style={{flex:1,minHeight:0,overflowY:"auto",padding:16}}>
+        <ContractTerms contract={contract} company={company} client={client}/>
+        <ContractSignatures contract={contract}/>
+      </div>
+      <div style={{display:"flex",gap:8,padding:"12px 18px",borderTop:"1px solid #e2e8f0"}}>
+        {signed&&<button onClick={printCopy} style={{flex:1.4,padding:"11px 0",background:"#0891b2",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Print / Save as PDF</button>}
+        <button onClick={onClose} style={{flex:1,padding:"11px 0",background:"#ffffff",border:"1px solid #cbd5e1",borderRadius:10,color:"#475569",fontSize:13,fontWeight:600,cursor:"pointer"}}>Close</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function SignatureModal({contract,client,company,saving,onSign,onCancel}:{contract:any;client:any;company?:any;saving:boolean;onSign:(dataUrl:string)=>void;onCancel:()=>void}){
   const canvasRef=React.useRef<HTMLCanvasElement|null>(null);
   const [hasDrawn,setHasDrawn]=React.useState(false);
   const [mode,setMode]=React.useState<"draw"|"upload">("draw");
   const [uploadPreview,setUploadPreview]=React.useState<string|null>(null);
   const drawing=React.useRef(false);
+  // The contract is read first, then signed; Submit stays disabled until the agreement box is ticked.
+  const [step,setStep]=React.useState<"read"|"sign">("read");
+  const [agreed,setAgreed]=React.useState(false);
 
   function getPos(e:any,canvas:HTMLCanvasElement){
     const rect=canvas.getBoundingClientRect();
@@ -330,7 +420,21 @@ function SignatureModal({contract,client,saving,onSign,onCancel}:{contract:any;c
     reader.readAsDataURL(f);
   }
 
-  const canSubmit=mode==="draw"?hasDrawn:!!uploadPreview;
+  const canSubmit=(mode==="draw"?hasDrawn:!!uploadPreview)&&agreed;
+
+  if(step==="read")return(
+    <div style={{background:"#0d1117",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:20,width:"100%",maxWidth:700,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
+      <div style={{fontWeight:700,fontSize:15,color:"#f1f5f9",marginBottom:4}}>Read Contract</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Please read the whole contract before you sign it.</div>
+      <div style={{flex:1,minHeight:0,overflowY:"auto",borderRadius:12}}>
+        <ContractTerms contract={contract} company={company||null} client={client}/>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:14}}>
+        <button onClick={onCancel} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+        <button onClick={()=>setStep("sign")} style={{flex:1.4,padding:"10px 0",borderRadius:10,border:"none",background:"#22c55e",color:"white",fontSize:13,fontWeight:700,cursor:"pointer"}}>Continue to sign</button>
+      </div>
+    </div>
+  );
 
   return(
     <div style={{background:"#0d1117",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:20,width:"100%",maxWidth:420,maxHeight:"90vh",overflowY:"auto"}}>
@@ -364,6 +468,12 @@ function SignatureModal({contract,client,saving,onSign,onCancel}:{contract:any;c
         </label>
         {uploadPreview&&<button onClick={()=>setUploadPreview(null)} style={{marginTop:8,width:"100%",padding:"6px 0",borderRadius:8,border:"1px solid rgba(239,68,68,0.3)",background:"transparent",color:"#ef4444",fontSize:12,cursor:"pointer"}}>Remove Photo</button>}
       </>}
+
+      <label style={{display:"flex",alignItems:"flex-start",gap:8,marginTop:14,fontSize:12,color:"#cbd5e1",lineHeight:1.5,cursor:"pointer"}}>
+        <input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} style={{marginTop:2,width:16,height:16,accentColor:"#22c55e",cursor:"pointer"}}/>
+        <span>I have read and agree to this contract</span>
+      </label>
+      <button onClick={()=>setStep("read")} style={{marginTop:8,background:"none",border:"none",padding:0,color:"#60a5fa",fontSize:11,cursor:"pointer"}}>&larr; Read the contract again</button>
 
       <div style={{display:"flex",gap:8,marginTop:14}}>
         {mode==="draw"&&<button onClick={clear} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Clear</button>}
@@ -424,6 +534,7 @@ export default function ClientPortalPage() {
   const [estimates,setEstimates]=useState<any[]>([]);
   const [signingContract,setSigningContract]=useState<any|null>(null);
   const [savingSignature,setSavingSignature]=useState(false);
+  const [viewingContract,setViewingContract]=useState<any|null>(null);
   const [tab,setTab]=useState<Tab>("overview");
   const [progress,setProgress]=useState(0);
   const [newComment,setNewComment]=useState("");
@@ -460,6 +571,9 @@ export default function ClientPortalPage() {
   useEffect(()=>{
     if(signingContract)logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:signingContract.id,projectId:project?.id});
   },[signingContract]);
+  useEffect(()=>{
+    if(viewingContract)logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:viewingContract.id,projectId:viewingContract.project_id});
+  },[viewingContract]);
   // Item-level views: when a tab is opened, log a view for each item it lists. The database
   // already skips repeats within 30 minutes; the id-key deps only stop a re-fire on every render.
   useEffect(()=>{
@@ -869,13 +983,15 @@ export default function ClientPortalPage() {
                 <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.contractor_signed_at?"rgba(34,197,94,0.1)":"#f8fafc",color:ct.contractor_signed_at?"#22c55e":"#475569"}}>Contractor {ct.contractor_signed_at?"✓":"Pending"}</div>
                 <div style={{flex:1,fontSize:11,padding:"6px 10px",borderRadius:8,textAlign:"center",fontWeight:600,background:ct.client_signed_at?"rgba(34,197,94,0.1)":"#f8fafc",color:ct.client_signed_at?"#22c55e":"#475569"}}>You {ct.client_signed_at?"✓ Signed":"Pending"}</div>
               </div>
+              <button onClick={()=>setViewingContract(ct)} style={{width:"100%",marginTop:12,padding:"10px 0",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:12,color:"#0f172a",fontSize:13,fontWeight:700,cursor:"pointer"}}>Read contract</button>
               {!ct.client_signed_at&&ct.contractor_signed_at&&<button onClick={()=>setSigningContract(ct)} style={{width:"100%",marginTop:12,padding:"12px 0",background:"#22c55e",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Sign This Contract</button>}
               {!ct.contractor_signed_at&&<div style={{marginTop:12,padding:"10px 14px",background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:10,fontSize:12,color:"#f59e0b"}}>Waiting for contractor signature before you can sign.</div>}
             </div>
           )
         }
+        {viewingContract&&<PortalContractViewer contract={viewingContract} company={company} client={client} onClose={()=>setViewingContract(null)}/>}
         {signingContract&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <SignatureModal contract={signingContract} client={client} saving={savingSignature} onCancel={()=>setSigningContract(null)} onSign={async(dataUrl)=>{
+          <SignatureModal contract={signingContract} client={client} company={company} saving={savingSignature} onCancel={()=>setSigningContract(null)} onSign={async(dataUrl)=>{
             setSavingSignature(true);
             try{
               if(!portalSessionToken)throw new Error("Your session has expired. Please sign in again.");

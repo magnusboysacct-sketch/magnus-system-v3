@@ -14,6 +14,7 @@ import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portal
 import { SeenBadge } from "../components/PortalSeen";
 import { useItemViews } from "../lib/useItemViews";
 import { fetchContractSignRecord, formatJamaicaShort, deviceLabel } from "../lib/portalSeen";
+import { formatJamaicaDateTimeFull } from "../lib/contractDocument";
 import type { ItemViews } from "../lib/portalSeen";
 import {
   Plus, FileText, Search, RefreshCw, X, Check, Edit2, Trash2,
@@ -49,6 +50,7 @@ interface Contract {
   client_signed_at: string | null;
   warranty_period_months: number;
   penalty_clause: string | null;
+  insurance_details?: string | null;
   governing_law: string;
   created_at: string;
   // send-to-client state
@@ -202,6 +204,21 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
   watermark?: {url:string;opacity:number;size?:number}|null;
 }) {
   const totalScheduled = schedule.reduce((s, p) => s + Number(p.amount || 0), 0);
+  // Electronic signature record (IP + device of the client's signing), when one was logged.
+  const [signRecord, setSignRecord] = useState<{ occurred_at: string; ip_address: string | null; user_agent: string | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!contract.client_signed_at) { if (!cancelled) setSignRecord(null); return; }
+        const r = await fetchContractSignRecord(contract.id);
+        if (!cancelled) setSignRecord(r);
+      } catch {
+        if (!cancelled) setSignRecord(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [contract.id, contract.client_signed_at]);
   function downloadPDF() {
     const html = document.getElementById("contract-print-content")?.innerHTML || "";
     const extraCss = `
@@ -323,6 +340,8 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                       ["Contract Value", fmtJMD(contract.contract_amount)],
                       ["Retention", `${contract.retention_percent || 0}%`],
                       ["Warranty Period", `${contract.warranty_period_months || 12} months`],
+                      ...(contract.contract_date ? [["Contract Date", fmtDate(contract.contract_date)]] : []),
+                      ...(contract.billing_schedule ? [["Billing Schedule", String(contract.billing_schedule).replace(/_/g, " ")]] : []),
                       ["Governing Law", contract.governing_law || "Jamaica"],
                     ].map(([k,v])=>(
                       <tr key={k} style={{borderBottom:"1px solid #f3f4f6"}}>
@@ -378,6 +397,13 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                 </div>
               )}
 
+              {schedule.length === 0 && contract.payment_terms && (
+                <div className="section" style={{marginBottom:48}}>
+                  <h2 style={{fontSize:18,fontWeight:700,marginBottom:16,borderBottom:"2px solid #1a1a1a",paddingBottom:8}}>Payment Terms</h2>
+                  <div style={{fontSize:12,lineHeight:1.9,whiteSpace:"pre-wrap",color:"#374151"}}>{contract.payment_terms}</div>
+                </div>
+              )}
+
               {/* Terms & Conditions */}
               {contract.terms_and_conditions && (
                 <div className="section" style={{marginBottom:48}}>
@@ -391,6 +417,13 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                 <div className="section" style={{marginBottom:48}}>
                   <h2 style={{fontSize:18,fontWeight:700,marginBottom:12,borderBottom:"2px solid #1a1a1a",paddingBottom:8}}>Penalty Clause</h2>
                   <div style={{fontSize:12,lineHeight:1.9,color:"#374151"}}>{contract.penalty_clause}</div>
+                </div>
+              )}
+
+              {contract.insurance_details && (
+                <div className="section" style={{marginBottom:48}}>
+                  <h2 style={{fontSize:18,fontWeight:700,marginBottom:12,borderBottom:"2px solid #1a1a1a",paddingBottom:8}}>Insurance</h2>
+                  <div style={{fontSize:12,lineHeight:1.9,whiteSpace:"pre-wrap",color:"#374151"}}>{contract.insurance_details}</div>
                 </div>
               )}
 
@@ -431,6 +464,26 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
                   </div>
                 </div>
               </div>
+
+              {contract.client_signed_at && signRecord && (
+                <div className="section" style={{marginBottom:48}}>
+                  <h2 style={{fontSize:18,fontWeight:700,marginBottom:12,borderBottom:"2px solid #1a1a1a",paddingBottom:8}}>Electronic Signature Record</h2>
+                  <table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <tbody>
+                      {[
+                        ["Client signed", formatJamaicaDateTimeFull(signRecord.occurred_at)],
+                        ["IP address", signRecord.ip_address || "unknown"],
+                        ["Device", deviceLabel(signRecord.user_agent)],
+                      ].map(([k,v])=>(
+                        <tr key={k} style={{borderBottom:"1px solid #f3f4f6"}}>
+                          <td style={{padding:"8px 12px",fontWeight:700,fontSize:12,width:180,color:"#6b7280",textTransform:"uppercase",letterSpacing:0.5}}>{k}</td>
+                          <td style={{padding:"8px 12px",fontSize:13}}>{v}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               {/* Footer */}
               <div style={{borderTop:"2px solid #1a1a1a",paddingTop:16,textAlign:"center",fontSize:11,color:"#9ca3af"}}>
@@ -1042,7 +1095,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                   <Send size={12}/> {isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at) ? "Sent to Client · Resend" : "Send to Client"}
                 </button>
                 <button onClick={() => setShowPDF(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-white/[0.06] hover:bg-white/[0.1] border border-slate-200 dark:border-white/[0.08] text-white text-xs font-bold transition">
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 dark:bg-white/[0.06] hover:bg-slate-300 dark:hover:bg-white/[0.1] border border-slate-300 dark:border-white/[0.08] text-slate-800 dark:text-white text-xs font-bold transition">
                   <Eye size={12}/> Preview & Print
                 </button>
                 <button onClick={() => setViewingContract(null)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">
