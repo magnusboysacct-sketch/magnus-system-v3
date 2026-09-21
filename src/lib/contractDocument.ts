@@ -116,8 +116,10 @@ export function buildPortalContractHtml(opts: {
   contract: any;
   company: any;
   clientName: string;
+  // Payment schedule rows already fetched by the viewer (this builder never calls the database).
+  schedule?: any[];
 }): string {
-  const { contract: c, company, clientName } = opts;
+  const { contract: c, company, clientName, schedule } = opts;
   const rows = contractSummaryRows(c);
   const sections = contractLongSections(c);
   const contact = [company?.address_line1, company?.phone, company?.email].filter(Boolean).map(escapeHtml).join(" &middot; ");
@@ -128,6 +130,19 @@ export function buildPortalContractHtml(opts: {
     const cap = at ? `Signed ${escapeHtml(formatJamaicaDateTimeFull(at))}` : "Signature pending";
     return `<div class="sigbox"><div class="siglabel">${escapeHtml(label)}</div>${img}<div class="sigcap">${cap}</div></div>`;
   };
+
+  const sectionHtml = (list: ContractSection[]) =>
+    list.map((s) => `<div class="sec"><h2>${escapeHtml(s.title)}</h2><div class="txt">${escapeHtml(s.text)}</div></div>`).join("");
+  const sched = (Array.isArray(schedule) ? schedule : []).filter(Boolean);
+  const scheduleHtml = sched.length
+    ? `<div class="sec"><h2>Payment Schedule</h2><table class="sched"><thead><tr><th>Milestone</th><th>Due date</th><th class="r">Amount</th><th class="r">% complete</th></tr></thead><tbody>${sched
+        .map((p) => {
+          const due = formatContractDate(p.due_date);
+          const pct = p.percent_complete === null || p.percent_complete === undefined || p.percent_complete === "" ? "" : `${Number(p.percent_complete) || 0}%`;
+          return `<tr><td><strong>${escapeHtml(p.milestone_name)}</strong>${p.milestone_description ? `<div class="msd">${escapeHtml(p.milestone_description)}</div>` : ""}</td><td>${due ? escapeHtml(due) : "&mdash;"}</td><td class="r">${escapeHtml(formatMoney(p.amount))}</td><td class="r">${escapeHtml(pct)}</td></tr>`;
+        })
+        .join("")}</tbody></table></div>`
+    : "";
 
   return `<style>
     .page{max-width:800px;margin:0 auto;padding:40px 48px;font-family:Georgia,serif;color:#1a1a1a}
@@ -149,6 +164,9 @@ export function buildPortalContractHtml(opts: {
     .sig{max-height:70px;max-width:220px;object-fit:contain;display:block;margin-bottom:4px}
     .sigcap{border-top:1px solid #1a1a1a;padding-top:5px;font-size:11px;color:#374151}
     .foot{margin-top:34px;border-top:2px solid #1a1a1a;padding-top:10px;text-align:center;font-size:10px;color:#9ca3af}
+    table.sched th{background:#1a1a1a;color:#fff;padding:7px 10px;text-align:left;font-size:11px;text-transform:uppercase}
+    .r{text-align:right}
+    .msd{font-size:11px;color:#6b7280;margin-top:2px}
   </style>
   <div class="page">
     <div class="head"><div class="co">${coName}</div>${contact ? `<div class="sub">${contact}</div>` : ""}</div>
@@ -156,7 +174,9 @@ export function buildPortalContractHtml(opts: {
     <h1>${escapeHtml(c?.contract_name || "")}</h1>
     <div class="prep">Prepared for ${escapeHtml(clientName || "the client")}</div>
     ${rows.length ? `<table><tbody>${rows.map((r) => `<tr><td class="k">${escapeHtml(r.label)}</td><td>${escapeHtml(r.value)}</td></tr>`).join("")}</tbody></table>` : ""}
-    ${sections.map((s) => `<div class="sec"><h2>${escapeHtml(s.title)}</h2><div class="txt">${escapeHtml(s.text)}</div></div>`).join("")}
+    ${sectionHtml(sections.filter((s) => s.key === "payment_terms"))}
+    ${scheduleHtml}
+    ${sectionHtml(sections.filter((s) => s.key !== "payment_terms"))}
     <div class="sec"><h2>Signatures</h2>
       <div class="sigs">${sigSide("Contractor", c?.contractor_signed_at, c?.contractor_signature_url)}${sigSide("Client", c?.client_signed_at, c?.client_signature_url)}</div>
     </div>

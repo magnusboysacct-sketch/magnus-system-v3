@@ -289,7 +289,28 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
 // The contract's terms as a "paper" document. Empty fields are skipped, long text keeps its line
 // breaks, and the internal `notes` field is never shown. Used by the Read contract viewer and by
 // the read-first step of the signing flow.
-function ContractTerms({contract,company,client}:{contract:any;company:Co|null;client:any}) {
+// The contract's payment schedule comes from the session-validated get_portal_contract_schedule
+// function (the table itself is never read from the browser). Any failure just means "no schedule":
+// nothing is shown and no error is surfaced to the client.
+function useContractSchedule(contractId:string|undefined,sessionToken:string|null):any[]{
+  const [rows,setRows]=useState<any[]>([]);
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try{
+        if(!contractId||!sessionToken){if(!cancelled)setRows([]);return;}
+        const {data,error}=await supabase.rpc("get_portal_contract_schedule",{p_session_token:sessionToken,p_contract_id:contractId});
+        if(error||!Array.isArray(data)){if(!cancelled)setRows([]);return;}
+        const sorted=[...data].sort((a:any,b:any)=>(Number(a?.sort_order)||0)-(Number(b?.sort_order)||0));
+        if(!cancelled)setRows(sorted);
+      }catch{if(!cancelled)setRows([]);}
+    })();
+    return()=>{cancelled=true;};
+  },[contractId,sessionToken]);
+  return rows;
+}
+
+function ContractTerms({contract,company,client,schedule}:{contract:any;company:Co|null;client:any;schedule?:any[]}) {
   const rows=contractSummaryRows(contract);
   const sections=contractLongSections(contract);
   const pay=sections.find(s=>s.key==="payment_terms");
@@ -314,9 +335,24 @@ function ContractTerms({contract,company,client}:{contract:any;company:Co|null;c
       </tr>)}
     </tbody></table>}
     {pay&&block(pay)}
-    {/* PAYMENT SCHEDULE - PLACEHOLDER. The milestone list lives in the contract_payment_schedules table,
-        which the portal must not read directly (and get_portal_contracts does not return it). Render it
-        here, right after Payment Terms, once a session-validated server function provides it. */}
+    {schedule&&schedule.length>0&&<div style={{marginTop:18}}>
+      <div style={{fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"#374151",borderBottom:"1px solid #e5e7eb",paddingBottom:4,marginBottom:8}}>Payment schedule</div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",minWidth:420}}>
+          <thead><tr>
+            {[["Milestone","left"],["Due date","left"],["Amount","right"],["% complete","right"]].map(([h,a])=><th key={h} style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",padding:"6px 8px",borderBottom:"1px solid #e2e8f0",textAlign:a as "left"|"right",whiteSpace:"nowrap"}}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {schedule.map((p:any,i:number)=><tr key={p.id||i}>
+              <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:13,verticalAlign:"top"}}><div style={{fontWeight:700}}>{p.milestone_name}</div>{p.milestone_description&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.milestone_description}</div>}</td>
+              <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:12,verticalAlign:"top",whiteSpace:"nowrap"}}>{fmtDate(p.due_date||null)}</td>
+              <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:13,fontWeight:700,textAlign:"right",verticalAlign:"top",whiteSpace:"nowrap"}}>{fmt(Number(p.amount)||0)}</td>
+              <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:12,textAlign:"right",verticalAlign:"top"}}>{p.percent_complete===null||p.percent_complete===undefined||p.percent_complete===""?"":`${Number(p.percent_complete)||0}%`}</td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
+    </div>}
     {rest.map(block)}
   </div>;
 }
@@ -342,11 +378,12 @@ function ContractSignatures({contract}:{contract:any}) {
 
 // Read-only contract viewer. A Print / Save as PDF button is offered ONLY once the client has
 // signed; an unsigned contract cannot be printed or downloaded from here.
-function PortalContractViewer({contract,company,client,onClose}:{contract:any;company:Co|null;client:any;onClose:()=>void}) {
+function PortalContractViewer({contract,company,client,sessionToken,onClose}:{contract:any;company:Co|null;client:any;sessionToken:string|null;onClose:()=>void}) {
   const signed=!!contract.client_signed_at;
+  const schedule=useContractSchedule(contract.id,sessionToken);
   function printCopy(){
     try{
-      openPrintWindow(buildPortalContractHtml({contract,company,clientName:client?.contact_name||client?.name||""}),{title:`${contract.contract_number||"Contract"} - ${contract.contract_name||""}`});
+      openPrintWindow(buildPortalContractHtml({contract,company,clientName:client?.contact_name||client?.name||"",schedule}),{title:`${contract.contract_number||"Contract"} - ${contract.contract_name||""}`});
     }catch{alert("Could not open the print window. Please allow pop-ups for this site and try again.");}
   }
   return <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
@@ -359,7 +396,7 @@ function PortalContractViewer({contract,company,client,onClose}:{contract:any;co
         <button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",fontSize:22,lineHeight:1,color:"#64748b",cursor:"pointer",padding:4}}>×</button>
       </div>
       <div style={{flex:1,minHeight:0,overflowY:"auto",padding:16}}>
-        <ContractTerms contract={contract} company={company} client={client}/>
+        <ContractTerms contract={contract} company={company} client={client} schedule={schedule}/>
         <ContractSignatures contract={contract}/>
       </div>
       <div style={{display:"flex",gap:8,padding:"12px 18px",borderTop:"1px solid #e2e8f0"}}>
@@ -370,7 +407,7 @@ function PortalContractViewer({contract,company,client,onClose}:{contract:any;co
   </div>;
 }
 
-function SignatureModal({contract,client,company,saving,onSign,onCancel}:{contract:any;client:any;company?:any;saving:boolean;onSign:(dataUrl:string)=>void;onCancel:()=>void}){
+function SignatureModal({contract,client,company,sessionToken,saving,onSign,onCancel}:{contract:any;client:any;company?:any;sessionToken?:string|null;saving:boolean;onSign:(dataUrl:string)=>void;onCancel:()=>void}){
   const canvasRef=React.useRef<HTMLCanvasElement|null>(null);
   const [hasDrawn,setHasDrawn]=React.useState(false);
   const [mode,setMode]=React.useState<"draw"|"upload">("draw");
@@ -379,6 +416,7 @@ function SignatureModal({contract,client,company,saving,onSign,onCancel}:{contra
   // The contract is read first, then signed; Submit stays disabled until the agreement box is ticked.
   const [step,setStep]=React.useState<"read"|"sign">("read");
   const [agreed,setAgreed]=React.useState(false);
+  const schedule=useContractSchedule(contract?.id,sessionToken||null);
 
   function getPos(e:any,canvas:HTMLCanvasElement){
     const rect=canvas.getBoundingClientRect();
@@ -427,7 +465,7 @@ function SignatureModal({contract,client,company,saving,onSign,onCancel}:{contra
       <div style={{fontWeight:700,fontSize:15,color:"#f1f5f9",marginBottom:4}}>Read Contract</div>
       <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Please read the whole contract before you sign it.</div>
       <div style={{flex:1,minHeight:0,overflowY:"auto",borderRadius:12}}>
-        <ContractTerms contract={contract} company={company||null} client={client}/>
+        <ContractTerms contract={contract} company={company||null} client={client} schedule={schedule}/>
       </div>
       <div style={{display:"flex",gap:8,marginTop:14}}>
         <button onClick={onCancel} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
@@ -989,9 +1027,9 @@ export default function ClientPortalPage() {
             </div>
           )
         }
-        {viewingContract&&<PortalContractViewer contract={viewingContract} company={company} client={client} onClose={()=>setViewingContract(null)}/>}
+        {viewingContract&&<PortalContractViewer contract={viewingContract} company={company} client={client} sessionToken={portalSessionToken} onClose={()=>setViewingContract(null)}/>}
         {signingContract&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <SignatureModal contract={signingContract} client={client} company={company} saving={savingSignature} onCancel={()=>setSigningContract(null)} onSign={async(dataUrl)=>{
+          <SignatureModal contract={signingContract} client={client} company={company} sessionToken={portalSessionToken} saving={savingSignature} onCancel={()=>setSigningContract(null)} onSign={async(dataUrl)=>{
             setSavingSignature(true);
             try{
               if(!portalSessionToken)throw new Error("Your session has expired. Please sign in again.");
