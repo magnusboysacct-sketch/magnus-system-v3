@@ -1,7 +1,7 @@
 // src/layout/AppLayout.tsx — Main shell with sidebar + top bar
 // Drop-in replacement for SidebarLayout.tsx
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
 import { supabase } from "../lib/supabase";
@@ -227,6 +227,22 @@ export default function AppLayout() {
   const { settings: co } = useCompanySettings();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
+  // Takeoff wants the whole width, so the sidebar collapses while you are on it and goes back to what it was when you leave.
+  // preTakeoffCollapsed is null except during a Takeoff visit, where it holds the state from before the visit. Only the
+  // enter / leave transition (onTakeoff flipping) runs this: moving between two Takeoff pages does not re-run it, and a
+  // manual toggle on Takeoff is left alone (it changes `collapsed` but not onTakeoff). In memory only, nothing is saved.
+  // A layout effect so a direct load of a Takeoff URL collapses before the first paint instead of flashing open.
+  const onTakeoff = /^\/(?:projects\/[^/]+\/)?takeoff\/?$/.test(location.pathname);
+  const preTakeoffCollapsed = useRef<boolean | null>(null);
+  useLayoutEffect(() => {
+    if (onTakeoff && preTakeoffCollapsed.current === null) {
+      preTakeoffCollapsed.current = collapsed;
+      if (!collapsed) setCollapsed(true);
+    } else if (!onTakeoff && preTakeoffCollapsed.current !== null) {
+      setCollapsed(preTakeoffCollapsed.current);
+      preTakeoffCollapsed.current = null;
+    }
+  }, [onTakeoff]);
   const { userRole } = useProjectContext();
   const { canAccessFullFinance } = useFinanceAccess();
 
