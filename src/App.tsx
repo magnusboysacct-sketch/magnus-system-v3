@@ -347,12 +347,13 @@ export default function App() {
                 via email+password landed on a page stuck in "loading"
                 forever. */}
             <Route path="/client-portal/session/:sessionToken" element={<ClientPortalPage />} />
-            <Route path="/projects/:projectId/site-visit" element={<SiteVisitPage />} />
-            <Route path="/projects/:projectId/plans" element={<ProjectPlansPage />} />
-            <Route path="/projects/:projectId/issues" element={<ProjectIssuesPage />} />
-            <Route path="/projects/:projectId/logs" element={<ProjectLogsPage />} />
-            <Route path="/projects/:projectId/photos" element={<ProjectPhotosPage />} />
-            <Route path="/access-log" element={<AccessLogPage />} />
+            {/* Staff pages: full-screen (no sidebar), login required */}
+            <Route path="/projects/:projectId/site-visit" element={<RequireAuth><SiteVisitPage /></RequireAuth>} />
+            <Route path="/projects/:projectId/plans" element={<RequireAuth><ProjectPlansPage /></RequireAuth>} />
+            <Route path="/projects/:projectId/issues" element={<RequireAuth><ProjectIssuesPage /></RequireAuth>} />
+            <Route path="/projects/:projectId/logs" element={<RequireAuth><ProjectLogsPage /></RequireAuth>} />
+            <Route path="/projects/:projectId/photos" element={<RequireAuth><ProjectPhotosPage /></RequireAuth>} />
+            <Route path="/access-log" element={<RequireAuth><AccessLogPage /></RequireAuth>} />
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </BrowserRouter>
