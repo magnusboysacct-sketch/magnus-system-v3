@@ -4,8 +4,7 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { logPortalEvent } from "../lib/portalActivity";
 import { functionErrorMessage } from "../lib/portalErrors";
-import { openPrintWindow } from "../lib/printUtils";
-import { contractSummaryRows, contractLongSections, buildPortalContractHtml, formatJamaicaDateTimeFull } from "../lib/contractDocument";
+import ContractDocument, { printContractDocument, watermarkFromCompany } from "../components/ContractDocument";
 
 type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
 type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback"|"estimates";
@@ -18,7 +17,7 @@ interface Invoice { id:string; invoice_number:string|null; total_amount:number; 
 interface ChangeOrder { id:string; title:string; description:string|null; amount:number; status:string; created_at:string; }
 interface Comment { id:string; message:string; created_at:string; sender_type?:string; }
 interface Photo { id:string; url?:string; public_url?:string; publicUrl?:string; caption?:string; created_at:string; }
-interface Co { company_name:string|null; logo_url:string|null; phone:string|null; email:string|null; address_line1:string|null; }
+interface Co { company_name:string|null; logo_url:string|null; phone:string|null; email:string|null; address_line1:string|null; address_line2?:string|null; parish?:string|null; tagline?:string|null; city?:string|null; watermark_url?:string|null; watermark_enabled?:boolean|null; watermark_opacity?:number|null; watermark_size?:number|null; }
 
 const fmt = (n:number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(n);
 // Date-only values (YYYY-MM-DD) are calendar dates: parsing them as UTC midnight and
@@ -286,9 +285,8 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
 }
 
 // ---- Contract viewing (read-only) ----------------------------------------------------------
-// The contract's terms as a "paper" document. Empty fields are skipped, long text keeps its line
-// breaks, and the internal `notes` field is never shown. Used by the Read contract viewer and by
-// the read-first step of the signing flow.
+// The contract is shown with the SAME shared document staff see (src/components/ContractDocument.tsx), so
+// a signed contract looks identical to everyone. The internal `notes` field is never shown.
 // The contract's payment schedule comes from the session-validated get_portal_contract_schedule
 // function (the table itself is never read from the browser). Any failure just means "no schedule":
 // nothing is shown and no error is surfaced to the client.
@@ -309,87 +307,19 @@ function useContractSchedule(contractId:string|undefined,sessionToken:string|nul
   },[contractId,sessionToken]);
   return rows;
 }
-
-function ContractTerms({contract,company,client,schedule}:{contract:any;company:Co|null;client:any;schedule?:any[]}) {
-  const rows=contractSummaryRows(contract);
-  const sections=contractLongSections(contract);
-  const pay=sections.find(s=>s.key==="payment_terms");
-  const rest=sections.filter(s=>s.key!=="payment_terms");
-  const contact=[company?.address_line1,company?.phone,company?.email].filter(Boolean).join(" · ");
-  const block=(s:{key:string;title:string;text:string})=><div key={s.key} style={{marginTop:18}}>
-    <div style={{fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"#374151",borderBottom:"1px solid #e5e7eb",paddingBottom:4,marginBottom:8}}>{s.title}</div>
-    <div style={{fontSize:13,lineHeight:1.7,color:"#374151",whiteSpace:"pre-wrap"}}>{s.text}</div>
-  </div>;
-  return <div style={{background:"#ffffff",color:"#1a1a1a",fontFamily:"Georgia,serif",border:"1px solid #e2e8f0",borderRadius:12,padding:"22px 22px 26px"}}>
-    <div style={{textAlign:"center",marginBottom:14}}>
-      {company?.logo_url&&<img src={company.logo_url} alt="" onError={e=>{e.currentTarget.style.display="none";}} style={{maxHeight:60,maxWidth:200,objectFit:"contain",display:"block",margin:"0 auto 6px"}}/>}
-      <div style={{fontSize:15,fontWeight:800}}>{company?.company_name||"Magnus Boys Construction"}</div>
-      {contact&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>{contact}</div>}
-    </div>
-    <div style={{textAlign:"center",fontSize:10,letterSpacing:3,color:"#94a3b8",fontWeight:700}}>CONTRACT</div>
-    <div style={{textAlign:"center",fontSize:19,fontWeight:800,margin:"4px 0"}}>{contract.contract_name}</div>
-    <div style={{textAlign:"center",fontSize:12,color:"#64748b",marginBottom:16}}>Prepared for {client?.contact_name||client?.name||"you"}</div>
-    {rows.length>0&&<table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
-      {rows.map(r=><tr key={r.label}>
-        <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:0.5,width:150,verticalAlign:"top"}}>{r.label}</td>
-        <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:13}}>{r.value}</td>
-      </tr>)}
-    </tbody></table>}
-    {pay&&block(pay)}
-    {schedule&&schedule.length>0&&<div style={{marginTop:18}}>
-      <div style={{fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"#374151",borderBottom:"1px solid #e5e7eb",paddingBottom:4,marginBottom:8}}>Payment schedule</div>
-      <div style={{overflowX:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",minWidth:420}}>
-          <thead><tr>
-            {[["Milestone","left"],["Due date","left"],["Amount","right"],["% complete","right"]].map(([h,a])=><th key={h} style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",padding:"6px 8px",borderBottom:"1px solid #e2e8f0",textAlign:a as "left"|"right",whiteSpace:"nowrap"}}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {schedule.map((p:any,i:number)=><tr key={p.id||i}>
-              <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:13,verticalAlign:"top"}}><div style={{fontWeight:700}}>{p.milestone_name}</div>{p.milestone_description&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.milestone_description}</div>}</td>
-              <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:12,verticalAlign:"top",whiteSpace:"nowrap"}}>{fmtDate(p.due_date||null)}</td>
-              <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:13,fontWeight:700,textAlign:"right",verticalAlign:"top",whiteSpace:"nowrap"}}>{fmt(Number(p.amount)||0)}</td>
-              <td style={{padding:"7px 8px",borderBottom:"1px solid #f1f5f9",fontSize:12,textAlign:"right",verticalAlign:"top"}}>{p.percent_complete===null||p.percent_complete===undefined||p.percent_complete===""?"":`${Number(p.percent_complete)||0}%`}</td>
-            </tr>)}
-          </tbody>
-        </table>
-      </div>
-    </div>}
-    {rest.map(block)}
-  </div>;
-}
-
-// Signature images with their signed date and time (Jamaica), for whichever side has signed.
-function ContractSignatures({contract}:{contract:any}) {
-  const sides=[
-    {label:"Contractor",at:contract.contractor_signed_at,url:contract.contractor_signature_url},
-    {label:"You",at:contract.client_signed_at,url:contract.client_signature_url},
-  ].filter(s=>s.at);
-  if(sides.length===0)return null;
-  return <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:12,padding:"16px 22px",marginTop:12}}>
-    <div style={{fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:"#374151",marginBottom:10}}>Signatures</div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:20}}>
-      {sides.map(s=><div key={s.label}>
-        <div style={{fontSize:12,fontWeight:700,marginBottom:6}}>{s.label}</div>
-        {s.url&&<img src={s.url} alt={`${s.label} signature`} style={{maxHeight:70,maxWidth:"100%",objectFit:"contain",display:"block",marginBottom:4}}/>}
-        <div style={{borderTop:"1px solid #cbd5e1",paddingTop:5,fontSize:11,color:"#475569"}}>Signed {formatJamaicaDateTimeFull(s.at)}</div>
-      </div>)}
-    </div>
-  </div>;
-}
-
-// Read-only contract viewer. A Print / Save as PDF button is offered ONLY once the client has
-// signed; an unsigned contract cannot be printed or downloaded from here.
-function PortalContractViewer({contract,company,client,sessionToken,onClose}:{contract:any;company:Co|null;client:any;sessionToken:string|null;onClose:()=>void}) {
+// Read-only contract viewer. Print / Save as PDF is offered ONLY once the client has signed; an unsigned
+// contract cannot be printed or downloaded from here.
+function PortalContractViewer({contract,company,sessionToken,onClose}:{contract:any;company:Co|null;sessionToken:string|null;onClose:()=>void}) {
   const signed=!!contract.client_signed_at;
   const schedule=useContractSchedule(contract.id,sessionToken);
   function printCopy(){
     try{
-      const opened=openPrintWindow(buildPortalContractHtml({contract,company,clientName:client?.contact_name||client?.name||"",schedule}),{title:`${contract.contract_number||"Contract"} - ${contract.contract_name||""}`,waitForImages:true});
+      const opened=printContractDocument({variant:"print",title:`${contract.contract_number||"Contract"} - ${contract.contract_name||""}`,watermark:watermarkFromCompany(company),tagline:company?.tagline,waitForImages:true});
       if(!opened)alert("Could not open the print window. Please allow pop-ups for this site and try again.");
     }catch{alert("Could not open the print window. Please allow pop-ups for this site and try again.");}
   }
   return <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{background:"#f8fafc",borderRadius:16,width:"100%",maxWidth:720,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.35)"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#f8fafc",borderRadius:16,width:"100%",maxWidth:900,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.35)"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"14px 18px",borderBottom:"1px solid #e2e8f0"}}>
         <div>
           <div style={{fontSize:14,fontWeight:700,color:"#0f172a"}}>Contract</div>
@@ -397,9 +327,8 @@ function PortalContractViewer({contract,company,client,sessionToken,onClose}:{co
         </div>
         <button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",fontSize:22,lineHeight:1,color:"#64748b",cursor:"pointer",padding:4}}>×</button>
       </div>
-      <div style={{flex:1,minHeight:0,overflowY:"auto",padding:16}}>
-        <ContractTerms contract={contract} company={company} client={client} schedule={schedule}/>
-        <ContractSignatures contract={contract}/>
+      <div style={{flex:1,minHeight:0,overflowY:"auto",background:"#f3f4f6",padding:16}}>
+        <ContractDocument contract={contract} schedule={schedule} company={company} signRecord={null}/>
       </div>
       <div style={{display:"flex",gap:8,padding:"12px 18px",borderTop:"1px solid #e2e8f0"}}>
         {signed&&<button onClick={printCopy} style={{flex:1.4,padding:"11px 0",background:"#0891b2",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Print / Save as PDF</button>}
@@ -408,7 +337,6 @@ function PortalContractViewer({contract,company,client,sessionToken,onClose}:{co
     </div>
   </div>;
 }
-
 function SignatureModal({contract,client,company,sessionToken,saving,onSign,onCancel}:{contract:any;client:any;company?:any;sessionToken?:string|null;saving:boolean;onSign:(dataUrl:string)=>void;onCancel:()=>void}){
   const canvasRef=React.useRef<HTMLCanvasElement|null>(null);
   const [hasDrawn,setHasDrawn]=React.useState(false);
@@ -466,8 +394,8 @@ function SignatureModal({contract,client,company,sessionToken,saving,onSign,onCa
     <div style={{background:"#0d1117",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:20,width:"100%",maxWidth:700,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
       <div style={{fontWeight:700,fontSize:15,color:"#f1f5f9",marginBottom:4}}>Read Contract</div>
       <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Please read the whole contract before you sign it.</div>
-      <div style={{flex:1,minHeight:0,overflowY:"auto",borderRadius:12}}>
-        <ContractTerms contract={contract} company={company||null} client={client} schedule={schedule}/>
+      <div style={{flex:1,minHeight:0,overflowY:"auto",borderRadius:12,background:"#f3f4f6",padding:12}}>
+        <ContractDocument contract={contract} schedule={schedule} company={company||null} signRecord={null}/>
       </div>
       <div style={{display:"flex",gap:8,marginTop:14}}>
         <button onClick={onCancel} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
@@ -813,6 +741,17 @@ export default function ClientPortalPage() {
     if(client)localStorage.removeItem(`portal_${client.id}`);
     setAuthState("login");
   }
+  // The shared contract document expects the staff-shaped contract (client + project details). The portal
+  // builds them from what the server sends: client_name / client_address / project_name / project_site_address from
+  // get_portal_contracts (those take precedence, so a contract on any project matches the staff copy), falling back
+  // to get_portal_data's project only if a field is missing.
+  function docContract(ct:any){
+    const proj=project&&ct?.project_id&&project.id===ct.project_id?project:null;
+    return {...ct,
+      client:{name:ct?.client_name??client?.name,contact_name:client?.contact_name??null,address:ct?.client_address??null},
+      project:{name:ct?.project_name??proj?.name??null,site_address:ct?.project_site_address??proj?.site_address??null}};
+  }
+
   const totalInvoiced=invoices.reduce((s,i)=>s+Number(i.total_amount||0),0);
   const totalPaid=invoices.filter(i=>i.status==="paid").reduce((s,i)=>s+Number(i.total_amount||0),0);
   const balanceDue=totalInvoiced-totalPaid;
@@ -1029,9 +968,9 @@ export default function ClientPortalPage() {
             </div>
           )
         }
-        {viewingContract&&<PortalContractViewer contract={viewingContract} company={company} client={client} sessionToken={portalSessionToken} onClose={()=>setViewingContract(null)}/>}
+        {viewingContract&&<PortalContractViewer contract={docContract(viewingContract)} company={company} sessionToken={portalSessionToken} onClose={()=>setViewingContract(null)}/>}
         {signingContract&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <SignatureModal contract={signingContract} client={client} company={company} sessionToken={portalSessionToken} saving={savingSignature} onCancel={()=>setSigningContract(null)} onSign={async(dataUrl)=>{
+          <SignatureModal contract={docContract(signingContract)} client={client} company={company} sessionToken={portalSessionToken} saving={savingSignature} onCancel={()=>setSigningContract(null)} onSign={async(dataUrl)=>{
             setSavingSignature(true);
             try{
               if(!portalSessionToken)throw new Error("Your session has expired. Please sign in again.");
