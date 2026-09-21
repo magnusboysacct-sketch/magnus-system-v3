@@ -5,6 +5,9 @@ import { supabase } from "../lib/supabase";
 import { logPortalEvent } from "../lib/portalActivity";
 import { functionErrorMessage } from "../lib/portalErrors";
 import ContractDocument, { printContractDocument, watermarkFromCompany } from "../components/ContractDocument";
+import PortalProjectPicker from "../components/PortalProjectPicker";
+import { normalizeProjects, hasMultipleProjects, filterByProject, itemProjectLabel, invoiceTotals, countUnpaid, countUnsigned, countPending, createRequestGate, readRememberedProject, rememberProject, pickRememberedProject } from "../lib/portalProjects";
+import type { PortalProject } from "../lib/portalProjects";
 
 type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
 type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback"|"estimates";
@@ -13,9 +16,9 @@ type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback"|"esti
 // was removed from the type rather than left declared-but-always-undefined.
 interface Client { id:string; name:string; contact_name:string|null; email:string|null; phone?:string|null; portal_email:string|null; portal_activated_at:string|null; company_id?:string|null; }
 interface Project { id:string; name:string; status:string; start_date:string|null; end_date:string|null; site_address:string|null; }
-interface Invoice { id:string; invoice_number:string|null; total_amount:number; status:string; issue_date:string|null; due_date:string|null; }
+interface Invoice { id:string; invoice_number:string|null; total_amount:number; status:string; issue_date:string|null; due_date:string|null; project_id?:string|null; project_name?:string|null; }
 interface ChangeOrder { id:string; title:string; description:string|null; amount:number; status:string; created_at:string; }
-interface Comment { id:string; message:string; created_at:string; sender_type?:string; }
+interface Comment { id:string; message:string; created_at:string; sender_type?:string; project_id?:string|null; }
 interface Photo { id:string; url?:string; public_url?:string; publicUrl?:string; caption?:string; created_at:string; }
 interface Co { company_name:string|null; logo_url:string|null; phone:string|null; email:string|null; address_line1:string|null; address_line2?:string|null; parish?:string|null; tagline?:string|null; city?:string|null; watermark_url?:string|null; watermark_enabled?:boolean|null; watermark_opacity?:number|null; watermark_size?:number|null; }
 
@@ -508,7 +511,7 @@ export default function ClientPortalPage() {
   const [newComment,setNewComment]=useState("");
   const [rating,setRating]=useState(0);
   const [reviewText,setReviewText]=useState("");
-  const [reviewSubmitted,setReviewSubmitted]=useState(false);
+  const [reviewedProjectIds,setReviewedProjectIds]=useState<string[]>([]);
   const [toast,setToast]=useState<{msg:string;type:"success"|"error"}|null>(null);
   const [lightbox,setLightbox]=useState<Photo|null>(null);
   const [respondingTo,setRespondingTo]=useState<string|null>(null);
@@ -518,6 +521,23 @@ export default function ClientPortalPage() {
   const [sitePhotos,setSitePhotos]=useState<any[]>([]);
   const [photosLoading,setPhotosLoading]=useState(true);
   const [selectedPhoto,setSelectedPhoto]=useState<any|null>(null);
+  // Project picker: shown only when the client has 2+ projects. "projects" and the server's choice of project
+  // come from get_portal_data; selectedProjectId is what the picker highlights and what the per-project
+  // lists, messages, review and activity events use. projectGate makes only the latest switch apply.
+  const [projects,setProjects]=useState<PortalProject[]>([]);
+  const [selectedProjectId,setSelectedProjectId]=useState<string|null>(null);
+  const [switchingProject,setSwitchingProject]=useState(false);
+  const projectGate=React.useRef(createRequestGate());
+  const multiProject=hasMultipleProjects(projects);
+  const activeProjectId=selectedProjectId||project?.id||null;
+  const selectedProjectName=projects.find(p=>p.id===activeProjectId)?.name||project?.name||"";
+  const reviewSubmitted=!!activeProjectId&&reviewedProjectIds.includes(activeProjectId);
+  // Invoices, estimates, contracts and messages come back for the whole client; show the selected project's
+  // (plus any with no project). A single-project client is never filtered, so nothing changes for them.
+  const visInvoices=filterByProject(invoices,activeProjectId,multiProject);
+  const visEstimates=filterByProject(estimates,activeProjectId,multiProject);
+  const visContracts=filterByProject(contracts,activeProjectId,multiProject);
+  const visComments=filterByProject(comments,activeProjectId,multiProject);
 
   useEffect(()=>{
     if(sessionToken)checkAuthViaSession(sessionToken);
@@ -528,16 +548,16 @@ export default function ClientPortalPage() {
   // src/lib/portalActivity.ts. These effects only observe existing state; they
   // never change it, and skip the initial render (no session token yet).
   useEffect(()=>{
-    if(portalSessionToken)logPortalEvent(portalSessionToken,"tab_view",{entityType:"tab",entityId:tab});
+    if(portalSessionToken)logPortalEvent(portalSessionToken,"tab_view",{entityType:"tab",entityId:tab,projectId:activeProjectId});
   },[tab]);
   useEffect(()=>{
-    if(lightbox)logPortalEvent(portalSessionToken,"photo_view",{entityType:"photo",entityId:lightbox.id,projectId:project?.id});
+    if(lightbox)logPortalEvent(portalSessionToken,"photo_view",{entityType:"photo",entityId:lightbox.id,projectId:activeProjectId});
   },[lightbox]);
   useEffect(()=>{
-    if(selectedPhoto)logPortalEvent(portalSessionToken,"photo_view",{entityType:"photo",entityId:selectedPhoto.id,projectId:project?.id});
+    if(selectedPhoto)logPortalEvent(portalSessionToken,"photo_view",{entityType:"photo",entityId:selectedPhoto.id,projectId:activeProjectId});
   },[selectedPhoto]);
   useEffect(()=>{
-    if(signingContract)logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:signingContract.id,projectId:project?.id});
+    if(signingContract)logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:signingContract.id,projectId:signingContract.project_id??activeProjectId});
   },[signingContract]);
   useEffect(()=>{
     if(viewingContract)logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:viewingContract.id,projectId:viewingContract.project_id});
@@ -545,14 +565,18 @@ export default function ClientPortalPage() {
   // Item-level views: when a tab is opened, log a view for each item it lists. The database
   // already skips repeats within 30 minutes; the id-key deps only stop a re-fire on every render.
   useEffect(()=>{
-    if(tab==="invoices"&&portalSessionToken)invoices.slice(0,20).forEach((inv:any)=>logPortalEvent(portalSessionToken,"invoice_view",{entityType:"invoice",entityId:inv.id,projectId:inv.project_id}));
-  },[tab,invoices.map((i:any)=>i.id).join(",")]);
+    if(tab==="invoices"&&portalSessionToken)visInvoices.slice(0,20).forEach((inv:any)=>logPortalEvent(portalSessionToken,"invoice_view",{entityType:"invoice",entityId:inv.id,projectId:inv.project_id}));
+  },[tab,visInvoices.map((i:any)=>i.id).join(",")]);
   useEffect(()=>{
-    if(tab==="estimates"&&portalSessionToken)estimates.slice(0,20).forEach((es:any)=>logPortalEvent(portalSessionToken,"estimate_view",{entityType:"estimate",entityId:es.id,projectId:es.project_id}));
-  },[tab,estimates.map((e:any)=>e.id).join(",")]);
+    if(tab==="estimates"&&portalSessionToken)visEstimates.slice(0,20).forEach((es:any)=>logPortalEvent(portalSessionToken,"estimate_view",{entityType:"estimate",entityId:es.id,projectId:es.project_id}));
+  },[tab,visEstimates.map((e:any)=>e.id).join(",")]);
   useEffect(()=>{
-    if(tab==="contracts"&&portalSessionToken)contracts.slice(0,20).forEach((ct:any)=>logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:ct.id,projectId:ct.project_id}));
-  },[tab,contracts.map((c:any)=>c.id).join(",")]);
+    if(tab==="contracts"&&portalSessionToken)visContracts.slice(0,20).forEach((ct:any)=>logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:ct.id,projectId:ct.project_id}));
+  },[tab,visContracts.map((c:any)=>c.id).join(",")]);
+  // The Estimates tab disappears when the selected project has none; don't leave the view on a hidden tab.
+  useEffect(()=>{
+    if(tab==="estimates"&&visEstimates.length===0)setTab("overview");
+  },[tab,visEstimates.length]);
 
   // Session-URL route (email+password login from ClientLoginPage.tsx): the session token in the
   // URL is validated AND everything the page shows is loaded by ONE server call, get_portal_data.
@@ -596,6 +620,8 @@ export default function ClientPortalPage() {
     setCompany(d.company||null);
     const proj=d.project||null;
     setProject(proj);
+    setProjects(normalizeProjects(d.projects));
+    setSelectedProjectId(proj?.id??null);
     if(proj){
       const newest=(a:any,b:any)=>String(b.created_at||"").localeCompare(String(a.created_at||""));
       const ph=[...(d.photos||[])].sort(newest);
@@ -615,11 +641,25 @@ export default function ClientPortalPage() {
     }
   }
 
-  async function loadData(c:Client,sessionTok:string,prefetched?:any) {
+  // The first get_portal_data answer already lists this client's projects and says which one the server chose.
+  // If this tab remembers another of them, load that one instead. The remembered id is only ever a request: it
+  // must be in the server's own list, and get_portal_data still applies its ownership check on the way.
+  async function withRememberedProject(d:any,sessionTok:string){
+    try{
+      const wanted=pickRememberedProject(readRememberedProject(d?.client?.id),normalizeProjects(d?.projects),d?.project?.id??null);
+      if(!wanted)return d;
+      const {data:d2,error}=await supabase.rpc("get_portal_data",{p_session_token:sessionTok,p_project_id:wanted});
+      return !error&&d2?d2:d;
+    }catch{return d;}
+  }
+
+  async function loadData(c:Client,sessionTok:string,prefetched?:any,projectId?:string|null) {
     try {
-      const d=prefetched??(await supabase.rpc("get_portal_data",{p_session_token:sessionTok})).data;
+      const ticket=projectGate.current.current();
+      let d=prefetched??(await supabase.rpc("get_portal_data",projectId?{p_session_token:sessionTok,p_project_id:projectId}:{p_session_token:sessionTok})).data;
       if(!d)return;
-      applyPortalData(d,c);
+      if(prefetched&&!projectId)d=await withRememberedProject(d,sessionTok);
+      if(projectGate.current.isCurrent(ticket))applyPortalData(d,c);
       const proj=d.project||null;
       const {data:cm,error:cmErr}=await supabase.rpc("get_portal_comments",{p_session_token:sessionTok});
       if(cmErr)console.error("get_portal_comments failed:",cmErr);
@@ -655,6 +695,31 @@ export default function ClientPortalPage() {
     setAuthState("authenticated");
     setToast({msg:"Welcome to your project portal!",type:"success"});
   }
+  // Pick another project: reload its progress, photos, site updates and change orders through get_portal_data.
+  // Only the most recent pick may apply its response (a slower earlier one is ignored), the current tab is
+  // kept, and a failed load puts the picker back on the project that is actually on screen.
+  async function selectProject(id:string){
+    if(!portalSessionToken||!client||id===activeProjectId)return;
+    const ticket=projectGate.current.next();
+    const previousId=project?.id||null;
+    setSelectedProjectId(id);setSwitchingProject(true);
+    setNewComment("");setRating(0);setReviewText("");
+    setLogsLoading(true);setPhotosLoading(true);
+    try{
+      const {data:d,error}=await supabase.rpc("get_portal_data",{p_session_token:portalSessionToken,p_project_id:id});
+      if(!projectGate.current.isCurrent(ticket))return;
+      if(error||!d)throw new Error(error?.message||"No data returned");
+      applyPortalData(d,client);
+      rememberProject(client.id,d.project?.id||id);
+    }catch(e){
+      if(!projectGate.current.isCurrent(ticket))return;
+      console.error("get_portal_data (project switch) failed:",e);
+      setSelectedProjectId(previousId);
+      setLogsLoading(false);setPhotosLoading(false);
+      setToast({msg:"Could not load that project. Please try again.",type:"error"});
+    }
+    if(projectGate.current.isCurrent(ticket))setSwitchingProject(false);
+  }
   async function submitComment(){
     if(!newComment.trim()||!client||!portalSessionToken) return;
 
@@ -663,7 +728,7 @@ export default function ClientPortalPage() {
     // validated session, same as get_portal_comments above.
     const { error } = await supabase.rpc("insert_portal_comment", {
       p_session_token: portalSessionToken,
-      p_project_id: project?.id || null,
+      p_project_id: activeProjectId,
       p_message: newComment,
     });
 
@@ -674,18 +739,18 @@ export default function ClientPortalPage() {
     }
 
     setNewComment("");
-    logPortalEvent(portalSessionToken,"comment_sent",{projectId:project?.id});
+    logPortalEvent(portalSessionToken,"comment_sent",{projectId:activeProjectId});
     setToast({ msg: "Message sent!", type: "success" });
-    loadData(client,portalSessionToken);
+    loadData(client,portalSessionToken,undefined,activeProjectId);
   }
 
   async function submitReview(){
-    if(!rating||!client||!project)return;
+    if(!rating||!client||!activeProjectId)return;
     try{
       if(!portalSessionToken)throw new Error("Your session has expired. Please sign in again.");
-      const {error}=await supabase.rpc("submit_portal_review",{p_session_token:portalSessionToken,p_project_id:project.id,p_rating:rating,p_comment:reviewText});
+      const {error}=await supabase.rpc("submit_portal_review",{p_session_token:portalSessionToken,p_project_id:activeProjectId,p_rating:rating,p_comment:reviewText});
       if(error)throw new Error(error.message);
-      setReviewSubmitted(true);setToast({msg:"Thank you for your review!",type:"success"});
+      setReviewedProjectIds(prev=>[...prev,activeProjectId]);setToast({msg:"Thank you for your review!",type:"success"});
     }catch(e:any){setToast({msg:e?.message||"Could not submit your review. Please try again.",type:"error"});}
   }
   function getWeatherEmoji(desc:string) {
@@ -714,7 +779,7 @@ export default function ClientPortalPage() {
       a.download=photo.caption?`${photo.caption.replace(/\s+/g,"-")}.jpg`:`site-photo-${photo.id}.jpg`;
       document.body.appendChild(a);a.click();document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      logPortalEvent(portalSessionToken,"photo_download",{entityType:"photo",entityId:photo.id,projectId:project?.id});
+      logPortalEvent(portalSessionToken,"photo_download",{entityType:"photo",entityId:photo.id,projectId:activeProjectId});
     } catch {alert("Failed to download photo.");}
   }
 
@@ -752,10 +817,8 @@ export default function ClientPortalPage() {
       project:{name:ct?.project_name??proj?.name??null,site_address:ct?.project_site_address??proj?.site_address??null}};
   }
 
-  const totalInvoiced=invoices.reduce((s,i)=>s+Number(i.total_amount||0),0);
-  const totalPaid=invoices.filter(i=>i.status==="paid").reduce((s,i)=>s+Number(i.total_amount||0),0);
-  const balanceDue=totalInvoiced-totalPaid;
-  const pendingChanges=changes.filter(c=>c.status==="pending").length;
+  const {totalInvoiced,totalPaid,balanceDue}=invoiceTotals(visInvoices);
+  const pendingChanges=countPending(changes);
 
   const G=`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box} body{margin:0} input::placeholder,textarea::placeholder{color:#94a3b8} input:focus,textarea:focus{border-color:#0891b2!important} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}`;
 
@@ -768,7 +831,7 @@ export default function ClientPortalPage() {
   if(!client||authState!=="authenticated")return null;
 
   const sColor:Record<string,string>={active:"#22c55e",planning:"#3b82f6",on_hold:"#f59e0b",completed:"#94a3b8",cancelled:"#ef4444"};
-  const TABS=[{id:"overview",label:"Overview",emoji:"📋"},...(estimates.length?[{id:"estimates",label:"Estimates",emoji:"📐",badge:estimates.length}]:[]),{id:"contracts",label:"Contracts",emoji:"📝",badge:contracts.filter((c:any)=>!c.client_signed_at).length||undefined},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"invoices",label:"Invoices",emoji:"🧾",badge:invoices.filter(i=>i.status!=="paid").length||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined},{id:"feedback",label:"Feedback",emoji:"⭐"}] as const;
+  const TABS=[{id:"overview",label:"Overview",emoji:"📋"},...(visEstimates.length?[{id:"estimates",label:"Estimates",emoji:"📐",badge:visEstimates.length}]:[]),{id:"contracts",label:"Contracts",emoji:"📝",badge:countUnsigned(visContracts)||undefined},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"invoices",label:"Invoices",emoji:"🧾",badge:countUnpaid(visInvoices)||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined},{id:"feedback",label:"Feedback",emoji:"⭐"}] as const;
 
   return <div style={{minHeight:"100vh",background:"#f8fafc",color:"#0f172a",fontFamily:"system-ui,sans-serif"}}>
     <style>{G}</style>
@@ -793,7 +856,9 @@ export default function ClientPortalPage() {
       </div>
     </div>
 
-    <div style={{maxWidth:860,margin:"0 auto",padding:"20px 20px 60px",display:"flex",flexDirection:"column",gap:16}}>
+    {multiProject&&<PortalProjectPicker projects={projects} selectedId={activeProjectId} onSelect={selectProject}/>}
+
+    <div style={{maxWidth:860,margin:"0 auto",padding:"20px 20px 60px",display:"flex",flexDirection:"column",gap:16,...(switchingProject?{opacity:0.55,transition:"opacity 0.2s"}:{})}}>
 
       <div style={{background:"linear-gradient(135deg,#eff6ff,#ecfeff)",border:"1px solid #bae6fd",borderRadius:20,padding:"22px 24px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",animation:"fadeIn 0.4s ease"}}>
         <div style={{flex:1,minWidth:180}}>
@@ -918,8 +983,8 @@ export default function ClientPortalPage() {
 
         <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
           <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:14}}>💬 Messages</div>
-          {comments.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16,maxHeight:280,overflowY:"auto"}}>
-            {comments.map(c=>{
+          {visComments.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16,maxHeight:280,overflowY:"auto"}}>
+            {visComments.map(c=>{
               const isStaff=c.sender_type==="staff";
               return <div key={c.id} style={{display:"flex",justifyContent:isStaff?"flex-end":"flex-start"}}>
                 <div style={{maxWidth:"75%",background:isStaff?"#0891b2":"#eff6ff",border:isStaff?"none":"1px solid #bfdbfe",borderRadius:10,padding:"10px 14px"}}>
@@ -929,6 +994,7 @@ export default function ClientPortalPage() {
               </div>;
             })}
           </div>}
+          {multiProject&&<div style={{fontSize:11,color:"#64748b",marginBottom:6}}>About: {selectedProjectName}</div>}
           <textarea value={newComment} onChange={e=>setNewComment(e.target.value)} placeholder="Send a message to your contractor…"
             style={{width:"100%",background:"#ffffff",border:"1px solid #cbd5e1",borderRadius:10,padding:"11px 14px",fontSize:13,color:"#0f172a",resize:"none",height:76,outline:"none"}}/>
           <button onClick={submitComment} disabled={!newComment.trim()}
@@ -946,14 +1012,15 @@ export default function ClientPortalPage() {
         </div>
       </div>}
       {tab==="contracts"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
-        {contracts.length===0
+        {visContracts.length===0
           ?<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>📝</div><p style={{color:"#64748b"}}>No contracts have been sent for signing yet.</p></div>
-          :contracts.map((ct:any)=>
+          :visContracts.map((ct:any)=>
             <div key={ct.id} style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:12}}>
                 <div>
                   <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:4}}>{ct.contract_name}</div>
                   <div style={{fontSize:11,color:"#64748b"}}>#{ct.contract_number}</div>
+                  {multiProject&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{itemProjectLabel(ct,projects,multiProject)}</div>}
                 </div>
                 <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,background:ct.client_signed_at?"rgba(34,197,94,0.15)":"rgba(245,158,11,0.15)",color:ct.client_signed_at?"#22c55e":"#f59e0b"}}>{ct.client_signed_at?"Signed":"Awaiting Signature"}</span>
               </div>
@@ -1005,11 +1072,12 @@ export default function ClientPortalPage() {
             </div>
           ))}
         </div>
-        {invoices.length===0?<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🧾</div><p style={{color:"#64748b"}}>No invoices yet.</p></div>
-          :invoices.map(inv=><div key={inv.id} style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:14,padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        {visInvoices.length===0?<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>🧾</div><p style={{color:"#64748b"}}>No invoices yet.</p></div>
+          :visInvoices.map(inv=><div key={inv.id} style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:14,padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <div>
               <div style={{fontSize:14,fontWeight:700,color:"#0f172a",marginBottom:4}}>Invoice #{inv.invoice_number||inv.id.slice(0,8).toUpperCase()}</div>
               <div style={{fontSize:11,color:"#64748b"}}>Issued {fmtDate(inv.issue_date)} … Due {fmtDate(inv.due_date)}</div>
+              {multiProject&&<div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>{itemProjectLabel(inv,projects,multiProject)}</div>}
             </div>
             <div style={{textAlign:"right"}}>
               <div style={{fontSize:16,fontWeight:800,color:"#0f172a",marginBottom:4}}>{fmt(Number(inv.total_amount||0))}</div>
@@ -1019,7 +1087,7 @@ export default function ClientPortalPage() {
       </div>}
 
       {tab==="estimates"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
-        {estimates.map((es:any)=><PortalEstimateCard key={es.id} es={es}/>)}
+        {visEstimates.map((es:any)=><PortalEstimateCard key={es.id} es={es}/>)}
       </div>}
 
       {tab==="changes"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
@@ -1045,6 +1113,7 @@ export default function ClientPortalPage() {
         {reviewSubmitted?<div style={{background:"rgba(34,197,94,0.07)",border:"1px solid rgba(34,197,94,0.2)",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:48,marginBottom:12}}>🌟</div><div style={{fontSize:18,fontWeight:700,color:"#22c55e",marginBottom:6}}>Thank you!</div><p style={{color:"#475569",fontSize:14}}>Your feedback means a lot to us.</p></div>
           :<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:28}}>
             <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:4}}>Rate Our Work</div>
+            {multiProject&&<div style={{fontSize:11,color:"#64748b",marginBottom:6}}>Project: {selectedProjectName}</div>}
             <p style={{fontSize:13,color:"#475569",marginBottom:20}}>How satisfied are you with the project so far?</p>
             <Stars value={rating} onChange={setRating}/>
             {rating>0&&<div style={{marginTop:20}}>
