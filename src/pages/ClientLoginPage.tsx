@@ -27,7 +27,7 @@ export default function ClientLoginPage() {
   const [resetSent, setResetSent] = useState(false);
 
   useEffect(() => {
-    supabase.from("company_settings").select("company_name,logo_url").limit(1).maybeSingle()
+    supabase.rpc("get_login_branding")
       .then(({data}) => setCompany(data));
   }, []);
 

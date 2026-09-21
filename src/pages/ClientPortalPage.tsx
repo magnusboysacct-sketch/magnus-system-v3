@@ -9,8 +9,8 @@ type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback"|"esti
 
 // No portal_password_hash — nothing in this file selects it anymore, so it
 // was removed from the type rather than left declared-but-always-undefined.
-interface Client { id:string; name:string; contact_name:string|null; email:string|null; phone:string|null; portal_email:string|null; portal_activated_at:string|null; company_id?:string|null; }
-interface Project { id:string; name:string; status:string; start_date:string|null; end_date:string|null; site_address:string|null; notes:string|null; budget:number|null; }
+interface Client { id:string; name:string; contact_name:string|null; email:string|null; phone?:string|null; portal_email:string|null; portal_activated_at:string|null; company_id?:string|null; }
+interface Project { id:string; name:string; status:string; start_date:string|null; end_date:string|null; site_address:string|null; }
 interface Invoice { id:string; invoice_number:string|null; total_amount:number; status:string; issue_date:string|null; due_date:string|null; }
 interface ChangeOrder { id:string; title:string; description:string|null; amount:number; status:string; created_at:string; }
 interface Comment { id:string; message:string; created_at:string; sender_type?:string; }
@@ -452,85 +452,73 @@ export default function ClientPortalPage() {
     if(tab==="contracts"&&portalSessionToken)contracts.slice(0,20).forEach((ct:any)=>logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:ct.id,projectId:ct.project_id}));
   },[tab,contracts.map((c:any)=>c.id).join(",")]);
 
-  // New path for ClientLoginPage.tsx's email+password flow: the session
-  // token in the URL is looked up directly in client_portal_sessions, then
-  // the client row is fetched by id with an explicit column list that
-  // never includes portal_password_hash — auth already happened
-  // server-side in the client-portal-login edge function before this page
-  // was ever reached, so there's nothing left to compare here, and no
-  // reason for this browser-side query to be able to read the hash at all.
+  // Session-URL route (email+password login from ClientLoginPage.tsx): the session token in the
+  // URL is validated AND everything the page shows is loaded by ONE server call, get_portal_data.
+  // No direct table reads happen from the browser any more.
   async function checkAuthViaSession(sessTok: string) {
     setAuthState("loading");
     try {
-      const {data:sess}=await supabase.from("client_portal_sessions")
-        .select("client_id,expires_at")
-        .eq("session_token",sessTok)
-        .gt("expires_at",new Date().toISOString())
-        .maybeSingle();
-      if(!sess){setErrorMsg("This session has expired. Please sign in again.");setAuthState("error");return;}
-      const {data:c}=await supabase.from("clients")
-        .select("id,name,contact_name,email,phone,portal_email,portal_activated_at,company_id")
-        .eq("id",sess.client_id)
-        .eq("portal_enabled",true)
-        .maybeSingle();
-      if(!c){setErrorMsg("This account is no longer available.");setAuthState("error");return;}
-      setClient(c);
+      const {data:d,error:dErr}=await supabase.rpc("get_portal_data",{p_session_token:sessTok});
+      if(dErr||!d){setErrorMsg("This session has expired. Please sign in again.");setAuthState("error");return;}
       setPortalSessionToken(sessTok);
       logPortalEvent(sessTok,"session_resume");
-      if(c.company_id){
-        const {data:cs}=await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").eq("company_id",c.company_id).maybeSingle();
-        setCompany(cs);
-      }
-      await loadData(c,sessTok);
+      await loadData(d.client,sessTok,d);
       setAuthState("authenticated");
     } catch {setErrorMsg("Something went wrong.");setAuthState("error");}
   }
 
-  // Unchanged below — the /portal/:token magic-link flow is an intentional
-  // separate feature, kept exactly as it was.
+  // /portal/:token magic-link flow. get_portal_link_info identifies the client and says whether
+  // this is a first-time setup or a login (it never returns anything secret); a stored session
+  // is then resumed by asking get_portal_data, which returns null unless the session is valid.
   async function checkAuth() {
     setAuthState("loading");
     try {
-      // Explicit column list, no portal_password_hash — this page never
-      // compares the hash itself anymore (AuthScreen calls the edge
-      // function for that), so there's no reason this read needs to be
-      // able to see it at all.
-      const {data:c}=await supabase.from("clients")
-        .select("id,name,contact_name,email,phone,portal_email,portal_activated_at,company_id")
-        .eq("portal_token",token).eq("portal_enabled",true).single();
-      if(!c){setErrorMsg("This portal link is invalid or has been disabled.");setAuthState("error");return;}
-      setClient(c);
-      if(c.company_id){
-        const {data:cs}=await supabase.from("company_settings").select("company_name,logo_url,phone,email,address_line1").eq("company_id",c.company_id).maybeSingle();
-        setCompany(cs);
-      }
-      const sess=localStorage.getItem(`portal_${c.id}`);
+      const {data:info}=await supabase.rpc("get_portal_link_info",{p_portal_token:token});
+      if(!info||!info.client){setErrorMsg("This portal link is invalid or has been disabled.");setAuthState("error");return;}
+      setClient(info.client);
+      setCompany({company_name:null,logo_url:null,phone:null,email:null,address_line1:null,...(info.company||{})} as Co);
+      const sess=localStorage.getItem(`portal_${info.client.id}`);
       if(sess){
-        const {data:s}=await supabase.from("client_portal_sessions").select("id").eq("session_token",sess).eq("client_id",c.id).gt("expires_at",new Date().toISOString()).maybeSingle();
-        if(s){setPortalSessionToken(sess);logPortalEvent(sess,"session_resume");await loadData(c,sess);setAuthState("authenticated");return;}
+        const {data:d}=await supabase.rpc("get_portal_data",{p_session_token:sess});
+        if(d&&d.client?.id===info.client.id){setPortalSessionToken(sess);logPortalEvent(sess,"session_resume");await loadData(d.client,sess,d);setAuthState("authenticated");return;}
       }
-      setAuthState(c.portal_activated_at?"login":"setup");
+      setAuthState((info.mode||(info.client.portal_activated_at?"login":"setup"))==="setup"?"setup":"login");
     } catch {setErrorMsg("Something went wrong.");setAuthState("error");}
   }
 
-  async function loadData(c:Client,sessionTok:string) {
+  // Puts one get_portal_data payload into state: client, company, project, progress, photos,
+  // site updates and change orders. Photo URLs are built from photo_url exactly as before.
+  // As before, the project-scoped lists are only touched when the client has a project.
+  function applyPortalData(d:any,fallback?:Client){
+    setClient(d.client||fallback||null);
+    setCompany(d.company||null);
+    const proj=d.project||null;
+    setProject(proj);
+    if(proj){
+      const newest=(a:any,b:any)=>String(b.created_at||"").localeCompare(String(a.created_at||""));
+      const ph=[...(d.photos||[])].sort(newest);
+      setPhotos(ph.map((photo:any)=>{
+        const{data:urlData}=supabase.storage.from("project-photos").getPublicUrl(photo.photo_url);
+        return{...photo,url:urlData.publicUrl};
+      }));
+      setSitePhotos(ph.slice(0,20).map((photo:any)=>{
+        const{data:urlData}=supabase.storage.from("project-photos").getPublicUrl(photo.photo_url);
+        return{...photo,publicUrl:urlData.publicUrl};
+      }));
+      setDailyLogs([...(d.daily_logs||[])].sort((a:any,b:any)=>String(b.log_date||"").localeCompare(String(a.log_date||""))).slice(0,10));
+      setChanges([...(d.change_orders||[])].sort(newest));
+      setProgress(Math.round(Number(d.progress_pct)||0));
+      setLogsLoading(false);
+      setPhotosLoading(false);
+    }
+  }
+
+  async function loadData(c:Client,sessionTok:string,prefetched?:any) {
     try {
-      const {data:p}=await supabase.from("projects").select("*").eq("client_id",c.id).order("created_at",{ascending:false}).limit(1);
-      let proj=p?.[0]||null;
-      if(proj){
-        // projects has no `budget` column (select("*") never errored, so
-        // this was a silent bug — the Project type even declared `budget`
-        // as if it were real — instead of the loud 400s the same mistake
-        // caused on Dashboard/Reports). Real budget is BOQ-derived, from
-        // v_project_finance_summary.budget_total, same as those fixes.
-        const {data:fin}=await supabase.from("v_project_finance_summary").select("budget_total").eq("project_id",proj.id).maybeSingle();
-        proj={...proj,budget:fin?.budget_total??null};
-      }
-      setProject(proj);
-      // Replaces the direct client_comments SELECT — anon has zero
-      // policies left on that table (see the lock-down migration); this
-      // RPC validates sessionTok server-side and returns only that
-      // client's comments, same shape/ordering as the query it replaces.
+      const d=prefetched??(await supabase.rpc("get_portal_data",{p_session_token:sessionTok})).data;
+      if(!d)return;
+      applyPortalData(d,c);
+      const proj=d.project||null;
       const {data:cm,error:cmErr}=await supabase.rpc("get_portal_comments",{p_session_token:sessionTok});
       if(cmErr)console.error("get_portal_comments failed:",cmErr);
       setComments(cm||[]);
@@ -547,44 +535,24 @@ export default function ClientPortalPage() {
         else setContracts(Array.isArray(cts)?cts:[]);
       }catch(e){console.error("get_portal_contracts failed:",e);}
       if(proj){
-        const [inv,co,ph,boq]=await Promise.all([
-          supabase.rpc("get_portal_invoices",{p_session_token:sessionTok}),
-          supabase.from("change_orders").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
-          supabase.from("project_photos").select("*").eq("project_id",proj.id).order("created_at",{ascending:false}),
-          supabase.from("boq_items").select("status").eq("project_id",proj.id),
-        ]);
-        const photosWithUrls=(ph.data||[]).map((photo:any)=>{
-          const{data:urlData}=supabase.storage.from("project-photos").getPublicUrl(photo.photo_url);
-          return{...photo,url:urlData.publicUrl};
-        });
-        setInvoices(inv.data||[]);setChanges(co.data||[]);setPhotos(photosWithUrls);
+        const inv=await supabase.rpc("get_portal_invoices",{p_session_token:sessionTok});
+        setInvoices(inv.data||[]);
         if(inv.error)console.error("get_portal_invoices failed:",inv.error);
-        const items=boq.data||[];
-        setProgress(items.length?Math.round(items.filter((b:any)=>b.status==="complete").length/items.length*100):0);
-        await Promise.all([loadDailyLogs(proj.id),loadSitePhotos(proj.id)]);
       }
     } catch(e){console.error(e);}
   }
 
   async function onAuthSuccess(){
-    // Same narrowed column list as checkAuth() — no portal_password_hash.
-    const fresh=await supabase.from("clients")
-      .select("id,name,contact_name,email,phone,portal_email,portal_activated_at,company_id")
-      .eq("portal_token",token).single();
-    if(fresh.data){
-      setClient(fresh.data);
-      // AuthScreen already wrote the freshly-minted session token to
-      // localStorage (localStorage.setItem(`portal_${client.id}`,
-      // data.sessionToken)) immediately before calling onSuccess() — same
-      // key checkAuth()'s own magic-link branch reads, so this is
-      // guaranteed present here, not a race.
-      const sessTok=localStorage.getItem(`portal_${fresh.data.id}`);
-      if(sessTok){setPortalSessionToken(sessTok);await loadData(fresh.data,sessTok);}
+    // AuthScreen already wrote the freshly-minted session token to localStorage under this
+    // client's key immediately before calling onSuccess(), so it is present here, not a race.
+    const sessTok=client?localStorage.getItem(`portal_${client.id}`):null;
+    if(sessTok){
+      const {data:d}=await supabase.rpc("get_portal_data",{p_session_token:sessTok});
+      if(d){setPortalSessionToken(sessTok);await loadData(d.client,sessTok,d);}
     }
     setAuthState("authenticated");
     setToast({msg:"Welcome to your project portal!",type:"success"});
   }
-
   async function submitComment(){
     if(!newComment.trim()||!client||!portalSessionToken) return;
 
@@ -611,11 +579,13 @@ export default function ClientPortalPage() {
 
   async function submitReview(){
     if(!rating||!client||!project)return;
-    await supabase.from("client_reviews").insert({client_id:client.id,project_id:project.id,rating,comment:reviewText});
-    logPortalEvent(portalSessionToken,"review_sent",{projectId:project.id});
-    setReviewSubmitted(true);setToast({msg:"Thank you for your review!",type:"success"});
+    try{
+      if(!portalSessionToken)throw new Error("Your session has expired. Please sign in again.");
+      const {error}=await supabase.rpc("submit_portal_review",{p_session_token:portalSessionToken,p_project_id:project.id,p_rating:rating,p_comment:reviewText});
+      if(error)throw new Error(error.message);
+      setReviewSubmitted(true);setToast({msg:"Thank you for your review!",type:"success"});
+    }catch(e:any){setToast({msg:e?.message||"Could not submit your review. Please try again.",type:"error"});}
   }
-
   function getWeatherEmoji(desc:string) {
     if(!desc)return"🌤️";
     const d=desc.toLowerCase();
@@ -628,29 +598,14 @@ export default function ClientPortalPage() {
     return"🌤️";
   }
 
-  async function loadDailyLogs(projectId:string) {
-    setLogsLoading(true);
-    const{data}=await supabase.from("project_daily_logs").select("*").eq("project_id",projectId).order("log_date",{ascending:false}).limit(10);
-    setDailyLogs(data||[]);
-    setLogsLoading(false);
-  }
-
-  async function loadSitePhotos(projectId:string) {
-    setPhotosLoading(true);
-    const{data}=await supabase.from("project_photos").select("*").eq("project_id",projectId).order("created_at",{ascending:false}).limit(20);
-    const photosWithUrls=(data||[]).map(photo=>{
-      const{data:urlData}=supabase.storage.from("project-photos").getPublicUrl(photo.photo_url);
-      return{...photo,publicUrl:urlData.publicUrl};
-    });
-    setSitePhotos(photosWithUrls);
-    setPhotosLoading(false);
-  }
-
   async function downloadPhoto(photo:any,e:React.MouseEvent) {
     e.stopPropagation();
     try {
-      const{data,error}=await supabase.storage.from("project-photos").download(photo.photo_url);
-      if(error||!data){alert("Failed to download photo.");return;}
+      // Photos are public URLs (that is how they are displayed), so fetch the image directly.
+      const src=photo.publicUrl||photo.url||photo.public_url;
+      const resp=src?await fetch(src):null;
+      if(!resp||!resp.ok){alert("Failed to download photo.");return;}
+      const data=await resp.blob();
       const url=URL.createObjectURL(data);
       const a=document.createElement("a");
       a.href=url;
@@ -661,14 +616,29 @@ export default function ClientPortalPage() {
     } catch {alert("Failed to download photo.");}
   }
 
+  // Approve / reject a change order through the server function, which checks the order is this
+  // client's and still unanswered, and logs change_approve / change_reject itself.
   async function respondChange(id:string,resp:"approved"|"rejected"){
     setRespondingTo(id);
-    await supabase.from("change_orders").update({status:resp,client_response:resp,responded_at:new Date().toISOString()}).eq("id",id);
-    logPortalEvent(portalSessionToken,resp==="approved"?"change_approve":"change_reject",{entityType:"change_order",entityId:id,projectId:project?.id});
-    setToast({msg:resp==="approved"?"Change approved!":"Change rejected.",type:resp==="approved"?"success":"error"});
-    setRespondingTo(null);if(client&&portalSessionToken)loadData(client,portalSessionToken);
+    try{
+      if(!portalSessionToken)throw new Error("Your session has expired. Please sign in again.");
+      const {data,error}=await supabase.rpc("respond_portal_change_order",{p_session_token:portalSessionToken,p_change_order_id:id,p_response:resp});
+      if(error)throw new Error(error.message);
+      setChanges(prev=>prev.map(c=>c.id===id?{...c,status:resp,...(data&&typeof data==="object"?data:{})}:c));
+      setToast({msg:resp==="approved"?"Change approved!":"Change rejected.",type:resp==="approved"?"success":"error"});
+    }catch(e:any){setToast({msg:e?.message||"Could not save your response. Please try again.",type:"error"});}
+    finally{setRespondingTo(null);}
   }
 
+  // Sign out: end the session on the server (portal_logout logs "logout" and deletes the
+  // session row), fire-and-forget, then clear it locally exactly as before.
+  function signOut(){
+    try{
+      if(portalSessionToken)void Promise.resolve(supabase.rpc("portal_logout",{p_session_token:portalSessionToken})).then(()=>{},()=>{});
+    }catch{}
+    if(client)localStorage.removeItem(`portal_${client.id}`);
+    setAuthState("login");
+  }
   const totalInvoiced=invoices.reduce((s,i)=>s+Number(i.total_amount||0),0);
   const totalPaid=invoices.filter(i=>i.status==="paid").reduce((s,i)=>s+Number(i.total_amount||0),0);
   const balanceDue=totalInvoiced-totalPaid;
@@ -705,7 +675,7 @@ export default function ClientPortalPage() {
             <div style={{fontSize:12,fontWeight:600,color:"#0f172a"}}>{client.contact_name||client.name}</div>
             <div style={{fontSize:10,color:"#64748b"}}>{client.portal_email||client.email}</div>
           </div>
-          <button onClick={()=>{logPortalEvent(portalSessionToken,"logout");localStorage.removeItem(`portal_${client.id}`);setAuthState("login");}} style={{padding:"6px 12px",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",fontSize:11,cursor:"pointer",fontWeight:600}}>Sign Out</button>
+          <button onClick={signOut} style={{padding:"6px 12px",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",fontSize:11,cursor:"pointer",fontWeight:600}}>Sign Out</button>
         </div>
       </div>
     </div>
@@ -760,12 +730,7 @@ export default function ClientPortalPage() {
           <div style={{height:8,background:"#e2e8f0",borderRadius:8,overflow:"hidden"}}>
             <div style={{height:"100%",width:`${progress}%`,background:"linear-gradient(90deg,#3b82f6,#06b6d4)",borderRadius:8,transition:"width 1.5s ease"}}/>
           </div>
-          {project?.budget&&<div style={{marginTop:8,fontSize:11,color:"#475569"}}>Budget: <span style={{color:"#94a3b8",fontWeight:600}}>{fmt(project.budget)}</span></div>}
         </div>
-        {project?.notes&&<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
-          <div style={{fontSize:10,color:"#475569",fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",marginBottom:8}}>Project Notes</div>
-          <p style={{fontSize:13,color:"#475569",lineHeight:1.7,margin:0}}>{project.notes}</p>
-        </div>}
         {/* Daily Logs */}
         <div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:20}}>
           <div style={{fontSize:13,fontWeight:700,color:"#374151",marginBottom:14}}>📋 Site Updates</div>
