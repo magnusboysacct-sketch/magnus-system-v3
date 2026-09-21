@@ -14,7 +14,7 @@ import {
   ZoomIn, ZoomOut, Maximize2, Trash2, Hash, Square, Box,
   AlertCircle, RefreshCw, Send, MousePointer, Plus, Check,
   Crosshair, Package, Layers, BarChart2, ChevronRight as Arrow,
-  BookOpen, Wand2, Eye, EyeOff, Edit2, Flag
+  BookOpen, Wand2, Eye, EyeOff, Edit2, Flag, Minimize2
 } from "lucide-react";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
@@ -68,25 +68,45 @@ interface CostItem {
 // Rows shown per library section before "Show more".
 const LIB_PAGE = 20;
 
-// The Rate Library can hold more rows than PostgREST returns in one response (its max-rows cap, 1000 by default),
-// so it is fetched in windows until an empty page comes back. Each window advances by the rows actually received,
-// so a server cap below the requested window size cannot skip rows. Reads cost_items directly, as before (RLS
-// applies to the table itself); id is a tiebreaker so equal item_names cannot shift between windows.
-async function fetchAllCostItems(): Promise<CostItem[]> {
+// PostgREST returns at most 1000 rows per response (its max-rows cap, by default), so a table that can grow past
+// that is read in windows until an empty page comes back. Each window advances by the rows actually received, so a
+// server cap below the requested window size cannot skip rows. Callers order by a unique column last (id) so equal
+// values cannot shift between windows. An error part-way keeps what already loaded.
+async function fetchAllWindows<T>(label: string, page: (from: number, to: number) => PromiseLike<{ data: any[] | null; error: any }>): Promise<T[]> {
   const WINDOW = 1000;
-  let all: CostItem[] = [];
+  let all: T[] = [];
   let from = 0;
   for (let guard = 0; guard < 200; guard++) {
-    const { data, error } = await supabase.from("cost_items")
-      .select("id,item_name,unit,category,coverage_factor,coverage_unit").eq("is_active", true)
-      .order("item_name").order("id").range(from, from + WINDOW - 1);
-    if (error) { console.error("cost_items load failed at row " + from + ":", error); break; }
-    const page = (data || []) as CostItem[];
-    if (page.length === 0) break;
-    all = all.concat(page);
-    from += page.length;
+    const { data, error } = await page(from, from + WINDOW - 1);
+    if (error) { console.error(label + " load failed at row " + from + ":", error); break; }
+    const rows = (data || []) as T[];
+    if (rows.length === 0) break;
+    all = all.concat(rows);
+    from += rows.length;
   }
   return all;
+}
+
+// The Rate Library, read directly from cost_items (RLS applies to the table itself).
+function fetchAllCostItems(): Promise<CostItem[]> {
+  return fetchAllWindows<CostItem>("cost_items", (a, b) => supabase.from("cost_items")
+    .select("id,item_name,unit,category,coverage_factor,coverage_unit").eq("is_active", true)
+    .order("item_name").order("id").range(a, b));
+}
+
+// Remembered layout preferences (localStorage). Every access is wrapped: on any failure nothing is remembered and
+// the defaults apply.
+const LS_RIGHT = "takeoff_right_panel_collapsed";
+const LS_RIGHT_TABLET = "takeoff_right_panel_collapsed_tablet";
+const LS_FOCUS = "takeoff_focus_mode";
+function readBool(key: string): boolean | null {
+  try {
+    const v = window.localStorage.getItem(key);
+    return v === "1" ? true : v === "0" ? false : null;
+  } catch { return null; }
+}
+function writeBool(key: string, value: boolean) {
+  try { window.localStorage.setItem(key, value ? "1" : "0"); } catch { /* remembering is a convenience only */ }
 }
 
 const TOOL_CFG: Record<ToolMode, { label: string; shortcut: string; color: string; desc: string; icon: React.ReactNode }> = {
@@ -557,9 +577,23 @@ const calibration =
   // Session
   // Mobile
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  // Tablet = 768-1023px: same width check and same resize listener as the mobile breakpoint.
+  const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 768 && window.innerWidth < 1024);
+  // Focus mode hides the page's own top bar and collapses both side panels; the right panel collapses to a thin rail.
+  // Preferences are remembered (desktop and tablet separately, so re-opening the panel on a tablet sticks there).
+  // Defaults: right panel open on desktop, collapsed on tablet.
+  const [focusMode, setFocusMode] = useState(() => readBool(LS_FOCUS) === true);
+  const [rightCollapsed, setRightCollapsed] = useState(() => readBool(LS_FOCUS) === true || (readBool(window.innerWidth >= 768 && window.innerWidth < 1024 ? LS_RIGHT_TABLET : LS_RIGHT) ?? (window.innerWidth >= 768 && window.innerWidth < 1024)));
+  const pagesBeforeFocusRef = useRef(true);
+  // Crossing into or out of tablet width applies that mode's remembered choice (or its default); tablet also keeps the Pages panel closed.
+  useEffect(() => {
+    if (focusMode) { setRightCollapsed(true); setPagesPanelCollapsed(true); return; }
+    setRightCollapsed(readBool(isTablet ? LS_RIGHT_TABLET : LS_RIGHT) ?? isTablet);
+    if (isTablet) setPagesPanelCollapsed(true);
+  }, [isTablet]);
   const [pdfSignedUrl, setPdfSignedUrl] = useState<string|null>(null);
   useEffect(() => {
-    function handleResize() { setIsMobile(window.innerWidth < 768); }
+    function handleResize() { setIsMobile(window.innerWidth < 768); setIsTablet(window.innerWidth >= 768 && window.innerWidth < 1024); }
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
@@ -1138,8 +1172,10 @@ calibRef.current =
         }
 
         // Load assemblies
-        const { data: asmbs } = await supabase.from("assemblies").select("id,name,category,unit,is_active").eq("is_active",true).order("name");
-        const { data: acomps } = await supabase.from("assembly_components").select("assembly_id");
+        // (in windows, so more than 1000 assemblies or component rows still load completely and the "N components" counts are right)
+        let asmbs: any[] = [], acomps: any[] = [];
+        try { asmbs = await fetchAllWindows<any>("assemblies", (a, b) => supabase.from("assemblies").select("id,name,category,unit,is_active").eq("is_active",true).order("name").order("id").range(a, b)); } catch (e) { console.error("assemblies load failed:", e); }
+        try { acomps = await fetchAllWindows<any>("assembly_components", (a, b) => supabase.from("assembly_components").select("assembly_id").order("id").range(a, b)); } catch (e) { console.error("assembly_components load failed:", e); }
         const compCounts: Record<string,number> = {};
         (acomps||[]).forEach((c:any) => { compCounts[c.assembly_id] = (compCounts[c.assembly_id]||0)+1; });
         setAssemblies((asmbs||[]).map((a:any) => ({ id:a.id, name:a.name, category:a.category, unit:a.unit, componentCount:compCounts[a.id]||0 })));
@@ -1703,6 +1739,64 @@ calibRef.current =
     ? assemblies.find(a=>a.id===linkedAssemblyId)?.name
     : linkedItemId ? costItems.find(i=>i.id===linkedItemId)?.item_name : null;
 
+  // --- Right panel rail / focus mode ------------------------------------------
+  function toggleRight() {
+    const next = !rightCollapsed;
+    setRightCollapsed(next);
+    writeBool(isTablet ? LS_RIGHT_TABLET : LS_RIGHT, next);
+  }
+  function expandRight(tab: "templates"|"measurements"|"stats") {
+    setRightTab(tab);
+    if (rightCollapsed) { setRightCollapsed(false); writeBool(isTablet ? LS_RIGHT_TABLET : LS_RIGHT, false); }
+  }
+  function setFocus(on: boolean) {
+    setFocusMode(on); writeBool(LS_FOCUS, on);
+    if (on) { pagesBeforeFocusRef.current = pagesPanelCollapsed; setPagesPanelCollapsed(true); setRightCollapsed(true); }
+    else { setPagesPanelCollapsed(pagesBeforeFocusRef.current); setRightCollapsed(readBool(isTablet ? LS_RIGHT_TABLET : LS_RIGHT) ?? isTablet); }
+  }
+
+  // --- Library lists: the linked assembly / item is pinned to the top of its section (marked "Linked"), whichever page or
+  // search would otherwise list it. The rest keep their normal order. Only the ordering changes; linking works as before.
+  const pinnedAsm = linkedAssemblyId ? assemblies.find(a => a.id === linkedAssemblyId) || null : null;
+  const pinnedItem = linkedItemId ? costItems.find(i => i.id === linkedItemId) || null : null;
+  const restAssemblies = pinnedAsm ? filteredAssemblies.filter(a => a.id !== pinnedAsm.id) : filteredAssemblies;
+  const restItems = pinnedItem ? filteredItems.filter(i => i.id !== pinnedItem.id) : filteredItems;
+  // Rows a section lists = the pinned row (if any) + the rest. The header count and "Showing X of Y" both use these, so they agree.
+  const asmTotal = restAssemblies.length + (pinnedAsm ? 1 : 0);
+  const itemsTotal = restItems.length + (pinnedItem ? 1 : 0);
+  const asmShown = Math.min(asmVisible, restAssemblies.length) + (pinnedAsm ? 1 : 0);
+  const itemsShown = Math.min(itemsVisible, restItems.length) + (pinnedItem ? 1 : 0);
+
+  function renderAsmRow(a: Assembly) {
+    const active = linkedAssemblyId === a.id;
+    return (
+      <button key={a.id} onClick={()=>{setLinkedAssemblyId(active?"":a.id);setLinkedItemId("");}}
+        className={`w-full text-left rounded-lg px-3 py-2.5 border transition-all flex items-center gap-2.5 ${active?"border-purple-500/30 bg-purple-500/10":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04] hover:border-white/[0.09]"}`}>
+        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${active?"bg-purple-500/20":"bg-slate-50 dark:bg-white/[0.04]"}`}>
+          <Layers size={12} className={active?"text-purple-400":"text-slate-500 dark:text-slate-600"}/>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className={`text-[11px] font-semibold truncate ${active?"text-purple-200":"text-slate-700 dark:text-slate-300"}`}>{a.name}</div>
+          <div className="text-[9px] text-slate-400 dark:text-slate-700">{a.category||"General"} · {a.componentCount} component{a.componentCount!==1?"s":""}{a.unit?` · ${a.unit}`:""}</div>
+        </div>
+        {active && <Check size={12} className="text-purple-400 flex-shrink-0"/>}
+      </button>
+    );
+  }
+  function renderItemRow(i: CostItem) {
+    const active = linkedItemId === i.id;
+    return (
+      <button key={i.id} onClick={()=>{setLinkedItemId(active?"":i.id);setLinkedAssemblyId("");}}
+        className={`w-full text-left rounded-lg px-3 py-2 border transition-all flex items-center gap-2 ${active?"border-blue-500/30 bg-blue-500/10":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04]"}`}>
+        <div className="flex-1 min-w-0">
+          <div className={`text-[11px] font-medium truncate ${active?"text-blue-200":"text-slate-600 dark:text-slate-400"}`}>{i.item_name}</div>
+          <div className="text-[9px] text-slate-400 dark:text-slate-700">{i.category||"—"}{i.unit?` · ${i.unit}`:""}</div>
+        </div>
+        {active && <Check size={11} className="text-blue-400 flex-shrink-0"/>}
+      </button>
+    );
+  }
+
   const curTool = TOOL_CFG[tool];
 
   // --- Mobile: swap in the plan-viewer + manual-entry experience. All hooks
@@ -1734,13 +1828,13 @@ calibRef.current =
     <div className="flex h-screen flex-col bg-slate-50 dark:bg-[#080b10] text-slate-900 dark:text-slate-100 select-none overflow-hidden">
 
       {/* -- Top Bar -- */}
-      <header className="flex-shrink-0 h-12 flex items-center gap-3 px-4 bg-white dark:bg-[#0d1117] border-b border-slate-200 dark:border-white/[0.06] z-20">
+      {!focusMode && <header className="flex-shrink-0 h-12 flex items-center gap-3 px-4 bg-white dark:bg-[#0d1117] border-b border-slate-200 dark:border-white/[0.06] z-20">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-sky-500 to-blue-700 flex items-center justify-center flex-shrink-0">
             <Ruler size={14} className="text-white"/>
           </div>
           <span className="text-sm font-bold text-slate-900 dark:text-slate-100">Takeoff</span>
-          {currentProject && <><span className="text-white/20 text-xs">·</span><span className="text-xs text-slate-500 truncate max-w-[140px]">{currentProject.name}</span></>}
+          {currentProject && !isTablet && <><span className="text-white/20 text-xs">·</span><span className="text-xs text-slate-500 truncate max-w-[140px]">{currentProject.name}</span></>}
         </div>
 
         {/* Page nav */}
@@ -1761,7 +1855,7 @@ calibRef.current =
           title={calibration ? `Calibrated: ${feetInches(dist(calibration.p1, calibration.p2) * calibration.feetPerPx)} (1px = ${calibration.feetPerPx.toFixed(5)} ft)` : "Click to set scale"}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition ${calibrating?"bg-amber-500/15 border-amber-400/30 text-amber-300":calibration?"bg-emerald-500/10 border-emerald-500/20 text-emerald-300":"bg-slate-50 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
           <Crosshair size={12}/>
-          {calibrating ? "Click 2 points…" : calibration ? `Scale: ${feetInches(dist(calibration.p1, calibration.p2) * calibration.feetPerPx)}` : "Set Scale"}
+          {!isTablet && (calibrating ? "Click 2 points…" : calibration ? `Scale: ${feetInches(dist(calibration.p1, calibration.p2) * calibration.feetPerPx)}` : "Set Scale")}
         </button>
         {calibration && !calibrating && (
           <button onClick={()=>{
@@ -1780,23 +1874,30 @@ calibRef.current = null;
           </button>
         )}
 
+        {/* Focus mode */}
+        <button onClick={()=>setFocus(true)} title="Focus mode: hide this bar and the side panels for more room"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-600 dark:text-slate-400 transition">
+          <Maximize2 size={12}/>{!isTablet && " Focus"}
+        </button>
+
         {/* Upload */}
-        <label className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium transition">
-          <Upload size={12}/> Upload PDF
+        <label title={isTablet ? "Upload PDF" : undefined} className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-700 dark:text-slate-300 font-medium transition">
+          <Upload size={12}/>{!isTablet && " Upload PDF"}
           <input type="file" accept=".pdf" className="hidden" onChange={e=>onPickFile(e.target.files?.[0]||null)}/>
         </label>
 
         {/* Export */}
-        <button onClick={exportCSV} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-600 dark:text-slate-400 transition">
-          <Download size={12}/> Export
+        <button onClick={exportCSV} title={isTablet ? "Export" : undefined} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-200 dark:bg-white/[0.07] border border-slate-200 dark:border-white/[0.08] text-[11px] text-slate-600 dark:text-slate-400 transition">
+          <Download size={12}/>{!isTablet && " Export"}
         </button>
 
         {/* Send to BOQ */}
         <button onClick={sendToBOQ} disabled={measurements.length===0}
+          title={isTablet ? "Send to BOQ" : undefined}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold disabled:opacity-40 transition shadow-sm">
-          <Send size={12}/> Send to BOQ
+          <Send size={12}/>{!isTablet && " Send to BOQ"}
         </button>
-      </header>
+      </header>}
 
       {/* -- Main layout -- */}
       <div className="flex flex-1 min-h-0">
@@ -1896,6 +1997,28 @@ calibRef.current = null;
 
           <canvas ref={canvasRef} className="absolute inset-0"/>
 
+          {/* Focus mode: the top bar is hidden, so its three working buttons live in a slim strip in the canvas top-left corner,
+              away from the calibration banner (top centre), the error toast (top right) and the Exit button (bottom right).
+              The strip stops mouse events so clicking it never draws or pans. */}
+          {focusMode && (
+            <div className="absolute top-3 left-3 z-20 flex items-center gap-1 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white/95 dark:bg-[#0d1117]/95 backdrop-blur p-1 shadow-lg"
+              onMouseDown={e=>e.stopPropagation()} onMouseUp={e=>e.stopPropagation()} onDoubleClick={e=>e.stopPropagation()}>
+              <button onClick={()=>{setCalibrating(true);calibratingRef.current=true;setCalibPts([]);calibPtsRef.current=[];}}
+                title={calibrating ? "Click 2 points on the drawing" : calibration ? `Scale: ${feetInches(dist(calibration.p1, calibration.p2) * calibration.feetPerPx)} (click to reset)` : "Set Scale"}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition ${calibrating?"bg-amber-500/15 text-amber-300":calibration?"bg-emerald-500/10 text-emerald-400":"text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.05]"}`}>
+                <Crosshair size={14}/>
+              </button>
+              <button onClick={exportCSV} title="Export"
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.05] transition">
+                <Download size={14}/>
+              </button>
+              <button onClick={sendToBOQ} disabled={measurements.length===0} title="Send to BOQ"
+                className="w-8 h-8 rounded-lg flex items-center justify-center bg-cyan-600 hover:bg-cyan-500 text-white disabled:opacity-40 transition">
+                <Send size={14}/>
+              </button>
+            </div>
+          )}
+
           {/* Empty state */}
           {!pdfDoc && !loadingPdf && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-5 pointer-events-none">
@@ -1964,7 +2087,29 @@ calibRef.current = null;
         </div>
 
         {/* -- Right Panel -- */}
-        <div className="flex-shrink-0 w-72 flex flex-col bg-white dark:bg-[#0d1117] border-l border-slate-200 dark:border-white/[0.06] z-10">
+        <div className={`flex-shrink-0 flex flex-col bg-white dark:bg-[#0d1117] border-l border-slate-200 dark:border-white/[0.06] z-10 transition-all ${rightCollapsed ? "w-10" : "w-72"}`}>
+          {rightCollapsed ? (
+            /* Rail: expand button, one icon per tab, and a dot + short label for whatever is linked */
+            <div className="flex flex-col items-center py-2 gap-1">
+              <button onClick={toggleRight} title="Show panel"
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.05] hover:text-slate-700 dark:hover:text-slate-300 transition">
+                <ChevronLeft size={14}/>
+              </button>
+              {([["templates","Templates",<BookOpen size={14}/>],["measurements","Taken",<Ruler size={14}/>],["stats","Summary",<BarChart2 size={14}/>]] as const).map(([k,label,icon])=>(
+                <button key={k} onClick={()=>expandRight(k)} title={label}
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100 dark:hover:bg-white/[0.05] transition ${rightTab===k?"text-sky-400":"text-slate-400 dark:text-slate-600 hover:text-slate-600 dark:hover:text-slate-300"}`}>
+                  {icon}
+                </button>
+              ))}
+              {activeLinkedName && (
+                <button onClick={()=>expandRight("templates")} title={`Linked: ${activeLinkedName}`} className="mt-2 flex flex-col items-center gap-1.5">
+                  <span className={`w-2.5 h-2.5 rounded-full animate-pulse ${linkedAssemblyId?"bg-purple-400":"bg-blue-400"}`}/>
+                  <span className={`text-[9px] font-semibold ${linkedAssemblyId?"text-purple-300":"text-blue-300"}`} style={{writingMode:"vertical-rl"}}>{activeLinkedName.length>16?activeLinkedName.slice(0,15)+"…":activeLinkedName}</span>
+                </button>
+              )}
+            </div>
+          ) : (<>
+
 
           {/* Tabs */}
           <div className="flex border-b border-slate-200 dark:border-white/[0.06]">
@@ -1974,6 +2119,10 @@ calibRef.current = null;
                 {label}
               </button>
             ))}
+            <button onClick={toggleRight} title="Hide panel"
+              className="w-9 flex-shrink-0 flex items-center justify-center border-b-2 border-transparent text-slate-400 dark:text-slate-600 hover:text-slate-600 dark:hover:text-slate-300 transition">
+              <ChevronRight size={14}/>
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto">
@@ -2051,7 +2200,7 @@ calibRef.current = null;
                 {/* Assemblies */}
                 {assemblies.length > 0 && (
                   <CollapsibleSection
-                    title="Assemblies (Templates)" count={filteredAssemblies.length} storageKey="takeoff_lib_assemblies_open"
+                    title="Assemblies (Templates)" count={asmTotal} storageKey="takeoff_lib_assemblies_open"
                     icon={<Wand2 size={10} className="text-purple-400 flex-shrink-0"/>}
                     summary={linkedAssemblyId && activeLinkedName ? <span className="text-[10px] text-purple-300 font-semibold truncate max-w-[120px]" title={activeLinkedName}>● {activeLinkedName}</span> : undefined}>
                     <div className="relative">
@@ -2060,34 +2209,26 @@ calibRef.current = null;
                         placeholder="Search assemblies…"
                         className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-600 outline-none focus:border-sky-500/40"/>
                     </div>
+                    {pinnedAsm && (
+                      <div className="space-y-1">
+                        <div className="px-1 text-[8px] font-bold uppercase tracking-widest text-purple-400/80">Linked</div>
+                        {renderAsmRow(pinnedAsm)}
+                        {restAssemblies.length > 0 && <div className="border-t border-slate-200 dark:border-white/[0.07] mt-2"/>}
+                      </div>
+                    )}
                     <div className="space-y-1">
-                      {filteredAssemblies.slice(0, asmVisible).map(a => {
-                        const active = linkedAssemblyId === a.id;
-                        return (
-                          <button key={a.id} onClick={()=>{setLinkedAssemblyId(active?"":a.id);setLinkedItemId("");}}
-                            className={`w-full text-left rounded-lg px-3 py-2.5 border transition-all flex items-center gap-2.5 ${active?"border-purple-500/30 bg-purple-500/10":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04] hover:border-white/[0.09]"}`}>
-                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${active?"bg-purple-500/20":"bg-slate-50 dark:bg-white/[0.04]"}`}>
-                              <Layers size={12} className={active?"text-purple-400":"text-slate-500 dark:text-slate-600"}/>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className={`text-[11px] font-semibold truncate ${active?"text-purple-200":"text-slate-700 dark:text-slate-300"}`}>{a.name}</div>
-                              <div className="text-[9px] text-slate-400 dark:text-slate-700">{a.category||"General"} · {a.componentCount} component{a.componentCount!==1?"s":""}{a.unit?` · ${a.unit}`:""}</div>
-                            </div>
-                            {active && <Check size={12} className="text-purple-400 flex-shrink-0"/>}
-                          </button>
-                        );
-                      })}
+                      {restAssemblies.slice(0, asmVisible).map(renderAsmRow)}
                     </div>
                     {filteredAssemblies.length === 0 && (
                       <div className="text-[10px] text-slate-400 dark:text-slate-700 text-center py-3">No assemblies match.</div>
                     )}
-                    {filteredAssemblies.length > 0 && (
+                    {restAssemblies.length > 0 && (
                       <div className="flex items-center justify-between gap-2 pt-1">
-                        <span className="text-[10px] text-slate-400 dark:text-slate-600">Showing {Math.min(asmVisible, filteredAssemblies.length)} of {filteredAssemblies.length}</span>
-                        {asmVisible < filteredAssemblies.length && (
+                        <span className="text-[10px] text-slate-400 dark:text-slate-600">Showing {asmShown} of {asmTotal}</span>
+                        {asmVisible < restAssemblies.length && (
                           <button onClick={()=>setAsmVisible(v=>v+LIB_PAGE)}
                             className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/[0.08] text-[10px] font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition">
-                            Show {Math.min(LIB_PAGE, filteredAssemblies.length - asmVisible)} more
+                            Show {Math.min(LIB_PAGE, restAssemblies.length - asmVisible)} more
                           </button>
                         )}
                       </div>
@@ -2098,7 +2239,7 @@ calibRef.current = null;
                 {/* Items */}
                 {costItems.length > 0 && (
                   <CollapsibleSection
-                    title="Rate Library Items" count={filteredItems.length} storageKey="takeoff_lib_items_open"
+                    title="Rate Library Items" count={itemsTotal} storageKey="takeoff_lib_items_open"
                     icon={<Package size={10} className="text-blue-400 flex-shrink-0"/>}
                     summary={linkedItemId && activeLinkedName ? <span className="text-[10px] text-blue-300 font-semibold truncate max-w-[120px]" title={activeLinkedName}>● {activeLinkedName}</span> : undefined}>
                     <div className="relative">
@@ -2107,31 +2248,26 @@ calibRef.current = null;
                         placeholder="Search rate items…"
                         className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-600 outline-none focus:border-sky-500/40"/>
                     </div>
+                    {pinnedItem && (
+                      <div className="space-y-1">
+                        <div className="px-1 text-[8px] font-bold uppercase tracking-widest text-blue-400/80">Linked</div>
+                        {renderItemRow(pinnedItem)}
+                        {restItems.length > 0 && <div className="border-t border-slate-200 dark:border-white/[0.07] mt-2"/>}
+                      </div>
+                    )}
                     <div className="space-y-1">
-                      {filteredItems.slice(0, itemsVisible).map(i => {
-                        const active = linkedItemId === i.id;
-                        return (
-                          <button key={i.id} onClick={()=>{setLinkedItemId(active?"":i.id);setLinkedAssemblyId("");}}
-                            className={`w-full text-left rounded-lg px-3 py-2 border transition-all flex items-center gap-2 ${active?"border-blue-500/30 bg-blue-500/10":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04]"}`}>
-                            <div className="flex-1 min-w-0">
-                              <div className={`text-[11px] font-medium truncate ${active?"text-blue-200":"text-slate-600 dark:text-slate-400"}`}>{i.item_name}</div>
-                              <div className="text-[9px] text-slate-400 dark:text-slate-700">{i.category||"—"}{i.unit?` · ${i.unit}`:""}</div>
-                            </div>
-                            {active && <Check size={11} className="text-blue-400 flex-shrink-0"/>}
-                          </button>
-                        );
-                      })}
+                      {restItems.slice(0, itemsVisible).map(renderItemRow)}
                     </div>
                     {filteredItems.length === 0 && (
                       <div className="text-[10px] text-slate-400 dark:text-slate-700 text-center py-3">No rate items match.</div>
                     )}
-                    {filteredItems.length > 0 && (
+                    {restItems.length > 0 && (
                       <div className="flex items-center justify-between gap-2 pt-1">
-                        <span className="text-[10px] text-slate-400 dark:text-slate-600">Showing {Math.min(itemsVisible, filteredItems.length)} of {filteredItems.length}</span>
-                        {itemsVisible < filteredItems.length && (
+                        <span className="text-[10px] text-slate-400 dark:text-slate-600">Showing {itemsShown} of {itemsTotal}</span>
+                        {itemsVisible < restItems.length && (
                           <button onClick={()=>setItemsVisible(v=>v+LIB_PAGE)}
                             className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/[0.08] text-[10px] font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition">
-                            Show {Math.min(LIB_PAGE, filteredItems.length - itemsVisible)} more
+                            Show {Math.min(LIB_PAGE, restItems.length - itemsVisible)} more
                           </button>
                         )}
                       </div>
@@ -2219,8 +2355,17 @@ calibRef.current = null;
               </div>
             )}
           </div>
+          </>)}
         </div>
       </div>
+
+      {/* Exit focus mode: the top bar is hidden, so this is the way back */}
+      {focusMode && (
+        <button onClick={()=>setFocus(false)} title="Exit focus mode"
+          className="fixed bottom-4 right-14 z-40 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-white/[0.1] bg-white/95 dark:bg-[#0d1117]/95 backdrop-blur shadow-lg text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.06] transition">
+          <Minimize2 size={12}/> Exit focus
+        </button>
+      )}
 
       {/* -- Calibration Modal -- */}
       {showCalibModal && (
