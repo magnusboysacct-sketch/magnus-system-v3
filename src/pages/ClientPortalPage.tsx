@@ -373,6 +373,36 @@ function SignatureModal({contract,client,saving,onSign,onCancel}:{contract:any;c
   );
 }
 
+// Contract signing goes through the portal-sign-contract edge function, which only accepts a small
+// PNG. The drawn signature is already one; a photo uploaded from a phone (any image type, often
+// several MB) is redrawn smaller as a PNG first. If that fails the original is sent unchanged
+// and the server explains what is wrong.
+async function normalizeSignature(dataUrl:string):Promise<string>{
+  try{
+    if(dataUrl.startsWith("data:image/png")&&dataUrl.length<600000)return dataUrl;
+    const img=await new Promise<HTMLImageElement>((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error("image"));i.src=dataUrl;});
+    const scale=Math.min(1,800/Math.max(img.width,img.height));
+    const cv=document.createElement("canvas");
+    cv.width=Math.max(1,Math.round(img.width*scale));cv.height=Math.max(1,Math.round(img.height*scale));
+    const ctx=cv.getContext("2d");
+    if(!ctx)return dataUrl;
+    ctx.fillStyle="#ffffff";ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.drawImage(img,0,0,cv.width,cv.height);
+    return cv.toDataURL("image/png");
+  }catch{return dataUrl;}
+}
+
+// supabase.functions.invoke returns data=null and a generic message for any non-2xx response;
+// the server's own {error:"..."} text is in error.context (the Response).
+async function functionErrorMessage(err:any,data:any,fallback:string):Promise<string>{
+  try{
+    if(data?.error)return String(data.error);
+    const ctx=err?.context;
+    if(ctx&&typeof ctx.json==="function"){const b=await ctx.json();if(b?.error)return String(b.error);}
+  }catch{}
+  return fallback;
+}
+
 export default function ClientPortalPage() {
   // Two distinct, unrelated ways to arrive here: /portal/:token is the
   // magic-link flow (token compared against clients.portal_token — an
@@ -858,16 +888,14 @@ export default function ClientPortalPage() {
           <SignatureModal contract={signingContract} client={client} saving={savingSignature} onCancel={()=>setSigningContract(null)} onSign={async(dataUrl)=>{
             setSavingSignature(true);
             try{
-              const blob=await(await fetch(dataUrl)).blob();
-              const path=`client-signatures/${signingContract.id}_${Date.now()}.png`;
-              const{error:ue}=await supabase.storage.from("project-files").upload(path,blob,{upsert:true,contentType:"image/png"});
-              const sigUrl=ue?null:supabase.storage.from("project-files").getPublicUrl(path).data.publicUrl;
-              await supabase.from("client_contracts").update({client_signed_at:new Date().toISOString(),client_signature_url:sigUrl,client_signed_ip:"portal"}).eq("id",signingContract.id);
-              logPortalEvent(portalSessionToken,"contract_sign",{entityType:"contract",entityId:signingContract.id,projectId:project?.id});
-              setContracts(prev=>prev.map(c=>c.id===signingContract.id?{...c,client_signed_at:new Date().toISOString()}:c));
+              if(!portalSessionToken)throw new Error("Your session has expired. Please sign in again.");
+              const signaturePng=await normalizeSignature(dataUrl);
+              const{data:signed,error:signErr}=await supabase.functions.invoke("portal-sign-contract",{body:{sessionToken:portalSessionToken,contractId:signingContract.id,signaturePng}});
+              if(signErr||signed?.error||!signed?.ok)throw new Error(await functionErrorMessage(signErr,signed,"Failed to save signature."));
+              setContracts(prev=>prev.map(c=>c.id===signingContract.id?{...c,client_signed_at:signed.client_signed_at,client_signature_url:signed.client_signature_url}:c));
               setSigningContract(null);
               setToast({msg:"Contract signed successfully!",type:"success"});
-            }catch(e:any){setToast({msg:"Failed to save signature.",type:"error"});}
+            }catch(e:any){setToast({msg:e?.message||"Failed to save signature.",type:"error"});}
             finally{setSavingSignature(false);}
           }}/>
         </div>}
