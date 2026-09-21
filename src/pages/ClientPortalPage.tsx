@@ -440,6 +440,17 @@ export default function ClientPortalPage() {
   useEffect(()=>{
     if(signingContract)logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:signingContract.id,projectId:project?.id});
   },[signingContract]);
+  // Item-level views: when a tab is opened, log a view for each item it lists. The database
+  // already skips repeats within 30 minutes; the id-key deps only stop a re-fire on every render.
+  useEffect(()=>{
+    if(tab==="invoices"&&portalSessionToken)invoices.slice(0,20).forEach((inv:any)=>logPortalEvent(portalSessionToken,"invoice_view",{entityType:"invoice",entityId:inv.id,projectId:inv.project_id}));
+  },[tab,invoices.map((i:any)=>i.id).join(",")]);
+  useEffect(()=>{
+    if(tab==="estimates"&&portalSessionToken)estimates.slice(0,20).forEach((es:any)=>logPortalEvent(portalSessionToken,"estimate_view",{entityType:"estimate",entityId:es.id,projectId:es.project_id}));
+  },[tab,estimates.map((e:any)=>e.id).join(",")]);
+  useEffect(()=>{
+    if(tab==="contracts"&&portalSessionToken)contracts.slice(0,20).forEach((ct:any)=>logPortalEvent(portalSessionToken,"contract_view",{entityType:"contract",entityId:ct.id,projectId:ct.project_id}));
+  },[tab,contracts.map((c:any)=>c.id).join(",")]);
 
   // New path for ClientLoginPage.tsx's email+password flow: the session
   // token in the URL is looked up directly in client_portal_sessions, then

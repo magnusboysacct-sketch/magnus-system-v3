@@ -8,6 +8,8 @@ import {
   Table, Th, Tr, Td, Empty, Modal, Alert, Textarea,
   Tabs, cn
 } from "../components/ui";
+import { fetchLastSeen, fetchClientActivity, formatJamaicaShort, timeAgoLabel, deviceLabel, activityLabel } from "../lib/portalSeen";
+import type { LastSeen, ActivityRow } from "../lib/portalSeen";
 import {
   Plus, Search, Building2, Phone, Mail,
   MapPin, ArrowRight, Edit2, Trash2, RefreshCw,
@@ -57,7 +59,34 @@ const EMPTY_FORM = {
 
 // ─── Client Card ──────────────────────────────────────────────────────────────
 
-function ClientCard({ client, unreadCount, onEdit, onDelete, onPortalToggle, onResetPassword, onMessage }: {
+// "Last active ..." line for portal-enabled clients (card and list row). seenMap is null when
+// the data could not be loaded, in which case nothing is shown.
+function PortalLastActive({ client, seenMap, onActivity }: {
+  client: Client;
+  seenMap: Record<string, LastSeen> | null;
+  onActivity: (c: Client) => void;
+}) {
+  if (!client.portal_enabled || !seenMap) return null;
+  const s = seenMap[client.id];
+  const at = s?.last_active_at || null;
+  const failed = Number(s?.failed_24h || 0);
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" onClick={e => e.stopPropagation()}>
+      <button type="button" onClick={() => onActivity(client)}
+        title={at ? `${formatJamaicaShort(at)} - click to see portal activity` : "Click to see portal activity"}
+        className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline transition-colors">
+        {at ? `Last active ${timeAgoLabel(at)}` : "Never opened the portal"}
+      </button>
+      {failed >= 3 && (
+        <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-semibold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400">
+          {failed} failed logins in 24h
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ClientCard({ client, unreadCount, onEdit, onDelete, onPortalToggle, onResetPassword, onMessage, seenMap, onActivity }: {
   client: Client;
   unreadCount: number;
   onEdit: (c: Client) => void;
@@ -65,6 +94,8 @@ function ClientCard({ client, unreadCount, onEdit, onDelete, onPortalToggle, onR
   onPortalToggle: (c: Client) => void;
   onResetPassword: (c: Client) => void;
   onMessage: (c: Client) => void;
+  seenMap: Record<string, LastSeen> | null;
+  onActivity: (c: Client) => void;
 }) {
   const { userRole } = useProjectContext();
   const canDelete = userRole === "director";
@@ -135,6 +166,10 @@ function ClientCard({ client, unreadCount, onEdit, onDelete, onPortalToggle, onR
         )}
       </div>
 
+      {client.portal_enabled && (
+        <div className="mb-3"><PortalLastActive client={client} seenMap={seenMap} onActivity={onActivity} /></div>
+      )}
+
       <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/[0.05]">
         <Badge color={client.status === "active" ? "green" : "slate"} dot>
           {client.status}
@@ -182,6 +217,27 @@ export default function ClientsPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState("");
   const [sendingMessage, setSendingMessage] = useState(false);
+
+  // Portal activity: "Last active" for every portal-enabled client in ONE batched query,
+  // plus a read-only per-client activity list. Read-only; failures just hide the line.
+  const [seenMap, setSeenMap] = useState<Record<string, LastSeen> | null>(null);
+  const [activityClient, setActivityClient] = useState<Client | null>(null);
+  const [activityRows, setActivityRows] = useState<ActivityRow[] | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const portalIdsKey = clients.filter(c => c.portal_enabled).map(c => c.id).join(",");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!portalIdsKey) { if (!cancelled) setSeenMap({}); return; }
+        const m = await fetchLastSeen(portalIdsKey.split(","));
+        if (!cancelled) setSeenMap(m);
+      } catch {
+        if (!cancelled) setSeenMap(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [portalIdsKey]);
 
   useEffect(() => { loadClients(); loadUnreadCounts(); }, []);
 
@@ -327,6 +383,19 @@ export default function ClientsPage() {
       setClients(prev => prev.map(cl => cl.id === client.id ? {...cl, portal_enabled: true, portal_token: token} : cl));
       const url = `${PORTAL_BASE}/portal/${token}`;
       setPortalNotice({ name: client.name, url, phone: client.phone, email: client.email });
+    }
+  }
+
+  async function openActivity(client: Client) {
+    setActivityClient(client);
+    setActivityRows(null);
+    setActivityLoading(true);
+    try {
+      setActivityRows(await fetchClientActivity(client.id, 50));
+    } catch {
+      setActivityRows(null);
+    } finally {
+      setActivityLoading(false);
     }
   }
 
@@ -477,6 +546,8 @@ export default function ClientsPage() {
                 onDelete={id => setDeleteConfirm(id)}
                 onResetPassword={resetPortalPassword}
                 onMessage={openMessages}
+                seenMap={seenMap}
+                onActivity={openActivity}
               />
             ))}
           </div>
@@ -503,6 +574,9 @@ export default function ClientsPage() {
                         </div>
                         <span className="font-semibold text-slate-800 dark:text-slate-200">{c.name}</span>
                       </div>
+                      {c.portal_enabled && (
+                        <div className="mt-1 ml-9"><PortalLastActive client={c} seenMap={seenMap} onActivity={openActivity} /></div>
+                      )}
                     </Td>
                     <Td muted>{c.contact_name || "—"}</Td>
                     <Td muted>{c.phone || "—"}</Td>
@@ -639,6 +713,35 @@ export default function ClientsPage() {
           </div>
         </div>
       )}
+      {/* Portal activity (read-only) */}
+      <Modal open={!!activityClient} onClose={() => setActivityClient(null)}
+        title="Portal activity" subtitle={activityClient ? `${activityClient.name} - last 50 events, newest first` : ""} width="max-w-2xl">
+        {activityLoading ? (
+          <div className="py-8 text-center text-xs text-slate-500">Loading...</div>
+        ) : activityRows === null ? (
+          <div className="py-8 text-center text-xs text-slate-500">Could not load activity.</div>
+        ) : activityRows.length === 0 ? (
+          <div className="py-8 text-center text-xs text-slate-500">No activity yet.</div>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-white/[0.06]">
+            {activityRows.map(r => (
+              <div key={r.id} className="flex flex-col sm:flex-row sm:items-baseline gap-x-4 gap-y-0.5 py-2">
+                <div className="sm:w-36 flex-shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{formatJamaicaShort(r.occurred_at)}</div>
+                <div className={cn("flex-1 text-xs font-medium",
+                  r.event_type === "login_failed" ? "text-amber-600 dark:text-amber-400"
+                  : r.event_type === "item_shared" || r.event_type === "item_withdrawn" ? "text-slate-500 dark:text-slate-400"
+                  : "text-slate-800 dark:text-slate-200")}>
+                  {activityLabel(r)}
+                </div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500 sm:text-right">
+                  {r.ip_address || "-"} · {deviceLabel(r.user_agent)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
       <Modal open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)}
         title="Delete Client" subtitle="This action cannot be undone." width="max-w-sm">
         <div className="space-y-4">

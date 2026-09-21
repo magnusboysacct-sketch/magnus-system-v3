@@ -19,6 +19,8 @@ import { useProjectContext } from "../context/ProjectContext";
 import { Send } from "lucide-react";
 import SendToClientModal from "../components/SendToClientModal";
 import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
+import { SeenBadge, SeenDetail } from "../components/PortalSeen";
+import { useItemViews } from "../lib/useItemViews";
 
 interface LineItem {
   id?: string;
@@ -96,6 +98,12 @@ export default function AccountsReceivablePage() {
     loadClientsAndProjects();
     loadContracts();
   }, []);
+
+  // "Opened by client" data for the shared invoices, in one batched query.
+  const invoiceViews = useItemViews(
+    "invoice",
+    invoices.filter(i => i.status !== "cancelled" && isSharedNow(i.shared_at, i.withdrawn_at)).map(i => i.id)
+  );
 
   if (financeAccess.loading) {
     return (
@@ -712,6 +720,9 @@ export default function AccountsReceivablePage() {
                         </span>
                       )
                     )}
+                    {inv.status !== "cancelled" && (
+                      <SeenBadge sharedAt={isSharedNow(inv.shared_at, inv.withdrawn_at)} viewsMap={invoiceViews} id={inv.id} />
+                    )}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -1007,6 +1018,13 @@ export default function AccountsReceivablePage() {
                 <div className="font-medium text-slate-900 dark:text-slate-100">{selectedInvoice.due_date}</div>
               </div>
             </div>
+
+            {selectedInvoice.status !== "cancelled" && isSharedNow(selectedInvoice.shared_at, selectedInvoice.withdrawn_at) && (
+              <div className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-medium">Client portal:</span>{" "}
+                <SeenDetail className="inline" sharedAt={isSharedNow(selectedInvoice.shared_at, selectedInvoice.withdrawn_at)} viewsMap={invoiceViews} id={selectedInvoice.id} />
+              </div>
+            )}
 
             {selectedInvoice.notes && (
               <div className="mb-6">

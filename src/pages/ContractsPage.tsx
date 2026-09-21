@@ -11,6 +11,10 @@ import { magnusAI } from "../lib/magnusAI";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import SendToClientModal from "../components/SendToClientModal";
 import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
+import { SeenBadge } from "../components/PortalSeen";
+import { useItemViews } from "../lib/useItemViews";
+import { fetchContractSignRecord, formatJamaicaShort, deviceLabel } from "../lib/portalSeen";
+import type { ItemViews } from "../lib/portalSeen";
 import {
   Plus, FileText, Search, RefreshCw, X, Check, Edit2, Trash2,
   Save, ChevronDown, ChevronUp, AlertCircle, Bot, Sparkles,
@@ -144,8 +148,9 @@ function ShareMarker({ contract }: { contract: Contract }) {
 }
 
 // --- Contract Card ------------------------------------------------------------
-function ContractCard({ contract, onView, onDelete, onDuplicate }: {
+function ContractCard({ contract, onView, onDelete, onDuplicate, seenViews }: {
   contract: Contract; onView: () => void; onDelete: () => void; onDuplicate: () => void;
+  seenViews: Record<string, ItemViews> | null;
 }) {
   const cfg = STATUS_CFG[contract.status] || STATUS_CFG.draft;
   return (
@@ -174,6 +179,7 @@ function ContractCard({ contract, onView, onDelete, onDuplicate }: {
           {cfg.icon} {cfg.label}
         </span>
         <ShareMarker contract={contract} />
+        <SeenBadge sharedAt={isSharedNow(contract.shared_at, contract.withdrawn_at)} viewsMap={seenViews} id={contract.id} />
         <span className="text-[9px] text-slate-400 dark:text-slate-700">{fmtDate(contract.contract_date)}</span>
       </div>
 
@@ -643,6 +649,27 @@ export default function ContractsPage() {
     }
   }, []);
 
+  // "Opened by client" for shared contracts (one batched query), and the client's own
+  // signature record (IP + device) for the open contract, when one was logged.
+  const contractViews = useItemViews(
+    "contract",
+    contracts.filter(c => isSharedNow(c.shared_at, c.withdrawn_at)).map(c => c.id)
+  );
+  const [signRecord, setSignRecord] = useState<{ occurred_at: string; ip_address: string | null; user_agent: string | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!viewingContract?.id || !viewingContract.client_signed_at) { if (!cancelled) setSignRecord(null); return; }
+        const r = await fetchContractSignRecord(viewingContract.id);
+        if (!cancelled) setSignRecord(r);
+      } catch {
+        if (!cancelled) setSignRecord(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [viewingContract?.id, viewingContract?.client_signed_at]);
+
   async function loadAll(cid: string) {
     setLoading(true);
     try {
@@ -983,7 +1010,8 @@ Adjust percentages based on the project type and value. Make sure they add up to
               <ContractCard key={c.id} contract={c}
                 onView={async () => { setViewingContract(c); await loadSchedule(c.id); }}
                 onDelete={() => deleteContract(c.id)}
-                onDuplicate={() => duplicateContract(c)}/>
+                onDuplicate={() => duplicateContract(c)}
+                seenViews={contractViews}/>
             ))}
           </div>
         )}
@@ -1004,6 +1032,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
                     </span>
                   ); })()}
                   <ShareMarker contract={viewingContract} />
+                  <SeenBadge sharedAt={isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at)} viewsMap={contractViews} id={viewingContract.id} />
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-slate-600 font-mono">{viewingContract.contract_number}</p>
               </div>
@@ -1026,6 +1055,12 @@ Adjust percentages based on the project type and value. Make sure they add up to
               {(viewingContract.client_signed_at || isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at)) && (
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300">
                   {viewingContract.client_signed_at ? "Signed by the client. Cannot be edited." : "Sent to client. Withdraw it to edit."}
+                </div>
+              )}
+
+              {viewingContract.client_signed_at && signRecord && (
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Signature record: Signed {formatJamaicaShort(signRecord.occurred_at)} from IP {signRecord.ip_address || "unknown"} · {deviceLabel(signRecord.user_agent)}
                 </div>
               )}
 

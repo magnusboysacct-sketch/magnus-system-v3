@@ -9,6 +9,9 @@ import SendToClientModal from "../components/SendToClientModal";
 import type { DetailLevel } from "../components/SendToClientModal";
 import { buildEstimateSnapshot } from "../lib/estimateSnapshot";
 import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
+import { SeenBadge } from "../components/PortalSeen";
+import { useItemViews } from "../lib/useItemViews";
+import type { ItemViews } from "../lib/portalSeen";
 import {
   createClientInvoice, createInvoiceLineItems,
   createClientPayment, updateInvoiceAfterPayment, fetchInvoicePayments,
@@ -122,7 +125,7 @@ function ShareMarker({ estimate }: { estimate: EstimateHeader }) {
 
 // --- Estimate Card ------------------------------------------------------------
 
-function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdateStatus, onAdvisor, onSend }: {
+function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdateStatus, onAdvisor, onSend, seenViews }: {
   estimate: EstimateHeader;
   total: number;
   onView: () => void;
@@ -131,6 +134,7 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
   onUpdateStatus: (status: EstimateHeader["status"]) => void;
   onAdvisor: () => void;
   onSend: () => void;
+  seenViews: Record<string, ItemViews> | null;
 }) {
   return (
     <Card className="group hover:border-slate-300 dark:hover:border-white/[0.13] transition-all cursor-pointer" onClick={onView}>
@@ -167,6 +171,7 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
       <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/[0.05]">
         <Badge color={STATUS_COLOR[estimate.status]} dot>{estimate.status}</Badge>
         <ShareMarker estimate={estimate} />
+        <SeenBadge sharedAt={isSharedNow(estimate.shared_at, estimate.withdrawn_at)} viewsMap={seenViews} id={estimate.id} />
         <div className="text-[9px] text-slate-700">{fmtDate(estimate.updated_at)}</div>
       </div>
 
@@ -197,13 +202,14 @@ function EstimateCard({ estimate, total, onView, onDelete, onDuplicate, onUpdate
 
 // --- Detail Modal -------------------------------------------------------------
 
-function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSend, onClose }: {
+function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSend, onClose, seenViews }: {
   estimate: EstimateHeader;
   items: EstimateItem[];
   companyId: string | null;
   onUpdateStatus: (status: EstimateHeader["status"]) => void;
   onSend: (live: { markupOverall: number; contingencyPct: number }) => void;
   onClose: () => void;
+  seenViews: Record<string, ItemViews> | null;
 }) {
   const nav = useNavigate();
   const total = items.reduce((s, i) => s + (i.amount || 0), 0);
@@ -580,6 +586,7 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
               <Badge color={STATUS_COLOR[estimate.status]} dot>{estimate.status}</Badge>
               <span className="text-xs text-slate-500">v{estimate.version} · {estimate.projects?.name || "No project"}</span>
               <ShareMarker estimate={estimate} />
+              <SeenBadge sharedAt={isSharedNow(estimate.shared_at, estimate.withdrawn_at)} viewsMap={seenViews} id={estimate.id} />
             </div>
           </div>
           <button onClick={onClose}
@@ -987,6 +994,12 @@ export default function EstimatesPage() {
 
   useEffect(() => { if (companyId) loadEstimates(); }, [companyId]);
 
+  // "Opened by client" data for the shared estimates, in one batched query.
+  const estimateViews = useItemViews(
+    "estimate",
+    estimates.filter(e => isSharedNow(e.shared_at, e.withdrawn_at)).map(e => e.id)
+  );
+
   async function loadEstimates() {
     setLoading(true);
     try {
@@ -1267,6 +1280,7 @@ export default function EstimatesPage() {
                 onUpdateStatus={status => updateStatus(e.id, status)}
                 onAdvisor={() => setAdvisorEstimate(e)}
                 onSend={() => openSend(e)}
+                seenViews={estimateViews}
               />
             ))}
           </div>
@@ -1321,6 +1335,7 @@ export default function EstimatesPage() {
           companyId={companyId}
           onUpdateStatus={status => updateStatus(viewingEstimate.id, status)}
           onSend={live => openSend(viewingEstimate, live)}
+          seenViews={estimateViews}
           onClose={() => setViewingEstimate(null)}
         />
       )}
