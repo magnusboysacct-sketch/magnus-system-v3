@@ -8,6 +8,7 @@ import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
+import CollapsibleSection from "../components/common/CollapsibleSection";
 import {
   Upload, Ruler, Download, FileText, X, ChevronLeft, ChevronRight,
   ZoomIn, ZoomOut, Maximize2, Trash2, Hash, Square, Box,
@@ -64,6 +65,30 @@ interface CostItem {
 }
 
 // --- Constants ----------------------------------------------------------------
+// Rows shown per library section before "Show more".
+const LIB_PAGE = 20;
+
+// The Rate Library can hold more rows than PostgREST returns in one response (its max-rows cap, 1000 by default),
+// so it is fetched in windows until an empty page comes back. Each window advances by the rows actually received,
+// so a server cap below the requested window size cannot skip rows. Reads cost_items directly, as before (RLS
+// applies to the table itself); id is a tiebreaker so equal item_names cannot shift between windows.
+async function fetchAllCostItems(): Promise<CostItem[]> {
+  const WINDOW = 1000;
+  let all: CostItem[] = [];
+  let from = 0;
+  for (let guard = 0; guard < 200; guard++) {
+    const { data, error } = await supabase.from("cost_items")
+      .select("id,item_name,unit,category,coverage_factor,coverage_unit").eq("is_active", true)
+      .order("item_name").order("id").range(from, from + WINDOW - 1);
+    if (error) { console.error("cost_items load failed at row " + from + ":", error); break; }
+    const page = (data || []) as CostItem[];
+    if (page.length === 0) break;
+    all = all.concat(page);
+    from += page.length;
+  }
+  return all;
+}
+
 const TOOL_CFG: Record<ToolMode, { label: string; shortcut: string; color: string; desc: string; icon: React.ReactNode }> = {
   select: { label: "Select",  shortcut: "S", color: "#94a3b8", desc: "Click to select. Space+drag to pan.",    icon: <MousePointer size={16}/> },
   pan:    { label: "Pan",     shortcut: "P", color: "#64748b", desc: "Click and drag to pan the view.",       icon: <span style={{fontSize:16}}>?</span> },
@@ -557,7 +582,11 @@ const calibration =
   const [dbReady, setDbReady] = useState(false);
   const [error, setError] = useState<string|null>(null);
   const [rightTab, setRightTab] = useState<"templates"|"measurements"|"stats">("templates");
-  const [searchLib, setSearchLib] = useState("");
+  const [searchAsm, setSearchAsm] = useState("");
+  const [searchItems, setSearchItems] = useState("");
+  // How many rows each library section shows; "Show more" adds a page, a new search goes back to one page.
+  const [asmVisible, setAsmVisible] = useState(LIB_PAGE);
+  const [itemsVisible, setItemsVisible] = useState(LIB_PAGE);
 
   // Keep refs in sync
   useEffect(()=>{ zoomRef.current = zoom; },[zoom]);
@@ -996,6 +1025,9 @@ useEffect(() => {
   }, [drawAllWithPdf]);
 
   // --- Fit view ----------------------------------------------------------------
+  // The view fitView() last produced (and the container size it was for), so a later resize can tell whether the
+  // user was still on the fitted view or had zoomed / panned away from it.
+  const lastFitRef = useRef<{ zoom: number; pan: Point; w: number; h: number } | null>(null);
   function fitView() {
     const c = containerRef.current;
     if (!c || pdfPageSize.x === 0) return;
@@ -1004,9 +1036,35 @@ useEffect(() => {
     const newPan = { x: (cw - pdfPageSize.x * newZ) / 2, y: (ch - pdfPageSize.y * newZ) / 2 };
     setZoom(newZ); setPan(newPan);
     zoomRef.current = newZ; panRef.current = newPan;
+    lastFitRef.current = { zoom: newZ, pan: newPan, w: cw, h: ch };
     scheduleRender();
   }
   useEffect(() => { if (pdfPageSize.x > 0) fitView(); }, [pdfPageSize]);
+
+  // The canvas bitmap is only resized inside drawAll(), which only runs when a render is scheduled, so when the
+  // container changes size (app sidebar or a panel collapsing, window resize) it stayed stretched at the old size
+  // until the next mouse move. Redraw on any size change, and re-fit if the view was still the fitted one.
+  const fitViewRef = useRef(fitView);
+  fitViewRef.current = fitView;
+  useEffect(() => {
+    const c = containerRef.current;
+    if (!c || typeof ResizeObserver === "undefined") return;
+    let lastW = c.clientWidth, lastH = c.clientHeight;
+    const ro = new ResizeObserver(() => {
+      try {
+        const w = c.clientWidth, h = c.clientHeight;
+        if (w === lastW && h === lastH) return;
+        const lf = lastFitRef.current;
+        const wasFit = !!lf && lf.w === lastW && lf.h === lastH
+          && Math.abs(zoomRef.current - lf.zoom) < 1e-6
+          && Math.abs(panRef.current.x - lf.pan.x) < 0.5 && Math.abs(panRef.current.y - lf.pan.y) < 0.5;
+        lastW = w; lastH = h;
+        if (wasFit) fitViewRef.current(); else scheduleRender();
+      } catch { /* a failed redraw must never break the page */ }
+    });
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [isMobile]);
 
   // --- DB init -----------------------------------------------------------------
   useEffect(() => {
@@ -1086,9 +1144,8 @@ calibRef.current =
         (acomps||[]).forEach((c:any) => { compCounts[c.assembly_id] = (compCounts[c.assembly_id]||0)+1; });
         setAssemblies((asmbs||[]).map((a:any) => ({ id:a.id, name:a.name, category:a.category, unit:a.unit, componentCount:compCounts[a.id]||0 })));
 
-        // Load cost items (include coverage fields for unit conversion)
-        const { data: items } = await supabase.from("cost_items").select("id,item_name,unit,category,coverage_factor,coverage_unit").eq("is_active",true).order("item_name");
-        setCostItems(items||[]);
+        // Load cost items (include coverage fields for unit conversion), in windows so a library over 1000 rows loads completely
+        try { setCostItems(await fetchAllCostItems()); } catch (e) { console.error("cost_items load failed:", e); }
 
         // Load project milestones for picker
         if (projectId) {
@@ -1631,15 +1688,16 @@ calibRef.current =
     volumes: pageMeasurements.filter(m=>m.type==="volume").reduce((s,m)=>s+m.result, 0),
   }), [pageMeasurements]);
 
+  // All matches for each section's own search; the section renders the first asmVisible / itemsVisible of them.
   const filteredAssemblies = useMemo(() => {
-    const q = searchLib.trim().toLowerCase();
+    const q = searchAsm.trim().toLowerCase();
     return !q ? assemblies : assemblies.filter(a => (a.name||"").toLowerCase().includes(q)||(a.category||"").toLowerCase().includes(q));
-  }, [assemblies, searchLib]);
+  }, [assemblies, searchAsm]);
 
   const filteredItems = useMemo(() => {
-    const q = searchLib.trim().toLowerCase();
-    return !q ? costItems.slice(0,20) : costItems.filter(i=>(i.item_name||"").toLowerCase().includes(q)||(i.category||"").toLowerCase().includes(q)).slice(0,20);
-  }, [costItems, searchLib]);
+    const q = searchItems.trim().toLowerCase();
+    return !q ? costItems : costItems.filter(i=>(i.item_name||"").toLowerCase().includes(q)||(i.category||"").toLowerCase().includes(q));
+  }, [costItems, searchItems]);
 
   const activeLinkedName = linkedAssemblyId
     ? assemblies.find(a=>a.id===linkedAssemblyId)?.name
@@ -1974,14 +2032,6 @@ calibRef.current = null;
                   </div>
                 </div>
 
-                {/* Search */}
-                <div className="relative">
-                  <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
-                  <input value={searchLib} onChange={e=>setSearchLib(e.target.value)}
-                    placeholder="Search templates & items…"
-                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-600 outline-none focus:border-sky-500/40"/>
-                </div>
-
                 {/* Active link */}
                 {activeLinkedName && (
                   <div className="flex items-center gap-2 rounded-lg bg-sky-500/10 border border-sky-500/20 px-3 py-2">
@@ -1999,14 +2049,19 @@ calibRef.current = null;
                 )}
 
                 {/* Assemblies */}
-                {filteredAssemblies.length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-1.5 px-1 mb-2">
-                      <Wand2 size={10} className="text-purple-400"/>
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Assemblies (Templates)</span>
+                {assemblies.length > 0 && (
+                  <CollapsibleSection
+                    title="Assemblies (Templates)" count={filteredAssemblies.length} storageKey="takeoff_lib_assemblies_open"
+                    icon={<Wand2 size={10} className="text-purple-400 flex-shrink-0"/>}
+                    summary={linkedAssemblyId && activeLinkedName ? <span className="text-[10px] text-purple-300 font-semibold truncate max-w-[120px]" title={activeLinkedName}>● {activeLinkedName}</span> : undefined}>
+                    <div className="relative">
+                      <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
+                      <input value={searchAsm} onChange={e=>{setSearchAsm(e.target.value);setAsmVisible(LIB_PAGE);}}
+                        placeholder="Search assemblies…"
+                        className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-600 outline-none focus:border-sky-500/40"/>
                     </div>
                     <div className="space-y-1">
-                      {filteredAssemblies.map(a => {
+                      {filteredAssemblies.slice(0, asmVisible).map(a => {
                         const active = linkedAssemblyId === a.id;
                         return (
                           <button key={a.id} onClick={()=>{setLinkedAssemblyId(active?"":a.id);setLinkedItemId("");}}
@@ -2023,18 +2078,37 @@ calibRef.current = null;
                         );
                       })}
                     </div>
-                  </div>
+                    {filteredAssemblies.length === 0 && (
+                      <div className="text-[10px] text-slate-400 dark:text-slate-700 text-center py-3">No assemblies match.</div>
+                    )}
+                    {filteredAssemblies.length > 0 && (
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <span className="text-[10px] text-slate-400 dark:text-slate-600">Showing {Math.min(asmVisible, filteredAssemblies.length)} of {filteredAssemblies.length}</span>
+                        {asmVisible < filteredAssemblies.length && (
+                          <button onClick={()=>setAsmVisible(v=>v+LIB_PAGE)}
+                            className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/[0.08] text-[10px] font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition">
+                            Show {Math.min(LIB_PAGE, filteredAssemblies.length - asmVisible)} more
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </CollapsibleSection>
                 )}
 
                 {/* Items */}
-                {filteredItems.length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-1.5 px-1 mb-2 mt-1">
-                      <Package size={10} className="text-blue-400"/>
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Rate Library Items</span>
+                {costItems.length > 0 && (
+                  <CollapsibleSection
+                    title="Rate Library Items" count={filteredItems.length} storageKey="takeoff_lib_items_open"
+                    icon={<Package size={10} className="text-blue-400 flex-shrink-0"/>}
+                    summary={linkedItemId && activeLinkedName ? <span className="text-[10px] text-blue-300 font-semibold truncate max-w-[120px]" title={activeLinkedName}>● {activeLinkedName}</span> : undefined}>
+                    <div className="relative">
+                      <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-600 pointer-events-none"/>
+                      <input value={searchItems} onChange={e=>{setSearchItems(e.target.value);setItemsVisible(LIB_PAGE);}}
+                        placeholder="Search rate items…"
+                        className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] rounded-lg pl-7 pr-2 py-2 text-[11px] text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-600 outline-none focus:border-sky-500/40"/>
                     </div>
                     <div className="space-y-1">
-                      {filteredItems.map(i => {
+                      {filteredItems.slice(0, itemsVisible).map(i => {
                         const active = linkedItemId === i.id;
                         return (
                           <button key={i.id} onClick={()=>{setLinkedItemId(active?"":i.id);setLinkedAssemblyId("");}}
@@ -2048,9 +2122,22 @@ calibRef.current = null;
                         );
                       })}
                     </div>
-                  </div>
+                    {filteredItems.length === 0 && (
+                      <div className="text-[10px] text-slate-400 dark:text-slate-700 text-center py-3">No rate items match.</div>
+                    )}
+                    {filteredItems.length > 0 && (
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <span className="text-[10px] text-slate-400 dark:text-slate-600">Showing {Math.min(itemsVisible, filteredItems.length)} of {filteredItems.length}</span>
+                        {itemsVisible < filteredItems.length && (
+                          <button onClick={()=>setItemsVisible(v=>v+LIB_PAGE)}
+                            className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/[0.08] text-[10px] font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04] transition">
+                            Show {Math.min(LIB_PAGE, filteredItems.length - itemsVisible)} more
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </CollapsibleSection>
                 )}
-
                 {assemblies.length===0&&costItems.length===0&&(
                   <div className="text-[11px] text-slate-400 dark:text-slate-700 text-center py-6">No templates or items found.<br/>Build assemblies in the Assemblies page.</div>
                 )}
