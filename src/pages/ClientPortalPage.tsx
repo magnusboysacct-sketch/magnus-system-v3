@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { logPortalEvent } from "../lib/portalActivity";
+import { functionErrorMessage } from "../lib/portalErrors";
 
 type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
 type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback"|"estimates";
@@ -146,7 +147,7 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
     setLoading(true);setError("");
     const {data,error:invokeError}=await supabase.functions.invoke("client-portal-login",
       {body:{action:"magicLinkSetup",portalToken:token,email:email.trim(),password}});
-    if(invokeError||data?.error){setError(data?.error||invokeError?.message||"Failed to set up account.");setLoading(false);return;}
+    if(invokeError||data?.error){setError(await functionErrorMessage(invokeError,data,invokeError?.message||"Failed to set up account."));setLoading(false);return;}
     localStorage.setItem(`portal_${client.id}`,data.sessionToken);
     onSuccess();setLoading(false);
   }
@@ -160,7 +161,7 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
         { body: { action: "request", email: email.trim() } }
       );
       if (invokeError) {
-        setForgotError(invokeError.message || "Failed to send reset email.");
+        setForgotError(await functionErrorMessage(invokeError, data, invokeError.message || "Failed to send reset email."));
         setForgotLoading(false);
         return;
       }
@@ -181,7 +182,7 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
     setLoading(true);setError("");
     const {data,error:invokeError}=await supabase.functions.invoke("client-portal-login",
       {body:{action:"magicLinkLogin",portalToken:token,password}});
-    if(invokeError||data?.error){setError(data?.error||invokeError?.message||"Login failed. Please try again.");setLoading(false);return;}
+    if(invokeError||data?.error){setError(await functionErrorMessage(invokeError,data,invokeError?.message||"Login failed. Please try again."));setLoading(false);return;}
     localStorage.setItem(`portal_${client.id}`,data.sessionToken);
     onSuccess();setLoading(false);
   }
@@ -390,17 +391,6 @@ async function normalizeSignature(dataUrl:string):Promise<string>{
     ctx.drawImage(img,0,0,cv.width,cv.height);
     return cv.toDataURL("image/png");
   }catch{return dataUrl;}
-}
-
-// supabase.functions.invoke returns data=null and a generic message for any non-2xx response;
-// the server's own {error:"..."} text is in error.context (the Response).
-async function functionErrorMessage(err:any,data:any,fallback:string):Promise<string>{
-  try{
-    if(data?.error)return String(data.error);
-    const ctx=err?.context;
-    if(ctx&&typeof ctx.json==="function"){const b=await ctx.json();if(b?.error)return String(b.error);}
-  }catch{}
-  return fallback;
 }
 
 export default function ClientPortalPage() {

@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { functionErrorMessage } from "../lib/portalErrors";
 
 export default function ClientResetPasswordPage() {
   const [params] = useSearchParams();
@@ -45,7 +46,7 @@ export default function ClientResetPasswordPage() {
       );
 
       if (invokeError) {
-        setError(invokeError.message || "Failed to reset password.");
+        setError(await functionErrorMessage(invokeError, data, invokeError.message || "Failed to reset password."));
         setLoading(false);
         return;
       }

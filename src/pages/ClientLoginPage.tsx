@@ -12,6 +12,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { functionErrorMessage } from "../lib/portalErrors";
 
 export default function ClientLoginPage() {
   const nav = useNavigate();
@@ -40,7 +41,7 @@ export default function ClientLoginPage() {
         { body: { action: "lookup", email: email.trim() } }
       );
       if (invokeError || data?.error) {
-        setError(data?.error || invokeError?.message || "No account found with that email. Contact your contractor.");
+        setError(await functionErrorMessage(invokeError, data, invokeError?.message || "No account found with that email. Contact your contractor."));
         setLoading(false);
         return;
       }
@@ -61,7 +62,7 @@ export default function ClientLoginPage() {
         { body: { action: "setup", email: email.trim(), password } }
       );
       if (invokeError || data?.error) {
-        setError(data?.error || invokeError?.message || "Failed to set up account.");
+        setError(await functionErrorMessage(invokeError, data, invokeError?.message || "Failed to set up account."));
         setLoading(false);
         return;
       }
@@ -79,7 +80,7 @@ export default function ClientLoginPage() {
         { body: { action: "login", email: email.trim(), password } }
       );
       if (invokeError || data?.error) {
-        setError(data?.error || invokeError?.message || "Login failed. Please try again.");
+        setError(await functionErrorMessage(invokeError, data, invokeError?.message || "Login failed. Please try again."));
         setLoading(false);
         return;
       }
@@ -102,7 +103,7 @@ export default function ClientLoginPage() {
       );
 
       if (invokeError) {
-        setError(invokeError.message || "Failed to send reset email.");
+        setError(await functionErrorMessage(invokeError, data, invokeError.message || "Failed to send reset email."));
         setLoading(false);
         return;
       }
