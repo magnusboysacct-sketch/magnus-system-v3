@@ -322,6 +322,7 @@ function ContractTerms({contract,company,client,schedule}:{contract:any;company:
   </div>;
   return <div style={{background:"#ffffff",color:"#1a1a1a",fontFamily:"Georgia,serif",border:"1px solid #e2e8f0",borderRadius:12,padding:"22px 22px 26px"}}>
     <div style={{textAlign:"center",marginBottom:14}}>
+      {company?.logo_url&&<img src={company.logo_url} alt="" onError={e=>{e.currentTarget.style.display="none";}} style={{maxHeight:60,maxWidth:200,objectFit:"contain",display:"block",margin:"0 auto 6px"}}/>}
       <div style={{fontSize:15,fontWeight:800}}>{company?.company_name||"Magnus Boys Construction"}</div>
       {contact&&<div style={{fontSize:11,color:"#64748b",marginTop:2}}>{contact}</div>}
     </div>
@@ -383,7 +384,8 @@ function PortalContractViewer({contract,company,client,sessionToken,onClose}:{co
   const schedule=useContractSchedule(contract.id,sessionToken);
   function printCopy(){
     try{
-      openPrintWindow(buildPortalContractHtml({contract,company,clientName:client?.contact_name||client?.name||"",schedule}),{title:`${contract.contract_number||"Contract"} - ${contract.contract_name||""}`});
+      const opened=openPrintWindow(buildPortalContractHtml({contract,company,clientName:client?.contact_name||client?.name||"",schedule}),{title:`${contract.contract_number||"Contract"} - ${contract.contract_name||""}`,waitForImages:true});
+      if(!opened)alert("Could not open the print window. Please allow pop-ups for this site and try again.");
     }catch{alert("Could not open the print window. Please allow pop-ups for this site and try again.");}
   }
   return <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>

@@ -5,12 +5,39 @@ export interface PrintOptions {
   title?: string;
   watermark?: { url: string; opacity: number; size?: number } | null;
   tagline?: string;
+  // Wait until every <img> in the print window has loaded (or failed) before printing, instead of a
+  // fixed delay. Off by default so existing prints behave exactly as before.
+  waitForImages?: boolean;
 }
 
-export function openPrintWindow(html: string, options: PrintOptions = {}) {
-  const { title = "Magnus Boys ERP", watermark, tagline } = options;
+// Prints once every image in the window has loaded or failed. A slow or broken image never blocks
+// printing: after maxWaitMs it prints anyway. print() is called at most once.
+function printWhenImagesReady(w: Window, maxWaitMs = 8000) {
+  let printed = false;
+  const go = () => {
+    if (printed) return;
+    printed = true;
+    try { w.focus(); w.print(); } catch { /* ignore */ }
+  };
+  try {
+    const pending = Array.from(w.document.images).filter((img) => !img.complete);
+    if (pending.length === 0) { setTimeout(go, 150); return; }
+    let left = pending.length;
+    const settled = () => { left -= 1; if (left <= 0) setTimeout(go, 100); };
+    pending.forEach((img) => {
+      img.addEventListener("load", settled, { once: true });
+      img.addEventListener("error", settled, { once: true });
+    });
+    setTimeout(go, maxWaitMs);
+  } catch {
+    setTimeout(go, 600);
+  }
+}
+
+export function openPrintWindow(html: string, options: PrintOptions = {}): boolean {
+  const { title = "Magnus Boys ERP", watermark, tagline, waitForImages } = options;
   const w = window.open("", "_blank");
-  if (!w) return;
+  if (!w) return false;
 
   const wmHtml = watermark?.url
     ? `<img class="wm" src="${watermark.url}"/>${tagline ? `<div class="wm-tag">${tagline.toUpperCase()}</div>` : ""}`
@@ -28,5 +55,7 @@ export function openPrintWindow(html: string, options: PrintOptions = {}) {
   </head><body>${html}${wmHtml}</body></html>`);
 
   w.document.close();
-  setTimeout(() => w.print(), 600);
+  if (waitForImages) printWhenImagesReady(w);
+  else setTimeout(() => w.print(), 600);
+  return true;
 }

@@ -5,6 +5,12 @@
 // and the printable HTML for the client's own signed copy.
 //
 // The contract's internal `notes` field is deliberately NOT part of any of this.
+// Images in the printed copy must be absolute http(s) URLs; anything else is dropped.
+function httpUrl(u: unknown): string {
+  const s = String(u ?? "").trim();
+  return /^https?:\/\//i.test(s) ? s : "";
+}
+
 export function escapeHtml(v: unknown): string {
   return String(v ?? "")
     .replace(/&/g, "&amp;")
@@ -124,9 +130,11 @@ export function buildPortalContractHtml(opts: {
   const sections = contractLongSections(c);
   const contact = [company?.address_line1, company?.phone, company?.email].filter(Boolean).map(escapeHtml).join(" &middot; ");
   const coName = escapeHtml(company?.company_name || "Magnus Boys Construction");
+  const logoUrl = httpUrl(company?.logo_url);
 
   const sigSide = (label: string, at: unknown, url: unknown) => {
-    const img = at && url ? `<img class="sig" src="${escapeHtml(url)}" alt="${escapeHtml(label)} signature"/>` : "";
+    const sigUrl = httpUrl(url);
+    const img = at && sigUrl ? `<img class="sig" src="${escapeHtml(sigUrl)}" alt="${escapeHtml(label)} signature"/>` : "";
     const cap = at ? `Signed ${escapeHtml(formatJamaicaDateTimeFull(at))}` : "Signature pending";
     return `<div class="sigbox"><div class="siglabel">${escapeHtml(label)}</div>${img}<div class="sigcap">${cap}</div></div>`;
   };
@@ -147,6 +155,7 @@ export function buildPortalContractHtml(opts: {
   return `<style>
     .page{max-width:800px;margin:0 auto;padding:40px 48px;font-family:Georgia,serif;color:#1a1a1a}
     .head{text-align:center;margin-bottom:20px}
+    .logo{max-height:60px;max-width:200px;object-fit:contain;display:block;margin:0 auto 8px}
     .co{font-size:18px;font-weight:800}
     .sub{font-size:11px;color:#6b7280;margin-top:3px}
     .kicker{text-align:center;font-size:10px;letter-spacing:4px;color:#9ca3af;font-weight:700;margin-top:18px}
@@ -169,7 +178,7 @@ export function buildPortalContractHtml(opts: {
     .msd{font-size:11px;color:#6b7280;margin-top:2px}
   </style>
   <div class="page">
-    <div class="head"><div class="co">${coName}</div>${contact ? `<div class="sub">${contact}</div>` : ""}</div>
+    <div class="head">${logoUrl ? `<img class="logo" src="${escapeHtml(logoUrl)}" alt=""/>` : ""}<div class="co">${coName}</div>${contact ? `<div class="sub">${contact}</div>` : ""}</div>
     <div class="kicker">CONTRACT</div>
     <h1>${escapeHtml(c?.contract_name || "")}</h1>
     <div class="prep">Prepared for ${escapeHtml(clientName || "the client")}</div>
