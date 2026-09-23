@@ -11,6 +11,7 @@ import ProjectLogsPage from './pages/ProjectLogsPage';
 import ProjectPhotosPage from './pages/ProjectPhotosPage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
+import UpdateBanner from "./components/UpdateBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProjectProvider, useProjectContext } from "./context/ProjectContext";
 import { useFinanceAccess } from "./hooks/useFinanceAccess";
@@ -238,6 +239,7 @@ export default function App() {
       <ProjectProvider>
         <BrowserRouter>
           <AuthHashRouter />
+          <UpdateBanner />
           <Routes>
             {/* Public */}
             <Route path="/verify/:workerId" element={<WorkerVerifyPage />} />
