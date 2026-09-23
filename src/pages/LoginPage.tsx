@@ -9,13 +9,23 @@ const MAGNUS_BRAND = {
 
 type Mode = "signin" | "signup";
 
+const REMEMBERED_EMAIL_KEY = "magnus_remembered_email";
+function readRememberedEmail(): string {
+  try {
+    return localStorage.getItem(REMEMBERED_EMAIL_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
 export default function LoginPage() {
   const nav = useNavigate();
   const loc = useLocation();
 
   const [mode, setMode] = useState<Mode>("signin");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => readRememberedEmail());
   const [password, setPassword] = useState("");
+  const [rememberEmail, setRememberEmail] = useState(() => !!readRememberedEmail());
   const [showForgot, setShowForgot] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetSent, setResetSent] = useState(false);
@@ -80,6 +90,15 @@ export default function LoginPage() {
             setErr(error.message);
           }
           return;
+        }
+
+        // Local convenience only — never touches the auth call above. A failure here (storage unavailable
+        // or blocked) must not stop the user from signing in.
+        try {
+          if (rememberEmail) localStorage.setItem(REMEMBERED_EMAIL_KEY, email.trim());
+          else localStorage.removeItem(REMEMBERED_EMAIL_KEY);
+        } catch {
+          // remembering is a convenience only
         }
 
         const next = new URLSearchParams(loc.search).get("next") || "/";
@@ -219,6 +238,21 @@ export default function LoginPage() {
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
             />
           </div>
+
+          {mode === "signin" && (
+            <div className="flex items-center gap-2">
+              <input
+                id="remember-email"
+                type="checkbox"
+                checked={rememberEmail}
+                onChange={(e) => setRememberEmail(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-1 focus:ring-blue-500/30"
+              />
+              <label htmlFor="remember-email" className="text-xs text-slate-500">
+                Remember my email on this device
+              </label>
+            </div>
+          )}
 
           {err && (
             <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
