@@ -1687,6 +1687,28 @@ calibRef.current =
     pinchActiveRef.current = true;
   }
   function onTouchMove(e: React.TouchEvent) {
+    // A single finger already dragging an offset dimension line (armed by the synthetic mousedown from its
+    // initial tap — see onMouseDown's select-tool label/line hit-test) needs its own touch-driven path here:
+    // mobile browsers do not fire a continuous stream of synthetic mousemove events while a finger is held
+    // and slid across the screen (compatibility mouse events are effectively a mousedown-then-mouseup pair,
+    // not interleaved with every touchmove), so onMouseMove's drag-update branch never actually runs during
+    // the finger-slide on a real device, even though the drag was armed correctly by the initial tap. This
+    // mirrors onMouseMove's own perpendicular-projection math exactly, just reading the touch point directly
+    // instead of depending on a synthetic mousemove that mobile browsers do not reliably deliver.
+    if (e.touches.length === 1 && draggingOffsetIdRef.current) {
+      e.preventDefault();
+      const t = e.touches[0];
+      const p = screenToPdf(t.clientX, t.clientY);
+      const start = offsetDragStartRef.current;
+      const id = draggingOffsetIdRef.current;
+      const moveDx = p.x - start.mousePdf.x, moveDy = p.y - start.mousePdf.y;
+      const proj = moveDx*start.normal.x + moveDy*start.normal.y;
+      const nextOffset = start.startOffset + proj;
+      const next = measurementsRef.current.map(m => m.id === id ? { ...m, dimensionOffset: nextOffset } : m);
+      setMeasurements(next); measurementsRef.current = next;
+      scheduleRender();
+      return;
+    }
     if (e.touches.length !== 2) return; // 1 finger: untouched, drawing continues via the synthetic mouse events
     e.preventDefault();
     if (!pinchActiveRef.current || pinchStartDistRef.current === 0) return;
@@ -1703,6 +1725,22 @@ calibRef.current =
     scheduleRender();
   }
   function onTouchEnd(e: React.TouchEvent) {
+    // Mirrors onMouseUp's snap-to-zero exactly, for the same reason the touch-driven drag update above
+    // exists: a synthetic mouseup may not reliably follow a real touch-and-drag on every device, so ending
+    // the gesture must not depend on it. draggingOffsetIdRef is only ever armed by a single-finger tap (a
+    // 2-finger touchstart never touches it), so any touchend seen while it is set means that one finger just
+    // lifted — no touches.length check is needed here to know the drag is over.
+    if (draggingOffsetIdRef.current) {
+      const SNAP_ZERO_PDF = 3;
+      const id = draggingOffsetIdRef.current;
+      const m = measurementsRef.current.find(x => x.id === id);
+      if (m && m.dimensionOffset && Math.abs(m.dimensionOffset) < SNAP_ZERO_PDF/zoomRef.current) {
+        const next = measurementsRef.current.map(x => x.id === id ? { ...x, dimensionOffset: undefined } : x);
+        setMeasurements(next); measurementsRef.current = next;
+        scheduleRender();
+      }
+      draggingOffsetIdRef.current = null;
+    }
     // Dropping to 0 or 1 remaining finger ends the pinch/pan gesture (a lone remaining finger does not
     // resume as a mouse-driven drag here — the synthetic mouse events for it, if any, are unaffected since
     // nothing above ever called preventDefault for it).
