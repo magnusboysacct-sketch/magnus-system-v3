@@ -39,6 +39,11 @@ interface Measurement {
   pageNumber?: number;
   wallLength?: number;
   wallHeight?: number;
+  // Perpendicular distance (PDF-space units, signed) the "offset dimension line" is shifted from the true
+  // measured line — an architectural-style dimension line, parallel to the real geometry, that the label
+  // renders against. Absent/zero = default rendering, identical to before this existed. Line measurements
+  // only for now. See drawAllWithPdf and the select-tool drag in onMouseDown/onMouseMove.
+  dimensionOffset?: number;
 }
 
 interface PdfFile {
@@ -527,6 +532,12 @@ function TakeoffInner() {
   const measurementsRef = useRef<Measurement[]>([]);
   const [selectedId, setSelectedId] = useState<string|null>(null);
   const selectedIdRef = useRef<string|null>(null);
+  // Dragging a line measurement's offset dimension line (or its label), select tool only. The motion is
+  // constrained to ONE axis — perpendicular to the true line — not a free 2D drag: mouse-down records the
+  // click's PDF point, the line's unit normal at that moment, and the starting dimensionOffset; mouse-move
+  // projects the mouse's movement onto that normal (a dot product) to get the new offset.
+  const draggingOffsetIdRef = useRef<string|null>(null);
+  const offsetDragStartRef = useRef<{ mousePdf: Point; normal: Point; startOffset: number }>({ mousePdf: { x: 0, y: 0 }, normal: { x: 0, y: 1 }, startOffset: 0 });
   const [inProgress, setInProgress] = useState<Point[]>([]);
   const inProgressRef = useRef<Point[]>([]);
   const [hoverPt, setHoverPt] = useState<Point|null>(null);
@@ -834,15 +845,22 @@ useEffect(() => {
     }
   }
 
-  function drawLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, small = false) {
+  // The label's drawn box (in canvas/screen space): font + measureText + padding, exactly as drawLabel below
+  // paints it. Shared so the select-tool label hit-test in onMouseDown tests against the SAME box the label
+  // is actually drawn in, rather than a second, independently maintained copy of this math.
+  function labelBox(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, small = false): { x: number; y: number; w: number; h: number } {
     const font = small ? "bold 9px system-ui" : "bold 11px system-ui";
     ctx.font = font;
-    ctx.textAlign = "center";
     const tw = ctx.measureText(text).width;
     const pad = 4, h = small ? 14 : 17;
+    return { x: x-tw/2-pad, y: y-h+2, w: tw+pad*2, h };
+  }
+  function drawLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, small = false) {
+    const box = labelBox(ctx, text, x, y, small);
+    ctx.textAlign = "center";
     ctx.fillStyle = "rgba(10,13,20,0.88)";
     ctx.beginPath();
-    roundRect(ctx, x-tw/2-pad, y-h+2, tw+pad*2, h, 4);
+    roundRect(ctx, box.x, box.y, box.w, box.h, 4);
     ctx.fill();
     ctx.fillStyle = color;
     ctx.textBaseline = "bottom";
@@ -948,8 +966,35 @@ useEffect(() => {
         ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
         ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
         [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
-        drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, (a.x+b.x)/2, (a.y+b.y)/2-14, col);
-        if (m.linkedAssemblyName) drawLabel(ctx, `? ${m.linkedAssemblyName}`, (a.x+b.x)/2, (a.y+b.y)/2+4, "#a78bfa", true);
+        // Offset dimension line: a full parallel copy of the true line above, shifted perpendicular to it by
+        // dimensionOffset (PDF-space units). Absent/zero -> lx/ly stay exactly the true midpoint minus 14px,
+        // byte-for-byte what this block always computed: no offset line, no extension lines, single label.
+        const dOff = m.dimensionOffset || 0;
+        let lx = (a.x+b.x)/2, ly = (a.y+b.y)/2-14;
+        if (dOff !== 0) {
+          const dx = m.points[1].x-m.points[0].x, dy = m.points[1].y-m.points[0].y;
+          const len = Math.hypot(dx,dy) || 1;
+          const nx = -dy/len, ny = dx/len; // unit normal, perpendicular to the true line's direction
+          const offA = pdfToCanvas({ x: m.points[0].x+nx*dOff, y: m.points[0].y+ny*dOff });
+          const offB = pdfToCanvas({ x: m.points[1].x+nx*dOff, y: m.points[1].y+ny*dOff });
+          // Extension lines: true endpoint -> matching offset endpoint. Thin, dashed, muted (same style the
+          // earlier label-leader work used) — this is what makes the offset line read as "this measurement,
+          // moved aside" rather than a second, unrelated line.
+          ctx.save();
+          ctx.strokeStyle = "rgba(148,163,184,0.6)"; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+          ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(offA.x,offA.y); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(offB.x,offB.y); ctx.stroke();
+          ctx.restore();
+          // Offset line itself: same strokeStyle/lineWidth as the true line above (ambient state, restored
+          // by the extension lines' own save/restore, not reset here) — same style on purpose: it visually
+          // stands in for the measurement's real line, just displaced, exactly like a drafting dimension
+          // line drawn at the same weight as the feature it measures. The extension lines' dashed/muted
+          // style, plus the true line staying fully visible, is what keeps the two unambiguous.
+          ctx.beginPath(); ctx.moveTo(offA.x,offA.y); ctx.lineTo(offB.x,offB.y); ctx.stroke();
+          lx = (offA.x+offB.x)/2; ly = (offA.y+offB.y)/2-14;
+        }
+        drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, lx, ly, col);
+        if (m.linkedAssemblyName) drawLabel(ctx, `? ${m.linkedAssemblyName}`, lx, ly+18, "#a78bfa", true);
       } else if (m.type === "wall" && m.points.length >= 2) {
         const pts = m.points.map(pdfToCanvas);
         ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
@@ -1169,6 +1214,7 @@ calibRef.current =
             const ms: Measurement[] = mData.map((r:any) => ({
               id: r.id, type: r.type, points: r.points, result: Number(r.result), unit: r.unit,
               label: r.meta?.label || "", color: r.meta?.color || nextColor(),
+              dimensionOffset: typeof r.meta?.dimension_offset === "number" ? r.meta.dimension_offset : undefined,
               linkedAssemblyId: r.linked_assembly_id || r.meta?.linked_assembly_id,
               linkedAssemblyName: r.meta?.linked_assembly_name,
               linkedItemId: r.linked_item_id || r.meta?.linked_item_id,
@@ -1225,7 +1271,8 @@ calibRef.current =
           geometry_json: m.points, anchor_points_json: m.points,
           formula_inputs_json: {}, resolved_fields_json: {}, metadata: {}, client_visible: true,
           linked_item_id: m.linkedItemId || null, linked_assembly_id: m.linkedAssemblyId || null,
-          meta: { label:m.label, color:m.color, timestamp:m.timestamp, linked_assembly_name:m.linkedAssemblyName, linked_item_name:m.linkedItemName },
+          meta: { label:m.label, color:m.color, timestamp:m.timestamp, linked_assembly_name:m.linkedAssemblyName, linked_item_name:m.linkedItemName,
+            ...(m.dimensionOffset ? { dimension_offset: m.dimensionOffset } : {}) },
         })));
       }
       await supabase.from("takeoff_sessions").update({ last_page_number: pageToSave }).eq("id", sessionIdRef.current);
@@ -1337,6 +1384,19 @@ calibRef.current =
   function onMouseMove(e: React.MouseEvent) {
     const p = screenToPdf(e.clientX, e.clientY);
     setHoverPt(p); hoverRef.current = p;
+    if (draggingOffsetIdRef.current) {
+      const start = offsetDragStartRef.current;
+      const id = draggingOffsetIdRef.current;
+      // Project the mouse's movement onto the line's perpendicular axis (a dot product) — this is what
+      // constrains the drag to one axis instead of a free 2D drag.
+      const moveDx = p.x - start.mousePdf.x, moveDy = p.y - start.mousePdf.y;
+      const proj = moveDx*start.normal.x + moveDy*start.normal.y;
+      const nextOffset = start.startOffset + proj;
+      const next = measurementsRef.current.map(m => m.id === id ? { ...m, dimensionOffset: nextOffset } : m);
+      setMeasurements(next); measurementsRef.current = next;
+      scheduleRender();
+      return;
+    }
     if (panningRef.current) {
       const dx = e.clientX - panStartRef.current.mouse.x;
       const dy = e.clientY - panStartRef.current.mouse.y;
@@ -1368,6 +1428,43 @@ calibRef.current =
     }
 
     if (toolRef.current === "select") {
+      // Grabbing the OFFSET line (or its label) starts a drag; at zero offset it sits exactly on the true
+      // line, so this doubles as "start dragging a fresh dimension line out of it." Clicking the TRUE line
+      // when it's visually distinct from the offset line (offset != 0) falls through to the existing body
+      // hit-test below instead, which only selects — never drags.
+      // A synthetic mouse event from a single-finger touch (how drawing already works on tablet) is
+      // indistinguishable from a real mouse event by the time it reaches onMouseDown — this file has no
+      // pointerType/sourceCapabilities check anywhere, and the pinch-zoom touch handlers only ever engage at
+      // 2 fingers. So rather than leaving this mouse-precision-only, the grab tolerance below is doubled
+      // universally: comfortable for a fingertip, still small enough with a mouse not to feel imprecise.
+      const GRAB_TOL_PDF = 24; // was 12 (matches the existing line/count select-tool tolerance elsewhere)
+      const GRAB_PAD_SCREEN = 12; // extra px padding around the label's own (zoom-independent) hit box
+      const rect = containerRef.current?.getBoundingClientRect();
+      const ctx2d = canvasRef.current?.getContext("2d");
+      if (rect && ctx2d) {
+        const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+        for (const m of measurementsRef.current) {
+          if (m.type !== "line" || m.points.length < 2) continue;
+          const dOffM = m.dimensionOffset || 0;
+          const dx = m.points[1].x-m.points[0].x, dy = m.points[1].y-m.points[0].y;
+          const len = Math.hypot(dx,dy) || 1;
+          const nx = -dy/len, ny = dx/len;
+          const offA = { x: m.points[0].x+nx*dOffM, y: m.points[0].y+ny*dOffM };
+          const offB = { x: m.points[1].x+nx*dOffM, y: m.points[1].y+ny*dOffM };
+          const hitOffsetLine = distToSeg(p, offA, offB) < GRAB_TOL_PDF/zoomRef.current;
+          const labelScreen = pdfToCanvas({ x: (offA.x+offB.x)/2, y: (offA.y+offB.y)/2 });
+          const text = m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`;
+          const box = labelBox(ctx2d, text, labelScreen.x, labelScreen.y-14, false);
+          const hitLabel = sx >= box.x-GRAB_PAD_SCREEN && sx <= box.x+box.w+GRAB_PAD_SCREEN && sy >= box.y-GRAB_PAD_SCREEN && sy <= box.y+box.h+GRAB_PAD_SCREEN;
+          if (hitOffsetLine || hitLabel) {
+            setSelectedId(m.id); selectedIdRef.current = m.id;
+            draggingOffsetIdRef.current = m.id;
+            offsetDragStartRef.current = { mousePdf: p, normal: { x: nx, y: ny }, startOffset: dOffM };
+            scheduleRender();
+            return;
+          }
+        }
+      }
       // Find closest measurement
       const hit = measurementsRef.current.find(m => {
         if (m.type==="line"&&m.points.length>=2) return distToSeg(p,m.points[0],m.points[1]) < 12/zoomRef.current;
@@ -1447,6 +1544,22 @@ calibRef.current =
   }
 
   function onMouseUp(e: React.MouseEvent) {
+    if (draggingOffsetIdRef.current) {
+      // A drag that ends only a hair off zero should cleanly settle back to "no offset" — the pixel-identical
+      // default rendering — rather than leaving a barely-visible ghost line. Threshold: 3 PDF-units, expressed
+      // over zoom so it is a CONSTANT ~3 screen pixels at any zoom (same convention as the 12px/zoom select
+      // tolerance elsewhere in this file) — smaller than the true line's own 2.5-3.5px stroke width, so a gap
+      // this small is already imperceptible next to the line itself.
+      const SNAP_ZERO_PDF = 3;
+      const id = draggingOffsetIdRef.current;
+      const m = measurementsRef.current.find(x => x.id === id);
+      if (m && m.dimensionOffset && Math.abs(m.dimensionOffset) < SNAP_ZERO_PDF/zoomRef.current) {
+        const next = measurementsRef.current.map(x => x.id === id ? { ...x, dimensionOffset: undefined } : x);
+        setMeasurements(next); measurementsRef.current = next;
+        scheduleRender();
+      }
+    }
+    draggingOffsetIdRef.current = null; // ends the drag; the existing debounced auto-save effect picks up the dimensionOffset change on its own
     if (panningRef.current) { panningRef.current = false; }
   }
 
