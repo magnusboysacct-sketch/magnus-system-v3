@@ -495,6 +495,15 @@ function TakeoffInner() {
   const zoomRef = useRef(1);
   const panningRef = useRef(false);
   const panStartRef = useRef<{ mouse: Point; pan: Point }>({ mouse: { x: 0, y: 0 }, pan: { x: 0, y: 0 } });
+  // Two-finger touch: pinch-to-zoom + pan, tracked separately from panningRef/panStartRef above (those are for
+  // the single-finger "select tool, empty space" mouse drag). pinchStartAnchorRef is the PDF-space point that
+  // was under the two fingers' midpoint when the gesture began; keeping IT under the (moving) midpoint on every
+  // touchmove is what makes pinch-zoom and two-finger pan work together in one natural gesture, exactly like a
+  // map or PDF viewer. Single-finger touches never touch any of this — see onTouchStart/onTouchMove below.
+  const pinchActiveRef = useRef(false);
+  const pinchStartDistRef = useRef(0);
+  const pinchStartZoomRef = useRef(1);
+  const pinchStartAnchorRef = useRef<Point>({ x: 0, y: 0 });
   const spaceRef = useRef(false);
 
   // PDF
@@ -1525,6 +1534,75 @@ calibRef.current =
     c.addEventListener("wheel", handler, { passive: false });
     return () => c.removeEventListener("wheel", handler);
   }, []);
+
+  // --- Two-finger touch: pinch-to-zoom + pan ------------------------------------------------------------
+  // A single finger is deliberately left alone everywhere below: the browser already turns a one-finger
+  // touch into synthetic mouse events (mousedown/mousemove/mouseup) that drive onMouseDown/onMouseMove/
+  // onMouseUp above exactly as a real mouse would, and that already works. Calling preventDefault() on a
+  // touchstart/touchmove — for ANY number of fingers — is what tells the browser not to synthesize those
+  // mouse events, so these handlers only ever call it inside the e.touches.length===2 branch. Reusing the
+  // same setZoom/setPan/zoomRef/panRef/clamp(...,0.05,12) that onWheel and the toolbar zoom buttons use, so
+  // there is exactly one zoom range and one way zoom/pan state gets updated, not a second parallel one.
+  function touchMidpoint(t: React.TouchList): Point {
+    return { x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 };
+  }
+  function touchDistance(t: React.TouchList): number {
+    return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  }
+  function onTouchStart(e: React.TouchEvent) {
+    if (e.touches.length !== 2) return; // 1 finger (or 3+): untouched, no preventDefault — see comment above
+    e.preventDefault();
+    const c = containerRef.current; if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const mid = touchMidpoint(e.touches);
+    const midLocal = { x: mid.x - rect.left, y: mid.y - rect.top };
+    pinchStartDistRef.current = touchDistance(e.touches);
+    pinchStartZoomRef.current = zoomRef.current;
+    pinchStartAnchorRef.current = {
+      x: (midLocal.x - panRef.current.x) / zoomRef.current,
+      y: (midLocal.y - panRef.current.y) / zoomRef.current,
+    };
+    pinchActiveRef.current = true;
+  }
+  function onTouchMove(e: React.TouchEvent) {
+    if (e.touches.length !== 2) return; // 1 finger: untouched, drawing continues via the synthetic mouse events
+    e.preventDefault();
+    if (!pinchActiveRef.current || pinchStartDistRef.current === 0) return;
+    const c = containerRef.current; if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const mid = touchMidpoint(e.touches);
+    const midLocal = { x: mid.x - rect.left, y: mid.y - rect.top };
+    const distNow = touchDistance(e.touches);
+    const nz = clamp(pinchStartZoomRef.current * (distNow / pinchStartDistRef.current), 0.05, 12);
+    const anchor = pinchStartAnchorRef.current;
+    const np = { x: midLocal.x - anchor.x * nz, y: midLocal.y - anchor.y * nz };
+    setZoom(nz); zoomRef.current = nz;
+    setPan(np); panRef.current = np;
+    scheduleRender();
+  }
+  function onTouchEnd(e: React.TouchEvent) {
+    // Dropping to 0 or 1 remaining finger ends the pinch/pan gesture (a lone remaining finger does not
+    // resume as a mouse-driven drag here — the synthetic mouse events for it, if any, are unaffected since
+    // nothing above ever called preventDefault for it).
+    if (e.touches.length < 2) { pinchActiveRef.current = false; pinchStartDistRef.current = 0; }
+  }
+
+  // Belt-and-suspenders backstop for the CSS touchAction:"none" on the canvas container below — some
+  // browsers don't fully honor touch-action for pinch gestures, so also block the native default at the JS
+  // level, same as ProjectPlansPage.tsx. Only ever acts on 2+ fingers, so a single-finger touch (and its
+  // synthetic mouse events) is never affected by this either. Attached the same way as the wheel listener
+  // above: manually, with { passive: false }, so preventDefault() here actually has an effect.
+  useEffect(() => {
+    const c = containerRef.current;
+    if (!c) return;
+    const preventPinch = (e: TouchEvent) => { if (e.touches.length > 1) e.preventDefault(); };
+    c.addEventListener("touchstart", preventPinch, { passive: false });
+    c.addEventListener("touchmove", preventPinch, { passive: false });
+    return () => {
+      c.removeEventListener("touchstart", preventPinch);
+      c.removeEventListener("touchmove", preventPinch);
+    };
+  }, []);
   function snapToNearby(p: Point): Point {
     const tol = 10 / zoomRef.current;
     for (const m of measurementsRef.current) for (const q of m.points) if (dist(p, q) < tol) return q;
@@ -1987,11 +2065,14 @@ calibRef.current = null;
         {/* -- Canvas Area -- */}
         <div className="flex-1 relative min-w-0 overflow-hidden bg-slate-50 dark:bg-[#080b10]"
           ref={containerRef}
-          style={{ cursor: panningRef.current ? "grabbing" : (spaceRef.current || tool==="pan") ? "grab" : tool==="select" ? "default" : "crosshair" }}
+          style={{ cursor: panningRef.current ? "grabbing" : (spaceRef.current || tool==="pan") ? "grab" : tool==="select" ? "default" : "crosshair", touchAction: "none" }}
           onMouseMove={onMouseMove}
           onMouseDown={onMouseDown}
           onMouseUp={onMouseUp}
           onDoubleClick={onDblClick}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
 
           onContextMenu={e=>e.preventDefault()}>
 
