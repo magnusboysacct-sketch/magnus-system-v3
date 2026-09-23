@@ -963,34 +963,43 @@ useEffect(() => {
       if (selected) { ctx.shadowColor = col; ctx.shadowBlur = 14; }
       if (m.type === "line" && m.points.length >= 2) {
         const [a, b] = [pdfToCanvas(m.points[0]), pdfToCanvas(m.points[1])];
-        ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
-        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-        [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
-        // Offset dimension line: a full parallel copy of the true line above, shifted perpendicular to it by
-        // dimensionOffset (PDF-space units). Absent/zero -> lx/ly stay exactly the true midpoint minus 14px,
-        // byte-for-byte what this block always computed: no offset line, no extension lines, single label.
+        // Offset dimension line: a full parallel copy of the true line, shifted perpendicular to it by
+        // dimensionOffset (PDF-space units). Absent/zero -> the true line is drawn exactly as before this
+        // feature existed (byte-for-byte the same three lines this block always ran): no offset line, no
+        // extension lines, single label at the true midpoint. Non-zero -> the true line's stroke and
+        // endpoint dots are skipped entirely (decluttering the plan is the point of moving it), leaving only
+        // its thin dashed extension-line stubs and the offset line as the sole visible representation. The
+        // true line's own click-to-select hit-test (onMouseDown) still tests the true points regardless, so
+        // it stays selectable/deletable even though nothing is drawn there.
         const dOff = m.dimensionOffset || 0;
         let lx = (a.x+b.x)/2, ly = (a.y+b.y)/2-14;
-        if (dOff !== 0) {
+        if (dOff === 0) {
+          ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
+          ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+          [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
+        } else {
           const dx = m.points[1].x-m.points[0].x, dy = m.points[1].y-m.points[0].y;
           const len = Math.hypot(dx,dy) || 1;
           const nx = -dy/len, ny = dx/len; // unit normal, perpendicular to the true line's direction
           const offA = pdfToCanvas({ x: m.points[0].x+nx*dOff, y: m.points[0].y+ny*dOff });
           const offB = pdfToCanvas({ x: m.points[1].x+nx*dOff, y: m.points[1].y+ny*dOff });
           // Extension lines: true endpoint -> matching offset endpoint. Thin, dashed, muted (same style the
-          // earlier label-leader work used) — this is what makes the offset line read as "this measurement,
-          // moved aside" rather than a second, unrelated line.
+          // earlier label-leader work used) — the only remaining trace of where this was actually measured.
           ctx.save();
           ctx.strokeStyle = "rgba(148,163,184,0.6)"; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
           ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(offA.x,offA.y); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(offB.x,offB.y); ctx.stroke();
           ctx.restore();
-          // Offset line itself: same strokeStyle/lineWidth as the true line above (ambient state, restored
-          // by the extension lines' own save/restore, not reset here) — same style on purpose: it visually
-          // stands in for the measurement's real line, just displaced, exactly like a drafting dimension
-          // line drawn at the same weight as the feature it measures. The extension lines' dashed/muted
-          // style, plus the true line staying fully visible, is what keeps the two unambiguous.
+          // Offset line: the true line's own stroke is skipped above (not just left ambient), so its
+          // strokeStyle/lineWidth are set explicitly here rather than relied on as leftover state — this is
+          // now the sole visible line for this measurement, drawn at the same weight/color the true line
+          // would have used, exactly like a drafting dimension line drawn at the weight of the feature it
+          // measures.
+          ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
           ctx.beginPath(); ctx.moveTo(offA.x,offA.y); ctx.lineTo(offB.x,offB.y); ctx.stroke();
+          // Same endpoint dots the true line used to have at dOff===0, now on the offset line's own
+          // endpoints instead — it is the only visible line for this measurement now, so it gets the dots.
+          [offA,offB].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
           lx = (offA.x+offB.x)/2; ly = (offA.y+offB.y)/2-14;
         }
         drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, lx, ly, col);
