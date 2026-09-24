@@ -634,6 +634,9 @@ const calibration =
   const sessionIdRef = useRef<string|null>(null);
   const companyIdRef = useRef<string|null>(null);
   const [dbReady, setDbReady] = useState(false);
+  // TEMP DEBUG — remove after touch-drag is confirmed working
+  const [touchDebug, setTouchDebug] = useState<{ touches: number; dragId: string | null; offset: number | undefined }>({ touches: 0, dragId: null, offset: undefined });
+  // END TEMP DEBUG
   const [error, setError] = useState<string|null>(null);
   const [rightTab, setRightTab] = useState<"templates"|"measurements"|"stats">("templates");
   const [searchAsm, setSearchAsm] = useState("");
@@ -1672,6 +1675,57 @@ calibRef.current =
     return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   }
   function onTouchStart(e: React.TouchEvent) {
+    // TEMP DEBUG — remove after touch-drag is confirmed working
+    setTouchDebug({ touches: e.touches.length, dragId: draggingOffsetIdRef.current, offset: draggingOffsetIdRef.current ? measurementsRef.current.find(m => m.id === draggingOffsetIdRef.current)?.dimensionOffset : undefined });
+    // END TEMP DEBUG
+    // Arm an offset-line drag directly from a real touchstart, without waiting for (or depending on) any
+    // synthetic mousedown. On many mobile browsers the compatibility mousedown for a touch-and-hold gesture
+    // is deferred and only fires together with mouseup/click AFTER the finger lifts — i.e. after the hold-
+    // and-slide is already over — so draggingOffsetIdRef was never set in time for onTouchMove's drag-update
+    // branch (added in the previous fix) to see it during the actual gesture. This deliberately DUPLICATES
+    // the hit-test math onMouseDown's select-tool branch already runs, rather than extracting a shared
+    // helper, specifically so onMouseDown itself stays completely untouched while this is being verified on
+    // a real device — the desktop/mouse path must not risk a regression while chasing a tablet-only bug.
+    if (e.touches.length === 1 && toolRef.current === "select") {
+      const t = e.touches[0];
+      const p = screenToPdf(t.clientX, t.clientY);
+      const rect = containerRef.current?.getBoundingClientRect();
+      const ctx2d = canvasRef.current?.getContext("2d");
+      if (rect && ctx2d) {
+        const sx = t.clientX - rect.left, sy = t.clientY - rect.top;
+        const GRAB_TOL_PDF = 24; // matches onMouseDown's select-tool tolerance exactly
+        const GRAB_PAD_SCREEN = 12;
+        for (const m of measurementsRef.current) {
+          if (m.type !== "line" || m.points.length < 2) continue;
+          const dOffM = m.dimensionOffset || 0;
+          const dx = m.points[1].x-m.points[0].x, dy = m.points[1].y-m.points[0].y;
+          const len = Math.hypot(dx,dy) || 1;
+          const nx = -dy/len, ny = dx/len;
+          const offA = { x: m.points[0].x+nx*dOffM, y: m.points[0].y+ny*dOffM };
+          const offB = { x: m.points[1].x+nx*dOffM, y: m.points[1].y+ny*dOffM };
+          const hitOffsetLine = distToSeg(p, offA, offB) < GRAB_TOL_PDF/zoomRef.current;
+          const labelScreen = pdfToCanvas({ x: (offA.x+offB.x)/2, y: (offA.y+offB.y)/2 });
+          const text = m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`;
+          const box = labelBox(ctx2d, text, labelScreen.x, labelScreen.y-14, false);
+          const hitLabel = sx >= box.x-GRAB_PAD_SCREEN && sx <= box.x+box.w+GRAB_PAD_SCREEN && sy >= box.y-GRAB_PAD_SCREEN && sy <= box.y+box.h+GRAB_PAD_SCREEN;
+          if (hitOffsetLine || hitLabel) {
+            // This touch sequence is now ours: suppress the deferred synthetic mouse events entirely so they
+            // cannot also fire and redo/interfere once the finger eventually lifts.
+            e.preventDefault();
+            setSelectedId(m.id); selectedIdRef.current = m.id;
+            draggingOffsetIdRef.current = m.id;
+            offsetDragStartRef.current = { mousePdf: p, normal: { x: nx, y: ny }, startOffset: dOffM };
+            // TEMP DEBUG — remove after touch-drag is confirmed working
+            setTouchDebug({ touches: e.touches.length, dragId: m.id, offset: dOffM });
+            // END TEMP DEBUG
+            scheduleRender();
+            return;
+          }
+        }
+      }
+    }
+    // If nothing was hit above (or the tool isn't "select"), fall through completely unchanged: normal
+    // single-finger drawing is untouched, since nothing here called preventDefault or set any drag state.
     if (e.touches.length !== 2) return; // 1 finger (or 3+): untouched, no preventDefault — see comment above
     e.preventDefault();
     const c = containerRef.current; if (!c) return;
@@ -1687,12 +1741,15 @@ calibRef.current =
     pinchActiveRef.current = true;
   }
   function onTouchMove(e: React.TouchEvent) {
-    // A single finger already dragging an offset dimension line (armed by the synthetic mousedown from its
-    // initial tap — see onMouseDown's select-tool label/line hit-test) needs its own touch-driven path here:
-    // mobile browsers do not fire a continuous stream of synthetic mousemove events while a finger is held
-    // and slid across the screen (compatibility mouse events are effectively a mousedown-then-mouseup pair,
-    // not interleaved with every touchmove), so onMouseMove's drag-update branch never actually runs during
-    // the finger-slide on a real device, even though the drag was armed correctly by the initial tap. This
+    // TEMP DEBUG — remove after touch-drag is confirmed working
+    setTouchDebug({ touches: e.touches.length, dragId: draggingOffsetIdRef.current, offset: draggingOffsetIdRef.current ? measurementsRef.current.find(m => m.id === draggingOffsetIdRef.current)?.dimensionOffset : undefined });
+    // END TEMP DEBUG
+    // A single finger already dragging an offset dimension line (armed either directly by onTouchStart's own
+    // hit-test above, or historically by a synthetic mousedown — see onMouseDown's select-tool label/line
+    // hit-test) needs its own touch-driven path here: mobile browsers do not fire a continuous stream of
+    // synthetic mousemove events while a finger is held and slid across the screen (compatibility mouse
+    // events are effectively a mousedown-then-mouseup pair, not interleaved with every touchmove), so
+    // onMouseMove's drag-update branch never actually runs during the finger-slide on a real device. This
     // mirrors onMouseMove's own perpendicular-projection math exactly, just reading the touch point directly
     // instead of depending on a synthetic mousemove that mobile browsers do not reliably deliver.
     if (e.touches.length === 1 && draggingOffsetIdRef.current) {
@@ -1706,6 +1763,9 @@ calibRef.current =
       const nextOffset = start.startOffset + proj;
       const next = measurementsRef.current.map(m => m.id === id ? { ...m, dimensionOffset: nextOffset } : m);
       setMeasurements(next); measurementsRef.current = next;
+      // TEMP DEBUG — remove after touch-drag is confirmed working
+      setTouchDebug({ touches: e.touches.length, dragId: id, offset: nextOffset });
+      // END TEMP DEBUG
       scheduleRender();
       return;
     }
@@ -1725,6 +1785,9 @@ calibRef.current =
     scheduleRender();
   }
   function onTouchEnd(e: React.TouchEvent) {
+    // TEMP DEBUG — remove after touch-drag is confirmed working
+    setTouchDebug(d => ({ ...d, touches: e.touches.length }));
+    // END TEMP DEBUG
     // Mirrors onMouseUp's snap-to-zero exactly, for the same reason the touch-driven drag update above
     // exists: a synthetic mouseup may not reliably follow a real touch-and-drag on every device, so ending
     // the gesture must not depend on it. draggingOffsetIdRef is only ever armed by a single-finger tap (a
@@ -1740,6 +1803,9 @@ calibRef.current =
         scheduleRender();
       }
       draggingOffsetIdRef.current = null;
+      // TEMP DEBUG — remove after touch-drag is confirmed working
+      setTouchDebug(d => ({ ...d, dragId: null, offset: undefined }));
+      // END TEMP DEBUG
     }
     // Dropping to 0 or 1 remaining finger ends the pinch/pan gesture (a lone remaining finger does not
     // resume as a mouse-driven drag here — the synthetic mouse events for it, if any, are unaffected since
@@ -2237,6 +2303,14 @@ calibRef.current = null;
           onContextMenu={e=>e.preventDefault()}>
 
           <canvas ref={canvasRef} className="absolute inset-0"/>
+
+          {/* TEMP DEBUG — remove after touch-drag is confirmed working */}
+          {dbReady && (
+            <div className="absolute bottom-4 right-4 z-30 pointer-events-none rounded-md bg-black/80 px-2 py-1 font-mono text-[10px] leading-tight text-lime-300 whitespace-pre">
+              {`touches:${touchDebug.touches} drag:${touchDebug.dragId ? touchDebug.dragId.slice(0,6) : "—"} off:${touchDebug.offset !== undefined ? touchDebug.offset.toFixed(1) : "—"}`}
+            </div>
+          )}
+          {/* END TEMP DEBUG */}
 
           {/* Focus mode: the top bar is hidden, so its three working buttons live in a slim strip in the canvas top-left corner,
               away from the calibration banner (top centre), the error toast (top right) and the Exit button (bottom right).
