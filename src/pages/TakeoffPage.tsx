@@ -1107,7 +1107,7 @@ useEffect(() => {
       ip.forEach(p=>{const cp=pdfToCanvas(p);ctx.fillStyle=tcol;ctx.setLineDash([]);ctx.beginPath();ctx.arc(cp.x,cp.y,4,0,Math.PI*2);ctx.fill();});
       ctx.restore();
     }
-    if (t==="wall"&&wallLineModeRef.current==="continuous"&&ip.length>0&&hp){
+    if (((t==="wall"&&wallLineModeRef.current==="continuous")||t==="perimeter")&&ip.length>0&&hp){
       const allPts=[...ip,hp].map(pdfToCanvas);
       ctx.save(); ctx.strokeStyle=tcol; ctx.lineWidth=2; ctx.setLineDash([6,4]);
       ctx.beginPath(); allPts.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);}); ctx.stroke();
@@ -1116,9 +1116,13 @@ useEffect(() => {
         let totalLengthFt = 0;
         for (let i = 0; i < ip.length - 1; i++) { totalLengthFt += dist(ip[i], ip[i+1]) * calibRef.current.feetPerPx; }
         totalLengthFt += dist(ip[ip.length-1], hp) * calibRef.current.feetPerPx;
-        const wallArea = totalLengthFt * wallTotalHeightFeetRef.current;
         const lastPt = allPts[allPts.length-1];
-        drawLabel(ctx,`${fmt2(wallArea)} ft² total`,lastPt.x,lastPt.y-18,tcol);
+        if (t==="wall") {
+          const wallArea = totalLengthFt * wallTotalHeightFeetRef.current;
+          drawLabel(ctx,`${fmt2(wallArea)} ft² total`,lastPt.x,lastPt.y-18,tcol);
+        } else {
+          drawLabel(ctx,`${feetInches(totalLengthFt)} total`,lastPt.x,lastPt.y-18,tcol);
+        }
       }
       ctx.restore();
     }
