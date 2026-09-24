@@ -588,6 +588,12 @@ const calibration =
   // double-click finish, and the new button's click-to-finish) rather than via a useEffect, since all writes
   // already happen in code we control directly.
   const [activeCountId, setActiveCountId] = useState<string | null>(null);
+  // Perimeter auto-close: a click within PERIMETER_CLOSE_TOL_PX screen pixels (divided by zoom -> PDF units,
+  // same convention as the file's other 12/zoom and 24/zoom tolerances) of the path's first point closes it.
+  // 24 matches the stylus-friendly grab tolerance already used for the offset-dimension-line drag.
+  const PERIMETER_CLOSE_TOL_PX = 24;
+  const PERIMETER_CLOSE_SWALLOW_MS = 500;
+  const perimeterClosedAtRef = useRef(0);
 
   // Depth modal for volume
   const [showDepthModal, setShowDepthModal] = useState(false);
@@ -1023,9 +1029,8 @@ useEffect(() => {
         if (dOff === 0) {
           ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
           ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-          // A square grab-handle at each endpoint, plus outward-pointing arrowheads at both ends (each
-          // continuing the line's direction past that end) — the architectural dimension-line convention.
-          drawVertexSquare(ctx, a, col); drawVertexSquare(ctx, b, col);
+          // Outward-pointing arrowheads at both ends (each continuing the line's direction past that end) — the
+          // architectural dimension-line convention. Both points are ends, so both get an arrow and no square.
           drawArrowhead(ctx, b, a, col, selected ? 3.5 : 2.5); // outward past the start: direction b -> a
           drawArrowhead(ctx, a, b, col, selected ? 3.5 : 2.5); // outward past the end: direction a -> b
         } else {
@@ -1079,13 +1084,18 @@ useEffect(() => {
         pts.forEach((p,i) => { if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
         ctx.stroke();
         ctx.setLineDash([]);
-        // A square grab-handle at every vertex (both ends and every interior corner), plus outward-pointing
-        // arrowheads at only the very first and very last point — same convention as the "line" tool above,
-        // extended to a multi-point path. Interior corners get a square only, no arrowhead (they have an
-        // incoming AND an outgoing segment, so there's no single "outward" direction for them).
-        pts.forEach(p => drawVertexSquare(ctx, p, col));
-        drawArrowhead(ctx, pts[1], pts[0], col, selected ? 3.5 : 2.5); // outward past the start: direction pts[1] -> pts[0]
-        drawArrowhead(ctx, pts[pts.length-2], pts[pts.length-1], col, selected ? 3.5 : 2.5); // outward past the end
+        // A point is EITHER a square OR an arrow, never both. Open path: the first and last point get an
+        // outward arrowhead only; every interior vertex gets a square only. Closed path (the last point was
+        // snapped exactly onto the first — see the perimeter click branch): there is no start or end any more,
+        // so every distinct vertex is a square and there are no arrows. The duplicate last point isn't drawn twice.
+        const closed = pts.length >= 4 && dist(pts[0], pts[pts.length-1]) < 0.5;
+        if (closed) {
+          for (let i = 0; i < pts.length - 1; i++) drawVertexSquare(ctx, pts[i], col);
+        } else {
+          for (let i = 1; i < pts.length - 1; i++) drawVertexSquare(ctx, pts[i], col);
+          drawArrowhead(ctx, pts[1], pts[0], col, selected ? 3.5 : 2.5); // outward past the start: direction pts[1] -> pts[0]
+          drawArrowhead(ctx, pts[pts.length-2], pts[pts.length-1], col, selected ? 3.5 : 2.5); // outward past the end
+        }
         const midIdx = Math.floor(pts.length/2);
         const labelPt = pts.length % 2 === 0
           ? { x:(pts[midIdx-1].x+pts[midIdx].x)/2, y:(pts[midIdx-1].y+pts[midIdx].y)/2 }
@@ -1185,9 +1195,8 @@ useEffect(() => {
       ctx.restore();
       // Persisted scale line only — the transient in-progress rendering above (red circle + × glyph while
       // actively placing the two calibration points) is untouched. Same square + outward-arrowhead convention
-      // as line/perimeter.
+      // as line (both points are ends, so arrows only, no squares).
       ctx.save(); ctx.globalAlpha=0.4;
-      drawVertexSquare(ctx, a, "#ef4444"); drawVertexSquare(ctx, b, "#ef4444");
       drawArrowhead(ctx, b, a, "#ef4444", 1.5);
       drawArrowhead(ctx, a, b, "#ef4444", 1.5);
       ctx.restore();
@@ -1647,8 +1656,15 @@ calibRef.current =
       // Same click-to-append pattern as wall's continuous mode (~1537-1542), minus the mode switch and the
       // height step entirely — this tool only ever works one way, an open chain of points, no setup needed.
       const ip = inProgressRef.current;
+      // Swallow the second click of a double-click that just auto-closed a perimeter, so it doesn't start a
+      // stray new path (the double-click that used to be needed to close near the start still "works").
+      if (Date.now() - perimeterClosedAtRef.current < PERIMETER_CLOSE_SWALLOW_MS) return;
       if (ip.length === 0) {
         setInProgress([snap]); inProgressRef.current = [snap];
+      } else if (ip.length >= 3 && dist(snap, ip[0]) < PERIMETER_CLOSE_TOL_PX / zoomRef.current) {
+        // Auto-close: snap exactly onto the first point and finish right here (same finish as double-click).
+        perimeterClosedAtRef.current = Date.now();
+        finishPerimeter([...ip, { x: ip[0].x, y: ip[0].y }]);
       } else {
         setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
       }
@@ -1705,6 +1721,28 @@ calibRef.current =
     activeCountIdRef.current = null; setActiveCountId(null);
   }
 
+  // Finish a perimeter from a full point list: a plain linear total in feet (same segment-sum convention as
+  // wall's continuous mode, minus height). Shared by the double-click gesture (open path) and the click
+  // handler's proximity auto-close (closed path, where the last point has been snapped onto the first, so the
+  // closing segment is included in the total automatically).
+  function finishPerimeter(pts: Point[]) {
+    const calib = calibRef.current;
+    let totalLengthFt = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const segPx = dist(pts[i], pts[i+1]);
+      totalLengthFt += calib ? segPx * calib.feetPerPx : segPx;
+    }
+    const col = nextColor();
+    const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+    const item = costItems.find(i=>i.id===linkedItemId);
+    const nm: Measurement = { id:uid(), type:"perimeter", points:[...pts], result:totalLengthFt, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
+    const next = [...measurementsRef.current, nm];
+    setMeasurements(next); measurementsRef.current = next;
+    setInProgress([]); inProgressRef.current = [];
+    upsertMeasurementTask(nm);
+    scheduleRender();
+  }
+
   function onDblClick(e: React.MouseEvent) {
     const t = toolRef.current;
     const ip = inProgressRef.current;
@@ -1747,25 +1785,7 @@ calibRef.current =
       upsertMeasurementTask(nm);
       scheduleRender();
     }
-    // Same finish (double-click) convention as wall's continuous mode above, minus height entirely: a plain
-    // linear total in feet, chainable to any number of points, never closing into a shape.
-    if (t==="perimeter" && ip.length >= 2) {
-      const calib = calibRef.current;
-      let totalLengthFt = 0;
-      for (let i = 0; i < ip.length - 1; i++) {
-        const segPx = dist(ip[i], ip[i+1]);
-        totalLengthFt += calib ? segPx * calib.feetPerPx : segPx;
-      }
-      const col = nextColor();
-      const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
-      const item = costItems.find(i=>i.id===linkedItemId);
-      const nm: Measurement = { id:uid(), type:"perimeter", points:[...ip], result:totalLengthFt, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
-      const next = [...measurementsRef.current, nm];
-      setMeasurements(next); measurementsRef.current = next;
-      setInProgress([]); inProgressRef.current = [];
-      upsertMeasurementTask(nm);
-      scheduleRender();
-    }
+    if (t==="perimeter" && ip.length >= 2) finishPerimeter(ip);
   }
 
   function confirmDepth() {
