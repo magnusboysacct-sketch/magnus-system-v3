@@ -44,6 +44,10 @@ interface Measurement {
   // renders against. Absent/zero = default rendering, identical to before this existed. Line measurements
   // only for now. See drawAllWithPdf and the select-tool drag in onMouseDown/onMouseMove.
   dimensionOffset?: number;
+  // Purely a display toggle: when true, drawAllWithPdf skips drawing this measurement entirely (geometry,
+  // label, dots — everything), but it still counts in sendToBOQ() and the Summary tab's stats, still shows
+  // (dimmed) in the Taken list, and can still be selected/deleted normally. Absent/false = draws as always.
+  hidden?: boolean;
 }
 
 interface PdfFile {
@@ -957,6 +961,7 @@ useEffect(() => {
     const ms = pageMeasurementsRef.current;
     ms.forEach(m => {
       if (m.points.length === 0) return;
+      if (m.hidden) return; // purely a display toggle — never skipped in sendToBOQ() or the Summary tab's stats
       const col = m.color;
       const selected = m.id === selectedIdRef.current;
       ctx.save();
@@ -1224,6 +1229,7 @@ calibRef.current =
               id: r.id, type: r.type, points: r.points, result: Number(r.result), unit: r.unit,
               label: r.meta?.label || "", color: r.meta?.color || nextColor(),
               dimensionOffset: typeof r.meta?.dimension_offset === "number" ? r.meta.dimension_offset : undefined,
+              hidden: r.meta?.hidden === true ? true : undefined,
               linkedAssemblyId: r.linked_assembly_id || r.meta?.linked_assembly_id,
               linkedAssemblyName: r.meta?.linked_assembly_name,
               linkedItemId: r.linked_item_id || r.meta?.linked_item_id,
@@ -1281,7 +1287,8 @@ calibRef.current =
           formula_inputs_json: {}, resolved_fields_json: {}, metadata: {}, client_visible: true,
           linked_item_id: m.linkedItemId || null, linked_assembly_id: m.linkedAssemblyId || null,
           meta: { label:m.label, color:m.color, timestamp:m.timestamp, linked_assembly_name:m.linkedAssemblyName, linked_item_name:m.linkedItemName,
-            ...(m.dimensionOffset ? { dimension_offset: m.dimensionOffset } : {}) },
+            ...(m.dimensionOffset ? { dimension_offset: m.dimensionOffset } : {}),
+            ...(m.hidden ? { hidden: true } : {}) },
         })));
       }
       await supabase.from("takeoff_sessions").update({ last_page_number: pageToSave }).eq("id", sessionIdRef.current);
@@ -2562,20 +2569,33 @@ calibRef.current = null;
                   <>
                     {pageMeasurements.map(m=>(
                       <div key={m.id} onClick={()=>{setSelectedId(m.id===selectedId?null:m.id);selectedIdRef.current=m.id===selectedId?null:m.id;scheduleRender();}}
-                        className={`rounded-lg border px-3 py-2.5 cursor-pointer transition-all flex items-center gap-2.5 ${m.id===selectedId?"border-sky-500/25 bg-sky-500/[0.07]":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04]"}`}>
+                        className={`rounded-lg border px-3 py-2.5 cursor-pointer transition-all flex items-center gap-2.5 ${m.hidden?"opacity-40":""} ${m.id===selectedId?"border-sky-500/25 bg-sky-500/[0.07]":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04]"}`}>
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:m.color}}/>
                         <div className="flex-1 min-w-0">
                           <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{m.unit === "ft" ? feetInches(m.result) : fmt2(m.result)} <span className="text-slate-500 dark:text-slate-600 font-normal">{m.unit === "ft" ? "" : m.unit}</span></div>
                           {m.linkedAssemblyName&&<div className="text-[9px] text-purple-400 truncate">? {m.linkedAssemblyName}</div>}
                           {m.linkedItemName&&!m.linkedAssemblyName&&<div className="text-[9px] text-blue-400 truncate">{m.linkedItemName}</div>}
-                          <div className="text-[9px] text-slate-400 dark:text-slate-700 capitalize">{m.type}</div>
+                          <div className="text-[9px] text-slate-400 dark:text-slate-700 capitalize">{m.type}{m.hidden?" · hidden":""}</div>
                         </div>
+                        <button onClick={e=>{e.stopPropagation();const next=measurementsRef.current.map(x=>x.id===m.id?{...x,hidden:!x.hidden}:x);setMeasurements(next);measurementsRef.current=next;scheduleRender();}}
+                          title={m.hidden?"Show measurement":"Hide measurement"}
+                          className={`p-1 rounded transition flex-shrink-0 ${m.hidden?"text-slate-400 dark:text-slate-600 hover:text-emerald-400":"text-slate-400 dark:text-slate-700 hover:text-amber-400"}`}>
+                          {m.hidden?<Eye size={11}/>:<EyeOff size={11}/>}
+                        </button>
                         <button onClick={e=>{e.stopPropagation();const next=measurementsRef.current.filter(x=>x.id!==m.id);setMeasurements(next);measurementsRef.current=next;if(selectedId===m.id){setSelectedId(null);selectedIdRef.current=null;}scheduleRender();}}
-                          className="p-1 rounded hover:bg-red-500/15 text-slate-400 dark:text-slate-700 hover:text-red-400 transition">
+                          className="p-1 rounded hover:bg-red-500/15 text-slate-400 dark:text-slate-700 hover:text-red-400 transition flex-shrink-0">
                           <X size={11}/>
                         </button>
                       </div>
                     ))}
+                    <button onClick={()=>{
+                        const anyVisible = pageMeasurements.some(x=>!x.hidden);
+                        const next = measurementsRef.current.map(x => (x.pageNumber??1)===pageNum ? {...x, hidden: anyVisible} : x);
+                        setMeasurements(next); measurementsRef.current = next; scheduleRender();
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition mt-2">
+                      {pageMeasurements.some(x=>!x.hidden)?<><EyeOff size={11}/> Hide All</>:<><Eye size={11}/> Show All</>}
+                    </button>
                     <button onClick={()=>{setMeasurements([]);measurementsRef.current=[];setSelectedId(null);selectedIdRef.current=null;scheduleRender();}}
                       className="w-full py-2 rounded-lg border border-red-500/15 text-[10px] text-red-500/60 hover:text-red-400 hover:border-red-500/25 transition mt-2">
                       Clear All
