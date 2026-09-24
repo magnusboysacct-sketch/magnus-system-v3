@@ -885,6 +885,22 @@ useEffect(() => {
     ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
   }
 
+  // Ported from SiteVisitPage.tsx's drawArrow (same atan2-angle + two 30°-back-stroke math), but draws only the
+  // head at `to` — the shaft itself is already stroked by the caller as part of the measurement's own line.
+  function drawArrowhead(ctx: CanvasRenderingContext2D, from: Point, to: Point, color: string, lw: number) {
+    const headLen = 12;
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - headLen * Math.cos(angle - Math.PI / 6), to.y - headLen * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - headLen * Math.cos(angle + Math.PI / 6), to.y - headLen * Math.sin(angle + Math.PI / 6));
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // Schedule render when deps change
   useEffect(() => { scheduleRender(); }, [zoom, pan, pageMeasurements, selectedId, inProgress, hoverPt, calibration, calibrating, calibPts, pdfPageSize]);
 
@@ -988,7 +1004,9 @@ useEffect(() => {
         if (dOff === 0) {
           ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
           ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-          [a,b].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
+          // Arrowhead at the end point only, showing the direction the line was drawn (start -> end) — replaces
+          // the old dual-arc dots at both ends.
+          drawArrowhead(ctx, a, b, col, selected ? 3.5 : 2.5);
         } else {
           const dx = m.points[1].x-m.points[0].x, dy = m.points[1].y-m.points[0].y;
           const len = Math.hypot(dx,dy) || 1;
@@ -1040,7 +1058,10 @@ useEffect(() => {
         pts.forEach((p,i) => { if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
         ctx.stroke();
         ctx.setLineDash([]);
-        pts.forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
+        // An arrowhead at every junction (not the first point, which has no incoming segment), each pointing
+        // from the previous point to that one — reads as a direction-of-travel trail along the whole path,
+        // same convention as the single end-arrowhead on the "line" tool above, just repeated per segment.
+        for (let i = 1; i < pts.length; i++) drawArrowhead(ctx, pts[i-1], pts[i], col, selected ? 3.5 : 2.5);
         const midIdx = Math.floor(pts.length/2);
         const labelPt = pts.length % 2 === 0
           ? { x:(pts[midIdx-1].x+pts[midIdx].x)/2, y:(pts[midIdx-1].y+pts[midIdx].y)/2 }
@@ -1137,6 +1158,11 @@ useEffect(() => {
       const a=pdfToCanvas(calibRef.current.p1),b=pdfToCanvas(calibRef.current.p2);
       ctx.save(); ctx.strokeStyle="#ef4444"; ctx.lineWidth=1.5; ctx.globalAlpha=0.4;
       ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      ctx.restore();
+      // Persisted scale line only — the transient in-progress rendering above (red circle + × glyph while
+      // actively placing the two calibration points) is untouched. Same single end-arrowhead convention as line/perimeter.
+      ctx.save(); ctx.globalAlpha=0.4;
+      drawArrowhead(ctx, a, b, "#ef4444", 1.5);
       ctx.restore();
     }
   }, [pdfPageSize]);
