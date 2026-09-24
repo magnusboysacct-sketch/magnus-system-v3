@@ -588,12 +588,14 @@ const calibration =
   // double-click finish, and the new button's click-to-finish) rather than via a useEffect, since all writes
   // already happen in code we control directly.
   const [activeCountId, setActiveCountId] = useState<string | null>(null);
-  // Perimeter auto-close: a click within PERIMETER_CLOSE_TOL_PX screen pixels (divided by zoom -> PDF units,
-  // same convention as the file's other 12/zoom and 24/zoom tolerances) of the path's first point closes it.
-  // 24 matches the stylus-friendly grab tolerance already used for the offset-dimension-line drag.
-  const PERIMETER_CLOSE_TOL_PX = 24;
-  const PERIMETER_CLOSE_SWALLOW_MS = 500;
-  const perimeterClosedAtRef = useRef(0);
+  // Auto-close, shared by perimeter/area/volume: a click within SHAPE_CLOSE_TOL_PX screen pixels (divided by
+  // zoom -> PDF units, same convention as the file's other 12/zoom and 24/zoom tolerances) of the shape's first
+  // point (once 3+ points exist) closes it. 24 matches the stylus-friendly grab tolerance already used for the
+  // offset-dimension-line drag. shapeClosedAtRef timestamps the last auto-close so the second click of a
+  // double-click right after it is swallowed instead of starting a stray new shape.
+  const SHAPE_CLOSE_TOL_PX = 24;
+  const SHAPE_CLOSE_SWALLOW_MS = 500;
+  const shapeClosedAtRef = useRef(0);
 
   // Depth modal for volume
   const [showDepthModal, setShowDepthModal] = useState(false);
@@ -1069,7 +1071,11 @@ useEffect(() => {
         ctx.beginPath();
         pts.forEach((p,i) => { if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
         ctx.stroke();
-        pts.forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
+        // Same convention as an open perimeter: a wall run never closes, so its first/last points get outward
+        // arrows only and every interior vertex a square only (a 2-point wall: two arrows, no squares).
+        for (let i = 1; i < pts.length - 1; i++) drawVertexSquare(ctx, pts[i], col);
+        drawArrowhead(ctx, pts[1], pts[0], col, selected ? 3.5 : 2.5); // outward past the start
+        drawArrowhead(ctx, pts[pts.length-2], pts[pts.length-1], col, selected ? 3.5 : 2.5); // outward past the end
         const midIdx = Math.floor(pts.length/2);
         const labelPt = pts.length % 2 === 0
           ? { x:(pts[midIdx-1].x+pts[midIdx].x)/2, y:(pts[midIdx-1].y+pts[midIdx].y)/2 }
@@ -1109,6 +1115,8 @@ useEffect(() => {
         const pts = m.points.map(pdfToCanvas);
         ctx.strokeStyle=col; ctx.fillStyle=col+"28"; ctx.lineWidth=selected?2.5:1.5;
         ctx.beginPath(); pts.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y);}); ctx.closePath(); ctx.fill(); ctx.stroke();
+        // A finished area/volume is always a closed shape: every corner is a square, no arrows anywhere.
+        pts.forEach(p => drawVertexSquare(ctx, p, col));
         const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length, cy=pts.reduce((s,p)=>s+p.y,0)/pts.length;
         drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, cx, cy, col);
         if (m.linkedAssemblyName) drawLabel(ctx, `? ${m.linkedAssemblyName}`, cx, cy+20, "#a78bfa", true);
@@ -1661,18 +1669,29 @@ calibRef.current =
       const ip = inProgressRef.current;
       // Swallow the second click of a double-click that just auto-closed a perimeter, so it doesn't start a
       // stray new path (the double-click that used to be needed to close near the start still "works").
-      if (Date.now() - perimeterClosedAtRef.current < PERIMETER_CLOSE_SWALLOW_MS) return;
+      if (Date.now() - shapeClosedAtRef.current < SHAPE_CLOSE_SWALLOW_MS) return;
       if (ip.length === 0) {
         setInProgress([snap]); inProgressRef.current = [snap];
-      } else if (ip.length >= 3 && dist(snap, ip[0]) < PERIMETER_CLOSE_TOL_PX / zoomRef.current) {
+      } else if (ip.length >= 3 && dist(snap, ip[0]) < SHAPE_CLOSE_TOL_PX / zoomRef.current) {
         // Auto-close: snap exactly onto the first point and finish right here (same finish as double-click).
-        perimeterClosedAtRef.current = Date.now();
+        shapeClosedAtRef.current = Date.now();
         finishPerimeter([...ip, { x: ip[0].x, y: ip[0].y }]);
       } else {
         setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
       }
     } else if (toolRef.current === "area" || toolRef.current === "volume") {
-      setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
+      const ip = inProgressRef.current;
+      // Same swallow guard as perimeter (see shapeClosedAtRef).
+      if (Date.now() - shapeClosedAtRef.current < SHAPE_CLOSE_SWALLOW_MS) return;
+      if (ip.length >= 3 && dist(snap, ip[0]) < SHAPE_CLOSE_TOL_PX / zoomRef.current) {
+        // Auto-close: the click is consumed (not appended) and the polygon closes implicitly onto its first
+        // point, exactly as double-click closes it — through the very same finishAreaVolume() (for volume that
+        // includes opening the depth prompt).
+        shapeClosedAtRef.current = Date.now();
+        finishAreaVolume(toolRef.current, ip);
+      } else {
+        setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
+      }
     } else if (toolRef.current === "count") {
       const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
       // Append to the batch this ref already points at, not to whatever count measurement happens to share
@@ -1753,48 +1772,70 @@ calibRef.current =
     if (ip.length >= 2) finishPerimeter(ip);
   }
 
+  // Close an area/volume polygon from its full point list (3+). Shared by the double-click gesture and the
+  // click handler's proximity auto-close so both go through exactly one closing path: area is computed and
+  // saved here; volume opens the depth prompt (confirmDepth() completes it).
+  function finishAreaVolume(t: ToolMode, ip: Point[]) {
+    if (t==="volume") {
+      pendingVolumeRef.current = [...ip];
+      setShowDepthModal(true);
+    } else {
+      const calib = calibRef.current;
+      const areaPx = polyArea(ip);
+      const result = calib ? areaPx * calib.feetPerPx * calib.feetPerPx : areaPx;
+      const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+      const nm: Measurement = { id:uid(), type:"area", points:[...ip], result, unit:"ft²", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
+      const next = [...measurementsRef.current, nm];
+      setMeasurements(next); measurementsRef.current = next;
+      upsertMeasurementTask(nm);
+    }
+    setInProgress([]); inProgressRef.current = [];
+    scheduleRender();
+  }
+
+  // Finish a continuous-mode wall from its point list (2+): summed length x wall height. Shared by the
+  // double-click gesture and the "Finish Wall" button. A wall is a linear run, so there is no auto-close.
+  function finishWall(ip: Point[]) {
+    const calib = calibRef.current;
+    let totalLengthFt = 0;
+    for (let i = 0; i < ip.length - 1; i++) {
+      const segPx = dist(ip[i], ip[i+1]);
+      totalLengthFt += calib ? segPx * calib.feetPerPx : segPx;
+    }
+    const heightFt = wallTotalHeightFeetRef.current;
+    const result = totalLengthFt * heightFt;
+    const col = nextColor();
+    const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+    const item = costItems.find(i=>i.id===linkedItemId);
+    const nm: Measurement = { id:uid(), type:"wall", points:[...ip], result, unit:"ft²", label:`${feetInches(totalLengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:totalLengthFt, wallHeight:heightFt };
+    const next = [...measurementsRef.current, nm];
+    setMeasurements(next); measurementsRef.current = next;
+    setInProgress([]); inProgressRef.current = [];
+    upsertMeasurementTask(nm);
+    scheduleRender();
+  }
+
+  // "Finish Wall" button handler (continuous mode only; the button is only shown then).
+  function finishWallButton() {
+    const ip = inProgressRef.current;
+    if (wallLineModeRef.current === "continuous" && ip.length >= 2) finishWall(ip);
+  }
+
+  // "Finish Area" / "Finish Volume" button handler: a third way to trigger the same finishAreaVolume() that
+  // double-click and proximity auto-close already use (3+ points required, as for both of those).
+  function finishAreaVolumeButton() {
+    const t = toolRef.current, ip = inProgressRef.current;
+    if ((t==="area"||t==="volume") && ip.length >= 3) finishAreaVolume(t, ip);
+  }
+
   function onDblClick(e: React.MouseEvent) {
     const t = toolRef.current;
     const ip = inProgressRef.current;
     if (t === "count") {
       finishCountBatch();
     }
-    if ((t==="area"||t==="volume") && ip.length >= 3) {
-      if (t==="volume") {
-        pendingVolumeRef.current = [...ip];
-        setShowDepthModal(true);
-      } else {
-        const calib = calibRef.current;
-        const areaPx = polyArea(ip);
-        const result = calib ? areaPx * calib.feetPerPx * calib.feetPerPx : areaPx;
-        const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
-        const nm: Measurement = { id:uid(), type:"area", points:[...ip], result, unit:"ft²", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
-        const next = [...measurementsRef.current, nm];
-        setMeasurements(next); measurementsRef.current = next;
-        upsertMeasurementTask(nm);
-      }
-      setInProgress([]); inProgressRef.current = [];
-      scheduleRender();
-    }
-    if (t==="wall" && wallLineModeRef.current==="continuous" && ip.length >= 2) {
-      const calib = calibRef.current;
-      let totalLengthFt = 0;
-      for (let i = 0; i < ip.length - 1; i++) {
-        const segPx = dist(ip[i], ip[i+1]);
-        totalLengthFt += calib ? segPx * calib.feetPerPx : segPx;
-      }
-      const heightFt = wallTotalHeightFeetRef.current;
-      const result = totalLengthFt * heightFt;
-      const col = nextColor();
-      const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
-      const item = costItems.find(i=>i.id===linkedItemId);
-      const nm: Measurement = { id:uid(), type:"wall", points:[...ip], result, unit:"ft²", label:`${feetInches(totalLengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:totalLengthFt, wallHeight:heightFt };
-      const next = [...measurementsRef.current, nm];
-      setMeasurements(next); measurementsRef.current = next;
-      setInProgress([]); inProgressRef.current = [];
-      upsertMeasurementTask(nm);
-      scheduleRender();
-    }
+    if ((t==="area"||t==="volume") && ip.length >= 3) finishAreaVolume(t, ip);
+    if (t==="wall" && wallLineModeRef.current==="continuous" && ip.length >= 2) finishWall(ip);
     if (t==="perimeter" && ip.length >= 2) finishPerimeter(ip);
   }
 
@@ -2333,6 +2374,23 @@ calibRef.current = null;
           <button onClick={finishPerimeterOpen} title="Finish this path as-is (open, not closed) — the next click starts a new one"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shadow-sm">
             <Check size={12}/>{!isTablet && " Finish Perimeter"}
+          </button>
+        )}
+
+        {/* Finish Wall: same pattern as Finish Count/Perimeter. Continuous mode only (segment mode finishes
+            itself on the second click). Shown while 2+ points are placed; hides once finished. */}
+        {tool==="wall" && wallLineMode==="continuous" && inProgress.length >= 2 && (
+          <button onClick={finishWallButton} title="Finish this wall run — the next click starts a new one"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shadow-sm">
+            <Check size={12}/>{!isTablet && " Finish Wall"}
+          </button>
+        )}
+
+        {/* Finish Area / Finish Volume: same pattern as the other Finish buttons; 3+ points in progress. */}
+        {(tool==="area" || tool==="volume") && inProgress.length >= 3 && (
+          <button onClick={finishAreaVolumeButton} title={tool==="volume" ? "Close this shape and enter the depth" : "Close this shape and finish the area"}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shadow-sm">
+            <Check size={12}/>{!isTablet && (tool==="volume" ? " Finish Volume" : " Finish Area")}
           </button>
         )}
 
