@@ -1053,9 +1053,12 @@ useEffect(() => {
           // measures.
           ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
           ctx.beginPath(); ctx.moveTo(offA.x,offA.y); ctx.lineTo(offB.x,offB.y); ctx.stroke();
-          // Same endpoint dots the true line used to have at dOff===0, now on the offset line's own
-          // endpoints instead — it is the only visible line for this measurement now, so it gets the dots.
-          [offA,offB].forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
+          // The offset line is now the only visible line for this measurement and is itself a simple 2-point
+          // line, so it gets the same markers as the zero-offset case: outward arrows at both ends, no squares.
+          // Nothing at all is drawn at the TRUE line's own points here (only the dashed extension stubs above
+          // start there).
+          drawArrowhead(ctx, offB, offA, col, selected ? 3.5 : 2.5); // outward past the offset line's start
+          drawArrowhead(ctx, offA, offB, col, selected ? 3.5 : 2.5); // outward past the offset line's end
           lx = (offA.x+offB.x)/2; ly = (offA.y+offB.y)/2-14;
         }
         drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, lx, ly, col);
@@ -1743,6 +1746,13 @@ calibRef.current =
     scheduleRender();
   }
 
+  // "Finish Perimeter" button: finish the in-progress path as-is, OPEN — the same thing double-click does,
+  // and deliberately never the auto-close-near-start snap. Needs 2+ points (a single point has no length).
+  function finishPerimeterOpen() {
+    const ip = inProgressRef.current;
+    if (ip.length >= 2) finishPerimeter(ip);
+  }
+
   function onDblClick(e: React.MouseEvent) {
     const t = toolRef.current;
     const ip = inProgressRef.current;
@@ -2314,6 +2324,15 @@ calibRef.current = null;
           <button onClick={finishCountBatch} title="Finish this count batch — the next click/tap starts a new one"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shadow-sm">
             <Check size={12}/>{!isTablet && " Finish Count"}
+          </button>
+        )}
+
+        {/* Finish Perimeter: same pattern/placement as Finish Count. Finishes the path OPEN (no close-snap).
+            Shown only while the perimeter tool is active with 2+ points placed; hides once finished. */}
+        {tool==="perimeter" && inProgress.length >= 2 && (
+          <button onClick={finishPerimeterOpen} title="Finish this path as-is (open, not closed) — the next click starts a new one"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shadow-sm">
+            <Check size={12}/>{!isTablet && " Finish Perimeter"}
           </button>
         )}
 
