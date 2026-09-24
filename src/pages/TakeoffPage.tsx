@@ -583,6 +583,11 @@ const calibration =
   // that happens to share the same link"). Cleared on double-click (onDblClick) to finish the batch, and on
   // a page change (see the effect below) so a batch never continues onto a different page.
   const activeCountIdRef = useRef<string | null>(null);
+  // Mirrors activeCountIdRef purely so the "Finish Count" button (JSX) can react to it — the ref alone is
+  // invisible to React's render cycle. Set alongside the ref at every one of its 3 write sites (batch start,
+  // double-click finish, and the new button's click-to-finish) rather than via a useEffect, since all writes
+  // already happen in code we control directly.
+  const [activeCountId, setActiveCountId] = useState<string | null>(null);
 
   // Depth modal for volume
   const [showDepthModal, setShowDepthModal] = useState(false);
@@ -666,7 +671,7 @@ useEffect(() => {
     calibrations[pageNum] || null;
 }, [pageNum, calibrations]);
 
-  useEffect(()=>{ activeCountIdRef.current = null; },[pageNum]);
+  useEffect(()=>{ activeCountIdRef.current = null; setActiveCountId(null); },[pageNum]);
   useEffect(()=>{ calibratingRef.current = calibrating; },[calibrating]);
   useEffect(()=>{ calibPtsRef.current = calibPts; },[calibPts]);
   useEffect(()=>{ inProgressRef.current = inProgress; },[inProgress]);
@@ -901,6 +906,20 @@ useEffect(() => {
     ctx.restore();
   }
 
+  // Small filled+stroked square centered on a single vertex — the architectural dimension-line "node" marker,
+  // drawn at every vertex of a line/perimeter/calibration measurement. Deliberately a distinct shape from the
+  // old dual-arc dot (still used by wall/offset-line) so these read as grab-handles: a future point-editing
+  // feature can hit-test each one individually since the vertex's own {x,y} (points[i]) is exactly its center.
+  function drawVertexSquare(ctx: CanvasRenderingContext2D, p: Point, color: string) {
+    const s = 9; // side length in canvas px — similar visual weight to the old radius-5/2 dot pair, but a square
+    ctx.save();
+    ctx.fillStyle = color; ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.rect(p.x - s/2, p.y - s/2, s, s);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
   // Schedule render when deps change
   useEffect(() => { scheduleRender(); }, [zoom, pan, pageMeasurements, selectedId, inProgress, hoverPt, calibration, calibrating, calibPts, pdfPageSize]);
 
@@ -1004,9 +1023,11 @@ useEffect(() => {
         if (dOff === 0) {
           ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5;
           ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-          // Arrowhead at the end point only, showing the direction the line was drawn (start -> end) — replaces
-          // the old dual-arc dots at both ends.
-          drawArrowhead(ctx, a, b, col, selected ? 3.5 : 2.5);
+          // A square grab-handle at each endpoint, plus outward-pointing arrowheads at both ends (each
+          // continuing the line's direction past that end) — the architectural dimension-line convention.
+          drawVertexSquare(ctx, a, col); drawVertexSquare(ctx, b, col);
+          drawArrowhead(ctx, b, a, col, selected ? 3.5 : 2.5); // outward past the start: direction b -> a
+          drawArrowhead(ctx, a, b, col, selected ? 3.5 : 2.5); // outward past the end: direction a -> b
         } else {
           const dx = m.points[1].x-m.points[0].x, dy = m.points[1].y-m.points[0].y;
           const len = Math.hypot(dx,dy) || 1;
@@ -1058,10 +1079,13 @@ useEffect(() => {
         pts.forEach((p,i) => { if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
         ctx.stroke();
         ctx.setLineDash([]);
-        // An arrowhead at every junction (not the first point, which has no incoming segment), each pointing
-        // from the previous point to that one — reads as a direction-of-travel trail along the whole path,
-        // same convention as the single end-arrowhead on the "line" tool above, just repeated per segment.
-        for (let i = 1; i < pts.length; i++) drawArrowhead(ctx, pts[i-1], pts[i], col, selected ? 3.5 : 2.5);
+        // A square grab-handle at every vertex (both ends and every interior corner), plus outward-pointing
+        // arrowheads at only the very first and very last point — same convention as the "line" tool above,
+        // extended to a multi-point path. Interior corners get a square only, no arrowhead (they have an
+        // incoming AND an outgoing segment, so there's no single "outward" direction for them).
+        pts.forEach(p => drawVertexSquare(ctx, p, col));
+        drawArrowhead(ctx, pts[1], pts[0], col, selected ? 3.5 : 2.5); // outward past the start: direction pts[1] -> pts[0]
+        drawArrowhead(ctx, pts[pts.length-2], pts[pts.length-1], col, selected ? 3.5 : 2.5); // outward past the end
         const midIdx = Math.floor(pts.length/2);
         const labelPt = pts.length % 2 === 0
           ? { x:(pts[midIdx-1].x+pts[midIdx].x)/2, y:(pts[midIdx-1].y+pts[midIdx].y)/2 }
@@ -1160,8 +1184,11 @@ useEffect(() => {
       ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
       ctx.restore();
       // Persisted scale line only — the transient in-progress rendering above (red circle + × glyph while
-      // actively placing the two calibration points) is untouched. Same single end-arrowhead convention as line/perimeter.
+      // actively placing the two calibration points) is untouched. Same square + outward-arrowhead convention
+      // as line/perimeter.
       ctx.save(); ctx.globalAlpha=0.4;
+      drawVertexSquare(ctx, a, "#ef4444"); drawVertexSquare(ctx, b, "#ef4444");
+      drawArrowhead(ctx, b, a, "#ef4444", 1.5);
       drawArrowhead(ctx, a, b, "#ef4444", 1.5);
       ctx.restore();
     }
@@ -1642,7 +1669,7 @@ calibRef.current =
         const nm: Measurement = { id:uid(), type:"count", points:[snap], result:1, unit:"ea", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
-        activeCountIdRef.current = nm.id;
+        activeCountIdRef.current = nm.id; setActiveCountId(nm.id);
         upsertMeasurementTask(nm);
       }
     }
@@ -1669,15 +1696,20 @@ calibRef.current =
     if (panningRef.current) { panningRef.current = false; }
   }
 
+  // Finish the current count batch: the next single click starts a brand-new count measurement instead of
+  // appending further. No minimum count required (unlike area/volume) — a count of 1 is meaningful, and this
+  // is also a harmless no-op if nothing was active. The measurement just finished isn't "locked" in any way;
+  // it stays a completely ordinary measurement (selectable, deletable, listed in Taken). Shared by the
+  // double-click gesture (mouse) and the "Finish Count" button (stylus/touch, no gesture timing involved).
+  function finishCountBatch() {
+    activeCountIdRef.current = null; setActiveCountId(null);
+  }
+
   function onDblClick(e: React.MouseEvent) {
     const t = toolRef.current;
     const ip = inProgressRef.current;
     if (t === "count") {
-      // Finish the current batch: the next single click starts a brand-new count measurement instead of
-      // appending further. No minimum count required (unlike area/volume) — a count of 1 is meaningful, and
-      // this is also a harmless no-op if nothing was active. The measurement just finished isn't "locked" in
-      // any way; it stays a completely ordinary measurement (selectable, deletable, listed in Taken).
-      activeCountIdRef.current = null;
+      finishCountBatch();
     }
     if ((t==="area"||t==="volume") && ip.length >= 3) {
       if (t==="volume") {
@@ -2252,6 +2284,16 @@ calibRef.current = null;
             title="Clear calibration and start over"
             className="flex items-center justify-center w-6 h-6 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-slate-400 hover:text-red-400 hover:border-red-500/30 transition">
             <X size={11}/>
+          </button>
+        )}
+
+        {/* Finish Count: stylus-friendly alternative to double-click/double-tap for ending a count batch. Only
+            shown while the count tool is active AND a batch is actually in progress; hides again the instant
+            the batch ends (by this button or by double-click), same finishCountBatch() either way. */}
+        {tool==="count" && activeCountId && (
+          <button onClick={finishCountBatch} title="Finish this count batch — the next click/tap starts a new one"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shadow-sm">
+            <Check size={12}/>{!isTablet && " Finish Count"}
           </button>
         )}
 
