@@ -14,14 +14,14 @@ import {
   ZoomIn, ZoomOut, Maximize2, Trash2, Hash, Square, Box,
   AlertCircle, RefreshCw, Send, MousePointer, Plus, Check,
   Crosshair, Package, Layers, BarChart2, ChevronRight as Arrow,
-  BookOpen, Wand2, Eye, EyeOff, Edit2, Flag, Minimize2
+  BookOpen, Wand2, Eye, EyeOff, Edit2, Flag, Minimize2, Waypoints
 } from "lucide-react";
 
 GlobalWorkerOptions.workerSrc = workerSrc;
 
 // --- Types --------------------------------------------------------------------
 type Point = { x: number; y: number };
-type ToolMode = "select" | "pan" | "line" | "area" | "count" | "volume" | "wall";
+type ToolMode = "select" | "pan" | "line" | "area" | "count" | "volume" | "wall" | "perimeter";
 
 interface Measurement {
   id: string;
@@ -126,6 +126,7 @@ const TOOL_CFG: Record<ToolMode, { label: string; shortcut: string; color: strin
   count:  { label: "Count",   shortcut: "C", color: "#fb923c", desc: "Click to place markers.",                icon: <Hash size={16}/> },
   volume: { label: "Volume",  shortcut: "V", color: "#34d399", desc: "Trace base. Double-click ? enter depth.", icon: <Box size={16}/> },
   wall:   { label: "Wall",    shortcut: "W", color: "#f472b6", desc: "Draw wall line, then enter height.",     icon: <Layers size={16}/> },
+  perimeter: { label: "Perimeter", shortcut: "—", color: "#22d3ee", desc: "Click to trace a path. Double-click to finish.", icon: <Waypoints size={16}/> },
 };
 
 const MEASURE_COLORS = ["#38bdf8","#a78bfa","#fb923c","#34d399","#f472b6","#facc15","#60a5fa","#f87171"];
@@ -1029,6 +1030,23 @@ useEffect(() => {
         drawLabel(ctx, `${fmt2(m.result)} ft²`, labelPt.x, labelPt.y-14, col);
         drawLabel(ctx, m.label, labelPt.x, labelPt.y+4, "#f472b6", true);
         if (m.linkedAssemblyName) drawLabel(ctx, `? ${m.linkedAssemblyName}`, labelPt.x, labelPt.y+22, "#a78bfa", true);
+      } else if (m.type === "perimeter" && m.points.length >= 2) {
+        // Same open-polyline drawing as wall just above (never closed), but dashed rather than solid — reads
+        // as a reference/measurement line rather than a real wall, since both can otherwise share the same
+        // per-instance rotating color and would only differ by their "ft" vs "ft²" label otherwise.
+        const pts = m.points.map(pdfToCanvas);
+        ctx.strokeStyle = col; ctx.lineWidth = selected ? 3.5 : 2.5; ctx.setLineDash([7,4]);
+        ctx.beginPath();
+        pts.forEach((p,i) => { if (i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+        ctx.stroke();
+        ctx.setLineDash([]);
+        pts.forEach(p => { ctx.fillStyle=col; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill(); ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(p.x,p.y,2,0,Math.PI*2); ctx.fill(); });
+        const midIdx = Math.floor(pts.length/2);
+        const labelPt = pts.length % 2 === 0
+          ? { x:(pts[midIdx-1].x+pts[midIdx].x)/2, y:(pts[midIdx-1].y+pts[midIdx].y)/2 }
+          : pts[midIdx];
+        drawLabel(ctx, m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`, labelPt.x, labelPt.y-14, col);
+        if (m.linkedAssemblyName) drawLabel(ctx, `? ${m.linkedAssemblyName}`, labelPt.x, labelPt.y+4, "#a78bfa", true);
       } else if ((m.type==="area"||m.type==="volume") && m.points.length>=3) {
         const pts = m.points.map(pdfToCanvas);
         ctx.strokeStyle=col; ctx.fillStyle=col+"28"; ctx.lineWidth=selected?2.5:1.5;
@@ -1232,7 +1250,9 @@ calibRef.current =
             .eq("session_id", sid).order("created_at", { ascending: true });
           if (mData && mData.length > 0) {
             const ms: Measurement[] = mData.map((r:any) => ({
-              id: r.id, type: r.type, points: r.points, result: Number(r.result), unit: r.unit,
+              id: r.id,
+              type: r.type,
+              points: r.points, result: Number(r.result), unit: r.unit,
               label: r.meta?.label || "", color: r.meta?.color || nextColor(),
               dimensionOffset: typeof r.meta?.dimension_offset === "number" ? r.meta.dimension_offset : undefined,
               hidden: r.meta?.hidden === true ? true : undefined,
@@ -1503,6 +1523,13 @@ calibRef.current =
       const hit = measurementsRef.current.find(m => {
         if (m.type==="line"&&m.points.length>=2) return distToSeg(p,m.points[0],m.points[1]) < 12/zoomRef.current;
         if (m.type==="count") return m.points.some(q=>dist(p,q)<10/zoomRef.current);
+        // No polyline type (wall/area/volume) has hit-testing yet; built fresh here for perimeter specifically
+        // (per the investigation, nothing else already has this to reuse) — distance to the NEAREST of all
+        // consecutive segments, reusing the same distToSeg() and tolerance the line/count tests above use.
+        if (m.type==="perimeter"&&m.points.length>=2) {
+          for (let i=0;i<m.points.length-1;i++) if (distToSeg(p,m.points[i],m.points[i+1]) < 12/zoomRef.current) return true;
+          return false;
+        }
         return false;
       }) || null;
       setSelectedId(hit?.id||null); selectedIdRef.current = hit?.id||null;
@@ -1558,6 +1585,15 @@ calibRef.current =
           setInProgress([]); inProgressRef.current = [];
           upsertMeasurementTask(nm);
         }
+      }
+    } else if (toolRef.current === "perimeter") {
+      // Same click-to-append pattern as wall's continuous mode (~1537-1542), minus the mode switch and the
+      // height step entirely — this tool only ever works one way, an open chain of points, no setup needed.
+      const ip = inProgressRef.current;
+      if (ip.length === 0) {
+        setInProgress([snap]); inProgressRef.current = [snap];
+      } else {
+        setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
       }
     } else if (toolRef.current === "area" || toolRef.current === "volume") {
       setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
@@ -1643,6 +1679,25 @@ calibRef.current =
       const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
       const item = costItems.find(i=>i.id===linkedItemId);
       const nm: Measurement = { id:uid(), type:"wall", points:[...ip], result, unit:"ft²", label:`${feetInches(totalLengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:totalLengthFt, wallHeight:heightFt };
+      const next = [...measurementsRef.current, nm];
+      setMeasurements(next); measurementsRef.current = next;
+      setInProgress([]); inProgressRef.current = [];
+      upsertMeasurementTask(nm);
+      scheduleRender();
+    }
+    // Same finish (double-click) convention as wall's continuous mode above, minus height entirely: a plain
+    // linear total in feet, chainable to any number of points, never closing into a shape.
+    if (t==="perimeter" && ip.length >= 2) {
+      const calib = calibRef.current;
+      let totalLengthFt = 0;
+      for (let i = 0; i < ip.length - 1; i++) {
+        const segPx = dist(ip[i], ip[i+1]);
+        totalLengthFt += calib ? segPx * calib.feetPerPx : segPx;
+      }
+      const col = nextColor();
+      const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+      const item = costItems.find(i=>i.id===linkedItemId);
+      const nm: Measurement = { id:uid(), type:"perimeter", points:[...ip], result:totalLengthFt, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
       const next = [...measurementsRef.current, nm];
       setMeasurements(next); measurementsRef.current = next;
       setInProgress([]); inProgressRef.current = [];
