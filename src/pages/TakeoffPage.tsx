@@ -48,7 +48,18 @@ interface Measurement {
   // label, dots — everything), but it still counts in sendToBOQ() and the Summary tab's stats, still shows
   // (dimmed) in the Taken list, and can still be selected/deleted normally. Absent/false = draws as always.
   hidden?: boolean;
+  // Batch mode: measurements finished while the same batch was active for their tool share one batchId (and
+  // one colour). Each is otherwise a completely ordinary, independent measurement. Persisted in meta.batch_id.
+  batchId?: string;
+  // Volume only: the depth (inches) this shape was computed with. Persisted in meta.depth_in.
+  depthIn?: number;
 }
+
+// The batch currently open for a tool (in memory only — a page reload ends any open batch, its members keep
+// their batchId and stay grouped). depthIn is the volume batch's depth, entered once at its first shape.
+interface ActiveBatch { id: string; color: string; depthIn?: number; }
+const BATCH_TOOLS: ToolMode[] = ["line", "perimeter", "wall", "area", "volume", "count"];
+const BATCH_LABEL: Partial<Record<ToolMode, string>> = { line: "Line", perimeter: "Perimeter", wall: "Wall", area: "Area", volume: "Volume", count: "Count" };
 
 interface PdfFile {
   name: string;
@@ -154,6 +165,11 @@ function feetInches(totalFeet: number): string {
 }
 function fmtLen(n: number, unit: string): string {
   return unit === "ft" ? feetInches(n) : `${fmt2(n)} ${unit}`;
+}
+// Combined total for a batch's members: count reads as a whole number, linear as feet-inches, the rest as number + unit.
+function fmtBatchTotal(unit: string, total: number): string {
+  if (unit === "ea") return `${Math.round(total)} ea`;
+  return unit === "ft" ? feetInches(total) : `${fmt2(total)} ${unit}`;
 }
 function fmtMoney(n: number) { return new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:0}).format(n); }
 function uid() { try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random().toString(16).slice(2)}`; } }
@@ -578,16 +594,38 @@ const calibration =
   const wallHeightConfirmedRef = useRef(false);
   const wallTotalHeightFeetRef = useRef(0);
   const wallLineModeRef = useRef<"segment" | "continuous">("segment");
-  // Which count measurement the count tool is currently appending to (explicit, not re-derived by matching
-  // linkedAssemblyId every click — that couldn't tell "still counting this batch" apart from "a new batch
-  // that happens to share the same link"). Cleared on double-click (onDblClick) to finish the batch, and on
-  // a page change (see the effect below) so a batch never continues onto a different page.
-  const activeCountIdRef = useRef<string | null>(null);
-  // Mirrors activeCountIdRef purely so the "Finish Count" button (JSX) can react to it — the ref alone is
-  // invisible to React's render cycle. Set alongside the ref at every one of its 3 write sites (batch start,
-  // double-click finish, and the new button's click-to-finish) rather than via a useEffect, since all writes
-  // already happen in code we control directly.
-  const [activeCountId, setActiveCountId] = useState<string | null>(null);
+  // Batch mode (every measuring tool, count included): shapes finished while a tool's batch is open all join
+  // that batch — same batchId, same colour (picked once, when the batch starts), and for volume the same depth.
+  // The batch stays open across page changes and tool switches until Finish is pressed for that tool. The ref
+  // is the source of truth for the imperative click code; the state mirrors it so the buttons/badge re-render.
+  const activeBatchesRef = useRef<Partial<Record<ToolMode, ActiveBatch>>>({});
+  const [activeBatches, setActiveBatches] = useState<Partial<Record<ToolMode, ActiveBatch>>>({});
+  // Set when Finish is pressed on a volume whose first shape still needs its depth: end the batch once the
+  // depth prompt has been confirmed (and the shape created), not before.
+  const endBatchAfterDepthRef = useRef(false);
+  function writeBatches(next: Partial<Record<ToolMode, ActiveBatch>>) { activeBatchesRef.current = next; setActiveBatches(next); }
+  // The open batch for a tool, starting a new one (new id, one new colour) if none is open.
+  function joinBatch(tool: ToolMode): ActiveBatch {
+    const cur = activeBatchesRef.current[tool];
+    if (cur) return cur;
+    const b: ActiveBatch = { id: uid(), color: nextColor() };
+    writeBatches({ ...activeBatchesRef.current, [tool]: b });
+    return b;
+  }
+  function endBatch(tool: ToolMode) {
+    if (!activeBatchesRef.current[tool]) return;
+    const next = { ...activeBatchesRef.current }; delete next[tool]; writeBatches(next);
+  }
+  function setBatchDepth(tool: ToolMode, depthIn: number) {
+    const cur = activeBatchesRef.current[tool]; if (!cur) return;
+    writeBatches({ ...activeBatchesRef.current, [tool]: { ...cur, depthIn } });
+  }
+  // After anything is deleted: an open batch none of whose members still exist is over.
+  function pruneBatches(list: Measurement[]) {
+    let changed = false; const next = { ...activeBatchesRef.current };
+    for (const t of BATCH_TOOLS) { const b = next[t]; if (b && !list.some(m => m.batchId === b.id)) { delete next[t]; changed = true; } }
+    if (changed) writeBatches(next);
+  }
   // Auto-close, shared by perimeter/area/volume: a click within SHAPE_CLOSE_TOL_PX screen pixels (divided by
   // zoom -> PDF units, same convention as the file's other 12/zoom and 24/zoom tolerances) of the shape's first
   // point (once 3+ points exist) closes it. 24 matches the stylus-friendly grab tolerance already used for the
@@ -679,7 +717,6 @@ useEffect(() => {
     calibrations[pageNum] || null;
 }, [pageNum, calibrations]);
 
-  useEffect(()=>{ activeCountIdRef.current = null; setActiveCountId(null); },[pageNum]);
   useEffect(()=>{ calibratingRef.current = calibrating; },[calibrating]);
   useEffect(()=>{ calibPtsRef.current = calibPts; },[calibPts]);
   useEffect(()=>{ inProgressRef.current = inProgress; },[inProgress]);
@@ -1333,6 +1370,8 @@ calibRef.current =
               label: r.meta?.label || "", color: r.meta?.color || nextColor(),
               dimensionOffset: typeof r.meta?.dimension_offset === "number" ? r.meta.dimension_offset : undefined,
               hidden: r.meta?.hidden === true ? true : undefined,
+              batchId: typeof r.meta?.batch_id === "string" ? r.meta.batch_id : undefined,
+              depthIn: typeof r.meta?.depth_in === "number" ? r.meta.depth_in : undefined,
               linkedAssemblyId: r.linked_assembly_id || r.meta?.linked_assembly_id,
               linkedAssemblyName: r.meta?.linked_assembly_name,
               linkedItemId: r.linked_item_id || r.meta?.linked_item_id,
@@ -1391,7 +1430,9 @@ calibRef.current =
           linked_item_id: m.linkedItemId || null, linked_assembly_id: m.linkedAssemblyId || null,
           meta: { label:m.label, color:m.color, timestamp:m.timestamp, linked_assembly_name:m.linkedAssemblyName, linked_item_name:m.linkedItemName,
             ...(m.dimensionOffset ? { dimension_offset: m.dimensionOffset } : {}),
-            ...(m.hidden ? { hidden: true } : {}) },
+            ...(m.hidden ? { hidden: true } : {}),
+            ...(m.batchId ? { batch_id: m.batchId } : {}),
+            ...(m.depthIn ? { depth_in: m.depthIn } : {}) },
         })));
       }
       await supabase.from("takeoff_sessions").update({ last_page_number: pageToSave }).eq("id", sessionIdRef.current);
@@ -1627,10 +1668,10 @@ calibRef.current =
         // Complete line
         const calib = calibRef.current;
         const result = calib ? dist(ip[0], snap) * calib.feetPerPx : dist(ip[0], snap);
-        const col = nextColor();
+        const batch = joinBatch("line"); const col = batch.color;
         const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
         const item = costItems.find(i=>i.id===linkedItemId);
-        const nm: Measurement = { id:uid(), type:"line", points:[ip[0],snap], result, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
+        const nm: Measurement = { id:uid(), batchId:batch.id, type:"line", points:[ip[0],snap], result, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
         setInProgress([]); inProgressRef.current = [];
@@ -1653,10 +1694,10 @@ calibRef.current =
           const lengthFt = calib ? dist(ip[0], snap) * calib.feetPerPx : dist(ip[0], snap);
           const heightFt = wallTotalHeightFeetRef.current;
           const result = lengthFt * heightFt;
-          const col = nextColor();
+          const batch = joinBatch("wall"); const col = batch.color;
           const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
           const item = costItems.find(i=>i.id===linkedItemId);
-          const nm: Measurement = { id:uid(), type:"wall", points:[ip[0],snap], result, unit:"ft²", label:`${feetInches(lengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:lengthFt, wallHeight:heightFt };
+          const nm: Measurement = { id:uid(), batchId:batch.id, type:"wall", points:[ip[0],snap], result, unit:"ft²", label:`${feetInches(lengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:lengthFt, wallHeight:heightFt };
           const next = [...measurementsRef.current, nm];
           setMeasurements(next); measurementsRef.current = next;
           setInProgress([]); inProgressRef.current = [];
@@ -1694,20 +1735,21 @@ calibRef.current =
       }
     } else if (toolRef.current === "count") {
       const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
-      // Append to the batch this ref already points at, not to whatever count measurement happens to share
-      // the currently-armed link — that old lookup matched across the WHOLE session (every page), so an
-      // unlinked count on page 2 silently merged into an unlinked count left over from page 1. The ref is
-      // only ever set to a measurement just created on THIS page (below), and is cleared on a page change or
-      // a double-click, so it can never point at a stale or cross-page batch.
-      const existing = activeCountIdRef.current ? measurementsRef.current.find(m=>m.id===activeCountIdRef.current&&m.type==="count") : undefined;
+      // Count batches span pages: the batch's members are ordinary count measurements, one per page it has
+      // points on (a measurement lives on exactly one page). Append to this page's member of the open batch,
+      // or start this page's member — same batchId, same colour — if this is the batch's first point here.
+      const batch = joinBatch("count");
+      const existing = measurementsRef.current.find(m=>m.type==="count"&&m.batchId===batch.id&&(m.pageNumber??1)===pageNum);
       if (existing) {
-        const next = measurementsRef.current.map(m=>m.id===existing.id?{...m,points:[...m.points,snap],result:m.points.length+1}:m);
+        const updated = {...existing,points:[...existing.points,snap],result:existing.points.length+1};
+        const next = measurementsRef.current.map(m=>m.id===existing.id?updated:m);
         setMeasurements(next); measurementsRef.current = next;
+        // Keep the linked BOQ task's quantity tracking the count: add just this click's delta.
+        upsertMeasurementTask(updated, existing.result);
       } else {
-        const nm: Measurement = { id:uid(), type:"count", points:[snap], result:1, unit:"ea", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
+        const nm: Measurement = { id:uid(), batchId:batch.id, type:"count", points:[snap], result:1, unit:"ea", label:"", color:batch.color, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
-        activeCountIdRef.current = nm.id; setActiveCountId(nm.id);
         upsertMeasurementTask(nm);
       }
     }
@@ -1734,13 +1776,28 @@ calibRef.current =
     if (panningRef.current) { panningRef.current = false; }
   }
 
-  // Finish the current count batch: the next single click starts a brand-new count measurement instead of
-  // appending further. No minimum count required (unlike area/volume) — a count of 1 is meaningful, and this
-  // is also a harmless no-op if nothing was active. The measurement just finished isn't "locked" in any way;
-  // it stays a completely ordinary measurement (selectable, deletable, listed in Taken). Shared by the
-  // double-click gesture (mouse) and the "Finish Count" button (stylus/touch, no gesture timing involved).
+  // Double-click on the count tool ends its batch (same as the Finish Count button): the next click starts a
+  // brand-new batch — new id, new colour.
   function finishCountBatch() {
-    activeCountIdRef.current = null; setActiveCountId(null);
+    endBatch("count");
+  }
+
+  // Ends a tool's open batch (the header "Finish <Tool>" buttons and the on-canvas badge). If a shape is still
+  // being drawn with that tool it is finished first (so its points aren't lost) and joins the batch before
+  // the batch closes; an incomplete stub (e.g. a lone first click) is discarded. A volume whose first shape
+  // still needs its depth closes the batch once the depth prompt is confirmed.
+  function finishBatch(tool: ToolMode) {
+    const ip = inProgressRef.current;
+    if (toolRef.current === tool && ip.length > 0) {
+      if (tool==="perimeter" && ip.length >= 2) finishPerimeter(ip);
+      else if (tool==="wall" && wallLineModeRef.current==="continuous" && ip.length >= 2) finishWall(ip);
+      else if ((tool==="area"||tool==="volume") && ip.length >= 3) {
+        if (tool==="volume" && activeBatchesRef.current.volume?.depthIn === undefined) { endBatchAfterDepthRef.current = true; finishAreaVolume(tool, ip); return; }
+        finishAreaVolume(tool, ip);
+      } else { setInProgress([]); inProgressRef.current = []; }
+    }
+    endBatch(tool);
+    scheduleRender();
   }
 
   // Finish a perimeter from a full point list: a plain linear total in feet (same segment-sum convention as
@@ -1754,10 +1811,10 @@ calibRef.current =
       const segPx = dist(pts[i], pts[i+1]);
       totalLengthFt += calib ? segPx * calib.feetPerPx : segPx;
     }
-    const col = nextColor();
+    const batch = joinBatch("perimeter"); const col = batch.color;
     const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
     const item = costItems.find(i=>i.id===linkedItemId);
-    const nm: Measurement = { id:uid(), type:"perimeter", points:[...pts], result:totalLengthFt, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
+    const nm: Measurement = { id:uid(), batchId:batch.id, type:"perimeter", points:[...pts], result:totalLengthFt, unit:"ft", label:"", color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
     const next = [...measurementsRef.current, nm];
     setMeasurements(next); measurementsRef.current = next;
     setInProgress([]); inProgressRef.current = [];
@@ -1777,14 +1834,21 @@ calibRef.current =
   // saved here; volume opens the depth prompt (confirmDepth() completes it).
   function finishAreaVolume(t: ToolMode, ip: Point[]) {
     if (t==="volume") {
-      pendingVolumeRef.current = [...ip];
-      setShowDepthModal(true);
+      const knownDepth = activeBatchesRef.current.volume?.depthIn;
+      if (knownDepth !== undefined) {
+        // Depth was entered at this batch's first shape: reuse it, no prompt.
+        createVolume(ip, knownDepth);
+      } else {
+        pendingVolumeRef.current = [...ip];
+        setShowDepthModal(true);
+      }
     } else {
       const calib = calibRef.current;
       const areaPx = polyArea(ip);
       const result = calib ? areaPx * calib.feetPerPx * calib.feetPerPx : areaPx;
       const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
-      const nm: Measurement = { id:uid(), type:"area", points:[...ip], result, unit:"ft²", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
+      const batch = joinBatch("area");
+      const nm: Measurement = { id:uid(), batchId:batch.id, type:"area", points:[...ip], result, unit:"ft²", label:"", color:batch.color, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
       const next = [...measurementsRef.current, nm];
       setMeasurements(next); measurementsRef.current = next;
       upsertMeasurementTask(nm);
@@ -1804,10 +1868,10 @@ calibRef.current =
     }
     const heightFt = wallTotalHeightFeetRef.current;
     const result = totalLengthFt * heightFt;
-    const col = nextColor();
+    const batch = joinBatch("wall"); const col = batch.color;
     const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
     const item = costItems.find(i=>i.id===linkedItemId);
-    const nm: Measurement = { id:uid(), type:"wall", points:[...ip], result, unit:"ft²", label:`${feetInches(totalLengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:totalLengthFt, wallHeight:heightFt };
+    const nm: Measurement = { id:uid(), batchId:batch.id, type:"wall", points:[...ip], result, unit:"ft²", label:`${feetInches(totalLengthFt)} long x ${feetInches(heightFt)} high`, color:col, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum, wallLength:totalLengthFt, wallHeight:heightFt };
     const next = [...measurementsRef.current, nm];
     setMeasurements(next); measurementsRef.current = next;
     setInProgress([]); inProgressRef.current = [];
@@ -1823,6 +1887,23 @@ calibRef.current =
 
   // "Finish Area" / "Finish Volume" button handler: a third way to trigger the same finishAreaVolume() that
   // double-click and proximity auto-close already use (3+ points required, as for both of those).
+  // Batches with 2+ members that have at least one member on this page, for the grouped Taken rows. Members are
+  // gathered from every page (the total is the whole batch); single-member batches stay ordinary rows.
+  function takenBatchGroups(): { id: string; members: Measurement[] }[] {
+    const out: { id: string; members: Measurement[] }[] = []; const seen = new Set<string>();
+    for (const pm of pageMeasurements) {
+      if (!pm.batchId || seen.has(pm.batchId)) continue;
+      const members = measurements.filter(x => x.batchId === pm.batchId);
+      if (members.length >= 2) { seen.add(pm.batchId); out.push({ id: pm.batchId, members }); }
+    }
+    return out;
+  }
+  function takenGroupedIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const g of takenBatchGroups()) for (const x of g.members) ids.add(x.id);
+    return ids;
+  }
+
   function finishAreaVolumeButton() {
     const t = toolRef.current, ip = inProgressRef.current;
     if ((t==="area"||t==="volume") && ip.length >= 3) finishAreaVolume(t, ip);
@@ -1839,21 +1920,29 @@ calibRef.current =
     if (t==="perimeter" && ip.length >= 2) finishPerimeter(ip);
   }
 
-  function confirmDepth() {
-    const d = parseFloat(depthInches) || 0;
-    if (d <= 0 || pendingVolumeRef.current.length < 3) return;
-    const ip = pendingVolumeRef.current;
+  // Create one volume measurement from a polygon and a depth in inches, joining the open volume batch (and
+  // recording the depth against it if it is the batch's first shape).
+  function createVolume(ip: Point[], d: number) {
     const calib = calibRef.current;
     const areaPx = polyArea(ip);
     const areaFt2 = calib ? areaPx * calib.feetPerPx * calib.feetPerPx : areaPx;
     const depthFt = d / 12;
     const result = areaFt2 * depthFt;
     const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
-    const nm: Measurement = { id:uid(), type:"volume", points:[...ip], result, unit:"ft³", label:`${d}" deep`, color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
+    const batch = joinBatch("volume");
+    if (batch.depthIn === undefined) setBatchDepth("volume", d);
+    const nm: Measurement = { id:uid(), batchId:batch.id, type:"volume", points:[...ip], result, unit:"ft³", label:`${d}" deep`, depthIn:d, color:batch.color, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
     const next = [...measurementsRef.current, nm];
     setMeasurements(next); measurementsRef.current = next;
     upsertMeasurementTask(nm);
+  }
+
+  function confirmDepth() {
+    const d = parseFloat(depthInches) || 0;
+    if (d <= 0 || pendingVolumeRef.current.length < 3) return;
+    createVolume(pendingVolumeRef.current, d);
     setShowDepthModal(false); setDepthInches("4"); pendingVolumeRef.current = [];
+    if (endBatchAfterDepthRef.current) { endBatchAfterDepthRef.current = false; endBatch("volume"); }
     scheduleRender();
   }
 
@@ -2026,7 +2115,7 @@ calibRef.current =
       if (e.key === "Escape") { setInProgress([]); inProgressRef.current = []; setCalibrating(false); calibratingRef.current = false; setCalibPts([]); calibPtsRef.current = []; scheduleRender(); }
       if ((e.key === "Delete" || e.key === "Backspace") && selectedIdRef.current) {
         const next = measurementsRef.current.filter(m=>m.id!==selectedIdRef.current);
-        setMeasurements(next); measurementsRef.current = next; setSelectedId(null); selectedIdRef.current = null; scheduleRender();
+        setMeasurements(next); measurementsRef.current = next; pruneBatches(next); setSelectedId(null); selectedIdRef.current = null; scheduleRender();
       }
     }
     function onKeyUp(e: KeyboardEvent) { if (e.code === "Space") spaceRef.current = false; }
@@ -2059,7 +2148,17 @@ calibRef.current =
   }
 
   // --- Milestone-linked task upsert (fires on each completed measurement) ------
-  async function upsertMeasurementTask(nm: Measurement) {
+  // Calls are chained one after another: each is a read-then-write of the same project_tasks quantity, so fast
+  // successive calls (e.g. rapid count clicks) must not interleave or they would overwrite each other.
+  const upsertQueueRef = useRef<Promise<void>>(Promise.resolve());
+  function upsertMeasurementTask(nm: Measurement, previousResult?: number): Promise<void> {
+    const run = upsertQueueRef.current.then(() => doUpsertMeasurementTask(nm, previousResult));
+    upsertQueueRef.current = run.catch(() => {});
+    return run;
+  }
+  // previousResult (count appends only): the measurement's result before this change, so only the difference
+  // is added to the task's quantity. Omitted on creation -> the full result is added, exactly as before.
+  async function doUpsertMeasurementTask(nm: Measurement, previousResult?: number) {
     const pid = projectId;
     const msId = activeMilestoneIdRef.current;
     if (!msId || !pid) return;
@@ -2068,7 +2167,10 @@ calibRef.current =
       // Apply coverage conversion for rate-library items that have a factor
       const item = nm.linkedItemId ? costItems.find(i => i.id === nm.linkedItemId) : null;
       const cf = item?.coverage_factor;
-      const convertedQty = (cf && cf > 0) ? Math.ceil(nm.result / cf) : nm.result;
+      const conv = (r: number) => (cf && cf > 0) ? Math.ceil(r / cf) : r;
+      const fullQty = conv(nm.result);
+      const convertedQty = previousResult !== undefined ? fullQty - conv(previousResult) : fullQty;
+      if (previousResult !== undefined && convertedQty === 0) return;
       const sellUnit = (cf && cf > 0 && item?.unit) ? item.unit : nm.unit;
 
       const q = supabase.from("project_tasks")
@@ -2094,7 +2196,7 @@ calibRef.current =
           linked_item_id: nm.linkedItemId || null,
           linked_assembly_name: nm.linkedAssemblyName || null,
           linked_item_name: nm.linkedItemName || null,
-          quantity: convertedQty,
+          quantity: fullQty,
           unit: sellUnit,
           trade_type: "General Labour",
           rate_per_unit: 0,
@@ -2358,39 +2460,24 @@ calibRef.current = null;
           </button>
         )}
 
-        {/* Finish Count: stylus-friendly alternative to double-click/double-tap for ending a count batch. Only
-            shown while the count tool is active AND a batch is actually in progress; hides again the instant
-            the batch ends (by this button or by double-click), same finishCountBatch() either way. */}
-        {tool==="count" && activeCountId && (
-          <button onClick={finishCountBatch} title="Finish this count batch — the next click/tap starts a new one"
+        {/* Finish <Tool>: ends that tool's open BATCH (all shapes drawn since the last Finish are one group).
+            Shown whenever the current tool has an open batch — including between shapes, when nothing is in
+            progress. A shape still being drawn is finished first (see finishBatch). */}
+        {BATCH_TOOLS.includes(tool) && activeBatches[tool] && (
+          <button onClick={()=>finishBatch(tool)} title="End this batch — the next shape starts a new group (new colour)"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shadow-sm">
-            <Check size={12}/>{!isTablet && " Finish Count"}
+            <Check size={12}/>{!isTablet && ` Finish ${BATCH_LABEL[tool]}`}
           </button>
         )}
 
-        {/* Finish Perimeter: same pattern/placement as Finish Count. Finishes the path OPEN (no close-snap).
-            Shown only while the perimeter tool is active with 2+ points placed; hides once finished. */}
-        {tool==="perimeter" && inProgress.length >= 2 && (
-          <button onClick={finishPerimeterOpen} title="Finish this path as-is (open, not closed) — the next click starts a new one"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shadow-sm">
-            <Check size={12}/>{!isTablet && " Finish Perimeter"}
-          </button>
-        )}
-
-        {/* Finish Wall: same pattern as Finish Count/Perimeter. Continuous mode only (segment mode finishes
-            itself on the second click). Shown while 2+ points are placed; hides once finished. */}
-        {tool==="wall" && wallLineMode==="continuous" && inProgress.length >= 2 && (
-          <button onClick={finishWallButton} title="Finish this wall run — the next click starts a new one"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shadow-sm">
-            <Check size={12}/>{!isTablet && " Finish Wall"}
-          </button>
-        )}
-
-        {/* Finish Area / Finish Volume: same pattern as the other Finish buttons; 3+ points in progress. */}
-        {(tool==="area" || tool==="volume") && inProgress.length >= 3 && (
-          <button onClick={finishAreaVolumeButton} title={tool==="volume" ? "Close this shape and enter the depth" : "Close this shape and finish the area"}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition shadow-sm">
-            <Check size={12}/>{!isTablet && (tool==="volume" ? " Finish Volume" : " Finish Area")}
+        {/* Finish Shape: complete the path/polygon currently being drawn WITHOUT ending the batch — the
+            stylus-friendly alternative to double-click. Perimeter/continuous wall: 2+ points (finishes open,
+            never close-snapped); area/volume: 3+ points (volume prompts for depth at the batch's first shape). */}
+        {((tool==="perimeter" && inProgress.length >= 2) || (tool==="wall" && wallLineMode==="continuous" && inProgress.length >= 2) || ((tool==="area" || tool==="volume") && inProgress.length >= 3)) && (
+          <button onClick={tool==="perimeter" ? finishPerimeterOpen : tool==="wall" ? finishWallButton : finishAreaVolumeButton}
+            title="Finish the shape being drawn and add it to the batch — the next click starts another shape"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold transition shadow-sm">
+            <Check size={12}/>{!isTablet && " Finish Shape"}
           </button>
         )}
 
@@ -2519,6 +2606,33 @@ calibRef.current = null;
           onContextMenu={e=>e.preventDefault()}>
 
           <canvas ref={canvasRef} className="absolute inset-0"/>
+
+          {/* Open-batch reminder: shown whenever ANY tool has an open batch, on every PDF page (it reads the whole
+              measurement list, not the current page). Its Finish button also works in Focus mode, where the top
+              bar is hidden. Stops mouse/touch events so tapping it never draws or pans. */}
+          {BATCH_TOOLS.some(t => activeBatches[t]) && (
+            <div className="absolute top-16 left-3 z-20 flex flex-col gap-1.5 max-w-[92%]"
+              onMouseDown={e=>e.stopPropagation()} onMouseUp={e=>e.stopPropagation()} onDoubleClick={e=>e.stopPropagation()}
+              onTouchStart={e=>e.stopPropagation()} onTouchMove={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()}>
+              {BATCH_TOOLS.filter(t => activeBatches[t]).map(t => {
+                const b = activeBatches[t]!;
+                const members = measurements.filter(m => m.batchId === b.id);
+                const total = members.reduce((sum, m) => sum + m.result, 0);
+                const unit = members[0]?.unit ?? "";
+                return (
+                  <div key={t} className="flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117]/95 backdrop-blur px-3 py-1.5 shadow-lg">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:b.color}}/>
+                    <span className="text-[11px] text-slate-700 dark:text-slate-300">
+                      {t==="count"
+                        ? `Counting: ${Math.round(total)} — tap Finish when done`
+                        : `${BATCH_LABEL[t]} batch: ${members.length} shape${members.length===1?"":"s"}, ${fmtBatchTotal(unit, total)} so far — tap Finish when done`}
+                    </span>
+                    <button onClick={()=>finishBatch(t)} className="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold flex-shrink-0">Finish</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Focus mode: the top bar is hidden, so its three working buttons live in a slim strip in the canvas top-left corner,
               away from the calibration banner (top centre), the error toast (top right) and the Exit button (bottom right).
@@ -2810,7 +2924,38 @@ calibRef.current = null;
                   <div className="text-[11px] text-slate-400 dark:text-slate-700 text-center py-10">No measurements yet.<br/>Select a template and draw on the plan.</div>
                 ):(
                   <>
-                    {pageMeasurements.map(m=>(
+                    {takenBatchGroups().map(g=>{
+                      const first = g.members[0];
+                      const total = g.members.reduce((sum,x)=>sum+x.result,0);
+                      const pages = Array.from(new Set(g.members.map(x=>x.pageNumber??1))).sort((a,b)=>a-b);
+                      const allHidden = g.members.every(x=>x.hidden);
+                      const onThisPage = g.members.filter(x=>(x.pageNumber??1)===pageNum);
+                      const selectedHere = onThisPage.some(x=>x.id===selectedId);
+                      const ids = new Set(g.members.map(x=>x.id));
+                      return (
+                        <div key={"batch-"+g.id} onClick={()=>{const id=selectedHere?null:onThisPage[0].id;setSelectedId(id);selectedIdRef.current=id;scheduleRender();}}
+                          className={`rounded-lg border px-3 py-2.5 cursor-pointer transition-all flex items-center gap-2.5 ${allHidden?"opacity-40":""} ${selectedHere?"border-sky-500/25 bg-sky-500/[0.07]":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04]"}`}>
+                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:first.color}}/>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{fmtBatchTotal(first.unit, total)}</div>
+                            {first.linkedAssemblyName&&<div className="text-[9px] text-purple-400 truncate">? {first.linkedAssemblyName}</div>}
+                            {first.linkedItemName&&!first.linkedAssemblyName&&<div className="text-[9px] text-blue-400 truncate">{first.linkedItemName}</div>}
+                            <div className="text-[9px] text-slate-400 dark:text-slate-700 capitalize">{first.type} batch · {first.type==="count"?`${Math.round(total)} points`:`${g.members.length} shapes`}{pages.length>1?` · pages ${pages.join(", ")}`:""}{allHidden?" · hidden":""}</div>
+                          </div>
+                          <button onClick={e=>{e.stopPropagation();const anyVisible=g.members.some(x=>!x.hidden);const next=measurementsRef.current.map(x=>ids.has(x.id)?{...x,hidden:anyVisible}:x);setMeasurements(next);measurementsRef.current=next;scheduleRender();}}
+                            title={allHidden?"Show this batch":"Hide this batch"}
+                            className={`p-1 rounded transition flex-shrink-0 ${allHidden?"text-slate-400 dark:text-slate-600 hover:text-emerald-400":"text-slate-400 dark:text-slate-700 hover:text-amber-400"}`}>
+                            {allHidden?<Eye size={11}/>:<EyeOff size={11}/>}
+                          </button>
+                          <button onClick={e=>{e.stopPropagation();const next=measurementsRef.current.filter(x=>!ids.has(x.id));setMeasurements(next);measurementsRef.current=next;pruneBatches(next);if(selectedId&&ids.has(selectedId)){setSelectedId(null);selectedIdRef.current=null;}scheduleRender();}}
+                            title="Delete this whole batch"
+                            className="p-1 rounded hover:bg-red-500/15 text-slate-400 dark:text-slate-700 hover:text-red-400 transition flex-shrink-0">
+                            <X size={11}/>
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {pageMeasurements.filter(m=>!takenGroupedIds().has(m.id)).map(m=>(
                       <div key={m.id} onClick={()=>{setSelectedId(m.id===selectedId?null:m.id);selectedIdRef.current=m.id===selectedId?null:m.id;scheduleRender();}}
                         className={`rounded-lg border px-3 py-2.5 cursor-pointer transition-all flex items-center gap-2.5 ${m.hidden?"opacity-40":""} ${m.id===selectedId?"border-sky-500/25 bg-sky-500/[0.07]":"border-slate-100 dark:border-white/[0.05] bg-slate-50 dark:bg-white/[0.02] hover:bg-slate-50 dark:bg-white/[0.04]"}`}>
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor:m.color}}/>
@@ -2825,7 +2970,7 @@ calibRef.current = null;
                           className={`p-1 rounded transition flex-shrink-0 ${m.hidden?"text-slate-400 dark:text-slate-600 hover:text-emerald-400":"text-slate-400 dark:text-slate-700 hover:text-amber-400"}`}>
                           {m.hidden?<Eye size={11}/>:<EyeOff size={11}/>}
                         </button>
-                        <button onClick={e=>{e.stopPropagation();const next=measurementsRef.current.filter(x=>x.id!==m.id);setMeasurements(next);measurementsRef.current=next;if(selectedId===m.id){setSelectedId(null);selectedIdRef.current=null;}scheduleRender();}}
+                        <button onClick={e=>{e.stopPropagation();const next=measurementsRef.current.filter(x=>x.id!==m.id);setMeasurements(next);measurementsRef.current=next;pruneBatches(next);if(selectedId===m.id){setSelectedId(null);selectedIdRef.current=null;}scheduleRender();}}
                           className="p-1 rounded hover:bg-red-500/15 text-slate-400 dark:text-slate-700 hover:text-red-400 transition flex-shrink-0">
                           <X size={11}/>
                         </button>
@@ -2839,7 +2984,7 @@ calibRef.current = null;
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition mt-2">
                       {pageMeasurements.some(x=>!x.hidden)?<><EyeOff size={11}/> Hide All</>:<><Eye size={11}/> Show All</>}
                     </button>
-                    <button onClick={()=>{setMeasurements([]);measurementsRef.current=[];setSelectedId(null);selectedIdRef.current=null;scheduleRender();}}
+                    <button onClick={()=>{setMeasurements([]);measurementsRef.current=[];writeBatches({});setSelectedId(null);selectedIdRef.current=null;scheduleRender();}}
                       className="w-full py-2 rounded-lg border border-red-500/15 text-[10px] text-red-500/60 hover:text-red-400 hover:border-red-500/25 transition mt-2">
                       Clear All
                     </button>
@@ -3027,7 +3172,7 @@ calibRef.current = null;
                 placeholder="4" onKeyDown={e=>{if(e.key==="Enter")confirmDepth();}}/>
             </div>
             <div className="flex gap-2">
-              <button onClick={()=>{setShowDepthModal(false);pendingVolumeRef.current=[];setInProgress([]);inProgressRef.current=[];}}
+              <button onClick={()=>{setShowDepthModal(false);pendingVolumeRef.current=[];setInProgress([]);inProgressRef.current=[];endBatchAfterDepthRef.current=false;}}
                 className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-white/[0.07] text-xs text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">Cancel</button>
               <button onClick={confirmDepth}
                 className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">Confirm</button>
