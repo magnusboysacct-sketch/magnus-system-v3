@@ -577,6 +577,11 @@ const calibration =
   const wallHeightConfirmedRef = useRef(false);
   const wallTotalHeightFeetRef = useRef(0);
   const wallLineModeRef = useRef<"segment" | "continuous">("segment");
+  // Which count measurement the count tool is currently appending to (explicit, not re-derived by matching
+  // linkedAssemblyId every click — that couldn't tell "still counting this batch" apart from "a new batch
+  // that happens to share the same link"). Cleared on double-click (onDblClick) to finish the batch, and on
+  // a page change (see the effect below) so a batch never continues onto a different page.
+  const activeCountIdRef = useRef<string | null>(null);
 
   // Depth modal for volume
   const [showDepthModal, setShowDepthModal] = useState(false);
@@ -660,6 +665,7 @@ useEffect(() => {
     calibrations[pageNum] || null;
 }, [pageNum, calibrations]);
 
+  useEffect(()=>{ activeCountIdRef.current = null; },[pageNum]);
   useEffect(()=>{ calibratingRef.current = calibrating; },[calibrating]);
   useEffect(()=>{ calibPtsRef.current = calibPts; },[calibPts]);
   useEffect(()=>{ inProgressRef.current = inProgress; },[inProgress]);
@@ -1557,7 +1563,12 @@ calibRef.current =
       setInProgress(prev => { const n=[...prev,snap]; inProgressRef.current=n; return n; });
     } else if (toolRef.current === "count") {
       const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
-      const existing = measurementsRef.current.find(m=>m.type==="count"&&m.linkedAssemblyId===linkedAssemblyId&&!m.id.includes("solo"));
+      // Append to the batch this ref already points at, not to whatever count measurement happens to share
+      // the currently-armed link — that old lookup matched across the WHOLE session (every page), so an
+      // unlinked count on page 2 silently merged into an unlinked count left over from page 1. The ref is
+      // only ever set to a measurement just created on THIS page (below), and is cleared on a page change or
+      // a double-click, so it can never point at a stale or cross-page batch.
+      const existing = activeCountIdRef.current ? measurementsRef.current.find(m=>m.id===activeCountIdRef.current&&m.type==="count") : undefined;
       if (existing) {
         const next = measurementsRef.current.map(m=>m.id===existing.id?{...m,points:[...m.points,snap],result:m.points.length+1}:m);
         setMeasurements(next); measurementsRef.current = next;
@@ -1565,6 +1576,7 @@ calibRef.current =
         const nm: Measurement = { id:uid(), type:"count", points:[snap], result:1, unit:"ea", label:"", color:nextColor(), linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
+        activeCountIdRef.current = nm.id;
         upsertMeasurementTask(nm);
       }
     }
@@ -1594,6 +1606,13 @@ calibRef.current =
   function onDblClick(e: React.MouseEvent) {
     const t = toolRef.current;
     const ip = inProgressRef.current;
+    if (t === "count") {
+      // Finish the current batch: the next single click starts a brand-new count measurement instead of
+      // appending further. No minimum count required (unlike area/volume) — a count of 1 is meaningful, and
+      // this is also a harmless no-op if nothing was active. The measurement just finished isn't "locked" in
+      // any way; it stays a completely ordinary measurement (selectable, deletable, listed in Taken).
+      activeCountIdRef.current = null;
+    }
     if ((t==="area"||t==="volume") && ip.length >= 3) {
       if (t==="volume") {
         pendingVolumeRef.current = [...ip];
