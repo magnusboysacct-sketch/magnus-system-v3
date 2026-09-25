@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { upsertLibraryRate } from "../lib/rateLibrary";
 import MasterCategorySelect from "../components/master/MasterCategorySelect.tsx";
 import MasterUnitSelect from "../components/master/MasterUnitSelect.tsx";
 import EditableDropdown from "../components/common/EditableDropdown.tsx";
@@ -662,8 +663,10 @@ export default function RatesPage() {
   async function saveRate(itemId:string,nextRate:number){
     setBusy(true);
     try{
-      const{error}=await supabase.from("cost_item_rates").insert({cost_item_id:itemId,rate:nextRate,currency:"JMD",effective_date:new Date().toISOString().slice(0,10),source:"manual_edit"});
-      if(error){console.error("Rate update error:",error);return;}
+      // Shared upsert (see lib/rateLibrary.ts): a second edit the same day updates that day's row instead of failing, and a
+      // real failure is shown rather than only logged.
+      const res=await upsertLibraryRate(itemId,nextRate,{source:"manual_edit",currency:"JMD"});
+      if(!res.success){console.error("Rate update error:",res.error);showToast("❌ Couldn't save the price: "+res.error,"error");return;}
       await reload();
     }finally{setBusy(false);}
   }

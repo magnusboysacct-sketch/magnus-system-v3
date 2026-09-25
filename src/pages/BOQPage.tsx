@@ -9,6 +9,7 @@ import {
   Bot, ChevronLeft, Loader, Zap, Star, MessageSquare, FilePlus, History
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { upsertLibraryRate, createOwnCopyAtRate } from "../lib/rateLibrary";
 import { useMasterLists } from "../hooks/useMasterLists";
 import EditableDropdown from "../components/common/EditableDropdown";
 import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
@@ -47,6 +48,8 @@ type RateItem = {
   item_type: string | null;
   current_rate?: number | null;
   current_currency?: string | null;
+  // null = a shared/global library item; a company id = that company's own item (used to decide who may change its price)
+  company_id?: string | null;
   calc_engine_json?: {
     vars?: { key: string }[];
     formulas?: { qty?: string };
@@ -1196,6 +1199,9 @@ export default function BOQPage() {
   // True once the rate-library load has finished (success or failure): lets the takeoff import wait for it without
   // waiting forever on an empty/failed library.
   const [ratesLoaded, setRatesLoaded] = useState(false);
+  // Result message of the "Update Library Price" action (shown as a small toast).
+  const [libToast, setLibToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  function showLibToast(msg: string, type: "success" | "error") { setLibToast({ msg, type }); setTimeout(() => setLibToast(null), 4000); }
   const [companyId, setCompanyId] = useState<string>("");
 
   // Find item modal
@@ -1287,14 +1293,14 @@ export default function BOQPage() {
       }
       try {
         const { data, error } = await supabase.from("v_cost_items_current")
-          .select("id,item_name,description,variant,unit,category,item_type,current_rate,current_currency,calc_engine_json")
+          .select("id,item_name,description,variant,unit,category,item_type,current_rate,current_currency,company_id,calc_engine_json")
           .order("item_name", { ascending: true }).limit(5000);
         if (error) throw error;
         if (alive) setRateItems((data ?? []) as RateItem[]);
       } catch {
         try {
           const { data } = await supabase.from("cost_items")
-            .select("id,item_name,description,variant,unit,category,item_type,calc_engine_json")
+            .select("id,item_name,description,variant,unit,category,item_type,company_id,calc_engine_json")
             .order("item_name", { ascending: true }).limit(5000);
           if (alive) setRateItems((data ?? []) as RateItem[]);
         } catch (e: any) { console.error("Failed to load rate items:", e); }
@@ -1888,6 +1894,58 @@ useEffect(() => {
       rate_source: "library",
     });
     setFindModal(null);
+  }
+
+  // --- Update Library Price --------------------------------------------------
+  const rateItemById = useMemo(() => new Map(rateItems.map(r => [r.id, r])), [rateItems]);
+  // Which "Update Library Price" action, if any, applies to a line: "own" = the item belongs to this user's company,
+  // "global" = a shared library item (its price can't be changed here; offer a company copy instead). Assembly component
+  // rows are excluded. UI-level guard only — it decides which button to offer; it is NOT a security boundary.
+  function libraryPriceKind(item: BOQItemRow): "own" | "global" | null {
+    if (!item.cost_item_id || item.assembly_instance_id) return null;
+    const ri = rateItemById.get(item.cost_item_id);
+    if (!ri || ri.company_id === undefined) return null;
+    if (ri.company_id === null) return "global";
+    return companyId && ri.company_id === companyId ? "own" : null;
+  }
+  // Pushes ONE line's current rate back to the shared library, after a confirmation. Every BOQ line stores its own copy of
+  // its rate (qty/rate columns on the line), so no other line — in this BOQ, another version or another project — changes;
+  // only items pulled from the library afterwards see the new price.
+  async function handleUpdateLibraryPrice(sectionId: string, item: BOQItemRow) {
+    const kind = libraryPriceKind(item);
+    const ri = item.cost_item_id ? rateItemById.get(item.cost_item_id) : undefined;
+    if (!kind || !ri) return;
+    const rate = numOr(item.rate, 0);
+    if (!(rate > 0)) { alert("Enter a rate above 0 on this line first."); return; }
+    const currency = ri.current_currency || "JMD";
+    if (kind === "own") {
+      if (!window.confirm(`Update the library price for "${ri.item_name}" to ${fmtMoney(rate)}? This affects future estimates using this item.`)) return;
+      const res = await upsertLibraryRate(ri.id, rate, { source: "boq_update", currency });
+      if (!res.success) { showLibToast(`Couldn't update the library price: ${res.error}`, "error"); return; }
+      setRateItems(prev => prev.map(r => r.id === ri.id ? { ...r, current_rate: rate } : r));
+      updateItem(sectionId, item.id, { rate_source: "library" });
+      showLibToast(`Library price for "${ri.item_name}" updated to ${fmtMoney(rate)}.`, "success");
+    } else {
+      if (!companyId) { showLibToast("Your company couldn't be determined, so a copy can't be created.", "error"); return; }
+      if (!window.confirm(`"${ri.item_name}" is a shared library item, so its price can't be changed from here.\n\nCreate your own copy at ${fmtMoney(rate)} and use it on this line? The shared item is not changed.`)) return;
+      const res = await createOwnCopyAtRate(ri.id, companyId, rate, { currency });
+      if (!res.success) { showLibToast(`Couldn't create your copy: ${res.error}`, "error"); return; }
+      setRateItems(prev => [...prev, { ...res.item, current_rate: rate, current_currency: currency } as RateItem]);
+      updateItem(sectionId, item.id, { cost_item_id: res.item.id, rate_source: "library" });
+      showLibToast(`Created your own "${res.item.item_name}" at ${fmtMoney(rate)} and linked this line to it.`, "success");
+    }
+  }
+  // The small library button shown beside a line's rate (both layouts). null when it doesn't apply.
+  function renderLibraryPriceButton(sectionId: string, item: BOQItemRow) {
+    const kind = libraryPriceKind(item);
+    if (!canEdit || !kind || !(numOr(item.rate, 0) > 0)) return null;
+    return (
+      <button type="button" onClick={() => handleUpdateLibraryPrice(sectionId, item)}
+        className="p-0.5 rounded text-slate-400 dark:text-slate-600 hover:text-emerald-500 hover:bg-emerald-500/10 transition flex-shrink-0"
+        title={kind === "own" ? "Update Library Price — save this rate to the library for future estimates" : "Create my own copy at this price — the shared library item can't be changed here"}>
+        <BookOpen size={12}/>
+      </button>
+    );
   }
 
   // --- Smart Selector Handler ------------------------------------------------
@@ -2624,7 +2682,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                   </div>
                                 </div>
                                 <div className="flex-shrink-0 w-24">
-                                  <div className="text-[9px] text-slate-400 dark:text-slate-700 mb-1 uppercase">Rate (JMD)</div>
+                                  <div className="text-[9px] text-slate-400 dark:text-slate-700 mb-1 uppercase flex items-center justify-between">Rate (JMD){renderLibraryPriceButton(section.id, item)}</div>
                                   <input type="number" value={Number.isFinite(item.rate) ? item.rate : 0} disabled={!canEdit}
                                     onChange={e => updateItem(section.id, item.id, { rate: numOr(e.target.value, 0), rate_source: "manual" })}
                                     className={`w-full px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] border text-xs font-semibold text-right focus:outline-none disabled:opacity-50 transition ${isMissingRate ? "border-amber-500/40 text-amber-500" : "border-slate-200 dark:border-white/[0.07] text-green-500 dark:text-green-400 focus:border-cyan-500/40"}`}/>
@@ -2847,7 +2905,8 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                             </div>
 
                             {/* Rate */}
-                            <div className="pr-1 min-w-0">
+                            <div className="pr-1 min-w-0 flex items-center gap-0.5">
+                              {renderLibraryPriceButton(section.id, item)}
                               <input type="number" value={Number.isFinite(item.rate) ? item.rate : 0} disabled={!canEdit}
                                 onChange={e => updateItem(section.id, item.id, { rate: numOr(e.target.value, 0), rate_source: "manual" })}
                                 className={`w-full bg-slate-50 dark:bg-white/[0.04] border rounded-lg px-1.5 py-1 text-[10px] text-right font-semibold focus:outline-none disabled:opacity-50 transition ${isMissingRate ? "border-amber-500/40 text-amber-500" : "border-slate-200 dark:border-white/[0.07] text-green-400 focus:border-cyan-500/40"}`}/>
@@ -3564,6 +3623,12 @@ Answer briefly and practically. If they ask to add items, explain they need to u
             </div>
             <p className="text-[9px] text-slate-400 dark:text-slate-700 mt-1.5 text-center">Press Enter to send ? AI uses Jamaica construction knowledge</p>
           </div>
+        </div>
+      )}
+
+      {libToast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] max-w-md px-4 py-2.5 rounded-xl shadow-xl text-xs font-medium border ${libToast.type === "success" ? "bg-emerald-600 border-emerald-500 text-white" : "bg-red-600 border-red-500 text-white"}`}>
+          {libToast.msg}
         </div>
       )}
 
