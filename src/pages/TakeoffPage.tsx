@@ -93,6 +93,9 @@ const LIB_PAGE = 20;
 // auto-close-near-start, and the per-vertex hit-test for edit mode. (The smaller 12/zoom body-select and 10/zoom snap
 // tolerances are deliberately different: they are about a line under the cursor, not a handle to pick up.)
 const GRAB_TOL_PX = 24;
+// Edit mode: a press on a vertex only becomes a drag once the pointer has moved this many SCREEN px; less than that
+// is a tap ("select this vertex"), so a slightly shaky tap never nudges the geometry.
+const VERTEX_DRAG_THRESHOLD_PX = 6;
 
 // PostgREST returns at most 1000 rows per response (its max-rows cap, by default), so a table that can grow past
 // that is read in windows until an empty page comes back. Each window advances by the rows actually received, so a
@@ -223,8 +226,8 @@ function measureGeometry(type: ToolMode, pts: Point[]): number {
 interface RecomputePatch { result: number; wallLength?: number; label?: string; rescaled: boolean; }
 
 // After a measurement's points change (m.points -> newPoints): rescale the old result by new geometry / old geometry,
-// rather than recomputing from calibration or wall height / volume depth — those aren't reliably stored (wallLength/
-// wallHeight are never saved, older volumes have no depth), and rescaling keeps the scale the measurement was drawn at.
+// rather than recomputing from calibration or wall height / volume depth — those aren't reliably stored (walls drawn
+// before wallLength/wallHeight were saved, and older volumes, lack them), and rescaling keeps the scale it was drawn at.
 // Count is a recount (result = number of markers). If the OLD geometry is zero (or non-finite) there is nothing to
 // scale from: the result is returned unchanged with rescaled=false so the caller can decide. Pure.
 function recompute(m: Measurement, newPoints: Point[]): RecomputePatch {
@@ -701,6 +704,12 @@ const calibration =
   const [editingId, setEditingId] = useState<string | null>(null);
   const editingIdRef = useRef<string | null>(null);
   function enterEdit(id: string) {
+    // A hidden measurement draws nothing (no shape, no handles), so editing it blind makes no sense: unhide it as part
+    // of entering edit mode. Goes through the ordinary measurements state, so the existing auto-save persists it.
+    if (measurementsRef.current.some(x => x.id === id && x.hidden)) {
+      const next = measurementsRef.current.map(x => x.id === id ? { ...x, hidden: false } : x);
+      setMeasurements(next); measurementsRef.current = next;
+    }
     setTool("select"); toolRef.current = "select";
     setInProgress([]); inProgressRef.current = [];
     setSelectedId(id); selectedIdRef.current = id;
@@ -709,10 +718,74 @@ const calibration =
   }
   function exitEdit() {
     if (!editingIdRef.current) return;
+    cancelVertexDrag();
     setEditingId(null); editingIdRef.current = null;
+    selectedVertexRef.current = null; hoverVertexRef.current = null;
     scheduleRender();
   }
   function toggleEdit(id: string) { if (editingIdRef.current === id) exitEdit(); else enterEdit(id); }
+
+  // --- Edit mode: dragging a vertex of the measurement being edited ---------------------------------------------
+  // orig is the measurement exactly as it was when the press began: every frame recomputes from it (not from the
+  // previous frame), so the result is orig.result x (new geometry / orig geometry) with no drift. moved flips true
+  // once the pointer travels VERTEX_DRAG_THRESHOLD_PX; until then nothing changes, and a release is a tap.
+  const draggingVertexRef = useRef<{ id: string; index: number; startClient: Point; startPdf: Point; orig: Measurement; moved: boolean } | null>(null);
+  const hoverVertexRef = useRef<number | null>(null);      // mouse only: the vertex under the pointer (nothing to hover on touch)
+  const selectedVertexRef = useRef<number | null>(null);   // set by a tap or a finished drag; step 3 will act on it
+  function armVertexDrag(clientX: number, clientY: number): boolean {
+    const id = editingIdRef.current; if (!id) return false;
+    const m = measurementsRef.current.find(x => x.id === id);
+    if (!m || m.hidden) return false; // a hidden measurement shows no handles, so there is nothing to grab
+    const p = screenToPdf(clientX, clientY);
+    const idx = hitTestVertex(m.points, p, zoomRef.current);
+    if (idx === null) return false;
+    draggingVertexRef.current = { id, index: idx, startClient: { x: clientX, y: clientY }, startPdf: p, orig: m, moved: false };
+    return true;
+  }
+  function updateVertexDrag(clientX: number, clientY: number) {
+    const d = draggingVertexRef.current; if (!d) return;
+    if (!d.moved) {
+      if (Math.hypot(clientX - d.startClient.x, clientY - d.startClient.y) < VERTEX_DRAG_THRESHOLD_PX) return;
+      d.moved = true;
+    }
+    const p = screenToPdf(clientX, clientY);
+    const orig = d.orig, n = orig.points.length;
+    // The vertex follows the pointer's displacement (so grabbing 20px off-centre doesn't make it jump), then may
+    // snap onto another measurement's point — never onto any point of the measurement being edited itself.
+    const want = { x: orig.points[d.index].x + (p.x - d.startPdf.x), y: orig.points[d.index].y + (p.y - d.startPdf.y) };
+    const pos = snapToNearby(want, d.id);
+    // An auto-closed perimeter stores its first point again as its last: they are ONE physical point, so both move.
+    const closed = orig.type === "perimeter" && n >= 4 && dist(orig.points[0], orig.points[n-1]) < 1e-6;
+    const newPoints = orig.points.map((q, i) => (i === d.index || (closed && ((d.index === 0 && i === n-1) || (d.index === n-1 && i === 0)))) ? pos : q);
+    const patch = recompute(orig, newPoints);
+    const next = measurementsRef.current.map(m => m.id === d.id
+      ? { ...m, points: newPoints, result: patch.result, ...(patch.wallLength !== undefined ? { wallLength: patch.wallLength } : {}), ...(patch.label !== undefined ? { label: patch.label } : {}) }
+      : m);
+    setMeasurements(next); measurementsRef.current = next;
+    scheduleRender();
+  }
+  function finishVertexDrag() {
+    const d = draggingVertexRef.current; if (!d) return;
+    draggingVertexRef.current = null;
+    selectedVertexRef.current = d.index; // a tap selects the vertex; a finished drag leaves the dragged vertex selected
+    if (d.moved) {
+      // Persistence needs nothing here: the debounced auto-save effect watches pageMeasurements. The linked BOQ task
+      // is updated ONCE per drag (by the change in result since the press), never per frame.
+      const cur = measurementsRef.current.find(m => m.id === d.id);
+      if (cur && cur.result !== d.orig.result) upsertMeasurementTask(cur, d.orig.result);
+    }
+    scheduleRender();
+  }
+  // A second finger (pinch) or leaving edit mode mid-drag abandons it and puts the measurement back as it was.
+  function cancelVertexDrag() {
+    const d = draggingVertexRef.current; if (!d) return;
+    draggingVertexRef.current = null;
+    if (d.moved) {
+      const next = measurementsRef.current.map(m => m.id === d.id ? d.orig : m);
+      setMeasurements(next); measurementsRef.current = next;
+    }
+    scheduleRender();
+  }
   useEffect(() => { if (editingIdRef.current && tool !== "select") exitEdit(); }, [tool]);
   useEffect(() => { if (editingIdRef.current) exitEdit(); }, [pageNum]);
   useEffect(() => { if (editingIdRef.current && !measurements.some(m => m.id === editingIdRef.current)) exitEdit(); }, [measurements]);
@@ -1022,7 +1095,9 @@ useEffect(() => {
   // the multi-point types (perimeter/wall/area/volume; area/volume include the closing edge) previewing where a later
   // "add a node" would go. An auto-closed perimeter's duplicate last point is not drawn twice. Count gets a larger ring
   // around each numbered marker; a line gets its two end rings and no "+".
-  function drawEditHandles(ctx: CanvasRenderingContext2D, m: Measurement) {
+  // Step 2 adds three states on top of the plain ring: hover (mouse only) = bigger amber ring with a glow; selected (after
+  // a tap or a finished drag) = filled in the measurement's colour; dragging = amber fill with the glow.
+  function drawEditHandles(ctx: CanvasRenderingContext2D, m: Measurement, hoverIdx: number | null = null, selectedIdx: number | null = null, dragIdx: number | null = null) {
     const pts = m.points.map(pdfToCanvas);
     if (pts.length === 0) return;
     const closedPerim = m.type === "perimeter" && pts.length >= 4 && dist(pts[0], pts[pts.length-1]) < 0.5;
@@ -1040,10 +1115,19 @@ useEffect(() => {
       }
     }
     const r = m.type === "count" ? 13 : 9;
-    verts.forEach(p => {
-      ctx.fillStyle = "#fff"; ctx.strokeStyle = m.color; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
-      if (m.type !== "count") { ctx.fillStyle = m.color; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill(); }
+    // the shared start/end of an auto-closed perimeter is drawn once, as index 0
+    const norm = (i: number | null) => (i !== null && closedPerim && i === pts.length - 1) ? 0 : i;
+    const hi = norm(hoverIdx), si = norm(selectedIdx), di = norm(dragIdx);
+    verts.forEach((p, i) => {
+      const dragging = di === i, hover = hi === i && di === null, selected = si === i;
+      ctx.save();
+      if (dragging || hover) { ctx.shadowColor = "#f59e0b"; ctx.shadowBlur = 12; }
+      ctx.fillStyle = dragging ? "#fde68a" : selected ? m.color : "#fff";
+      ctx.strokeStyle = (dragging || hover) ? "#f59e0b" : selected ? "#fff" : m.color;
+      ctx.lineWidth = (dragging || hover) ? 4 : 3;
+      ctx.beginPath(); ctx.arc(p.x, p.y, (dragging || hover) ? r + 2 : r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.restore();
+      if (m.type !== "count") { ctx.fillStyle = selected && !dragging ? "#fff" : m.color; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill(); }
     });
     ctx.restore();
   }
@@ -1284,7 +1368,7 @@ useEffect(() => {
 
     // Edit mode (step 1: display only): handles on the one measurement being edited, drawn above everything else.
     const editM = editingIdRef.current ? ms.find(x => x.id === editingIdRef.current) : undefined;
-    if (editM && !editM.hidden) drawEditHandles(ctx, editM);
+    if (editM && !editM.hidden) drawEditHandles(ctx, editM, hoverVertexRef.current, selectedVertexRef.current, draggingVertexRef.current?.moved ? draggingVertexRef.current.index : null);
 
     // In-progress + hover preview
     const ip = inProgressRef.current, hp = hoverRef.current, t = toolRef.current;
@@ -1489,6 +1573,8 @@ calibRef.current =
               hidden: r.meta?.hidden === true ? true : undefined,
               batchId: typeof r.meta?.batch_id === "string" ? r.meta.batch_id : undefined,
               depthIn: typeof r.meta?.depth_in === "number" ? r.meta.depth_in : undefined,
+              wallLength: typeof r.meta?.wall_length === "number" ? r.meta.wall_length : undefined,
+              wallHeight: typeof r.meta?.wall_height === "number" ? r.meta.wall_height : undefined,
               linkedAssemblyId: r.linked_assembly_id || r.meta?.linked_assembly_id,
               linkedAssemblyName: r.meta?.linked_assembly_name,
               linkedItemId: r.linked_item_id || r.meta?.linked_item_id,
@@ -1549,7 +1635,9 @@ calibRef.current =
             ...(m.dimensionOffset ? { dimension_offset: m.dimensionOffset } : {}),
             ...(m.hidden ? { hidden: true } : {}),
             ...(m.batchId ? { batch_id: m.batchId } : {}),
-            ...(m.depthIn ? { depth_in: m.depthIn } : {}) },
+            ...(m.depthIn ? { depth_in: m.depthIn } : {}),
+            ...(m.wallLength !== undefined ? { wall_length: m.wallLength } : {}),
+            ...(m.wallHeight !== undefined ? { wall_height: m.wallHeight } : {}) },
         })));
       }
       await supabase.from("takeoff_sessions").update({ last_page_number: pageToSave }).eq("id", sessionIdRef.current);
@@ -1664,7 +1752,8 @@ calibRef.current =
   // a hit. Returns true if something was grabbed. Callers remain responsible for calling preventDefault()
   // (MouseEvent and TouchEvent don't share a common type for it) and scheduleRender()/return on a hit — the
   // original mouse path never called preventDefault here either, so this keeps that exactly as it was.
-  function hitTestOffsetLine(p: Point, sx: number, sy: number): boolean {
+  // onlyId: when set (edit mode), only that measurement's offset line can be grabbed, so selection stays pinned to it.
+  function hitTestOffsetLine(p: Point, sx: number, sy: number, onlyId?: string | null): boolean {
     const ctx2d = canvasRef.current?.getContext("2d");
     if (!ctx2d) return false;
     // A synthetic mouse event from a single-finger touch (how drawing already works on tablet) is
@@ -1675,6 +1764,7 @@ calibRef.current =
     const GRAB_PAD_SCREEN = 12; // extra px padding around the label's own (zoom-independent) hit box
     for (const m of measurementsRef.current) {
       if (m.type !== "line" || m.points.length < 2) continue;
+      if (onlyId && m.id !== onlyId) continue;
       const dOffM = m.dimensionOffset || 0;
       const dx = m.points[1].x-m.points[0].x, dy = m.points[1].y-m.points[0].y;
       const len = Math.hypot(dx,dy) || 1;
@@ -1699,6 +1789,12 @@ calibRef.current =
   function onMouseMove(e: React.MouseEvent) {
     const p = screenToPdf(e.clientX, e.clientY);
     setHoverPt(p); hoverRef.current = p;
+    if (draggingVertexRef.current) { updateVertexDrag(e.clientX, e.clientY); return; }
+    if (editingIdRef.current) {
+      // Hover feedback (mouse only — a touch has no pointer until it lands): which vertex a press here would grab.
+      const em = measurementsRef.current.find(x => x.id === editingIdRef.current);
+      hoverVertexRef.current = em && !em.hidden ? hitTestVertex(em.points, p, zoomRef.current) : null;
+    }
     if (draggingOffsetIdRef.current) {
       const start = offsetDragStartRef.current;
       const id = draggingOffsetIdRef.current;
@@ -1749,7 +1845,18 @@ calibRef.current =
       // hit-test below instead, which only selects — never drags. See hitTestOffsetLine for the tolerance
       // constants and why they're the same for mouse and touch.
       const rect = containerRef.current?.getBoundingClientRect();
-      if (rect && hitTestOffsetLine(p, e.clientX - rect.left, e.clientY - rect.top)) {
+      // Edit mode: a press on a vertex of the measurement being edited starts a (tap-or-drag) vertex press.
+      if (editingIdRef.current && armVertexDrag(e.clientX, e.clientY)) { scheduleRender(); return; }
+      if (rect && hitTestOffsetLine(p, e.clientX - rect.left, e.clientY - rect.top, editingIdRef.current)) {
+        scheduleRender();
+        return;
+      }
+      // Edit mode pins the selection to the measurement being edited: clicking anywhere else (another shape, empty
+      // space) never changes it — empty space just pans. Only Done / Esc / another tool / another page end edit mode.
+      if (editingIdRef.current) {
+        selectedVertexRef.current = null;
+        panningRef.current = true;
+        panStartRef.current = { mouse: { x: e.clientX, y: e.clientY }, pan: { ...panRef.current } };
         scheduleRender();
         return;
       }
@@ -1884,6 +1991,7 @@ calibRef.current =
   }
 
   function onMouseUp(e: React.MouseEvent) {
+    if (draggingVertexRef.current) finishVertexDrag();
     if (draggingOffsetIdRef.current) {
       // A drag that ends only a hair off zero should cleanly settle back to "no offset" — the pixel-identical
       // default rendering — rather than leaving a barely-visible ghost line. Threshold: 3 PDF-units, expressed
@@ -2124,7 +2232,14 @@ calibRef.current =
       const t = e.touches[0];
       const p = screenToPdf(t.clientX, t.clientY);
       const rect = containerRef.current?.getBoundingClientRect();
-      if (rect && hitTestOffsetLine(p, t.clientX - rect.left, t.clientY - rect.top)) {
+      // Edit mode: arm a vertex press straight from the real touchstart (same reason as the offset line just below:
+      // the synthetic mousedown for a touch-and-hold is deferred until after the finger lifts).
+      if (editingIdRef.current && armVertexDrag(t.clientX, t.clientY)) {
+        e.preventDefault();
+        scheduleRender();
+        return;
+      }
+      if (rect && hitTestOffsetLine(p, t.clientX - rect.left, t.clientY - rect.top, editingIdRef.current)) {
         // This touch sequence is now ours: suppress the deferred synthetic mouse events entirely so they
         // cannot also fire and redo/interfere once the finger eventually lifts.
         e.preventDefault();
@@ -2136,6 +2251,7 @@ calibRef.current =
     // single-finger drawing is untouched, since nothing here called preventDefault or set any drag state.
     if (e.touches.length !== 2) return; // 1 finger (or 3+): untouched, no preventDefault — see comment above
     e.preventDefault();
+    cancelVertexDrag(); // a second finger turns a vertex press into a pinch: abandon the press
     const c = containerRef.current; if (!c) return;
     const rect = c.getBoundingClientRect();
     const mid = touchMidpoint(e.touches);
@@ -2157,6 +2273,11 @@ calibRef.current =
     // onMouseMove's drag-update branch never actually runs during the finger-slide on a real device. This
     // mirrors onMouseMove's own perpendicular-projection math exactly, just reading the touch point directly
     // instead of depending on a synthetic mousemove that mobile browsers do not reliably deliver.
+    if (e.touches.length === 1 && draggingVertexRef.current) {
+      e.preventDefault();
+      updateVertexDrag(e.touches[0].clientX, e.touches[0].clientY);
+      return;
+    }
     if (e.touches.length === 1 && draggingOffsetIdRef.current) {
       e.preventDefault();
       const t = e.touches[0];
@@ -2187,6 +2308,7 @@ calibRef.current =
     scheduleRender();
   }
   function onTouchEnd(e: React.TouchEvent) {
+    if (draggingVertexRef.current) finishVertexDrag();
     // Mirrors onMouseUp's snap-to-zero exactly, for the same reason the touch-driven drag update above
     // exists: a synthetic mouseup may not reliably follow a real touch-and-drag on every device, so ending
     // the gesture must not depend on it. draggingOffsetIdRef is only ever armed by a single-finger tap (a
@@ -2225,9 +2347,11 @@ calibRef.current =
       c.removeEventListener("touchmove", preventPinch);
     };
   }, []);
-  function snapToNearby(p: Point): Point {
+  // excludeId: a measurement whose points must not be snapped onto (the one being dragged in edit mode — otherwise
+  // its own current position, which is always within tolerance of where it is being dragged, would pull it back).
+  function snapToNearby(p: Point, excludeId?: string): Point {
     const tol = 10 / zoomRef.current;
-    for (const m of measurementsRef.current) for (const q of m.points) if (dist(p, q) < tol) return q;
+    for (const m of measurementsRef.current) { if (m.id === excludeId) continue; for (const q of m.points) if (dist(p, q) < tol) return q; }
     return p;
   }
 
