@@ -7,6 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { supabase } from "../lib/supabase";
+import { groupTakeoffMeasurements } from "../lib/takeoffGroups";
 import { useProjectContext } from "../context/ProjectContext";
 import CollapsibleSection from "../components/common/CollapsibleSection";
 import {
@@ -2631,60 +2632,9 @@ calibRef.current =
   async function sendToBOQ() {
     await flushMeasurementsSave(pageNum);
 
-  const groups: Record<string, {
-    name:string;
-    value:number;
-    metric:string;
-    assemblyId?: string;
-    costItemId?: string;
-    length?: number;
-    height?: number;
-    width?: number;
-    heightMismatch?: boolean;
-  }> = {};
-
-  measurements.forEach(m => {
-    // Assembly id, else the linked rate item's id (so two items that share a display name stay separate), else the
-    // item name (measurements saved before item ids were carried), else the bare type.
-    const key =
-      m.linkedAssemblyId ||
-      (m.linkedItemId ? "item:" + m.linkedItemId : "") ||
-      m.linkedItemName ||
-      m.type;
-
-    // Apply coverage conversion for rate-library items with a coverage factor
-    const item = m.linkedItemId ? costItems.find(i => i.id === m.linkedItemId) : null;
-    const cf = item?.coverage_factor;
-    const convertedVal = (cf && cf > 0) ? Math.ceil(m.result / cf) : m.result;
-    const sellUnit = (cf && cf > 0 && item?.unit) ? item.unit : m.unit;
-
-    if (!groups[key]) {
-      groups[key] = {
-        name:
-          m.linkedAssemblyName ||
-          m.linkedItemName ||
-          m.type,
-        value: 0,
-        metric: sellUnit,
-        assemblyId: m.linkedAssemblyId,
-        // The rate-library item's real id (never set together with an assembly), so BOQ can look up its rate.
-        costItemId: m.linkedAssemblyId ? undefined : m.linkedItemId,
-      };
-    }
-
-    if (m.type === "wall" && typeof m.wallLength === "number" && typeof m.wallHeight === "number") {
-      groups[key].length = (groups[key].length || 0) + m.wallLength;
-      if (groups[key].height === undefined) {
-        groups[key].height = m.wallHeight;
-      } else if (groups[key].height !== m.wallHeight) {
-        groups[key].heightMismatch = true;
-      }
-    }
-
-    groups[key].value += convertedVal;
-  });
-
-  const data = Object.values(groups);
+  // The grouping itself (assembly id / "item:" + item id / item name / type keys, coverage conversion, wall length/height
+  // roll-up) lives in lib/takeoffGroups.ts so the BOQ page can reuse it; each group now also carries its groupKey.
+  const data = groupTakeoffMeasurements(measurements, costItems);
 
   const pid =
     routeProjectId ||
