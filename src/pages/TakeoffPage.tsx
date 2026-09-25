@@ -88,6 +88,12 @@ interface CostItem {
 // Rows shown per library section before "Show more".
 const LIB_PAGE = 20;
 
+// One screen-pixel radius for "grab / snap onto a point": divide by zoom for PDF units. 24 is a fingertip/stylus-friendly
+// size (well above the 9px vertex squares). Used for the offset-dimension-line grab, the perimeter/area/volume
+// auto-close-near-start, and the per-vertex hit-test for edit mode. (The smaller 12/zoom body-select and 10/zoom snap
+// tolerances are deliberately different: they are about a line under the cursor, not a handle to pick up.)
+const GRAB_TOL_PX = 24;
+
 // PostgREST returns at most 1000 rows per response (its max-rows cap, by default), so a table that can grow past
 // that is read in windows until an empty page comes back. Each window advances by the rows actually received, so a
 // server cap below the requested window size cannot skip rows. Callers order by a unique column last (id) so equal
@@ -180,6 +186,61 @@ function polyArea(pts: Point[]) {
   for (let i = 0; i < pts.length; i++) { const j = (i+1)%pts.length; a += pts[i].x*pts[j].y - pts[j].x*pts[i].y; }
   return Math.abs(a)/2;
 }
+// Ray-casting point-in-polygon (the ring is implicitly closed last -> first, as area/volume shapes are).
+function pointInPolygon(p: Point, pts: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i], b = pts[j];
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+// Edit mode: which vertex of ONE measurement's points (if any) is under p. Nearest wins when several are within
+// GRAB_TOL_PX (screen px, so divided by zoom). Returns the index into points, or null. Pure — takes the points of
+// the measurement being edited only, never other measurements. (An auto-closed perimeter stores its first point
+// again as its last; on an exact tie the lower index wins, so step 2 must treat that pair as one node.)
+function hitTestVertex(points: Point[], p: Point, zoom: number): number | null {
+  const tol = GRAB_TOL_PX / zoom;
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const d = dist(p, points[i]);
+    if (d < tol && d < bestD) { best = i; bestD = d; }
+  }
+  return best < 0 ? null : best;
+}
+
+// The "size" of a measurement's geometry that its result is proportional to: a line's length, a perimeter's or
+// wall's summed segment length, an area's or volume's polygon area (volume = area x a fixed depth).
+function measureGeometry(type: ToolMode, pts: Point[]): number {
+  if (type === "line") return pts.length >= 2 ? dist(pts[0], pts[1]) : 0;
+  if (type === "area" || type === "volume") return polyArea(pts);
+  if (type === "perimeter" || type === "wall") { let sum = 0; for (let i = 0; i < pts.length - 1; i++) sum += dist(pts[i], pts[i+1]); return sum; }
+  return 0;
+}
+
+// What an edit changes on a measurement. rescaled=false means "could not rescale, result left as it was".
+interface RecomputePatch { result: number; wallLength?: number; label?: string; rescaled: boolean; }
+
+// After a measurement's points change (m.points -> newPoints): rescale the old result by new geometry / old geometry,
+// rather than recomputing from calibration or wall height / volume depth — those aren't reliably stored (wallLength/
+// wallHeight are never saved, older volumes have no depth), and rescaling keeps the scale the measurement was drawn at.
+// Count is a recount (result = number of markers). If the OLD geometry is zero (or non-finite) there is nothing to
+// scale from: the result is returned unchanged with rescaled=false so the caller can decide. Pure.
+function recompute(m: Measurement, newPoints: Point[]): RecomputePatch {
+  if (m.type === "count") return { result: newPoints.length, rescaled: true };
+  const oldG = measureGeometry(m.type, m.points), newG = measureGeometry(m.type, newPoints);
+  if (!(oldG > 0) || !Number.isFinite(oldG) || !Number.isFinite(newG)) return { result: m.result, rescaled: false };
+  const ratio = newG / oldG;
+  const patch: RecomputePatch = { result: m.result * ratio, rescaled: true };
+  if (m.type === "wall" && typeof m.wallLength === "number") {
+    patch.wallLength = m.wallLength * ratio;
+    // The wall's caption ("X long x Y high") is stored text; only regenerate it when the height is known too.
+    if (typeof m.wallHeight === "number") patch.label = `${feetInches(patch.wallLength)} long x ${feetInches(m.wallHeight)} high`;
+  }
+  return patch;
+}
+
 function distToSeg(p: Point, a: Point, b: Point) {
   const A=p.x-a.x,B=p.y-a.y,C=b.x-a.x,D=b.y-a.y;
   const dot=A*C+B*D,len=C*C+D*D,t=len?clamp(dot/len,0,1):0;
@@ -626,14 +687,35 @@ const calibration =
     for (const t of BATCH_TOOLS) { const b = next[t]; if (b && !list.some(m => m.batchId === b.id)) { delete next[t]; changed = true; } }
     if (changed) writeBatches(next);
   }
-  // Auto-close, shared by perimeter/area/volume: a click within SHAPE_CLOSE_TOL_PX screen pixels (divided by
+  // Auto-close, shared by perimeter/area/volume: a click within GRAB_TOL_PX screen pixels (divided by
   // zoom -> PDF units, same convention as the file's other 12/zoom and 24/zoom tolerances) of the shape's first
   // point (once 3+ points exist) closes it. 24 matches the stylus-friendly grab tolerance already used for the
   // offset-dimension-line drag. shapeClosedAtRef timestamps the last auto-close so the second click of a
   // double-click right after it is swallowed instead of starting a stray new shape.
-  const SHAPE_CLOSE_TOL_PX = 24;
   const SHAPE_CLOSE_SWALLOW_MS = 500;
   const shapeClosedAtRef = useRef(0);
+
+  // Edit mode (node editing): the ONE measurement whose points are being edited. Separate from selectedId. Entering
+  // forces the select tool and selects it; it ends via the Done button, Esc, another tool, another page, or the
+  // measurement disappearing. Step 1 only shows handles — nothing is draggable/addable/deletable yet.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editingIdRef = useRef<string | null>(null);
+  function enterEdit(id: string) {
+    setTool("select"); toolRef.current = "select";
+    setInProgress([]); inProgressRef.current = [];
+    setSelectedId(id); selectedIdRef.current = id;
+    setEditingId(id); editingIdRef.current = id;
+    scheduleRender();
+  }
+  function exitEdit() {
+    if (!editingIdRef.current) return;
+    setEditingId(null); editingIdRef.current = null;
+    scheduleRender();
+  }
+  function toggleEdit(id: string) { if (editingIdRef.current === id) exitEdit(); else enterEdit(id); }
+  useEffect(() => { if (editingIdRef.current && tool !== "select") exitEdit(); }, [tool]);
+  useEffect(() => { if (editingIdRef.current) exitEdit(); }, [pageNum]);
+  useEffect(() => { if (editingIdRef.current && !measurements.some(m => m.id === editingIdRef.current)) exitEdit(); }, [measurements]);
 
   // Depth modal for volume
   const [showDepthModal, setShowDepthModal] = useState(false);
@@ -935,6 +1017,37 @@ useEffect(() => {
     ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
   }
 
+  // Edit mode handles (display only, step 1) for the ONE measurement being edited: a ring at every vertex — bigger than
+  // the normal 9px squares/arrows so it is clear which points are grabbable — plus a "+" disc at each segment midpoint on
+  // the multi-point types (perimeter/wall/area/volume; area/volume include the closing edge) previewing where a later
+  // "add a node" would go. An auto-closed perimeter's duplicate last point is not drawn twice. Count gets a larger ring
+  // around each numbered marker; a line gets its two end rings and no "+".
+  function drawEditHandles(ctx: CanvasRenderingContext2D, m: Measurement) {
+    const pts = m.points.map(pdfToCanvas);
+    if (pts.length === 0) return;
+    const closedPerim = m.type === "perimeter" && pts.length >= 4 && dist(pts[0], pts[pts.length-1]) < 0.5;
+    const verts = closedPerim ? pts.slice(0, -1) : pts;
+    ctx.save();
+    ctx.setLineDash([]);
+    if (m.type==="perimeter"||m.type==="wall"||m.type==="area"||m.type==="volume") {
+      const segCount = (m.type==="area"||m.type==="volume") ? pts.length : pts.length - 1;
+      for (let i = 0; i < segCount; i++) {
+        const a = pts[i], b = pts[(i+1) % pts.length];
+        const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+        ctx.fillStyle = "rgba(255,255,255,0.9)"; ctx.strokeStyle = m.color; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(mx, my, 7, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(mx-3.5, my); ctx.lineTo(mx+3.5, my); ctx.moveTo(mx, my-3.5); ctx.lineTo(mx, my+3.5); ctx.stroke();
+      }
+    }
+    const r = m.type === "count" ? 13 : 9;
+    verts.forEach(p => {
+      ctx.fillStyle = "#fff"; ctx.strokeStyle = m.color; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      if (m.type !== "count") { ctx.fillStyle = m.color; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill(); }
+    });
+    ctx.restore();
+  }
+
   // Ported from SiteVisitPage.tsx's drawArrow (same atan2-angle + two 30°-back-stroke math), but draws only the
   // head at `to` — the shaft itself is already stroked by the caller as part of the measurement's own line.
   function drawArrowhead(ctx: CanvasRenderingContext2D, from: Point, to: Point, color: string, lw: number) {
@@ -1168,6 +1281,10 @@ useEffect(() => {
       }
       ctx.restore();
     });
+
+    // Edit mode (step 1: display only): handles on the one measurement being edited, drawn above everything else.
+    const editM = editingIdRef.current ? ms.find(x => x.id === editingIdRef.current) : undefined;
+    if (editM && !editM.hidden) drawEditHandles(ctx, editM);
 
     // In-progress + hover preview
     const ip = inProgressRef.current, hp = hoverRef.current, t = toolRef.current;
@@ -1555,7 +1672,6 @@ calibRef.current =
     // pointerType/sourceCapabilities check anywhere, and the pinch-zoom touch handlers only ever engage at
     // 2 fingers. So rather than leaving this mouse-precision-only, the grab tolerance below is doubled
     // universally: comfortable for a fingertip, still small enough with a mouse not to feel imprecise.
-    const GRAB_TOL_PDF = 24; // was 12 (matches the existing line/count select-tool tolerance elsewhere)
     const GRAB_PAD_SCREEN = 12; // extra px padding around the label's own (zoom-independent) hit box
     for (const m of measurementsRef.current) {
       if (m.type !== "line" || m.points.length < 2) continue;
@@ -1565,7 +1681,7 @@ calibRef.current =
       const nx = -dy/len, ny = dx/len;
       const offA = { x: m.points[0].x+nx*dOffM, y: m.points[0].y+ny*dOffM };
       const offB = { x: m.points[1].x+nx*dOffM, y: m.points[1].y+ny*dOffM };
-      const hitOffsetLine = distToSeg(p, offA, offB) < GRAB_TOL_PDF/zoomRef.current;
+      const hitOffsetLine = distToSeg(p, offA, offB) < GRAB_TOL_PX/zoomRef.current;
       const labelScreen = pdfToCanvas({ x: (offA.x+offB.x)/2, y: (offA.y+offB.y)/2 });
       const text = m.unit === "ft" ? feetInches(m.result) : `${fmt2(m.result)} ${m.unit}`;
       const box = labelBox(ctx2d, text, labelScreen.x, labelScreen.y-14, false);
@@ -1641,15 +1757,26 @@ calibRef.current =
       const hit = measurementsRef.current.find(m => {
         if (m.type==="line"&&m.points.length>=2) return distToSeg(p,m.points[0],m.points[1]) < 12/zoomRef.current;
         if (m.type==="count") return m.points.some(q=>dist(p,q)<10/zoomRef.current);
-        // No polyline type (wall/area/volume) has hit-testing yet; built fresh here for perimeter specifically
-        // (per the investigation, nothing else already has this to reuse) — distance to the NEAREST of all
-        // consecutive segments, reusing the same distToSeg() and tolerance the line/count tests above use.
+        // Perimeter: distance to the NEAREST of all consecutive segments, reusing the same distToSeg() and
+        // tolerance the line/count tests above use.
         if (m.type==="perimeter"&&m.points.length>=2) {
           for (let i=0;i<m.points.length-1;i++) if (distToSeg(p,m.points[i],m.points[i+1]) < 12/zoomRef.current) return true;
           return false;
         }
+        // Wall / area / volume: the same edge-distance test (area and volume include the closing edge). Only shapes
+        // on the page being viewed — unlike the older line/count/perimeter tests above, which look at every page.
+        if (m.type==="wall"&&m.points.length>=2&&(m.pageNumber??1)===pageNum) {
+          for (let i=0;i<m.points.length-1;i++) if (distToSeg(p,m.points[i],m.points[i+1]) < 12/zoomRef.current) return true;
+          return false;
+        }
+        if ((m.type==="area"||m.type==="volume")&&m.points.length>=3&&(m.pageNumber??1)===pageNum) {
+          for (let i=0;i<m.points.length;i++) if (distToSeg(p,m.points[i],m.points[(i+1)%m.points.length]) < 12/zoomRef.current) return true;
+          return false;
+        }
         return false;
-      }) || null;
+      // Second pass, only if no line/edge was hit anywhere: a click INSIDE an area/volume polygon selects it. Done last
+      // so a big area never shadows a line, count or perimeter drawn on top of it.
+      }) || measurementsRef.current.find(m => (m.type==="area"||m.type==="volume")&&m.points.length>=3&&(m.pageNumber??1)===pageNum&&pointInPolygon(p,m.points)) || null;
       setSelectedId(hit?.id||null); selectedIdRef.current = hit?.id||null;
       if (!hit) {
         panningRef.current = true;
@@ -1713,7 +1840,7 @@ calibRef.current =
       if (Date.now() - shapeClosedAtRef.current < SHAPE_CLOSE_SWALLOW_MS) return;
       if (ip.length === 0) {
         setInProgress([snap]); inProgressRef.current = [snap];
-      } else if (ip.length >= 3 && dist(snap, ip[0]) < SHAPE_CLOSE_TOL_PX / zoomRef.current) {
+      } else if (ip.length >= 3 && dist(snap, ip[0]) < GRAB_TOL_PX / zoomRef.current) {
         // Auto-close: snap exactly onto the first point and finish right here (same finish as double-click).
         shapeClosedAtRef.current = Date.now();
         finishPerimeter([...ip, { x: ip[0].x, y: ip[0].y }]);
@@ -1724,7 +1851,7 @@ calibRef.current =
       const ip = inProgressRef.current;
       // Same swallow guard as perimeter (see shapeClosedAtRef).
       if (Date.now() - shapeClosedAtRef.current < SHAPE_CLOSE_SWALLOW_MS) return;
-      if (ip.length >= 3 && dist(snap, ip[0]) < SHAPE_CLOSE_TOL_PX / zoomRef.current) {
+      if (ip.length >= 3 && dist(snap, ip[0]) < GRAB_TOL_PX / zoomRef.current) {
         // Auto-close: the click is consumed (not appended) and the polygon closes implicitly onto its first
         // point, exactly as double-click closes it — through the very same finishAreaVolume() (for volume that
         // includes opening the depth prompt).
@@ -2112,7 +2239,7 @@ calibRef.current =
       const map: Record<string,ToolMode> = {s:"select",p:"pan",l:"line",a:"area",c:"count",v:"volume"};
       const k = e.key.toLowerCase();
       if (map[k]) { setTool(map[k]); toolRef.current = map[k]; setInProgress([]); inProgressRef.current = []; }
-      if (e.key === "Escape") { setInProgress([]); inProgressRef.current = []; setCalibrating(false); calibratingRef.current = false; setCalibPts([]); calibPtsRef.current = []; scheduleRender(); }
+      if (e.key === "Escape") { exitEdit(); setInProgress([]); inProgressRef.current = []; setCalibrating(false); calibratingRef.current = false; setCalibPts([]); calibPtsRef.current = []; scheduleRender(); }
       if ((e.key === "Delete" || e.key === "Backspace") && selectedIdRef.current) {
         const next = measurementsRef.current.filter(m=>m.id!==selectedIdRef.current);
         setMeasurements(next); measurementsRef.current = next; pruneBatches(next); setSelectedId(null); selectedIdRef.current = null; scheduleRender();
@@ -2457,6 +2584,14 @@ calibRef.current = null;
             title="Clear calibration and start over"
             className="flex items-center justify-center w-6 h-6 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-500 dark:text-slate-400 hover:text-red-400 hover:border-red-500/30 transition">
             <X size={11}/>
+          </button>
+        )}
+
+        {/* Done editing: shown only while a measurement is in edit mode (its points show handles). Esc does the same. */}
+        {editingId && (
+          <button onClick={exitEdit} title="Stop editing points (Esc)"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold transition shadow-sm">
+            <Check size={12}/>{!isTablet && " Done editing"}
           </button>
         )}
 
@@ -2947,6 +3082,11 @@ calibRef.current = null;
                             className={`p-1 rounded transition flex-shrink-0 ${allHidden?"text-slate-400 dark:text-slate-600 hover:text-emerald-400":"text-slate-400 dark:text-slate-700 hover:text-amber-400"}`}>
                             {allHidden?<Eye size={11}/>:<EyeOff size={11}/>}
                           </button>
+                          <button onClick={e=>{e.stopPropagation();toggleEdit(onThisPage[0].id);}}
+                            title={onThisPage.some(x=>x.id===editingId)?"Done editing points":"Edit points (first shape of this batch on this page)"}
+                            className={`p-1 rounded transition flex-shrink-0 ${onThisPage.some(x=>x.id===editingId)?"text-sky-400 bg-sky-500/15":"text-slate-400 dark:text-slate-700 hover:text-sky-400"}`}>
+                            <Edit2 size={11}/>
+                          </button>
                           <button onClick={e=>{e.stopPropagation();const next=measurementsRef.current.filter(x=>!ids.has(x.id));setMeasurements(next);measurementsRef.current=next;pruneBatches(next);if(selectedId&&ids.has(selectedId)){setSelectedId(null);selectedIdRef.current=null;}scheduleRender();}}
                             title="Delete this whole batch"
                             className="p-1 rounded hover:bg-red-500/15 text-slate-400 dark:text-slate-700 hover:text-red-400 transition flex-shrink-0">
@@ -2969,6 +3109,11 @@ calibRef.current = null;
                           title={m.hidden?"Show measurement":"Hide measurement"}
                           className={`p-1 rounded transition flex-shrink-0 ${m.hidden?"text-slate-400 dark:text-slate-600 hover:text-emerald-400":"text-slate-400 dark:text-slate-700 hover:text-amber-400"}`}>
                           {m.hidden?<Eye size={11}/>:<EyeOff size={11}/>}
+                        </button>
+                        <button onClick={e=>{e.stopPropagation();toggleEdit(m.id);}}
+                          title={m.id===editingId?"Done editing points":"Edit points"}
+                          className={`p-1 rounded transition flex-shrink-0 ${m.id===editingId?"text-sky-400 bg-sky-500/15":"text-slate-400 dark:text-slate-700 hover:text-sky-400"}`}>
+                          <Edit2 size={11}/>
                         </button>
                         <button onClick={e=>{e.stopPropagation();const next=measurementsRef.current.filter(x=>x.id!==m.id);setMeasurements(next);measurementsRef.current=next;pruneBatches(next);if(selectedId===m.id){setSelectedId(null);selectedIdRef.current=null;}scheduleRender();}}
                           className="p-1 rounded hover:bg-red-500/15 text-slate-400 dark:text-slate-700 hover:text-red-400 transition flex-shrink-0">
