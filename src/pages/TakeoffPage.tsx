@@ -96,6 +96,13 @@ const GRAB_TOL_PX = 24;
 // Edit mode: a press on a vertex only becomes a drag once the pointer has moved this many SCREEN px; less than that
 // is a tap ("select this vertex"), so a slightly shaky tap never nudges the geometry.
 const VERTEX_DRAG_THRESHOLD_PX = 6;
+// Edit mode "+" (add-a-node) handle at a segment midpoint: a smaller grab radius than a vertex (24), so on short
+// segments the vertex still wins nearby; when both are in range the CLOSER one wins.
+const MIDPOINT_TOL_PX = 16;
+// Edit mode delete affordance: a small "x" disc drawn this many screen px up-and-right of the selected vertex (below
+// it if the vertex is near the top edge), and how close a press must be to its centre to count as hitting it.
+const DELETE_HANDLE_OFFSET_PX = 24;
+const DELETE_HANDLE_HIT_PX = 16;
 
 // PostgREST returns at most 1000 rows per response (its max-rows cap, by default), so a table that can grow past
 // that is read in windows until an empty page comes back. Each window advances by the rows actually received, so a
@@ -243,6 +250,67 @@ function recompute(m: Measurement, newPoints: Point[]): RecomputePatch {
   }
   return patch;
 }
+
+// An auto-closed perimeter stores its first point again as its last; the two are one physical point.
+function isClosedPerimeter(pts: Point[]): boolean { return pts.length >= 4 && dist(pts[0], pts[pts.length - 1]) < 1e-6; }
+
+// Edit mode: what a press at p would grab on ONE measurement — a vertex (index into points), or the "+" handle at a
+// segment midpoint (at = the index the new point would be spliced in at, i.e. between points[at-1] and points[at % n]).
+// Multi-point types only (perimeter/wall/area/volume; area/volume include the closing edge, whose insertion index is
+// n, i.e. appended). For a closed perimeter the last real point -> repeated first point segment inserts BEFORE the
+// repeat, so the shape stays closed. Vertex within GRAB_TOL_PX, "+" within MIDPOINT_TOL_PX; if both are in range the
+// closer wins (a tie goes to the vertex).
+function hitTestEditTarget(m: { type: ToolMode; points: Point[] }, p: Point, zoom: number): { kind: "vertex"; index: number } | { kind: "mid"; at: number } | null {
+  const pts = m.points, n = pts.length;
+  const vIdx = hitTestVertex(pts, p, zoom);
+  const vDist = vIdx === null ? Infinity : dist(p, pts[vIdx]);
+  let mAt = -1, mDist = Infinity;
+  if (m.type === "perimeter" || m.type === "wall" || m.type === "area" || m.type === "volume") {
+    const tol = MIDPOINT_TOL_PX / zoom;
+    const segCount = (m.type === "area" || m.type === "volume") ? n : n - 1;
+    for (let i = 0; i < segCount; i++) {
+      const a = pts[i], b = pts[(i + 1) % n];
+      const d = dist(p, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+      if (d < tol && d < mDist) { mAt = i + 1; mDist = d; }
+    }
+  }
+  if (vIdx !== null && (mAt < 0 || vDist <= mDist)) return { kind: "vertex", index: vIdx };
+  if (mAt >= 0) return { kind: "mid", at: mAt };
+  return null;
+}
+
+// May vertex idx of this measurement be deleted? A line never (always exactly 2 points). Open perimeter / wall need 2
+// points left, so 3+ to delete one. Area / volume need 3 left. A closed perimeter needs 3 DISTINCT points left
+// (its stored array has one more, the repeated first). A count marker may go while at least one remains.
+function canDeleteVertex(m: { type: ToolMode; points: Point[] }, idx: number): boolean {
+  const n = m.points.length;
+  if (!(idx >= 0 && idx < n)) return false;
+  if (m.type === "line") return false;
+  if (m.type === "count") return n >= 2;
+  if (m.type === "perimeter") return isClosedPerimeter(m.points) ? n - 1 >= 4 : n >= 3;
+  if (m.type === "wall") return n >= 3;
+  if (m.type === "area" || m.type === "volume") return n >= 4;
+  return false;
+}
+
+// The points left after deleting vertex idx (callers check canDeleteVertex first). Deleting the SHARED start/end of a
+// closed perimeter drops both copies and closes the loop on the next point instead, so the shape stays validly closed.
+function pointsAfterDelete(m: { type: ToolMode; points: Point[] }, idx: number): Point[] {
+  const pts = m.points;
+  if (m.type === "perimeter" && isClosedPerimeter(pts) && (idx === 0 || idx === pts.length - 1)) {
+    return [...pts.slice(1, pts.length - 1), pts[1]];
+  }
+  return pts.filter((_, i) => i !== idx);
+}
+
+// Where the delete "x" is drawn / hit for a vertex at canvas position cp.
+function deleteHandlePos(cp: Point): Point {
+  return { x: cp.x + DELETE_HANDLE_OFFSET_PX, y: cp.y < 40 ? cp.y + DELETE_HANDLE_OFFSET_PX : cp.y - DELETE_HANDLE_OFFSET_PX };
+}
+
+// Has an edit changed a result by more than floating-point noise? (Inserting a point on a straight segment re-sums the
+// same length in two pieces and can differ in the last bits; that must not count as a change.)
+function resultChanged(before: number, after: number): boolean { return Math.abs(after - before) > 1e-9 * Math.max(1, Math.abs(before)); }
 
 function distToSeg(p: Point, a: Point, b: Point) {
   const A=p.x-a.x,B=p.y-a.y,C=b.x-a.x,D=b.y-a.y;
@@ -729,18 +797,45 @@ const calibration =
   // orig is the measurement exactly as it was when the press began: every frame recomputes from it (not from the
   // previous frame), so the result is orig.result x (new geometry / orig geometry) with no drift. moved flips true
   // once the pointer travels VERTEX_DRAG_THRESHOLD_PX; until then nothing changes, and a release is a tap.
-  const draggingVertexRef = useRef<{ id: string; index: number; startClient: Point; startPdf: Point; orig: Measurement; moved: boolean } | null>(null);
+  const draggingVertexRef = useRef<{ id: string; index: number; startClient: Point; startPdf: Point; orig: Measurement; moved: boolean; addAt?: number } | null>(null);
   const hoverVertexRef = useRef<number | null>(null);      // mouse only: the vertex under the pointer (nothing to hover on touch)
   const selectedVertexRef = useRef<number | null>(null);   // set by a tap or a finished drag; step 3 will act on it
+  // A press in edit mode grabs either a vertex (drag it) or a "+" midpoint (tap adds a point there; dragging from it
+  // adds the point and drags it). addAt is set for the "+" case: the index the new point is spliced in at.
   function armVertexDrag(clientX: number, clientY: number): boolean {
     const id = editingIdRef.current; if (!id) return false;
     const m = measurementsRef.current.find(x => x.id === id);
     if (!m || m.hidden) return false; // a hidden measurement shows no handles, so there is nothing to grab
     const p = screenToPdf(clientX, clientY);
-    const idx = hitTestVertex(m.points, p, zoomRef.current);
-    if (idx === null) return false;
-    draggingVertexRef.current = { id, index: idx, startClient: { x: clientX, y: clientY }, startPdf: p, orig: m, moved: false };
+    const target = hitTestEditTarget(m, p, zoomRef.current);
+    if (!target) return false;
+    const base = { id, startClient: { x: clientX, y: clientY }, startPdf: p, orig: m, moved: false };
+    draggingVertexRef.current = target.kind === "vertex" ? { ...base, index: target.index } : { ...base, index: target.at, addAt: target.at };
     return true;
+  }
+  // Writes newPoints onto the measurement being edited: result rescaled from `orig` by recompute() (kept exactly as it
+  // was when the edit is geometry-neutral), plus wallLength / the wall caption where recompute() produced them.
+  function commitPoints(orig: Measurement, newPoints: Point[]): Measurement | undefined {
+    const patch = recompute(orig, newPoints);
+    const changed = resultChanged(orig.result, patch.result);
+    const result = changed ? patch.result : orig.result;
+    let updated: Measurement | undefined;
+    const next = measurementsRef.current.map(m => {
+      if (m.id !== orig.id) return m;
+      // A geometry-neutral edit (a "+" tap) also leaves wallLength and the wall caption exactly as they were.
+      updated = { ...m, points: newPoints, result, ...(changed && patch.wallLength !== undefined ? { wallLength: patch.wallLength } : {}), ...(changed && patch.label !== undefined ? { label: patch.label } : {}) };
+      return updated;
+    });
+    setMeasurements(next); measurementsRef.current = next;
+    return updated;
+  }
+  // The point list a press would produce BEFORE any movement: orig.points, or with the midpoint spliced in for a "+".
+  function dragBasis(d: { orig: Measurement; addAt?: number }): { basis: Point[]; base: Point } {
+    const pts = d.orig.points;
+    if (d.addAt === undefined) return { basis: pts, base: pts[0] };
+    const a = pts[d.addAt - 1], b = pts[d.addAt % pts.length];
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    return { basis: [...pts.slice(0, d.addAt), mid, ...pts.slice(d.addAt)], base: mid };
   }
   function updateVertexDrag(clientX: number, clientY: number) {
     const d = draggingVertexRef.current; if (!d) return;
@@ -749,31 +844,52 @@ const calibration =
       d.moved = true;
     }
     const p = screenToPdf(clientX, clientY);
-    const orig = d.orig, n = orig.points.length;
+    const { basis, base: mid } = dragBasis(d), n = basis.length;
+    const start = d.addAt === undefined ? basis[d.index] : mid;
     // The vertex follows the pointer's displacement (so grabbing 20px off-centre doesn't make it jump), then may
     // snap onto another measurement's point — never onto any point of the measurement being edited itself.
-    const want = { x: orig.points[d.index].x + (p.x - d.startPdf.x), y: orig.points[d.index].y + (p.y - d.startPdf.y) };
+    const want = { x: start.x + (p.x - d.startPdf.x), y: start.y + (p.y - d.startPdf.y) };
     const pos = snapToNearby(want, d.id);
     // An auto-closed perimeter stores its first point again as its last: they are ONE physical point, so both move.
-    const closed = orig.type === "perimeter" && n >= 4 && dist(orig.points[0], orig.points[n-1]) < 1e-6;
-    const newPoints = orig.points.map((q, i) => (i === d.index || (closed && ((d.index === 0 && i === n-1) || (d.index === n-1 && i === 0)))) ? pos : q);
-    const patch = recompute(orig, newPoints);
-    const next = measurementsRef.current.map(m => m.id === d.id
-      ? { ...m, points: newPoints, result: patch.result, ...(patch.wallLength !== undefined ? { wallLength: patch.wallLength } : {}), ...(patch.label !== undefined ? { label: patch.label } : {}) }
-      : m);
-    setMeasurements(next); measurementsRef.current = next;
+    const closed = d.orig.type === "perimeter" && isClosedPerimeter(basis);
+    const newPoints = basis.map((q, i) => (i === d.index || (closed && ((d.index === 0 && i === n-1) || (d.index === n-1 && i === 0)))) ? pos : q);
+    commitPoints(d.orig, newPoints);
     scheduleRender();
   }
   function finishVertexDrag() {
     const d = draggingVertexRef.current; if (!d) return;
     draggingVertexRef.current = null;
     selectedVertexRef.current = d.index; // a tap selects the vertex; a finished drag leaves the dragged vertex selected
-    if (d.moved) {
+    if (d.addAt !== undefined && !d.moved) {
+      // A tap on a "+": splice the midpoint in. Geometry is unchanged, so the result (and the BOQ) stay as they are.
+      commitPoints(d.orig, dragBasis(d).basis);
+    } else if (d.moved) {
       // Persistence needs nothing here: the debounced auto-save effect watches pageMeasurements. The linked BOQ task
       // is updated ONCE per drag (by the change in result since the press), never per frame.
       const cur = measurementsRef.current.find(m => m.id === d.id);
-      if (cur && cur.result !== d.orig.result) upsertMeasurementTask(cur, d.orig.result);
+      if (cur && resultChanged(d.orig.result, cur.result)) upsertMeasurementTask(cur, d.orig.result);
     }
+    scheduleRender();
+  }
+  // Delete affordance: is this canvas-local press on the "x" drawn beside the selected vertex?
+  function hitDeleteHandle(sx: number, sy: number): boolean {
+    const id = editingIdRef.current, idx = selectedVertexRef.current;
+    if (!id || idx === null || draggingVertexRef.current) return false;
+    const m = measurementsRef.current.find(x => x.id === id);
+    if (!m || m.hidden || !canDeleteVertex(m, idx)) return false;
+    const h = deleteHandlePos(pdfToCanvas(m.points[idx]));
+    return Math.hypot(sx - h.x, sy - h.y) < DELETE_HANDLE_HIT_PX;
+  }
+  // Removes the selected vertex (the caller has checked hitDeleteHandle, which already applies the per-type minimums),
+  // rescales the result, and sends the linked BOQ task the change once — the same delta pattern a drag uses on release.
+  function deleteSelectedVertex() {
+    const id = editingIdRef.current, idx = selectedVertexRef.current;
+    if (!id || idx === null) return;
+    const m = measurementsRef.current.find(x => x.id === id);
+    if (!m || !canDeleteVertex(m, idx)) return;
+    const updated = commitPoints(m, pointsAfterDelete(m, idx));
+    selectedVertexRef.current = null; hoverVertexRef.current = null; // nothing may keep pointing at a vertex that is gone
+    if (updated && resultChanged(m.result, updated.result)) upsertMeasurementTask(updated, m.result);
     scheduleRender();
   }
   // A second finger (pinch) or leaving edit mode mid-drag abandons it and puts the measurement back as it was.
@@ -1129,6 +1245,14 @@ useEffect(() => {
       ctx.restore();
       if (m.type !== "count") { ctx.fillStyle = selected && !dragging ? "#fff" : m.color; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill(); }
     });
+    // Delete affordance: a red "x" disc beside the selected vertex — only where deleting that vertex is allowed (never on a
+    // line, never below a type's minimum point count) and not while it is being dragged.
+    if (selectedIdx !== null && dragIdx === null && canDeleteVertex(m, selectedIdx) && pts[selectedIdx]) {
+      const h = deleteHandlePos(pts[selectedIdx]);
+      ctx.fillStyle = "#ef4444"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(h.x, h.y, 10, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(h.x-4, h.y-4); ctx.lineTo(h.x+4, h.y+4); ctx.moveTo(h.x+4, h.y-4); ctx.lineTo(h.x-4, h.y+4); ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -1846,6 +1970,7 @@ calibRef.current =
       // constants and why they're the same for mouse and touch.
       const rect = containerRef.current?.getBoundingClientRect();
       // Edit mode: a press on a vertex of the measurement being edited starts a (tap-or-drag) vertex press.
+      if (editingIdRef.current && rect && hitDeleteHandle(e.clientX - rect.left, e.clientY - rect.top)) { deleteSelectedVertex(); scheduleRender(); return; }
       if (editingIdRef.current && armVertexDrag(e.clientX, e.clientY)) { scheduleRender(); return; }
       if (rect && hitTestOffsetLine(p, e.clientX - rect.left, e.clientY - rect.top, editingIdRef.current)) {
         scheduleRender();
@@ -2234,6 +2359,12 @@ calibRef.current =
       const rect = containerRef.current?.getBoundingClientRect();
       // Edit mode: arm a vertex press straight from the real touchstart (same reason as the offset line just below:
       // the synthetic mousedown for a touch-and-hold is deferred until after the finger lifts).
+      if (editingIdRef.current && rect && hitDeleteHandle(t.clientX - rect.left, t.clientY - rect.top)) {
+        e.preventDefault();
+        deleteSelectedVertex();
+        scheduleRender();
+        return;
+      }
       if (editingIdRef.current && armVertexDrag(t.clientX, t.clientY)) {
         e.preventDefault();
         scheduleRender();
