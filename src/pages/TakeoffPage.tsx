@@ -2106,7 +2106,8 @@ calibRef.current =
         // Keep the linked BOQ task's quantity tracking the count: add just this click's delta.
         upsertMeasurementTask(updated, existing.result);
       } else {
-        const nm: Measurement = { id:uid(), batchId:batch.id, type:"count", points:[snap], result:1, unit:"ea", label:"", color:batch.color, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
+        const item = costItems.find(i=>i.id===linkedItemId);
+        const nm: Measurement = { id:uid(), batchId:batch.id, type:"count", points:[snap], result:1, unit:"ea", label:"", color:batch.color, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
         const next = [...measurementsRef.current, nm];
         setMeasurements(next); measurementsRef.current = next;
         upsertMeasurementTask(nm);
@@ -2207,8 +2208,9 @@ calibRef.current =
       const areaPx = polyArea(ip);
       const result = calib ? areaPx * calib.feetPerPx * calib.feetPerPx : areaPx;
       const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+      const item = costItems.find(i=>i.id===linkedItemId);
       const batch = joinBatch("area");
-      const nm: Measurement = { id:uid(), batchId:batch.id, type:"area", points:[...ip], result, unit:"ft²", label:"", color:batch.color, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
+      const nm: Measurement = { id:uid(), batchId:batch.id, type:"area", points:[...ip], result, unit:"ft²", label:"", color:batch.color, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
       const next = [...measurementsRef.current, nm];
       setMeasurements(next); measurementsRef.current = next;
       upsertMeasurementTask(nm);
@@ -2289,9 +2291,10 @@ calibRef.current =
     const depthFt = d / 12;
     const result = areaFt2 * depthFt;
     const asmb = assemblies.find(a=>a.id===linkedAssemblyId);
+    const item = costItems.find(i=>i.id===linkedItemId);
     const batch = joinBatch("volume");
     if (batch.depthIn === undefined) setBatchDepth("volume", d);
-    const nm: Measurement = { id:uid(), batchId:batch.id, type:"volume", points:[...ip], result, unit:"ft³", label:`${d}" deep`, depthIn:d, color:batch.color, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, timestamp:Date.now(), pageNumber:pageNum };
+    const nm: Measurement = { id:uid(), batchId:batch.id, type:"volume", points:[...ip], result, unit:"ft³", label:`${d}" deep`, depthIn:d, color:batch.color, linkedAssemblyId:linkedAssemblyId||undefined, linkedAssemblyName:asmb?.name, linkedItemId:linkedItemId||undefined, linkedItemName:item?.item_name, timestamp:Date.now(), pageNumber:pageNum };
     const next = [...measurementsRef.current, nm];
     setMeasurements(next); measurementsRef.current = next;
     upsertMeasurementTask(nm);
@@ -2564,7 +2567,10 @@ calibRef.current =
       } else {
         q.eq("linked_item_id", nm.linkedItemId!).is("linked_assembly_id", null);
       }
-      const { data: existing } = await q.maybeSingle();
+      // If several tasks already match (e.g. made by hand on the dashboard) use the EARLIEST one instead of letting the
+      // multi-row error read as "none" and inserting yet another; and a real query error must not look like "none" either.
+      const { data: existing, error: lookupErr } = await q.order("created_at", { ascending: true }).limit(1).maybeSingle();
+      if (lookupErr) throw lookupErr;
       if (existing) {
         await supabase.from("project_tasks")
           .update({ quantity: (existing.quantity || 0) + convertedQty, updated_at: new Date().toISOString() })
@@ -2630,6 +2636,7 @@ calibRef.current =
     value:number;
     metric:string;
     assemblyId?: string;
+    costItemId?: string;
     length?: number;
     height?: number;
     width?: number;
@@ -2637,8 +2644,11 @@ calibRef.current =
   }> = {};
 
   measurements.forEach(m => {
+    // Assembly id, else the linked rate item's id (so two items that share a display name stay separate), else the
+    // item name (measurements saved before item ids were carried), else the bare type.
     const key =
       m.linkedAssemblyId ||
+      (m.linkedItemId ? "item:" + m.linkedItemId : "") ||
       m.linkedItemName ||
       m.type;
 
@@ -2657,6 +2667,8 @@ calibRef.current =
         value: 0,
         metric: sellUnit,
         assemblyId: m.linkedAssemblyId,
+        // The rate-library item's real id (never set together with an assembly), so BOQ can look up its rate.
+        costItemId: m.linkedAssemblyId ? undefined : m.linkedItemId,
       };
     }
 

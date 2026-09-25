@@ -250,6 +250,14 @@ function getCategoryLabel(c: any): string { return String(c?.name ?? "Unnamed Ca
 function getCategoryScope(c: any): string { return String(c?.scope_of_work ?? ""); }
 function getUnitId(u: any): string { return String(u?.id ?? ""); }
 function getUnitLabel(u: any): string { return String(u?.name ?? "Unit"); }
+// Loose unit comparison for the takeoff import's mismatch note: case/spacing/punctuation-insensitive, "²"/"sq ft"/"sqft"
+// all read as ft2, "sq m"/"sqm" as m2 — so common spellings of the same unit aren't flagged as a mismatch.
+function normalizeUnitLabel(u: string | null | undefined): string {
+  return String(u || "").toLowerCase().replace(/[\s.\-_]/g, "").replace(/²/g, "2").replace(/³/g, "3")
+    .replace(/^(sqft|sf|sqfeet|squarefeet|squarefoot|ft2)$/, "ft2").replace(/^(sqm|squaremeters?|squaremetres?|m2)$/, "m2")
+    .replace(/^(cuft|cf|cubicfeet|cubicfoot|ft3)$/, "ft3").replace(/^(cum|cubicmeters?|cubicmetres?|m3)$/, "m3")
+    .replace(/^(lf|linft|linearfeet|linearfoot|feet|foot|ft)$/, "ft").replace(/^(each|piece|pieces|pc|pcs|no|nr|ea)$/, "ea");
+}
 function resolveProjectId(): string | null {
   const keys = ["active_project_id", "selected_project_id", "project_id"];
   for (const k of keys) { const v = localStorage.getItem(k); if (v?.trim()) return v.trim(); }
@@ -1185,6 +1193,9 @@ export default function BOQPage() {
 
   const [rateItems, setRateItems] = useState<RateItem[]>([]);
   const [rateLoading, setRateLoading] = useState(false);
+  // True once the rate-library load has finished (success or failure): lets the takeoff import wait for it without
+  // waiting forever on an empty/failed library.
+  const [ratesLoaded, setRatesLoaded] = useState(false);
   const [companyId, setCompanyId] = useState<string>("");
 
   // Find item modal
@@ -1287,7 +1298,7 @@ export default function BOQPage() {
             .order("item_name", { ascending: true }).limit(5000);
           if (alive) setRateItems((data ?? []) as RateItem[]);
         } catch (e: any) { console.error("Failed to load rate items:", e); }
-      } finally { if (alive) setRateLoading(false); }
+      } finally { if (alive) { setRateLoading(false); setRatesLoaded(true); } }
     }
     load();
     return () => { alive = false; };
@@ -1326,6 +1337,9 @@ useEffect(() => {
 
   const needsExplosion =
     groupsParam.includes('"assemblyId"');
+
+  // Groups that carry a rate item's id need the rate library loaded to pre-fill the item and its rate.
+  if (groupsParam.includes('"costItemId"') && !ratesLoaded) return;
 
   if (
     needsExplosion &&
@@ -1369,6 +1383,37 @@ useEffect(() => {
 
           if (exploded.length > 0) {
             importedItems.push(...exploded);
+            continue;
+          }
+        }
+
+        // A single rate-library item (no assembly): fill the line from the real item and its current rate, the same
+        // fields "Find Item" fills. If the item can't be found (deleted / library unavailable) fall through to the manual line.
+        if (!g.assemblyId && g.costItemId) {
+          const ri = rateItems.find(r => r.id === g.costItemId);
+          if (ri) {
+            const unitObj = usableUnits.find((u: any) => getUnitLabel(u).toLowerCase() === (ri.unit || "").toLowerCase());
+            // The takeoff quantity is in g.metric (already converted to the item's unit when the item has a coverage
+            // factor). If that isn't the library's unit, say so on the line rather than silently pricing it per another unit.
+            const unitNote = normalizeUnitLabel(g.metric) !== normalizeUnitLabel(ri.unit || "")
+              ? `Takeoff quantity is in ${g.metric}; library rate is per ${ri.unit || "?"}`
+              : "";
+            importedItems.push({
+              id: safeId(),
+              pick_type: ri.item_type || "",
+              pick_category: ri.category || "",
+              pick_item: ri.item_name || "",
+              pick_variant: ri.variant || "",
+              cost_item_id: ri.id,
+              item_name: ri.item_name || g.name || "Imported Item",
+              description: [ri.description || "", unitNote].filter(Boolean).join(" — "),
+              unit_id: unitObj ? getUnitId(unitObj) : null,
+              qty: Number(g.value) || 0,
+              // Units match: pre-fill the library's current rate. They don't: leave the rate at 0 (the description says
+              // why) rather than price a quantity in one unit against a rate per another.
+              rate: unitNote ? 0 : numOr(ri.current_rate ?? 0, 0),
+              rate_source: unitNote ? "" : "library",
+            });
             continue;
           }
         }
@@ -1425,7 +1470,8 @@ useEffect(() => {
   assemblies,
   assemblyComponents,
   rateItems,
-  usableUnits
+  usableUnits,
+  ratesLoaded
 ]);
 
   // --- BOQ Persistence -------------------------------------------------------
