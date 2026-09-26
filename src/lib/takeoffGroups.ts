@@ -20,6 +20,16 @@ export interface GroupableCostItem {
   id: string;
   unit?: string | null;
   coverage_factor?: number | null;
+  // Percent added for waste when converting by coverage_factor. 0 / null / undefined mean "never set" and use DEFAULT_COVERAGE_WASTE_PERCENT.
+  waste_percent?: number | null;
+}
+
+// Matches the 5% the BOQ "Enter measurements" modal applies. Used when an item's waste_percent is 0 or unset.
+export const DEFAULT_COVERAGE_WASTE_PERCENT = 5;
+
+export function effectiveWastePercent(item: { waste_percent?: number | null } | null | undefined): number {
+  const w = Number(item?.waste_percent);
+  return Number.isFinite(w) && w > 0 ? w : DEFAULT_COVERAGE_WASTE_PERCENT;
 }
 
 export interface TakeoffGroup {
@@ -35,6 +45,8 @@ export interface TakeoffGroup {
   height?: number;
   width?: number;
   heightMismatch?: boolean;
+  // Set only when the value was converted by a coverage_factor: the waste percent that was included in it.
+  wastePercent?: number;
 }
 
 // The key a measurement is grouped under. Assembly id, else the linked rate item's id (so two items that share a display
@@ -50,6 +62,7 @@ export function groupTakeoffMeasurements(measurements: GroupableMeasurement[], c
   // A plain object (not a Map) on purpose: the groups come back in this object's key order, exactly as before this was
   // moved out of the Takeoff page.
   const groups: Record<string, TakeoffGroup> = {};
+  const coverage: Record<string, Record<string, { raw: number; cf: number; waste: number }>> = {};
 
   measurements.forEach(m => {
     const key = takeoffGroupKey(m);
@@ -57,7 +70,7 @@ export function groupTakeoffMeasurements(measurements: GroupableMeasurement[], c
     // Apply coverage conversion for rate-library items with a coverage factor
     const item = m.linkedItemId ? costItems.find(i => i.id === m.linkedItemId) : null;
     const cf = item?.coverage_factor;
-    const convertedVal = (cf && cf > 0) ? Math.ceil(m.result / cf) : m.result;
+    const hasCoverage = !!(item && cf && cf > 0);
     const sellUnit = (cf && cf > 0 && item?.unit) ? item.unit : m.unit;
 
     if (!groups[key]) {
@@ -83,7 +96,22 @@ export function groupTakeoffMeasurements(measurements: GroupableMeasurement[], c
       }
     }
 
-    groups[key].value += convertedVal;
+    if (hasCoverage) {
+      // Sum the raw measured quantity per item; waste and the round-up are applied once, after the loop.
+      const acc = (coverage[key] ??= {});
+      (acc[item!.id] ??= { raw: 0, cf: cf as number, waste: effectiveWastePercent(item) }).raw += m.result;
+    } else {
+      groups[key].value += m.result;
+    }
+  });
+
+  // ceil((sum of measured / coverage_factor) * (1 + waste/100)), once per item in the group. The toFixed guards float
+  // noise (e.g. 10 * 1.1 = 11.000000000000002) from rounding up an extra unit.
+  Object.keys(coverage).forEach(key => {
+    Object.values(coverage[key]).forEach(c => {
+      groups[key].value += Math.ceil(Number(((c.raw / c.cf) * (1 + c.waste / 100)).toFixed(6)));
+      if (groups[key].wastePercent === undefined) groups[key].wastePercent = c.waste;
+    });
   });
 
   return Object.values(groups);

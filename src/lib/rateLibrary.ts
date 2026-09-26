@@ -86,3 +86,25 @@ export async function createOwnCopyAtRate(
     },
   };
 }
+
+// ─── Coverage derivation ─────────────────────────────────────────────────────
+// Recognises ONLY the simple divide-by-constant form "<var> / <number>" where <var> is the
+// formula type's own variable (area/length/count/volume). Anything else (multipliers,
+// parentheses, several operators, another variable) returns null so coverage_factor is
+// left untouched. coverage_unit is the MEASURED unit (matches the seeded cost_items).
+const COVERAGE_VAR_FOR_TYPE: Record<string, string> = { area: "area", length: "length", volume: "volume", count: "count", coverage: "area" };
+const COVERAGE_MEASURED_UNIT: Record<string, string> = { area: "ft²", length: "lf", volume: "ft³", count: "ea" };
+const COVERAGE_PATTERN = /^\s*([a-z]+)\s*\/\s*(\d+(?:\.\d+)?|\.\d+)\s*$/i;
+
+export function deriveCoverageFromFormula(
+  formulaType: string,
+  formula: string,
+): { factor: number; unit: string } | null {
+  const want = COVERAGE_VAR_FOR_TYPE[formulaType];
+  if (!want) return null;
+  const m = COVERAGE_PATTERN.exec(formula || "");
+  if (!m || m[1].toLowerCase() !== want) return null;
+  const factor = Number(m[2]);
+  if (!Number.isFinite(factor) || factor <= 0) return null;
+  return { factor, unit: COVERAGE_MEASURED_UNIT[want] };
+}

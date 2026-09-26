@@ -1404,6 +1404,8 @@ useEffect(() => {
             const unitNote = normalizeUnitLabel(g.metric) !== normalizeUnitLabel(ri.unit || "")
               ? `Takeoff quantity is in ${g.metric}; library rate is per ${ri.unit || "?"}`
               : "";
+            // A coverage-converted quantity that includes waste says so, so the final number is explainable later.
+            const wasteNote = Number(g.wastePercent) > 0 ? `(includes ${Number(g.wastePercent)}% waste)` : "";
             importedItems.push({
               id: safeId(),
               pick_type: ri.item_type || "",
@@ -1412,7 +1414,7 @@ useEffect(() => {
               pick_variant: ri.variant || "",
               cost_item_id: ri.id,
               item_name: ri.item_name || g.name || "Imported Item",
-              description: [ri.description || "", unitNote].filter(Boolean).join(" — "),
+              description: [ri.description || "", unitNote, wasteNote].filter(Boolean).join(" — "),
               unit_id: unitObj ? getUnitId(unitObj) : null,
               qty: Number(g.value) || 0,
               // Units match: pre-fill the library's current rate. They don't: leave the rate at 0 (the description says

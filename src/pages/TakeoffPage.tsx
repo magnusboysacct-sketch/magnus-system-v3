@@ -83,6 +83,7 @@ interface CostItem {
   category: string | null;
   coverage_factor?: number | null;
   coverage_unit?: string | null;
+  waste_percent?: number | null;
 }
 
 // --- Constants ----------------------------------------------------------------
@@ -127,7 +128,7 @@ async function fetchAllWindows<T>(label: string, page: (from: number, to: number
 // The Rate Library, read directly from cost_items (RLS applies to the table itself).
 function fetchAllCostItems(): Promise<CostItem[]> {
   return fetchAllWindows<CostItem>("cost_items", (a, b) => supabase.from("cost_items")
-    .select("id,item_name,unit,category,coverage_factor,coverage_unit").eq("is_active", true)
+    .select("id,item_name,unit,category,coverage_factor,coverage_unit,waste_percent").eq("is_active", true)
     .order("item_name").order("id").range(a, b));
 }
 

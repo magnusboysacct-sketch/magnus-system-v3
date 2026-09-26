@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { upsertLibraryRate } from "../lib/rateLibrary";
+import { upsertLibraryRate, deriveCoverageFromFormula } from "../lib/rateLibrary";
 import MasterCategorySelect from "../components/master/MasterCategorySelect.tsx";
 import MasterUnitSelect from "../components/master/MasterUnitSelect.tsx";
 import EditableDropdown from "../components/common/EditableDropdown.tsx";
@@ -73,6 +73,9 @@ type CostItem = {
   current_effective_date: string | null;
   current_source: string | null;
   current_batch_id: string | null;
+  coverage_factor?: number | null;
+  coverage_unit?: string | null;
+  waste_percent?: number | null;
 };
 
 type ImportRow = {
@@ -316,6 +319,24 @@ export default function RatesPage() {
   const [fUnitWeight,setFUnitWeight]=useState("");
   const [fWeightUnit,setFWeightUnit]=useState("kg");
   const [fCoverageRate,setFCoverageRate]=useState("");
+  const [fCovFactor,setFCovFactor]=useState("");
+  const [fCovUnit,setFCovUnit]=useState("");
+  const [fWaste,setFWaste]=useState("");
+  const [wasteOrig,setWasteOrig]=useState(false); // item already had a non-zero waste_percent when opened
+  const [covOrig,setCovOrig]=useState(false); // item already had a coverage_factor when opened
+  const covAutoRef=useRef(false); // fields currently hold a value derived from the formula
+  useEffect(()=>{
+    const eff=formulaType==="coverage"?`area / ${parseFloat(fCoverageRate)||400}`:formulaInput;
+    const d=formulaType?deriveCoverageFromFormula(formulaType,eff):null;
+    if(d){
+      if(covAutoRef.current||(!fCovFactor.trim()&&!fCovUnit.trim())){
+        setFCovFactor(String(d.factor));setFCovUnit(d.unit);covAutoRef.current=true;
+      }
+    } else if(covAutoRef.current){
+      setFCovFactor("");setFCovUnit("");covAutoRef.current=false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[formulaType,formulaInput,fCoverageRate]);
   const [fLaborMode,setFLaborMode]=useState<"day"|"hour">("day");
   const [fCrewSize,setFCrewSize]=useState("1");
 
@@ -370,7 +391,7 @@ export default function RatesPage() {
         const{data:profile}=await supabase.from("user_profiles").select("company_id").eq("id",user.id).single();
         if(profile?.company_id&&alive) setCompanyId(profile.company_id);
       }
-      const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
+      const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id,coverage_factor,coverage_unit,waste_percent";
       let{data:rawItems,error:loadError}=await fetchAllCostItems(sel);
       if(loadError){
         console.error("RatesPage load error:",loadError);
@@ -396,7 +417,7 @@ export default function RatesPage() {
     let alive=true;
     async function load(){
       setLoading(true);
-      const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id";
+      const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id,coverage_factor,coverage_unit,waste_percent";
       const{data:rawItems}=await fetchAllCostItems(sel);
       if(!alive) return;
       const{count}=await supabase.from("v_cost_items_current").select("id",{count:"exact",head:true});
@@ -487,6 +508,7 @@ export default function RatesPage() {
     setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit(unitOptions[0]??"each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
     setFUnitWeight("");setFWeightUnit("kg");setFCoverageRate("");setFLaborMode("day");setFCrewSize("1");
+    covAutoRef.current=false;setFCovFactor("");setFCovUnit("");setCovOrig(false);setFWaste("");setWasteOrig(false);
     setIsModalOpen(true);
   }
   function openEdit(item:CostItem){
@@ -496,6 +518,9 @@ export default function RatesPage() {
     setFType(item.item_type||ITEM_TYPES[0]);setFUnit((item.unit||"").trim()||(unitOptions[0]??"each"));
     setFRate(item.current_rate==null?"":String(item.current_rate));setFVariant(item.variant||"");setFGrade(item.grade||"");
     setFUnitWeight("");setFWeightUnit("kg");setFCoverageRate("");setFLaborMode("day");setFCrewSize("1");
+    covAutoRef.current=false;
+    setFCovFactor(item.coverage_factor!=null?String(item.coverage_factor):"");setFCovUnit(item.coverage_unit||"");setCovOrig(item.coverage_factor!=null);
+    setFWaste(Number(item.waste_percent)>0?String(item.waste_percent):"");setWasteOrig(Number(item.waste_percent)>0);
     const calcJson=(item as any).calc_engine_json;
     if(calcJson){
       try{
@@ -529,6 +554,7 @@ export default function RatesPage() {
     setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit("each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
     setFUnitWeight("");setFWeightUnit("kg");setFCoverageRate("");setFLaborMode("day");setFCrewSize("1");
+    covAutoRef.current=false;setFCovFactor("");setFCovUnit("");setCovOrig(false);setFWaste("");setWasteOrig(false);
     setActiveId(null);setMode("add");setSaveError(null);
   }
 
@@ -1283,6 +1309,25 @@ export default function RatesPage() {
                     className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-green-400 font-bold outline-none focus:border-blue-500/50 transition"
                     placeholder="e.g. 18500"/>
                 </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Coverage per unit</div>
+                  <input value={fCovFactor} onChange={e=>{covAutoRef.current=false;setFCovFactor(e.target.value);}} type="number" step="any" min="0"
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-blue-500/50 transition"
+                    placeholder="e.g. 32"/>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Coverage measured in</div>
+                  <input value={fCovUnit} onChange={e=>{covAutoRef.current=false;setFCovUnit(e.target.value);}}
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-blue-500/50 transition"
+                    placeholder="e.g. ft²"/>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Waste %</div>
+                  <input value={fWaste} onChange={e=>setFWaste(e.target.value)} type="number" step="any" min="0"
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-blue-500/50 transition"
+                    placeholder="0"/>
+                </div>
+                <div className="col-span-2 -mt-2 text-[11px] text-slate-500">How much measured quantity one {fUnit||"unit"} covers (e.g. 32 ft² per sheet). Takeoff divides by this when sending to BOQ. Leave blank for none. Waste % is added on top of that conversion; leave it blank or 0 to use the standard 5%.</div>
               </div>
 
               {/* Advanced: Calculator */}
@@ -1436,6 +1481,20 @@ export default function RatesPage() {
                   updated_at:new Date().toISOString(),
                   calc_engine_json:formulaType?buildCalcJson(formulaType,formulaInput):null,
                 };
+                {
+                  const cf=parseFloat(fCovFactor);
+                  if(fCovFactor.trim()&&Number.isFinite(cf)&&cf>0){
+                    payload.coverage_factor=cf;payload.coverage_unit=fCovUnit.trim()||null;
+                  } else if(mode==="edit"&&covOrig&&!fCovFactor.trim()){
+                    payload.coverage_factor=null;payload.coverage_unit=null; // user cleared it
+                  }
+                  const wp=parseFloat(fWaste);
+                  if(fWaste.trim()&&Number.isFinite(wp)&&wp>0){
+                    payload.waste_percent=wp;
+                  } else if(mode==="edit"&&wasteOrig){
+                    payload.waste_percent=0; // user cleared it -> back to "unset" (0)
+                  }
+                }
                 setSaveError(null);
                 setBusy(true);
                 try{
