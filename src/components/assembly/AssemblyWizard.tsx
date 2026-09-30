@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { X, ChevronRight, ChevronLeft, Check, AlertCircle } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import CostItemPicker, { type CostItem } from "../common/CostItemPicker";
+import { SmartItemSelector, type SmartItemSelection } from "../SmartItemSelector";
 
 // ─── Bar size table ────────────────────────────────────────────────────────
 const BAR_SIZES = [
@@ -3950,15 +3951,14 @@ export default function AssemblyWizard({
         </div>
       </div>
 
-      {pickerOpenFor !== null && (
-        <CostItemPicker
-          costItems={costItems}
-          onSelect={(item) => {
-            updateReviewComponent(pickerOpenFor, { cost_item_id: item.id, matched_item_name: item.item_name, match_status: "user_matched" });
+      {pickerOpenFor !== null && companyId && (
+        <SmartItemSelector companyId={companyId}
+          onSelect={(sel: SmartItemSelection) => {
+            updateReviewComponent(pickerOpenFor, { cost_item_id: sel.costItemId, matched_item_name: sel.itemName, match_status: "user_matched" });
             setPickerOpenFor(null);
           }}
-          onClose={() => setPickerOpenFor(null)}
-        />
+          onCancel={() => setPickerOpenFor(null)}
+          title="Match Component to Rate Library Item"/>
       )}
     </div>
   );
