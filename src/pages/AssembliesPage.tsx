@@ -6,7 +6,8 @@ import { supabase } from "../lib/supabase";
 import { useMasterLists } from "../hooks/useMasterLists";
 import EditableDropdown from "../components/common/EditableDropdown";
 import AssemblyWizard from "../components/assembly/AssemblyWizard";
-import CostItemPicker, { type CostItem } from "../components/common/CostItemPicker";
+import { type CostItem } from "../components/common/CostItemPicker";
+import { SmartItemSelector, type SmartItemSelection } from "../components/SmartItemSelector";
 import { magnusAI } from "../lib/magnusAI";
 import {
   Plus, Trash2, Edit2, Save, X, Search,
@@ -206,6 +207,25 @@ export default function AssembliesPage() {
     cost_item_id: "", line_type: "material", formula: "", waste_percent: "0", notes: "",
   });
   const [showItemSearch, setShowItemSearch] = useState(false);
+  // sel.type comes straight from cost_items.item_type ("Material", "Labor"/"Labour", "Equipment",
+  // "Subcontract", "Other", title-cased) — LINE_TYPES below is the lowercase set the dropdown and
+  // addComponent()/updateComponentFormula() actually store. "labour" is normalized to "labor" since
+  // SmartItemSelector's own TYPE_META treats both spellings as the same type.
+  function lineTypeFromItemType(itemType: string): string | null {
+    const t = itemType.trim().toLowerCase();
+    const mapped = t === "labour" ? "labor" : t;
+    return LINE_TYPES.includes(mapped) ? mapped : null;
+  }
+  function handleSmartItemSelect(sel: SmartItemSelection) {
+    // Picking an item sets a sensible line_type default from its own item_type — always overwriting,
+    // not just when blank, so choosing a Labor item after a Material one updates it too. An unmapped/
+    // missing item_type (mapped === null) leaves whatever line_type was already selected untouched,
+    // rather than clobbering it with a value the dropdown wouldn't recognize. The user can still
+    // change the dropdown manually afterward — this only sets the default at pick time.
+    const mapped = lineTypeFromItemType(sel.type || "");
+    setNewComp(p => ({ ...p, cost_item_id: sel.costItemId || "", line_type: mapped ?? p.line_type }));
+    setShowItemSearch(false);
+  }
 
   // Live preview
   const [previewVars, setPreviewVars] = useState<Record<string, string>>({
@@ -1114,12 +1134,9 @@ export default function AssembliesPage() {
       )}
 
       {/* ── Item Search Modal ── */}
-      {showItemSearch && (
-        <CostItemPicker
-          costItems={costItems}
-          onSelect={(item) => { setNewComp(p => ({ ...p, cost_item_id: item.id })); setShowItemSearch(false); }}
-          onClose={() => setShowItemSearch(false)}
-        />
+      {showItemSearch && companyId && (
+        <SmartItemSelector companyId={companyId} onSelect={handleSmartItemSelect}
+          onCancel={() => setShowItemSearch(false)} title="Select Item from Rate Library"/>
       )}
 
       {/* Toast */}

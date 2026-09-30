@@ -97,7 +97,10 @@ export function SmartItemSelector({
       const { data, error } = await supabase
         .from("v_cost_items_current")
         .select("id, item_name, category, item_group, material_type, use_type, item_size, variant_code, variant, unit, current_rate, item_type")
-        .eq("company_id", companyId)
+        // Global items (company_id IS NULL, the bulk of the seeded rate library) are readable
+        // by every company under the cost_items_select RLS policy — include them alongside the
+        // company's own items, rather than only the company's own rows.
+        .or(`company_id.eq.${companyId},company_id.is.null`)
         .eq("is_active", true)
         .order("item_name");
       if (error) throw error;
