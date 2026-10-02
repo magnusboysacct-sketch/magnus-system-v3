@@ -76,6 +76,7 @@ type CostItem = {
   coverage_factor?: number | null;
   coverage_unit?: string | null;
   waste_percent?: number | null;
+  piece_weight_kg?: number | null;
 };
 
 type ImportRow = {
@@ -322,6 +323,8 @@ export default function RatesPage() {
   const [fCovFactor,setFCovFactor]=useState("");
   const [fCovUnit,setFCovUnit]=useState("");
   const [fWaste,setFWaste]=useState("");
+  const [fPieceWeight,setFPieceWeight]=useState("");
+  const [pieceWeightOrig,setPieceWeightOrig]=useState(false); // item already had a piece_weight_kg when opened
   const [wasteOrig,setWasteOrig]=useState(false); // item already had a non-zero waste_percent when opened
   const [covOrig,setCovOrig]=useState(false); // item already had a coverage_factor when opened
   const covAutoRef=useRef(false); // fields currently hold a value derived from the formula
@@ -391,7 +394,7 @@ export default function RatesPage() {
         const{data:profile}=await supabase.from("user_profiles").select("company_id").eq("id",user.id).single();
         if(profile?.company_id&&alive) setCompanyId(profile.company_id);
       }
-      const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id,coverage_factor,coverage_unit,waste_percent";
+      const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id,coverage_factor,coverage_unit,waste_percent,piece_weight_kg";
       let{data:rawItems,error:loadError}=await fetchAllCostItems(sel);
       if(loadError){
         console.error("RatesPage load error:",loadError);
@@ -417,7 +420,7 @@ export default function RatesPage() {
     let alive=true;
     async function load(){
       setLoading(true);
-      const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id,coverage_factor,coverage_unit,waste_percent";
+      const sel="id,item_name,description,cost_code,unit,category,item_type,updated_at,calc_engine_json,current_rate,current_currency,current_effective_date,current_source,current_batch_id,coverage_factor,coverage_unit,waste_percent,piece_weight_kg";
       const{data:rawItems}=await fetchAllCostItems(sel);
       if(!alive) return;
       const{count}=await supabase.from("v_cost_items_current").select("id",{count:"exact",head:true});
@@ -508,7 +511,7 @@ export default function RatesPage() {
     setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit(unitOptions[0]??"each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
     setFUnitWeight("");setFWeightUnit("kg");setFCoverageRate("");setFLaborMode("day");setFCrewSize("1");
-    covAutoRef.current=false;setFCovFactor("");setFCovUnit("");setCovOrig(false);setFWaste("");setWasteOrig(false);
+    covAutoRef.current=false;setFCovFactor("");setFCovUnit("");setCovOrig(false);setFWaste("");setWasteOrig(false);setFPieceWeight("");setPieceWeightOrig(false);
     setIsModalOpen(true);
   }
   function openEdit(item:CostItem){
@@ -521,6 +524,7 @@ export default function RatesPage() {
     covAutoRef.current=false;
     setFCovFactor(item.coverage_factor!=null?String(item.coverage_factor):"");setFCovUnit(item.coverage_unit||"");setCovOrig(item.coverage_factor!=null);
     setFWaste(Number(item.waste_percent)>0?String(item.waste_percent):"");setWasteOrig(Number(item.waste_percent)>0);
+    setFPieceWeight(Number(item.piece_weight_kg)>0?String(item.piece_weight_kg):"");setPieceWeightOrig(Number(item.piece_weight_kg)>0);
     const calcJson=(item as any).calc_engine_json;
     if(calcJson){
       try{
@@ -554,7 +558,7 @@ export default function RatesPage() {
     setFCategory(categories[0]?.name??"Uncategorized");setFType(ITEM_TYPES[0]);
     setFUnit("each");setFRate("");setFormulaType("");setFormulaInput("");setFormulaPreview(null);
     setFUnitWeight("");setFWeightUnit("kg");setFCoverageRate("");setFLaborMode("day");setFCrewSize("1");
-    covAutoRef.current=false;setFCovFactor("");setFCovUnit("");setCovOrig(false);setFWaste("");setWasteOrig(false);
+    covAutoRef.current=false;setFCovFactor("");setFCovUnit("");setCovOrig(false);setFWaste("");setWasteOrig(false);setFPieceWeight("");setPieceWeightOrig(false);
     setActiveId(null);setMode("add");setSaveError(null);
   }
 
@@ -1327,7 +1331,13 @@ export default function RatesPage() {
                     className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-blue-500/50 transition"
                     placeholder="0"/>
                 </div>
-                <div className="col-span-2 -mt-2 text-[11px] text-slate-500">How much measured quantity one {fUnit||"unit"} covers (e.g. 32 ft² per sheet). Takeoff divides by this when sending to BOQ. Leave blank for none. Waste % is added on top of that conversion; leave it blank or 0 to use the standard 5%.</div>
+                <div>
+                  <div className="text-xs text-slate-500 mb-1.5 font-medium">Weight per unit (kg)</div>
+                  <input value={fPieceWeight} onChange={e=>setFPieceWeight(e.target.value)} type="number" step="any" min="0"
+                    className="w-full bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-blue-500/50 transition"
+                    placeholder="e.g. 5.07"/>
+                </div>
+                <div className="col-span-2 -mt-2 text-[11px] text-slate-500">How much measured quantity one {fUnit||"unit"} covers (e.g. 32 ft² per sheet). Takeoff divides by this when sending to BOQ. Leave blank for none. Waste % is added on top of that conversion; leave it blank or 0 to use the standard 5%. Weight per unit is for assembly formulas that compute a total weight in kg (e.g. rebar) — set it so the correct piece count gets priced instead of the raw kg figure. Leave blank if not applicable.</div>
               </div>
 
               {/* Advanced: Calculator */}
@@ -1493,6 +1503,12 @@ export default function RatesPage() {
                     payload.waste_percent=wp;
                   } else if(mode==="edit"&&wasteOrig){
                     payload.waste_percent=0; // user cleared it -> back to "unset" (0)
+                  }
+                  const pw=parseFloat(fPieceWeight);
+                  if(fPieceWeight.trim()&&Number.isFinite(pw)&&pw>0){
+                    payload.piece_weight_kg=pw;
+                  } else if(mode==="edit"&&pieceWeightOrig&&!fPieceWeight.trim()){
+                    payload.piece_weight_kg=null; // user cleared it
                   }
                 }
                 setSaveError(null);

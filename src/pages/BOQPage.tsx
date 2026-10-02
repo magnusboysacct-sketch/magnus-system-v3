@@ -48,6 +48,11 @@ type RateItem = {
   item_type: string | null;
   current_rate?: number | null;
   current_currency?: string | null;
+  // How much one sold unit (e.g. one rebar bar) physically weighs, in kg. Lets a weight-
+  // computing formula (anything built on barWeight(), which always yields kg) convert its
+  // total-kg result into a correct count of pieces to price, instead of pricing that many
+  // kilograms as if each were one priced unit. Unset/0 = no conversion, unchanged behavior.
+  piece_weight_kg?: number | null;
   // null = a shared/global library item; a company id = that company's own item (used to decide who may change its price)
   company_id?: string | null;
   calc_engine_json?: {
@@ -1293,14 +1298,14 @@ export default function BOQPage() {
       }
       try {
         const { data, error } = await supabase.from("v_cost_items_current")
-          .select("id,item_name,description,variant,unit,category,item_type,current_rate,current_currency,company_id,calc_engine_json")
+          .select("id,item_name,description,variant,unit,category,item_type,current_rate,current_currency,company_id,calc_engine_json,piece_weight_kg")
           .order("item_name", { ascending: true }).limit(5000);
         if (error) throw error;
         if (alive) setRateItems((data ?? []) as RateItem[]);
       } catch {
         try {
           const { data } = await supabase.from("cost_items")
-            .select("id,item_name,description,variant,unit,category,item_type,company_id,calc_engine_json")
+            .select("id,item_name,description,variant,unit,category,item_type,company_id,calc_engine_json,piece_weight_kg")
             .order("item_name", { ascending: true }).limit(5000);
           if (alive) setRateItems((data ?? []) as RateItem[]);
         } catch (e: any) { console.error("Failed to load rate items:", e); }
@@ -2151,6 +2156,16 @@ function explodeAssembly(
 
       const finalQty = rawQty * (1 + numOr(c.waste_percent, 0) / 100);
 
+      // A weight-computing formula (anything built on barWeight(), e.g. "(height/0.6)*length*0.56")
+      // correctly produces a total in kilograms, but the linked cost item may be sold per discrete
+      // piece (e.g. "bar"), not per kilogram. When that item specifies piece_weight_kg, convert the
+      // finished kg figure into a real piece count to price — strictly a post-processing step on the
+      // already-finished finalQty, so it never touches dims/mergedVars/evaluated/rawQty/usesDimsVar
+      // or the waste calculation above; every component without piece_weight_kg set is unaffected.
+      const pieceWeightKg = numOr(r.piece_weight_kg, 0);
+      const pieces = pieceWeightKg > 0 ? Math.ceil(finalQty / pieceWeightKg) : finalQty;
+      const tonnageNote = pieceWeightKg > 0 ? `${finalQty.toFixed(2)} kg ≈ ${(finalQty / 1000).toFixed(3)} t total steel` : "";
+
       // The modal only ever gates "Add Lines" on a real length being entered
       // for linear/area/volume assemblies ("Enter a length." alert) — length
       // is the one dimension guaranteed present in dims whenever the user
@@ -2175,9 +2190,9 @@ function explodeAssembly(
         pick_variant: (r.variant ?? "").trim(),
         cost_item_id: c.cost_item_id,
         item_name: r.item_name ?? "",
-        description: (r.description ?? "").trim() || (formula ? "" : c.notes) || "",
+        description: [(r.description ?? "").trim() || (formula ? "" : c.notes) || "", tonnageNote].filter(Boolean).join(" — "),
         unit_id: unitMatch ? getUnitId(unitMatch) : null,
-        qty: Number.isFinite(finalQty) ? finalQty : 0,
+        qty: Number.isFinite(pieces) ? pieces : 0,
         rate: numOr(r.current_rate ?? 0, 0),
         rate_source: "assembly",
         assembly_instance_id: instanceId,
