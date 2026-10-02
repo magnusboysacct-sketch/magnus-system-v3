@@ -2104,23 +2104,29 @@ function explodeAssembly(
         const mergedVars: FormulaVars = { ...constants, ...dims };
         const evaluated = evalAssemblyFormula(formula, mergedVars);
         if (evaluated !== null) {
-          // A formula computes a PER-UNIT quantity that scales with qtyBase, the
-          // same way the legacy quantity_factor path always has — a formula like
-          // "3" (plumbing_fixtures' pre-baked WC count) means "3 per assembly
-          // instance", not "3 total regardless of how many instances you add".
+          // A formula resolved entirely from the assembly's own fixed CONSTANTS (no
+          // per-use dims referenced at all) computes a PER-INSTANCE quantity that still
+          // scales with qtyBase, the same way the legacy quantity_factor path always
+          // has — a formula like "3" (plumbing_fixtures' pre-baked WC count) means "3
+          // per assembly instance", not "3 total regardless of how many instances you
+          // add". qtyBase is "1" for every manual-modal formula-mode call (linear/area/
+          // volume assemblies), so this multiplication is a no-op there; it only matters
+          // for count-type/legacy modal calls, where qtyBase is the real typed Qty.
           //
-          // Exception: formulas that reference `count` directly (door_solid,
-          // window_aluminum, window_louvre) already have that scaling baked into
-          // their own math, because the modal populates dims.count from the same
-          // typed Qty that qtyBase is. Multiplying by qtyBase again on top would
-          // double-apply it (e.g. "count * 4.6" with qty=3 would come out to
-          // 3*4.6*3=41.4 instead of the correct 13.8). A formula's measure_type
-          // is exactly one of count vs linear/area/volume, never both at once —
-          // dims.count and dims.length/height/width are never populated in the
-          // same call — so this check never wrongly skips real qtyBase scaling
-          // for a length/height/width formula.
-          const usesCount = /\bcount\b/i.test(formula);
-          rawQty = usesCount ? evaluated : evaluated * qtyBase;
+          // Exception: a formula that references any variable DIMS itself supplied
+          // (count — door_solid/window_aluminum/window_louvre — or, since the Takeoff
+          // import path can also hand in real length/height, those too) already has
+          // that scaling baked into its own math, because dims IS the real per-use
+          // measurement — multiplying by qtyBase again on top double-applies it. For a
+          // count-type modal call this is exactly the old `count`-only check (dims only
+          // ever holds {count} there, never length/height/width, so nothing here changes
+          // for door_solid/window_aluminum/window_louvre or the plumbing/electrical/
+          // staircase per-instance constants). For the Takeoff-import path, this is what
+          // stops a formula like "(height / 0.6) * length * 0.56" — which already fully
+          // resolved itself from the wall's own real length/height — from then being
+          // multiplied again by that same wall's raw measured area as qtyBase.
+          const usesDimsVar = dims ? Object.keys(dims).some(k => new RegExp(`\\b${k}\\b`, "i").test(formula)) : false;
+          rawQty = usesDimsVar ? evaluated : evaluated * qtyBase;
         } else {
           rawQty = qtyBase * numOr(c.quantity_factor, 1);
         }
