@@ -40,6 +40,12 @@ interface Measurement {
   pageNumber?: number;
   wallLength?: number;
   wallHeight?: number;
+  // Total sq ft of door/window cutouts in this wall segment — a fixed real-world
+  // quantity, not derived from geometry, so node editing never touches it (commitPoints
+  // spreads unlisted fields through unchanged). undefined = never set (a formula needing
+  // it still fails, same as before this existed); 0 = explicitly "no opening" and must
+  // still reach BOQPage.tsx's dims as a present key, not be dropped like an unset value.
+  openings?: number;
   // Perpendicular distance (PDF-space units, signed) the "offset dimension line" is shifted from the true
   // measured line — an architectural-style dimension line, parallel to the real geometry, that the label
   // renders against. Absent/zero = default rendering, identical to before this existed. Line measurements
@@ -1701,6 +1707,7 @@ calibRef.current =
               depthIn: typeof r.meta?.depth_in === "number" ? r.meta.depth_in : undefined,
               wallLength: typeof r.meta?.wall_length === "number" ? r.meta.wall_length : undefined,
               wallHeight: typeof r.meta?.wall_height === "number" ? r.meta.wall_height : undefined,
+              openings: typeof r.meta?.openings === "number" ? r.meta.openings : undefined,
               linkedAssemblyId: r.linked_assembly_id || r.meta?.linked_assembly_id,
               linkedAssemblyName: r.meta?.linked_assembly_name,
               linkedItemId: r.linked_item_id || r.meta?.linked_item_id,
@@ -1763,7 +1770,8 @@ calibRef.current =
             ...(m.batchId ? { batch_id: m.batchId } : {}),
             ...(m.depthIn ? { depth_in: m.depthIn } : {}),
             ...(m.wallLength !== undefined ? { wall_length: m.wallLength } : {}),
-            ...(m.wallHeight !== undefined ? { wall_height: m.wallHeight } : {}) },
+            ...(m.wallHeight !== undefined ? { wall_height: m.wallHeight } : {}),
+            ...(m.openings !== undefined ? { openings: m.openings } : {}) },
         })));
       }
       await supabase.from("takeoff_sessions").update({ last_page_number: pageToSave }).eq("id", sessionIdRef.current);
@@ -3322,6 +3330,20 @@ calibRef.current = null;
                           {m.linkedAssemblyName&&<div className="text-[9px] text-purple-400 truncate">? {m.linkedAssemblyName}</div>}
                           {m.linkedItemName&&!m.linkedAssemblyName&&<div className="text-[9px] text-blue-400 truncate">{m.linkedItemName}</div>}
                           <div className="text-[9px] text-slate-400 dark:text-slate-700 capitalize">{m.type}{m.hidden?" · hidden":""}</div>
+                          {m.type==="wall"&&(
+                            <div className="flex items-center gap-1 mt-1" onClick={e=>e.stopPropagation()}>
+                              <span className="text-[9px] text-slate-400 dark:text-slate-700">Openings (sq ft)</span>
+                              <input type="number" min="0" step="any" value={m.openings ?? ""}
+                                onChange={e=>{
+                                  const v = e.target.value;
+                                  const openings = v.trim()==="" ? undefined : (Number.isFinite(Number(v)) ? Number(v) : undefined);
+                                  const next = measurementsRef.current.map(x=>x.id===m.id?{...x,openings}:x);
+                                  setMeasurements(next); measurementsRef.current = next;
+                                }}
+                                placeholder="0"
+                                className="w-14 px-1 py-0.5 rounded border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] text-[9px] text-slate-700 dark:text-slate-300 outline-none focus:border-sky-500/50"/>
+                            </div>
+                          )}
                         </div>
                         <button onClick={e=>{e.stopPropagation();const next=measurementsRef.current.map(x=>x.id===m.id?{...x,hidden:!x.hidden}:x);setMeasurements(next);measurementsRef.current=next;scheduleRender();}}
                           title={m.hidden?"Show measurement":"Hide measurement"}
