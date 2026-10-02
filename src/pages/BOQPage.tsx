@@ -1379,15 +1379,24 @@ useEffect(() => {
                     usableUnits,
                     (g.length != null || g.height != null || g.width != null || g.openings != null)
                       ? {
-                          ...(Number(g.length) ? { length: Number(g.length) } : {}),
-                          ...(Number(g.height) ? { height: Number(g.height) } : {}),
-                          ...(Number(g.width) ? { width: Number(g.width) } : {}),
+                          // explodeAssembly and every assembly formula template are meters-native (the manual
+                          // "Add From Assembly" modal converts its own feet+inches inputs via feetInchesToMeters
+                          // before this same call) — but Takeoff's g.length/g.height/g.width are decimal FEET
+                          // (TakeoffPage.tsx's wallLength/wallHeight), with no separate inches component to
+                          // combine, so a plain *0.3048 is the correct, direct feet-to-meters conversion here
+                          // (feetInchesToMeters itself takes separate feet+inches args Takeoff doesn't have).
+                          ...(Number(g.length) ? { length: Number(g.length) * 0.3048 } : {}),
+                          ...(Number(g.height) ? { height: Number(g.height) * 0.3048 } : {}),
+                          ...(Number(g.width) ? { width: Number(g.width) * 0.3048 } : {}),
                           // Unlike length/height/width, 0 is a legitimate, common openings value (a wall
                           // segment with no door/window) and must still reach explodeAssembly as a present
                           // key — a truthy check here would drop it exactly like an unset value, and a
                           // formula that needs openings would fail "Unknown variable" instead of correctly
-                          // subtracting nothing.
-                          ...(g.openings != null ? { openings: Number(g.openings) } : {}),
+                          // subtracting nothing. openings is an AREA (sq ft, from the Takeoff UI), not a linear
+                          // dimension, so it needs the squared conversion factor (0.3048 * 0.3048 = 0.09290304)
+                          // to become square meters — the same factor the manual modal's own openingsAreaM2
+                          // arrives at by multiplying two already-meters-converted linear dimensions together.
+                          ...(g.openings != null ? { openings: Number(g.openings) * 0.09290304 } : {}),
                         }
                       : undefined,
                     assemblies.find(a => a.id === g.assemblyId)?.name || g.name || g.groupName || "Assembly"
