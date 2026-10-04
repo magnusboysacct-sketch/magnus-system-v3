@@ -608,10 +608,13 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
     setScanning(true);
     try {
       // Upload photo first
-      const path = `receipts/${companyId}/${Date.now()}-${file.name}`;
-      await supabase.storage.from("project-files").upload(path,file,{cacheControl:"3600",upsert:false});
-      const { data:sd } = supabase.storage.from("project-files").getPublicUrl(path);
-      setReceiptUrl(sd.publicUrl);
+      const path = `${companyId}/receipts/${Date.now()}-${file.name}`;
+      const { error:receiptUpErr } = await supabase.storage.from("private-files").upload(path,file,{cacheControl:"3600",upsert:false});
+      if (!receiptUpErr) {
+        // 1 year, same expiry as lib/fieldPayments.ts
+        const { data:sd } = await supabase.storage.from("private-files").createSignedUrl(path, 60 * 60 * 24 * 365);
+        if (sd?.signedUrl) setReceiptUrl(sd.signedUrl);
+      }
 
       // Convert to base64 for AI
       const base64 = await new Promise<string>((res,rej)=>{

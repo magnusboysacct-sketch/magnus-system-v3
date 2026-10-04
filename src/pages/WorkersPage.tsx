@@ -579,15 +579,18 @@ export default function WorkersPage() {
       console.log("PASSPORT REF:", passportPhotoFileRef.current, "COMPANY:", companyId);
       if (passportPhotoFileRef.current && companyId) {
         try {
-          const ppPath = `workers/passport/${companyId}/${Date.now()}_passport.jpg`;
+          const ppPath = `${companyId}/workers/passport/${Date.now()}_passport.jpg`;
           const { error: ppErr } = await supabase.storage
-            .from("project-files")
+            .from("private-files")
             .upload(ppPath, passportPhotoFileRef.current!, { upsert: true });
           if (!ppErr) {
           console.log("PASSPORT UPLOAD RESULT - ppErr:", ppErr);
-            const { data: ppUrl } = supabase.storage.from("project-files").getPublicUrl(ppPath);
-            payload.passport_photo_url = ppUrl.publicUrl;
-            console.log("PASSPORT SAVED TO PAYLOAD:", payload.passport_photo_url);
+            // Private bucket: store a 1-year signed URL in the same column (same expiry as lib/fieldPayments.ts).
+            const { data: ppUrl } = await supabase.storage.from("private-files").createSignedUrl(ppPath, 60 * 60 * 24 * 365);
+            if (ppUrl?.signedUrl) {
+              payload.passport_photo_url = ppUrl.signedUrl;
+              console.log("PASSPORT SAVED TO PAYLOAD");
+            }
           }
         } catch (e) { console.error("PASSPORT CATCH ERROR:", e); }
       }
@@ -595,16 +598,18 @@ export default function WorkersPage() {
       console.log("Checking ID photo ref:", idPhotoFileRef.current, companyId);
       if (idPhotoFileRef.current && companyId) {
         try {
-          const path = `workers/ids/${companyId}/${Date.now()}_${form.id_number || "id"}.jpg`;
+          const path = `${companyId}/workers/ids/${Date.now()}_${form.id_number || "id"}.jpg`;
           const { error: upErr } = await supabase.storage
-            .from("project-files")
+            .from("private-files")
             .upload(path, idPhotoFileRef.current!, { upsert: true });
           if (upErr) {
             console.error("ID photo upload error:", upErr);
           } else {
-            const { data: urlData } = supabase.storage.from("project-files").getPublicUrl(path);
-            payload.id_photo_url = urlData.publicUrl;
-            console.log("ID photo uploaded:", urlData.publicUrl);
+            const { data: urlData } = await supabase.storage.from("private-files").createSignedUrl(path, 60 * 60 * 24 * 365); // 1 year
+            if (urlData?.signedUrl) {
+              payload.id_photo_url = urlData.signedUrl;
+              console.log("ID photo uploaded");
+            }
           }
         } catch (upEx) {
           console.error("ID photo upload exception:", upEx);

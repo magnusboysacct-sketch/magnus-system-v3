@@ -356,9 +356,9 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     try {
       let idPhotoUrl="";
       if(idPhotoFile&&companyId){
-        const path=`field-payments/ids/${companyId}/${Date.now()}_${form.worker_id_number||"id"}.jpg`;
-        const {error:ue}=await supabase.storage.from("project-files").upload(path,idPhotoFile,{upsert:true});
-        if(!ue){const {data:ud}=supabase.storage.from("project-files").getPublicUrl(path);idPhotoUrl=ud.publicUrl;}
+        const path=`${companyId}/field-payments/ids/${Date.now()}_${form.worker_id_number||"id"}.jpg`;
+        const {error:ue}=await supabase.storage.from("private-files").upload(path,idPhotoFile,{upsert:true});
+        if(!ue){const {data:ud}=await supabase.storage.from("private-files").createSignedUrl(path,60*60*24*365);if(ud?.signedUrl)idPhotoUrl=ud.signedUrl;} // 1 year, same as lib/fieldPayments.ts
       }
 
       const recNum=`FP-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,"0")}-${Date.now().toString().slice(-6)}`;

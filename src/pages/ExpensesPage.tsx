@@ -136,7 +136,7 @@ export default function ExpensesPage() {
 
   function handleExpenseScan(result: any, receiptFile?: File) {
     setShowExpenseScanner(false);
-    if(receiptFile&&companyId){const now=new Date();const p="receipts/"+now.getFullYear()+"/"+String(now.getMonth()+1).padStart(2,"0")+"/"+Date.now()+"_receipt.jpg";supabase.storage.from("project-files").upload(p,receiptFile,{upsert:true}).then(({error:ue})=>{if(!ue){const{data:ud}=supabase.storage.from("project-files").getPublicUrl(p);setForm(f=>({...f,receipt_url:ud.publicUrl}));}});}
+    if(receiptFile&&companyId){const now=new Date();const p=companyId+"/receipts/"+now.getFullYear()+"/"+String(now.getMonth()+1).padStart(2,"0")+"/"+Date.now()+"_receipt.jpg";supabase.storage.from("private-files").upload(p,receiptFile,{upsert:true}).then(async({error:ue})=>{if(!ue){const{data:ud}=await supabase.storage.from("private-files").createSignedUrl(p,60*60*24*365);if(ud?.signedUrl)setForm(f=>({...f,receipt_url:ud.signedUrl}));}});}
     setForm(f => ({
       ...f,
       description: result.vendor ? `${result.vendor} - Receipt` : f.description,
