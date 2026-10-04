@@ -32,3 +32,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/send-payslip-email/deno.json"
 entrypoint = "./functions/send-payslip-email/index.ts"
+
+[functions.migrate-storage-to-private]
+enabled = true
+verify_jwt = true
+import_map = "./functions/migrate-storage-to-private/deno.json"
+entrypoint = "./functions/migrate-storage-to-private/index.ts"
