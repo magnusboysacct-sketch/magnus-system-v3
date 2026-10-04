@@ -10,6 +10,9 @@
 //   - the contract must be THIS client's, have been sent (shared_at), be contractor-signed
 //     and not yet client-signed;
 //   - the signature must be a small, real PNG;
+//   - the PNG goes to the PRIVATE "private-files" bucket under <company id>/contract-signatures/, and only its
+//     storage PATH is stored; the response also carries a fresh 1-hour signed URL so the portal can show it at once
+//     (later views sign on read through portal-contract-signature-urls);
 //   - the file is uploaded FIRST; if that fails nothing is marked signed;
 //   - the contract is updated with a guard (client_signed_at IS NULL, exactly one row) and
 //     the client's real IP is recorded;
@@ -32,6 +35,7 @@ type RequestBody = {
 };
 
 const MAX_SIGNATURE_BYTES = 500 * 1024;
+const SIGNATURE_URL_TTL_SECONDS = 3600;
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PNG_DATA_URL_RE = /^data:image\/png;base64,([A-Za-z0-9+/=\s]+)$/;
@@ -148,15 +152,21 @@ Deno.serve(async (req) => {
     if ("error" in parsed) return jsonResponse({ error: parsed.error }, 400);
 
     // 4. Upload first. If this fails, the contract is NOT marked signed.
-    const path = `client-signatures/${contractId}_${Date.now()}.png`;
+    if (!client.company_id) {
+      console.error("portal-sign-contract: client has no company_id");
+      return jsonResponse({ error: "Could not save the signature. Please try again." }, 500);
+    }
+    const path = `${client.company_id}/contract-signatures/${contractId}_client_${Date.now()}.png`;
     const { error: uploadError } = await supabaseAdmin.storage
-      .from("project-files")
+      .from("private-files")
       .upload(path, parsed.bytes, { contentType: "image/png", upsert: false });
     if (uploadError) {
       console.error("portal-sign-contract upload failed:", uploadError.message);
       return jsonResponse({ error: "Could not save the signature. Please try again." }, 500);
     }
-    const signatureUrl = supabaseAdmin.storage.from("project-files").getPublicUrl(path).data.publicUrl;
+    // A fresh short-lived URL for the response only; it is never stored. Failing to sign must not undo a saved signature.
+    const { data: signedData } = await supabaseAdmin.storage.from("private-files").createSignedUrl(path, SIGNATURE_URL_TTL_SECONDS);
+    const signedSignatureUrl = signedData?.signedUrl ?? null;
 
     // 5. Mark signed - guarded, and exactly one row must change.
     const ip =
@@ -168,7 +178,7 @@ Deno.serve(async (req) => {
       .from("client_contracts")
       .update({
         client_signed_at: signedAt,
-        client_signature_url: signatureUrl,
+        client_signature_url: path, // the storage PATH, signed on read
         client_signed_ip: ip,
       })
       .eq("id", contractId)
@@ -179,7 +189,7 @@ Deno.serve(async (req) => {
     if (updateError || !updated || updated.length !== 1) {
       // Best effort: don't leave an orphaned signature file behind.
       try {
-        await supabaseAdmin.storage.from("project-files").remove([path]);
+        await supabaseAdmin.storage.from("private-files").remove([path]);
       } catch (_err) {
         // ignore
       }
@@ -215,7 +225,12 @@ Deno.serve(async (req) => {
       // ignore
     }
 
-    return jsonResponse({ ok: true, client_signed_at: signedAt, client_signature_url: signatureUrl });
+    return jsonResponse({
+      ok: true,
+      client_signed_at: signedAt,
+      client_signature_url: path,
+      client_signature_signed_url: signedSignatureUrl,
+    });
   } catch (err) {
     console.error("Unexpected error in portal-sign-contract:", err);
     return jsonResponse(

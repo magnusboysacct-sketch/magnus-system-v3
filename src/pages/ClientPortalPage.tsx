@@ -4,7 +4,9 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { logPortalEvent } from "../lib/portalActivity";
 import { functionErrorMessage } from "../lib/portalErrors";
-import ContractDocument, { printContractDocument, watermarkFromCompany } from "../components/ContractDocument";
+import ContractDocument, { printContractDocument, printContractDocumentFresh, watermarkFromCompany } from "../components/ContractDocument";
+import { useContractSignatureSrcs, isLegacySignatureUrl } from "../lib/contractSignatures";
+import type { SignatureSrcs } from "../lib/contractSignatures";
 import PortalProjectPicker from "../components/PortalProjectPicker";
 import { normalizeProjects, hasMultipleProjects, filterByProject, itemProjectLabel, invoiceTotals, countUnpaid, countUnsigned, countPending, createRequestGate, readRememberedProject, rememberProject, pickRememberedProject } from "../lib/portalProjects";
 import type { PortalProject } from "../lib/portalProjects";
@@ -310,16 +312,43 @@ function useContractSchedule(contractId:string|undefined,sessionToken:string|nul
   },[contractId,sessionToken]);
   return rows;
 }
+// Contract signatures are stored as storage paths in a private bucket. Portal visitors have no Supabase session, so the
+// portal-contract-signature-urls function (session-validated) signs them. Older contracts hold a permanent public URL,
+// which is used as-is, and a signature that was JUST saved arrives with a fresh signed URL (client_signature_src) so
+// it shows without another request. force = true (used right before printing) always asks for fresh URLs.
+async function resolvePortalSignatures(contract:any,sessionToken:string|null,force:boolean):Promise<SignatureSrcs>{
+  const out:SignatureSrcs={contractor:null,client:null};
+  const sides:Array<["contractor"|"client",string|null|undefined,string|null|undefined]>=[
+    ["contractor",contract?.contractor_signature_url,contract?.contractor_signature_src],
+    ["client",contract?.client_signature_url,contract?.client_signature_src],
+  ];
+  const needServer:Array<"contractor"|"client">=[];
+  for(const [side,stored,pre] of sides){
+    if(!stored)continue;
+    if(isLegacySignatureUrl(stored)){out[side]=String(stored);continue;}
+    if(!force&&pre){out[side]=pre;continue;}
+    needServer.push(side);
+  }
+  if(needServer.length&&sessionToken&&contract?.id){
+    const {data,error}=await supabase.functions.invoke("portal-contract-signature-urls",{body:{sessionToken,contractId:contract.id}});
+    if(!error&&data&&!data.error){
+      if(needServer.includes("contractor"))out.contractor=data.contractorSignatureUrl||null;
+      if(needServer.includes("client"))out.client=data.clientSignatureUrl||null;
+    }
+  }
+  return out;
+}
 // Read-only contract viewer. Print / Save as PDF is offered ONLY once the client has signed; an unsigned
 // contract cannot be printed or downloaded from here.
 function PortalContractViewer({contract,company,sessionToken,onClose}:{contract:any;company:Co|null;sessionToken:string|null;onClose:()=>void}) {
   const signed=!!contract.client_signed_at;
   const schedule=useContractSchedule(contract.id,sessionToken);
+  const {srcs:sigSrcs,refresh:refreshSigs}=useContractSignatureSrcs(contract,(c,o)=>resolvePortalSignatures(c,sessionToken,o.force));
   function printCopy(){
-    try{
-      const opened=printContractDocument({variant:"print",title:`${contract.contract_number||"Contract"} - ${contract.contract_name||""}`,watermark:watermarkFromCompany(company),tagline:company?.tagline,waitForImages:true});
-      if(!opened)alert("Could not open the print window. Please allow pop-ups for this site and try again.");
-    }catch{alert("Could not open the print window. Please allow pop-ups for this site and try again.");}
+    // Re-signs the signatures right before printing (a viewer left open for a while must not print an expired link).
+    printContractDocumentFresh({variant:"print",title:`${contract.contract_number||"Contract"} - ${contract.contract_name||""}`,watermark:watermarkFromCompany(company),tagline:company?.tagline,refreshSignatures:refreshSigs})
+      .then(opened=>{if(!opened)alert("Could not open the print window. Please allow pop-ups for this site and try again.");})
+      .catch(()=>alert("Could not open the print window. Please allow pop-ups for this site and try again."));
   }
   return <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#f8fafc",borderRadius:16,width:"100%",maxWidth:900,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.35)"}}>
@@ -331,7 +360,7 @@ function PortalContractViewer({contract,company,sessionToken,onClose}:{contract:
         <button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",fontSize:22,lineHeight:1,color:"#64748b",cursor:"pointer",padding:4}}>×</button>
       </div>
       <div style={{flex:1,minHeight:0,overflowY:"auto",background:"#f3f4f6",padding:16}}>
-        <ContractDocument contract={contract} schedule={schedule} company={company} signRecord={null}/>
+        <ContractDocument contract={contract} schedule={schedule} company={company} signRecord={null} contractorSignatureSrc={sigSrcs.contractor} clientSignatureSrc={sigSrcs.client}/>
       </div>
       <div style={{display:"flex",gap:8,padding:"12px 18px",borderTop:"1px solid #e2e8f0"}}>
         {signed&&<button onClick={printCopy} style={{flex:1.4,padding:"11px 0",background:"#0891b2",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Print / Save as PDF</button>}
@@ -350,6 +379,7 @@ function SignatureModal({contract,client,company,sessionToken,saving,onSign,onCa
   const [step,setStep]=React.useState<"read"|"sign">("read");
   const [agreed,setAgreed]=React.useState(false);
   const schedule=useContractSchedule(contract?.id,sessionToken||null);
+  const {srcs:sigSrcs}=useContractSignatureSrcs(contract,(c,o)=>resolvePortalSignatures(c,sessionToken||null,o.force));
 
   function getPos(e:any,canvas:HTMLCanvasElement){
     const rect=canvas.getBoundingClientRect();
@@ -398,7 +428,7 @@ function SignatureModal({contract,client,company,sessionToken,saving,onSign,onCa
       <div style={{fontWeight:700,fontSize:15,color:"#f1f5f9",marginBottom:4}}>Read Contract</div>
       <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>Please read the whole contract before you sign it.</div>
       <div style={{flex:1,minHeight:0,overflowY:"auto",borderRadius:12,background:"#f3f4f6",padding:12}}>
-        <ContractDocument contract={contract} schedule={schedule} company={company||null} signRecord={null}/>
+        <ContractDocument contract={contract} schedule={schedule} company={company||null} signRecord={null} contractorSignatureSrc={sigSrcs.contractor} clientSignatureSrc={sigSrcs.client}/>
       </div>
       <div style={{display:"flex",gap:8,marginTop:14}}>
         <button onClick={onCancel} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"#94a3b8",fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
@@ -1044,7 +1074,7 @@ export default function ClientPortalPage() {
               const signaturePng=await normalizeSignature(dataUrl);
               const{data:signed,error:signErr}=await supabase.functions.invoke("portal-sign-contract",{body:{sessionToken:portalSessionToken,contractId:signingContract.id,signaturePng}});
               if(signErr||signed?.error||!signed?.ok)throw new Error(await functionErrorMessage(signErr,signed,"Failed to save signature."));
-              setContracts(prev=>prev.map(c=>c.id===signingContract.id?{...c,client_signed_at:signed.client_signed_at,client_signature_url:signed.client_signature_url}:c));
+              setContracts(prev=>prev.map(c=>c.id===signingContract.id?{...c,client_signed_at:signed.client_signed_at,client_signature_url:signed.client_signature_url,client_signature_src:signed.client_signature_signed_url||null}:c));
               setSigningContract(null);
               setToast({msg:"Contract signed successfully!",type:"success"});
             }catch(e:any){setToast({msg:e?.message||"Failed to save signature.",type:"error"});}

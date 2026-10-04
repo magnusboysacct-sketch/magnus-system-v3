@@ -38,3 +38,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/migrate-storage-to-private/deno.json"
 entrypoint = "./functions/migrate-storage-to-private/index.ts"
+
+[functions.portal-contract-signature-urls]
+enabled = true
+verify_jwt = true
+import_map = "./functions/portal-contract-signature-urls/deno.json"
+entrypoint = "./functions/portal-contract-signature-urls/index.ts"

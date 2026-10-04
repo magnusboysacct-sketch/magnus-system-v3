@@ -10,6 +10,7 @@
 // The contract's internal `notes` field is deliberately never read here.
 import React from "react";
 import { openPrintWindow } from "../lib/printUtils";
+import type { SignatureSrcs } from "../lib/contractSignatures";
 import { formatContractDate, formatJamaicaDateTimeFull } from "../lib/contractDocument";
 
 // Date-only values (YYYY-MM-DD) are calendar dates and must not shift a day in Jamaica.
@@ -68,15 +69,49 @@ export function printContractDocument(opts: {
   tagline?: string | null;
   variant?: "print" | "pdf";
   waitForImages?: boolean;
+  // Freshly signed signature URLs to print instead of whatever the on-screen images currently point at.
+  signatureSrcs?: SignatureSrcs | null;
+  existingWindow?: Window | null;
 }): boolean {
-  const html = document.getElementById(CONTRACT_DOCUMENT_ID)?.innerHTML || "";
+  let html = "";
+  const el = document.getElementById(CONTRACT_DOCUMENT_ID);
+  if (el) {
+    const clone = el.cloneNode(true) as HTMLElement;
+    for (const side of ["contractor", "client"] as const) {
+      const src = opts.signatureSrcs?.[side];
+      if (src) clone.querySelectorAll(`img[data-signature="${side}"]`).forEach((img) => img.setAttribute("src", src));
+    }
+    html = clone.innerHTML;
+  }
   const extraCss = opts.variant === "pdf" ? CONTRACT_PDF_CSS : CONTRACT_PRINT_CSS;
   return openPrintWindow(`<style>${extraCss}</style>${html}`, {
     title: opts.title,
     watermark: opts.watermark,
     tagline: opts.tagline ?? undefined,
     waitForImages: opts.waitForImages,
+    existingWindow: opts.existingWindow,
   });
+}
+
+// Prints after re-resolving fresh signature URLs, so a document left open for a while never prints an expired signature.
+// The print window is opened synchronously (pop-up blockers only allow that inside the click) and shows a short
+// "preparing" message while the signatures are re-signed, then the real document replaces it.
+export async function printContractDocumentFresh(
+  opts: Omit<Parameters<typeof printContractDocument>[0], "signatureSrcs" | "existingWindow"> & {
+    refreshSignatures: () => Promise<SignatureSrcs>;
+  },
+): Promise<boolean> {
+  const { refreshSignatures, ...printOpts } = opts;
+  const w = window.open("", "_blank");
+  if (!w) return false;
+  try {
+    w.document.write('<!DOCTYPE html><html><head><title>Preparing document…</title></head><body style="font-family:sans-serif;color:#555;padding:24px">Preparing document…</body></html>');
+  } catch { /* the placeholder is cosmetic */ }
+  let signatureSrcs: SignatureSrcs | null = null;
+  try {
+    signatureSrcs = await refreshSignatures();
+  } catch { /* print with whatever the screen already shows */ }
+  return printContractDocument({ ...printOpts, signatureSrcs, existingWindow: w, waitForImages: true });
 }
 
 export interface ContractDocumentProps {
@@ -84,10 +119,15 @@ export interface ContractDocumentProps {
   schedule: any[];
   company: any;
   signRecord?: { signedAt: string; ip: string; device: string } | null;
+  // Resolved (signed) signature image URLs. When given they are used directly; when omitted the raw stored value is used.
+  contractorSignatureSrc?: string | null;
+  clientSignatureSrc?: string | null;
 }
 
-export default function ContractDocument({ contract, schedule, company, signRecord }: ContractDocumentProps) {
+export default function ContractDocument({ contract, schedule, company, signRecord, contractorSignatureSrc, clientSignatureSrc }: ContractDocumentProps) {
   const totalScheduled = schedule.reduce((s, p) => s + Number(p.amount || 0), 0);
+  const contractorSrc = contractorSignatureSrc !== undefined ? contractorSignatureSrc : contract.contractor_signature_url;
+  const clientSrc = clientSignatureSrc !== undefined ? clientSignatureSrc : contract.client_signature_url;
   return (
         <div id="contract-print-content" style={{position:"relative"}}>
 
@@ -241,7 +281,7 @@ export default function ContractDocument({ contract, schedule, company, signReco
                     <div style={{fontSize:12,color:"#6b7280",marginBottom:32}}>{company?.company_name || company?.company_name||"Magnus Boys Construction"}</div>
                     {contract.contractor_signed_at ? (
                       <>
-                        {contract.contractor_signature_url && <img src={contract.contractor_signature_url} alt="Contractor signature" style={{maxHeight:60,maxWidth:200,marginBottom:6,objectFit:"contain"}}/>}
+                        {contractorSrc && <img data-signature="contractor" src={contractorSrc} alt="Contractor signature" style={{maxHeight:60,maxWidth:200,marginBottom:6,objectFit:"contain"}}/>}
                       <div style={{fontSize:12,color:"#16a34a",fontWeight:700}}>? Signed {formatJamaicaDateTimeFull(contract.contractor_signed_at)}</div>
                       </>
                     ) : (
@@ -255,7 +295,7 @@ export default function ContractDocument({ contract, schedule, company, signReco
                     <div style={{fontSize:12,color:"#6b7280",marginBottom:32}}>{contract.client?.contact_name || contract.client?.name || "Client"}</div>
                     {contract.client_signed_at ? (
                       <>
-                        {contract.client_signature_url && <img src={contract.client_signature_url} alt="Client signature" style={{maxHeight:60,maxWidth:200,marginBottom:6,objectFit:"contain"}}/>}
+                        {clientSrc && <img data-signature="client" src={clientSrc} alt="Client signature" style={{maxHeight:60,maxWidth:200,marginBottom:6,objectFit:"contain"}}/>}
                       <div style={{fontSize:12,color:"#16a34a",fontWeight:700}}>? Signed {formatJamaicaDateTimeFull(contract.client_signed_at)}</div>
                       </>
                     ) : (

@@ -8,6 +8,9 @@ export interface PrintOptions {
   // Wait until every <img> in the print window has loaded (or failed) before printing, instead of a
   // fixed delay. Off by default so existing prints behave exactly as before.
   waitForImages?: boolean;
+  // A window the caller already opened (synchronously, inside the click handler, so pop-up blockers allow it) and
+  // may have shown a placeholder in. It is reset and used instead of opening a new one.
+  existingWindow?: Window | null;
 }
 
 // Prints once every image in the window has loaded or failed. A slow or broken image never blocks
@@ -35,9 +38,10 @@ function printWhenImagesReady(w: Window, maxWaitMs = 8000) {
 }
 
 export function openPrintWindow(html: string, options: PrintOptions = {}): boolean {
-  const { title = "Magnus Boys ERP", watermark, tagline, waitForImages } = options;
-  const w = window.open("", "_blank");
+  const { title = "Magnus Boys ERP", watermark, tagline, waitForImages, existingWindow } = options;
+  const w = existingWindow ?? window.open("", "_blank");
   if (!w) return false;
+  if (existingWindow) w.document.open(); // clear the placeholder before writing the real document
 
   const wmHtml = watermark?.url
     ? `<img class="wm" src="${watermark.url}"/>${tagline ? `<div class="wm-tag">${tagline.toUpperCase()}</div>` : ""}`

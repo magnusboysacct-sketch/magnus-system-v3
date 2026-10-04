@@ -12,7 +12,8 @@ import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portal
 import { SeenBadge } from "../components/PortalSeen";
 import { useItemViews } from "../lib/useItemViews";
 import { fetchContractSignRecord, formatJamaicaShort, deviceLabel } from "../lib/portalSeen";
-import ContractDocument, { printContractDocument } from "../components/ContractDocument";
+import ContractDocument, { printContractDocument, printContractDocumentFresh } from "../components/ContractDocument";
+import { useContractSignatureSrcs, staffSignatureResolver, contractSignaturePath } from "../lib/contractSignatures";
 import type { ItemViews } from "../lib/portalSeen";
 import {
   Plus, FileText, Search, RefreshCw, X, Check, Edit2, Trash2,
@@ -216,12 +217,15 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
     })();
     return () => { cancelled = true; };
   }, [contract.id, contract.client_signed_at]);
+  // Signatures are stored as storage paths and signed on read; refreshSignatures re-signs right before printing.
+  const { srcs: signatureSrcs, refresh: refreshSignatures } = useContractSignatureSrcs(contract, staffSignatureResolver);
+
   function downloadPDF() {
-    printContractDocument({ variant: "pdf", title: contract.contract_number + "-" + contract.contract_name, watermark, tagline: company?.tagline });
+    void printContractDocumentFresh({ variant: "pdf", title: contract.contract_number + "-" + contract.contract_name, watermark, tagline: company?.tagline, refreshSignatures });
   }
 
   function printContract() {
-    printContractDocument({ variant: "print", title: contract.contract_name, watermark, tagline: company?.tagline });
+    void printContractDocumentFresh({ variant: "print", title: contract.contract_name, watermark, tagline: company?.tagline, refreshSignatures });
   }
 
   return (
@@ -251,6 +255,7 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
       {/* Preview */}
       <div className="flex-1 overflow-y-auto bg-gray-100 p-8">
         <ContractDocument contract={contract} schedule={schedule} company={company}
+          contractorSignatureSrc={signatureSrcs.contractor} clientSignatureSrc={signatureSrcs.client}
           signRecord={signRecord ? { signedAt: signRecord.occurred_at, ip: signRecord.ip_address || "", device: deviceLabel(signRecord.user_agent) } : null}/>
       </div>
     </div>
@@ -390,6 +395,7 @@ export default function ContractsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [toastError, setToastError] = useState(false);
 
   // Modals
   const [showNew, setShowNew] = useState(false);
@@ -636,10 +642,22 @@ export default function ContractsPage() {
     try {
       let sigUrl: string | null = null;
       if (signatureDataUrl) {
+        // The private-files policies need the company id as the first folder; without one the upload cannot succeed.
+        if (!companyId) {
+          showToast("Couldn't save the signature: your account isn't linked to a company. The contract was NOT marked as signed.", true);
+          return;
+        }
         const blob = await (await fetch(signatureDataUrl)).blob();
-        const path = `contract-signatures/${contractId}_${party}_${Date.now()}.png`;
-        const { error: ue } = await supabase.storage.from("project-files").upload(path, blob, { upsert: true, contentType: "image/png" });
-        if (!ue) { const { data: ud } = supabase.storage.from("project-files").getPublicUrl(path); sigUrl = ud.publicUrl; }
+        // Private bucket, company id as the first folder. The PATH is what gets stored (never a URL): it is signed on read.
+        const path = contractSignaturePath(companyId, contractId, party);
+        const { error: ue } = await supabase.storage.from("private-files").upload(path, blob, { upsert: true, contentType: "image/png" });
+        if (ue) {
+          // Abort: marking the contract signed with no image would leave a signed contract with a blank signature.
+          console.error("Contract signature upload failed:", ue.message);
+          showToast("Couldn't save the signature, so the contract was NOT marked as signed. Please try again.", true);
+          return;
+        }
+        sigUrl = path;
       }
       const field = party === "contractor" ? "contractor_signed_at" : "client_signed_at";
       const urlField = party === "contractor" ? "contractor_signature_url" : "client_signature_url";
@@ -727,7 +745,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
     setAiLoading(null);
   }
 
-  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(null), 3000); }
+  function showToast(msg: string, isError = false) { setToast(msg); setToastError(isError); setTimeout(() => setToast(null), isError ? 6000 : 3000); }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1227,8 +1245,8 @@ Adjust percentages based on the project type and value. Make sure they add up to
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] pointer-events-none">
-          <div className="bg-white dark:bg-[#0d1117] border border-emerald-500/25 text-emerald-400 text-sm font-semibold px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"/>
+          <div className={`bg-white dark:bg-[#0d1117] border ${toastError ? "border-red-500/30 text-red-400" : "border-emerald-500/25 text-emerald-400"} text-sm font-semibold px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${toastError ? "bg-red-400" : "bg-emerald-400"} animate-pulse`}/>
             {toast}
           </div>
         </div>
