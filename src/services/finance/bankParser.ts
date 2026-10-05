@@ -152,12 +152,14 @@ export async function uploadBankStatement(
     throw new Error("Bank account not found");
   }
 
-  // Upload file to storage (using existing pattern)
+  // Upload file to the PRIVATE private-files bucket. Its policies require the company id as the FIRST folder, so the path
+  // is <companyId>/bank-statements/... (it used to be bank-statements/<companyId>/... in the public project-files bucket).
+  // file_url below stores this path (not a URL); nothing reads it back yet, and a future viewer should sign it on demand.
   const fileExt = file.name.split(".").pop();
-  const fileName = `bank-statements/${account.company_id}/${Date.now()}_${file.name}`;
+  const fileName = `${account.company_id}/bank-statements/${Date.now()}_${file.name}`;
   
   const { data: uploadData, error: uploadError } = await supabase.storage
-    .from("project-files") // Reuse existing bucket
+    .from("private-files")
     .upload(fileName, file);
 
   if (uploadError) throw uploadError;
