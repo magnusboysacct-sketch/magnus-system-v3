@@ -1,6 +1,7 @@
 // supabase/functions/migrate-storage-to-private/index.ts
 //
-// ONE-TIME migration: copies EXISTING worker ID photos, worker passport photos and field-payment ID photos from
+// ONE-TIME migration: copies EXISTING worker ID photos, worker passport photos, field-payment ID photos and staff
+// profile photos (user_profiles.avatar_url) from
 // the public "project-files" bucket into the private "private-files" bucket, replaces the stored public URL with a
 // fresh 1-year signed URL, and logs every row it processes to storage_migration_log.
 //
@@ -37,6 +38,8 @@ const TARGETS: Target[] = [
   { table: "workers", column: "id_photo_url", folder: "workers/ids" },
   { table: "workers", column: "passport_photo_url", folder: "workers/passport" },
   { table: "field_payments", column: "id_photo_url", folder: "field-payments/ids" },
+  // Staff photos: the stored value is the public URL plus a "?t=<timestamp>" cache-buster, which parseOldPath strips.
+  { table: "user_profiles", column: "avatar_url", folder: "staff-photos" },
 ];
 
 type Detail = {
