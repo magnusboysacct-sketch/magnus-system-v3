@@ -216,15 +216,20 @@ export default function SettingsRecordsPage() {
     // Explicitly remove any existing object at this path before uploading,
     // rather than relying on upsert:true alone — belt-and-suspenders now
     // that the real blocker (RLS INSERT policy) is fixed separately.
-    await supabase.storage.from("project-files").remove([path]);
+    //
+    // New uploads go to the PRIVATE private-files bucket (same <company_id>/staff-photos/<userId>.png path, which its
+    // company-scoped policies key on) and the column gets a 1-year signed URL, the same expiry as lib/fieldPayments.ts.
+    // A photo uploaded before this change stays in project-files, untouched, until the separate migration moves it.
+    await supabase.storage.from("private-files").remove([path]);
     const { error } = await supabase.storage
-      .from("project-files")
+      .from("private-files")
       .upload(path, file, { upsert: true, contentType: "image/png" });
     if (error) { console.error("Photo upload error:", error); return null; }
-    const { data } = supabase.storage
-      .from("project-files")
-      .getPublicUrl(path);
-    return data.publicUrl;
+    const { data, error: signError } = await supabase.storage
+      .from("private-files")
+      .createSignedUrl(path, 60 * 60 * 24 * 365); // 1 year
+    if (signError || !data?.signedUrl) { console.error("Photo signing error:", signError); return null; }
+    return data.signedUrl;
   }
 
   // Selecting a file no longer uploads it directly — it opens the crop
@@ -245,7 +250,10 @@ export default function SettingsRecordsPage() {
     setUploadingPhoto(true);
     const url = await uploadStaffPhoto(blob, selectedStaff.id);
     if (url) {
-      setNewPhotoUrl(`${url}?t=${Date.now()}`); // cache-bust so the preview updates immediately on re-upload
+      // No cache-buster: a signed URL already carries its own query string (?token=...), so appending "?t=..." would corrupt the
+      // token and break the image. It is also unnecessary: every createSignedUrl() call mints a new token, so a re-upload
+      // always yields a different URL and the preview updates immediately.
+      setNewPhotoUrl(url);
       setPhotoRemoved(false); // a fresh upload supersedes any pending "remove" from this same edit session
     } else {
       alert("Failed to upload photo.");
@@ -264,6 +272,8 @@ export default function SettingsRecordsPage() {
     // clears the photo from the card; a failed storage delete here (e.g.
     // nothing at that path) shouldn't block that.
     if (companyId) {
+      // Both buckets: new photos live in private-files, older ones still in project-files until they are migrated.
+      try { await supabase.storage.from("private-files").remove([`${companyId}/staff-photos/${selectedStaff.id}.png`]); } catch {}
       try { await supabase.storage.from("project-files").remove([`${companyId}/staff-photos/${selectedStaff.id}.png`]); } catch {}
     }
     setNewPhotoUrl(null);
