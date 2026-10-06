@@ -11,7 +11,7 @@ import {
 } from "../lib/clientAccess";
 import { fetchProjectTasks, getProjectProgress } from "../lib/tasks";
 import type { ProjectTask, ProjectProgress } from "../lib/tasks";
-import { fetchProjectFiles } from "../lib/documents";
+import { fetchProjectFiles, downloadProjectFile } from "../lib/documents";
 import type { ProjectDocument } from "../lib/documents";
 import { fetchDailyLogs } from "../lib/dailyLogs";
 import type { DailyLog } from "../lib/dailyLogs";
@@ -507,15 +507,17 @@ export default function ClientProjectPage() {
                       })}
                     </div>
                   </div>
-                  <a
-                    href={doc.file_url}
-                    download
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  {/* file_url is a storage PATH in the private bucket, so this reads it with the signed-in user's session */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const result = await downloadProjectFile(doc.file_url, doc.file_name);
+                      if (!result.success) alert("Could not download this document.");
+                    }}
                     className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition"
                   >
                     Download
-                  </a>
+                  </button>
                 </div>
               ))}
             </div>

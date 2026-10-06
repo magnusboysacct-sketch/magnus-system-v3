@@ -18,20 +18,28 @@ export async function uploadProjectFile(
   try {
     const fileExt = file.name.split(".").pop();
     const fileName = `${Date.now()}_${file.name}`;
-    const filePath = `${projectId}/${fileName}`;
+
+    // project_documents has no company_id of its own, so the company comes from the project. The private-files bucket needs
+    // the company id as the FIRST folder of the path (its policies key on it), and the stored file_url is that PATH, never a
+    // URL: it is read with the viewer's own session each time (see downloadProjectFile).
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("company_id")
+      .eq("id", projectId)
+      .single();
+    if (projectError || !project?.company_id) {
+      return { success: false, error: projectError || new Error("The project has no company") };
+    }
+    const filePath = `${project.company_id}/project-documents/${projectId}/${fileName}`;
 
     const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("project-files")
+      .from("private-files")
       .upload(filePath, file);
 
     if (uploadError) {
       console.error("Error uploading file to storage:", uploadError);
       return { success: false, error: uploadError };
     }
-
-    const { data: urlData } = supabase.storage
-      .from("project-files")
-      .getPublicUrl(filePath);
 
     const {
       data: { user },
@@ -55,7 +63,7 @@ export async function uploadProjectFile(
 
     if (docError) {
       console.error("Error creating document record:", docError);
-      await supabase.storage.from("project-files").remove([filePath]);
+      await supabase.storage.from("private-files").remove([filePath]);
       return { success: false, error: docError };
     }
 
@@ -91,7 +99,7 @@ export async function fetchProjectFiles(projectId: string) {
 export async function deleteProjectFile(documentId: string, filePath: string) {
   try {
     const { error: storageError } = await supabase.storage
-      .from("project-files")
+      .from("private-files")
       .remove([filePath]);
 
     if (storageError) {
@@ -117,8 +125,9 @@ export async function deleteProjectFile(documentId: string, filePath: string) {
 
 export async function downloadProjectFile(filePath: string, fileName: string) {
   try {
+    // Read with the signed-in user's own session each time (private-files company policy); nothing long-lived is ever stored.
     const { data, error } = await supabase.storage
-      .from("project-files")
+      .from("private-files")
       .download(filePath);
 
     if (error) {
