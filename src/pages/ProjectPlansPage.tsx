@@ -7,6 +7,7 @@ import {
   ArrowRight, RotateCcw, Maximize2, Layers,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { signPrivatePath, signPrivatePaths } from "../lib/privateFiles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Plan {
@@ -1494,12 +1495,20 @@ export default function ProjectPlansPage() {
     const { data } = await supabase
       .from("project_plans").select("*").eq("project_id", projectId!)
       .order("created_at", { ascending: false });
-    const withUrls = (data || []).map((p: any) => {
-      const { data: urlData } = supabase.storage.from("project-files").getPublicUrl(p.file_url);
-      return { ...p, publicUrl: urlData.publicUrl } as Plan;
-    });
+    // file_url is a storage PATH in the private private-files bucket; sign it on read. (The Plan field is still called
+    // publicUrl, but it now holds a signed URL.)
+    const rows = data || [];
+    const signed = await signPrivatePaths(rows.map((p: any) => p.file_url));
+    const withUrls = rows.map((p: any) => ({ ...p, publicUrl: signed.get(p.file_url) || "" } as Plan));
     setPlans(withUrls);
     setLoading(false);
+  }
+
+  // pdf.js re-fetches the whole file for every page it renders, so the viewer must never be handed a URL that is about to
+  // lapse: sign a fresh one each time a plan is opened (on top of the 24-hour window from loadPlans).
+  async function openPlan(plan: Plan) {
+    const fresh = await signPrivatePath(plan.file_url);
+    setViewingPlan(fresh ? { ...plan, publicUrl: fresh } : plan);
   }
 
   function handleFileDrop(files: FileList) {
@@ -1516,17 +1525,19 @@ export default function ProjectPlansPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user!.id).single();
+      // private-files requires the company id as the first folder of the path
+      if (!profile?.company_id) { alert("Can't upload plans: your account isn't linked to a company."); return; }
 
       for (const file of pendingFiles) {
         const ext = file.name.split(".").pop() ?? "bin";
-        const path = `plans/${projectId}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("project-files").upload(path, file, { upsert: false });
+        const path = `${profile.company_id}/plans/${projectId}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("private-files").upload(path, file, { upsert: false });
         if (upErr) { console.error(upErr); continue; }
 
         let pageCount = 1;
         if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-          const { data: urlData } = supabase.storage.from("project-files").getPublicUrl(path);
-          try { pageCount = await getPdfPageCount(urlData.publicUrl); } catch {}
+          const signedUrl = await signPrivatePath(path);
+          if (signedUrl) { try { pageCount = await getPdfPageCount(signedUrl); } catch {} }
         }
 
         await supabase.from("project_plans").insert({
@@ -1551,7 +1562,7 @@ export default function ProjectPlansPage() {
   async function handleDelete(plan: Plan) {
     if (!confirm(`Delete "${plan.file_name}"?`)) return;
     await supabase.from("project_plans").delete().eq("id", plan.id);
-    await supabase.storage.from("project-files").remove([plan.file_url]);
+    await supabase.storage.from("private-files").remove([plan.file_url]);
     await loadPlans();
   }
 
@@ -1586,7 +1597,7 @@ export default function ProjectPlansPage() {
           plans={plans}
           uploading={uploading}
           onUpload={handleFileDrop}
-          onOpen={plan => setViewingPlan(plan)}
+          onOpen={openPlan}
           onDelete={handleDelete}
         />
       </div>

@@ -2,6 +2,7 @@ import React from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { resolveProjectPhotoUrls, projectPhotoBucket } from "../lib/privateFiles";
 import { ArrowLeft, Camera, Plus, X, Trash2, Download } from "lucide-react";
 import MobilePhotoCapture from "../components/MobilePhotoCapture";
 import { BaseModal } from "../components/common/BaseModal";
@@ -30,10 +31,9 @@ export default function ProjectPhotosPage() {
       .eq("project_id", projectId!)
       .order("created_at", { ascending: false });
 
-    const photosWithUrls = (data || []).map(photo => {
-      const { data: urlData } = supabase.storage.from("project-photos").getPublicUrl(photo.photo_url);
-      return { ...photo, publicUrl: urlData.publicUrl };
-    });
+    // Photos from the field app are in the private private-files bucket (signed on read); the rest are in project-photos.
+    const urls = await resolveProjectPhotoUrls((data || []).map(photo => photo.photo_url));
+    const photosWithUrls = (data || []).map(photo => ({ ...photo, publicUrl: urls.get(photo.photo_url) || "" }));
     setPhotos(photosWithUrls);
     setLoading(false);
   }
@@ -41,7 +41,7 @@ export default function ProjectPhotosPage() {
   async function deletePhoto(photo: any) {
     if (!confirm("Delete this photo? This cannot be undone.")) return;
     await supabase.from("project_photos").delete().eq("id", photo.id);
-    await supabase.storage.from("project-photos").remove([photo.photo_url]);
+    await supabase.storage.from(projectPhotoBucket(photo.photo_url)).remove([photo.photo_url]);
     setSelectedPhoto(null);
     loadPhotos();
   }
@@ -50,7 +50,7 @@ export default function ProjectPhotosPage() {
     e.stopPropagation();
     try {
       const { data, error } = await supabase.storage
-        .from("project-photos")
+        .from(projectPhotoBucket(photo.photo_url))
         .download(photo.photo_url);
       if (error || !data) { alert("Failed to download photo."); return; }
       const url = URL.createObjectURL(data);

@@ -2,6 +2,7 @@
 // Digital Signature + Receipt Scan + Expense Logging + Full Mobile ERP
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabase";
+import { resolveProjectPhotoUrls } from "../lib/privateFiles";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import {
   FileText, Camera, DollarSign, AlertTriangle, ShieldCheck,
@@ -169,7 +170,10 @@ export default function FieldAppPage() {
     ]);
     setTodayLog(logRes.data);
     setRecentPayments(payRes.data||[]);
-    setPhotos(photoRes.data||[]);
+    // photo_url is a storage path (private-files for field photos); sign it on read.
+    const photoRows = photoRes.data||[];
+    const photoUrls = await resolveProjectPhotoUrls(photoRows.map((r:any)=>r.photo_url));
+    setPhotos(photoRows.map((r:any)=>({...r, signedUrl: photoUrls.get(r.photo_url)||""})));
   }
 
   async function switchProject(pid: string) {
@@ -241,7 +245,7 @@ export default function FieldAppPage() {
       <div style={{animation:"fadeUp 0.3s ease"}}>
         {screen==="home" && <HomeScreen project={project} weather={weather} todayLog={todayLog} recentPayments={recentPayments} photos={photos} safetyChecked={safetyChecked} setScreen={setScreen}/>}
         {screen==="log" && <DailyLogScreen projectId={project?.id} today={today} existing={todayLog} onSave={async()=>{await loadProjectData(project.id,companyId);setScreen("home");showToast("Daily log saved!");}} onBack={()=>setScreen("home")}/>}
-        {screen==="photos" && <PhotoScreen projectId={project?.id} photos={photos} onSave={async()=>{await loadProjectData(project.id,companyId);showToast("Photo uploaded!");}} onBack={()=>setScreen("home")}/>}
+        {screen==="photos" && <PhotoScreen projectId={project?.id} photos={photos} companyId={companyId} onSave={async()=>{await loadProjectData(project.id,companyId);showToast("Photo uploaded!");}} onBack={()=>setScreen("home")}/>}
         {screen==="payments" && <PaymentsScreen companyId={companyId} projectId={project?.id} payments={recentPayments} onBack={()=>setScreen("home")} onRefresh={async()=>await loadProjectData(project.id,companyId)} showToast={showToast}/>}
         {screen==="expenses" && <ExpensesScreen companyId={companyId} projectId={project?.id} onBack={()=>setScreen("home")} showToast={showToast}/>}
         {screen==="issue" && <IssueScreen projectId={project?.id} onSave={()=>{setScreen("home");showToast("Issue logged!");}} onBack={()=>setScreen("home")}/>}
@@ -407,7 +411,7 @@ function DailyLogScreen({ projectId, today, existing, onSave, onBack }: any) {
 }
 
 // ─── Photo Screen ─────────────────────────────────────────────────────────────
-function PhotoScreen({ projectId, photos, onSave, onBack }: any) {
+function PhotoScreen({ projectId, companyId, photos, onSave, onBack }: any) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [caption, setCaption] = useState("");
@@ -416,10 +420,19 @@ function PhotoScreen({ projectId, photos, onSave, onBack }: any) {
     const file = e.target.files?.[0]; if (!file) return;
     setUploading(true);
     try {
-      const path = `projects/${projectId}/${Date.now()}-${file.name}`;
-      await supabase.storage.from("project-files").upload(path,file,{cacheControl:"3600",upsert:false});
-      const { data:sd } = supabase.storage.from("project-files").getPublicUrl(path);
-      await supabase.from("project_photos").insert({ project_id:projectId, url:sd.publicUrl, public_url:sd.publicUrl, caption:caption||null });
+      // private-files needs the company id as the first folder; project_photos stores that PATH in photo_url (never a URL).
+      if (!companyId) throw new Error("your account isn't linked to a company");
+      const { data:{ user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("you are not signed in");
+      const path = `${companyId}/field-photos/${projectId}/${Date.now()}-${file.name}`;
+      const { error:upErr } = await supabase.storage.from("private-files").upload(path,file,{cacheControl:"3600",upsert:false});
+      if (upErr) throw upErr;
+      // The real project_photos columns: photo_url and uploaded_by are required (the old url/public_url columns do not exist).
+      const { error:insErr } = await supabase.from("project_photos").insert({ project_id:projectId, company_id:companyId, photo_url:path, caption:caption||"", uploaded_by:user.id });
+      if (insErr) {
+        await supabase.storage.from("private-files").remove([path]); // don't leave an orphaned file behind
+        throw insErr;
+      }
       setCaption(""); onSave();
     } catch(e:any) { alert("Upload failed: "+e.message); }
     setUploading(false);
@@ -446,7 +459,7 @@ function PhotoScreen({ projectId, photos, onSave, onBack }: any) {
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
               {photos.map((p:any)=>(
                 <div key={p.id} style={{aspectRatio:"1",borderRadius:10,overflow:"hidden",background:"rgba(255,255,255,0.04)"}}>
-                  <img src={p.url||p.public_url||p.publicUrl||""} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                  {p.signedUrl && <img src={p.signedUrl} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>}
                 </div>
               ))}
             </div>

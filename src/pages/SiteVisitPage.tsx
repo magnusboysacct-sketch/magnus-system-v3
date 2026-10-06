@@ -5,6 +5,7 @@ import {
   Trash2, Save, Volume2, X, Check,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { isLegacyUrl, signPrivatePaths } from "../lib/privateFiles";
 import { magnusAI } from "../lib/magnusAI";
 
 // ─── Sketch Types ─────────────────────────────────────────────────────────────
@@ -671,9 +672,13 @@ export default function SiteVisitPage() {
 
   async function loadPhotos(visitId: string) {
     const { data } = await supabase.from("site_visit_photos").select("*").eq("site_visit_id", visitId).order("created_at", { ascending: false });
-    const withUrls = (data || []).map(p => {
-      const { data: urlData } = supabase.storage.from("project-files").getPublicUrl(p.photo_url);
-      return { ...p, publicUrl: p.annotated_url || urlData.publicUrl };
+    // photo_url and annotated_url are storage PATHS in the private private-files bucket, signed on read. An annotated_url that
+    // starts with http is a legacy public URL and is used as-is. (The photo field is still called publicUrl.)
+    const rows = data || [];
+    const signed = await signPrivatePaths(rows.flatMap(p => [p.photo_url, p.annotated_url].filter(v => v && !isLegacyUrl(v))));
+    const withUrls = rows.map(p => {
+      const annotated = p.annotated_url ? (isLegacyUrl(p.annotated_url) ? p.annotated_url : signed.get(p.annotated_url) || null) : null;
+      return { ...p, publicUrl: annotated || signed.get(p.photo_url) || "" };
     });
     setPhotos(withUrls);
   }
@@ -762,13 +767,20 @@ Respond in a clear, structured format that a construction estimator can use.`;
     const visitId = await ensureVisit();
     const { data: { user } } = await supabase.auth.getUser();
     const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user!.id).single();
+    // private-files requires the company id as the first folder of the path
+    if (!profile?.company_id) { alert("Can't upload photos: your account isn't linked to a company."); return; }
     for (const file of Array.from(files)) {
       const ext = file.name.split(".").pop();
-      const path = `site-visits/${projectId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
-      await supabase.storage.from("project-files").upload(path, file, { upsert: false });
-      await supabase.from("site_visit_photos").insert({
-        site_visit_id: visitId, project_id: projectId, company_id: profile?.company_id, photo_url: path, caption: "",
+      const path = `${profile.company_id}/site-visits/${projectId}/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("private-files").upload(path, file, { upsert: false });
+      if (upErr) { alert("Photo upload failed: " + upErr.message); continue; }
+      const { error: insErr } = await supabase.from("site_visit_photos").insert({
+        site_visit_id: visitId, project_id: projectId, company_id: profile.company_id, photo_url: path, caption: "",
       });
+      if (insErr) {
+        await supabase.storage.from("private-files").remove([path]); // don't leave an orphaned file behind
+        alert("Photo could not be saved: " + insErr.message);
+      }
     }
     await loadPhotos(visitId);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -777,10 +789,15 @@ Respond in a clear, structured format that a construction estimator can use.`;
 
   async function handleAnnotationSave(photo: SitePhoto, annotationData: any, dataUrl: string) {
     const blob = await (await fetch(dataUrl)).blob();
-    const path = `site-visits/${projectId}/annotated-${photo.id}.jpg`;
-    await supabase.storage.from("project-files").upload(path, blob, { upsert: true });
-    const { data: urlData } = supabase.storage.from("project-files").getPublicUrl(path);
-    await supabase.from("site_visit_photos").update({ annotation_data: annotationData, annotated_url: urlData.publicUrl }).eq("id", photo.id);
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user!.id).single();
+    if (!profile?.company_id) { alert("Can't save the annotation: your account isn't linked to a company."); return; }
+    // The PATH is stored in annotated_url (older rows hold a full public URL; loadPhotos handles both).
+    const path = `${profile.company_id}/site-visits/${projectId}/annotated-${photo.id}.jpg`;
+    const { error: upErr } = await supabase.storage.from("private-files").upload(path, blob, { upsert: true });
+    if (upErr) { alert("Annotation upload failed: " + upErr.message); return; }
+    const { error: updErr } = await supabase.from("site_visit_photos").update({ annotation_data: annotationData, annotated_url: path }).eq("id", photo.id);
+    if (updErr) { alert("Annotation could not be saved: " + updErr.message); return; }
     setAnnotatingPhoto(null);
     if (visit?.id) await loadPhotos(visit.id);
   }
@@ -788,7 +805,8 @@ Respond in a clear, structured format that a construction estimator can use.`;
   async function deletePhoto(photo: SitePhoto) {
     if (!confirm("Delete this photo?")) return;
     await supabase.from("site_visit_photos").delete().eq("id", photo.id);
-    await supabase.storage.from("project-files").remove([photo.photo_url]);
+    const stored = [photo.photo_url, photo.annotated_url].filter((v): v is string => !!v && !isLegacyUrl(v));
+    await supabase.storage.from("private-files").remove(stored);
     if (visit?.id) await loadPhotos(visit.id);
   }
 
