@@ -9,7 +9,9 @@
 // - dry_run defaults to TRUE and makes ZERO writes (no storage copy, no database update, no log insert).
 // - The old public copies are NOT deleted — that is a separate, later step. Until then every row is reversible
 //   from storage_migration_log (old_url is recorded).
-// - Contract signatures are deliberately NOT handled here.
+// - Contract signatures ARE handled, but differently: those two columns already support sign-on-read (see
+//   src/lib/contractSignatures.ts: a value starting with http is a legacy URL, anything else is a storage path signed when
+//   viewed), so for them the column gets the new storage PATH, never a signed URL (mode "path" below).
 //
 // Body (JSON, all optional): { "dry_run": false, "table_filter": "workers" | "field_payments" | "workers.id_photo_url" | ... }
 // Only the literal boolean false turns off dry_run.
@@ -31,15 +33,22 @@ const MAX_BATCHES_PER_TARGET = 200; // hard stop against a runaway loop
 const TIME_BUDGET_MS = 100_000; // stop starting new rows near the edge-function wall-clock limit; just rerun
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Target = { table: string; column: string; folder: string };
+// mode "signedUrl" (default): the column gets a fresh 1-year signed URL (for columns whose readers use the value directly as
+// a link or image source). mode "path": the column gets the new storage path instead (for columns that are signed on read).
+type Target = { table: string; column: string; folder: string; mode?: "signedUrl" | "path" };
 
-// Contracts are intentionally absent.
 const TARGETS: Target[] = [
   { table: "workers", column: "id_photo_url", folder: "workers/ids" },
   { table: "workers", column: "passport_photo_url", folder: "workers/passport" },
   { table: "field_payments", column: "id_photo_url", folder: "field-payments/ids" },
   // Staff photos: the stored value is the public URL plus a "?t=<timestamp>" cache-buster, which parseOldPath strips.
   { table: "user_profiles", column: "avatar_url", folder: "staff-photos" },
+  // Contract signatures: stored as a PATH (sign-on-read already exists for these columns). Old values point at
+  // contract-signatures/<contractId>_<party>_<ts>.png (staff) or client-signatures/<contractId>_<ts>.png (portal).
+  { table: "client_contracts", column: "contractor_signature_url", folder: "contract-signatures", mode: "path" },
+  { table: "client_contracts", column: "client_signature_url", folder: "contract-signatures", mode: "path" },
+  // Receipt images: readers use the value directly (<img src>, window.open), and new uploads already store a signed URL.
+  { table: "expenses", column: "receipt_url", folder: "receipts" },
 ];
 
 type Detail = {
@@ -203,18 +212,22 @@ export async function migrate(
         }
       }
 
-      // 2. Fresh 1-year signed URL.
-      const { data: signed, error: signErr } = await admin.storage
-        .from(DEST_BUCKET)
-        .createSignedUrl(built.path, ONE_YEAR_SECONDS);
-      if (signErr || !signed?.signedUrl) {
-        throw new Error(`object copied but signing failed: ${signErr?.message || "no URL returned"}`);
+      // 2. The new value: a fresh 1-year signed URL, or (mode "path") just the storage path, which is signed when viewed.
+      let newValue = built.path;
+      if (t.mode !== "path") {
+        const { data: signed, error: signErr } = await admin.storage
+          .from(DEST_BUCKET)
+          .createSignedUrl(built.path, ONE_YEAR_SECONDS);
+        if (signErr || !signed?.signedUrl) {
+          throw new Error(`object copied but signing failed: ${signErr?.message || "no URL returned"}`);
+        }
+        newValue = signed.signedUrl;
       }
 
       // 3. Update guarded by the old value, so a concurrent edit is never overwritten.
       const { data: updated, error: updErr } = await admin
         .from(t.table)
-        .update({ [t.column]: signed.signedUrl })
+        .update({ [t.column]: newValue })
         .eq("id", row.id)
         .eq(t.column, oldUrl)
         .select("id");
@@ -225,7 +238,7 @@ export async function migrate(
 
       res.migrated++;
       res.details.push({ id: rowId, status: "migrated", old_path: parsed.path, new_path: built.path });
-      await writeLog(t, rowId, oldUrl, signed.signedUrl, "migrated");
+      await writeLog(t, rowId, oldUrl, newValue, "migrated");
     } catch (e) {
       res.failed++;
       res.details.push({ id: rowId, status: "failed", reason: (e as Error)?.message || String(e) });
