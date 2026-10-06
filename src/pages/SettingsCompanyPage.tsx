@@ -148,7 +148,8 @@ export default function SettingsCompanyPage() {
 
   // Uploads the drawn signature PNG to storage and stores its public URL —
   // same upload-then-getPublicUrl pattern as the logo above and as
-  // ContractsPage's signContract(), reusing the "project-files" bucket.
+  // ContractsPage's signContract(); uploads go to the public company-assets bucket (signature, watermark) and
+  // company-logos (logo), each under <companyId>/...
   // Persisted immediately (not deferred to the main "Save Changes" button)
   // so a director doesn't lose a freshly-drawn signature if they navigate
   // away before hitting Save elsewhere on the page.
@@ -161,10 +162,12 @@ export default function SettingsCompanyPage() {
     if (!companyId) return;
     setSavingSignature(true); setMsg(null);
     try {
-      const path = `signatures/${companyId}/${Date.now()}_signature.${ext}`;
-      const { error: ue } = await supabase.storage.from("project-files").upload(path, blob, { upsert: true, contentType });
+      // Public bucket on purpose (the signature is embedded in ID cards and documents), company id FIRST so the bucket's
+      // company-scoped write policy applies.
+      const path = `${companyId}/signature/${Date.now()}_signature.${ext}`;
+      const { error: ue } = await supabase.storage.from("company-assets").upload(path, blob, { upsert: true, contentType });
       if (ue) throw ue;
-      const { data: ud } = supabase.storage.from("project-files").getPublicUrl(path);
+      const { data: ud } = supabase.storage.from("company-assets").getPublicUrl(path);
       setSignatureUrl(ud.publicUrl);
       const { error } = await supabase.from("company_settings")
         .update({ signature_url: ud.publicUrl, updated_at: new Date().toISOString() })
@@ -270,10 +273,11 @@ export default function SettingsCompanyPage() {
                     const f = e.target.files?.[0]; if (!f || !companyId) return;
                     setUploadingLogo(true);
                     try {
-                      const path = `logos/${companyId}/${Date.now()}_logo.${f.name.split(".").pop()}`;
-                      const { error: ue } = await supabase.storage.from("project-files").upload(path, f, { upsert: true });
+                      // Public bucket on purpose (emails, portal, pre-login pages), company id FIRST for the write policy.
+                      const path = `${companyId}/logo/${Date.now()}_logo.${f.name.split(".").pop()}`;
+                      const { error: ue } = await supabase.storage.from("company-logos").upload(path, f, { upsert: true });
                       if (!ue) {
-                        const { data: ud } = supabase.storage.from("project-files").getPublicUrl(path);
+                        const { data: ud } = supabase.storage.from("company-logos").getPublicUrl(path);
                         setLogoUrl(ud.publicUrl);
                       } else {
                         setMsg({ type: "error", text: ue.message });
@@ -438,9 +442,9 @@ export default function SettingsCompanyPage() {
                 <input type="file" accept="image/*" className="hidden" onChange={async(e)=>{
                   const f=e.target.files?.[0]; if(!f||!companyId) return;
                   setUploadingWatermark(true);
-                  const path=`watermarks/${companyId}/${Date.now()}_watermark.png`;
-                  const {error:ue}=await supabase.storage.from("project-files").upload(path,f,{upsert:true});
-                  if(!ue){const{data:ud}=supabase.storage.from("project-files").getPublicUrl(path);setWatermarkUrl(ud.publicUrl);}
+                  const path=`${companyId}/watermark/${Date.now()}_watermark.png`; // public bucket, company id first
+                  const {error:ue}=await supabase.storage.from("company-assets").upload(path,f,{upsert:true});
+                  if(!ue){const{data:ud}=supabase.storage.from("company-assets").getPublicUrl(path);setWatermarkUrl(ud.publicUrl);}
                   setUploadingWatermark(false);
                 }}/>
               </label>
