@@ -490,18 +490,33 @@ function PaymentsScreen({ companyId, projectId, payments, onBack, onRefresh, sho
   async function savePayment() {
     if(!selWorker||!amount){alert("Select worker and enter amount.");return;}
     setSaving(true);
-    // Upload signature if exists
-    let sigUrl = null;
+    // Upload signature if exists. It goes to the PRIVATE private-files bucket (company id as the first folder, which its
+    // policies require) and the column stores a 1-year signed URL, the same expiry as lib/fieldPayments.ts. A failure is
+    // never swallowed: the user is told, and chooses between going back to retry and saving the payment without a signature.
+    let sigUrl: string | null = null;
     if (sigDataUrl) {
+      let sigError = "";
+      let uploadedPath: string | null = null;
       try {
+        if (!companyId) throw new Error("your account isn't linked to a company");
         const blob = await (await fetch(sigDataUrl)).blob();
-        const path = `signatures/${companyId}/${Date.now()}.png`;
-        const { error:ue } = await supabase.storage.from("project-files").upload(path, blob, {contentType:"image/png",upsert:false});
-        if (!ue) {
-          const { data:sd } = supabase.storage.from("project-files").getPublicUrl(path);
-          sigUrl = sd.publicUrl;
-        }
-      } catch {}
+        const path = `${companyId}/field-payments/signatures/${Date.now()}.png`;
+        const { error:ue } = await supabase.storage.from("private-files").upload(path, blob, {contentType:"image/png",upsert:false});
+        if (ue) throw ue;
+        uploadedPath = path;
+        const { data:sd, error:se } = await supabase.storage.from("private-files").createSignedUrl(path, 60 * 60 * 24 * 365);
+        if (se || !sd?.signedUrl) throw se || new Error("the signature link could not be created");
+        sigUrl = sd.signedUrl;
+      } catch (e:any) {
+        sigError = e?.message || "unknown error";
+        if (uploadedPath) { try { await supabase.storage.from("private-files").remove([uploadedPath]); } catch {} } // no orphaned file
+      }
+      if (sigError && !window.confirm(`The signature could not be saved (${sigError}).
+
+Save the payment WITHOUT a signature? Press Cancel to go back and try again.`)) {
+        setSaving(false);
+        return;
+      }
     }
     await supabase.from("field_payments").insert({
       company_id:companyId, project_id:projectId||null, worker_id:selWorker,
@@ -510,7 +525,7 @@ function PaymentsScreen({ companyId, projectId, payments, onBack, onRefresh, sho
       notes:notes||null, signature_url:sigUrl,
     });
     setSaving(false); setShowAdd(false); setSelWorker(""); setAmount(""); setNotes(""); setSigDataUrl(null);
-    showToast("Payment saved with signature!");
+    showToast(sigUrl ? "Payment saved with signature!" : "Payment saved (no signature).");
     if(onRefresh) onRefresh();
   }
 
