@@ -54,14 +54,15 @@ function newLine(): EntryLine {
 }
 
 // ─── Auto-file helper ─────────────────────────────────────────────────────────
-// Creates a path like "journal-entries/2026/June/JE-XXXXXXXX"
-// Stores the reference in gl_transactions.notes as a JSON tag
+// Creates a path like "<companyId>/journal-entries/2026/June/JE-XXXXXXXX.json" in the PRIVATE private-files bucket, whose
+// policies need the company id as the first folder. This is a write-only audit copy: the path is shown in the success message
+// but is not stored in any database column (gl_transactions.notes holds only the user's own notes) and nothing reads it back.
 
-function getFilingPath(date: string, txNumber: string): string {
+function getFilingPath(companyId: string, date: string, txNumber: string): string {
   const d = new Date(date);
   const year = d.getFullYear().toString();
   const month = d.toLocaleString("en-US", { month: "long" });
-  return `journal-entries/${year}/${month}/${txNumber}.json`;
+  return `${companyId}/journal-entries/${year}/${month}/${txNumber}.json`;
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -258,8 +259,9 @@ export default function JournalEntryPage() {
 
   async function fileEntry(txId: string, txNumber: string, entries: any[]) {
     if (!autoFile) return null;
+    if (!companyId) return null; // private-files needs the company id as the first folder; filing is best-effort
     try {
-      const path = getFilingPath(date, txNumber);
+      const path = getFilingPath(companyId, date, txNumber);
       const payload = {
         transaction_id: txId,
         transaction_number: txNumber,
@@ -275,7 +277,7 @@ export default function JournalEntryPage() {
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const file = new File([blob], `${txNumber}.json`, { type: "application/json" });
       const { error: uploadErr } = await supabase.storage
-        .from("project-files")
+        .from("private-files")
         .upload(path, file, { upsert: true });
       if (uploadErr) {
         console.warn("Auto-file upload failed:", uploadErr.message);
@@ -440,7 +442,7 @@ export default function JournalEntryPage() {
             </button>
             {autoFile && (
               <span className="text-[9px] text-slate-700 font-mono">
-                → journal-entries/{new Date(date).getFullYear()}/{new Date(date).toLocaleString("en-US",{month:"long"})}/
+                → &lt;company&gt;/journal-entries/{new Date(date).getFullYear()}/{new Date(date).toLocaleString("en-US",{month:"long"})}/
               </span>
             )}
           </div>
@@ -624,7 +626,7 @@ export default function JournalEntryPage() {
             <div className="text-[11px] text-emerald-300">
               <strong>Auto-file ON:</strong> When posted, this entry will be saved to{" "}
               <span className="font-mono text-emerald-400">
-                journal-entries/{new Date(date).getFullYear()}/{new Date(date).toLocaleString("en-US",{month:"long"})}/JE-XXXXXX.json
+                &lt;company&gt;/journal-entries/{new Date(date).getFullYear()}/{new Date(date).toLocaleString("en-US",{month:"long"})}/JE-XXXXXX.json
               </span>
               {" "}— folder created automatically if it doesn't exist.
             </div>
