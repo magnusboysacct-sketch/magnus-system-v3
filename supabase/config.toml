@@ -44,3 +44,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/portal-contract-signature-urls/deno.json"
 entrypoint = "./functions/portal-contract-signature-urls/index.ts"
+
+[functions.photo-share-resolve]
+enabled = true
+verify_jwt = true
+import_map = "./functions/photo-share-resolve/deno.json"
+entrypoint = "./functions/photo-share-resolve/index.ts"
