@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { resolveProjectPhotoUrls, projectPhotoBucket } from "../lib/privateFiles";
 import JSZip from "jszip";
-import { ArrowLeft, Camera, Plus, X, Trash2, Download, Check } from "lucide-react";
+import { ArrowLeft, Camera, Plus, X, Trash2, Download, Check, Link2, Share2 } from "lucide-react";
 import MobilePhotoCapture from "../components/MobilePhotoCapture";
 import { BaseModal } from "../components/common/BaseModal";
+import PhotoShareModal from "../components/PhotoShareModal";
+import PhotoShareLinksModal from "../components/PhotoShareLinksModal";
 
 // A zip is built in the browser's memory, so one download is capped.
 const MAX_ZIP_PHOTOS = 50;
@@ -67,6 +69,9 @@ export default function ProjectPhotosPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [zipProgress, setZipProgress] = useState<{ done: number; total: number } | null>(null);
   const [zipResult, setZipResult] = useState<{ ok: boolean; message: string; failed: string[] } | null>(null);
+  // Share links (a no-login link to the selected photos) and the list of this project's existing links.
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showLinksModal, setShowLinksModal] = useState(false);
 
   useEffect(() => { loadPhotos(); loadProject(); }, [projectId]);
 
@@ -196,7 +201,7 @@ export default function ProjectPhotosPage() {
   const overLimit = selectedIds.length > MAX_ZIP_PHOTOS;
 
   return (
-    <div className={`min-h-screen bg-slate-50 dark:bg-slate-950 p-4 max-w-2xl mx-auto${selectMode ? " pb-28" : ""}`}>
+    <div className={`min-h-screen bg-slate-50 dark:bg-slate-950 p-4 max-w-2xl mx-auto${selectMode ? " pb-36" : ""}`}>
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => navigate(`/projects/${projectId}`)}
@@ -220,6 +225,16 @@ export default function ProjectPhotosPage() {
           </button>
         </div>
       </div>
+
+      {/* Shared links */}
+      {projectId && (
+        <div className="mb-4 -mt-3">
+          <button onClick={() => setShowLinksModal(true)}
+            className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-blue-500 transition-colors">
+            <Link2 size={14}/> Shared links
+          </button>
+        </div>
+      )}
 
       {/* Zip result */}
       {zipResult && (
@@ -289,18 +304,22 @@ export default function ProjectPhotosPage() {
       {/* Select-mode action bar */}
       {selectMode && selectedIds.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 px-4 py-3">
-          <div className="max-w-2xl mx-auto flex items-center gap-3">
-            <div className="flex-1 min-w-0">
+          <div className="max-w-2xl mx-auto flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[8rem]">
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                 {zipProgress ? `Zipping ${zipProgress.done} of ${zipProgress.total}...` : `${selectedIds.length} selected`}
               </p>
               {overLimit && !zipProgress && (
-                <p className="text-xs text-red-500">Maximum {MAX_ZIP_PHOTOS} photos per zip - deselect {selectedIds.length - MAX_ZIP_PHOTOS}.</p>
+                <p className="text-xs text-red-500">Maximum {MAX_ZIP_PHOTOS} photos at a time - deselect {selectedIds.length - MAX_ZIP_PHOTOS}.</p>
               )}
             </div>
             <button onClick={exitSelectMode} disabled={!!zipProgress}
               className="px-4 py-2 text-sm font-semibold rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 disabled:opacity-50">
               Cancel
+            </button>
+            <button onClick={() => setShowShareModal(true)} disabled={!!zipProgress || overLimit}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors">
+              <Share2 size={16}/> Share Link
             </button>
             <button onClick={downloadZip} disabled={!!zipProgress || overLimit}
               className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors">
@@ -340,6 +359,20 @@ export default function ProjectPhotosPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Share link modals */}
+      {projectId && (
+        <>
+          <PhotoShareModal
+            open={showShareModal}
+            projectId={projectId}
+            projectName={projectName}
+            photoIds={photos.filter(p => selectedIds.includes(p.id)).map(p => p.id)}
+            onClose={(created) => { setShowShareModal(false); if (created) exitSelectMode(); }}
+          />
+          <PhotoShareLinksModal open={showLinksModal} projectId={projectId} onClose={() => setShowLinksModal(false)} />
+        </>
       )}
 
       {/* Add Photos Modal */}

@@ -9,6 +9,7 @@ import AccessLogPage from './pages/AccessLogPage';
 import ProjectIssuesPage from './pages/ProjectIssuesPage';
 import ProjectLogsPage from './pages/ProjectLogsPage';
 import ProjectPhotosPage from './pages/ProjectPhotosPage';
+import SharedPhotosPage from './pages/SharedPhotosPage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
 import UpdateBanner from "./components/UpdateBanner";
@@ -338,6 +339,8 @@ export default function App() {
             </Route>
 
             <Route path="/portal/:token" element={<ClientPortalPage />} />
+            {/* Public, no login: a photo share link (checked server-side by the photo-share-resolve function) */}
+            <Route path="/shared/:token" element={<SharedPhotosPage />} />
             <Route path="/client-login" element={<ClientLoginPage />} />
             <Route path="/client-reset-password" element={<ClientResetPasswordPage />} />
             {/* Session-based login (ClientLoginPage.tsx's email+password flow)
