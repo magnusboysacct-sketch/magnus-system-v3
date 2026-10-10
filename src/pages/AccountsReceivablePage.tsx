@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { FileText, Plus, DollarSign, CircleAlert as AlertCircle, CircleCheck as CheckCircle, X, Trash2, Eye, Bell, MessageCircle, Mail, Save, Pencil, Printer } from "lucide-react";
 import {
   fetchClientInvoices,
@@ -34,6 +35,7 @@ interface LineItem {
 
 export default function AccountsReceivablePage() {
   const financeAccess = useFinanceAccess();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { userRole } = useProjectContext();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,6 +101,16 @@ export default function AccountsReceivablePage() {
     loadClientsAndProjects();
     loadContracts();
   }, []);
+
+  // Arriving with ?invoice=<id> (e.g. from "Generate Invoice" on the BOQ page) opens that invoice's details once the list
+  // has loaded, then drops the parameter so a refresh doesn't reopen it.
+  const deepLinkInvoiceId = searchParams.get("invoice");
+  useEffect(() => {
+    if (!deepLinkInvoiceId || loading) return;
+    const inv = invoices.find(i => i.id === deepLinkInvoiceId);
+    if (inv) openDetailModal(inv);
+    setSearchParams({}, { replace: true });
+  }, [deepLinkInvoiceId, loading, invoices]);
 
   // "Opened by client" data for the shared invoices, in one batched query.
   const invoiceViews = useItemViews(

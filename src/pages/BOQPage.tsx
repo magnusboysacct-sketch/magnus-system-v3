@@ -15,6 +15,12 @@ import EditableDropdown from "../components/common/EditableDropdown";
 import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
 import { generateProcurementFromBOQ } from "../lib/procurement";
 import { generateEstimateFromBOQ } from "../lib/estimates";
+import { useFinanceAccess } from "../hooks/useFinanceAccess";
+import {
+  generateInvoiceFromBOQ, buildBoqInvoiceLines, computeInvoiceTotals, validateBoqInvoiceOptions, jamaicaToday, addDays,
+  findItemsMissingRate, missingRateMessage,
+  type BoqInvoiceLineMode,
+} from "../lib/boqToInvoice";
 import { useProjectContext } from "../context/ProjectContext";
 import { SmartItemSelector } from "../components/SmartItemSelector";
 import { magnusAI } from "../lib/magnusAI";
@@ -1173,6 +1179,18 @@ export default function BOQPage() {
   const { currentProjectId, currentProject: selectedProject, userRole } = useProjectContext();
   const canApproveBoq = userRole === "director" || userRole === "estimator";
   const [searchParams, setSearchParams] = useSearchParams();
+  // "Generate Invoice" (finance users only): dialog state. See src/lib/boqToInvoice.ts.
+  const { canAccessFullFinance } = useFinanceAccess();
+  const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
+  const [invUnits, setInvUnits] = useState("1");
+  const [invMarkup, setInvMarkup] = useState("0");
+  const [invMode, setInvMode] = useState<BoqInvoiceLineMode>("per-section");
+  const [invDate, setInvDate] = useState("");
+  const [invDue, setInvDue] = useState("");
+  const [invTax, setInvTax] = useState("0");
+  const [invTerms, setInvTerms] = useState("Net 30");
+  const [invBusy, setInvBusy] = useState(false);
+  const [invError, setInvError] = useState<string | null>(null);
 
   const [status, setStatus] = useState<"draft" | "approved">("draft");
   const [sections, setSections] = useState<Section[]>([]);
@@ -2297,6 +2315,47 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims
     } catch (e: any) { setPersistError(e?.message); } finally { setPersistLoading(false); }
   }
 
+  // --- Generate Invoice (approved BOQ -> draft client invoice) -----------------
+  function openInvoiceDialog() {
+    const today = jamaicaToday();
+    setInvUnits("1"); setInvMarkup("0"); setInvMode("per-section"); setInvTax("0"); setInvTerms("Net 30");
+    setInvDate(today); setInvDue(addDays(today, 30)); setInvError(null);
+    setShowInvoiceDialog(true);
+  }
+
+  // Inputs as typed; anything unreadable becomes NaN so validateBoqInvoiceOptions rejects it with a clear message.
+  function readInvoiceOptions() {
+    const read = (s: string) => (s.trim() === "" ? 0 : Number(s));
+    return {
+      multiplier: invUnits.trim() === "" ? NaN : Number(invUnits),
+      markupPercent: read(invMarkup),
+      lineMode: invMode,
+      invoiceDate: invDate,
+      dueDate: invDue,
+      taxRate: read(invTax),
+      terms: invTerms,
+    };
+  }
+
+  async function handleGenerateInvoice() {
+    const effectiveProjectId = routeProjectId || activeProjectId;
+    if (status !== "approved") { setInvError("Approve the BOQ first."); return; }
+    if (!effectiveProjectId || !boqId) { setInvError("Save the BOQ first."); return; }
+    const options = readInvoiceOptions();
+    const problem = validateBoqInvoiceOptions(options);
+    if (problem) { setInvError(problem); return; }
+    const noRate = findItemsMissingRate(sections);
+    if (noRate.length > 0) { setInvError(missingRateMessage(noRate)); return; }
+    setInvBusy(true); setInvError(null);
+    try {
+      const result = await generateInvoiceFromBOQ(effectiveProjectId, boqId, options);
+      if (result.success) {
+        setShowInvoiceDialog(false);
+        nav(`/accounts-receivable?invoice=${result.invoiceId}`);
+      } else setInvError(result.error);
+    } catch (e: any) { setInvError(e?.message || "The invoice could not be generated."); } finally { setInvBusy(false); }
+  }
+
   async function handleGenerateProcurement() {
     const effectiveProjectId = routeProjectId || activeProjectId;
     if (!effectiveProjectId) { setPersistError("Select a project first"); return; }
@@ -2500,6 +2559,13 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <FileSpreadsheet size={12}/> Estimate
             </button>
+            {canAccessFullFinance && (
+              <button onClick={openInvoiceDialog} disabled={status !== "approved" || persistLoading || !boqId}
+                title={status !== "approved" ? "Approve BOQ first" : "Create a draft invoice from this BOQ"}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
+                <FilePlus size={12}/> Generate Invoice
+              </button>
+            )}
             <button onClick={handleGenerateProcurement} disabled={!(routeProjectId || activeProjectId) || sections.length === 0 || persistLoading}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-[11px] text-white font-semibold disabled:opacity-40 transition">
               <ShoppingCart size={12}/> Procurement
@@ -3715,6 +3781,100 @@ Answer briefly and practically. If they ask to add items, explain they need to u
           rateItems={rateItems}
         />
       )}
+      {/* -- Generate Invoice dialog -- */}
+      {showInvoiceDialog && canAccessFullFinance && (() => {
+        const opts = readInvoiceOptions();
+        const problem = validateBoqInvoiceOptions(opts);
+        const valid = !problem;
+        const missingRateItems = findItemsMissingRate(sections);
+        const units = valid ? (opts.multiplier as number) : 1;
+        const lines = buildBoqInvoiceLines(sections, { multiplier: units, markupPercent: valid ? opts.markupPercent : 0, lineMode: invMode });
+        const invTotals = computeInvoiceTotals(lines, valid ? opts.taxRate : 0);
+        const inputCls = "w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] text-xs text-slate-900 dark:text-slate-100";
+        const lbl = "block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1";
+        return (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+            <div className="w-full max-w-md max-h-[92vh] overflow-y-auto bg-white dark:bg-[#0d1117] border border-slate-300 dark:border-white/[0.1] rounded-2xl p-6 shadow-2xl">
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Generate Invoice from BOQ</div>
+              <div className="text-xs text-slate-500 mb-4">Creates a draft invoice for the project's client. You can review it in Accounts Receivable before sending.</div>
+
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className={lbl}>Number of units</label>
+                  <input value={invUnits} onChange={e => setInvUnits(e.target.value)} inputMode="numeric" className={inputCls}/>
+                </div>
+                <div>
+                  <label className={lbl}>Markup %</label>
+                  <input value={invMarkup} onChange={e => setInvMarkup(e.target.value)} inputMode="decimal" className={inputCls}/>
+                </div>
+              </div>
+
+              <label className={lbl}>Invoice lines</label>
+              <div className="flex gap-2 mb-3">
+                {([["per-section", "One per section"], ["itemized", "Itemized"]] as const).map(([mode, text]) => (
+                  <button key={mode} onClick={() => setInvMode(mode)}
+                    className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${invMode === mode ? "bg-teal-600 border-teal-600 text-white" : "bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400"}`}>
+                    {text}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                  <label className={lbl}>Invoice date</label>
+                  <input type="date" value={invDate} onChange={e => setInvDate(e.target.value)} className={inputCls}/>
+                </div>
+                <div>
+                  <label className={lbl}>Due date</label>
+                  <input type="date" value={invDue} onChange={e => setInvDue(e.target.value)} className={inputCls}/>
+                </div>
+                <div>
+                  <label className={lbl}>Tax %</label>
+                  <input value={invTax} onChange={e => setInvTax(e.target.value)} inputMode="decimal" className={inputCls}/>
+                </div>
+                <div>
+                  <label className={lbl}>Terms</label>
+                  <input value={invTerms} onChange={e => setInvTerms(e.target.value)} className={inputCls}/>
+                </div>
+              </div>
+
+              {missingRateItems.length > 0 && (
+                <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-600 dark:text-red-400">
+                  <div className="font-bold mb-1">Can't generate yet: {missingRateItems.length} item{missingRateItems.length === 1 ? " has" : "s have"} a quantity but no rate.</div>
+                  <div>{missingRateItems.slice(0, 8).join(", ")}{missingRateItems.length > 8 ? ` and ${missingRateItems.length - 8} more` : ""}</div>
+                  <div className="mt-1">Set {missingRateItems.length === 1 ? "its" : "their"} rate first (Rate Library, then the BOQ), approve the BOQ again, then try again.</div>
+                </div>
+              )}
+
+              <div className="rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.03] p-3 mb-3 text-xs space-y-1">
+                <div className="flex justify-between"><span className="text-slate-500">BOQ total (1 unit)</span><span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(totals.subtotal)}</span></div>
+                {units > 1 && (
+                  <div className="flex justify-between"><span className="text-slate-500">× {units} units</span><span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(totals.subtotal * units)}</span></div>
+                )}
+                <div className="flex justify-between"><span className="text-slate-500">Invoice subtotal{valid && opts.markupPercent > 0 ? ` (+${opts.markupPercent}% markup)` : ""}</span><span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(invTotals.subtotal)}</span></div>
+                {invTotals.taxAmount > 0 && (
+                  <div className="flex justify-between"><span className="text-slate-500">Tax ({opts.taxRate}%)</span><span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(invTotals.taxAmount)}</span></div>
+                )}
+                <div className="flex justify-between border-t border-slate-200 dark:border-white/[0.08] pt-1 text-sm"><span className="font-bold text-slate-900 dark:text-slate-100">Invoice total</span><span className="font-bold text-slate-900 dark:text-slate-100">{fmtMoney(invTotals.total)}</span></div>
+                <div className="text-[10px] text-slate-500">{lines.length} invoice line{lines.length === 1 ? "" : "s"}</div>
+              </div>
+
+              {(invError || problem) && <div className="mb-3 text-[11px] text-red-500">{invError || problem}</div>}
+
+              <div className="flex gap-2">
+                <button onClick={() => setShowInvoiceDialog(false)} disabled={invBusy}
+                  className="flex-1 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 text-xs font-semibold disabled:opacity-50">
+                  Cancel
+                </button>
+                <button onClick={() => void handleGenerateInvoice()} disabled={invBusy || !valid || lines.length === 0 || missingRateItems.length > 0}
+                  className="flex-1 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold disabled:opacity-50">
+                  {invBusy ? "Generating…" : "Generate"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
