@@ -10,6 +10,8 @@ import {
 } from "../components/ui";
 import { fetchLastSeen, fetchClientActivity, formatJamaicaShort, timeAgoLabel, deviceLabel, activityLabel } from "../lib/portalSeen";
 import type { LastSeen, ActivityRow } from "../lib/portalSeen";
+import ClientContactsManager from "../components/ClientContactsManager";
+import { addClientContact, type ClientContact } from "../lib/clientContacts";
 import {
   Plus, Search, Building2, Phone, Mail,
   MapPin, ArrowRight, Edit2, Trash2, RefreshCw,
@@ -198,6 +200,9 @@ export default function ClientsPage() {
   const [showNew, setShowNew] = useState(false);
   const [editClient, setEditClient] = useState<Client | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  // Contacts (see lib/clientContacts.ts): how many the open client has (null until known), and whether the contacts table exists yet.
+  const [contactCount, setContactCount] = useState<number | null>(null);
+  const [contactsReady, setContactsReady] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -334,11 +339,14 @@ export default function ClientsPage() {
     try {
       if (editClient) {
         // Update
+        // With contacts, the client's contact_name / phone / email belong to the primary contact (the database keeps them in step), so
+        // they are not sent from this form - a stale copy must never overwrite them. Without contacts (or before the contacts table
+        // exists) the form saves them exactly as before.
+        const mirrored = contactsReady && (contactCount ?? 0) > 0;
         const { error: e } = await supabase.from("clients").update({
           name: form.name.trim(),
-          contact_name: form.contact_name.trim() || null,
-          phone: form.phone.trim() || null,
-          email: form.email.trim() || null,
+          ...(contactsReady ? {} : { contact_name: form.contact_name.trim() || null }),
+          ...(mirrored ? {} : { phone: form.phone.trim() || null, email: form.email.trim() || null }),
           address: form.address.trim() || null,
           notes: form.notes.trim() || null,
           status: form.status,
@@ -355,7 +363,7 @@ export default function ClientsPage() {
           throw new Error("Could not determine your company. Please contact support.");
         }
 
-        const { error: e } = await supabase.from("clients").insert({
+        const { data: created, error: e } = await supabase.from("clients").insert({
           name: form.name.trim(),
           contact_name: form.contact_name.trim() || null,
           phone: form.phone.trim() || null,
@@ -364,8 +372,17 @@ export default function ClientsPage() {
           notes: form.notes.trim() || null,
           status: form.status,
           company_id: profile?.company_id,
-        });
+        }).select("id").single();
         if (e) throw e;
+        // A contact person entered for a new client also becomes its first (primary) contact. The client already holds the same
+        // details, so if this can't be saved (e.g. the contacts table isn't there yet) nothing is lost.
+        if (created?.id && form.contact_name.trim()) {
+          try {
+            await addClientContact(created.id, { name: form.contact_name, phone: form.phone, email: form.email }, true);
+          } catch (contactErr) {
+            console.warn("Client created, but its first contact was not saved:", contactErr);
+          }
+        }
       }
       await loadClients();
       closeModal();
@@ -426,6 +443,8 @@ export default function ClientsPage() {
 
   function openEdit(client: Client) {
     setEditClient(client);
+    setContactCount(null);
+    setContactsReady(true);
     setForm({
       name: client.name,
       contact_name: client.contact_name || "",
@@ -441,9 +460,26 @@ export default function ClientsPage() {
   function closeModal() {
     setShowNew(false);
     setEditClient(null);
+    setContactCount(null);
+    setContactsReady(true);
     setForm(EMPTY_FORM);
     setError(null);
   }
+
+  // The client's own contact_name / phone / email follow its primary contact (the database mirrors them), so after any contact
+  // change the fresh values are read back into the form and the list, and the form never saves a stale copy over them.
+  async function handleContactsChanged(list: ClientContact[]) {
+    setContactCount(list.length);
+    if (!editClient) return;
+    const { data } = await supabase.from("clients").select("contact_name, phone, email").eq("id", editClient.id).maybeSingle();
+    if (!data) return;
+    setForm(f => ({ ...f, contact_name: data.contact_name || "", phone: data.phone || "", email: data.email || "" }));
+    setClients(prev => prev.map(c => c.id === editClient.id ? { ...c, contact_name: data.contact_name, phone: data.phone, email: data.email } : c));
+  }
+
+  // Phone / email are read-only while the client has contacts: they show the primary contact's details.
+  const fromPrimary = !!editClient && contactsReady && (contactCount ?? 0) > 0;
+
 
   // Filter
   const filtered = clients.filter(c => {
@@ -634,21 +670,32 @@ export default function ClientsPage() {
               autoFocus/>
           </Field>
 
-          <Field label="Contact Person">
-            <Input placeholder="e.g. John Smith"
-              value={form.contact_name}
-              onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))}/>
-          </Field>
+          {editClient && contactsReady ? (
+            <ClientContactsManager
+              clientId={editClient.id}
+              clientContactName={form.contact_name}
+              clientPhone={form.phone}
+              clientEmail={form.email}
+              onChanged={handleContactsChanged}
+              onNotReady={() => setContactsReady(false)}
+            />
+          ) : (
+            <Field label="Contact Person">
+              <Input placeholder="e.g. John Smith"
+                value={form.contact_name}
+                onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))}/>
+            </Field>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Phone">
+            <Field label="Phone" hint={fromPrimary ? "From the primary contact - change it under Contacts" : undefined}>
               <Input placeholder="e.g. 876-555-0100"
-                value={form.phone}
+                value={form.phone} disabled={fromPrimary}
                 onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}/>
             </Field>
-            <Field label="Email">
+            <Field label="Email" hint={fromPrimary ? "From the primary contact - change it under Contacts" : undefined}>
               <Input type="email" placeholder="e.g. john@abc.com"
-                value={form.email}
+                value={form.email} disabled={fromPrimary}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}/>
             </Field>
           </div>

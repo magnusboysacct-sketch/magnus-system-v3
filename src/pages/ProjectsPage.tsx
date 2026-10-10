@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
 import { supabase } from "../lib/supabase";
+import { fetchCompanyContacts, primaryContactIdFor, sortContacts, type ClientContact } from "../lib/clientContacts";
 import {
   PageHeader, Card, Badge, Btn, Input, Empty,
   Modal, Field, Select, Alert, cn
@@ -20,6 +21,7 @@ type Project = {
   name: string;
   status: string | null;
   client_id?: string | null;
+  contact_id?: string | null;
 };
 
 type Client = { id: string; name: string };
@@ -270,7 +272,11 @@ export default function ProjectsPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [showNew, setShowNew] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [form, setForm] = useState({ name: "", status: "active", client_id: "" });
+  const [form, setForm] = useState({ name: "", status: "active", client_id: "", contact_id: "" });
+  // Client contacts for the "Contact" picker. contactsAvailable is false until the client_contacts table exists, in which case the
+  // picker is hidden and contact_id is not sent.
+  const [contacts, setContacts] = useState<ClientContact[]>([]);
+  const [contactsAvailable, setContactsAvailable] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -310,6 +316,11 @@ export default function ProjectsPage() {
           .from("clients").select("id, name")
           .eq("company_id", profile.company_id).order("name");
         setClients(data || []);
+        try {
+          const res = await fetchCompanyContacts();
+          setContacts(res.contacts);
+          setContactsAvailable(res.available);
+        } catch {}
       } catch {}
     }
     loadClients();
@@ -336,6 +347,12 @@ export default function ProjectsPage() {
     setRefreshing(false);
   }
 
+  // The chosen contact, only if it really belongs to the chosen client (a project can never hold another client's contact).
+  function validContactId(): string | null {
+    if (!form.client_id || !form.contact_id) return null;
+    return contacts.some(c => c.id === form.contact_id && c.client_id === form.client_id) ? form.contact_id : null;
+  }
+
   async function saveProject() {
     if (!form.name.trim()) return;
     setSaving(true); setError(null);
@@ -347,6 +364,7 @@ export default function ProjectsPage() {
             name: form.name.trim(),
             status: form.status,
             client_id: form.client_id || null,
+            ...(contactsAvailable ? { contact_id: validContactId() } : {}),
           })
           .eq("id", editProject.id);
         if (e) throw e;
@@ -360,6 +378,7 @@ export default function ProjectsPage() {
           name: form.name.trim(),
           status: form.status,
           client_id: form.client_id || null,
+          ...(contactsAvailable ? { contact_id: validContactId() } : {}),
           company_id: profile.company_id,
         });
         if (e) throw e;
@@ -375,14 +394,15 @@ export default function ProjectsPage() {
 
   function openEdit(p: Project) {
     setEditProject(p);
-    setForm({ name: p.name, status: p.status || "active", client_id: p.client_id || "" });
+    const savedContact = p.contact_id && contacts.some(c => c.id === p.contact_id && c.client_id === p.client_id) ? p.contact_id : "";
+    setForm({ name: p.name, status: p.status || "active", client_id: p.client_id || "", contact_id: savedContact });
     setShowNew(true);
   }
 
   function closeModal() {
     setShowNew(false);
     setEditProject(null);
-    setForm({ name: "", status: "active", client_id: "" });
+    setForm({ name: "", status: "active", client_id: "", contact_id: "" });
     setError(null);
   }
 
@@ -527,6 +547,9 @@ export default function ProjectsPage() {
     setCloseOutSuccess(false);
   }
 
+  // The chosen client's contacts, primary first.
+  const clientContacts = sortContacts(contacts.filter(c => c.client_id === form.client_id));
+
   function getClient(clientId?: string | null) {
     return clients.find(c => c.id === clientId);
   }
@@ -667,9 +690,19 @@ export default function ProjectsPage() {
           </Field>
           {clients.length > 0 && (
             <Field label="Client (optional)">
-              <Select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}>
+              <Select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value, contact_id: primaryContactIdFor(contacts, e.target.value) }))}>
                 <option value="">No client</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </Field>
+          )}
+          {form.client_id && clientContacts.length > 0 && (
+            <Field label="Contact (optional)">
+              <Select value={form.contact_id} onChange={e => setForm(f => ({ ...f, contact_id: e.target.value }))}>
+                <option value="">No specific contact</option>
+                {clientContacts.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}{c.title ? " - " + c.title : ""}{c.is_primary ? " (primary)" : ""}</option>
+                ))}
               </Select>
             </Field>
           )}

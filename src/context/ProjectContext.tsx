@@ -14,7 +14,12 @@ export type ProjectOption = {
   name: string;
   client_id?: string | null;
   status?: string | null;
+  contact_id?: string | null;
 };
+
+// contact_id is a newer column. If a database doesn't have it yet the load retries without it, instead of failing every project.
+const PROJECT_COLS = "id, name, client_id, status";
+const PROJECT_COLS_WITH_CONTACT = "id, name, client_id, status, contact_id";
 
 type ProjectContextType = {
   projects: ProjectOption[];
@@ -131,6 +136,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     // project_members-only path by default until now). Every other role
     // (estimator, supervisor, office_user, site_user) is unchanged — still
     // scoped to their own project_members assignments below.
+    const fetchRows = async (cols: string) => {
     let data: any[] | null = null;
     let error: any = null;
     let totalCount: number | null = null;
@@ -139,7 +145,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         paginateAll<any>((from, to) =>
           supabase
             .from("projects")
-            .select("id, name, client_id, status")
+            .select(cols)
             .eq("company_id", profileData.company_id)
             .order("name", { ascending: true })
             .range(from, to)
@@ -178,7 +184,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           const paged = await paginateAll<any>((from, to) =>
             supabase
               .from("projects")
-              .select("id, name, client_id, status")
+              .select(cols)
               .in("id", projectIds)
               .order("name", { ascending: true })
               .range(from, to)
@@ -189,6 +195,13 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         }
       }
     }
+    return { data, error, totalCount };
+    };
+    let fetched = await fetchRows(PROJECT_COLS_WITH_CONTACT);
+    if (fetched.error && /contact_id/i.test(String(fetched.error?.message ?? ""))) fetched = await fetchRows(PROJECT_COLS);
+    const data = fetched.data;
+    const error = fetched.error;
+    const totalCount = fetched.totalCount;
 
     if (error) {
       console.error("Failed to load projects:", error);
@@ -205,6 +218,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       name: p.name,
       client_id: p.client_id ?? null,
       status: p.status ?? null,
+      contact_id: p.contact_id ?? null,
     }));
 
     setProjects(rows);
