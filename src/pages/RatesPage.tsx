@@ -304,7 +304,7 @@ export default function RatesPage() {
   const [fGrade,setFGrade]=useState("");
   const [saveError,setSaveError]=useState<string|null>(null);
   const [toast,setToast]=useState<{msg:string;type:"success"|"error"}|null>(null);
-  function showToast(msg:string,type:"success"|"error"="success"){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
+  function showToast(msg:string,type:"success"|"error"="success"){setToast({msg,type});setTimeout(()=>setToast(null),type==="error"?6000:3000);}
   const [itemTypes,setItemTypes]=useState<string[]>(()=>{
     try{const s=localStorage.getItem("magnus_item_types");return s?JSON.parse(s):["Material","Labor","Equipment","Subcontract","Other"];}
     catch{return ["Material","Labor","Equipment","Subcontract","Other"];}
@@ -641,14 +641,12 @@ export default function RatesPage() {
         calc_engine_json:calcJson,
       }).select("id").single();
       if(insertError){alert(insertError.message);return;}
+      // The copy is brand new, so its price row can't collide with anything. A real failure is shown (not ignored), and the
+      // copy is then left unpriced instead of being displayed with a price it doesn't have.
+      let priceError:string|null=null;
       if(item.current_rate&&newItem){
-        await supabase.from("cost_item_rates").insert({
-          cost_item_id:(newItem as any).id,
-          rate:item.current_rate,
-          currency:item.current_currency||"JMD",
-          effective_date:new Date().toISOString().slice(0,10),
-          source:"manual",
-        });
+        const res=await upsertLibraryRate((newItem as any).id,item.current_rate,{source:"manual",currency:item.current_currency||"JMD"});
+        if(!res.success){priceError=res.error;console.error("Duplicate price error:",res.error);}
       }
 
       // Build the new item and splice it right after the original in local
@@ -665,8 +663,8 @@ export default function RatesPage() {
         category:item.category,
         item_type:item.item_type,
         unit:item.unit,
-        current_rate:item.current_rate,
-        current_currency:item.current_currency,
+        current_rate:priceError?null:item.current_rate,
+        current_currency:priceError?null:item.current_currency,
         current_effective_date:new Date().toISOString().slice(0,10),
         current_source:"manual",
         current_batch_id:null,
@@ -686,7 +684,8 @@ export default function RatesPage() {
         const el=document.getElementById(`rate-item-${newCostItem.id}`);
         if(el) el.scrollIntoView({behavior:"smooth",block:"center"});
         openEdit(newCostItem);
-        showToast("✅ Duplicated — rename and customize it");
+        if(priceError) showToast("⚠️ Duplicated, but the price couldn't be copied: "+priceError,"error");
+        else showToast("✅ Duplicated — rename and customize it");
       },150);
     }finally{setBusy(false);}
   }
@@ -754,12 +753,23 @@ export default function RatesPage() {
     if(!confirm("Undo last bulk update?")) return;
     setBusy(true);
     try{
+      // A batch that can't be undone is reported (not just logged) and stays in the list so Undo can be tried again.
+      const undoFailures:{batchId:string;message:string}[]=[];
       for(const batchId of lastBulkBatches){
-        const{data,error}=await supabase.rpc("undo_rate_batch",{p_batch_id:batchId});
-        if(error) console.error("undo error:",error);
+        try{
+          const{error}=await supabase.rpc("undo_rate_batch",{p_batch_id:batchId});
+          if(error){console.error("undo error:",error);undoFailures.push({batchId,message:error.message||"unknown error"});}
+        }catch(e:any){
+          console.error("undo error:",e);
+          undoFailures.push({batchId,message:e?.message||"unknown error"});
+        }
       }
-      setLastBulkBatches([]);
+      setLastBulkBatches(undoFailures.map(f=>f.batchId));
       await reload();
+      if(undoFailures.length>0){
+        const total=lastBulkBatches.length;
+        showToast(`❌ Couldn't undo ${undoFailures.length} of ${total} bulk update${total===1?"":"s"}: ${undoFailures[0].message}`,"error");
+      }
     }finally{setBusy(false);}
   }
 
@@ -840,12 +850,27 @@ export default function RatesPage() {
       const{data:batch,error:bErr}=await supabase.from("rate_update_batches").insert({title:importTitle||"CSV import",reason:importReason||null}).select("id").single();
       if(bErr){alert(bErr.message);return;}
       const batchId=batch.id as string;
-      const payload=importMatched.map(m=>({cost_item_id:m.matchId,rate:m.src.rate,currency:(m.src.currency||"JMD").toUpperCase(),effective_date:importEffectiveDate,source:"import",batch_id:batchId,note:importReason||`CSV: ${importCsvName||"import"}`}));
-      const{error:rErr}=await supabase.from("cost_item_rates").insert(payload);
-      if(rErr){alert(rErr.message);return;}
+      // One row per item: the file may list the same item twice (the later row wins), and a rate already imported for the same
+      // item and date is updated instead of colliding with the unique (item, date, source) key. created_at is refreshed because
+      // v_cost_items_current breaks same-date ties by it.
+      const stamp=new Date().toISOString();
+      const byItem=new Map<string,any>();
+      for(const m of importMatched){
+        byItem.set(m.matchId,{cost_item_id:m.matchId,rate:m.src.rate,currency:(m.src.currency||"JMD").toUpperCase(),effective_date:importEffectiveDate,source:"import",batch_id:batchId,note:importReason||`CSV: ${importCsvName||"import"}`,created_at:stamp});
+      }
+      const payload=[...byItem.values()];
+      const collapsed=importMatched.length-payload.length;
+      const{error:rErr}=await supabase.from("cost_item_rates").upsert(payload,{onConflict:"cost_item_id,effective_date,source"});
+      if(rErr){
+        // Nothing was written, so the empty batch record is removed too.
+        await supabase.from("rate_update_batches").delete().eq("id",batchId);
+        alert("The import failed and no rates were changed: "+rErr.message);
+        return;
+      }
       setLastBulkBatches(prev=>[batchId,...prev].slice(0,10));
       setImportOpen(false);
       await reload();
+      showToast(`✅ Imported ${payload.length} rate${payload.length===1?"":"s"}${collapsed>0?` (${collapsed} repeated row${collapsed===1?"":"s"} in the file collapsed)`:""}`);
     }finally{setBusy(false);}
   }
 
@@ -1518,7 +1543,15 @@ export default function RatesPage() {
                     const{data:newItem,error:insertError}=await supabase.from("cost_items").insert(payload).select("id").single();
                     if(insertError){console.error(insertError);setSaveError(insertError.message||"Save failed. Please try again.");return;}
                     if(fRate.trim()){
-                      await supabase.from("cost_item_rates").insert({cost_item_id:(newItem as any).id,rate:Number(fRate),currency:"JMD",effective_date:new Date().toISOString().slice(0,10),source:"manual",note:null});
+                      // Shared upsert (lib/rateLibrary.ts). If the price can't be saved the just-created item is removed again, so the
+                      // user sees the error with the form still filled in and can retry without creating a duplicate item.
+                      const res=await upsertLibraryRate((newItem as any).id,Number(fRate),{source:"manual",currency:"JMD"});
+                      if(!res.success){
+                        console.error("Rate save error:",res.error);
+                        await supabase.from("cost_items").delete().eq("id",(newItem as any).id);
+                        setSaveError("Couldn't save the price, so the item was not added: "+res.error);
+                        return;
+                      }
                     }
                   } else {
                     if(!activeId) return;
@@ -1544,7 +1577,15 @@ export default function RatesPage() {
                       const original=items.find(i=>i.id===activeId);
                       const rateChanged=!original||original.current_rate==null||original.current_rate!==newRate||(original.current_currency||"JMD")!==newCurrency;
                       if(rateChanged){
-                        await supabase.from("cost_item_rates").insert({cost_item_id:activeId,rate:newRate,currency:newCurrency,effective_date:new Date().toISOString().slice(0,10),source:"manual",note:null});
+                        // Shared upsert: a second edit the same day updates that day's row instead of colliding with the
+                        // unique (item, date, source) key. A real failure is shown and the form stays open to retry.
+                        const res=await upsertLibraryRate(activeId,newRate,{source:"manual",currency:newCurrency});
+                        if(!res.success){
+                          console.error("Rate save error:",res.error);
+                          setSaveError("The item details were saved, but the price couldn't be saved: "+res.error);
+                          reload();
+                          return;
+                        }
                       }
                     }
                   }
