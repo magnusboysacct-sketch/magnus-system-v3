@@ -45,7 +45,7 @@ const COPY_COLUMNS = [
   "description", "variant", "grade", "category", "item_type", "unit", "item_size", "item_group", "material_type",
   "use_type", "tags", "waste_percent", "measurement_type", "formula", "labor_formula", "material_formula",
   "equipment_formula", "calculator_json", "calc_engine_json", "calculator_notes", "formula_variables",
-  "coverage_factor", "coverage_unit",
+  "coverage_factor", "coverage_unit", "piece_weight_kg",
 ];
 
 export interface CopiedCostItem {
