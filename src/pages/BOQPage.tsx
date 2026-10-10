@@ -1999,13 +1999,19 @@ useEffect(() => {
   function handleSmartSelection(sel: any) {
     if (!smartSelectorCtx) return;
     const { sectionId, rowId } = smartSelectorCtx;
+    // The library-derived fields come out exactly as in handleFindItem: the description is the library item's own (the selector's
+    // payload doesn't carry one, so it is looked up from the already-loaded library), the unit is matched ignoring case and
+    // cleared when nothing matches, and a missing price becomes 0 - nothing is left over from whatever the line held before.
+    const ri = sel.costItemId ? rateItemById.get(sel.costItemId) : undefined;
+    const unitObj = usableUnits.find((u: any) => getUnitLabel(u).toLowerCase() === (sel.unit || "").toLowerCase());
     const updates: Partial<BOQItemRow> = {
       pick_type: sel.type || "", pick_category: sel.category || "",
       pick_item: sel.item || "", pick_variant: sel.variant || "",
       item_name: sel.itemName || "", cost_item_id: sel.costItemId || null, rate_source: "library",
+      description: ri?.description || "",
+      unit_id: unitObj ? getUnitId(unitObj) : null,
+      rate: numOr(sel.currentRate ?? 0, 0),
     };
-    if (sel.unit) { const u = usableUnits.find((u: any) => getUnitLabel(u) === sel.unit); if (u) updates.unit_id = getUnitId(u); }
-    if (sel.currentRate != null) updates.rate = sel.currentRate;
     updateItem(sectionId, rowId, updates);
     setShowSmartSelector(false); setSmartSelectorCtx(null);
   }
