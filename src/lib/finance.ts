@@ -52,6 +52,8 @@ export interface ClientPayment {
   company_id: string;
   client_id?: string | null;
   invoice_id?: string | null;
+  // The project an advance was received for (set only on advances; needs the client_payments.project_id column).
+  project_id?: string | null;
   payment_number: string;
   payment_date: string;
   amount: number;
@@ -326,7 +328,8 @@ export async function createClientPayment(payment: Partial<ClientPayment>) {
       }
     }
 
-    const description = `Payment from ${clientName}${data.reference_number ? ` (Ref: ${data.reference_number})` : ""}`;
+    const isAdvance = !data.invoice_id && !!(data as any).project_id;
+    const description = `${isAdvance ? "Advance payment" : "Payment"} from ${clientName}${data.reference_number ? ` (Ref: ${data.reference_number})` : ""}`;
 
     const { error: cashError } = await supabase
       .from("cash_transactions")
@@ -348,6 +351,79 @@ export async function createClientPayment(payment: Partial<ClientPayment>) {
   }
 
   return data as ClientPayment;
+}
+
+// ---- Advance payments ------------------------------------------------------------------------------------------------
+// An advance is money received from a client for a PROJECT before any invoice exists: a client_payments row with
+// project_id set and invoice_id null, plus the usual cash_transactions income entry (createClientPayment makes it). It is
+// applied to an invoice later by linking it (invoice_id) and calling updateInvoiceAfterPayment, which recalculates the
+// invoice from its linked payments. Needs client_payments.project_id (a nullable column added by its own migration).
+export const ADVANCE_NOT_ENABLED_MESSAGE =
+  "Advance tracking isn't switched on yet: the database update that adds client_payments.project_id hasn't been applied.";
+
+function isMissingProjectIdColumn(error: any): boolean {
+  const msg = String(error?.message || error || "");
+  return /project_id/i.test(msg) && /(does not exist|schema cache|could not find)/i.test(msg);
+}
+
+const ADVANCE_METHODS: ClientPayment["payment_method"][] = ["check", "ach", "wire", "credit_card", "cash", "other"];
+
+export async function recordAdvancePayment(input: {
+  companyId: string;
+  projectId: string;
+  clientId: string;
+  amount: number;
+  paymentDate: string;
+  method: ClientPayment["payment_method"];
+  referenceNumber?: string | null;
+  notes?: string | null;
+}): Promise<ClientPayment> {
+  if (!input.companyId) throw new Error("Your company could not be determined.");
+  if (!input.projectId) throw new Error("Choose a project.");
+  if (!input.clientId) throw new Error("This project has no client set. Set the project's client first, then record the advance.");
+  const amount = Math.round((Number(input.amount) + Number.EPSILON) * 100) / 100;
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Enter an advance amount greater than zero.");
+  if (amount >= 1e10) throw new Error("That amount is too large.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.paymentDate || "")) throw new Error("Enter a valid payment date.");
+  if (!ADVANCE_METHODS.includes(input.method)) throw new Error("Choose a payment method.");
+
+  try {
+    return await createClientPayment({
+      company_id: input.companyId,
+      client_id: input.clientId,
+      project_id: input.projectId,
+      invoice_id: null,
+      payment_number: `ADV-${Date.now()}`,
+      payment_date: input.paymentDate,
+      amount,
+      payment_method: input.method,
+      reference_number: input.referenceNumber?.trim() || null,
+      notes: input.notes?.trim() || null,
+    });
+  } catch (e: any) {
+    if (isMissingProjectIdColumn(e)) throw new Error(ADVANCE_NOT_ENABLED_MESSAGE);
+    throw e;
+  }
+}
+
+// Advances not yet applied to any invoice (project set, invoice not), oldest first; optionally for one company/project.
+// Returns an empty list (rather than failing) while the project_id column doesn't exist yet.
+export async function fetchUnappliedAdvances(opts: { companyId?: string; projectId?: string } = {}): Promise<ClientPayment[]> {
+  let query = supabase
+    .from("client_payments")
+    .select("*")
+    .is("invoice_id", null)
+    .not("project_id", "is", null)
+    .order("payment_date", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (opts.companyId) query = query.eq("company_id", opts.companyId);
+  if (opts.projectId) query = query.eq("project_id", opts.projectId);
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingProjectIdColumn(error)) return [];
+    throw error;
+  }
+  return (data || []) as ClientPayment[];
 }
 
 export async function updateInvoiceAfterPayment(invoiceId: string) {

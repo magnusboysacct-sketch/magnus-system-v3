@@ -10,7 +10,9 @@ import {
   fetchInvoicePayments,
   createClientPayment,
   updateInvoiceAfterPayment,
-  updateClientInvoice
+  updateClientInvoice,
+  recordAdvancePayment,
+  fetchUnappliedAdvances
 } from "../lib/finance";
 import type { ClientInvoice, ClientInvoiceLineItem, ClientPayment } from "../lib/finance";
 import ContractProgressBilling from "../components/ContractProgressBilling";
@@ -23,6 +25,8 @@ import { printInvoiceFresh } from "../components/InvoiceDocument";
 import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
 import { SeenBadge, SeenDetail } from "../components/PortalSeen";
 import { useItemViews } from "../lib/useItemViews";
+
+const fmtAdvance = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", minimumFractionDigits: 2 }).format(n);
 
 interface LineItem {
   id?: string;
@@ -61,6 +65,19 @@ export default function AccountsReceivablePage() {
   const [selectedContract, setSelectedContract] = useState<any>(null);
   const [showSendModal, setShowSendModal] = useState(false);
   const [sendClient, setSendClient] = useState<any>(null);
+  // Advance payments: money received for a project before any invoice exists (client_payments with project_id, no invoice_id).
+  const [advances, setAdvances] = useState<ClientPayment[]>([]);
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [savingAdvance, setSavingAdvance] = useState(false);
+  const [advanceError, setAdvanceError] = useState("");
+  const [advanceForm, setAdvanceForm] = useState({
+    project_id: "",
+    amount: "",
+    payment_date: new Date().toISOString().split("T")[0],
+    payment_method: "check" as ClientPayment["payment_method"],
+    reference_number: "",
+    notes: "",
+  });
 
   const [formData, setFormData] = useState({
     invoice_number: "",
@@ -111,6 +128,10 @@ export default function AccountsReceivablePage() {
     if (inv) openDetailModal(inv);
     setSearchParams({}, { replace: true });
   }, [deepLinkInvoiceId, loading, invoices]);
+
+  useEffect(() => {
+    if (companyId) loadAdvances();
+  }, [companyId]);
 
   // "Opened by client" data for the shared invoices, in one batched query.
   const invoiceViews = useItemViews(
@@ -364,6 +385,55 @@ export default function AccountsReceivablePage() {
     }
   }
 
+  async function loadAdvances() {
+    try {
+      setAdvances(await fetchUnappliedAdvances({ companyId: companyId || undefined }));
+    } catch (error) {
+      console.error("Error loading advance payments:", error);
+    }
+  }
+
+  function openAdvanceModal() {
+    setAdvanceForm({
+      project_id: "",
+      amount: "",
+      payment_date: new Date().toISOString().split("T")[0],
+      payment_method: "check",
+      reference_number: "",
+      notes: "",
+    });
+    setAdvanceError("");
+    setShowAdvanceModal(true);
+  }
+
+  async function handleAdvanceSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (savingAdvance) return;
+    const project = projects.find(p => p.id === advanceForm.project_id);
+    if (!project) { setAdvanceError("Choose a project."); return; }
+    if (!project.client_id) { setAdvanceError("This project has no client set. Set the project's client first, then record the advance."); return; }
+    setSavingAdvance(true);
+    setAdvanceError("");
+    try {
+      await recordAdvancePayment({
+        companyId,
+        projectId: project.id,
+        clientId: project.client_id,
+        amount: parseFloat(advanceForm.amount),
+        paymentDate: advanceForm.payment_date,
+        method: advanceForm.payment_method,
+        referenceNumber: advanceForm.reference_number,
+        notes: advanceForm.notes,
+      });
+      setShowAdvanceModal(false);
+      await loadAdvances();
+    } catch (error: any) {
+      setAdvanceError(error?.message || "The advance could not be recorded.");
+    } finally {
+      setSavingAdvance(false);
+    }
+  }
+
   function openPaymentModal(invoice: any) {
     setSelectedInvoice(invoice);
     setPaymentData({
@@ -570,6 +640,13 @@ export default function AccountsReceivablePage() {
             </div>
           )}
           <button
+            onClick={openAdvanceModal}
+            className="flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+          >
+            <DollarSign size={18} />
+            Record Advance
+          </button>
+          <button
             onClick={openCreateModal}
             className="flex items-center gap-2 rounded-xl bg-slate-800 dark:bg-slate-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-600"
           >
@@ -633,6 +710,36 @@ export default function AccountsReceivablePage() {
             </div>
           </div>
         </div>
+
+        {advances.length > 0 && (
+          <div className="mb-6 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/5 p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Unapplied Advances ({advances.length})</h2>
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                {fmtAdvance(advances.reduce((s, a) => s + Number(a.amount || 0), 0))}
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+              Money received for a project before it was invoiced. Tick an advance when you generate an invoice from a BOQ to credit it against that invoice.
+            </p>
+            <div className="space-y-1.5">
+              {advances.map((a) => (
+                <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white dark:bg-slate-900 px-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
+                      {projects.find(p => p.id === a.project_id)?.name || "Project"}
+                      <span className="text-slate-500 dark:text-slate-400 font-normal"> · {clients.find(c => c.id === a.client_id)?.name || "Client"}</span>
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 capitalize">
+                      {a.payment_date} · {String(a.payment_method).replace("_", " ")}{a.reference_number ? ` - ${a.reference_number}` : ""}
+                    </div>
+                  </div>
+                  <div className="font-semibold text-slate-900 dark:text-slate-100">{fmtAdvance(Number(a.amount))}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="mb-4 flex items-center gap-3">
           <select
@@ -1337,6 +1444,134 @@ export default function AccountsReceivablePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Record Advance Payment Modal */}
+      {showAdvanceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Record Advance Payment</h2>
+              <button onClick={() => setShowAdvanceModal(false)} className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                <X size={24} />
+              </button>
+            </div>
+            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+              Money received for a project before it has been invoiced. You can credit it against an invoice later, when you generate one from the project's BOQ.
+            </p>
+
+            {(() => {
+              const project = projects.find(p => p.id === advanceForm.project_id);
+              const client = project ? clients.find(c => c.id === project.client_id) : null;
+              return (
+                <form onSubmit={handleAdvanceSubmit} className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Project *</label>
+                    <select
+                      required
+                      value={advanceForm.project_id}
+                      onChange={(e) => setAdvanceForm({ ...advanceForm, project_id: e.target.value })}
+                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100"
+                    >
+                      <option value="">Select a project</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    {project && (
+                      <div className={`mt-1 text-xs ${project.client_id ? "text-slate-500 dark:text-slate-400" : "text-red-500"}`}>
+                        {project.client_id ? `Client: ${client?.name || "—"}` : "This project has no client set, so an advance can't be recorded for it yet."}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Date *</label>
+                      <input
+                        type="date"
+                        required
+                        value={advanceForm.payment_date}
+                        onChange={(e) => setAdvanceForm({ ...advanceForm, payment_date: e.target.value })}
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Amount (JMD) *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        required
+                        value={advanceForm.amount}
+                        onChange={(e) => setAdvanceForm({ ...advanceForm, amount: e.target.value })}
+                        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Payment Method *</label>
+                    <select
+                      required
+                      value={advanceForm.payment_method}
+                      onChange={(e) => setAdvanceForm({ ...advanceForm, payment_method: e.target.value as ClientPayment["payment_method"] })}
+                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100"
+                    >
+                      <option value="check">Check</option>
+                      <option value="ach">ACH</option>
+                      <option value="wire">Wire Transfer</option>
+                      <option value="credit_card">Credit Card</option>
+                      <option value="cash">Cash</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Reference Number</label>
+                    <input
+                      type="text"
+                      value={advanceForm.reference_number}
+                      onChange={(e) => setAdvanceForm({ ...advanceForm, reference_number: e.target.value })}
+                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100"
+                      placeholder="Check #, Transaction ID, etc."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Notes</label>
+                    <textarea
+                      rows={2}
+                      value={advanceForm.notes}
+                      onChange={(e) => setAdvanceForm({ ...advanceForm, notes: e.target.value })}
+                      className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100"
+                      placeholder="Additional notes"
+                    />
+                  </div>
+
+                  {advanceError && <div className="text-sm text-red-500">{advanceError}</div>}
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvanceModal(false)}
+                      className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingAdvance || (!!project && !project.client_id)}
+                      className="rounded-lg bg-slate-800 dark:bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-50"
+                    >
+                      {savingAdvance ? "Saving..." : "Record Advance"}
+                    </button>
+                  </div>
+                </form>
+              );
+            })()}
           </div>
         </div>
       )}

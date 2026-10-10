@@ -16,9 +16,11 @@ import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
 import { generateProcurementFromBOQ } from "../lib/procurement";
 import { generateEstimateFromBOQ } from "../lib/estimates";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
+import { fetchUnappliedAdvances, type ClientPayment } from "../lib/finance";
+import { formatContractDate } from "../lib/contractDocument";
 import {
   generateInvoiceFromBOQ, buildBoqInvoiceLines, computeInvoiceTotals, validateBoqInvoiceOptions, jamaicaToday, addDays,
-  findItemsMissingRate, missingRateMessage,
+  findItemsMissingRate, missingRateMessage, checkAdvanceApplication,
   type BoqInvoiceLineMode,
 } from "../lib/boqToInvoice";
 import { useProjectContext } from "../context/ProjectContext";
@@ -1191,6 +1193,9 @@ export default function BOQPage() {
   const [invTerms, setInvTerms] = useState("Net 30");
   const [invBusy, setInvBusy] = useState(false);
   const [invError, setInvError] = useState<string | null>(null);
+  // Advances received for this project and not yet applied to an invoice, and which ones are ticked.
+  const [invAdvances, setInvAdvances] = useState<ClientPayment[]>([]);
+  const [invAdvanceSel, setInvAdvanceSel] = useState<string[]>([]);
 
   const [status, setStatus] = useState<"draft" | "approved">("draft");
   const [sections, setSections] = useState<Section[]>([]);
@@ -2320,6 +2325,9 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims
     const today = jamaicaToday();
     setInvUnits("1"); setInvMarkup("0"); setInvMode("per-section"); setInvTax("0"); setInvTerms("Net 30");
     setInvDate(today); setInvDue(addDays(today, 30)); setInvError(null);
+    setInvAdvances([]); setInvAdvanceSel([]);
+    const advProjectId = routeProjectId || activeProjectId;
+    if (advProjectId) fetchUnappliedAdvances({ projectId: advProjectId }).then(setInvAdvances).catch(() => setInvAdvances([]));
     setShowInvoiceDialog(true);
   }
 
@@ -2346,9 +2354,15 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims
     if (problem) { setInvError(problem); return; }
     const noRate = findItemsMissingRate(sections);
     if (noRate.length > 0) { setInvError(missingRateMessage(noRate)); return; }
+    const chosenAdvances = invAdvances.filter(a => invAdvanceSel.includes(a.id));
+    if (chosenAdvances.length > 0) {
+      const previewTotal = computeInvoiceTotals(buildBoqInvoiceLines(sections, options), options.taxRate).total;
+      const advanceProblem = checkAdvanceApplication(previewTotal, chosenAdvances);
+      if (advanceProblem) { setInvError(advanceProblem); return; }
+    }
     setInvBusy(true); setInvError(null);
     try {
-      const result = await generateInvoiceFromBOQ(effectiveProjectId, boqId, options);
+      const result = await generateInvoiceFromBOQ(effectiveProjectId, boqId, { ...options, applyAdvanceIds: chosenAdvances.map(a => a.id) });
       if (result.success) {
         setShowInvoiceDialog(false);
         nav(`/accounts-receivable?invoice=${result.invoiceId}`);
@@ -3790,6 +3804,9 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         const units = valid ? (opts.multiplier as number) : 1;
         const lines = buildBoqInvoiceLines(sections, { multiplier: units, markupPercent: valid ? opts.markupPercent : 0, lineMode: invMode });
         const invTotals = computeInvoiceTotals(lines, valid ? opts.taxRate : 0);
+        const chosenAdvances = invAdvances.filter(a => invAdvanceSel.includes(a.id));
+        const advanceSum = Math.round(chosenAdvances.reduce((s, a) => s + Number(a.amount || 0), 0) * 100) / 100;
+        const advanceProblem = chosenAdvances.length > 0 ? checkAdvanceApplication(invTotals.total, chosenAdvances) : null;
         const inputCls = "w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] text-xs text-slate-900 dark:text-slate-100";
         const lbl = "block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1";
         return (
@@ -3856,17 +3873,42 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                   <div className="flex justify-between"><span className="text-slate-500">Tax ({opts.taxRate}%)</span><span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(invTotals.taxAmount)}</span></div>
                 )}
                 <div className="flex justify-between border-t border-slate-200 dark:border-white/[0.08] pt-1 text-sm"><span className="font-bold text-slate-900 dark:text-slate-100">Invoice total</span><span className="font-bold text-slate-900 dark:text-slate-100">{fmtMoney(invTotals.total)}</span></div>
+                {chosenAdvances.length > 0 && !advanceProblem && (
+                  <>
+                    <div className="flex justify-between"><span className="text-slate-500">Less advances applied</span><span className="font-semibold text-emerald-600">- {fmtMoney(advanceSum)}</span></div>
+                    <div className="flex justify-between"><span className="font-bold text-slate-900 dark:text-slate-100">Balance due</span><span className="font-bold text-slate-900 dark:text-slate-100">{fmtMoney(Math.round((invTotals.total - advanceSum) * 100) / 100)}</span></div>
+                  </>
+                )}
                 <div className="text-[10px] text-slate-500">{lines.length} invoice line{lines.length === 1 ? "" : "s"}</div>
               </div>
 
-              {(invError || problem) && <div className="mb-3 text-[11px] text-red-500">{invError || problem}</div>}
+              {invAdvances.length > 0 && (
+                <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                  <div className="font-bold text-slate-900 dark:text-slate-100 mb-0.5">Advance payments received for this project</div>
+                  <div className="text-[10px] text-slate-500 mb-2">Tick any you want to credit against this invoice. An advance is applied whole, and the total credited can't exceed the invoice total.</div>
+                  <div className="space-y-1.5">
+                    {invAdvances.map(a => (
+                      <label key={a.id} className="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" className="mt-0.5" checked={invAdvanceSel.includes(a.id)}
+                          onChange={() => setInvAdvanceSel(prev => prev.includes(a.id) ? prev.filter(x => x !== a.id) : [...prev, a.id])}/>
+                        <span className="text-slate-700 dark:text-slate-300">
+                          Apply advance of <strong>{fmtMoney(Number(a.amount))}</strong> from {formatContractDate(a.payment_date) || a.payment_date}?
+                          <span className="block text-[10px] text-slate-500 capitalize">{String(a.payment_method).replace("_", " ")}{a.reference_number ? ` - ${a.reference_number}` : ""}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(invError || problem || advanceProblem) && <div className="mb-3 text-[11px] text-red-500">{invError || problem || advanceProblem}</div>}
 
               <div className="flex gap-2">
                 <button onClick={() => setShowInvoiceDialog(false)} disabled={invBusy}
                   className="flex-1 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 text-xs font-semibold disabled:opacity-50">
                   Cancel
                 </button>
-                <button onClick={() => void handleGenerateInvoice()} disabled={invBusy || !valid || lines.length === 0 || missingRateItems.length > 0}
+                <button onClick={() => void handleGenerateInvoice()} disabled={invBusy || !valid || lines.length === 0 || missingRateItems.length > 0 || !!advanceProblem}
                   className="flex-1 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold disabled:opacity-50">
                   {invBusy ? "Generating…" : "Generate"}
                 </button>

@@ -8,13 +8,18 @@
 // Money and quantities are rounded the way the database stores them (cents, 2-decimal quantities), and every itemized
 // line satisfies quantity x rate = amount exactly as printed.
 //
+// Advances (money received for the project before invoicing) can be credited on the new invoice: applyAdvanceIds are linked to
+// it and updateInvoiceAfterPayment recalculates amount_paid / balance_due / status once. An advance is applied whole or not
+// at all, and together they can't exceed the invoice total (checkAdvanceApplication) - checked before anything is written.
+//
 // An item with a quantity but NO rate is a hard block (never silently billed at 0): findItemsMissingRate lists them, and the
 // generator refuses before anything is written.
 //
 // Do NOT put anything in client_invoice_line_items.boq_item_id: that column points at boq_items (contract progress
 // billing), not at boq_section_items.
 import { supabase } from "./supabase";
-import { createClientInvoice, createInvoiceLineItems } from "./finance";
+import { createClientInvoice, createInvoiceLineItems, updateInvoiceAfterPayment, type ClientPayment } from "./finance";
+import { formatContractDate } from "./contractDocument";
 
 export type BoqInvoiceLineMode = "per-section" | "itemized";
 
@@ -26,6 +31,7 @@ export interface BoqInvoiceOptions {
   dueDate: string; // YYYY-MM-DD
   taxRate?: number; // percent, default 0
   terms?: string;
+  applyAdvanceIds?: string[]; // unapplied advances (client_payments) to credit against the new invoice
 }
 
 export interface BoqSectionInput {
@@ -173,8 +179,34 @@ function makeInvoiceNumber(): string {
   return `INV-${year}-${Date.now().toString().slice(-5)}`;
 }
 
+const fmtJMD = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", minimumFractionDigits: 2 }).format(n);
+
+// The rule for applying advances to an invoice: an advance is applied whole or not at all (never split), and the advances
+// together can't exceed the invoice total (no negative balance). Returns a plain-language problem, or null when it's fine.
+// Used by the dialog (to disable Generate) and by the generator (before anything is written), so the rule lives in one place.
+export function checkAdvanceApplication(
+  invoiceTotal: number,
+  advances: Array<{ amount: number | string; payment_date?: string | null }>,
+): string | null {
+  for (const a of advances) {
+    const amount = round2(num(a.amount));
+    if (amount > invoiceTotal) {
+      const when = a.payment_date ? ` from ${formatContractDate(a.payment_date)}` : "";
+      return `The advance of ${fmtJMD(amount)}${when} is larger than this invoice's total of ${fmtJMD(invoiceTotal)}, so it can't be applied. Deselect it, or apply it to a larger invoice.`;
+    }
+  }
+  const sum = round2(advances.reduce((s, a) => s + num(a.amount), 0));
+  if (sum > invoiceTotal) {
+    return `The selected advances add up to ${fmtJMD(sum)}, which is more than this invoice's total of ${fmtJMD(invoiceTotal)}. Deselect some of them.`;
+  }
+  return null;
+}
+
 export type BoqInvoiceResult =
-  | { success: true; invoiceId: string; invoiceNumber: string; lineCount: number; subtotal: number; taxAmount: number; total: number }
+  | {
+      success: true; invoiceId: string; invoiceNumber: string; lineCount: number; subtotal: number; taxAmount: number; total: number;
+      advancesApplied: number; amountPaid: number; balanceDue: number; status: string;
+    }
   | { success: false; error: string };
 
 export async function generateInvoiceFromBOQ(projectId: string, boqId: string, options: BoqInvoiceOptions): Promise<BoqInvoiceResult> {
@@ -249,6 +281,21 @@ export async function generateInvoiceFromBOQ(projectId: string, boqId: string, o
     if (lines.length === 0) return { success: false, error: "Nothing to bill: every section in this BOQ totals zero." };
     const { subtotal, taxAmount, total } = computeInvoiceTotals(lines, taxRate);
 
+    // Advances chosen to be credited on this invoice: checked now, before anything is written.
+    let advances: ClientPayment[] = [];
+    const advanceIds = [...new Set(options.applyAdvanceIds ?? [])];
+    if (advanceIds.length > 0) {
+      const { data: advRows, error: advError } = await supabase.from("client_payments").select("*").in("id", advanceIds);
+      if (advError) return { success: false, error: "Failed to read the selected advances: " + advError.message };
+      advances = (advRows || []) as ClientPayment[];
+      if (advances.length !== advanceIds.length) return { success: false, error: "One of the selected advances could not be found. Refresh and try again." };
+      if (advances.some((a) => a.invoice_id || a.project_id !== projectId)) {
+        return { success: false, error: "One of the selected advances has already been applied or belongs to another project. Refresh and try again." };
+      }
+      const advanceProblem = checkAdvanceApplication(total, advances);
+      if (advanceProblem) return { success: false, error: advanceProblem };
+    }
+
     // 4. A fresh invoice number (re-rolled if the company already has it).
     let invoiceNumber = makeInvoiceNumber();
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -308,7 +355,43 @@ export async function generateInvoiceFromBOQ(projectId: string, boqId: string, o
       };
     }
 
-    return { success: true, invoiceId: invoice.id, invoiceNumber, lineCount: lines.length, subtotal, taxAmount, total };
+
+    // Apply the chosen advances: link each one to the new invoice, then let updateInvoiceAfterPayment recalculate
+    // amount_paid / balance_due / status ONCE from the linked payments (the app's existing calculation - not repeated here).
+    let finalInvoice: { amount_paid?: number; balance_due?: number; status?: string } = { amount_paid: 0, balance_due: total, status: "draft" };
+    if (advances.length > 0) {
+      try {
+        for (const adv of advances) {
+          const { data: linked, error: linkError } = await supabase
+            .from("client_payments")
+            .update({ invoice_id: invoice.id })
+            .eq("id", adv.id)
+            .is("invoice_id", null)
+            .select("id");
+          if (linkError) throw linkError;
+          if (!linked || linked.length !== 1) throw new Error("an advance was applied elsewhere in the meantime");
+        }
+        finalInvoice = (await updateInvoiceAfterPayment(invoice.id)) as typeof finalInvoice;
+      } catch (applyError: any) {
+        // Deleting the invoice header also removes its lines (cascade) and un-links any advance already linked to it
+        // (client_payments.invoice_id is ON DELETE SET NULL), so every advance is back to "unapplied".
+        const { error: cleanupError } = await supabase.from("client_invoices").delete().eq("id", invoice.id);
+        return {
+          success: false,
+          error:
+            "Failed to apply the advance: " + (applyError?.message || String(applyError)) + ". The invoice was not created." +
+            (cleanupError ? ` (The invoice ${invoiceNumber} could not be removed automatically - please delete it from Accounts Receivable.)` : ""),
+        };
+      }
+    }
+
+    return {
+      success: true, invoiceId: invoice.id, invoiceNumber, lineCount: lines.length, subtotal, taxAmount, total,
+      advancesApplied: advances.length,
+      amountPaid: Number(finalInvoice.amount_paid ?? 0),
+      balanceDue: Number(finalInvoice.balance_due ?? total),
+      status: String(finalInvoice.status ?? "draft"),
+    };
   } catch (e: any) {
     return { success: false, error: e?.message || String(e) };
   }
