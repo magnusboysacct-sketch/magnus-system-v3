@@ -1808,19 +1808,21 @@ useEffect(() => {
   function updateSection(id: string, patch: Partial<Section>) { setSections(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s)); }
   function toggleCollapse(id: string) { setSections(prev => prev.map(s => s.id === id ? { ...s, collapsed: !s.collapsed } : s)); }
 
-  function onPickCategory(sectionId: string, catId: string) {
-    const cat = usableCategories.find((c: any) => getCategoryId(c) === catId);
-    updateSection(sectionId, { masterCategoryId: catId, title: cat ? getCategoryLabel(cat) : "New Section", scope: cat ? getCategoryScope(cat) : "" });
+  // "No category" is null, never "": master_category_id is a uuid column and "" is not a valid uuid.
+  function onPickCategory(sectionId: string, catId: string | null) {
+    const cat = catId ? usableCategories.find((c: any) => getCategoryId(c) === catId) : undefined;
+    updateSection(sectionId, { masterCategoryId: cat ? catId : null, title: cat ? getCategoryLabel(cat) : "New Section", scope: cat ? getCategoryScope(cat) : "" });
   }
 
-  async function addBOQCategory(name: string) {
-    await supabase.from("master_categories").insert({
-      name,
-      company_id: companyId || null,
-      is_active: true,
-      sort_order: usableCategories.length + 1,
-    });
+  // master_categories is a shared list (it has no company_id column). The new category's id comes straight back from the insert, so it
+  // is attached to the section right away - the dropdown's own list is stale until the refresh lands. A failure is shown, not ignored.
+  async function addBOQCategory(name: string, sectionId: string) {
+    const { data, error } = await supabase.from("master_categories")
+      .insert({ name, is_active: true, sort_order: usableCategories.length + 1 })
+      .select("id").single();
+    if (error || !data) { showLibToast("Couldn't add the category: " + (error?.message || "no row was returned"), "error"); return; }
     await refreshCategories();
+    updateSection(sectionId, { masterCategoryId: String((data as any).id), title: name, scope: "" });
   }
 
   async function deleteBOQCategory(name: string) {
@@ -2663,11 +2665,14 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                     return cat ? getCategoryLabel(cat) : "";
                   })()}
                   onChange={(name) => {
+                    if (!name) { onPickCategory(section.id, null); return; }
+                    // A name missing from the current list is a category that was JUST added: addBOQCategory has already
+                    // attached it by its id, so it must not be looked up (and wiped) here.
                     const cat = usableCategories.find((c: any) => getCategoryLabel(c) === name);
-                    onPickCategory(section.id, cat ? getCategoryId(cat) : "");
+                    if (cat) onPickCategory(section.id, getCategoryId(cat));
                   }}
                   options={usableCategories.map((c: any) => getCategoryLabel(c))}
-                  onAddOption={addBOQCategory}
+                  onAddOption={(name) => addBOQCategory(name, section.id)}
                   onDeleteOption={deleteBOQCategory}
                   placeholder="Category?"
                   disabled={!canEdit}

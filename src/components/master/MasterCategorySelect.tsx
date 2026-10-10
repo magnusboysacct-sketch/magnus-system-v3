@@ -20,15 +20,14 @@ export default function MasterCategorySelect({
   const { categories, refresh } = useMasterLists();
   const options = categories.map(c => c.name);
 
+  // master_categories is a shared list with no company_id column; a failed insert is shown instead of ignored.
   async function handleAdd(name: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user!.id).single();
-    await supabase.from("master_categories").insert({
+    const { error } = await supabase.from("master_categories").insert({
       name,
-      company_id: profile?.company_id,
       is_active: true,
       sort_order: categories.length + 1,
     });
+    if (error) { alert("Couldn't add the category: " + error.message); return; }
     await refresh();
   }
 

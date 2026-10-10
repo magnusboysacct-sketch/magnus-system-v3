@@ -173,10 +173,10 @@ export default function AssembliesPage() {
   const { categories, refresh: refreshCategories } = useMasterLists();
   const categoryOptions = categories.map(c => c.name);
 
+  // master_categories is a shared list with no company_id column; a failed insert is shown instead of ignored.
   async function addCategory(name: string) {
-    const { data: { user } } = await supabase.auth.getUser();
-    const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user!.id).single();
-    await supabase.from("master_categories").insert({ name, company_id: profile?.company_id, is_active: true, sort_order: categories.length + 1 });
+    const { error: insertError } = await supabase.from("master_categories").insert({ name, is_active: true, sort_order: categories.length + 1 });
+    if (insertError) { showToast("Couldn't add the category: " + insertError.message); return; }
     await refreshCategories();
   }
   async function deleteCategory(name: string) {

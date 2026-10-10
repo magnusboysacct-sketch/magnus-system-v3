@@ -966,9 +966,9 @@ export default function RatesPage() {
               options={categoryOptions}
               placeholder="All Categories"
               onAddOption={async(name)=>{
-                const{data:{user}}=await supabase.auth.getUser();
-                const{data:profile}=await supabase.from("user_profiles").select("company_id").eq("id",user!.id).single();
-                await supabase.from("master_categories").insert({name,company_id:profile?.company_id,is_active:true,sort_order:categories.length+1});
+                // Shared list, no company_id column; a failed insert is shown instead of ignored.
+                const{error:insertError}=await supabase.from("master_categories").insert({name,is_active:true,sort_order:categories.length+1});
+                if(insertError){showToast("❌ Couldn't add the category: "+insertError.message,"error");return;}
                 await refreshCategories();
               }}
               onDeleteOption={async(name)=>{
