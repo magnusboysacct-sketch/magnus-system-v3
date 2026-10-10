@@ -1,4 +1,4 @@
--- Auto-copy the rate library into every new company. NOT YET APPLIED - review before running.
+-- Auto-copy the rate library into every new company (applied directly to the live database; this file version-controls it).
 --
 -- Today every cost_items row is owned by the one real company, and a brand-new company starts with an empty library. This
 -- migration:
