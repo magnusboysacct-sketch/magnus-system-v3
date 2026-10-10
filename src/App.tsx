@@ -10,6 +10,7 @@ import ProjectIssuesPage from './pages/ProjectIssuesPage';
 import ProjectLogsPage from './pages/ProjectLogsPage';
 import ProjectPhotosPage from './pages/ProjectPhotosPage';
 import SharedPhotosPage from './pages/SharedPhotosPage';
+import MySignaturePage from './pages/MySignaturePage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
 import UpdateBanner from "./components/UpdateBanner";
@@ -307,6 +308,8 @@ export default function App() {
 
               {/* Help */}
               <Route path="/help"                          element={<HelpCenterPage />} />
+              {/* Every signed-in user's own signature - deliberately no role guard */}
+              <Route path="/my-signature"                  element={<MySignaturePage />} />
 
               {/* Secretary Workspace — accessible to secretary/admin/director,
                   a normal route addition (not a root-route switch like the

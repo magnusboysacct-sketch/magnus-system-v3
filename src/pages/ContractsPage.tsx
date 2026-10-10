@@ -14,6 +14,7 @@ import { useItemViews } from "../lib/useItemViews";
 import { fetchContractSignRecord, formatJamaicaShort, deviceLabel } from "../lib/portalSeen";
 import ContractDocument, { printContractDocument, printContractDocumentFresh } from "../components/ContractDocument";
 import { useContractSignatureSrcs, staffSignatureResolver, contractSignaturePath } from "../lib/contractSignatures";
+import { resolveUserSignature, signatureUrlToDataUrl, type ResolvedSignature } from "../lib/userSignature";
 import type { ItemViews } from "../lib/portalSeen";
 import {
   Plus, FileText, Search, RefreshCw, X, Check, Edit2, Trash2,
@@ -266,8 +267,19 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
 function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"contractor"|"client";contract:any;saving:boolean;onSign:(dataUrl:string)=>void;onCancel:()=>void}){
   const canvasRef=React.useRef<HTMLCanvasElement|null>(null);
   const [hasDrawn,setHasDrawn]=React.useState(false);
-  const [mode,setMode]=React.useState<"draw"|"upload">("draw");
+  const [mode,setMode]=React.useState<"draw"|"upload"|"saved">("draw");
   const [uploadPreview,setUploadPreview]=React.useState<string|null>(null);
+  // "Use my saved signature" (contractor only): the signed-in user's own signature, or the company default if they have none.
+  // Nothing is offered (and nothing changes) when neither exists.
+  const [saved,setSaved]=React.useState<ResolvedSignature|null>(null);
+  const [loadingSaved,setLoadingSaved]=React.useState(false);
+  const [savedError,setSavedError]=React.useState("");
+  React.useEffect(()=>{
+    if(party!=="contractor")return;
+    let alive=true;
+    resolveUserSignature().then(r=>{if(alive)setSaved(r);});
+    return()=>{alive=false;};
+  },[party]);
   const drawing=React.useRef(false);
 
   function getPos(e:any,canvas:HTMLCanvasElement){
@@ -299,6 +311,15 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
     setHasDrawn(false);
   }
   function submit(){
+    if(mode==="saved"){
+      if(!saved||loadingSaved)return;
+      setLoadingSaved(true);setSavedError("");
+      signatureUrlToDataUrl(saved.url)
+        .then(dataUrl=>onSign(dataUrl))
+        .catch(()=>setSavedError("Couldn't load your saved signature. Please draw or upload one instead."))
+        .finally(()=>setLoadingSaved(false));
+      return;
+    }
     if(mode==="upload"&&uploadPreview){onSign(uploadPreview);return;}
     const canvas=canvasRef.current; if(!canvas||!hasDrawn)return;
     onSign(canvas.toDataURL("image/png"));
@@ -310,7 +331,7 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
     reader.readAsDataURL(f);
   }
 
-  const canSubmit=mode==="draw"?hasDrawn:!!uploadPreview;
+  const canSubmit=mode==="draw"?hasDrawn:mode==="saved"?(!!saved&&!loadingSaved):!!uploadPreview;
   const label=party==="contractor"?"Contractor":"Client";
 
   return(
@@ -323,6 +344,12 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
           By signing, the {label.toLowerCase()} agrees to the terms, scope of work, and payment schedule outlined in this contract.
         </div>
 
+        {saved&&(
+          <button onClick={()=>{setMode("saved");setUploadPreview(null);setSavedError("");clear();}}
+            className={`w-full mb-2 py-2 rounded-lg border text-xs font-bold transition ${mode==="saved"?"bg-emerald-600 border-emerald-600 text-white":"bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
+            ✍️ Use my saved signature
+          </button>
+        )}
         <div className="flex gap-2 mb-4">
           <button onClick={()=>{setMode("draw");setUploadPreview(null);}}
             className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${mode==="draw"?"bg-emerald-600 border-emerald-600 text-white":"bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200"}`}>
@@ -362,6 +389,18 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
           </>
         )}
 
+        {mode==="saved"&&saved&&(
+          <>
+            <div className="text-[10px] text-slate-500 mb-2">
+              {saved.source==="personal"?"Signing with your saved signature:":"You haven't saved a personal signature, so the company's default signature will be used:"}
+            </div>
+            <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-white/[0.15] bg-white p-3" style={{minHeight:120}}>
+              <img src={saved.url} alt="Saved signature" className="max-h-28 max-w-full object-contain"/>
+            </div>
+            {savedError&&<div className="mt-2 text-[11px] text-red-500">{savedError}</div>}
+          </>
+        )}
+
         <div className="flex gap-2 mt-4">
           {mode==="draw"&&(
             <button onClick={clear} className="flex-1 py-2 rounded-lg border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400 text-xs font-semibold hover:bg-slate-100 dark:bg-white/[0.05] transition">
@@ -373,7 +412,7 @@ function ContractSignatureModal({party,contract,saving,onSign,onCancel}:{party:"
           </button>
           <button onClick={submit} disabled={!canSubmit||saving}
             className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${canSubmit?"bg-emerald-600 hover:bg-emerald-500 text-white":"bg-slate-100 dark:bg-white/[0.05] text-slate-500 dark:text-slate-600 cursor-not-allowed"}`}>
-            {saving?"Saving…":"Sign & Submit"}
+            {saving||loadingSaved?"Saving…":"Sign & Submit"}
           </button>
         </div>
       </div>
@@ -663,6 +702,11 @@ export default function ContractsPage() {
       const urlField = party === "contractor" ? "contractor_signature_url" : "client_signature_url";
       const updates: any = { [field]: new Date().toISOString() };
       if (sigUrl) updates[urlField] = sigUrl;
+      // Record WHO signed as contractor (the column existed but was never written).
+      if (party === "contractor") {
+        const { data: au } = await supabase.auth.getUser();
+        if (au?.user?.id) updates.contractor_signed_by = au.user.id;
+      }
       const saved = await updateContract(contractId, updates);
       if (!saved) return;
       setSigningParty(null);

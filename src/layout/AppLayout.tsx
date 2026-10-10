@@ -14,7 +14,7 @@ import {
   ChevronLeft, ChevronRight, Building2, Layers,
   Receipt, Truck, HardHat, Banknote, BookOpen,
   ClipboardList, Package, PieChart, Wrench, Landmark,
-  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase
+  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase, PenTool
 } from "lucide-react";
 import { cn, SectionLabel } from "../components/ui";
 import { canAccessSecretaryWorkspace, canApproveSecretaryDocuments } from "../lib/permissions";
@@ -437,6 +437,11 @@ export default function AppLayout() {
               </div>
             </div>
           )}
+          <button onClick={() => navigate("/my-signature")}
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+            <PenTool size={13}/>
+            {!collapsed && <span>My Signature</span>}
+          </button>
           <button onClick={() => navigate("/help")}
             className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
             <HelpCircle size={13}/>
