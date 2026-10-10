@@ -38,6 +38,18 @@ async function readProfile(userId: string): Promise<ProfileSignatureRow | null> 
   return { company_id: basic.data.company_id ?? null, signature_path: null, columnMissing: true };
 }
 
+// The company's default signature only (never anyone's personal one), for documents with no known signer.
+export async function resolveCompanySignature(companyId: string | null | undefined): Promise<ResolvedSignature | null> {
+  try {
+    if (!companyId) return null;
+    const { data: cs } = await supabase.from("company_settings").select("signature_url").eq("company_id", companyId).maybeSingle();
+    const companyUrl = typeof cs?.signature_url === "string" ? cs.signature_url.trim() : "";
+    return companyUrl ? { url: companyUrl, source: "company" } : null;
+  } catch {
+    return null;
+  }
+}
+
 // The signature to offer a user: THEIR OWN if they have saved one, else the company's default, else null. userId defaults to
 // the signed-in user. If a personal signature is saved but cannot be loaded right now, this returns null rather than
 // silently substituting the company's signature for someone's own.
@@ -58,14 +70,7 @@ export async function resolveUserSignature(userId?: string | null): Promise<Reso
       return url ? { url, source: "personal" } : null;
     }
 
-    if (!profile.company_id) return null;
-    const { data: cs } = await supabase
-      .from("company_settings")
-      .select("signature_url")
-      .eq("company_id", profile.company_id)
-      .maybeSingle();
-    const companyUrl = typeof cs?.signature_url === "string" ? cs.signature_url.trim() : "";
-    return companyUrl ? { url: companyUrl, source: "company" } : null;
+    return await resolveCompanySignature(profile.company_id);
   } catch {
     return null;
   }

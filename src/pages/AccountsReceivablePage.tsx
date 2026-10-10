@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from "react";
-import { FileText, Plus, DollarSign, CircleAlert as AlertCircle, CircleCheck as CheckCircle, X, Trash2, Eye, Bell, MessageCircle, Mail, Save, Pencil } from "lucide-react";
+import { FileText, Plus, DollarSign, CircleAlert as AlertCircle, CircleCheck as CheckCircle, X, Trash2, Eye, Bell, MessageCircle, Mail, Save, Pencil, Printer } from "lucide-react";
 import {
   fetchClientInvoices,
   createClientInvoice,
@@ -18,6 +18,7 @@ import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 import { useProjectContext } from "../context/ProjectContext";
 import { Send } from "lucide-react";
 import SendToClientModal from "../components/SendToClientModal";
+import { printInvoiceFresh } from "../components/InvoiceDocument";
 import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
 import { SeenBadge, SeenDetail } from "../components/PortalSeen";
 import { useItemViews } from "../lib/useItemViews";
@@ -1175,6 +1176,17 @@ export default function AccountsReceivablePage() {
             </div>
 
             <div className="flex justify-end gap-3 pt-6 border-t border-slate-200 dark:border-slate-800 mt-6">
+              <button
+                onClick={() => {
+                  printInvoiceFresh({ invoice: selectedInvoice, lineItems: invoiceLineItems, payments: invoicePayments })
+                    .then((opened) => { if (!opened) alert("Could not open the print window. Please allow pop-ups for this site and try again."); })
+                    .catch(() => alert("Could not prepare the invoice for printing. Please try again."));
+                }}
+                className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+              >
+                <Printer size={14} />
+                Print / Save as PDF
+              </button>
               {selectedInvoice.status !== "cancelled" && (
                 <button
                   onClick={() => openSendModal(selectedInvoice)}
