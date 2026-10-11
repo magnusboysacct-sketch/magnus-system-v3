@@ -16,8 +16,6 @@ import { ImportTakeoffModal } from "../components/ImportTakeoffModal";
 import { generateProcurementFromBOQ } from "../lib/procurement";
 import { generateEstimateFromBOQ } from "../lib/estimates";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
-import CustomNameField from "../components/CustomNameField";
-import { customNamePayload, isMissingCustomNameColumn } from "../lib/customName";
 import { fetchUnappliedAdvances, type ClientPayment } from "../lib/finance";
 import { formatContractDate } from "../lib/contractDocument";
 import {
@@ -240,16 +238,7 @@ type AssemblyComponentRow = {
 };
 type BoqHeaderRow = {
   id: string; project_id: string; status: string; version: number; updated_at: string;
-  custom_name_label?: string | null; custom_name_value?: string | null;
 };
-// The custom name columns are newer: if the database doesn't have them yet the header is read again without them, so a BOQ always loads.
-const HEADER_COLS_BASE = "id,project_id,status,version,updated_at";
-const HEADER_COLS = HEADER_COLS_BASE + ",custom_name_label,custom_name_value";
-async function withHeaderCols(run: (cols: string) => PromiseLike<{ data: any; error: any }>) {
-  const first = await run(HEADER_COLS);
-  if (first.error && isMissingCustomNameColumn(first.error)) return run(HEADER_COLS_BASE);
-  return first;
-}
 // Versions picker row — no project_id needed, the whole list is already scoped
 // to one project by the query itself.
 type BoqVersionRow = {
@@ -1211,12 +1200,6 @@ export default function BOQPage() {
   const [status, setStatus] = useState<"draft" | "approved">("draft");
   const [sections, setSections] = useState<Section[]>([]);
   const [boqId, setBoqId] = useState<string | null>(null);
-  // The BOQ's optional custom name (e.g. "Beneficiary Name" / "Mary Johnson"). The ref mirrors the state so a save or a blur always
-  // reads the latest text; hadCustomNameRef remembers whether the saved BOQ has one, so clearing it still writes the nulls.
-  const [customNameLabel, setCustomNameLabel] = useState("");
-  const [customNameValue, setCustomNameValue] = useState("");
-  const customNameRef = useRef({ label: "", value: "" });
-  const hadCustomNameRef = useRef(false);
   const [persistLoading, setPersistLoading] = useState(false);
   const [persistError, setPersistError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -1546,31 +1529,8 @@ useEffect(() => {
   // Shared by loadLatestBoq (picks the header itself) and loadBoqVersion (the
   // Versions picker — caller already knows exactly which header to load) so
   // the two never drift apart on how sections/items get hydrated.
-  function applyCustomName(label: string | null | undefined, value: string | null | undefined) {
-    customNameRef.current = { label: label ?? "", value: value ?? "" };
-    hadCustomNameRef.current = !!(label || value);
-    setCustomNameLabel(label ?? ""); setCustomNameValue(value ?? "");
-  }
-  function handleCustomNameLabel(label: string) { customNameRef.current = { ...customNameRef.current, label }; setCustomNameLabel(label); }
-  function handleCustomNameValue(value: string) { customNameRef.current = { ...customNameRef.current, value }; setCustomNameValue(value); }
-  // The name stays editable after approval. A draft BOQ saves it with the BOQ; an approved one (which has no Save) writes just the name,
-  // straight away, without touching anything else - not even updated_at, so it can't change which version counts as the latest.
-  async function persistCustomNameNow() {
-    if (!boqId || status !== "approved") return;
-    const cn = customNamePayload(customNameRef.current.label, customNameRef.current.value, hadCustomNameRef.current);
-    if (Object.keys(cn).length === 0) return;
-    const { error } = await supabase.from("boq_headers").update(cn).eq("id", boqId);
-    if (error) {
-      showLibToast(isMissingCustomNameColumn(error) ? "The custom name can't be saved yet: the database update for it hasn't been applied." : "Couldn't save the custom name: " + error.message, "error");
-      return;
-    }
-    hadCustomNameRef.current = !!(cn.custom_name_label || cn.custom_name_value);
-    showLibToast("Custom name saved.", "success");
-  }
-
   async function hydrateBoqFromHeader(header: BoqHeaderRow) {
     setBoqId(header.id); setStatus(header.status as "draft" | "approved");
-    applyCustomName(header.custom_name_label, header.custom_name_value);
     const { data: secRows, error: sErr } = await supabase.from("boq_sections")
       .select("id,boq_id,sort_order,master_category_id,title,scope").eq("boq_id", header.id).order("sort_order");
     if (sErr) throw sErr;
@@ -1617,12 +1577,12 @@ useEffect(() => {
   async function loadLatestBoq(projectId: string) {
     setPersistLoading(true); setPersistError(null);
     try {
-      const { data: headers, error: hErr } = await withHeaderCols((cols) => supabase.from("boq_headers")
-        .select(cols).eq("project_id", projectId)
-        .order("updated_at", { ascending: false }).order("version", { ascending: false }).limit(1));
+      const { data: headers, error: hErr } = await supabase.from("boq_headers")
+        .select("id,project_id,status,version,updated_at").eq("project_id", projectId)
+        .order("updated_at", { ascending: false }).order("version", { ascending: false }).limit(1);
       if (hErr) throw hErr;
       const header = (Array.isArray(headers) ? headers[0] : undefined) as BoqHeaderRow | undefined;
-      if (!header) { setBoqId(null); setStatus("draft"); setSections([]); applyCustomName(null, null); return; }
+      if (!header) { setBoqId(null); setStatus("draft"); setSections([]); return; }
       await hydrateBoqFromHeader(header);
     } catch (e: any) { setPersistError(e?.message ?? "Failed to load BOQ"); }
     finally { setPersistLoading(false); }
@@ -1709,8 +1669,8 @@ useEffect(() => {
   async function loadBoqVersion(headerId: string) {
     setPersistLoading(true); setPersistError(null);
     try {
-      const { data: header, error: hErr } = await withHeaderCols((cols) => supabase.from("boq_headers")
-        .select(cols).eq("id", headerId).single());
+      const { data: header, error: hErr } = await supabase.from("boq_headers")
+        .select("id,project_id,status,version,updated_at").eq("id", headerId).single();
       if (hErr) throw hErr;
       if (!header) return;
       await hydrateBoqFromHeader(header as BoqHeaderRow);
@@ -1745,27 +1705,15 @@ useEffect(() => {
         versionNumber = numOr(ex?.version, 1);
         if (String(ex?.project_id) !== projectId) throw new Error("BOQ belongs to a different project!");
       }
-      // The custom name goes into the header row; it is left out when nothing was ever set, so a database without the columns is never asked.
-      const cn = customNamePayload(customNameRef.current.label, customNameRef.current.value, hadCustomNameRef.current);
-      let nameSkipped = false;
       if (opType === "INSERT") {
         const { data: vCheck } = await supabase.from("boq_headers").select("id").eq("project_id", projectId).eq("version", versionNumber).maybeSingle();
         if (vCheck) throw new Error(`BOQ version ${versionNumber} already exists.`);
-        let insRes = await supabase.from("boq_headers").insert([{ project_id: projectId, status: nextStatus, version: versionNumber, ...cn }]).select("id,version").single();
-        if (insRes.error && Object.keys(cn).length > 0 && isMissingCustomNameColumn(insRes.error)) {
-          nameSkipped = true;
-          insRes = await supabase.from("boq_headers").insert([{ project_id: projectId, status: nextStatus, version: versionNumber }]).select("id,version").single();
-        }
-        const { data: ins, error: insErr } = insRes;
+        const { data: ins, error: insErr } = await supabase.from("boq_headers").insert([{ project_id: projectId, status: nextStatus, version: versionNumber }]).select("id,version").single();
         if (insErr) throw insErr;
         headerId = String((ins as any).id); setBoqId(headerId);
       } else {
-        let upRes = await supabase.from("boq_headers").update({ status: nextStatus, updated_at: new Date().toISOString(), ...cn }).eq("id", headerId);
-        if (upRes.error && Object.keys(cn).length > 0 && isMissingCustomNameColumn(upRes.error)) {
-          nameSkipped = true;
-          upRes = await supabase.from("boq_headers").update({ status: nextStatus, updated_at: new Date().toISOString() }).eq("id", headerId);
-        }
-        if (upRes.error) throw upRes.error;
+        const { error: upErr } = await supabase.from("boq_headers").update({ status: nextStatus, updated_at: new Date().toISOString() }).eq("id", headerId);
+        if (upErr) throw upErr;
       }
       const { error: delErr } = await supabase.from("boq_sections").delete().eq("boq_id", headerId);
       if (delErr) throw delErr;
@@ -1796,7 +1744,6 @@ useEffect(() => {
       await loadLatestBoq(projectId);
       setLastAutoSaveAt(new Date().toLocaleTimeString());
       setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 3000);
-      if (nameSkipped) showLibToast("The BOQ was saved, but its custom name wasn't: the database update for it hasn't been applied yet.", "error");
     } catch (e: any) { setPersistError(e?.message ?? "Failed to save"); alert(e?.message ?? "Failed to save BOQ"); }
     finally { setPersistLoading(false); }
   }
@@ -1832,7 +1779,6 @@ useEffect(() => {
       setSections([]);
       setBoqId(null);
       setStatus("draft");
-      applyCustomName(null, null);
       forceNewVersionRef.current = true;
     }
     if (sections.length > 0) {
@@ -2653,20 +2599,6 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               <Bot size={12}/> AI Assistant
             </button>
           </div>
-        </div>
-
-        {/* Custom name (optional), e.g. "Beneficiary Name: Mary Johnson". It carries onto invoices generated from this BOQ, and stays editable after approval. */}
-        <div className="px-5 pb-2 flex items-center gap-3 flex-wrap">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-600 flex-shrink-0">Custom name</span>
-          <CustomNameField
-            className="flex-1 min-w-[280px] max-w-xl"
-            inputClassName="py-1.5 text-xs"
-            label={customNameLabel}
-            value={customNameValue}
-            onLabelChange={handleCustomNameLabel}
-            onValueChange={handleCustomNameValue}
-            onCommit={() => void persistCustomNameNow()}
-          />
         </div>
 
         {/* Stats strip */}
