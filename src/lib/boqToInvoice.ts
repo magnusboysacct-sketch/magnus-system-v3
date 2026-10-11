@@ -15,6 +15,10 @@
 // An item with a quantity but NO rate is a hard block (never silently billed at 0): findItemsMissingRate lists them, and the
 // generator refuses before anything is written.
 //
+// Selected items (multi-beneficiary billing): with options.selection only the chosen BOQ items are billed, always itemized and
+// always for 1 unit (the multiplier does not apply), and each line carries its item's name (line_name) onto the invoice line.
+// Without a selection nothing about the above changes. The missing-rate block then looks only at the chosen items.
+//
 // Do NOT put anything in client_invoice_line_items.boq_item_id: that column points at boq_items (contract progress
 // billing), not at boq_section_items.
 import { supabase } from "./supabase";
@@ -32,11 +36,14 @@ export interface BoqInvoiceOptions {
   taxRate?: number; // percent, default 0
   terms?: string;
   applyAdvanceIds?: string[]; // unapplied advances (client_payments) to credit against the new invoice
+  selection?: { itemIds: string[] }; // bill only these BOQ items (itemized, 1 unit); see the note at the top
 }
 
 export interface BoqSectionInput {
   title?: string | null;
   items: Array<{
+    id?: string | null;
+    line_name?: string | null;
     item_name?: string | null;
     description?: string | null;
     unit_id?: string | null;
@@ -53,6 +60,7 @@ export interface InvoiceLineDraft {
   rate: number;
   amount: number;
   notes: string | null;
+  line_name?: string | null; // only on lines built with carryNames
 }
 
 export const MAX_MULTIPLIER = 1000;
@@ -78,8 +86,10 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Returns a plain-language problem with the options, or null when they are fine.
 export function validateBoqInvoiceOptions(o: BoqInvoiceOptions): string | null {
+  if (o.selection && !(Array.isArray(o.selection.itemIds) && o.selection.itemIds.length > 0)) return "Tick at least one item to bill.";
   const multiplier = o.multiplier ?? 1;
-  if (!Number.isInteger(multiplier) || multiplier < 1 || multiplier > MAX_MULTIPLIER) {
+  // With a selection the multiplier doesn't apply (it is always 1), so it isn't checked.
+  if (!o.selection && (!Number.isInteger(multiplier) || multiplier < 1 || multiplier > MAX_MULTIPLIER)) {
     return `Number of units must be a whole number from 1 to ${MAX_MULTIPLIER}.`;
   }
   const markup = o.markupPercent ?? 0;
@@ -106,6 +116,52 @@ export function findItemsMissingRate(sections: BoqSectionInput[]): string[] {
   return missing;
 }
 
+// The same sections with only the items whose id is in itemIds. Every section is kept (even if empty) so "Section N" numbering
+// in messages doesn't shift.
+export function filterSectionsBySelection<S extends BoqSectionInput>(sections: S[], itemIds: string[]): S[] {
+  const wanted = new Set(itemIds.map(String));
+  return sections.map((s) => ({ ...s, items: (s.items || []).filter((it) => it.id != null && wanted.has(String(it.id))) }));
+}
+
+// One BOQ item as the invoice line it becomes: the same quantity (x1) and rate (x markup) maths as the itemized builder.
+export function itemizedLineAmount(it: { qty?: number | string | null; rate?: number | string | null }, markupPercent = 0): number {
+  const quantity = round2(num(it.qty));
+  if (quantity <= 0) return 0;
+  return round2(quantity * round2(num(it.rate) * (1 + markupPercent / 100)));
+}
+
+// Name + item matching for "already billed" warnings: a name and an item description, case/space-insensitive.
+export function billedKey(name: unknown, itemDescription: unknown): string {
+  const norm = (v: unknown) => String(v ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  return norm(name) + "\u0001" + norm(itemDescription || "Unnamed Item");
+}
+
+// What this project has already billed by name: billedKey -> the invoice numbers carrying that name + item (cancelled invoices
+// don't count). Returns an empty map when the line_name column doesn't exist yet or the read fails.
+export async function fetchBilledNameItems(projectId: string): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (!projectId) return out;
+  try {
+    const { data, error } = await supabase
+      .from("client_invoice_line_items")
+      .select("line_name, description, client_invoices!inner(invoice_number, project_id, status)")
+      .not("line_name", "is", null)
+      .eq("client_invoices.project_id", projectId);
+    if (error) return out;
+    for (const row of (data || []) as any[]) {
+      const inv = Array.isArray(row.client_invoices) ? row.client_invoices[0] : row.client_invoices;
+      if (!inv || inv.status === "cancelled" || !String(row.line_name ?? "").trim()) continue;
+      const key = billedKey(row.line_name, row.description);
+      const list = out.get(key) ?? [];
+      if (inv.invoice_number && !list.includes(inv.invoice_number)) list.push(inv.invoice_number);
+      out.set(key, list);
+    }
+  } catch {
+    /* no warnings, never blocks */
+  }
+  return out;
+}
+
 const MAX_LISTED = 10;
 
 export function missingRateMessage(names: string[]): string {
@@ -120,7 +176,7 @@ export function missingRateMessage(names: string[]): string {
 // Builds the invoice lines from BOQ sections. `unitName` resolves a unit_id to its name (unknown -> "ea").
 export function buildBoqInvoiceLines(
   sections: BoqSectionInput[],
-  opts: { multiplier?: number; markupPercent?: number; lineMode?: BoqInvoiceLineMode },
+  opts: { multiplier?: number; markupPercent?: number; lineMode?: BoqInvoiceLineMode; carryNames?: boolean },
   unitName: (unitId: string | null | undefined) => string | null | undefined = () => null,
 ): InvoiceLineDraft[] {
   const multiplier = opts.multiplier ?? 1;
@@ -160,6 +216,7 @@ export function buildBoqInvoiceLines(
         rate,
         amount: round2(quantity * rate),
         notes: (it.description || "").trim() || null,
+        ...(opts.carryNames && (it.line_name || "").trim() ? { line_name: (it.line_name || "").trim() } : {}),
       });
     }
   }
@@ -214,9 +271,10 @@ export async function generateInvoiceFromBOQ(projectId: string, boqId: string, o
   const problem = validateBoqInvoiceOptions(options);
   if (problem) return { success: false, error: problem };
 
-  const multiplier = options.multiplier ?? 1;
+  const selecting = !!options.selection;
+  const multiplier = selecting ? 1 : options.multiplier ?? 1;
   const markupPercent = options.markupPercent ?? 0;
-  const lineMode = options.lineMode ?? "per-section";
+  const lineMode: BoqInvoiceLineMode = selecting ? "itemized" : options.lineMode ?? "per-section";
   const taxRate = options.taxRate ?? 0;
 
   try {
@@ -254,15 +312,29 @@ export async function generateInvoiceFromBOQ(projectId: string, boqId: string, o
     if (sectionsError) return { success: false, error: "Failed to fetch BOQ sections: " + sectionsError.message };
     if (!sections || sections.length === 0) return { success: false, error: "No sections found in BOQ" };
 
-    const { data: items, error: itemsError } = await supabase
+    // The item names are only read when billing selected items.
+    const itemCols = "id, section_id, item_name, description, unit_id, qty, rate, sort_order";
+    const itemsRes = (await supabase
       .from("boq_section_items")
-      .select("id, section_id, item_name, description, unit_id, qty, rate, sort_order")
+      .select(selecting ? itemCols + ", line_name" : itemCols)
       .in("section_id", sections.map((s) => s.id))
-      .order("sort_order", { ascending: true });
-    if (itemsError) return { success: false, error: "Failed to fetch BOQ items: " + itemsError.message };
+      .order("sort_order", { ascending: true })) as unknown as { data: any[] | null; error: { message: string } | null };
+    const { data: items, error: itemsError } = itemsRes;
+    if (itemsError) {
+      if (selecting && /line_name/i.test(itemsError.message)) return { success: false, error: "Item names can't be used yet: the database update for them hasn't been applied." };
+      return { success: false, error: "Failed to fetch BOQ items: " + itemsError.message };
+    }
     if (!items || items.length === 0) return { success: false, error: "No items found in BOQ" };
+    // Every selected id must be an item of THIS BOQ (a stale or foreign id fails before anything is written).
+    const selectedIds = selecting ? [...new Set((options.selection?.itemIds ?? []).map(String))] : [];
+    if (selecting) {
+      const known = new Set(items.map((i) => String(i.id)));
+      if (selectedIds.some((id) => !known.has(id))) {
+        return { success: false, error: "Some of the selected items are no longer part of this BOQ. Close the dialog, reload the BOQ and try again." };
+      }
+    }
 
-    const unitIds = [...new Set(items.map((i) => i.unit_id).filter(Boolean))] as string[];
+    const unitIds = [...new Set(items.map((i: any) => i.unit_id).filter(Boolean))] as string[];
     const unitMap = new Map<string, string>();
     if (unitIds.length > 0) {
       const { data: units } = await supabase.from("master_units").select("id, name").in("id", unitIds);
@@ -270,15 +342,18 @@ export async function generateInvoiceFromBOQ(projectId: string, boqId: string, o
     }
 
     // 3. The lines and totals.
-    const grouped = sections.map((s) => ({
+    const allGrouped = sections.map((s) => ({
       title: s.title,
-      items: items.filter((i) => i.section_id === s.id),
+      items: items.filter((i: any) => i.section_id === s.id),
     }));
+    const grouped = selecting ? filterSectionsBySelection(allGrouped, selectedIds) : allGrouped;
     // Hard block: an item with a quantity but no rate would bill at 0. Checked before anything is written.
     const missingRates = findItemsMissingRate(grouped);
     if (missingRates.length > 0) return { success: false, error: missingRateMessage(missingRates) };
-    const lines = buildBoqInvoiceLines(grouped, { multiplier, markupPercent, lineMode }, (id) => (id ? unitMap.get(id) : null));
-    if (lines.length === 0) return { success: false, error: "Nothing to bill: every section in this BOQ totals zero." };
+    const lines = buildBoqInvoiceLines(grouped, { multiplier, markupPercent, lineMode, carryNames: selecting }, (id) => (id ? unitMap.get(id) : null));
+    if (lines.length === 0) {
+      return { success: false, error: selecting ? "Nothing to bill: the selected items have no quantity." : "Nothing to bill: every section in this BOQ totals zero." };
+    }
     const { subtotal, taxAmount, total } = computeInvoiceTotals(lines, taxRate);
 
     // Advances chosen to be credited on this invoice: checked now, before anything is written.
@@ -312,6 +387,7 @@ export async function generateInvoiceFromBOQ(projectId: string, boqId: string, o
     // 5. The invoice, then its lines; if the lines fail the invoice header is removed again.
     const noteBits = [`Generated from BOQ v${boqHeader.version ?? ""}`.trim()];
     if (multiplier > 1) noteBits.push(`${multiplier} units`);
+    if (selecting) noteBits.push(`${selectedIds.length} selected item${selectedIds.length === 1 ? "" : "s"}`);
     // The markup is deliberately NOT recorded here: invoice notes travel with the invoice data the client portal receives.
     const invoice = await createClientInvoice({
       company_id: project.company_id,
@@ -343,6 +419,7 @@ export async function generateInvoiceFromBOQ(projectId: string, boqId: string, o
           rate: l.rate,
           amount: l.amount,
           notes: l.notes,
+          ...(l.line_name ? { line_name: l.line_name } : {}),
         })),
       );
     } catch (lineError: any) {

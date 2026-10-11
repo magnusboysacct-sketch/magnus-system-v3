@@ -20,6 +20,7 @@ import { fetchUnappliedAdvances, type ClientPayment } from "../lib/finance";
 import { formatContractDate } from "../lib/contractDocument";
 import {
   generateInvoiceFromBOQ, buildBoqInvoiceLines, computeInvoiceTotals, validateBoqInvoiceOptions, jamaicaToday, addDays,
+  filterSectionsBySelection, fetchBilledNameItems, billedKey, itemizedLineAmount,
   findItemsMissingRate, missingRateMessage, checkAdvanceApplication,
   type BoqInvoiceLineMode,
 } from "../lib/boqToInvoice";
@@ -108,6 +109,8 @@ type BOQItemRow = {
   component_formula?: string | null;
   component_waste_percent?: number | null;
   measurement_overridden?: boolean;
+  // Optional name for this line (e.g. a beneficiary). Plain items only, never an assembly component. Needs boq_section_items.line_name.
+  line_name?: string;
 };
 
 type Section = {
@@ -236,6 +239,8 @@ type AssemblyComponentRow = {
   // Matches a component_toggle option's `key` on the parent AssemblyRow.
   optional_flag: string | null;
 };
+// The item columns read when a BOQ loads. line_name is newer: if the database doesn't have it yet the items are read again without it.
+const ITEM_COLS = "id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate,measurements,assembly_instance_id,assembly_name,assembly_master_length,assembly_master_width,assembly_master_height,assembly_master_set,assembly_master_openings,component_formula,component_waste_percent,measurement_overridden";
 type BoqHeaderRow = {
   id: string; project_id: string; status: string; version: number; updated_at: string;
 };
@@ -1196,6 +1201,11 @@ export default function BOQPage() {
   // Advances received for this project and not yet applied to an invoice, and which ones are ticked.
   const [invAdvances, setInvAdvances] = useState<ClientPayment[]>([]);
   const [invAdvanceSel, setInvAdvanceSel] = useState<string[]>([]);
+  // "What to bill": the whole BOQ (today's behaviour) or only ticked items (for BOQs whose items carry names), and what this
+  // project has already billed by name + item (a warning only).
+  const [invWhat, setInvWhat] = useState<"whole" | "selected">("whole");
+  const [invSelIds, setInvSelIds] = useState<string[]>([]);
+  const [invBilled, setInvBilled] = useState<Map<string, string[]>>(new Map());
 
   const [status, setStatus] = useState<"draft" | "approved">("draft");
   const [sections, setSections] = useState<Section[]>([]);
@@ -1538,9 +1548,10 @@ useEffect(() => {
     const sectionIds = secList.map((s: any) => s.id).filter(Boolean);
     const itemsBySection = new Map<string, any[]>();
     if (sectionIds.length > 0) {
-      const { data: itemRows, error: iErr } = await supabase.from("boq_section_items")
-        .select("id,section_id,sort_order,pick_type,pick_category,pick_item,pick_variant,cost_item_id,item_name,description,unit_id,qty,rate,measurements,assembly_instance_id,assembly_name,assembly_master_length,assembly_master_width,assembly_master_height,assembly_master_set,assembly_master_openings,component_formula,component_waste_percent,measurement_overridden")
-        .in("section_id", sectionIds).order("sort_order");
+      const readItems = (cols: string) => supabase.from("boq_section_items").select(cols).in("section_id", sectionIds).order("sort_order") as unknown as PromiseLike<{ data: any; error: any }>;
+      let itemsRes = await readItems(ITEM_COLS + ",line_name");
+      if (itemsRes.error && /line_name/i.test(String(itemsRes.error.message ?? ""))) itemsRes = await readItems(ITEM_COLS);
+      const { data: itemRows, error: iErr } = itemsRes;
       if (iErr) throw iErr;
       for (const r of (itemRows || [])) {
         const sid = String((r as any).section_id ?? "");
@@ -1570,6 +1581,7 @@ useEffect(() => {
         component_formula: r.component_formula ? String(r.component_formula) : null,
         component_waste_percent: r.component_waste_percent != null ? Number(r.component_waste_percent) : null,
         measurement_overridden: !!r.measurement_overridden,
+        line_name: r.line_name ? String(r.line_name) : "",
       }))
     })));
   }
@@ -1726,13 +1738,19 @@ useEffect(() => {
         (insertedSecs || []).forEach((db: any) => { const cs = sections[db.sort_order]; if (cs) sectionIdMap.set(cs.id, db.id); });
       }
       const itemPayload: any[] = [];
+      let itemNamesSkipped = false;
       for (const s of sections) {
         const dbSid = sectionIdMap.get(s.id);
         if (!dbSid) throw new Error(`Section mapping failed: ${s.title}`);
-        s.items.forEach((it, i) => itemPayload.push({ section_id: dbSid, sort_order: i, pick_type: it.pick_type ?? "", pick_category: it.pick_category ?? "", pick_item: it.pick_item ?? "", pick_variant: it.pick_variant ?? "", cost_item_id: it.cost_item_id, item_name: it.item_name ?? "", description: it.description ?? "", unit_id: it.unit_id, qty: numOr(it.qty, 0), rate: numOr(it.rate, 0), measurements: it.measurements ?? [], assembly_instance_id: it.assembly_instance_id ?? null, assembly_name: it.assembly_name ?? null, assembly_master_length: it.assembly_master_length ?? null, assembly_master_width: it.assembly_master_width ?? null, assembly_master_height: it.assembly_master_height ?? null, assembly_master_set: it.assembly_master_set ?? false, assembly_master_openings: it.assembly_master_openings ?? null, component_formula: it.component_formula ?? null, component_waste_percent: it.component_waste_percent ?? null, measurement_overridden: it.measurement_overridden ?? false }));
+        s.items.forEach((it, i) => itemPayload.push({ section_id: dbSid, sort_order: i, pick_type: it.pick_type ?? "", pick_category: it.pick_category ?? "", pick_item: it.pick_item ?? "", pick_variant: it.pick_variant ?? "", cost_item_id: it.cost_item_id, item_name: it.item_name ?? "", description: it.description ?? "", unit_id: it.unit_id, qty: numOr(it.qty, 0), rate: numOr(it.rate, 0), measurements: it.measurements ?? [], assembly_instance_id: it.assembly_instance_id ?? null, assembly_name: it.assembly_name ?? null, assembly_master_length: it.assembly_master_length ?? null, assembly_master_width: it.assembly_master_width ?? null, assembly_master_height: it.assembly_master_height ?? null, assembly_master_set: it.assembly_master_set ?? false, assembly_master_openings: it.assembly_master_openings ?? null, component_formula: it.component_formula ?? null, component_waste_percent: it.component_waste_percent ?? null, measurement_overridden: it.measurement_overridden ?? false, ...(!it.assembly_instance_id && it.line_name?.trim() ? { line_name: it.line_name.trim().slice(0, 120) } : {}) }));
       }
       if (itemPayload.length > 0) {
-        const { error: iErr } = await supabase.from("boq_section_items").insert(itemPayload).select("id,item_name");
+        let iErr = (await supabase.from("boq_section_items").insert(itemPayload).select("id,item_name")).error;
+        // Names are only sent when typed; if the database doesn't have the column yet the items are saved again without them.
+        if (iErr && itemPayload.some(p => "line_name" in p) && /line_name/i.test(String(iErr.message ?? ""))) {
+          itemNamesSkipped = true;
+          iErr = (await supabase.from("boq_section_items").insert(itemPayload.map(({ line_name: _skip, ...rest }) => rest)).select("id,item_name")).error;
+        }
         if (iErr) throw iErr;
       }
       setStatus(nextStatus);
@@ -1744,6 +1762,7 @@ useEffect(() => {
       await loadLatestBoq(projectId);
       setLastAutoSaveAt(new Date().toLocaleTimeString());
       setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 3000);
+      if (itemNamesSkipped) showLibToast("The BOQ was saved, but the item names weren't: the database update for them hasn't been applied yet.", "error");
     } catch (e: any) { setPersistError(e?.message ?? "Failed to save"); alert(e?.message ?? "Failed to save BOQ"); }
     finally { setPersistLoading(false); }
   }
@@ -2334,7 +2353,11 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims
     setInvUnits("1"); setInvMarkup("0"); setInvMode("per-section"); setInvTax("0"); setInvTerms("Net 30");
     setInvDate(today); setInvDue(addDays(today, 30)); setInvError(null);
     setInvAdvances([]); setInvAdvanceSel([]);
+    setInvWhat("whole"); setInvSelIds([]); setInvBilled(new Map());
     const advProjectId = routeProjectId || activeProjectId;
+    if (advProjectId && sections.some(s => s.items.some(it => !it.assembly_instance_id && it.line_name?.trim()))) {
+      fetchBilledNameItems(advProjectId).then(setInvBilled).catch(() => setInvBilled(new Map()));
+    }
     if (advProjectId) fetchUnappliedAdvances({ projectId: advProjectId }).then(setInvAdvances).catch(() => setInvAdvances([]));
     setShowInvoiceDialog(true);
   }
@@ -2342,14 +2365,17 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims
   // Inputs as typed; anything unreadable becomes NaN so validateBoqInvoiceOptions rejects it with a clear message.
   function readInvoiceOptions() {
     const read = (s: string) => (s.trim() === "" ? 0 : Number(s));
+    // Selected items: always itemized and 1 unit (the units box is hidden), plus the ticked item ids.
+    const selected = invWhat === "selected";
     return {
-      multiplier: invUnits.trim() === "" ? NaN : Number(invUnits),
+      multiplier: selected ? 1 : invUnits.trim() === "" ? NaN : Number(invUnits),
       markupPercent: read(invMarkup),
-      lineMode: invMode,
+      lineMode: selected ? ("itemized" as BoqInvoiceLineMode) : invMode,
       invoiceDate: invDate,
       dueDate: invDue,
       taxRate: read(invTax),
       terms: invTerms,
+      ...(selected ? { selection: { itemIds: invSelIds } } : {}),
     };
   }
 
@@ -2360,11 +2386,13 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims
     const options = readInvoiceOptions();
     const problem = validateBoqInvoiceOptions(options);
     if (problem) { setInvError(problem); return; }
-    const noRate = findItemsMissingRate(sections);
+    // Selected items: the rate check and the advance preview look only at the ticked items.
+    const scopedSections = invWhat === "selected" ? filterSectionsBySelection(sections, invSelIds) : sections;
+    const noRate = findItemsMissingRate(scopedSections);
     if (noRate.length > 0) { setInvError(missingRateMessage(noRate)); return; }
     const chosenAdvances = invAdvances.filter(a => invAdvanceSel.includes(a.id));
     if (chosenAdvances.length > 0) {
-      const previewTotal = computeInvoiceTotals(buildBoqInvoiceLines(sections, options), options.taxRate).total;
+      const previewTotal = computeInvoiceTotals(buildBoqInvoiceLines(scopedSections, options), options.taxRate).total;
       const advanceProblem = checkAdvanceApplication(previewTotal, chosenAdvances);
       if (advanceProblem) { setInvError(advanceProblem); return; }
     }
@@ -2760,6 +2788,14 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                 </button>
                               </div>
 
+                              {!item.assembly_instance_id && (
+                                <div className="mb-2">
+                                  <input value={item.line_name ?? ""} disabled={!canEdit} maxLength={120}
+                                    onChange={e => updateItem(section.id, item.id, { line_name: e.target.value })}
+                                    className="w-full bg-transparent text-xs font-medium text-teal-600 dark:text-teal-400 placeholder-slate-400 dark:placeholder-slate-700 focus:outline-none disabled:opacity-60"
+                                    placeholder="Name (optional)"/>
+                                </div>
+                              )}
                               {/* Row 2: Find Item button */}
                               <div className="mb-2">
                                 <button onClick={() => setFindModal({ open: true, sectionId: section.id, rowId: item.id })}
@@ -2960,6 +2996,12 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                                 onChange={e => updateItem(section.id, item.id, { description: e.target.value })}
                                 className="w-full bg-transparent text-[10px] text-slate-500 dark:text-slate-600 placeholder-slate-800 focus:outline-none disabled:opacity-60"
                                 placeholder="Description?"/>
+                              {!item.assembly_instance_id && (
+                                <input value={item.line_name ?? ""} disabled={!canEdit} maxLength={120}
+                                  onChange={e => updateItem(section.id, item.id, { line_name: e.target.value })}
+                                  className="w-full bg-transparent text-[10px] font-medium text-teal-600 dark:text-teal-400 placeholder-slate-400 dark:placeholder-slate-700 focus:outline-none disabled:opacity-60"
+                                  placeholder="Name (optional)"/>
+                              )}
                               {item.rate_source === "library" && (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/15 font-medium">Library</span>
                               )}
@@ -3811,9 +3853,33 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         const opts = readInvoiceOptions();
         const problem = validateBoqInvoiceOptions(opts);
         const valid = !problem;
-        const missingRateItems = findItemsMissingRate(sections);
+        // "What to bill" only appears when some plain item has a name; ticked items then replace the whole BOQ in every figure below.
+        const hasNames = sections.some(s => s.items.some(it => !it.assembly_instance_id && it.line_name?.trim()));
+        const selectedMode = hasNames && invWhat === "selected";
+        const scoped = selectedMode ? filterSectionsBySelection(sections, invSelIds) : sections;
+        const missingRateItems = findItemsMissingRate(scoped);
         const units = valid ? (opts.multiplier as number) : 1;
-        const lines = buildBoqInvoiceLines(sections, { multiplier: units, markupPercent: valid ? opts.markupPercent : 0, lineMode: invMode });
+        const lines = buildBoqInvoiceLines(scoped, { multiplier: units, markupPercent: valid ? opts.markupPercent : 0, lineMode: selectedMode ? "itemized" : invMode });
+        type PickEntry = { id: string; itemName: string; section: string; amount: number; billedOn: string[]; noRate: boolean };
+        const namedGroups = new Map<string, { name: string; entries: PickEntry[] }>();
+        const sharedEntries: PickEntry[] = [];
+        if (hasNames) {
+          sections.forEach((s, si) => s.items.forEach(it => {
+            if (numOr(it.qty) <= 0) return;
+            const nm = !it.assembly_instance_id ? (it.line_name ?? "").trim() : "";
+            const itemName = (it.item_name || "").trim() || "Unnamed Item";
+            const entry: PickEntry = {
+              id: it.id, itemName, section: (s.title || "").trim() || `Section ${si + 1}`, amount: itemizedLineAmount(it, valid ? opts.markupPercent : 0),
+              billedOn: nm ? invBilled.get(billedKey(nm, itemName)) ?? [] : [], noRate: !(numOr(it.rate) > 0),
+            };
+            if (!nm) { sharedEntries.push(entry); return; }
+            const key = nm.toLowerCase().replace(/\s+/g, " ");
+            const g = namedGroups.get(key) ?? { name: nm, entries: [] };
+            g.entries.push(entry); namedGroups.set(key, g);
+          }));
+        }
+        const setTicked = (ids: string[], on: boolean) => setInvSelIds(prev => on ? [...new Set([...prev, ...ids])] : prev.filter(x => !ids.includes(x)));
+        const unbilledNamedIds = [...namedGroups.values()].flatMap(g => g.entries.filter(e => e.billedOn.length === 0).map(e => e.id));
         const invTotals = computeInvoiceTotals(lines, valid ? opts.taxRate : 0);
         const chosenAdvances = invAdvances.filter(a => invAdvanceSel.includes(a.id));
         const advanceSum = Math.round(chosenAdvances.reduce((s, a) => s + Number(a.amount || 0), 0) * 100) / 100;
@@ -3822,21 +3888,95 @@ Answer briefly and practically. If they ask to add items, explain they need to u
         const lbl = "block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1";
         return (
           <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-            <div className="w-full max-w-md max-h-[92vh] overflow-y-auto bg-white dark:bg-[#0d1117] border border-slate-300 dark:border-white/[0.1] rounded-2xl p-6 shadow-2xl">
+            <div className={`w-full ${hasNames ? "max-w-xl" : "max-w-md"} max-h-[92vh] overflow-y-auto bg-white dark:bg-[#0d1117] border border-slate-300 dark:border-white/[0.1] rounded-2xl p-6 shadow-2xl`}>
               <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Generate Invoice from BOQ</div>
               <div className="text-xs text-slate-500 mb-4">Creates a draft invoice for the project's client. You can review it in Accounts Receivable before sending.</div>
 
+              {hasNames && (
+                <div className="mb-3">
+                  <label className={lbl}>What to bill</label>
+                  <div className="flex gap-2 mb-2">
+                    {([["whole", "Whole BOQ"], ["selected", "Selected items"]] as const).map(([what, text]) => (
+                      <button key={what} onClick={() => setInvWhat(what)}
+                        className={`flex-1 py-2 rounded-lg border text-xs font-bold transition ${invWhat === what ? "bg-teal-600 border-teal-600 text-white" : "bg-slate-50 dark:bg-white/[0.03] border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-400"}`}>
+                        {text}
+                      </button>
+                    ))}
+                  </div>
+                  {selectedMode && (
+                    <div className="rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.03] p-2 text-xs">
+                      <div className="flex items-center justify-between px-1 pb-2">
+                        <span className="text-[10px] text-slate-500">{invSelIds.length} ticked. Billed one line per item, for 1 unit.</span>
+                        <span className="flex gap-3">
+                          <button onClick={() => setTicked(unbilledNamedIds, true)} className="text-[10px] font-semibold text-teal-600 dark:text-teal-400">Tick all not yet billed</button>
+                          <button onClick={() => setInvSelIds([])} className="text-[10px] font-semibold text-slate-500">Clear</button>
+                        </span>
+                      </div>
+                      <div className="max-h-72 overflow-y-auto space-y-2">
+                        {[...namedGroups.values()].map(g => {
+                          const ids = g.entries.map(e => e.id);
+                          const allOn = ids.every(id => invSelIds.includes(id));
+                          return (
+                            <div key={g.name} className="rounded-lg border border-slate-200 dark:border-white/[0.06] p-2">
+                              <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-900 dark:text-slate-100">
+                                <input type="checkbox" checked={allOn} onChange={() => setTicked(ids, !allOn)}/>
+                                {g.name}
+                              </label>
+                              <div className="mt-1 space-y-1 pl-6">
+                                {g.entries.map(e => (
+                                  <label key={e.id} className="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" className="mt-0.5" checked={invSelIds.includes(e.id)} onChange={() => setTicked([e.id], !invSelIds.includes(e.id))}/>
+                                    <span className="flex-1 min-w-0 text-slate-700 dark:text-slate-300">
+                                      {e.itemName} <span className="text-[10px] text-slate-500">({e.section})</span>
+                                      {e.billedOn.length > 0 && <span className="block text-[10px] font-semibold text-amber-600">Already billed on {e.billedOn.join(", ")}</span>}
+                                      {e.noRate && <span className="block text-[10px] font-semibold text-red-500">No rate set</span>}
+                                    </span>
+                                    <span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(e.amount)}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {sharedEntries.length > 0 && (
+                          <div className="rounded-lg border border-slate-200 dark:border-white/[0.06] p-2">
+                            <div className="font-bold text-slate-900 dark:text-slate-100">Shared items</div>
+                            <div className="text-[10px] text-slate-500 mb-1">No name. Tick any that should go on this invoice.</div>
+                            <div className="space-y-1">
+                              {sharedEntries.map(e => (
+                                <label key={e.id} className="flex items-start gap-2 cursor-pointer">
+                                  <input type="checkbox" className="mt-0.5" checked={invSelIds.includes(e.id)} onChange={() => setTicked([e.id], !invSelIds.includes(e.id))}/>
+                                  <span className="flex-1 min-w-0 text-slate-700 dark:text-slate-300">
+                                    {e.itemName} <span className="text-[10px] text-slate-500">({e.section})</span>
+                                    {e.noRate && <span className="block text-[10px] font-semibold text-red-500">No rate set</span>}
+                                  </span>
+                                  <span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(e.amount)}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3 mb-3">
+                {!selectedMode && (
                 <div>
                   <label className={lbl}>Number of units</label>
                   <input value={invUnits} onChange={e => setInvUnits(e.target.value)} inputMode="numeric" className={inputCls}/>
                 </div>
+                )}
                 <div>
                   <label className={lbl}>Markup %</label>
                   <input value={invMarkup} onChange={e => setInvMarkup(e.target.value)} inputMode="decimal" className={inputCls}/>
                 </div>
               </div>
 
+              {selectedMode && <div className="text-[11px] text-slate-500 mb-3">Invoice lines: itemized, one line per ticked item, each carrying its name.</div>}
+              {!selectedMode && (<>
               <label className={lbl}>Invoice lines</label>
               <div className="flex gap-2 mb-3">
                 {([["per-section", "One per section"], ["itemized", "Itemized"]] as const).map(([mode, text]) => (
@@ -3846,6 +3986,7 @@ Answer briefly and practically. If they ask to add items, explain they need to u
                   </button>
                 ))}
               </div>
+              </>)}
 
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
@@ -3875,8 +4016,8 @@ Answer briefly and practically. If they ask to add items, explain they need to u
               )}
 
               <div className="rounded-xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.03] p-3 mb-3 text-xs space-y-1">
-                <div className="flex justify-between"><span className="text-slate-500">BOQ total (1 unit)</span><span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(totals.subtotal)}</span></div>
-                {units > 1 && (
+                {!selectedMode && <div className="flex justify-between"><span className="text-slate-500">BOQ total (1 unit)</span><span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(totals.subtotal)}</span></div>}
+                {!selectedMode && units > 1 && (
                   <div className="flex justify-between"><span className="text-slate-500">× {units} units</span><span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(totals.subtotal * units)}</span></div>
                 )}
                 <div className="flex justify-between"><span className="text-slate-500">Invoice subtotal{valid && opts.markupPercent > 0 ? ` (+${opts.markupPercent}% markup)` : ""}</span><span className="font-semibold text-slate-900 dark:text-slate-100">{fmtMoney(invTotals.subtotal)}</span></div>

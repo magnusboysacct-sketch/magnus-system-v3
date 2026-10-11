@@ -144,7 +144,7 @@ export default function InvoiceDocument({ invoice, lineItems, payments, client, 
               ) : items.map((it, i) => (
                 <tr key={it.id || i}>
                   <td style={{ ...td, color: "#9ca3af" }}>{it.line_number || i + 1}</td>
-                  <td style={td}>{it.description}{it.notes ? <div style={{ fontSize: 10, color: "#6b7280" }}>{it.notes}</div> : null}</td>
+                  <td style={td}>{it.description}{String(it.line_name ?? "").trim() ? <div style={{ fontWeight: 700, fontSize: 11, marginTop: 1 }}>{String(it.line_name).trim()}</div> : null}{it.notes ? <div style={{ fontSize: 10, color: "#6b7280" }}>{it.notes}</div> : null}</td>
                   <td style={{ ...td, textAlign: "right" }}>{fmtQty(it.quantity)}</td>
                   <td style={td}>{it.unit || ""}</td>
                   <td style={{ ...td, textAlign: "right" }}>{fmtJMD(it.rate)}</td>

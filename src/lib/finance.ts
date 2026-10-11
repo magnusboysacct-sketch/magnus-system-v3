@@ -36,6 +36,8 @@ export interface ClientInvoiceLineItem {
   rate: number;
   amount: number;
   notes?: string | null;
+  // The name (e.g. a beneficiary) of the BOQ item this line was billed for; printed under the description when set.
+  line_name?: string | null;
   boq_item_id?: string | null;
   milestone_id?: string | null;
   billing_item_id?: string | null;

@@ -1161,6 +1161,7 @@ export default function AccountsReceivablePage() {
                     <div key={item.id} className="flex justify-between text-sm">
                       <div className="flex-1">
                         <div className="font-medium text-slate-900 dark:text-slate-100">{item.description}</div>
+                        {String(item.line_name ?? "").trim() && <div className="text-xs font-semibold text-teal-600 dark:text-teal-400">{String(item.line_name).trim()}</div>}
                         <div className="text-xs text-slate-500 dark:text-slate-400">
                           {item.quantity} {item.unit} × ${Number(item.rate).toFixed(2)}
                         </div>
