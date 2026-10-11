@@ -259,6 +259,22 @@ function numOr(v: unknown, fallback = 0) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
+// What saveBoq would write for these sections, as one string - and nothing else: not ids, not a section being collapsed, not the
+// "Library/Manual" labels. Two BOQs with the same fingerprint would save identical rows, so comparing against the fingerprint taken
+// when the BOQ was last loaded or saved tells whether there are real unsaved edits.
+function boqFingerprint(list: Section[]): string {
+  return JSON.stringify(list.map(sec => [
+    sec.masterCategoryId ?? null, sec.title ?? "New Section", sec.scope ?? "",
+    sec.items.map(it => [
+      it.pick_type ?? "", it.pick_category ?? "", it.pick_item ?? "", it.pick_variant ?? "", it.cost_item_id ?? null,
+      it.item_name ?? "", it.description ?? "", it.unit_id ?? null, numOr(it.qty, 0), numOr(it.rate, 0), it.measurements ?? [],
+      it.assembly_instance_id ?? null, it.assembly_name ?? null, it.assembly_master_length ?? null, it.assembly_master_width ?? null,
+      it.assembly_master_height ?? null, it.assembly_master_set ?? false, it.assembly_master_openings ?? null,
+      it.component_formula ?? null, it.component_waste_percent ?? null, it.measurement_overridden ?? false,
+      !it.assembly_instance_id ? (it.line_name ?? "").trim().slice(0, 120) : "",
+    ]),
+  ]));
+}
 function parseCalcJson(rateItem: RateItem | undefined | null): any {
   if (!rateItem?.calc_engine_json) return null;
   if (typeof rateItem.calc_engine_json === "string") {
@@ -1541,6 +1557,7 @@ useEffect(() => {
   // the two never drift apart on how sections/items get hydrated.
   async function hydrateBoqFromHeader(header: BoqHeaderRow) {
     setBoqId(header.id); setStatus(header.status as "draft" | "approved");
+    statusRef.current = header.status as "draft" | "approved";
     const { data: secRows, error: sErr } = await supabase.from("boq_sections")
       .select("id,boq_id,sort_order,master_category_id,title,scope").eq("boq_id", header.id).order("sort_order");
     if (sErr) throw sErr;
@@ -1560,7 +1577,7 @@ useEffect(() => {
         itemsBySection.get(sid)!.push(r);
       }
     }
-    setSections(secList.map((s: any) => ({
+    const hydrated: Section[] = secList.map((s: any) => ({
       id: String(s.id), masterCategoryId: s.master_category_id ? String(s.master_category_id) : null,
       title: String(s.title ?? "New Section"), scope: String(s.scope ?? ""), collapsed: false,
       items: (itemsBySection.get(String(s.id)) ?? []).map((r: any) => ({
@@ -1583,7 +1600,10 @@ useEffect(() => {
         measurement_overridden: !!r.measurement_overridden,
         line_name: r.line_name ? String(r.line_name) : "",
       }))
-    })));
+    }));
+    // The BOQ on screen now equals what is saved: it is not "dirty" until the user changes something.
+    lastSavedFpRef.current = boqFingerprint(hydrated);
+    setSections(hydrated);
   }
 
   async function loadLatestBoq(projectId: string) {
@@ -1754,6 +1774,8 @@ useEffect(() => {
         if (iErr) throw iErr;
       }
       setStatus(nextStatus);
+      statusRef.current = nextStatus;
+      lastSavedFpRef.current = boqFingerprint(sections); // what was just written; anything edited after this point counts as unsaved
       // The new version (if this save just created one) is now the current draft
       // going forward — subsequent saves on it should resume normal update-in-
       // place behavior, not keep forcing another new version each time.
@@ -1782,13 +1804,19 @@ useEffect(() => {
   const forceNewVersionRef = useRef(false);
   const saveBoqRef = useRef(saveBoq);
   useEffect(() => { saveBoqRef.current = saveBoq; }, [saveBoq]);
-  const hasUnsavedRef = useRef(false);
-  useEffect(() => { hasUnsavedRef.current = true; }, [sections]);
+  // Current status, and the fingerprint (boqFingerprint) of the sections as last loaded or saved. null = no BOQ content has been
+  // loaded or saved yet, so there is nothing to flush.
+  const statusRef = useRef(status);
+  useEffect(() => { statusRef.current = status; }, [status]);
+  const lastSavedFpRef = useRef<string | null>(null);
   useEffect(() => {
     return () => {
-      if (hasUnsavedRef.current && boqIdRef.current !== null) {
-        saveBoqRef.current("draft");
-      }
+      // Only a DRAFT BOQ with real edits since it was last loaded or saved is flushed. An approved BOQ is read-only (it cannot hold
+      // unsaved edits) and must never be saved over, which would turn it back into a draft; an untouched draft needs no rewrite.
+      if (boqIdRef.current === null || statusRef.current !== "draft") return;
+      const saved = lastSavedFpRef.current;
+      if (saved === null || boqFingerprint(sectionsRef.current) === saved) return;
+      saveBoqRef.current("draft");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
