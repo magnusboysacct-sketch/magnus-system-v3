@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Sparkles, Volume2, Square } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { aiChat } from "../../lib/magnusAI";
+import { fetchOwnerDrawsYTD } from "../../lib/ownerDraws";
 
 const FALLBACK_TEXT =
   "AI summary is unavailable right now — the cards below still show today's real numbers.";
@@ -114,7 +115,6 @@ export default function AISummaryBanner() {
           remittanceRes,
           workersRes,
           fieldPaymentsRes,
-          ownerAccountsRes,
           agingRes,
           overdueInvoicesRes,
           overdueBillsRes,
@@ -133,8 +133,6 @@ export default function AISummaryBanner() {
           // Workforce Snapshot's own filter
           supabase.from("workers").select("id").eq("company_id", companyId).eq("status", "active"),
           supabase.from("field_payments").select("total_amount").eq("company_id", companyId).gte("work_date", monday),
-          // Owner Draws' own account lookup
-          supabase.from("chart_of_accounts").select("id, code").eq("company_id", companyId).in("code", ["3440", "3450"]),
           // Receivables & Payables' own RPC
           supabase.rpc("get_ar_ap_aging", { p_company_id: companyId }),
           // Needs Attention's own overdue-invoice count
@@ -159,42 +157,13 @@ export default function AISummaryBanner() {
         const activeWorkers = (workersRes.data || []).length;
         const fieldPaymentsThisWeek = (fieldPaymentsRes.data || []).reduce((s, p: any) => s + (Number(p.total_amount) || 0), 0);
 
-        // Owner draws — the SAME year-scoped 3-query chain
-        // OwnerDrawsCard.tsx uses, not the all-time current_balance
-        // shortcut this originally had. That shortcut showed a real but
-        // different figure (all-time cumulative vs. this-year-only), and
-        // with both numbers visible on the same page at once, that read
-        // as a contradiction rather than an acceptable approximation —
-        // fixed by computing it exactly the same way Card 6 does.
-        const ownerAccounts = ownerAccountsRes.data || [];
-        let enronDraw = 0, veronDraw = 0;
-        if (ownerAccounts.length > 0) {
-          const accountIdToCode = new Map(ownerAccounts.map((a: any) => [a.id, a.code]));
-          const { data: drawTransactions } = await supabase
-            .from("gl_transactions")
-            .select("id")
-            .eq("company_id", companyId)
-            .eq("source_type", "fund_transfer")
-            .eq("status", "posted")
-            .gte("transaction_date", `${todayYear}-01-01`)
-            .lte("transaction_date", `${todayYear}-12-31`);
-          const drawTransactionIds = (drawTransactions || []).map((t: any) => t.id);
-          if (drawTransactionIds.length > 0) {
-            const { data: drawEntries } = await supabase
-              .from("gl_entries")
-              .select("account_id, debit, credit")
-              .in("account_id", Array.from(accountIdToCode.keys()))
-              .in("transaction_id", drawTransactionIds);
-            for (const e of drawEntries || []) {
-              const code = accountIdToCode.get((e as any).account_id);
-              // Equity is credit-normal; a draw is a net debit, so
-              // debit - credit is the direction a draw actually moves in
-              // (same reasoning as OwnerDrawsCard.tsx).
-              const net = (Number((e as any).debit) || 0) - (Number((e as any).credit) || 0);
-              if (code === "3440") enronDraw += net;
-              if (code === "3450") veronDraw += net;
-            }
-          }
+        // Owner draws this year, from the SAME shared function the Owner Draws card uses (src/lib/ownerDraws.ts): one entry per equity
+        // account with real Fund Transfer activity, named by the account's own name. A failure here just leaves it out of the summary.
+        let ownerDraws: Array<{ accountName: string; ytd: number }> = [];
+        try {
+          ownerDraws = (await fetchOwnerDrawsYTD(companyId, todayYear)).map(d => ({ accountName: d.accountName, ytd: d.ytd }));
+        } catch (e) {
+          console.error("AISummaryBanner: owner draws unavailable:", e);
         }
 
         const agingByKind: Record<string, number> = {};
@@ -211,7 +180,8 @@ export default function AISummaryBanner() {
           projects: { active_count: activeProjectCount },
           next_remittance: nextRemittance,
           workforce: { active_workers: activeWorkers, field_payments_this_week: fieldPaymentsThisWeek },
-          owner_draws_ytd: { enron_williams: enronDraw, veron_williams: veronDraw, year: todayYear },
+          // Only present when this company actually has owner draw activity, so the AI is never told about draws that don't exist.
+          ...(ownerDraws.length > 0 ? { owner_draws_ytd: { year: todayYear, by_account: ownerDraws } } : {}),
           receivables_payables: { receivable_total: agingByKind["receivable"] || 0, payable_total: agingByKind["payable"] || 0 },
           needs_attention_count: needsAttentionCount,
           // Explicit, named data gaps — the whole reason this is passed at
