@@ -179,7 +179,7 @@ function generatePayslipHTML(staff: { full_name: string | null; role: string; tr
     .sig-line { border-top: 1px solid #1a1a1a; padding-top: 6px; font-size: 11px; color: #666; margin-top: 40px; }
     @media print { @page { size: A4; margin: 15mm; } }
   </style></head><body>
-  <div class="watermark">${company?.company_name || "MAGNUS BOYS"}</div>
+  <div class="watermark">${company?.company_name || "YOUR COMPANY"}</div>
   <div class="header">
     ${company?.logo_url ? `<img src="${company.logo_url}" class="logo"/>` : ""}
     <div>

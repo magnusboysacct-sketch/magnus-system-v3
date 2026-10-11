@@ -407,7 +407,7 @@ export default function AppLayout() {
           </div>
           {!collapsed && (
             <div>
-              <div className="text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-tight">{co?.company_name || "Magnus"}</div>
+              <div className="text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-tight">{co?.company_name || "Your Company"}</div>
               <div className="text-[8px] text-slate-500 dark:text-slate-600 uppercase tracking-widest leading-tight">Construction ERP</div>
             </div>
           )}

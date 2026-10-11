@@ -25,6 +25,16 @@ const CLAUDE_MODEL = "claude-sonnet-4-5";
 const PROD_ORIGIN = Deno.env.get("APP_URL") || "https://app.magnusboys.com";
 const ALLOWED_ORIGINS = [PROD_ORIGIN, "http://localhost:5173"];
 
+// The caller's own company name, for the AI prompts below: one short line of plain text ("" when unavailable).
+function promptCompanyName(raw: unknown): string {
+  return String(raw ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+function companyIntro(name: string): string {
+  return name
+    ? `${name}, a construction company using the Magnus ERP`
+    : "a Jamaica-based construction company using the Magnus ERP";
+}
+
 function corsHeadersFor(origin: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -196,6 +206,21 @@ Deno.serve(async (req) => {
 
     const { action, imageBase64, data } = body;
 
+    // The prompts below name the caller's real company (read here, server-side, from their own company's settings).
+    let intro = companyIntro("");
+    if (action === "suggest_payment" || action === "chat") {
+      try {
+        const { data: cs } = await supabaseAdmin
+          .from("company_settings")
+          .select("company_name")
+          .eq("company_id", profile.company_id)
+          .maybeSingle();
+        intro = companyIntro(promptCompanyName(cs?.company_name));
+      } catch (_e) {
+        /* keep the generic wording */
+      }
+    }
+
     if (!action) throw new Error("action field is required");
 
     let messages: any[] = [];
@@ -224,7 +249,7 @@ Deno.serve(async (req) => {
     } else if (action === "suggest_payment") {
       messages = [{
         role: "user",
-        content: `You are an AI assistant for Magnus Boys Construction ERP.
+        content: `You are an AI assistant for ${intro}.
 Based on this payment data, give smart suggestions. Return ONLY valid JSON:
 {
   "suggestions": [{"type": "rate", "message": "suggestion text"}],
@@ -240,7 +265,7 @@ Payment data: ${JSON.stringify(data || {})}`,
     } else if (action === "chat") {
       messages = [{
         role: "user",
-        content: `You are the AI secretary for Magnus Boys Construction ERP.
+        content: `You are the AI secretary for ${intro}.
 Be concise and practical. Context: ${JSON.stringify(data?.context || {})}
 
 User: ${data?.message || ""}`,

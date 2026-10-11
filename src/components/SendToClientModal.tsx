@@ -6,6 +6,8 @@
 // client without staff pressing a button here. A failure is shown inline and
 // never opens WhatsApp/mail.
 import React, { useEffect, useRef, useState } from "react";
+import { useCompanySettings } from "../hooks/useCompanySettings";
+import { companyDisplayName } from "../lib/companyName";
 import { Globe, Link2, MessageCircle, Mail } from "lucide-react";
 import { Modal, Btn, Alert, Spinner, cn } from "./ui";
 import {
@@ -54,8 +56,6 @@ interface Props {
 
 type Busy = ShareVia | "enable" | "withdraw" | null;
 export type DetailLevel = "summary" | "full";
-
-const COMPANY_NAME = "Magnus Boys Construction";
 
 function OptionButton({ icon, title, desc, disabled, busy, onClick }: {
   icon: React.ReactNode;
@@ -106,6 +106,8 @@ export default function SendToClientModal({
   currentDetailLevel = null,
   note = null,
 }: Props) {
+  const { settings: companySettings } = useCompanySettings();
+  const companyName = companyDisplayName(companySettings?.company_name);
   const [localClient, setLocalClient] = useState<SendToClientClient>(client);
   const [shared, setShared] = useState<{ at: string | null; via: string | null }>({ at: sharedAt, via: sharedVia });
   const [busy, setBusy] = useState<Busy>(null);
@@ -207,7 +209,7 @@ export default function SendToClientModal({
         else window.open(wa, "_blank");
         setNotice("Now visible in the client's portal. WhatsApp opened.");
       } else {
-        const mail = buildMailtoUrl(localClient.email, `${itemLabel} from ${COMPANY_NAME}`, messageText(url));
+        const mail = buildMailtoUrl(localClient.email, `${itemLabel} from ${companyName}`, messageText(url));
         window.location.href = mail;
         setNotice("Now visible in the client's portal. Your email app should open.");
       }

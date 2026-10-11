@@ -1,6 +1,7 @@
 ﻿// src/pages/FieldPaymentsPage.tsx — Complete rebuild
 // Payment list + detail modal with PDF, WhatsApp, Email, New Advance, Pay Work, Final Payment
 import React, { useEffect, useState } from "react";
+import { companyDisplayName } from "../lib/companyName";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { FieldPaymentForm, generateReceiptHTML } from "../components/FieldPaymentForm";
@@ -285,7 +286,7 @@ export default function FieldPaymentsPage() {
 
 
   function sendWhatsApp(p: Payment) {
-    const msg=`*${company?.company_name||"Magnus Boys Construction"}*\n*${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT":"PAYMENT RECEIPT"}*\n\nReceipt #: ${p.receipt_number||""}\nWorker: ${p.worker_name}\nID: ${p.worker_id_number||"—"}\nDate: ${fmtDate(p.work_date)}\nPayment: ${p.payment_method}\n\n*AMOUNT: ${fmtJMD(p.total_amount)}*\n\nPaid by: ${p.supervisor_name||""} · ${fmtDate(p.created_at)}`;
+    const msg=`*${companyDisplayName(company?.company_name)}*\n*${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT":"PAYMENT RECEIPT"}*\n\nReceipt #: ${p.receipt_number||""}\nWorker: ${p.worker_name}\nID: ${p.worker_id_number||"—"}\nDate: ${fmtDate(p.work_date)}\nPayment: ${p.payment_method}\n\n*AMOUNT: ${fmtJMD(p.total_amount)}*\n\nPaid by: ${p.supervisor_name||""} · ${fmtDate(p.created_at)}`;
     const phone=p.worker_phone?.replace(/\D/g,"");
     window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`,"_blank");
   }
@@ -293,7 +294,7 @@ export default function FieldPaymentsPage() {
   function sendEmail(p: Payment) {
     const subject=encodeURIComponent(`Payment Receipt - ${p.worker_name} - ${p.receipt_number}`);
     const body=encodeURIComponent(
-      `${company?.company_name||"Magnus Boys Construction"}\n\n`+
+      `${companyDisplayName(company?.company_name)}\n\n`+
       `${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT — PAID IN FULL":"PAYMENT RECEIPT"}\n`+
       `Receipt #: ${p.receipt_number}\nDate: ${fmtDate(p.work_date)}\n\n`+
       `Worker: ${p.worker_name}\nID: ${p.worker_id_number||"—"}\n`+

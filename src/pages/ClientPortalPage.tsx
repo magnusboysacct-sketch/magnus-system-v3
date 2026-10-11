@@ -1,5 +1,6 @@
 ﻿// src/pages/ClientPortalPage.tsx … Secure portal with password + PWA
 import React, { useEffect, useState } from "react";
+import { companyDisplayName } from "../lib/companyName";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { logPortalEvent } from "../lib/portalActivity";
@@ -206,7 +207,7 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
       <div style={{textAlign:"center",marginBottom:28}}>
         {company?.logo_url?<img src={company.logo_url} style={{width:52,height:52,borderRadius:12,objectFit:"cover",margin:"0 auto 10px",display:"block"}}/>
           :<div style={{width:52,height:52,borderRadius:12,background:"linear-gradient(135deg,#0891b2,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:18,margin:"0 auto 10px",color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
-        <div style={{fontSize:17,fontWeight:800,color:"#0f172a",marginBottom:3}}>{company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
+        <div style={{fontSize:17,fontWeight:800,color:"#0f172a",marginBottom:3}}>{companyDisplayName(company?.company_name)}</div>
         <div style={{fontSize:12,color:"#64748b"}}>Client Portal</div>
       </div>
       <div style={S.card}>
@@ -284,7 +285,7 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
           )}
         </div>
       </div>
-      <div style={{textAlign:"center",marginTop:16,fontSize:11,color:"#1e293b"}}>🔒 Secured by {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
+      <div style={{textAlign:"center",marginTop:16,fontSize:11,color:"#1e293b"}}>🔒 Secured by {companyDisplayName(company?.company_name)}</div>
     </div>
   </div>;
 }
@@ -872,7 +873,7 @@ export default function ClientPortalPage() {
           {company?.logo_url?<img src={company.logo_url} style={{width:34,height:34,borderRadius:8,objectFit:"cover"}}/>
             :<div style={{width:34,height:34,borderRadius:8,background:"linear-gradient(135deg,#0891b2,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
           <div>
-            <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"}</div>
+            <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{companyDisplayName(company?.company_name)}</div>
             <div style={{fontSize:10,color:"#64748b"}}>Client Portal</div>
           </div>
         </div>
@@ -1157,7 +1158,7 @@ export default function ClientPortalPage() {
     </div>
 
     <div style={{borderTop:"1px solid #e2e8f0",padding:"16px 0",textAlign:"center",fontSize:11,color:"#94a3b8"}}>
-      {company?.company_name||company?.company_name||company?.company_name||"Magnus Boys Construction"} … Secured Portal … Powered by Magnus ERP
+      {companyDisplayName(company?.company_name)} … Secured Portal … Powered by Magnus ERP
     </div>
 
     {lightbox&&<div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.93)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>

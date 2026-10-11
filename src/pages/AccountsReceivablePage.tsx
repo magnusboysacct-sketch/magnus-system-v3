@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { companyDisplayName } from "../lib/companyName";
 import { FileText, Plus, DollarSign, CircleAlert as AlertCircle, CircleCheck as CheckCircle, X, Trash2, Eye, Bell, MessageCircle, Mail, Save, Pencil, Printer } from "lucide-react";
 import {
   fetchClientInvoices,
@@ -553,7 +554,7 @@ export default function AccountsReceivablePage() {
   function buildReminderMessage(invoice: any, client: any) {
     const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD" }).format(n);
     const isOverdue = new Date(invoice.due_date) < new Date();
-    return `Hi ${client.contact_name || client.name},\n\n${isOverdue ? "This is a friendly reminder that" : "This is a reminder that"} Invoice #${invoice.invoice_number} for ${fmt(Number(invoice.balance_due))} ${isOverdue ? "is now overdue" : `is due on ${new Date(invoice.due_date).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}`}.\n\nPlease arrange payment at your earliest convenience. Let us know if you have any questions.\n\nThank you,\n${companySettings?.company_name || "Magnus Boys Construction"}`;
+    return `Hi ${client.contact_name || client.name},\n\n${isOverdue ? "This is a friendly reminder that" : "This is a reminder that"} Invoice #${invoice.invoice_number} for ${fmt(Number(invoice.balance_due))} ${isOverdue ? "is now overdue" : `is due on ${new Date(invoice.due_date).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}`}.\n\nPlease arrange payment at your earliest convenience. Let us know if you have any questions.\n\nThank you,\n${companyDisplayName(companySettings?.company_name)}`;
   }
 
   function sendReminderWhatsApp(invoice: any) {
@@ -1338,7 +1339,7 @@ export default function AccountsReceivablePage() {
           sharedAt={isSharedNow(selectedInvoice.shared_at, selectedInvoice.withdrawn_at)}
           sharedVia={isSharedNow(selectedInvoice.shared_at, selectedInvoice.withdrawn_at) ? (selectedInvoice.shared_via || null) : null}
           messageText={(url) =>
-            `Hello ${sendClient.contact_name || sendClient.name}, your invoice ${selectedInvoice.invoice_number} for ${new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD" }).format(Number(selectedInvoice.total_amount) || 0)} is ready. View it in your client portal: ${url}\n\nMagnus Boys Construction`
+            `Hello ${sendClient.contact_name || sendClient.name}, your invoice ${selectedInvoice.invoice_number} for ${new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD" }).format(Number(selectedInvoice.total_amount) || 0)} is ready. View it in your client portal: ${url}\n\n${companyDisplayName(companySettings?.company_name)}`
           }
           onChanged={refreshSharedState}
         />
@@ -1597,13 +1598,13 @@ Thank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style
 
 We appreciate your business.
 
-${companySettings?.company_name || "Magnus Boys Construction"}`}
+${companyDisplayName(companySettings?.company_name)}`}
             </div>
             <div className="grid grid-cols-2 gap-2">
               {thankYouData.client.phone && (
                 <button
                   onClick={() => {
-                    const msg = `Hi ${thankYouData.client.contact_name||thankYouData.client.name},\n\nThank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(thankYouData.amount)} for Invoice #${thankYouData.invoiceNumber}.\n\nWe appreciate your business.\n\n${companySettings?.company_name||"Magnus Boys Construction"}`;
+                    const msg = `Hi ${thankYouData.client.contact_name||thankYouData.client.name},\n\nThank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(thankYouData.amount)} for Invoice #${thankYouData.invoiceNumber}.\n\nWe appreciate your business.\n\n${companyDisplayName(companySettings?.company_name)}`;
                     const phone = thankYouData.client.phone.replace(/\D/g,"");
                     window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`, "_blank");
                   }}
@@ -1616,7 +1617,7 @@ ${companySettings?.company_name || "Magnus Boys Construction"}`}
                 <button
                   onClick={() => {
                     const subject = encodeURIComponent(`Payment Received - Invoice #${thankYouData.invoiceNumber}`);
-                    const body = encodeURIComponent(`Hi ${thankYouData.client.contact_name||thankYouData.client.name},\n\nThank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(thankYouData.amount)} for Invoice #${thankYouData.invoiceNumber}.\n\nWe appreciate your business.\n\n${companySettings?.company_name||"Magnus Boys Construction"}`);
+                    const body = encodeURIComponent(`Hi ${thankYouData.client.contact_name||thankYouData.client.name},\n\nThank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(thankYouData.amount)} for Invoice #${thankYouData.invoiceNumber}.\n\nWe appreciate your business.\n\n${companyDisplayName(companySettings?.company_name)}`);
                     window.open(`mailto:${thankYouData.client.email}?subject=${subject}&body=${body}`, "_blank");
                   }}
                   className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-blue-300 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-sm font-semibold transition"

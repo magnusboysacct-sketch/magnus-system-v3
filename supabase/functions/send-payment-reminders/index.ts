@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
           .eq("company_id", invoice.company_id)
           .maybeSingle();
 
-        const companyName = company?.company_name || "Magnus Boys Construction";
+        const companyName = company?.company_name || "Your Company";
         const { subject, html, text } = buildReminderEmail(invoice, client, companyName);
 
         await sendEmail(client.email, subject, html, text);

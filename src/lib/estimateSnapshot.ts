@@ -15,6 +15,8 @@
 // deliberately not part of the input type, so an internal remark typed into a
 // line description can never reach the snapshot.
 
+import { companyDisplayName } from "./companyName";
+
 export type EstimateDetailLevel = "summary" | "full";
 
 export interface EstimateSnapshotItemInput {
@@ -150,7 +152,7 @@ export function buildEstimateSnapshot(
     project_name: input.projectName,
     client_name: input.clientName,
     company: {
-      name: company?.company_name || "Magnus Boys Construction",
+      name: companyDisplayName(company?.company_name),
       phone: company?.phone || null,
       email: company?.email || null,
       address: address || null,

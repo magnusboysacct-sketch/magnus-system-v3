@@ -49,7 +49,7 @@ function generatePayslipHTML(payslip: WorkerPayslip, worker: WorkerInfo, company
     .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%) rotate(-35deg); font-size: 80px; font-weight: 900; color: rgba(30,58,95,0.04); white-space: nowrap; pointer-events: none; z-index: 0; text-transform: uppercase; letter-spacing: 8px; }
     @media print { @page { size: A4; margin: 15mm; } }
   </style></head><body>
-  <div class="watermark">${company?.company_name || "MAGNUS BOYS"}</div>
+  <div class="watermark">${company?.company_name || "YOUR COMPANY"}</div>
   <div class="header">
     ${company?.logo_url ? `<img src="${company.logo_url}" class="logo"/>` : ""}
     <div>

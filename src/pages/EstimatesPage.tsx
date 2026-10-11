@@ -1,5 +1,7 @@
 ﻿// src/pages/EstimatesPage.tsx — v2 Rebuild
 import React, { useEffect, useState } from "react";
+import { useCompanySettings } from "../hooks/useCompanySettings";
+import { companyDisplayName } from "../lib/companyName";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
@@ -453,7 +455,7 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
 
     <div class="header">
       <div>
-        ${cs?.logo_url ? `<img src="${cs.logo_url}" class="company-logo"/>` : `<div class="company-name">${cs?.company_name || "Magnus Boys Construction"}</div>`}
+        ${cs?.logo_url ? `<img src="${cs.logo_url}" class="company-logo"/>` : `<div class="company-name">${companyDisplayName(cs?.company_name)}</div>`}
         <div class="company-sub">${cs?.address_line1 || ""}${cs?.parish ? ", " + cs.parish : ""}</div>
         <div class="company-sub">${cs?.phone || ""}${cs?.email ? " · " + cs.email : ""}</div>
       </div>
@@ -538,7 +540,7 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
         2. Prices are in Jamaican Dollars (JMD) and subject to change after validity period.<br/>
         3. A deposit is required before commencement of work.<br/>
         4. Progress payments as per agreed schedule.<br/>
-        5. All materials remain property of ${cs?.company_name || "Magnus Boys Construction"} until full payment is received.<br/>
+        5. All materials remain property of ${companyDisplayName(cs?.company_name)} until full payment is received.<br/>
         6. Contingency allowance covers unforeseen site conditions and price variations.
       </div>
     </div>
@@ -549,13 +551,13 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
         <div class="sig-sub">Signature &amp; Date</div>
       </div>
       <div class="sig-line">
-        <div class="sig-name">Authorized By — ${cs?.company_name || "Magnus Boys Construction"}</div>
+        <div class="sig-name">Authorized By — ${companyDisplayName(cs?.company_name)}</div>
         <div class="sig-sub">Signature &amp; Date</div>
       </div>
     </div>
 
     <div class="footer">
-      ${cs?.company_name || "Magnus Boys Construction"} · ${cs?.phone || ""} · ${cs?.email || ""}<br/>
+      ${companyDisplayName(cs?.company_name)} · ${cs?.phone || ""} · ${cs?.email || ""}<br/>
       This proposal is valid for ${cs?.estimate_validity_days || 30} days from date of issue.
     </div>
 
@@ -960,6 +962,7 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
 export default function EstimatesPage() {
   const { projects, currentProject } = useProjectContext();
   const nav = useNavigate();
+  const { settings: companySettings } = useCompanySettings();
   const [estimates, setEstimates] = useState<EstimateHeader[]>([]);
   const [itemsByEstimate, setItemsByEstimate] = useState<Record<string, EstimateItem[]>>({});
   const [loading, setLoading] = useState(true);
@@ -1359,7 +1362,7 @@ export default function EstimatesPage() {
             detailOptions
             buildSnapshot={buildSendSnapshot}
             messageText={(url) =>
-              `Hello ${sendTarget.client.contact_name || sendTarget.client.name}, your estimate for ${sendTarget.projectName} is ready to view in your client portal: ${url}\n\nMagnus Boys Construction`
+              `Hello ${sendTarget.client.contact_name || sendTarget.client.name}, your estimate for ${sendTarget.projectName} is ready to view in your client portal: ${url}\n\n${companyDisplayName(companySettings?.company_name)}`
             }
             onChanged={() => refreshEstimateShare(est.id)}
           />

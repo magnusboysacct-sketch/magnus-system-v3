@@ -1,5 +1,6 @@
 ﻿// src/pages/FinanceDashboardPage.tsx — Full Finance Department Hub
 import React, { useEffect, useState } from "react";
+import { companyDisplayName } from "../lib/companyName";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
@@ -540,7 +541,7 @@ export default function FinanceDashboardPage() {
         : reportKey === "pnl" ? buildPnLTable()
         : reportKey === "balance_sheet" ? buildBalanceSheetTable()
         : await buildCashFlowTable();
-      const companyName = companySettings?.company_name || "Magnus Boys Construction";
+      const companyName = companyDisplayName(companySettings?.company_name);
       if (format === "csv") downloadReportCSV(companyName, table);
       else downloadReportPDF(companyName, companySettings?.logo_url ?? null, table);
     } catch (e: any) {

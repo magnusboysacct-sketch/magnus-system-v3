@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
         .eq("company_id", client.company_id)
         .maybeSingle();
 
-      const companyName = company?.company_name || "Magnus Boys Construction";
+      const companyName = company?.company_name || "Your Company";
       const companyLogo = company?.logo_url || "";
       const companyTagline = company?.tagline || "Secure. Simple. Built for Construction.";
       const companyWebsite = company?.website || APP_URL;

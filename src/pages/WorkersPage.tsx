@@ -1,5 +1,6 @@
 ﻿// src/pages/WorkersPage.tsx
 import React, { useEffect, useState, useRef } from "react";
+import { companyDisplayName } from "../lib/companyName";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { useProjectContext } from "../context/ProjectContext";
@@ -1210,7 +1211,7 @@ export default function WorkersPage() {
       {idCardWorker && (
         <WorkerIDCard
           workerId={idCardWorker.id}
-          companyName={companySettings?.company_name || "Magnus Boys Construction"}
+          companyName={companyDisplayName(companySettings?.company_name)}
           onClose={() => setIdCardWorker(null)}
         />
       )}

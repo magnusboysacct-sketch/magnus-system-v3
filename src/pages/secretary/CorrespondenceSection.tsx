@@ -1,5 +1,6 @@
 // src/pages/secretary/CorrespondenceSection.tsx
 import React, { useEffect, useMemo, useState } from "react";
+import { companyDisplayName } from "../../lib/companyName";
 import { Plus, FileText, Send, Search, Sparkles, CheckCircle2, XCircle, Printer, Eye, Pencil, Trash2, Mail } from "lucide-react";
 import { Card, CardHeader, Btn, Badge, Table, Th, Tr, Td, Modal, Field, Input, Select, Textarea, Alert, Spinner, Empty } from "../../components/ui";
 import { supabase } from "../../lib/supabase";
@@ -213,7 +214,7 @@ function letterHtml(body: string, settings: CompanySettings | null) {
     .map(p => `<p style="margin:0 0 14px;white-space:pre-wrap;">${escapeHtml(p)}</p>`)
     .join("");
 
-  const companyName = settings?.company_name || "Magnus Boys Construction";
+  const companyName = companyDisplayName(settings?.company_name);
   const opacity = settings?.watermark_opacity ?? 0.15;
   const size = settings?.watermark_size ?? 25;
 
@@ -259,7 +260,7 @@ export default function CorrespondenceSection({
   // the ad-hoc company_settings SELECT this component used to run just for
   // company_name (removed from init() below, no longer needed here).
   const { settings } = useCompanySettings();
-  const companyName = settings?.company_name || "Magnus Boys Construction";
+  const companyName = companyDisplayName(settings?.company_name);
 
   const [companyId, setCompanyId] = useState<string>("");
 

@@ -10,6 +10,7 @@
 // key and only ever returns a session token — see
 // supabase/functions/client-portal-login/index.ts.
 import React, { useEffect, useState } from "react";
+import { companyDisplayName } from "../lib/companyName";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { functionErrorMessage } from "../lib/portalErrors";
@@ -128,7 +129,7 @@ export default function ClientLoginPage() {
           {company?.logo_url && (
             <img src={company.logo_url} className="w-16 h-16 rounded-full object-cover mx-auto mb-3 border-2 border-slate-200"/>
           )}
-          <div className="text-lg font-bold text-slate-900">{company?.company_name || "Magnus Boys Construction"}</div>
+          <div className="text-lg font-bold text-slate-900">{companyDisplayName(company?.company_name)}</div>
           <div className="text-xs text-slate-500 mt-1">Client Portal</div>
         </div>
 

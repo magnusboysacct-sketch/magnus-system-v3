@@ -1,6 +1,7 @@
 ﻿// src/pages/ContractsPage.tsx — Full Contracts & Proposals Module
 // @ts-ignore
 import jsPDF from "jspdf";
+import { companyDisplayName, aiCompanyName } from "../lib/companyName";
 import html2canvas from "html2canvas";
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
@@ -722,7 +723,7 @@ export default function ContractsPage() {
       const project = projects.find(p => p.id === form.project_id);
       const client = clients.find(c => c.id === form.client_id);
       const text = await magnusAI.chat(
-        `You are a Jamaica construction contract specialist for Magnus Boys Construction.
+        `You are a Jamaica construction contract specialist for ${aiCompanyName(company?.company_name)}.
 Write a professional Scope of Work for this construction contract:
 
 Contract: ${form.contract_name}
@@ -740,7 +741,7 @@ Write a detailed, professional scope of work that:
 5. References Jamaica building standards where applicable
 
 Format it clearly with numbered sections. Be specific and professional.
-This document represents Magnus Boys Construction to the client.`
+This document represents ${(company?.company_name || "").trim() || "the contractor"} to the client.`
       );
       setForm(f => ({ ...f, scope_of_work: String(text).trim() }));
       showToast("Scope of work generated!");
@@ -1278,7 +1279,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
           sharedAt={isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at)}
           sharedVia={isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at) ? (viewingContract.shared_via || null) : null}
           messageText={(url) =>
-            `Hello ${sendClient.contact_name || sendClient.name}, your contract ${viewingContract.contract_number} - ${viewingContract.contract_name} is ready to review and sign in your client portal: ${url}\n\nMagnus Boys Construction`
+            `Hello ${sendClient.contact_name || sendClient.name}, your contract ${viewingContract.contract_number} - ${viewingContract.contract_name} is ready to review and sign in your client portal: ${url}\n\n${companyDisplayName(company?.company_name)}`
           }
           canWithdraw={!viewingContract.client_signed_at}
           note={viewingContract.contractor_signed_at ? null : "You haven't signed this contract yet. The client will see it but can only sign after you do."}

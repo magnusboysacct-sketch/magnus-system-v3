@@ -1,5 +1,6 @@
 // src/components/WorkerIDCard.tsx — Navy/gold portrait badge design, front + back, side-by-side print with cut guides
 import React, { useState, useEffect } from "react";
+import { companyDisplayName } from "../lib/companyName";
 import QRCode from "qrcode";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
@@ -72,7 +73,7 @@ const CARD_W = 213, CARD_H = 338;
 
 export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }: Props) {
   const { settings: companySettings } = useCompanySettings();
-  const companyName = propCompanyName || companySettings?.company_name || "Magnus Boys Construction";
+  const companyName = companyDisplayName(propCompanyName || companySettings?.company_name);
   const [worker, setWorker] = useState<Worker | null>(null);
   const [loading, setLoading] = useState(true);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");

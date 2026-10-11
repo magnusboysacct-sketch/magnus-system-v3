@@ -1,5 +1,7 @@
 ﻿// src/pages/ClientsPage.tsx
 import React, { useEffect, useState, useRef } from "react";
+import { useCompanySettings } from "../hooks/useCompanySettings";
+import { companyDisplayName } from "../lib/companyName";
 import { useNavigate, useNavigate as useNav } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
@@ -188,6 +190,7 @@ function ClientCard({ client, unreadCount, onEdit, onDelete, onPortalToggle, onR
 
 export default function ClientsPage() {
   const nav = useNavigate();
+  const { settings: companySettings } = useCompanySettings();
   const { userRole } = useProjectContext();
   const canDelete = userRole === "director";
   const [clients, setClients] = useState<Client[]>([]);
@@ -747,11 +750,11 @@ export default function ClientsPage() {
                 className={`flex-1 py-2.5 text-white text-sm font-semibold rounded-xl transition-all ${copied ? "bg-green-600" : "bg-blue-600 hover:bg-blue-700"}`}>
                 {copied ? "✓ Copied!" : "📋 Copy Link"}
               </button>
-              <a href={portalNotice!.phone ? `https://wa.me/${portalNotice!.phone.replace(/\D/g,"")}?text=${encodeURIComponent("Hello " + (portalNotice!.name||"") + ",\n\nYour project portal is ready!\n\n" + portalNotice!.url + "\n\nSign in with your email: " + (portalNotice!.email||"your email") + "\n\nFirst time? You will be asked to create a password.\n\nMagnus Boys Construction")}` : `https://wa.me/?text=${encodeURIComponent("View your project portal: " + portalNotice!.url)}`} target="_blank" rel="noreferrer"
+              <a href={portalNotice!.phone ? `https://wa.me/${portalNotice!.phone.replace(/\D/g,"")}?text=${encodeURIComponent("Hello " + (portalNotice!.name||"") + ",\n\nYour project portal is ready!\n\n" + portalNotice!.url + "\n\nSign in with your email: " + (portalNotice!.email||"your email") + "\n\nFirst time? You will be asked to create a password.\n\n" + companyDisplayName(companySettings?.company_name))}` : `https://wa.me/?text=${encodeURIComponent("View your project portal: " + portalNotice!.url)}`} target="_blank" rel="noreferrer"
                 className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-colors text-center no-underline flex items-center justify-center">
                 💬 WhatsApp
               </a>
-              <a href={`mailto:${portalNotice!.email||""}?subject=${encodeURIComponent("Your Project Portal - " + portalNotice!.name)}&body=${encodeURIComponent("Hello " + portalNotice!.name + ",\n\nYour client portal is ready.\n\nVisit: " + portalNotice!.url + "\n\nSign in with your email: " + (portalNotice!.email||"your registered email") + "\n\nIf this is your first visit, you will be prompted to create a password.\n\nBest regards,\nMagnus Boys Construction")}`}
+              <a href={`mailto:${portalNotice!.email||""}?subject=${encodeURIComponent("Your Project Portal - " + portalNotice!.name)}&body=${encodeURIComponent("Hello " + portalNotice!.name + ",\n\nYour client portal is ready.\n\nVisit: " + portalNotice!.url + "\n\nSign in with your email: " + (portalNotice!.email||"your registered email") + "\n\nIf this is your first visit, you will be prompted to create a password.\n\nBest regards,\n" + companyDisplayName(companySettings?.company_name))}`}
                 className="flex-1 py-2.5 bg-slate-600 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl transition-colors text-center no-underline flex items-center justify-center">
                 ✉️ Email
               </a>

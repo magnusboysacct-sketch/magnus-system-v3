@@ -152,7 +152,7 @@ Deno.serve(async (req) => {
       .eq("company_id", callerProfile.company_id)
       .maybeSingle();
 
-    const companyName = company?.company_name || "Magnus Boys Construction";
+    const companyName = company?.company_name || "Your Company";
     const period = `${MONTH_NAMES[run.period_month - 1]} ${run.period_year}`;
     const html = buildPayslipHTML(staff, run, period, company);
     const text = `Hi ${staff.full_name || ""},\n\nYour payslip for ${period} is ready.\n\nGross Salary: JMD ${fmtJMD(run.gross_pay)}\nTotal Deductions: JMD ${fmtJMD(run.total_employee_deductions)}\nNet Pay: JMD ${fmtJMD(run.net_pay)}\n\n${companyName}`;

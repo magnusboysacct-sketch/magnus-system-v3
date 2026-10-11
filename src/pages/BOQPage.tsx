@@ -1,5 +1,7 @@
 ﻿// src/pages/BOQPage.tsx ? v3 Rebuild: staff-friendly, search-first picker, clear UX
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useCompanySettings } from "../hooks/useCompanySettings";
+import { aiCompanyName } from "../lib/companyName";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Plus, Trash2, ChevronRight, ChevronDown, Save, CheckCircle,
@@ -1204,6 +1206,7 @@ export default function BOQPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   // "Generate Invoice" (finance users only): dialog state. See src/lib/boqToInvoice.ts.
   const { canAccessFullFinance } = useFinanceAccess();
+  const { settings: companySettings } = useCompanySettings(); // the company's own name, for the AI assistant's prompt
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [invUnits, setInvUnits] = useState("1");
   const [invMarkup, setInvMarkup] = useState("0");
@@ -2568,7 +2571,7 @@ Respond in plain English, section by section. Keep it brief and actionable. Max 
     try {
       const boqContext = `BOQ has ${sections.length} sections, ${totalItems} items, total ${fmtMoney(totals.subtotal)}.`;
       const text = await magnusAI.chat(
-        `You are a Jamaica construction BOQ assistant for Magnus Boys Construction. 
+        `You are a Jamaica construction BOQ assistant for ${aiCompanyName(companySettings?.company_name)}. 
 ${boqContext}
 User asks: "${message}"
 Answer briefly and practically. If they ask to add items, explain they need to use the Add Section / Find Item buttons.`

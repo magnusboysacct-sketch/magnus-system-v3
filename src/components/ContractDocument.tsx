@@ -9,6 +9,7 @@
 //   signRecord  optional electronic signature record {signedAt, ip, device} (staff only)
 // The contract's internal `notes` field is deliberately never read here.
 import React from "react";
+import { companyDisplayName } from "../lib/companyName";
 import { openPrintWindow } from "../lib/printUtils";
 import type { SignatureSrcs } from "../lib/contractSignatures";
 import { formatContractDate, formatJamaicaDateTimeFull } from "../lib/contractDocument";
@@ -140,7 +141,7 @@ export default function ContractDocument({ contract, schedule, company, signReco
                 <img src={company.logo_url} alt="logo" style={{width:80,height:80,borderRadius:12,objectFit:"cover",marginBottom:20}}/>
               )}
               <div style={{fontSize:13,fontWeight:700,letterSpacing:4,textTransform:"uppercase",color:"#6b7280",marginBottom:8}}>
-                {company?.company_name || company?.company_name||"Magnus Boys Construction"}
+                {companyDisplayName(company?.company_name)}
               </div>
               <div style={{fontSize:11,color:"#9ca3af",marginBottom:40}}>
                 {company?.address_line1 || ""} {company?.city || ""} · {company?.phone || ""} · {company?.email || ""}
@@ -278,7 +279,7 @@ export default function ContractDocument({ contract, schedule, company, signReco
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:60}}>
                   <div>
                     <div style={{fontWeight:700,fontSize:13,marginBottom:4}}>CONTRACTOR</div>
-                    <div style={{fontSize:12,color:"#6b7280",marginBottom:32}}>{company?.company_name || company?.company_name||"Magnus Boys Construction"}</div>
+                    <div style={{fontSize:12,color:"#6b7280",marginBottom:32}}>{companyDisplayName(company?.company_name)}</div>
                     {contract.contractor_signed_at ? (
                       <>
                         {contractorSrc && <img data-signature="contractor" src={contractorSrc} alt="Contractor signature" style={{maxHeight:60,maxWidth:200,marginBottom:6,objectFit:"contain"}}/>}
@@ -329,7 +330,7 @@ export default function ContractDocument({ contract, schedule, company, signReco
 
               {/* Footer */}
               <div style={{borderTop:"2px solid #1a1a1a",paddingTop:16,textAlign:"center",fontSize:11,color:"#9ca3af"}}>
-                {company?.company_name || company?.company_name||"Magnus Boys Construction"} · {company?.phone || ""} · {company?.email || ""} · Powered by Magnus ERP
+                {companyDisplayName(company?.company_name)} · {company?.phone || ""} · {company?.email || ""} · Powered by Magnus ERP
               </div>
             </div>
           </div>

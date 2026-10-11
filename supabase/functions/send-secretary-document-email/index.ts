@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
       .eq("company_id", callerProfile.company_id)
       .maybeSingle();
 
-    const companyName = company?.company_name || "Magnus Boys Construction";
+    const companyName = company?.company_name || "Your Company";
     const typeLabel = DOC_TYPE_LABEL[doc.document_type] || "Letter";
     const html = buildLetterEmailHTML(doc, company);
     const text = `${doc.title}\n\n${doc.content || ""}\n\n${companyName}`;
