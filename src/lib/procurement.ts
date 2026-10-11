@@ -46,7 +46,8 @@ export interface ProcurementHeaderWithItems extends ProcurementHeader {
   itemCount: number;
 }
 
-export async function generateProcurementFromBOQ(projectId: string) {
+// boqId (optional) names the exact BOQ version to generate from. Without it the project's most recently updated BOQ is used, as before.
+export async function generateProcurementFromBOQ(projectId: string, boqId?: string) {
   console.log("=".repeat(80));
   console.log("[Procurement Generation] STARTING");
   console.log("[Procurement Generation] Project ID:", projectId);
@@ -64,13 +65,10 @@ export async function generateProcurementFromBOQ(projectId: string) {
 
     // Step 1: Fetch BOQ header
     console.log("\n[Procurement Generation] Step 1: Fetching BOQ header...");
-    const { data: boqHeader, error: headerError } = await supabase
-      .from("boq_headers")
-      .select("id, status, version")
-      .eq("project_id", projectId)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const headerQuery = supabase.from("boq_headers").select("id, status, version").eq("project_id", projectId);
+    const { data: boqHeader, error: headerError } = boqId
+      ? await headerQuery.eq("id", boqId).maybeSingle()
+      : await headerQuery.order("updated_at", { ascending: false }).limit(1).maybeSingle();
 
     if (headerError) {
       console.error("[Procurement Generation] ERROR fetching BOQ header:", headerError);

@@ -2438,12 +2438,21 @@ function addAssembly(sectionId: string, assemblyId: string, qtyStr: string, dims
     const effectiveProjectId = routeProjectId || activeProjectId;
     if (!effectiveProjectId) { setPersistError("Select a project first"); return; }
     if (!boqId) { setPersistError("Save the BOQ before generating procurement"); return; }
-    if (!window.confirm("Save BOQ and regenerate procurement list. Continue?")) return;
+    // An approved BOQ is read-only, so it has nothing unsaved - and saving it "as a draft" would turn it back into a draft. It is
+    // therefore never re-saved here: procurement is generated straight from its saved rows. A draft is saved first, because it may
+    // hold edits and the generator reads the saved rows.
+    const procFromApproved = status === "approved";
+    if (!window.confirm(procFromApproved
+      ? "Regenerate the procurement list from this approved BOQ? The BOQ itself is not changed. Continue?"
+      : "Save BOQ and regenerate procurement list. Continue?")) return;
     setPersistLoading(true); setPersistError(null);
     try {
-      await saveBoq("draft");
-      await loadLatestBoq(effectiveProjectId);
-      const result = await generateProcurementFromBOQ(effectiveProjectId);
+      if (!procFromApproved) {
+        await saveBoq("draft");
+        await loadLatestBoq(effectiveProjectId);
+      }
+      // The BOQ on screen is named explicitly: without a save to make it the most recently updated one, "latest" could be another version.
+      const result = await generateProcurementFromBOQ(effectiveProjectId, boqId);
       if (result.success) {
         const procId = (result as any).procurementId as string | undefined;
         if (procId) { await supabase.rpc("sync_procurement_committed_to_cost_events", { p_procurement_id: procId }); setTimeout(() => nav(`/projects/${effectiveProjectId}/procurement?view=document&doc=${procId}`), 500); }
