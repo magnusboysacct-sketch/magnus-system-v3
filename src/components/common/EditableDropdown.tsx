@@ -11,6 +11,8 @@ interface EditableDropdownProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  // Show the delete (X) button on every option. Default true; a list whose options can't meaningfully be deleted turns it off.
+  showDelete?: boolean;
 }
 
 // The open panel is portaled into document.body instead of rendering as a
@@ -30,6 +32,7 @@ export default function EditableDropdown({
   placeholder = "Select or add...",
   disabled = false,
   className = "",
+  showDelete = true,
 }: EditableDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -157,12 +160,14 @@ export default function EditableDropdown({
             <span className="text-sm flex-1" onClick={() => { onChange(option); setIsOpen(false); setSearch(""); }}>
               {option}
             </span>
+            {showDelete && (
             <button
               type="button"
               onClick={(e) => handleDelete(option, e)}
               className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-500/20 text-slate-300 hover:text-red-500 transition-colors ml-2">
               <X size={12}/>
             </button>
+            )}
           </div>
         ))}
       </div>

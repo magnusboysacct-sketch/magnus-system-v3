@@ -18,6 +18,9 @@ export interface ClientInvoice {
   status: "draft" | "sent" | "partial" | "paid" | "overdue" | "cancelled";
   notes?: string | null;
   terms?: string | null;
+  // Optional "custom name" (e.g. label "Beneficiary Name", value "Mary Johnson"); shown only when both are set.
+  custom_name_label?: string | null;
+  custom_name_value?: string | null;
   sent_date?: string | null;
   paid_date?: string | null;
   created_at?: string;

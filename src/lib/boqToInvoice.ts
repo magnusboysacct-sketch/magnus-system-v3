@@ -20,6 +20,7 @@
 import { supabase } from "./supabase";
 import { createClientInvoice, createInvoiceLineItems, updateInvoiceAfterPayment, type ClientPayment } from "./finance";
 import { formatContractDate } from "./contractDocument";
+import { hasCustomName, isMissingCustomNameColumn, normalizeCustomName } from "./customName";
 
 export type BoqInvoiceLineMode = "per-section" | "itemized";
 
@@ -236,12 +237,17 @@ export async function generateInvoiceFromBOQ(projectId: string, boqId: string, o
     if (!client) return { success: false, error: "The project's client could not be found. Check the client on the Projects page." };
 
     // 2. The BOQ: must belong to the project and be approved.
-    const { data: boqHeader, error: headerError } = await supabase
+    // The BOQ's optional custom name is read with the header (and left out if the database doesn't have those columns yet).
+    let headerRes: { data: any; error: any } = await supabase
       .from("boq_headers")
-      .select("id, project_id, status, version")
+      .select("id, project_id, status, version, custom_name_label, custom_name_value")
       .eq("id", boqId)
       .eq("project_id", projectId)
       .maybeSingle();
+    if (headerRes.error && isMissingCustomNameColumn(headerRes.error)) {
+      headerRes = await supabase.from("boq_headers").select("id, project_id, status, version").eq("id", boqId).eq("project_id", projectId).maybeSingle();
+    }
+    const { data: boqHeader, error: headerError } = headerRes;
     if (headerError) return { success: false, error: "Failed to fetch BOQ: " + headerError.message };
     if (!boqHeader) return { success: false, error: "BOQ not found or access denied" };
     if (boqHeader.status !== "approved") return { success: false, error: "BOQ must be approved before generating an invoice" };
@@ -329,6 +335,10 @@ export async function generateInvoiceFromBOQ(projectId: string, boqId: string, o
       status: "draft",
       notes: noteBits.join(" - "),
       terms: options.terms?.trim() || null,
+      // Carried over from the BOQ only when it has a complete custom name (label AND value).
+      ...(hasCustomName(boqHeader)
+        ? (() => { const n = normalizeCustomName(boqHeader.custom_name_label, boqHeader.custom_name_value); return { custom_name_label: n.label, custom_name_value: n.value }; })()
+        : {}),
     });
 
     try {

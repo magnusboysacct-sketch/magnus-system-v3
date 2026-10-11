@@ -22,6 +22,8 @@ import { useProjectContext } from "../context/ProjectContext";
 import { Send } from "lucide-react";
 import SendToClientModal from "../components/SendToClientModal";
 import { printInvoiceFresh } from "../components/InvoiceDocument";
+import CustomNameField from "../components/CustomNameField";
+import { hasCustomName, normalizeCustomName } from "../lib/customName";
 import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
 import { SeenBadge, SeenDetail } from "../components/PortalSeen";
 import { useItemViews } from "../lib/useItemViews";
@@ -88,6 +90,8 @@ export default function AccountsReceivablePage() {
     tax_rate: "0",
     notes: "",
     terms: "Net 30",
+    custom_name_label: "",
+    custom_name_value: "",
   });
 
   const [lineItems, setLineItems] = useState<LineItem[]>([
@@ -111,6 +115,8 @@ export default function AccountsReceivablePage() {
     terms: "",
     status: "",
     project_id: "",
+    custom_name_label: "",
+    custom_name_value: "",
   });
 
   useEffect(() => {
@@ -240,6 +246,8 @@ export default function AccountsReceivablePage() {
       tax_rate: "0",
       notes: "",
       terms: "Net 30",
+      custom_name_label: "",
+      custom_name_value: "",
     });
     setLineItems([{ description: "", quantity: "1", unit: "ea", rate: "", amount: 0 }]);
     setShowModal(true);
@@ -299,6 +307,8 @@ export default function AccountsReceivablePage() {
         status: "draft",
         notes: formData.notes,
         terms: formData.terms,
+        // Only a complete custom name (label AND value) is saved; left out otherwise.
+        ...(() => { const n = normalizeCustomName(formData.custom_name_label, formData.custom_name_value); return n.label && n.value ? { custom_name_label: n.label, custom_name_value: n.value } : {}; })(),
       });
 
       // Create line items
@@ -511,6 +521,8 @@ export default function AccountsReceivablePage() {
       terms: invoice.terms || "",
       status: invoice.status || "draft",
       project_id: invoice.project_id || "",
+      custom_name_label: (invoice as any).custom_name_label || "",
+      custom_name_value: (invoice as any).custom_name_value || "",
     });
   }
 
@@ -525,6 +537,11 @@ export default function AccountsReceivablePage() {
         terms: editForm.terms.trim() || null,
         status: editForm.status as ClientInvoice["status"],
         project_id: editForm.project_id || null,
+        // Written when the invoice already has the custom name columns (so clearing works) or a name was entered; otherwise left out.
+        ...(() => {
+          const n = normalizeCustomName(editForm.custom_name_label, editForm.custom_name_value);
+          return "custom_name_label" in (editingInvoice as any) || n.label || n.value ? { custom_name_label: n.label, custom_name_value: n.value } : {};
+        })(),
       });
       await loadInvoices();
       setEditingInvoice(null);
@@ -935,6 +952,16 @@ export default function AccountsReceivablePage() {
                 </select>
               </div>
 
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Custom Name (Optional)</label>
+                <CustomNameField
+                  label={formData.custom_name_label}
+                  value={formData.custom_name_value}
+                  onLabelChange={(l) => setFormData(f => ({ ...f, custom_name_label: l }))}
+                  onValueChange={(v) => setFormData(f => ({ ...f, custom_name_value: v }))}
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Invoice Date *</label>
@@ -1129,6 +1156,12 @@ export default function AccountsReceivablePage() {
                 <div className="text-sm text-slate-500 dark:text-slate-400">Project</div>
                 <div className="font-medium text-slate-900 dark:text-slate-100">{selectedInvoice.projects?.name || "-"}</div>
               </div>
+              {hasCustomName(selectedInvoice) && (
+                <div className="col-span-2">
+                  <div className="text-sm text-slate-500 dark:text-slate-400">{String(selectedInvoice.custom_name_label).trim()}</div>
+                  <div className="font-medium text-slate-900 dark:text-slate-100">{String(selectedInvoice.custom_name_value).trim()}</div>
+                </div>
+              )}
               <div>
                 <div className="text-sm text-slate-500 dark:text-slate-400">Invoice Date</div>
                 <div className="font-medium text-slate-900 dark:text-slate-100">{selectedInvoice.invoice_date}</div>
@@ -1693,6 +1726,15 @@ ${companySettings?.company_name || "Magnus Boys Construction"}`}
                       </option>
                     ))}
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Custom Name</label>
+                <CustomNameField
+                  label={editForm.custom_name_label}
+                  value={editForm.custom_name_value}
+                  onLabelChange={(l) => setEditForm(f => ({ ...f, custom_name_label: l }))}
+                  onValueChange={(v) => setEditForm(f => ({ ...f, custom_name_value: v }))}
+                />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Tax Rate (%)</label>

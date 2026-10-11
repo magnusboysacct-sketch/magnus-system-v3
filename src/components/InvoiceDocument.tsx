@@ -68,6 +68,9 @@ export default function InvoiceDocument({ invoice, lineItems, payments, client, 
   const showTax = Number(invoice?.tax_amount || 0) > 0 || Number(invoice?.tax_rate || 0) > 0;
   const items = Array.isArray(lineItems) ? lineItems : [];
   const pays = Array.isArray(payments) ? payments : [];
+  // The optional custom name ("Beneficiary Name: Mary Johnson") prints only when BOTH the label and the name are filled in.
+  const customNameLabel = String(invoice?.custom_name_label ?? "").trim();
+  const customNameValue = String(invoice?.custom_name_value ?? "").trim();
   const sigName = signature?.signerName || "";
   const sigTitle = signature?.signerTitle || "";
 
@@ -103,6 +106,9 @@ export default function InvoiceDocument({ invoice, lineItems, payments, client, 
             {client?.email && <div style={{ fontSize: 12, color: "#4b5563" }}>{client.email}</div>}
             {client?.phone && <div style={{ fontSize: 12, color: "#4b5563" }}>{client.phone}</div>}
             {projectName && <div style={{ fontSize: 12, marginTop: 8 }}><span style={{ color: "#9ca3af" }}>Project: </span>{projectName}</div>}
+            {customNameLabel && customNameValue && (
+              <div style={{ fontSize: 12, marginTop: projectName ? 2 : 8 }}><span style={{ color: "#9ca3af" }}>{customNameLabel}: </span>{customNameValue}</div>
+            )}
           </div>
           <div style={{ minWidth: 220 }}>
             <table>
