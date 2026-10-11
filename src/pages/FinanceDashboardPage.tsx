@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { openPrintWindow } from "../lib/printUtils";
+import { AddAccountModal } from "../components/AddAccountModal";
 
 type Tab = "overview" | "accounts" | "ledger" | "reports";
 
@@ -172,6 +173,7 @@ export default function FinanceDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [showAddAccount, setShowAddAccount] = useState(false);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [balances, setBalances] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -740,10 +742,18 @@ export default function FinanceDashboardPage() {
             <div className="flex items-center justify-between">
               <div className="text-xs text-slate-600">{accounts.length} active accounts across {Object.keys(byType).length} types</div>
               <Btn variant="primary" size="sm" icon={<Plus size={13}/>}
-                onClick={() => nav("/settings")}>
+                onClick={() => setShowAddAccount(true)}>
                 Add Account
               </Btn>
             </div>
+
+            {accounts.length === 0 && (
+              <Card>
+                <Empty icon={<BookOpen size={18}/>} title="No accounts yet"
+                  body="Your Chart of Accounts is empty. Add your first account to start recording transactions."
+                  action={<Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => setShowAddAccount(true)}>Add Account</Btn>}/>
+              </Card>
+            )}
 
             {/* By type */}
             {(["asset","liability","equity","revenue","expense"] as const).map(type => {
@@ -766,8 +776,8 @@ export default function FinanceDashboardPage() {
                         <Tr key={a.id}>
                           <Td><span className="font-mono text-[10px] text-slate-400">{a.code}</span></Td>
                           <Td>
-                            <span className="font-medium text-slate-800 dark:text-slate-200" style={{ paddingLeft: `${(a.level - 1) * 16}px` }}>
-                              {a.level > 1 ? "↳ " : ""}{a.name}
+                            <span className="font-medium text-slate-800 dark:text-slate-200" style={{ paddingLeft: `${((a.level ?? 1) - 1) * 16}px` }}>
+                              {(a.level ?? 1) > 1 ? "↳ " : ""}{a.name}
                             </span>
                           </Td>
                           <Td muted className="capitalize">{a.subtype?.replace(/_/g," ") || "—"}</Td>
@@ -784,6 +794,9 @@ export default function FinanceDashboardPage() {
                 </Card>
               );
             })}
+
+            <AddAccountModal open={showAddAccount} onClose={() => setShowAddAccount(false)} onCreated={() => { void loadAll(); }}
+              accounts={accounts} companyId={companyId}/>
           </>
         )}
 
