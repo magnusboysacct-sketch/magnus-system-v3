@@ -3,15 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#f8fafc" />
+    <meta name="theme-color" content="#1b2a6b" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="MB Field" />
-    <link rel="icon" type="image/svg+xml" href="/app-logo.svg" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="apple-mobile-web-app-title" content="Magnus Boys" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180x180.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Magnus Boys Construction ERP</title>
+    <title>Magnus System</title>
+    <meta name="description" content="Construction management ERP for Jamaica and the Caribbean" />
     <style>
       #initial-splash {
         position: fixed; inset: 0; background: linear-gradient(135deg, #f8fafc, #eff6ff); z-index: 9999;
@@ -19,8 +21,7 @@
         font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       }
       #initial-splash img {
-        width: 160px; height: 160px; object-fit: contain; border-radius: 24px;
-        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
+        width: 160px; height: 160px; object-fit: contain;
         margin-bottom: 24px;
       }
       #initial-splash h1 { color: #1e293b; font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
@@ -44,8 +45,8 @@
   <body style="background-color: #f8fafc; margin: 0;">
     <div id="root" style="background-color: #f8fafc; min-height: 100dvh;"></div>
     <div id="initial-splash">
-      <img src="/app-logo-round.svg" alt="Magnus Boys Construction"/>
-      <h1>Magnus Boys Construction</h1>
+      <img src="/icon-512x512.png" alt="Magnus Boys Construction"/>
+      <h1>Magnus System</h1>
       <p>Construction ERP</p>
       <div class="loading-track"><div class="loading-bar"></div></div>
     </div>
