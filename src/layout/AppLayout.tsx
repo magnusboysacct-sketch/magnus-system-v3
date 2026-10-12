@@ -401,11 +401,16 @@ export default function AppLayout() {
         </button>
         {/* Logo */}
         <div className={cn("flex items-center h-12 border-b border-slate-200 dark:border-white/[0.06] flex-shrink-0", collapsed ? "justify-center px-0" : "gap-2.5 px-4")}>
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
-              {co?.logo_url && <img src={co.logo_url} alt="logo" className="w-full h-full object-cover" />}
-            <Building2 size={14} className="text-white"/>
-          </div>
-          {!collapsed && (
+          {co?.logo_url ? (
+            // A real logo stands alone (the company name and tagline are hidden): natural proportions, capped at 28px high, width free up to the row.
+            // Collapsed rail is 56px wide; on mobile the close button sits over the right edge, so leave room for it there.
+            <img src={co.logo_url} alt="logo" className={cn("h-auto w-auto max-h-7 object-contain flex-shrink-0", collapsed ? "max-w-[48px]" : "max-w-[calc(100%-2rem)] md:max-w-full")} />
+          ) : (
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              <Building2 size={14} className="text-white"/>
+            </div>
+          )}
+          {!collapsed && !co?.logo_url && (
             <div>
               <div className="text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight leading-tight">{co?.company_name || "Your Company"}</div>
               <div className="text-[8px] text-slate-500 dark:text-slate-600 uppercase tracking-widest leading-tight">Construction ERP</div>

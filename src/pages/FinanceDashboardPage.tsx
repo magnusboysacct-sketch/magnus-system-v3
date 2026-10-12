@@ -144,7 +144,7 @@ function downloadReportCSV(companyName: string, table: ReportTable) {
 
 function downloadReportPDF(companyName: string, logoUrl: string | null, table: ReportTable) {
   const logoImg = logoUrl
-    ? `<img src="${logoUrl}" alt="logo" style="width:64px;height:64px;border-radius:10px;object-fit:cover;display:block;margin:0 auto 14px"/>`
+    ? `<img src="${logoUrl}" alt="logo" style="display:block;width:auto;height:auto;max-height:90px;max-width:260px;object-fit:contain;margin:0 auto 14px"/>`
     : "";
   const headHtml = table.columns
     .map((c, i) => `<th style="padding:8px 10px;text-align:${i === table.columns.length - 1 ? "right" : "left"};font-size:11px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #1a1a1a">${escapeHtml(c)}</th>`)

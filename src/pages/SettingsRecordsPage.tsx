@@ -325,7 +325,7 @@ export default function SettingsRecordsPage() {
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:Georgia,serif;color:#1a1a1a;background:white;padding:40px}
       .header{display:flex;align-items:center;gap:20px;border-bottom:3px solid #1a1a1a;padding-bottom:20px;margin-bottom:24px}
-      .logo{width:70px;height:70px;border-radius:10px;object-fit:cover}
+      .logo{display:block;width:auto;height:auto;max-height:80px;max-width:200px;object-fit:contain;flex-shrink:0}
       .company-name{font-size:22px;font-weight:900;letter-spacing:2px;text-transform:uppercase}
       .company-sub{font-size:11px;color:#666;margin-top:3px}
       .doc-title{text-align:center;margin-bottom:24px}
@@ -403,7 +403,7 @@ export default function SettingsRecordsPage() {
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:Georgia,serif;color:#1a1a1a;background:white;padding:40px}
       .header{display:flex;align-items:center;gap:20px;border-bottom:3px solid #1a1a1a;padding-bottom:20px;margin-bottom:24px}
-      .logo{width:70px;height:70px;border-radius:10px;object-fit:cover}
+      .logo{display:block;width:auto;height:auto;max-height:80px;max-width:200px;object-fit:contain;flex-shrink:0}
       .company-name{font-size:22px;font-weight:900;letter-spacing:2px;text-transform:uppercase}
       .company-sub{font-size:11px;color:#666;margin-top:3px}
       .doc-title{text-align:center;margin-bottom:24px}

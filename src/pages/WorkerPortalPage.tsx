@@ -37,7 +37,7 @@ function generatePayslipHTML(payslip: WorkerPayslip, worker: WorkerInfo, company
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Calibri, sans-serif; color: #1a1a1a; padding: 40px; }
     .header { display: flex; align-items: center; gap: 20px; border-bottom: 3px solid #1E3A5F; padding-bottom: 20px; margin-bottom: 24px; }
-    .logo { width: 70px; height: 70px; border-radius: 10px; object-fit: cover; }
+    .logo { display: block; width: auto; height: auto; max-height: 80px; max-width: 200px; object-fit: contain; flex-shrink: 0; }
     .company-name { font-size: 22px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #1E3A5F; }
     .title { text-align: center; font-size: 18px; font-weight: 900; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 24px; color: #1E3A5F; }
     .section { margin-bottom: 20px; }
@@ -284,7 +284,7 @@ export default function WorkerPortalPage() {
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
             {branding?.logo_url && (
-              <img src={branding.logo_url} alt="logo" className="w-9 h-9 rounded-lg object-cover flex-shrink-0" />
+              <img src={branding.logo_url} alt="logo" className="h-auto w-auto max-h-9 max-w-[140px] object-contain flex-shrink-0" />
             )}
             <div>
               <h1 className="text-xl font-semibold text-slate-800 dark:text-slate-200">

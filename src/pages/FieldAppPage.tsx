@@ -220,7 +220,7 @@ export default function FieldAppPage() {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             {company?.logo_url ? (
-              <img src={company.logo_url} style={{width:34,height:34,borderRadius:8,objectFit:"cover",border:"1px solid rgba(255,255,255,0.1)"}}/>
+              <img src={company.logo_url} style={{display:"block",width:"auto",height:"auto",maxHeight:34,maxWidth:120,objectFit:"contain"}}/>
             ) : (
               <div style={{width:34,height:34,borderRadius:8,background:"linear-gradient(135deg,#0891b2,#0e7490)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:"white"}}>
                 {(company?.company_name||"??").slice(0,2).toUpperCase()}

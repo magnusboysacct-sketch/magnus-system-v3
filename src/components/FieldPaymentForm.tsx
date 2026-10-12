@@ -130,7 +130,7 @@ export function generateReceiptHTML(payment: any, company: any, logoBase64?: str
   return `
   <div style="background:#fff;padding:32px;font-family:Georgia,serif;color:#1a1a1a;max-width:600px;margin:0 auto">
     <div style="text-align:center;border-bottom:3px solid #1a1a1a;padding-bottom:20px;margin-bottom:20px">
-      ${logoBase64?`<img src="${logoBase64}" style="width:64px;height:64px;border-radius:10px;object-fit:cover;margin:0 auto 10px;display:block"/>`:""}
+      ${logoBase64?`<img src="${logoBase64}" style="display:block;width:auto;height:auto;max-height:90px;max-width:260px;object-fit:contain;margin:0 auto 10px"/>`:""}
       <div style="font-size:18px;font-weight:900;letter-spacing:2px;text-transform:uppercase">${company?.company_name||""}</div>
       ${company?.address_line1?`<div style="font-size:11px;color:#666;margin-top:3px">${company.address_line1}${company?.parish?`, ${company.parish}`:""}${company?.country?`, ${company.country}`:""}</div>`:""}
       <div style="font-size:11px;color:#666">${company?.phone?`Tel: ${company.phone}`:""}${company?.phone&&company?.email?" · ":""}${company?.email||""}</div>

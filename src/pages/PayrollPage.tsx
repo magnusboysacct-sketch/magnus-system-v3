@@ -165,7 +165,7 @@ function generatePayslipHTML(staff: { full_name: string | null; role: string; tr
     body { font-family: Calibri, Arial, sans-serif; color: #1a1a1a; padding: 40px; background: white; }
     .watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%) rotate(-35deg); font-size: 80px; font-weight: 900; color: rgba(30,58,95,0.04); white-space: nowrap; pointer-events: none; z-index: 0; text-transform: uppercase; letter-spacing: 8px; }
     .header { display: flex; align-items: center; gap: 20px; border-bottom: 3px solid #1E3A5F; padding-bottom: 20px; margin-bottom: 24px; }
-    .logo { width: 70px; height: 70px; border-radius: 10px; object-fit: cover; }
+    .logo { display: block; width: auto; height: auto; max-height: 80px; max-width: 200px; object-fit: contain; flex-shrink: 0; }
     .company-name { font-size: 22px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #1E3A5F; }
     .title { text-align: center; font-size: 16px; font-weight: 900; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 24px; color: #1E3A5F; border: 2px solid #1E3A5F; padding: 10px; }
     .section { margin-bottom: 20px; }
