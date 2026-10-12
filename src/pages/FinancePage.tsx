@@ -79,7 +79,7 @@ export default function FinancePage() {
           .limit(20),
         // Expenses — confirmed columns
         supabase.from("expenses")
-          .select("id, amount, description, expense_date, status, projects(name), expense_categories(name)")
+          .select("id, amount, description, expense_date, status, chart_account_id, projects(name), expense_categories(name)")
           .eq("company_id", companyId!)
           .order("created_at", { ascending: false })
           .limit(10),
@@ -87,7 +87,15 @@ export default function FinancePage() {
 
       const clientInvoices = ciRes.data || [];
       const supplierInvoices = siRes.data || [];
-      const expenses = expRes.data || [];
+      // Category = the expense account the expense is charged to (Chart of Accounts); older expenses fall back to their old category's name.
+      const rawExpenses: any[] = expRes.data || [];
+      const accountIds = [...new Set(rawExpenses.map((e) => e.chart_account_id).filter(Boolean))] as string[];
+      const accountNames = new Map<string, string>();
+      if (accountIds.length > 0) {
+        const { data: accts } = await supabase.from("chart_of_accounts").select("id, name").in("id", accountIds);
+        for (const a of accts || []) accountNames.set(a.id, a.name);
+      }
+      const expenses = rawExpenses.map((e) => ({ ...e, category_name: (e.chart_account_id && accountNames.get(e.chart_account_id)) || e.expense_categories?.name || "" }));
 
       const totalReceivable = clientInvoices
         .filter(i => !["paid", "cancelled"].includes(i.status))
@@ -185,7 +193,7 @@ export default function FinancePage() {
                     {stats.recentExpenses.map((e: any) => (
                       <Tr key={e.id}>
                         <Td><span className="font-medium text-slate-800 dark:text-slate-200">{e.description || "—"}</span></Td>
-                        <Td muted>{e.expense_categories?.name || "—"}</Td>
+                        <Td muted>{e.category_name || "—"}</Td>
                         <Td muted>{e.projects?.name || "—"}</Td>
                         <Td muted>{e.expense_date ? fmtDate(e.expense_date) : "—"}</Td>
                         <Td right><span className="font-semibold text-slate-800 dark:text-slate-200">{fmt(e.amount)}</span></Td>

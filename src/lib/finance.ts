@@ -138,6 +138,8 @@ export interface Expense {
   company_id: string;
   project_id?: string | null;
   category_id?: string | null;
+  // The expense account (Chart of Accounts) the expense is charged to; category_id is the older link.
+  chart_account_id?: string | null;
   worker_id?: string | null;
   expense_date: string;
   vendor?: string | null;

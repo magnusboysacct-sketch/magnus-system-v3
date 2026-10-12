@@ -62,7 +62,8 @@ type Expense = {
   amount: number;
   description: string | null;
   expense_date: string | null;
-  category_id: string | null;
+  category_id: string | null; // older link, kept for history; new/edited expenses use chart_account_id
+  chart_account_id: string | null; // the expense account (Chart of Accounts) this expense is charged to
   project_id: string | null;
   worker_id: string | null;
   status: string | null;
@@ -155,7 +156,7 @@ export default function ExpensesPage() {
 
   const [form, setForm] = useState({
     description: "", amount: "", expense_date: "",
-    category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "",
+    chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "",
   });
 
   // Load company ID
@@ -226,16 +227,26 @@ export default function ExpensesPage() {
   }
 
   const accountsById = new Map<string, LedgerAccount>(accounts.map(a => [a.id, a]));
+  const byCode = (a: LedgerAccount, b: LedgerAccount) => a.code.localeCompare(b.code, undefined, { numeric: true });
+  // The Category list is the company's active expense accounts from the Chart of Accounts - only the "leaf" ones. An account that has active
+  // child accounts under it (e.g. 6000 Operating Expenses, 6200 Office Expenses) is a heading, not something to charge an expense to.
+  const groupIds = new Set(accounts.filter(a => a.is_active !== false && a.parent_id).map(a => a.parent_id as string));
+  const expenseAccounts = accounts.filter(a => a.type === "expense" && a.is_active !== false && !groupIds.has(a.id)).sort(byCode);
+  // The expense account an expense is charged to: its own account, or (older rows) the account its old category is linked to.
+  const effectiveAccountId = (x: { chart_account_id?: string | null; category_id?: string | null }) =>
+    x.chart_account_id || categories.find(c => c.id === x.category_id)?.chart_account_id || null;
+  // What to show in the Category column: the account's name, or (older rows) the old category's name.
+  const categoryLabel = (x: Expense) => (x.chart_account_id ? accountsById.get(x.chart_account_id)?.name : undefined) || x.expense_categories?.name || "";
 
   async function loadAccounts() {
     const { data } = await supabase
       .from("chart_of_accounts")
-      .select("id, code, name, type, subtype, is_active, is_project_linkable, company_id")
+      .select("id, code, name, type, subtype, parent_id, is_active, is_project_linkable, company_id")
       .eq("company_id", companyId!);
     setAccounts((data || []) as LedgerAccount[]);
   }
 
-  const blankForm = { description: "", amount: "", expense_date: "", category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "" };
+  const blankForm = { description: "", amount: "", expense_date: "", chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "" };
 
   function openNew() {
     setEditingExpense(null);
@@ -249,7 +260,8 @@ export default function ExpensesPage() {
       description: exp.description || "",
       amount: exp.amount != null ? String(exp.amount) : "",
       expense_date: exp.expense_date || "",
-      category_id: exp.category_id || "",
+      // Older expenses only have a category: preselect the account that category is linked to.
+      chart_account_id: effectiveAccountId(exp) || "",
       project_id: exp.project_id || "",
       status: exp.status || "pending",
       receipt_url: exp.receipt_url || "",
@@ -286,11 +298,17 @@ export default function ExpensesPage() {
   async function saveExpense() {
     setSaving(true); setError(null);
     try {
+      // The category IS the expense account. The older category_id is left alone when the account didn't change, and otherwise follows
+      // the one old category linked to the new account (or is cleared), so nothing still reading category_id sees a stale value.
+      const accountId = form.chart_account_id || null;
+      const accountUnchanged = !!editingExpense && accountId === effectiveAccountId(editingExpense);
+      const linkedCategories = categories.filter(c => !!accountId && c.chart_account_id === accountId);
       const payload = {
         description: form.description.trim(),
         amount: parseFloat(form.amount) || 0,
         expense_date: form.expense_date || null,
-        category_id: form.category_id || null,
+        chart_account_id: accountId,
+        category_id: accountUnchanged ? (editingExpense!.category_id ?? null) : (linkedCategories.length === 1 ? linkedCategories[0].id : null),
         project_id: form.project_id || null,
         status: form.status,
         receipt_url: form.receipt_url || null,
@@ -300,7 +318,7 @@ export default function ExpensesPage() {
       if (editingExpense?.gl_transaction_id) {
         const e0 = editingExpense;
         const moneyChanged = Number(payload.amount) !== Number(e0.amount) || (payload.expense_date ?? null) !== (e0.expense_date ?? null)
-          || (payload.category_id ?? null) !== (e0.category_id ?? null) || (payload.project_id ?? null) !== (e0.project_id ?? null)
+          || (payload.chart_account_id ?? null) !== (effectiveAccountId(e0) ?? null) || (payload.project_id ?? null) !== (e0.project_id ?? null)
           || (payload.paid_from_account_id ?? null) !== (e0.paid_from_account_id ?? null);
         if (moneyChanged) throw new Error("This expense is already posted to the ledger, so its amount, date, category, project and Paid-from account can't be changed here. Reverse the ledger entry first.");
         if (!POSTABLE_STATUSES.includes(payload.status)) throw new Error("This expense is already posted to the ledger, so it can't go back to pending or rejected. Reverse the ledger entry first.");
@@ -361,7 +379,7 @@ export default function ExpensesPage() {
   function exportCSV() {
     const rows = filtered.map(e => [
       fmtDate(e.expense_date), e.description || "", fmt(e.amount),
-      e.expense_categories?.name || "", e.projects?.name || "",
+      categoryLabel(e), e.projects?.name || "",
       `${e.workers?.first_name || ""} ${e.workers?.last_name || ""}`.trim(), e.status || ""
     ].join(","));
     const csv = ["Date,Description,Amount,Category,Project,Worker,Status", ...rows].join("\n");
@@ -388,7 +406,7 @@ export default function ExpensesPage() {
   const dateEndMs = dateEndIso ? new Date(dateEndIso).getTime() : null;
   const filtered = expenses.filter(e => {
     const matchSearch = (e.description || "").toLowerCase().includes(search.toLowerCase()) ||
-      (e.expense_categories?.name || "").toLowerCase().includes(search.toLowerCase());
+      categoryLabel(e).toLowerCase().includes(search.toLowerCase());
     const matchTab = tab === "all" || e.status === tab;
     const matchProject = projectFilter === NO_PROJECT_FILTER
       ? e.project_id === null
@@ -532,7 +550,7 @@ export default function ExpensesPage() {
                 <Tr key={e.id}>
                   <Td muted>{fmtDate(e.expense_date)}</Td>
                   <Td><span className="font-medium text-slate-800 dark:text-slate-200">{e.description || "—"}</span></Td>
-                  <Td muted>{e.expense_categories?.name || "—"}</Td>
+                  <Td muted>{categoryLabel(e) || "—"}</Td>
                   <Td muted>{e.projects?.name || "—"}</Td>
                   <Td muted>
                     {e.workers ? `${e.workers.first_name} ${e.workers.last_name}` : "—"}
@@ -697,12 +715,19 @@ export default function ExpensesPage() {
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Category">
-              <Select value={form.category_id} onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}>
-                <option value="">No category</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
-            </Field>
+            {(() => {
+              // Leaf expense accounts, plus the account already on this expense if it is no longer offered (deactivated, or a heading account).
+              const picked = form.chart_account_id ? accountsById.get(form.chart_account_id) : undefined;
+              const options = picked && !expenseAccounts.some(a => a.id === picked.id) ? [...expenseAccounts, picked].sort(byCode) : expenseAccounts;
+              return (
+                <Field label="Category" hint={expenseAccounts.length === 0 ? "No expense accounts yet. Add one in Chart of Accounts and it will appear here." : "Your expense accounts from the Chart of Accounts."}>
+                  <Select value={form.chart_account_id} onChange={e => setForm(f => ({ ...f, chart_account_id: e.target.value }))}>
+                    <option value="">No category</option>
+                    {options.map(a => <option key={a.id} value={a.id}>{a.code} - {a.name}{a.is_active === false ? " (inactive)" : groupIds.has(a.id) ? " (group account)" : ""}</option>)}
+                  </Select>
+                </Field>
+              );
+            })()}
             <Field label="Project">
               <Select value={form.project_id} onChange={e => setForm(f => ({ ...f, project_id: e.target.value }))}>
                 <option value="">No project</option>
@@ -711,11 +736,9 @@ export default function ExpensesPage() {
             </Field>
           </div>
           {(() => {
-            const cat = categories.find(c => c.id === form.category_id);
-            const catAccount = cat?.chart_account_id ? accountsById.get(cat.chart_account_id) : undefined;
+            const catAccount = form.chart_account_id ? accountsById.get(form.chart_account_id) : undefined;
             const needsProject = !!catAccount?.is_project_linkable && !form.project_id;
             // Money accounts (bank, cash, petty cash) and accounts for money OWED (payables, reimbursements, credit cards), shown in two groups.
-            const byCode = (a: LedgerAccount, b: LedgerAccount) => a.code.localeCompare(b.code, undefined, { numeric: true });
             const usable = accounts.filter(a => a.is_active !== false && isPaidFromAccount(a));
             const moneyAccounts = usable.filter(a => a.type === "asset").sort(byCode);
             const owedAccounts = usable.filter(a => a.type === "liability").sort(byCode);

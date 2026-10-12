@@ -18,6 +18,7 @@ export interface LedgerAccount {
   name: string;
   type: string;
   subtype?: string | null;
+  parent_id?: string | null;
   is_active?: boolean | null;
   is_project_linkable?: boolean | null;
   company_id?: string | null;
@@ -30,6 +31,8 @@ export interface PostableExpense {
   amount?: number | string | null;
   project_id?: string | null;
   category_id?: string | null;
+  // The expense account (from the Chart of Accounts) this expense is charged to. Older expenses only have category_id.
+  chart_account_id?: string | null;
   paid_from_account_id?: string | null;
   gl_transaction_id?: string | null;
 }
@@ -79,19 +82,22 @@ export function planExpensePosting(
   const amount = Math.round((Number(expense.amount) || 0) * 100) / 100;
   if (!(amount > 0)) return { ok: false, code: "bad_amount", reason: "The amount must be greater than zero." };
 
-  if (!expense.category_id || !category) {
-    return { ok: false, code: "no_category", reason: "This expense has no category, so there is no ledger account to charge it to." };
-  }
-  if (!category.chart_account_id) {
-    return { ok: false, code: "no_category_account", reason: `The category "${category.name || "?"}" isn't linked to a ledger account yet.` };
+  // The account to charge: the expense's own account (picked from the Chart of Accounts), or - for older expenses that only have a
+  // category - the account that category is linked to.
+  const debitId = expense.chart_account_id || category?.chart_account_id || null;
+  if (!debitId) {
+    if (expense.category_id && category) {
+      return { ok: false, code: "no_category_account", reason: `The category "${category.name || "?"}" isn't linked to a ledger account yet.` };
+    }
+    return { ok: false, code: "no_category", reason: "No category (expense account) is selected for this expense, so there is nothing to charge it to." };
   }
   if (!expense.paid_from_account_id) {
     return { ok: false, code: "no_paid_from", reason: "No \"Paid from\" account is selected (the bank, cash or petty-cash account the money came out of)." };
   }
 
-  const debit = accountsById.get(category.chart_account_id);
+  const debit = accountsById.get(debitId);
   const credit = accountsById.get(expense.paid_from_account_id);
-  if (!debit) return { ok: false, code: "account_missing", reason: `The ledger account linked to "${category.name || "this category"}" could not be found.` };
+  if (!debit) return { ok: false, code: "account_missing", reason: "The expense account selected for this expense could not be found." };
   if (!credit) return { ok: false, code: "account_missing", reason: "The selected \"Paid from\" account could not be found." };
   if (expense.company_id && ((debit.company_id && debit.company_id !== expense.company_id) || (credit.company_id && credit.company_id !== expense.company_id))) {
     return { ok: false, code: "other_company", reason: "A linked account belongs to a different company." };
@@ -188,14 +194,15 @@ async function postOnce(expenseId: string): Promise<PostExpenseResult> {
   }
 
   // 3. The accounts, and whether everything needed is there.
+  // The category is only consulted for older expenses that have no account of their own.
   let category: PostableCategory | null = null;
-  if (expense.category_id) {
+  if (expense.category_id && !expense.chart_account_id) {
     const { data: cat, error: catError } = await supabase
       .from("expense_categories").select("id, name, chart_account_id").eq("id", expense.category_id).maybeSingle();
     if (catError) return { status: "failed", reason: "Couldn't read the category: " + catError.message };
     category = cat;
   }
-  const accountIds = [category?.chart_account_id, expense.paid_from_account_id].filter(Boolean) as string[];
+  const accountIds = [expense.chart_account_id || category?.chart_account_id, expense.paid_from_account_id].filter(Boolean) as string[];
   const accountsById = new Map<string, LedgerAccount>();
   if (accountIds.length > 0) {
     const { data: accounts, error: acctError } = await supabase
