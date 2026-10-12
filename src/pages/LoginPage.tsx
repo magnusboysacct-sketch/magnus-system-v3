@@ -2,11 +2,6 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-const MAGNUS_BRAND = {
-  company_name: "Magnus Boys",
-  logo_url: "/app-logo-round.svg",
-};
-
 type Mode = "signin" | "signup";
 
 const REMEMBERED_EMAIL_KEY = "magnus_remembered_email";
@@ -146,20 +141,15 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-slate-50 to-blue-50 text-slate-800">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
         <div className="p-6 border-b border-slate-100">
-          <div className="flex items-center gap-3">
+          <div>
+            {/* One combined graphic (round badge + "Magnus Boy's ERP System" wordmark), ~4:1 — natural proportions, capped at 56px high */}
             <img
-              src={MAGNUS_BRAND.logo_url}
-              alt="Magnus Boys Construction"
-              className="h-14 w-14 rounded-full object-cover"
+              src="/login-header_icon-and-name.svg"
+              alt="Magnus Boy's ERP System"
+              className="block h-auto w-auto max-h-14 max-w-full object-contain"
             />
-
-            <div>
-              <div className="text-lg font-semibold text-slate-800">
-                {MAGNUS_BRAND.company_name}
-              </div>
-              <div className="text-xs text-slate-500">
-                {mode === "signin" ? "Sign in to continue" : "Create your account"}
-              </div>
+            <div className="text-xs text-slate-500 mt-2">
+              {mode === "signin" ? "Sign in to continue" : "Create your account"}
             </div>
           </div>
         </div>
