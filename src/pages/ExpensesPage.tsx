@@ -3,6 +3,8 @@ import React, { useEffect, useState } from "react";
 import { ReceiptScanner } from "../components/ReceiptScanner";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
+import { postExpenseToLedger, expenseLedgerState, POSTABLE_STATUSES, isPaidFromAccount, detectNonJmdCurrency } from "../lib/expensePosting";
+import type { LedgerAccount, PostExpenseResult } from "../lib/expensePosting";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
   Table, Th, Tr, Td, Empty, Modal, Alert, Tabs, cn
@@ -65,13 +67,15 @@ type Expense = {
   worker_id: string | null;
   status: string | null;
   receipt_url: string | null;
+  paid_from_account_id: string | null;
+  gl_transaction_id: string | null;
   created_at: string;
   projects?: { name: string } | null;
   workers?: { first_name: string; last_name: string } | null;
   expense_categories?: { name: string } | null;
 };
 
-type Category = { id: string; name: string; category_type: string };
+type Category = { id: string; name: string; category_type: string; chart_account_id: string | null };
 
 type Tab = "all" | "pending" | "approved" | "filing";
 
@@ -116,6 +120,9 @@ export default function ExpensesPage() {
   // ever grows past the .range() bound on the real fetch.
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  // The company's ledger accounts (for the "Paid from" list and the Ledger column), and the outcome of the last ledger posting.
+  const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
+  const [ledgerNote, setLedgerNote] = useState<{ kind: "success" | "warning" | "error" | "info"; text: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
@@ -148,7 +155,7 @@ export default function ExpensesPage() {
 
   const [form, setForm] = useState({
     description: "", amount: "", expense_date: "",
-    category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "",
+    category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "",
   });
 
   // Load company ID
@@ -161,7 +168,7 @@ export default function ExpensesPage() {
   }, []);
 
   useEffect(() => {
-    if (companyId) { loadExpenses(); loadCategories(); }
+    if (companyId) { loadExpenses(); loadCategories(); loadAccounts(); }
   }, [companyId]);
 
   async function loadExpenses() {
@@ -213,12 +220,22 @@ export default function ExpensesPage() {
   async function loadCategories() {
     const { data } = await supabase
       .from("expense_categories")
-      .select("id, name, category_type")
+      .select("id, name, category_type, chart_account_id")
       .eq("company_id", companyId!);
     setCategories(data || []);
   }
 
-  const blankForm = { description: "", amount: "", expense_date: "", category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "" };
+  const accountsById = new Map<string, LedgerAccount>(accounts.map(a => [a.id, a]));
+
+  async function loadAccounts() {
+    const { data } = await supabase
+      .from("chart_of_accounts")
+      .select("id, code, name, type, subtype, is_active, is_project_linkable, company_id")
+      .eq("company_id", companyId!);
+    setAccounts((data || []) as LedgerAccount[]);
+  }
+
+  const blankForm = { description: "", amount: "", expense_date: "", category_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "" };
 
   function openNew() {
     setEditingExpense(null);
@@ -236,6 +253,7 @@ export default function ExpensesPage() {
       project_id: exp.project_id || "",
       status: exp.status || "pending",
       receipt_url: exp.receipt_url || "",
+      paid_from_account_id: exp.paid_from_account_id || "",
     });
     setShowNew(true);
   }
@@ -251,6 +269,20 @@ export default function ExpensesPage() {
   // insert vs. update. No status restriction on editing (matches the
   // precedent on AccountsReceivablePage/FieldPaymentsPage: edit is allowed
   // at any status, only delete is role-gated).
+  // Posts an expense to the ledger and tells the user exactly what happened. Never throws and never undoes the expense itself.
+  async function postAndReport(expenseId: string, prefix: string) {
+    let res: PostExpenseResult;
+    try { res = await postExpenseToLedger(expenseId); }
+    catch (e: any) { res = { status: "failed", reason: e?.message || String(e) }; }
+    if (res.status === "posted" || res.status === "already_posted") {
+      setExpenses(prev => prev.map(x => x.id === expenseId ? { ...x, gl_transaction_id: res.transactionId } : x));
+    }
+    if (res.status === "posted") setLedgerNote({ kind: res.currencyNote ? "warning" : "success", text: `${prefix}Posted to the ledger${res.transactionNumber ? ` as ${res.transactionNumber}` : ""}.${res.currencyNote ? ` Note: ${res.currencyNote}` : ""}` });
+    else if (res.status === "already_posted") setLedgerNote({ kind: "info", text: `${prefix}Already posted to the ledger.` });
+    else if (res.status === "not_posted") setLedgerNote({ kind: "warning", text: `${prefix}Not posted to the ledger yet: ${res.reason} The expense itself is saved; fix this, then save it again or use Post.` });
+    else setLedgerNote({ kind: "error", text: `${prefix}Couldn't post to the ledger: ${res.reason} The expense itself is saved.` });
+  }
+
   async function saveExpense() {
     setSaving(true); setError(null);
     try {
@@ -262,14 +294,28 @@ export default function ExpensesPage() {
         project_id: form.project_id || null,
         status: form.status,
         receipt_url: form.receipt_url || null,
+        paid_from_account_id: form.paid_from_account_id || null,
       };
+      // Once an expense is on the ledger, what the entry was built from can't be changed here (that would leave the books wrong).
+      if (editingExpense?.gl_transaction_id) {
+        const e0 = editingExpense;
+        const moneyChanged = Number(payload.amount) !== Number(e0.amount) || (payload.expense_date ?? null) !== (e0.expense_date ?? null)
+          || (payload.category_id ?? null) !== (e0.category_id ?? null) || (payload.project_id ?? null) !== (e0.project_id ?? null)
+          || (payload.paid_from_account_id ?? null) !== (e0.paid_from_account_id ?? null);
+        if (moneyChanged) throw new Error("This expense is already posted to the ledger, so its amount, date, category, project and Paid-from account can't be changed here. Reverse the ledger entry first.");
+        if (!POSTABLE_STATUSES.includes(payload.status)) throw new Error("This expense is already posted to the ledger, so it can't go back to pending or rejected. Reverse the ledger entry first.");
+      }
+      let savedId: string | undefined = editingExpense?.id;
       if (editingExpense) {
         const { error: e } = await supabase.from("expenses").update(payload).eq("id", editingExpense.id);
         if (e) throw e;
       } else {
-        const { error: e } = await supabase.from("expenses").insert({ company_id: companyId, ...payload });
+        const { data: created, error: e } = await supabase.from("expenses").insert({ company_id: companyId, ...payload }).select("id").single();
         if (e) throw e;
+        savedId = created?.id;
       }
+      // Approved / paid: post to the ledger (does nothing if it's already posted). A problem here never undoes the save.
+      if (savedId && POSTABLE_STATUSES.includes(payload.status)) await postAndReport(savedId, "Saved. ");
       await loadExpenses();
       closeModal();
     } catch (e: any) { setError(e.message); }
@@ -282,6 +328,10 @@ export default function ExpensesPage() {
   // anywhere live in this app; window.confirm() is the dominant pattern for
   // every other delete action (invoices, POs, contracts, field payments).
   async function deleteExpense(exp: Expense) {
+    if (exp.gl_transaction_id) {
+      setLedgerNote({ kind: "error", text: "This expense is posted to the ledger, so it can't be deleted here. Reverse the ledger entry first." });
+      return;
+    }
     if (!window.confirm(`Delete expense "${exp.description || "this expense"}"? This cannot be undone.`)) return;
     const { error: e } = await supabase.from("expenses").delete().eq("id", exp.id);
     if (e) { setError(e.message); return; }
@@ -296,8 +346,16 @@ export default function ExpensesPage() {
   // its `markAsPaid` param), so "reimbursed" is the correct target here too,
   // not a new "paid" value added to the constraint.
   async function updateStatus(id: string, status: string) {
-    await supabase.from("expenses").update({ status }).eq("id", id);
-    setExpenses(prev => prev.map(e => e.id === id ? { ...e, status } : e));
+    const exp = expenses.find(x => x.id === id);
+    if (exp?.gl_transaction_id && !POSTABLE_STATUSES.includes(status)) {
+      setLedgerNote({ kind: "error", text: "This expense is posted to the ledger, so it can't go back to pending or rejected. Reverse the ledger entry first." });
+      return;
+    }
+    const { error: e } = await supabase.from("expenses").update({ status }).eq("id", id);
+    if (e) { setLedgerNote({ kind: "error", text: "Couldn't update the expense: " + e.message }); return; }
+    setExpenses(prev => prev.map(x => x.id === id ? { ...x, status } : x));
+    // Approving (or marking paid) posts it to the ledger. The status change above stands whatever happens here.
+    if (POSTABLE_STATUSES.includes(status)) await postAndReport(id, status === "approved" ? "Approved. " : "Marked paid. ");
   }
 
   function exportCSV() {
@@ -442,6 +500,8 @@ export default function ExpensesPage() {
           )}
         </div>
 
+        {ledgerNote && <Alert type={ledgerNote.kind} onClose={() => setLedgerNote(null)}>{ledgerNote.text}</Alert>}
+
         {/* Table */}
         <Card padding={false}>
           <Table>
@@ -454,16 +514,17 @@ export default function ExpensesPage() {
                 <Th>Worker</Th>
                 <Th right>Amount</Th>
                 <Th>Status</Th>
+                <Th>Ledger</Th>
                 <Th>Actions</Th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><Td colSpan={8} className="text-center py-10 text-slate-500 dark:text-slate-600">
+                <tr><Td colSpan={9} className="text-center py-10 text-slate-500 dark:text-slate-600">
                   <RefreshCw size={14} className="animate-spin inline mr-2"/>Loading...
                 </Td></tr>
               ) : filtered.length === 0 ? (
-                <tr><Td colSpan={8}>
+                <tr><Td colSpan={9}>
                   <Empty icon={<Receipt size={18}/>} title="No expenses found"
                     action={<Btn variant="primary" size="sm" icon={<Plus size={12}/>} onClick={openNew}>Log Expense</Btn>}/>
                 </Td></tr>
@@ -483,7 +544,22 @@ export default function ExpensesPage() {
                     </Badge>
                   </Td>
                   <Td>
+                    {(() => {
+                      const ls = expenseLedgerState(e, categories.find(c => c.id === e.category_id), accountsById);
+                      if (ls.state === "posted") return <span title="Posted to the General Ledger"><Badge color="green" dot>Posted</Badge></span>;
+                      if (ls.state === "not_posted") return <span title={ls.reason}><Badge color="amber" dot>Not posted</Badge></span>;
+                      if (ls.state === "ready") return <span title="Ready to post: use Post, or save the expense again"><Badge color="amber" dot>Not posted</Badge></span>;
+                      return <span className="text-slate-500 dark:text-slate-700">—</span>;
+                    })()}
+                  </Td>
+                  <Td>
                     <div className="flex items-center gap-1">
+                      {POSTABLE_STATUSES.includes(e.status || "") && !e.gl_transaction_id && (
+                        <button onClick={() => postAndReport(e.id, "")} title="Post this expense to the General Ledger"
+                          className="px-2 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 transition-colors">
+                          Post
+                        </button>
+                      )}
                       {e.status === "pending" && (
                         <button onClick={() => updateStatus(e.id, "approved")}
                           className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 transition-colors">
@@ -634,6 +710,44 @@ export default function ExpensesPage() {
               </Select>
             </Field>
           </div>
+          {(() => {
+            const cat = categories.find(c => c.id === form.category_id);
+            const catAccount = cat?.chart_account_id ? accountsById.get(cat.chart_account_id) : undefined;
+            const needsProject = !!catAccount?.is_project_linkable && !form.project_id;
+            // Money accounts (bank, cash, petty cash) and accounts for money OWED (payables, reimbursements, credit cards), shown in two groups.
+            const byCode = (a: LedgerAccount, b: LedgerAccount) => a.code.localeCompare(b.code, undefined, { numeric: true });
+            const usable = accounts.filter(a => a.is_active !== false && isPaidFromAccount(a));
+            const moneyAccounts = usable.filter(a => a.type === "asset").sort(byCode);
+            const owedAccounts = usable.filter(a => a.type === "liability").sort(byCode);
+            const optionText = (a: LedgerAccount) => `${a.code} - ${a.name}${detectNonJmdCurrency(a.name) ? ` (${detectNonJmdCurrency(a.name)} account)` : ""}`;
+            const chosen = accounts.find(a => a.id === form.paid_from_account_id);
+            const chosenCurrency = chosen ? detectNonJmdCurrency(chosen.name) : null;
+            return (
+              <>
+                {needsProject && (
+                  <div className="text-[11px] text-amber-500">The ledger account for this category ({catAccount!.code} {catAccount!.name}) requires a project. Pick one so this expense can be posted.</div>
+                )}
+                <Field label="Paid from" hint="Where the money came from: a bank, cash or petty-cash account if it was paid now, or a payable / credit-card account if it is still owed. Needed to post this expense to the ledger; you can set it later.">
+                  <Select value={form.paid_from_account_id} onChange={e => setForm(f => ({ ...f, paid_from_account_id: e.target.value }))}>
+                    <option value="">Not set yet</option>
+                    {moneyAccounts.length > 0 && (
+                      <optgroup label="Paid now (bank, cash, petty cash)">
+                        {moneyAccounts.map(a => <option key={a.id} value={a.id}>{optionText(a)}</option>)}
+                      </optgroup>
+                    )}
+                    {owedAccounts.length > 0 && (
+                      <optgroup label="Not paid yet (payables, credit cards)">
+                        {owedAccounts.map(a => <option key={a.id} value={a.id}>{optionText(a)}</option>)}
+                      </optgroup>
+                    )}
+                  </Select>
+                </Field>
+                {chosenCurrency && (
+                  <div className="text-[11px] text-amber-500">{chosen!.code} {chosen!.name} looks like a {chosenCurrency} account. This expense will be recorded in JMD (the amount as entered), with no currency conversion. You can still select it.</div>
+                )}
+              </>
+            );
+          })()}
           <Field label="Status">
             <Select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
               <option value="pending">Pending</option>

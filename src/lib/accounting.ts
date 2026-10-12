@@ -402,7 +402,11 @@ export async function createGLTransaction(
     .from("gl_entries")
     .insert(entries);
 
-  if (entriesError) throw entriesError;
+  if (entriesError) {
+    // Don't leave an empty draft header behind when its lines couldn't be written.
+    await supabase.from("gl_transactions").delete().eq("id", transactionData.id);
+    throw entriesError;
+  }
 
   return transactionData as GLTransaction;
 }
