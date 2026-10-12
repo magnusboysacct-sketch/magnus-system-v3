@@ -75,19 +75,19 @@ export default function InvoiceDocument({ invoice, lineItems, payments, client, 
     <div id="invoice-print-content" style={{ position: "relative" }}>
       <div className="inv-page" style={{ fontFamily: "Georgia,serif", color: "#1a1a1a" }}>
 
-        {/* Company header + invoice title */}
+        {/* Company header + invoice title: logo and company details stacked at the top-left, the title and number at the top-right */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 24, paddingBottom: 18, borderBottom: "3px solid #1a1a1a", marginBottom: 24 }}>
-          <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+          <div style={{ flex: "1 1 auto", minWidth: 0, textAlign: "left" }}>
             {company?.logo_url && (
-              <img src={company.logo_url} alt="logo" style={{ width: 64, height: 64, borderRadius: 8, objectFit: "contain" }} />
+              // Natural proportions, capped in both directions: a wide wordmark and a tall emblem both stay tidy, and a huge upload can't
+              // push the header around. Nothing is rendered (no empty gap) when there is no logo.
+              <img src={company.logo_url} alt="logo" style={{ display: "block", width: "auto", height: "auto", maxHeight: 90, maxWidth: 260, objectFit: "contain", objectPosition: "left top", marginBottom: 8 }} />
             )}
-            <div>
-              <div style={{ fontSize: 17, fontWeight: 800 }}>{company?.company_name || ""}</div>
-              {address && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{address}</div>}
-              {contactLine && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{contactLine}</div>}
-            </div>
+            <div style={{ fontSize: 17, fontWeight: 800 }}>{company?.company_name || ""}</div>
+            {address && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{address}</div>}
+            {contactLine && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{contactLine}</div>}
           </div>
-          <div style={{ textAlign: "right" }}>
+          <div style={{ flex: "0 0 auto", textAlign: "right" }}>
             <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: 2 }}>INVOICE</div>
             <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>{invoice?.invoice_number || ""}</div>
           </div>

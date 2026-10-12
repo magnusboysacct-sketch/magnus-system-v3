@@ -138,7 +138,8 @@ export default function ContractDocument({ contract, schedule, company, signReco
             {/* Cover Page */}
             <div id="contract-cover-section" className="cover" style={{minHeight:"60vh",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",textAlign:"center",borderBottom:"4px solid #1a1a1a",marginBottom:60,padding:"80px 40px"}}>
               {company?.logo_url && (
-                <img src={company.logo_url} alt="logo" style={{width:80,height:80,borderRadius:12,objectFit:"cover",marginBottom:20}}/>
+                // Natural proportions, capped (a wide wordmark or a tall emblem is shown whole, never cropped or squashed into a square).
+                <img src={company.logo_url} alt="logo" style={{display:"block",width:"auto",height:"auto",maxHeight:90,maxWidth:260,objectFit:"contain",marginBottom:20}}/>
               )}
               <div style={{fontSize:13,fontWeight:700,letterSpacing:4,textTransform:"uppercase",color:"#6b7280",marginBottom:8}}>
                 {companyDisplayName(company?.company_name)}
