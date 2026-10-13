@@ -38,6 +38,37 @@ type InvitationRow = {
   expires_at: string;
 };
 
+// Turns the edge function's { error, details } into one message that always includes the underlying reason.
+// `details` can be a string (Auth/Postgres message) or an object (Resend / database error), so flatten it.
+function withDetails(message: string, details: unknown): string {
+  if (details === null || details === undefined || details === "") return message;
+  let text: string;
+  if (typeof details === "string") text = details;
+  else if (typeof (details as { message?: unknown }).message === "string") text = (details as { message: string }).message;
+  else {
+    try { text = JSON.stringify(details); } catch { text = String(details); }
+  }
+  if (!text || text === message) return message;
+  return `${message}\n\nDetails: ${text}`;
+}
+
+// supabase-js's functions.invoke() only surfaces a generic "Edge Function returned a non-2xx status code"
+// on error.message; the function's real { error, details } body is on error.context (the raw fetch Response).
+async function edgeFunctionFailure(error: any, fallback: string): Promise<string> {
+  let message = error?.message || fallback;
+  let details: unknown = null;
+  if (error?.context && typeof error.context.json === "function") {
+    try {
+      const body = await error.context.clone().json();
+      if (body?.error) message = String(body.error);
+      details = body?.details ?? null;
+    } catch {
+      // Response body wasn't JSON (or already consumed) — fall back to the generic message.
+    }
+  }
+  return withDetails(message, details);
+}
+
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: "director", label: "Director" },
   { value: "admin", label: "Admin" },
@@ -303,22 +334,7 @@ export default function SettingsUsersPage() {
 
       if (error) {
         console.error("Invite error:", error);
-        // supabase-js's functions.invoke() only ever surfaces a generic
-        // "Edge Function returned a non-2xx status code" on error.message —
-        // the edge function's actual { error: "..." } response body (the
-        // useful part) lives on error.context, the raw fetch Response,
-        // which isn't read by default. Unpack it so the modal shows the
-        // real reason instead of the useless generic wrapper text.
-        let detail = error.message || "Failed to send invite.";
-        if (error.context && typeof error.context.json === "function") {
-          try {
-            const body = await error.context.clone().json();
-            if (body?.error) detail = String(body.error);
-          } catch {
-            // Response body wasn't JSON (or already consumed) — fall back to the generic message.
-          }
-        }
-        setInviteErr(detail);
+        setInviteErr(await edgeFunctionFailure(error, "Failed to send invite."));
         return;
       }
 
@@ -328,7 +344,7 @@ export default function SettingsUsersPage() {
       }
 
       if (data.error) {
-        setInviteErr(String(data.error));
+        setInviteErr(withDetails(String(data.error), data.details));
         return;
       }
 
@@ -369,12 +385,13 @@ export default function SettingsUsersPage() {
       });
 
       if (error) {
-        setErr(error.message || "Resend failed.");
+        console.error("Resend error:", error);
+        setErr(await edgeFunctionFailure(error, "Resend failed."));
         return;
       }
 
       if (data?.error) {
-        setErr(String(data.error));
+        setErr(withDetails(String(data.error), data.details));
         return;
       }
 
@@ -596,7 +613,7 @@ export default function SettingsUsersPage() {
             </div>
           )}
           {err && (
-            <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+            <div className="whitespace-pre-wrap break-words rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
               {err}
             </div>
           )}
@@ -844,7 +861,7 @@ export default function SettingsUsersPage() {
                     </div>
                   )}
                   {inviteErr && (
-                    <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
+                    <div className="whitespace-pre-wrap break-words rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
                       {inviteErr}
                     </div>
                   )}

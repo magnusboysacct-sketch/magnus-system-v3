@@ -32,10 +32,40 @@ function esc(value: unknown) {
     .replaceAll('"', "&quot;");
 }
 
+// Undo the auth user that generateLink({ type: "invite" }) created as a side effect, so a failed invite leaves no
+// orphaned unconfirmed account blocking the next attempt for that email (public.user_profiles.id cascades from
+// auth.users, so the profile row the new-user trigger made goes with it). Only ever called with the id from THIS
+// invocation's own generateLink result. A failure here is logged but never replaces the caller's original error.
+async function removeCreatedAuthUser(
+  admin: ReturnType<typeof createClient>,
+  userId: string | null,
+  reason: string,
+) {
+  if (!userId) return;
+  try {
+    const { error } = await admin.auth.admin.deleteUser(userId);
+    if (error) {
+      console.error("admin-invite-user: cleanup of just-created auth user failed", { userId, reason, message: error.message });
+    }
+  } catch (cleanupErr) {
+    console.error("admin-invite-user: cleanup of just-created auth user threw", {
+      userId,
+      reason,
+      message: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+    });
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
+
+  // Set only once generateLink has succeeded in THIS call (so the user is one we just created, never a pre-existing
+  // account). Anything that fails afterwards, including an exception caught by the outer catch, cleans it up.
+  let createdAuthUserId: string | null = null;
+  let createdInviteId: string | null = null;
+  let supabaseAdminForCleanup: ReturnType<typeof createClient> | null = null;
 
   try {
     if (req.method !== "POST") {
@@ -101,6 +131,7 @@ Deno.serve(async (req) => {
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+    supabaseAdminForCleanup = supabaseAdmin;
 
     const { data: userData, error: userError } =
       await supabaseUser.auth.getUser();
@@ -224,15 +255,49 @@ Deno.serve(async (req) => {
         })
         .eq("id", inviteRow.id);
 
+      // The real Supabase Auth error — the response below is user-facing, this is what shows in the
+      // Edge Function logs (Dashboard > Edge Functions > admin-invite-user > Logs).
+      console.error("admin-invite-user: generateLink failed", {
+        email,
+        message: linkError.message,
+        code: (linkError as { code?: string }).code,
+        status: (linkError as { status?: number }).status,
+      });
+
+      // Supabase Auth keeps one account per email across the whole project (not per company), so this
+      // fires when the address already has a login here or in any other company, including one left
+      // behind by an earlier invite that failed after the link was generated.
+      const alreadyRegistered =
+        (linkError as { code?: string }).code === "email_exists" ||
+        /already (been )?registered|already exists/i.test(linkError.message || "");
+
+      if (alreadyRegistered) {
+        return jsonResponse({
+          error:
+            "This email already has an account in the system. Each email can currently only belong to one company - check if this person already has access elsewhere, or use a different email address.",
+          details: linkError.message,
+        }, 409);
+      }
+
       return jsonResponse({
         error: "Failed to generate invite link",
         details: linkError.message,
       }, 500);
     }
 
+    // generateLink succeeded, so it just created this (unconfirmed) auth user: from here on a failure must undo it.
+    // (An email that already had an account never reaches this line — that is the linkError branch above.)
+    createdAuthUserId = linkData.user?.id ?? null;
+    createdInviteId = inviteRow.id;
+
     const tokenHash = linkData.properties?.hashed_token;
 
     if (!tokenHash) {
+      await supabaseAdmin
+        .from("company_invitations")
+        .update({ status: "revoked", updated_at: new Date().toISOString() })
+        .eq("id", inviteRow.id);
+      await removeCreatedAuthUser(supabaseAdmin, createdAuthUserId, "token_hash missing");
       return jsonResponse({ error: "Invite token_hash was not generated" }, 500);
     }
 
@@ -299,6 +364,9 @@ Deno.serve(async (req) => {
         })
         .eq("id", inviteRow.id);
 
+      console.error("admin-invite-user: Resend rejected the invite email", { email, status: resendResponse.status, resendResult });
+      await removeCreatedAuthUser(supabaseAdmin, createdAuthUserId, "resend rejected the email");
+
       return jsonResponse({
         error: "Failed to send branded invite email",
         details: resendResult,
@@ -312,6 +380,20 @@ Deno.serve(async (req) => {
       resend: resendResult,
     });
   } catch (err) {
+    if (createdAuthUserId && supabaseAdminForCleanup) {
+      console.error("admin-invite-user: unexpected error after the invite user was created", err);
+      try {
+        if (createdInviteId) {
+          await supabaseAdminForCleanup
+            .from("company_invitations")
+            .update({ status: "revoked", updated_at: new Date().toISOString() })
+            .eq("id", createdInviteId);
+        }
+      } catch (revokeErr) {
+        console.error("admin-invite-user: could not revoke the invitation row during cleanup", revokeErr);
+      }
+      await removeCreatedAuthUser(supabaseAdminForCleanup, createdAuthUserId, "unexpected exception");
+    }
     return jsonResponse({
       error: "Unexpected server error",
       details: err instanceof Error ? err.message : String(err),
