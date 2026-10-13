@@ -5,6 +5,7 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { logPortalEvent } from "../lib/portalActivity";
 import { useForceLightPage } from "../hooks/useForceLightPage";
+import PortalBrandLogo from "../components/PortalBrandLogo";
 import { functionErrorMessage } from "../lib/portalErrors";
 import ContractDocument, { printContractDocument, printContractDocumentFresh, watermarkFromCompany } from "../components/ContractDocument";
 import { useContractSignatureSrcs, isLegacySignatureUrl } from "../lib/contractSignatures";
@@ -215,8 +216,7 @@ function AuthScreen({client,company,mode,token,onSuccess,contact}:{client:Client
   return <div style={S.page}>
     <div style={{width:"100%",maxWidth:400}}>
       <div style={{textAlign:"center",marginBottom:28}}>
-        {company?.logo_url?<img src={company.logo_url} style={{display:"block",width:"auto",height:"auto",maxHeight:52,maxWidth:200,objectFit:"contain",margin:"0 auto 10px"}}/>
-          :<div style={{width:52,height:52,borderRadius:12,background:"linear-gradient(135deg,#0891b2,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:18,margin:"0 auto 10px",color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
+        <PortalBrandLogo logoUrl={company?.logo_url} companyName={company?.company_name}/>
         <div style={{fontSize:17,fontWeight:800,color:"#0f172a",marginBottom:3}}>{companyDisplayName(company?.company_name)}</div>
         <div style={{fontSize:12,color:"#64748b"}}>{contact?`${contact.client_name||"Client"} · Field officer portal`:"Client Portal"}</div>
       </div>

@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { functionErrorMessage } from "../lib/portalErrors";
 import { useForceLightPage } from "../hooks/useForceLightPage";
+import PortalBrandLogo from "../components/PortalBrandLogo";
 
 export default function ClientLoginPage() {
   useForceLightPage(); // always light, whatever the device's dark-mode setting
@@ -128,9 +129,8 @@ export default function ClientLoginPage() {
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          {company?.logo_url && (
-            <img src={company.logo_url} className="w-16 h-16 rounded-full object-cover mx-auto mb-3 border-2 border-slate-200"/>
-          )}
+          {/* The logo at its own shape (never cropped into a circle); a company-initial tile when there is none */}
+          <PortalBrandLogo logoUrl={company?.logo_url} companyName={company?.company_name} marginBottom={12}/>
           <div className="text-lg font-bold text-slate-900">{companyDisplayName(company?.company_name)}</div>
           <div className="text-xs text-slate-500 mt-1">Client Portal</div>
         </div>
