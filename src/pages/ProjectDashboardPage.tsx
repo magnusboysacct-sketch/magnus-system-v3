@@ -3,13 +3,14 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import FieldOfficerPortalCard from "../components/FieldOfficerPortalCard";
+import CopyMilestoneForBasesModal from "../components/CopyMilestoneForBasesModal";
 import {
   Ruler, ShoppingCart, Wallet, FileText, BarChart3,
   ArrowRight, DollarSign, Users, Package, Receipt,
   Clock, CheckCircle2, AlertCircle, TrendingUp,
   TrendingDown, Building2, RefreshCw, ChevronLeft,
   Plus, X, Save, ListTodo, Trash2, Edit2, Flag,
-  Calendar, Target, Layers, Map
+  Calendar, Target, Layers, Map, Copy
 } from "lucide-react";
 
 function fmtJMD(n: number) {
@@ -96,6 +97,8 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
     production_rate_per_day:"", payment_amount:"",
   });
   const [savingMS, setSavingMS] = useState(false);
+  // "Copy for bases…": the milestone being copied (null = modal closed)
+  const [copyMS, setCopyMS] = useState<any|null>(null);
 
   // Task form
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -382,9 +385,12 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   }
 
   async function deleteMS(id: string) {
-    if(!confirm("Delete this milestone and all its tasks?"))return;
-    await supabase.from("project_tasks").update({milestone_id:null}).eq("milestone_id",id);
-    await supabase.from("project_milestones").delete().eq("id",id);
+    const n=tasks.filter(t=>t.milestone_id===id).length;
+    if(!confirm(`Delete this milestone and all its tasks?${n>0?` (${n} task${n===1?"":"s"})`:""}`))return;
+    const {error:taskErr}=await supabase.from("project_tasks").delete().eq("milestone_id",id);
+    if(taskErr){alert("Could not delete the milestone's tasks: "+taskErr.message);await loadTasks();return;}
+    const {error:msErr}=await supabase.from("project_milestones").delete().eq("id",id);
+    if(msErr)alert("Could not delete the milestone: "+msErr.message);
     await loadMilestones(); await loadTasks();
   }
 
@@ -431,6 +437,11 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
     if(taskForm.quantity)payload.quantity=parseFloat(taskForm.quantity);
     if(taskForm.unit)payload.unit=taskForm.unit;
     if(taskForm.rate_per_unit)payload.rate_per_unit=parseFloat(taskForm.rate_per_unit);
+    // Same mapping as the quick status buttons (complete 100, active 50, planned 0). Applied on create, whenever the status changes, and
+    // always for "complete" (so it can never be complete at less than 100%); a plain edit of an active/planned task keeps its real percent.
+    if(!editingTask||payload.status!==editingTask.status||payload.status==="complete"){
+      payload.percent_complete=payload.status==="complete"?100:payload.status==="active"?50:0;
+    }
     if(editingTask){
       await supabase.from("project_tasks").update(payload).eq("id",editingTask.id);
     } else {
@@ -745,6 +756,20 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
             </div>
 
             {/* Milestone Form Modal */}
+            {copyMS&&(
+              <CopyMilestoneForBasesModal
+                projectId={projectId||""}
+                milestone={copyMS}
+                taskCount={tasks.filter(t=>t.milestone_id===copyMS.id).length}
+                existingMilestoneNames={milestones.map(m=>m.milestone_name)}
+                onClose={()=>setCopyMS(null)}
+                onDone={async(created)=>{
+                  setCopyMS(null);
+                  await loadMilestones(); await loadTasks();
+                  alert(`Created ${created} milestone${created===1?"":"s"} with their tasks.`);
+                }}
+              />
+            )}
             {showMSForm&&(
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                 <div className="w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -900,6 +925,10 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                           <button onClick={()=>openNewTask(ms.id)}
                             className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/20 transition">
                             <Plus size={10}/> Task
+                          </button>
+                          <button onClick={()=>setCopyMS(ms)} title="Copy for bases…"
+                            className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 text-[10px] font-semibold hover:bg-slate-200 dark:hover:bg-white/[0.09] transition">
+                            <Copy size={10}/> Copy for bases…
                           </button>
                           <button onClick={()=>openEditMS(ms)} className="p-1.5 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:text-slate-300 transition"><Edit2 size={12}/></button>
                           <button onClick={()=>deleteMS(ms.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-500 dark:text-slate-600 hover:text-red-400 transition"><Trash2 size={12}/></button>
