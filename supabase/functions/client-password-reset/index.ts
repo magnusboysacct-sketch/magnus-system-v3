@@ -134,14 +134,15 @@ Deno.serve(async (req) => {
       const html = `
         <div style="font-family:Arial,sans-serif;background:#f6f6f6;padding:30px;">
           <div style="max-width:620px;margin:auto;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #ddd;">
-            <div style="background:#111;color:#fff;padding:24px;text-align:center;border-top:5px solid #d4a017;">
+            <div style="background:#ffffff;color:#111;padding:24px;text-align:center;border-top:5px solid #d4a017;border-bottom:1px solid #e5e7eb;">
               ${
+                /* Plain white header so any logo (dark, light or colourful) is visible. With a logo, the logo stands alone (a wordmark already contains the
+                   company name); without one, the company name is shown as text. Natural proportions, capped (email clients ignore object-fit). */
                 companyLogo
-                  ? `<img src="${esc(companyLogo)}" alt="${esc(companyName)}" style="max-height:70px;margin-bottom:12px;">`
-                  : ""
+                  ? `<img src="${esc(companyLogo)}" alt="${esc(companyName)}" style="display:block;margin:0 auto 12px;width:auto;height:auto;max-height:70px;max-width:260px;border:0;">`
+                  : `<h2 style="margin:0;font-size:24px;color:#111;">${esc(companyName)}</h2>`
               }
-              <h2 style="margin:0;font-size:24px;">${esc(companyName)}</h2>
-              <p style="margin:8px 0 0;font-size:13px;color:#ddd;">${esc(companyTagline)}</p>
+              <p style="margin:8px 0 0;font-size:13px;color:#666;">${esc(companyTagline)}</p>
             </div>
 
             <div style="padding:32px;color:#222;">
