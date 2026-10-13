@@ -10,6 +10,8 @@ export default function ClientResetPasswordPage() {
 
   const token = params.get("token") || "";
   const email = params.get("email") || "";
+  // A field officer's reset link carries kind=contact; without it the call behaves exactly as before.
+  const kind = params.get("kind") || "";
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -41,7 +43,7 @@ export default function ClientResetPasswordPage() {
       const { data, error: invokeError } = await supabase.functions.invoke(
         "client-password-reset",
         {
-          body: { action: "confirm", email, token, newPassword: password },
+          body: { action: "confirm", email, token, newPassword: password, ...(kind ? { kind } : {}) },
         }
       );
 
