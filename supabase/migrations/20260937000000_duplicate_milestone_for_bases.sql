@@ -175,7 +175,8 @@ BEGIN
         actual_quantity_completed, actual_duration_days, weather_impact_factor,
         labor_cost_per_day, equipment_cost_per_day, material_cost_total,
         boq_section_id, boq_item_id, quantity_source_type, auto_sync_quantity,
-        linked_assembly_id, linked_item_id, linked_assembly_name, linked_item_name
+        linked_assembly_id, linked_item_id, linked_assembly_name, linked_item_name,
+        created_at
       ) VALUES (
         v_t.project_id, v_new.id, v_t.task_name, v_t.task_description, v_t.trade_type,
         v_t.start_date, v_t.end_date, 'planned', 0,
@@ -185,7 +186,9 @@ BEGIN
         v_match_section, v_match_id,
         CASE WHEN v_match_id IS NULL THEN 'manual' ELSE v_t.quantity_source_type END,
         CASE WHEN v_match_id IS NULL THEN false ELSE coalesce(v_t.auto_sync_quantity, false) END,
-        v_t.linked_assembly_id, v_t.linked_item_id, v_t.linked_assembly_name, v_t.linked_item_name
+        v_t.linked_assembly_id, v_t.linked_item_id, v_t.linked_assembly_name, v_t.linked_item_name,
+        -- now() is the same for every row of one transaction; clock_timestamp() moves on, so the copies keep the original task order
+        clock_timestamp()
       );
     END LOOP;
   END LOOP;
