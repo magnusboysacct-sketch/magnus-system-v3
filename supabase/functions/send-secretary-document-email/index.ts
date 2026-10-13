@@ -14,6 +14,7 @@
 // (send-payslip-email itself was never updated and still has the stale
 // check — out of scope to touch here, flagged separately).
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { lightOnlyWrap } from "../_shared/emailLayout.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -50,7 +51,7 @@ function buildLetterEmailHTML(doc: { title: string; content: string | null }, co
     .map(p => `<p style="margin:0 0 14px;white-space:pre-wrap;">${esc(p)}</p>`)
     .join("");
 
-  return `
+  return lightOnlyWrap("Letter", `
   <div style="font-family:Georgia,serif;color:#1a1a1a;max-width:640px;margin:0 auto;padding:32px;background:#fff;">
     <div style="display:flex;align-items:center;gap:16px;border-bottom:3px solid #1E3A5F;padding-bottom:16px;margin-bottom:24px;">
       ${company?.logo_url ? `<img src="${esc(company.logo_url)}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;" />` : ""}
@@ -63,7 +64,7 @@ function buildLetterEmailHTML(doc: { title: string; content: string | null }, co
       ${paragraphs}
     </div>
     <p style="margin-top:24px;padding-top:16px;border-top:1px solid #eee;font-size:10px;color:#999;">${esc(company?.company_name || "")} · Sent ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>
-  </div>`;
+  </div>`);
 }
 
 Deno.serve(async (req) => {

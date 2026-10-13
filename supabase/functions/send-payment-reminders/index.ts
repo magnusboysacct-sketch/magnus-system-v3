@@ -3,6 +3,7 @@
 // sends an email via Resend to any client whose invoice is due for a reminder today.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { renderEmail } from "../_shared/emailLayout.ts";
 
 const SUPABASE_URL = Deno.env.get("PROJECT_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SERVICE_ROLE_KEY")!;
@@ -19,7 +20,7 @@ function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
-function buildReminderEmail(invoice: any, client: any, companyName: string) {
+function buildReminderEmail(invoice: any, client: any, companyName: string, brand: { logoUrl?: string | null; tagline?: string | null; website?: string | null } = {}) {
   const isOverdue = new Date(invoice.due_date) < new Date();
   const greeting = client.contact_name || client.name;
   const intro = isOverdue ? "This is a friendly reminder that" : "This is a reminder that";
@@ -27,14 +28,16 @@ function buildReminderEmail(invoice: any, client: any, companyName: string) {
 
   const text = `Hi ${greeting},\n\n${intro} Invoice #${invoice.invoice_number} for ${fmtJMD(Number(invoice.balance_due))} ${dueText}.\n\nPlease arrange payment at your earliest convenience. Let us know if you have any questions.\n\nThank you,\n${companyName}`;
 
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1a1a1a;">
-      <p>Hi ${greeting},</p>
-      <p>${intro} <strong>Invoice #${invoice.invoice_number}</strong> for <strong>${fmtJMD(Number(invoice.balance_due))}</strong> ${dueText}.</p>
-      <p>Please arrange payment at your earliest convenience. Let us know if you have any questions.</p>
-      <p>Thank you,<br/>${companyName}</p>
-    </div>
-  `;
+  const html = renderEmail({
+    title: `Payment Reminder - Invoice #${invoice.invoice_number}`,
+    brand: { logoUrl: brand.logoUrl, companyName, tagline: brand.tagline },
+    bodyHtml: `
+        <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">Hi ${greeting},</p>
+        <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">${intro} <strong>Invoice #${invoice.invoice_number}</strong> for <strong>${fmtJMD(Number(invoice.balance_due))}</strong> ${dueText}.</p>
+        <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">Please arrange payment at your earliest convenience. Let us know if you have any questions.</p>
+        <p style="margin:0;font-family:Arial,Helvetica,sans-serif;color:#222222;">Thank you,<br/>${companyName}</p>`,
+    footerLines: [companyName, brand.website || ""],
+  });
 
   return { subject: `Payment Reminder - Invoice #${invoice.invoice_number}`, text, html };
 }
@@ -143,12 +146,12 @@ Deno.serve(async (req) => {
 
         const { data: company } = await supabase
           .from("company_settings")
-          .select("company_name")
+          .select("company_name, logo_url, tagline, website")
           .eq("company_id", invoice.company_id)
           .maybeSingle();
 
         const companyName = company?.company_name || "Your Company";
-        const { subject, html, text } = buildReminderEmail(invoice, client, companyName);
+        const { subject, html, text } = buildReminderEmail(invoice, client, companyName, { logoUrl: company?.logo_url, tagline: company?.tagline, website: company?.website });
 
         await sendEmail(client.email, subject, html, text);
 

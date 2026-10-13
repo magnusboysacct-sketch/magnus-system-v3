@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { emailButton, renderEmail } from "../_shared/emailLayout.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -124,44 +125,19 @@ Deno.serve(async (req) => {
 
     const resetUrl = `${redirectTo}?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`;
 
-    const html = `
-      <div style="font-family:Arial,sans-serif;background:#f6f6f6;padding:30px;">
-        <div style="max-width:620px;margin:auto;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #ddd;">
-          <div style="background:#ffffff;color:#111;padding:24px;text-align:center;border-top:5px solid #d4a017;border-bottom:1px solid #e5e7eb;">
-            ${
-              /* Plain white header so any logo (dark, light or colourful) is visible. With a logo, the logo stands alone (a wordmark already contains the
-                 company name); without one, the company name is shown as text. Natural proportions, capped (email clients ignore object-fit). */
-              companyLogo
-                ? `<img src="${esc(companyLogo)}" alt="${esc(companyName)}" style="display:block;margin:0 auto 12px;width:auto;height:auto;max-height:70px;max-width:260px;border:0;">`
-                : `<h2 style="margin:0;font-size:24px;color:#111;">${esc(companyName)}</h2>`
-            }
-            <p style="margin:8px 0 0;font-size:13px;color:#666;">${esc(companyTagline)}</p>
-          </div>
-
-          <div style="padding:32px;color:#222;">
-            <h2 style="margin-top:0;">Reset your password</h2>
-            <p>We received a request to reset the password for your account on the Magnus construction management platform.</p>
-            <p>Click the button below to choose a new password. If you didn't request this, you can safely ignore this email.</p>
-
-            <div style="text-align:center;margin:32px 0;">
-              <a href="${resetUrl}" style="background:#d4a017;color:#fff;padding:14px 28px;text-decoration:none;border-radius:6px;display:inline-block;font-weight:bold;">
-                Reset Password
-              </a>
-            </div>
-
-            <p style="font-size:13px;color:#777;">If the button does not work, copy and paste this link into your browser:</p>
-            <p style="font-size:12px;word-break:break-all;color:#777;">${resetUrl}</p>
-
-            <p style="font-size:12px;color:#999;margin-top:24px;">This link will expire in 1 hour.</p>
-          </div>
-
-          <div style="background:#f0f0f0;padding:18px;text-align:center;font-size:12px;color:#666;">
-            <p style="margin:0;">${esc(companyName)}</p>
-            <p style="margin:5px 0;">${esc(companyWebsite)}</p>
-          </div>
-        </div>
-      </div>
-    `;
+    const html = renderEmail({
+      title: `Reset your password - ${companyName}`,
+      brand: { logoUrl: companyLogo, companyName, tagline: companyTagline },
+      bodyHtml: `
+          <h2 style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:20px;color:#111111;">Reset your password</h2>
+          <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">We received a request to reset the password for your account on the Magnus construction management platform.</p>
+          <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">Click the button below to choose a new password. If you didn't request this, you can safely ignore this email.</p>
+          ${emailButton(resetUrl, "Reset Password")}
+          <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;font-size:13px;color:#777777;">If the button does not work, copy and paste this link into your browser:</p>
+      <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;font-size:12px;word-break:break-all;color:#777777;">${resetUrl}</p>
+          <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;font-size:12px;color:#999999;margin-top:24px;">This link will expire in 1 hour.</p>`,
+      footerLines: [companyName, companyWebsite],
+    });
 
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
