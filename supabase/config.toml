@@ -50,3 +50,17 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/photo-share-resolve/deno.json"
 entrypoint = "./functions/photo-share-resolve/index.ts"
+
+# JWT verification for the portal functions, matching what is live (checked 2026-10-13 with `supabase functions list`),
+# so a future deploy cannot flip it. Browser callers send the anon key, which is a valid JWT.
+[functions.client-portal-login]
+enabled = true
+verify_jwt = true
+
+[functions.client-password-reset]
+enabled = true
+verify_jwt = true
+
+[functions.portal-sign-contract]
+enabled = true
+verify_jwt = true
