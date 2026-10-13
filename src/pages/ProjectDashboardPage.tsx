@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import FieldOfficerPortalCard from "../components/FieldOfficerPortalCard";
 import {
   Ruler, ShoppingCart, Wallet, FileText, BarChart3,
   ArrowRight, DollarSign, Users, Package, Receipt,
@@ -571,6 +572,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
       <div className="p-6 space-y-5">{/* ── OVERVIEW ── */}
         {tab==="overview"&&(
           <>
+            <FieldOfficerPortalCard projectId={projectId || ""} userRole={userRole} />
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               {[
                 {label:"Milestones",  value:`${msComplete}/${milestones.length}`, sub:"completed", color:"text-cyan-400",    bg:"bg-cyan-500/10",    border:"border-cyan-500/20",    icon:<Flag size={14}/>},

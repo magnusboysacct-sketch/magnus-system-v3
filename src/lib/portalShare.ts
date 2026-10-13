@@ -27,6 +27,12 @@ export function getPortalUrl(client: { portal_token?: string | null } | null | u
   return `${PORTAL_BASE}/portal/${client.portal_token}`;
 }
 
+// A field officer's own invite link (their personal portal login), on the same base as the client link.
+export function getContactPortalUrl(portalToken: string | null | undefined): string | null {
+  if (!portalToken) return null;
+  return `${PORTAL_BASE}/portal/contact/${portalToken}`;
+}
+
 export async function shareWithClient(
   type: ShareItemType,
   id: string,
