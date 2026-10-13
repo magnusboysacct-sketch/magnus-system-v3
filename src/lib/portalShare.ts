@@ -27,10 +27,26 @@ export function getPortalUrl(client: { portal_token?: string | null } | null | u
   return `${PORTAL_BASE}/portal/${client.portal_token}`;
 }
 
-// A field officer's own invite link (their personal portal login), on the same base as the client link.
+// A field officer's own invite link (their personal portal login). Unlike the client link this is ALWAYS the production address,
+// even when the app is running on localhost: the link is sent to another person's phone, where a localhost address is
+// useless (and WhatsApp does not make it tappable).
+export const PRODUCTION_PORTAL_BASE = "https://app.magnusboys.com";
 export function getContactPortalUrl(portalToken: string | null | undefined): string | null {
   if (!portalToken) return null;
-  return `${PORTAL_BASE}/portal/contact/${portalToken}`;
+  return `${PRODUCTION_PORTAL_BASE}/portal/contact/${portalToken}`;
+}
+
+// The WhatsApp text for a field officer's invite. The link stands alone on its own line, with a blank line before and after it and
+// nothing touching it (no "link:", brackets, quotes, *bold* / _italic_ marks or trailing full stop), so WhatsApp makes it tappable.
+// Pass the result through buildWhatsAppUrl(), which encodes it exactly once.
+export function buildContactInviteMessage(opts: { contactName?: string | null; companyName: string; projectName?: string | null; url: string }): string {
+  const first = String(opts.contactName || "").trim().split(/\s+/)[0];
+  const project = String(opts.projectName || "").trim();
+  return (
+    `Hi${first ? " " + first : ""}, you've been given access to the ${opts.companyName} project portal${project ? " for " + project : ""}.\n\n` +
+    `${opts.url}\n\n` +
+    `Open the link to set your password.`
+  );
 }
 
 export async function shareWithClient(

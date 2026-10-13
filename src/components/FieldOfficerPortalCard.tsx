@@ -6,7 +6,9 @@
 // which do the real permission and company checks and raise readable errors; this component only shows them.
 import React, { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { buildWhatsAppUrl, formatJamaicaDateTime, getContactPortalUrl } from "../lib/portalShare";
+import { buildContactInviteMessage, buildWhatsAppUrl, formatJamaicaDateTime, getContactPortalUrl } from "../lib/portalShare";
+import { useCompanySettings } from "../hooks/useCompanySettings";
+import { companyDisplayName } from "../lib/companyName";
 
 // The same staff roles the three RPCs allow.
 const FIELD_OFFICER_PORTAL_ROLES = ["director", "admin", "estimator", "supervisor", "office_user", "secretary"];
@@ -38,6 +40,8 @@ export default function FieldOfficerPortalCard({ projectId, userRole }: { projec
   const [info, setInfo] = useState<ContactPortalStatus | null>(null);
   const [phone, setPhone] = useState<string | null>(null);
   const [clientName, setClientName] = useState<string>("the client");
+  const [projectName, setProjectName] = useState<string>("");
+  const { settings: companySettings } = useCompanySettings();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -58,10 +62,12 @@ export default function FieldOfficerPortalCard({ projectId, userRole }: { projec
         const { data: c } = await supabase.from("client_contacts").select("phone").eq("id", s.contact_id).maybeSingle();
         setPhone((c as { phone?: string | null } | null)?.phone ?? null);
       }
-      const { data: p } = await supabase.from("projects").select("clients(name)").eq("id", projectId).maybeSingle();
-      const nm = (p as { clients?: { name?: string } | { name?: string }[] | null } | null)?.clients;
+      const { data: p } = await supabase.from("projects").select("name, clients(name)").eq("id", projectId).maybeSingle();
+      const row = p as { name?: string | null; clients?: { name?: string } | { name?: string }[] | null } | null;
+      const nm = row?.clients;
       const resolved = Array.isArray(nm) ? nm[0]?.name : nm?.name;
       if (resolved) setClientName(resolved);
+      setProjectName(row?.name || "");
     } catch (e: unknown) {
       setInfo(null);
       setError(errText(e) || "Could not load portal access for this project.");
@@ -126,11 +132,12 @@ export default function FieldOfficerPortalCard({ projectId, userRole }: { projec
 
   function sendWhatsApp() {
     if (!url || !info) return;
-    const text =
-      `Hello ${info.contact_name || ""},\n\n` +
-      `You have been given your own login to follow your project${clientName !== "the client" ? ` for ${clientName}` : ""} on the project portal.\n\n` +
-      `Open this link and create your password:\n${url}\n\n` +
-      `The link is personal to you, please do not share it.`;
+    const text = buildContactInviteMessage({
+      contactName: info.contact_name,
+      companyName: companyDisplayName(companySettings?.company_name),
+      projectName,
+      url,
+    });
     window.open(buildWhatsAppUrl(phone, text), "_blank", "noopener");
   }
 
