@@ -14,8 +14,10 @@ import { companyDisplayName } from "../lib/companyName";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { functionErrorMessage } from "../lib/portalErrors";
+import { useForceLightPage } from "../hooks/useForceLightPage";
 
 export default function ClientLoginPage() {
+  useForceLightPage(); // always light, whatever the device's dark-mode setting
   const nav = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

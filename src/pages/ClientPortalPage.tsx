@@ -4,6 +4,7 @@ import { companyDisplayName } from "../lib/companyName";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { logPortalEvent } from "../lib/portalActivity";
+import { useForceLightPage } from "../hooks/useForceLightPage";
 import { functionErrorMessage } from "../lib/portalErrors";
 import ContractDocument, { printContractDocument, printContractDocumentFresh, watermarkFromCompany } from "../components/ContractDocument";
 import { useContractSignatureSrcs, isLegacySignatureUrl } from "../lib/contractSignatures";
@@ -515,6 +516,7 @@ async function normalizeSignature(dataUrl:string):Promise<string>{
 }
 
 export default function ClientPortalPage() {
+  useForceLightPage(); // the login/setup/invite screens and the portal are always light, whatever the device's dark-mode setting
   // Two distinct, unrelated ways to arrive here: /portal/:token is the
   // magic-link flow (token compared against clients.portal_token — an
   // intentional separate feature, left as-is below); /client-portal/session/

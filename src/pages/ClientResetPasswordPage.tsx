@@ -3,8 +3,10 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { functionErrorMessage } from "../lib/portalErrors";
+import { useForceLightPage } from "../hooks/useForceLightPage";
 
 export default function ClientResetPasswordPage() {
+  useForceLightPage(); // always light, whatever the device's dark-mode setting
   const [params] = useSearchParams();
   const nav = useNavigate();
 
