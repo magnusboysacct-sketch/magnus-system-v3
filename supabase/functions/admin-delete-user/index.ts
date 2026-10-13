@@ -184,6 +184,14 @@ Deno.serve(async (req) => {
       );
 
       if (authDeleteError) {
+        // Shows in the Edge Function logs; the response below is what the UI gets.
+        console.error("admin-delete-user: admin_delete_auth_user failed (orphaned auth account)", {
+          userId,
+          message: authDeleteError.message,
+          code: authDeleteError.code,
+          details: authDeleteError.details,
+          hint: authDeleteError.hint,
+        });
         return jsonResponse({
           error: authDeleteError.message || "Failed to delete auth user via SQL",
           details: authDeleteError,
@@ -212,6 +220,14 @@ Deno.serve(async (req) => {
     );
 
     if (authDeleteError) {
+      // Shows in the Edge Function logs; the response below is what the UI gets.
+      console.error("admin-delete-user: admin_delete_auth_user failed", {
+        userId,
+        message: authDeleteError.message,
+        code: authDeleteError.code,
+        details: authDeleteError.details,
+        hint: authDeleteError.hint,
+      });
       return jsonResponse({
         error: authDeleteError.message || "Failed to delete auth user via SQL",
         details: authDeleteError,

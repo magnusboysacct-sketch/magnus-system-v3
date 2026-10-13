@@ -459,12 +459,13 @@ export default function SettingsUsersPage() {
       });
 
       if (error) {
-        setErr(error.message || "Delete failed.");
+        console.error("Delete user error:", error);
+        setErr(await edgeFunctionFailure(error, "Delete failed."));
         return;
       }
 
       if (data?.error) {
-        setErr(String(data.error));
+        setErr(withDetails(String(data.error), data.details));
         return;
       }
 
@@ -493,12 +494,13 @@ export default function SettingsUsersPage() {
       });
 
       if (error) {
-        setErr(error.message || "Delete failed.");
+        console.error("Delete invitation error:", error);
+        setErr(await edgeFunctionFailure(error, "Delete failed."));
         return;
       }
 
       if (data?.error) {
-        setErr(String(data.error));
+        setErr(withDetails(String(data.error), data.details));
         return;
       }
 
