@@ -342,6 +342,8 @@ export default function App() {
             </Route>
 
             <Route path="/portal/:token" element={<ClientPortalPage />} />
+            {/* A field officer's own invite link: signs in as that one contact, who sees only their assigned projects */}
+            <Route path="/portal/contact/:contactToken" element={<ClientPortalPage />} />
             {/* Public, no login: a photo share link (checked server-side by the photo-share-resolve function) */}
             <Route path="/shared/:token" element={<SharedPhotosPage />} />
             <Route path="/client-login" element={<ClientLoginPage />} />

@@ -13,6 +13,9 @@ import { normalizeProjects, hasMultipleProjects, filterByProject, itemProjectLab
 import type { PortalProject } from "../lib/portalProjects";
 
 type AuthState = "loading"|"error"|"setup"|"login"|"authenticated";
+// A field officer (client contact) signing in with their own invite link. The viewer block of get_portal_data says who is looking.
+interface PortalContact { id:string; name:string; email:string|null; client_name:string|null; }
+type PortalViewer = {kind:"manager"}|{kind:"contact";contact_id:string;name?:string|null;title?:string|null;email?:string|null};
 type Tab = "overview"|"photos"|"invoices"|"contracts"|"changes"|"feedback"|"estimates";
 
 // No portal_password_hash — nothing in this file selects it anymore, so it
@@ -131,8 +134,14 @@ function Toast({msg,type="success",onDone}:{msg:string;type?:"success"|"error";o
     {type==="success"?"?":"?"} {msg}
   </div>;
 }
-function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company:Co|null;mode:"setup"|"login";token:string;onSuccess:()=>void}) {
-  const [email,setEmail]=useState(client.portal_email||client.email||"");
+function AuthScreen({client,company,mode,token,onSuccess,contact}:{client:Client;company:Co|null;mode:"setup"|"login";token:string;onSuccess:()=>void;contact?:PortalContact|null}) {
+  // With a contact this is a field officer's own invite link: their own actions, greeting and session key. Otherwise unchanged.
+  const sessionKey=contact?`portal_contact_${contact.id}`:`portal_${client.id}`;
+  const setupAction=contact?"contactLinkSetup":"magicLinkSetup";
+  const loginAction=contact?"contactLinkLogin":"magicLinkLogin";
+  const displayName=contact?contact.name:(client.contact_name||client.name);
+  const loginEmail=contact?contact.email:(client.portal_email||client.email);
+  const [email,setEmail]=useState((contact?contact.email:(client.portal_email||client.email))||"");
   const [password,setPassword]=useState("");
   const [confirm,setConfirm]=useState("");
   const [loading,setLoading]=useState(false);
@@ -153,9 +162,9 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
     if(password!==confirm){setError("Passwords do not match.");return;}
     setLoading(true);setError("");
     const {data,error:invokeError}=await supabase.functions.invoke("client-portal-login",
-      {body:{action:"magicLinkSetup",portalToken:token,email:email.trim(),password}});
+      {body:{action:setupAction,portalToken:token,email:email.trim(),password}});
     if(invokeError||data?.error){setError(await functionErrorMessage(invokeError,data,invokeError?.message||"Failed to set up account."));setLoading(false);return;}
-    localStorage.setItem(`portal_${client.id}`,data.sessionToken);
+    localStorage.setItem(sessionKey,data.sessionToken);
     onSuccess();setLoading(false);
   }
 
@@ -188,9 +197,9 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
     if(!password){setError("Please enter your password.");return;}
     setLoading(true);setError("");
     const {data,error:invokeError}=await supabase.functions.invoke("client-portal-login",
-      {body:{action:"magicLinkLogin",portalToken:token,password}});
+      {body:{action:loginAction,portalToken:token,password}});
     if(invokeError||data?.error){setError(await functionErrorMessage(invokeError,data,invokeError?.message||"Login failed. Please try again."));setLoading(false);return;}
-    localStorage.setItem(`portal_${client.id}`,data.sessionToken);
+    localStorage.setItem(sessionKey,data.sessionToken);
     onSuccess();setLoading(false);
   }
 
@@ -208,12 +217,12 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
         {company?.logo_url?<img src={company.logo_url} style={{display:"block",width:"auto",height:"auto",maxHeight:52,maxWidth:200,objectFit:"contain",margin:"0 auto 10px"}}/>
           :<div style={{width:52,height:52,borderRadius:12,background:"linear-gradient(135deg,#0891b2,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:18,margin:"0 auto 10px",color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
         <div style={{fontSize:17,fontWeight:800,color:"#0f172a",marginBottom:3}}>{companyDisplayName(company?.company_name)}</div>
-        <div style={{fontSize:12,color:"#64748b"}}>Client Portal</div>
+        <div style={{fontSize:12,color:"#64748b"}}>{contact?`${contact.client_name||"Client"} · Field officer portal`:"Client Portal"}</div>
       </div>
       <div style={S.card}>
         <h2 style={{fontSize:19,fontWeight:800,color:"#0f172a",margin:"0 0 6px"}}>{mode==="setup"?"Activate Your Account":"Welcome Back"}</h2>
         <p style={{fontSize:13,color:"#475569",margin:"0 0 20px",lineHeight:1.6}}>
-          {mode==="setup"?`Hello ${client.contact_name||client.name}! Create a password to access your project portal.`:`Sign in to view your project updates.`}
+          {mode==="setup"?`Hello ${displayName}! Create a password to access your project portal.`:`Sign in to view your project updates.`}
         </p>
         {error&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#dc2626",marginBottom:14}}>⚠ {error}</div>}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -222,7 +231,7 @@ function AuthScreen({client,company,mode,token,onSuccess}:{client:Client;company
             <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="your@email.com" style={S.input}/>
           </div>}
           {mode==="login"&&<div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#1d4ed8"}}>
-            📧 Signing in as: <strong>{client.portal_email||client.email}</strong>
+            📧 Signing in as: <strong>{loginEmail}</strong>
           </div>}
           <div>
             <label style={S.label}>{mode==="setup"?"CREATE PASSWORD":"PASSWORD"}</label>
@@ -515,8 +524,13 @@ export default function ClientPortalPage() {
   // named "token" that the session flow never actually populated correctly.
   const {token}=useParams<{token:string}>();
   const {sessionToken}=useParams<{sessionToken:string}>();
+  // /portal/contact/:contactToken: a field officer's own invite link (their personal login, scoped to their projects).
+  const {contactToken}=useParams<{contactToken:string}>();
   const [authState,setAuthState]=useState<AuthState>("loading");
   const [client,setClient]=useState<Client|null>(null);
+  // Who is looking, from get_portal_data's viewer block. Missing/null means the client's own (manager) login, exactly as before.
+  const [viewer,setViewer]=useState<PortalViewer|null>(null);
+  const [contactInfo,setContactInfo]=useState<PortalContact|null>(null);
   // The real credential client_comments' new RPC functions validate —
   // NOT the magic-link `token` param. Both login paths (magic-link and
   // email+password) converge on a client_portal_sessions.session_token
@@ -560,6 +574,7 @@ export default function ClientPortalPage() {
   const [switchingProject,setSwitchingProject]=useState(false);
   const projectGate=React.useRef(createRequestGate());
   const multiProject=hasMultipleProjects(projects);
+  const isContact=viewer?.kind==="contact";
   const activeProjectId=selectedProjectId||project?.id||null;
   const selectedProjectName=projects.find(p=>p.id===activeProjectId)?.name||project?.name||"";
   const reviewSubmitted=!!activeProjectId&&reviewedProjectIds.includes(activeProjectId);
@@ -572,8 +587,9 @@ export default function ClientPortalPage() {
 
   useEffect(()=>{
     if(sessionToken)checkAuthViaSession(sessionToken);
+    else if(contactToken)checkContactAuth();
     else if(token)checkAuth();
-  },[token,sessionToken]);
+  },[token,sessionToken,contactToken]);
 
   // Portal activity logging (client_portal_activity) — fire-and-forget, see
   // src/lib/portalActivity.ts. These effects only observe existing state; they
@@ -608,6 +624,10 @@ export default function ClientPortalPage() {
   useEffect(()=>{
     if(tab==="estimates"&&visEstimates.length===0)setTab("overview");
   },[tab,visEstimates.length]);
+  // A field officer has no Estimates / Contracts / Invoices / Feedback tabs; never leave the view on one of them.
+  useEffect(()=>{
+    if(isContact&&(tab==="estimates"||tab==="contracts"||tab==="invoices"||tab==="feedback"))setTab("overview");
+  },[isContact,tab]);
 
   // Session-URL route (email+password login from ClientLoginPage.tsx): the session token in the
   // URL is validated AND everything the page shows is loaded by ONE server call, get_portal_data.
@@ -637,9 +657,31 @@ export default function ClientPortalPage() {
       const sess=localStorage.getItem(`portal_${info.client.id}`);
       if(sess){
         const {data:d}=await supabase.rpc("get_portal_data",{p_session_token:sess});
-        if(d&&d.client?.id===info.client.id){setPortalSessionToken(sess);logPortalEvent(sess,"session_resume");await loadData(d.client,sess,d);setAuthState("authenticated");return;}
+        if(d&&d.client?.id===info.client.id&&d.viewer?.kind!=="contact"){setPortalSessionToken(sess);logPortalEvent(sess,"session_resume");await loadData(d.client,sess,d);setAuthState("authenticated");return;}
       }
       setAuthState((info.mode||(info.client.portal_activated_at?"login":"setup"))==="setup"?"setup":"login");
+    } catch {setErrorMsg("Something went wrong.");setAuthState("error");}
+  }
+
+  // /portal/contact/:contactToken. The link identifies the contact (it never returns anything secret). A stored session is
+  // resumed ONLY if the server says it belongs to this very contact; otherwise the setup/login screen is shown.
+  async function checkContactAuth() {
+    setAuthState("loading");
+    try {
+      const {data:info}=await supabase.rpc("get_contact_portal_link_info",{p_portal_token:contactToken});
+      if(!info||!info.contact){setErrorMsg("This invite link is invalid or has been withdrawn.");setAuthState("error");return;}
+      const ct:PortalContact={id:info.contact.id,name:info.contact.name,email:info.contact.email??null,client_name:info.contact.client_name??null};
+      setContactInfo(ct);
+      setClient({id:"",name:ct.client_name||"",contact_name:ct.name,email:ct.email,portal_email:ct.email,portal_activated_at:null});
+      setCompany({company_name:null,logo_url:null,phone:null,email:null,address_line1:null,...(info.company||{})} as Co);
+      const key=`portal_contact_${ct.id}`;
+      const sess=localStorage.getItem(key);
+      if(sess){
+        const {data:d}=await supabase.rpc("get_portal_data",{p_session_token:sess});
+        if(d&&d.viewer?.kind==="contact"&&d.viewer.contact_id===ct.id){setPortalSessionToken(sess);logPortalEvent(sess,"session_resume");await loadData(d.client,sess,d);setAuthState("authenticated");return;}
+        localStorage.removeItem(key); // expired, revoked, or not this contact's: forget it
+      }
+      setAuthState(info.mode==="setup"?"setup":"login");
     } catch {setErrorMsg("Something went wrong.");setAuthState("error");}
   }
 
@@ -648,6 +690,7 @@ export default function ClientPortalPage() {
   // As before, the project-scoped lists are only touched when the client has a project.
   function applyPortalData(d:any,fallback?:Client){
     setClient(d.client||fallback||null);
+    setViewer(d.viewer?.kind==="contact"?d.viewer:null);
     setCompany(d.company||null);
     const proj=d.project||null;
     setProject(proj);
@@ -677,7 +720,7 @@ export default function ClientPortalPage() {
   // must be in the server's own list, and get_portal_data still applies its ownership check on the way.
   async function withRememberedProject(d:any,sessionTok:string){
     try{
-      const wanted=pickRememberedProject(readRememberedProject(d?.client?.id),normalizeProjects(d?.projects),d?.project?.id??null);
+      const wanted=pickRememberedProject(readRememberedProject(d?.viewer?.kind==="contact"?`contact_${d.viewer.contact_id}`:d?.client?.id),normalizeProjects(d?.projects),d?.project?.id??null);
       if(!wanted)return d;
       const {data:d2,error}=await supabase.rpc("get_portal_data",{p_session_token:sessionTok,p_project_id:wanted});
       return !error&&d2?d2:d;
@@ -689,6 +732,7 @@ export default function ClientPortalPage() {
       const ticket=projectGate.current.current();
       let d=prefetched??(await supabase.rpc("get_portal_data",projectId?{p_session_token:sessionTok,p_project_id:projectId}:{p_session_token:sessionTok})).data;
       if(!d)return;
+      const contactView=d?.viewer?.kind==="contact";
       if(prefetched&&!projectId)d=await withRememberedProject(d,sessionTok);
       if(projectGate.current.isCurrent(ticket))applyPortalData(d,c);
       const proj=d.project||null;
@@ -696,18 +740,18 @@ export default function ClientPortalPage() {
       if(cmErr)console.error("get_portal_comments failed:",cmErr);
       setComments(cm||[]);
       // Shared estimates come back per client, so this sits outside the if(proj) block.
-      try{
+      if(!contactView)try{
         const {data:es,error:esErr}=await supabase.rpc("get_portal_estimates",{p_session_token:sessionTok});
         if(esErr)console.error("get_portal_estimates failed:",esErr);
         setEstimates(Array.isArray(es)?es:[]);
       }catch(e){console.error("get_portal_estimates failed:",e);}
       // Contracts the contractor has sent (per client, like estimates), so also outside if(proj).
-      try{
+      if(!contactView)try{
         const {data:cts,error:ctErr}=await supabase.rpc("get_portal_contracts",{p_session_token:sessionTok});
         if(ctErr)console.error("get_portal_contracts failed:",ctErr);
         else setContracts(Array.isArray(cts)?cts:[]);
       }catch(e){console.error("get_portal_contracts failed:",e);}
-      if(proj){
+      if(proj&&!contactView){
         const inv=await supabase.rpc("get_portal_invoices",{p_session_token:sessionTok});
         setInvoices(inv.data||[]);
         if(inv.error)console.error("get_portal_invoices failed:",inv.error);
@@ -718,10 +762,12 @@ export default function ClientPortalPage() {
   async function onAuthSuccess(){
     // AuthScreen already wrote the freshly-minted session token to localStorage under this
     // client's key immediately before calling onSuccess(), so it is present here, not a race.
-    const sessTok=client?localStorage.getItem(`portal_${client.id}`):null;
+    const sessTok=contactInfo?localStorage.getItem(`portal_contact_${contactInfo.id}`):(client?localStorage.getItem(`portal_${client.id}`):null);
     if(sessTok){
       const {data:d}=await supabase.rpc("get_portal_data",{p_session_token:sessTok});
-      if(d){setPortalSessionToken(sessTok);await loadData(d.client,sessTok,d);}
+      // A contact link only ever opens that contact's own view.
+      const okForThisLink=contactInfo?(d?.viewer?.kind==="contact"&&d.viewer.contact_id===contactInfo.id):true;
+      if(d&&okForThisLink){setPortalSessionToken(sessTok);await loadData(d.client,sessTok,d);}
     }
     setAuthState("authenticated");
     setToast({msg:"Welcome to your project portal!",type:"success"});
@@ -741,7 +787,7 @@ export default function ClientPortalPage() {
       if(!projectGate.current.isCurrent(ticket))return;
       if(error||!d)throw new Error(error?.message||"No data returned");
       applyPortalData(d,client);
-      rememberProject(client.id,d.project?.id||id);
+      rememberProject(viewer?.kind==="contact"?`contact_${viewer.contact_id}`:client.id,d.project?.id||id);
     }catch(e){
       if(!projectGate.current.isCurrent(ticket))return;
       console.error("get_portal_data (project switch) failed:",e);
@@ -834,6 +880,15 @@ export default function ClientPortalPage() {
     try{
       if(portalSessionToken)void Promise.resolve(supabase.rpc("portal_logout",{p_session_token:portalSessionToken})).then(()=>{},()=>{});
     }catch{}
+    if(isContact){
+      // A field officer: forget only THEIR session key (a manager's session on this device is untouched).
+      const cid=(viewer&&viewer.kind==="contact"?viewer.contact_id:null)||contactInfo?.id;
+      if(cid)localStorage.removeItem(`portal_contact_${cid}`);
+      setPortalSessionToken(null);
+      if(contactToken&&contactInfo){setViewer(null);setAuthState("login");return;} // back to this contact's own login screen
+      window.location.assign("/client-login");
+      return;
+    }
     if(client)localStorage.removeItem(`portal_${client.id}`);
     setAuthState("login");
   }
@@ -857,12 +912,34 @@ export default function ClientPortalPage() {
 
   if(authState==="error")return <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><style>{G}</style><div style={{textAlign:"center",maxWidth:360}}><div style={{fontSize:52,marginBottom:14}}>🔒</div><h2 style={{color:"#0f172a",fontSize:20,fontWeight:700,marginBottom:8}}>Access Denied</h2><p style={{color:"#64748b",fontSize:14,lineHeight:1.6}}>{errorMsg}</p></div></div>;
 
-  if(authState==="setup"||authState==="login")return <><style>{G}</style><AuthScreen client={client!} company={company} mode={authState} token={token!} onSuccess={onAuthSuccess}/></>;
+  if(authState==="setup"||authState==="login")return <><style>{G}</style><AuthScreen client={client!} company={company} mode={authState} token={(contactInfo?contactToken:token)!} contact={contactInfo} onSuccess={onAuthSuccess}/></>;
 
   if(!client||authState!=="authenticated")return null;
 
+  // A field officer with nothing assigned (or whose projects were reassigned): a plain message instead of empty tabs.
+  if(isContact&&!project)return <div style={{minHeight:"100vh",background:"#f8fafc",color:"#0f172a",fontFamily:"system-ui,sans-serif"}}>
+    <style>{G}</style>
+    <div style={{maxWidth:860,margin:"0 auto",padding:"12px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,borderBottom:"1px solid #e2e8f0"}}>
+      <div style={{fontWeight:700,fontSize:13}}>{companyDisplayName(company?.company_name)}</div>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:12,fontWeight:600}}>{viewer&&viewer.kind==="contact"?viewer.name:""}</div>
+          <div style={{fontSize:10,color:"#64748b"}}>{client.name} · field officer view</div>
+        </div>
+        <button onClick={signOut} style={{padding:"6px 12px",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",fontSize:11,cursor:"pointer",fontWeight:600}}>Sign Out</button>
+      </div>
+    </div>
+    <div style={{maxWidth:520,margin:"60px auto",padding:"0 20px",textAlign:"center"}}>
+      <div style={{fontSize:44,marginBottom:12}}>📋</div>
+      <h2 style={{fontSize:18,fontWeight:700,margin:"0 0 8px"}}>No projects assigned</h2>
+      <p style={{fontSize:14,color:"#64748b",lineHeight:1.6,margin:0}}>No projects are assigned to you right now. Contact {companyDisplayName(company?.company_name)}.</p>
+    </div>
+  </div>;
+
   const sColor:Record<string,string>={active:"#22c55e",planning:"#3b82f6",on_hold:"#f59e0b",completed:"#94a3b8",cancelled:"#ef4444"};
-  const TABS=[{id:"overview",label:"Overview",emoji:"📋"},...(visEstimates.length?[{id:"estimates",label:"Estimates",emoji:"📐",badge:visEstimates.length}]:[]),{id:"contracts",label:"Contracts",emoji:"📝",badge:countUnsigned(visContracts)||undefined},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"invoices",label:"Invoices",emoji:"🧾",badge:countUnpaid(visInvoices)||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined},{id:"feedback",label:"Feedback",emoji:"⭐"}] as const;
+  const TABS:ReadonlyArray<{id:string;label:string;emoji:string;badge?:number}>=isContact
+    ?[{id:"overview",label:"Overview",emoji:"📋"},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined}]
+    :[{id:"overview",label:"Overview",emoji:"📋"},...(visEstimates.length?[{id:"estimates",label:"Estimates",emoji:"📐",badge:visEstimates.length}]:[]),{id:"contracts",label:"Contracts",emoji:"📝",badge:countUnsigned(visContracts)||undefined},{id:"photos",label:"Photos",emoji:"📸",badge:photos.length||undefined},{id:"invoices",label:"Invoices",emoji:"🧾",badge:countUnpaid(visInvoices)||undefined},{id:"changes",label:"Changes",emoji:"⚠️",badge:pendingChanges||undefined},{id:"feedback",label:"Feedback",emoji:"⭐"}];
 
   return <div style={{minHeight:"100vh",background:"#f8fafc",color:"#0f172a",fontFamily:"system-ui,sans-serif"}}>
     <style>{G}</style>
@@ -874,13 +951,13 @@ export default function ClientPortalPage() {
             :<div style={{width:34,height:34,borderRadius:8,background:"linear-gradient(135deg,#0891b2,#06b6d4)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,color:"#fff"}}>{(company?.company_name||"M")[0]}</div>}
           <div>
             <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{companyDisplayName(company?.company_name)}</div>
-            <div style={{fontSize:10,color:"#64748b"}}>Client Portal</div>
+            <div style={{fontSize:10,color:"#64748b"}}>{isContact?"Field officer portal":"Client Portal"}</div>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{textAlign:"right"}}>
-            <div style={{fontSize:12,fontWeight:600,color:"#0f172a"}}>{client.contact_name||client.name}</div>
-            <div style={{fontSize:10,color:"#64748b"}}>{client.portal_email||client.email}</div>
+            <div style={{fontSize:12,fontWeight:600,color:"#0f172a"}}>{viewer&&viewer.kind==="contact"?(viewer.name||client.contact_name||client.name):(client.contact_name||client.name)}</div>
+            <div style={{fontSize:10,color:"#64748b"}}>{isContact?`${client.name} · field officer view`:(client.portal_email||client.email)}</div>
           </div>
           <button onClick={signOut} style={{padding:"6px 12px",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,color:"#475569",fontSize:11,cursor:"pointer",fontWeight:600}}>Sign Out</button>
         </div>
@@ -911,8 +988,8 @@ export default function ClientPortalPage() {
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
-        {[{l:"Paid",v:fmt(totalPaid),c:"#22c55e"},{l:"Balance Due",v:fmt(balanceDue),c:balanceDue>0?"#ef4444":"#22c55e"},{l:"Pending",v:`${pendingChanges}`,c:pendingChanges>0?"#f59e0b":"#64748b"}].map((s,i)=>(
+      <div style={{display:"grid",gridTemplateColumns:`repeat(${isContact?1:3},1fr)`,gap:10}}>
+        {[...(isContact?[]:[{l:"Paid",v:fmt(totalPaid),c:"#22c55e"},{l:"Balance Due",v:fmt(balanceDue),c:balanceDue>0?"#ef4444":"#22c55e"}]),{l:"Pending",v:`${pendingChanges}`,c:pendingChanges>0?"#f59e0b":"#64748b"}].map((s,i)=>(
           <div key={i} style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px",textAlign:"center"}}>
             <div style={{fontSize:18,fontWeight:800,color:s.c}}>{s.v}</div>
             <div style={{fontSize:10,color:"#475569",marginTop:3}}>{s.l}</div>
@@ -1122,7 +1199,7 @@ export default function ClientPortalPage() {
       </div>}
 
       {tab==="changes"&&<div style={{display:"flex",flexDirection:"column",gap:12,animation:"fadeIn 0.3s ease"}}>
-        <div style={{background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#f59e0b"}}>⚠️ Change orders need your approval before work begins.</div>
+        <div style={{background:"rgba(245,158,11,0.07)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:12,padding:"12px 16px",fontSize:13,color:"#f59e0b"}}>{isContact?"Changes are approved by your organisation's portal manager.":"⚠️ Change orders need your approval before work begins."}</div>
         {changes.length===0?<div style={{background:"#ffffff",border:"1px solid #e2e8f0",borderRadius:16,padding:48,textAlign:"center"}}><div style={{fontSize:40,marginBottom:12}}>⚠️</div><p style={{color:"#64748b"}}>No change orders at this time.</p></div>
           :changes.map(co=><div key={co.id} style={{background:"#ffffff",border:`1px solid ${co.status==="approved"?"rgba(34,197,94,0.3)":co.status==="rejected"?"rgba(239,68,68,0.2)":"#e2e8f0"}`,borderRadius:16,padding:20}}>
             <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:4}}>{co.title}</div>
@@ -1131,12 +1208,12 @@ export default function ClientPortalPage() {
               <span style={{fontSize:17,fontWeight:800,color:"#0f172a"}}>{fmt(Number(co.amount||0))}</span>
               <span style={{fontSize:10,padding:"3px 10px",borderRadius:20,fontWeight:700,textTransform:"capitalize",background:co.status==="approved"?"rgba(34,197,94,0.15)":co.status==="rejected"?"rgba(239,68,68,0.15)":"rgba(245,158,11,0.15)",color:co.status==="approved"?"#22c55e":co.status==="rejected"?"#ef4444":"#f59e0b"}}>{co.status}</span>
             </div>
-            {co.status==="pending"&&<div style={{display:"flex",gap:10}}>
+            {co.status==="pending"&&!isContact&&<div style={{display:"flex",gap:10}}>
               <button onClick={()=>respondChange(co.id,"approved")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"#16a34a",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:respondingTo===co.id?0.6:1}}>✅ Approve</button>
               <button onClick={()=>respondChange(co.id,"rejected")} disabled={respondingTo===co.id} style={{flex:1,padding:"11px 0",background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.25)",borderRadius:10,color:"#ef4444",fontSize:13,fontWeight:700,cursor:"pointer"}}>✗ Reject</button>
             </div>}
-            {co.status==="approved"&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>✅ You approved this change</div>}
-            {co.status==="rejected"&&<div style={{fontSize:12,color:"#ef4444",fontWeight:600}}>✗ You rejected this change</div>}
+            {co.status==="approved"&&<div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{isContact?"✅ Approved":"✅ You approved this change"}</div>}
+            {co.status==="rejected"&&<div style={{fontSize:12,color:"#ef4444",fontWeight:600}}>{isContact?"✗ Rejected":"✗ You rejected this change"}</div>}
           </div>)}
       </div>}
 
