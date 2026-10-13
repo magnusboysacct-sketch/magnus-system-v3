@@ -1,4 +1,9 @@
+// Client-portal password reset. Handles both kinds of portal login:
+//   - the client (manager) login, stored on clients (unchanged behaviour);
+//   - a contact login, stored on client_contact_portal_access (reset link carries kind=contact).
+// The client login is always looked up first, the same order client-portal-login uses.
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { equalStrings, generateToken, hashPassword, normalizeEmail } from "../_shared/portalPassword.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +19,7 @@ type RequestBody = {
   email?: string;
   token?: string;
   newPassword?: string;
+  kind?: "manager" | "contact";
 };
 
 function jsonResponse(data: unknown, status = 200) {
@@ -29,20 +35,6 @@ function esc(value: unknown) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
-}
-
-async function hashPassword(p: string): Promise<string> {
-  const data = new TextEncoder().encode(p + "magnus_portal_2026");
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function generateToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 Deno.serve(async (req) => {
@@ -75,9 +67,10 @@ Deno.serve(async (req) => {
     const action = body.action || "request";
 
     if (action === "request") {
-      const email = String(body.email || "").trim().toLowerCase();
+      // normalizeEmail() also keeps the value safe inside the .or() filter below.
+      const email = normalizeEmail(body.email);
 
-      if (!email || !email.includes("@")) {
+      if (!email) {
         return jsonResponse({ error: "A valid email is required" }, 400);
       }
 
@@ -86,6 +79,18 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "Missing RESEND_API_KEY secret" }, 500);
       }
 
+      const genericResponse = {
+        success: true,
+        message: "If an account exists for this email, a reset link has been sent.",
+      };
+
+      const token = generateToken();
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+      // Who is resetting: the client login first, else a live contact login with that email.
+      let kind: "manager" | "contact" = "manager";
+      let companyId: string | null = null;
+
       const { data: client } = await supabaseAdmin
         .from("clients")
         .select("id, name, contact_name, email, portal_email, portal_enabled, company_id")
@@ -93,35 +98,60 @@ Deno.serve(async (req) => {
         .eq("portal_enabled", true)
         .maybeSingle();
 
-      const genericResponse = {
-        success: true,
-        message: "If an account exists for this email, a reset link has been sent.",
-      };
+      if (client) {
+        const { error: updateError } = await supabaseAdmin
+          .from("clients")
+          .update({
+            portal_reset_token: token,
+            portal_reset_expires_at: expiresAt,
+          })
+          .eq("id", client.id);
 
-      if (!client) {
-        return jsonResponse(genericResponse);
-      }
+        if (updateError) {
+          console.error("Failed to store reset token:", updateError.message);
+          return jsonResponse(genericResponse);
+        }
+        companyId = client.company_id;
+      } else {
+        const { data: access } = await supabaseAdmin
+          .from("client_contact_portal_access")
+          .select("contact_id, company_id")
+          .eq("portal_email", email)
+          .eq("enabled", true)
+          .is("revoked_at", null)
+          .maybeSingle();
+        if (!access) {
+          return jsonResponse(genericResponse);
+        }
+        // The contact's client must still have the portal switched on
+        const { data: contact } = await supabaseAdmin
+          .from("client_contacts")
+          .select("client_id")
+          .eq("id", access.contact_id)
+          .maybeSingle();
+        const { data: contactClient } = contact
+          ? await supabaseAdmin.from("clients").select("id").eq("id", contact.client_id).eq("portal_enabled", true).maybeSingle()
+          : { data: null };
+        if (!contactClient) {
+          return jsonResponse(genericResponse);
+        }
 
-      const token = generateToken();
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-
-      const { error: updateError } = await supabaseAdmin
-        .from("clients")
-        .update({
-          portal_reset_token: token,
-          portal_reset_expires_at: expiresAt,
-        })
-        .eq("id", client.id);
-
-      if (updateError) {
-        console.error("Failed to store reset token:", updateError.message);
-        return jsonResponse(genericResponse);
+        const { error: updateError } = await supabaseAdmin
+          .from("client_contact_portal_access")
+          .update({ reset_token: token, reset_expires_at: expiresAt, updated_at: new Date().toISOString() })
+          .eq("contact_id", access.contact_id);
+        if (updateError) {
+          console.error("Failed to store contact reset token:", updateError.message);
+          return jsonResponse(genericResponse);
+        }
+        kind = "contact";
+        companyId = access.company_id;
       }
 
       const { data: company } = await supabaseAdmin
         .from("company_settings")
         .select("company_name, logo_url, tagline, website")
-        .eq("company_id", client.company_id)
+        .eq("company_id", companyId)
         .maybeSingle();
 
       const companyName = company?.company_name || "Your Company";
@@ -129,7 +159,7 @@ Deno.serve(async (req) => {
       const companyTagline = company?.tagline || "Secure. Simple. Built for Construction.";
       const companyWebsite = company?.website || APP_URL;
 
-      const resetUrl = `${APP_URL.replace(/\/+$/, "")}/client-reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+      const resetUrl = `${APP_URL.replace(/\/+$/, "")}/client-reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}${kind === "contact" ? "&kind=contact" : ""}`;
 
       const html = `
         <div style="font-family:Arial,sans-serif;background:#f6f6f6;padding:30px;">
@@ -193,7 +223,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "confirm") {
-      const email = String(body.email || "").trim().toLowerCase();
+      const email = normalizeEmail(body.email);
       const token = String(body.token || "").trim();
       const newPassword = String(body.newPassword || "");
 
@@ -203,6 +233,40 @@ Deno.serve(async (req) => {
 
       if (newPassword.length < 6) {
         return jsonResponse({ error: "Password must be at least 6 characters" }, 400);
+      }
+
+      // Contact login reset (link carries kind=contact)
+      if (body.kind === "contact") {
+        const { data: access } = await supabaseAdmin
+          .from("client_contact_portal_access")
+          .select("contact_id, reset_token, reset_expires_at")
+          .eq("portal_email", email)
+          .eq("enabled", true)
+          .is("revoked_at", null)
+          .maybeSingle();
+
+        if (!access || !access.reset_token || !equalStrings(access.reset_token, token)) {
+          return jsonResponse({ error: "Invalid or expired reset link." }, 400);
+        }
+        if (!access.reset_expires_at || new Date(access.reset_expires_at).getTime() < Date.now()) {
+          return jsonResponse({ error: "This reset link has expired. Please request a new one." }, 400);
+        }
+
+        const now = new Date().toISOString();
+        const { data: updated, error: updateError } = await supabaseAdmin
+          .from("client_contact_portal_access")
+          .update({ password_hash: await hashPassword(newPassword), activated_at: now,
+                    reset_token: null, reset_expires_at: null, updated_at: now })
+          .eq("contact_id", access.contact_id)
+          .eq("reset_token", access.reset_token) // one use only
+          .select("contact_id");
+        if (updateError) return jsonResponse({ error: updateError.message }, 500);
+        if (!updated?.length) return jsonResponse({ error: "Invalid or expired reset link." }, 400);
+
+        // A new password signs the contact out everywhere else.
+        await supabaseAdmin.from("client_portal_sessions").delete().eq("contact_id", access.contact_id);
+
+        return jsonResponse({ success: true, message: "Password updated successfully. You can now sign in." });
       }
 
       const { data: client, error: lookupError } = await supabaseAdmin
@@ -216,7 +280,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "Invalid or expired reset link." }, 400);
       }
 
-      if (!client.portal_reset_token || client.portal_reset_token !== token) {
+      if (!client.portal_reset_token || !equalStrings(client.portal_reset_token, token)) {
         return jsonResponse({ error: "Invalid or expired reset link." }, 400);
       }
 

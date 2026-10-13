@@ -115,6 +115,8 @@ Deno.serve(async (req) => {
       .select("id, client_id")
       .eq("session_token", sessionToken)
       .gt("expires_at", new Date().toISOString())
+      // Contracts are manager-only: a contact login (field officer) never gets past here.
+      .is("contact_id", null)
       .maybeSingle();
     if (sessErr) {
       console.error("portal-sign-contract session lookup failed:", sessErr.message);
