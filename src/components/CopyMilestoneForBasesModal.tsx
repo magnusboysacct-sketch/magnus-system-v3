@@ -48,14 +48,16 @@ async function loadProjectBases(projectId: string): Promise<string[]> {
 }
 
 export default function CopyMilestoneForBasesModal({
-  projectId, milestone, taskCount, existingMilestoneNames, onClose, onDone,
+  projectId, milestone, taskCount, existingMilestoneNames, originalHasProgress = false, onClose, onDone,
 }: {
   projectId: string;
   milestone: { id: string; milestone_name: string };
   taskCount: number;
   existingMilestoneNames: string[];
+  // true when the original already has progress (not planned, or any task started / paid): it can only be kept
+  originalHasProgress?: boolean;
   onClose: () => void;
-  onDone: (created: number) => void | Promise<void>;
+  onDone: (created: number, removedOriginal: boolean) => void | Promise<void>;
 }) {
   const [bases, setBases] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +67,8 @@ export default function CopyMilestoneForBasesModal({
   const [newName, setNewName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // The original is usually just a template, so removing it after copying is the default. Not possible once it has progress or payments.
+  const [removeOriginal, setRemoveOriginal] = useState(!originalHasProgress);
 
   useEffect(() => {
     let alive = true;
@@ -110,10 +114,11 @@ export default function CopyMilestoneForBasesModal({
       const { data, error: rpcError } = await supabase.rpc("duplicate_milestone_for_bases", {
         p_milestone_id: milestone.id,
         p_bases: chosen.map((name) => ({ name })),
+        p_remove_original: removeOriginal && !originalHasProgress,
       });
       if (rpcError) throw rpcError;
       const created = Array.isArray(data) ? data.length : n;
-      await onDone(created);
+      await onDone(created, removeOriginal && !originalHasProgress);
     } catch (e) {
       setError(errText(e) || "Could not create the copies.");
       setBusy(false);
@@ -190,6 +195,23 @@ export default function CopyMilestoneForBasesModal({
               : <>This will create <strong>{n} milestone{n === 1 ? "" : "s"}</strong> and <strong>{n * taskCount} task{n * taskCount === 1 ? "" : "s"}</strong>{taskCount > 0 ? <span className="text-slate-500"> ({n} × {taskCount})</span> : null}.</>}
             {tooMany && <div className="text-xs text-red-500 mt-1">At most {MAX_BASES} bases at a time.</div>}
             {taskCount === 0 && n > 0 && <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">This milestone has no tasks, so the copies won't change the progress bar until tasks are added to them.</div>}
+          </div>
+
+          <div>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-2">The original milestone</div>
+            <div className="space-y-1.5">
+              <label className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border text-sm ${originalHasProgress ? "opacity-50 border-slate-200 dark:border-white/[0.05]" : "cursor-pointer border-slate-200 dark:border-white/[0.07]"}`}>
+                <input type="radio" name="original" checked={removeOriginal && !originalHasProgress} disabled={originalHasProgress || busy} onChange={() => setRemoveOriginal(true)} className="accent-cyan-600 mt-0.5" />
+                <span className="text-slate-800 dark:text-slate-200">The original was a template: remove it after copying</span>
+              </label>
+              <label className="flex items-start gap-2.5 px-3 py-2 rounded-lg border text-sm cursor-pointer border-slate-200 dark:border-white/[0.07]">
+                <input type="radio" name="original" checked={!removeOriginal || originalHasProgress} disabled={busy} onChange={() => setRemoveOriginal(false)} className="accent-cyan-600 mt-0.5" />
+                <span className="text-slate-800 dark:text-slate-200">Keep the original as well</span>
+              </label>
+            </div>
+            {originalHasProgress && <div className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">This milestone already has progress or payments; keep it instead.</div>}
+            {!originalHasProgress && removeOriginal && <div className="text-xs text-slate-500 mt-1.5">The original and its {taskCount} task{taskCount === 1 ? "" : "s"} are deleted together with the copies being made (all or nothing), so the original does not count in the progress bar.</div>}
+            {!originalHasProgress && !removeOriginal && <div className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">The original stays and keeps counting in the client's progress bar as one more base.</div>}
           </div>
 
           {error && <div className="text-xs text-red-500 break-words">{error}</div>}

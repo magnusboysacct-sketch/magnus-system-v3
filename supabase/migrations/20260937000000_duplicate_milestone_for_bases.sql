@@ -25,11 +25,23 @@
 -- Milestone copy: status 'planned', actual_* dates/durations NULL, actual costs 0, percent_complete 0, payment_amount copied,
 -- contract_milestone_id NULL, milestone_no continues after the project's current highest number.
 --
+-- Template milestones: p_remove_original (default false) = true is for a milestone that was only a template. After the copies are made, in the
+-- SAME transaction, the original milestone AND its tasks are deleted, so the original does not stay behind as a phantom extra base in the
+-- client's progress bar. It is refused, with nothing changed, when the original already has progress: the milestone itself is not 'planned'
+-- or has percent_complete or actual cost above 0, or any of its tasks is not 'planned' or has percent_complete or actual_quantity_completed
+-- above 0. (Field payments are not stored against a task or milestone anywhere in the database, so the only trace of paid work is the
+-- task's own actual_quantity_completed / status / percent_complete, which is what is checked.) Message: "This milestone already has progress
+-- or payments; keep it instead".
+--
 -- Refuses: no milestone, an empty list, more than 50 bases, an empty or duplicate base name, a name whose copy already exists in the
--- project, and a milestone the caller cannot see. SECURITY INVOKER: the caller's normal row-level security applies throughout.
+-- project, a milestone the caller cannot see, and (with p_remove_original) an original that already has progress. SECURITY INVOKER: the
+-- caller's normal row-level security applies throughout.
 BEGIN;
 
-CREATE OR REPLACE FUNCTION public.duplicate_milestone_for_bases(p_milestone_id uuid, p_bases jsonb)
+-- The earlier two-argument version, if it was ever applied: dropped so a two-argument call is never ambiguous between two overloads.
+DROP FUNCTION IF EXISTS public.duplicate_milestone_for_bases(uuid, jsonb);
+
+CREATE OR REPLACE FUNCTION public.duplicate_milestone_for_bases(p_milestone_id uuid, p_bases jsonb, p_remove_original boolean DEFAULT false)
 RETURNS SETOF public.project_milestones
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -50,6 +62,7 @@ DECLARE
   v_match_id      uuid;
   v_match_section uuid;
   v_matches  int;
+  v_removed  int;
   i          int;
 BEGIN
   IF p_milestone_id IS NULL THEN RAISE EXCEPTION 'Choose a milestone to copy'; END IF;
@@ -61,6 +74,18 @@ BEGIN
   -- Row-level security decides what the caller can see: an invisible milestone looks the same as a missing one.
   SELECT * INTO v_src FROM public.project_milestones WHERE id = p_milestone_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Milestone not found'; END IF;
+
+  -- Removing the original is only allowed while it is still an untouched template (checked before anything is written).
+  IF coalesce(p_remove_original, false) THEN
+    IF v_src.status <> 'planned' OR coalesce(v_src.percent_complete, 0) > 0 OR coalesce(v_src.actual_total_cost, 0) > 0
+       OR EXISTS (
+         SELECT 1 FROM public.project_tasks t
+         WHERE t.milestone_id = p_milestone_id
+           AND (t.status <> 'planned' OR coalesce(t.actual_quantity_completed, 0) > 0 OR coalesce(t.percent_complete, 0) > 0)
+       ) THEN
+      RAISE EXCEPTION 'This milestone already has progress or payments; keep it instead';
+    END IF;
+  END IF;
 
   -- Validate every name before anything is written.
   FOR i IN 0 .. v_count - 1 LOOP
@@ -165,11 +190,19 @@ BEGIN
     END LOOP;
   END LOOP;
 
+  -- The original was only a template: remove it and its tasks now, in this same transaction (any failure above or here undoes the copies too).
+  IF coalesce(p_remove_original, false) THEN
+    DELETE FROM public.project_tasks WHERE milestone_id = p_milestone_id;
+    DELETE FROM public.project_milestones WHERE id = p_milestone_id;
+    GET DIAGNOSTICS v_removed = ROW_COUNT;
+    IF v_removed <> 1 THEN RAISE EXCEPTION 'Could not remove the original milestone'; END IF;
+  END IF;
+
   RETURN QUERY SELECT * FROM public.project_milestones WHERE id = ANY (v_ids) ORDER BY milestone_no;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.duplicate_milestone_for_bases(uuid, jsonb) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.duplicate_milestone_for_bases(uuid, jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.duplicate_milestone_for_bases(uuid, jsonb, boolean) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.duplicate_milestone_for_bases(uuid, jsonb, boolean) TO authenticated;
 
 COMMIT;

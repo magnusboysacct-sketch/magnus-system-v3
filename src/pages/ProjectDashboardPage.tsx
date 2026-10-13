@@ -202,7 +202,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
         supabase.from("purchase_orders").select("id,status,created_at,supplier_name").eq("project_id",projectId!),
         supabase.from("workers").select("id,first_name,last_name,worker_type,status").eq("company_id",proj.company_id||"").eq("status","active").limit(30),
         supabase.from("project_milestones").select("*").eq("project_id",projectId!).order("milestone_no",{ascending:true}),
-        supabase.from("project_tasks").select("id,task_name,task_description,trade_type,quantity,unit,rate_per_unit,start_date,end_date,status,percent_complete,milestone_id").eq("project_id",projectId!).order("created_at",{ascending:true}),
+        supabase.from("project_tasks").select("id,task_name,task_description,trade_type,quantity,unit,rate_per_unit,start_date,end_date,status,percent_complete,actual_quantity_completed,milestone_id").eq("project_id",projectId!).order("created_at",{ascending:true}),
         supabase.from("client_comments").select("*").eq("project_id",projectId!).order("created_at",{ascending:true}),
         // Active contract for this project (for contract value / profit view)
         supabase.from("client_contracts").select("contract_amount,retention_percent,status")
@@ -306,7 +306,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   }
 
   async function loadTasks() {
-    const {data}=await supabase.from("project_tasks").select("id,task_name,task_description,trade_type,quantity,unit,rate_per_unit,start_date,end_date,status,percent_complete,milestone_id").eq("project_id",projectId!).order("created_at",{ascending:true});
+    const {data}=await supabase.from("project_tasks").select("id,task_name,task_description,trade_type,quantity,unit,rate_per_unit,start_date,end_date,status,percent_complete,actual_quantity_completed,milestone_id").eq("project_id",projectId!).order("created_at",{ascending:true});
     setTasks(data||[]);
   }
 
@@ -762,11 +762,15 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                 milestone={copyMS}
                 taskCount={tasks.filter(t=>t.milestone_id===copyMS.id).length}
                 existingMilestoneNames={milestones.map(m=>m.milestone_name)}
+                originalHasProgress={
+                  copyMS.status!=="planned"||Number(copyMS.percent_complete)>0||Number(copyMS.actual_total_cost)>0||
+                  tasks.some(t=>t.milestone_id===copyMS.id&&(t.status!=="planned"||Number(t.percent_complete)>0||Number(t.actual_quantity_completed)>0))
+                }
                 onClose={()=>setCopyMS(null)}
-                onDone={async(created)=>{
+                onDone={async(created,removed)=>{
                   setCopyMS(null);
                   await loadMilestones(); await loadTasks();
-                  alert(`Created ${created} milestone${created===1?"":"s"} with their tasks.`);
+                  alert(`Created ${created} milestone${created===1?"":"s"} with their tasks.${removed?" The original template was removed.":""}`);
                 }}
               />
             )}
