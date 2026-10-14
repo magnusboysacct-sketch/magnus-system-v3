@@ -5,6 +5,8 @@ import QRCode from "qrcode";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { printHtmlDocument } from "../lib/printHtml";
+import { ID_LOGO, PLATE_IMG_MAX_W, PLATE_IMG_MAX_H, PLATE_INSET, fitInside } from "../lib/idCardLogo";
+import { FrontLogoPlate, BackLogoMark } from "./IdCardLogo";
 
 interface Worker {
   id: string;
@@ -71,6 +73,8 @@ function displayTitle(worker: Worker) {
 const BASE_URL = window.location.origin;
 // Portrait CR80 — same physical card, rotated (54mm x 85.6mm instead of 85.6 x 54).
 const CARD_W = 213, CARD_H = 338;
+// OFFICIAL ID badge (front, top right): sits right of the widest possible logo plate (centred, 119px wide -> ends at x 166).
+const BADGE_X = 170, BADGE_W = 36;
 
 export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }: Props) {
   const { settings: companySettings } = useCompanySettings();
@@ -121,36 +125,36 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.fillStyle = GOLD;
     ctx.fillRect(0, 0, W, 5 * S);
 
-    // OFFICIAL badge — top right, clear of the centered logo below it
+    // OFFICIAL badge — top right, kept clear of the logo plate (which can be up to 56% of the card wide)
     ctx.fillStyle = "rgba(201,168,76,0.15)";
     ctx.strokeStyle = "rgba(201,168,76,0.4)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.roundRect(161 * S, 10 * S, 40 * S, 20 * S, 3 * S); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(BADGE_X * S, 10 * S, BADGE_W * S, 20 * S, 3 * S); ctx.fill(); ctx.stroke();
     ctx.fillStyle = GOLD;
     ctx.font = `bold ${5 * S}px sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-    ctx.fillText("OFFICIAL", 181 * S, 19 * S);
-    ctx.fillText("ID", 181 * S, 26 * S);
+    ctx.fillText("OFFICIAL", (BADGE_X + BADGE_W / 2) * S, 19 * S);
+    ctx.fillText("ID", (BADGE_X + BADGE_W / 2) * S, 26 * S);
 
-    // Logo — top-center, circular frame (matches the back's shape/style,
-    // just bigger — front is the more prominent face). Sized as large as
-    // it can go without crowding the company name or photo below it; the
-    // photo is trimmed slightly (104 -> 80 tall) to absorb the difference,
-    // everything from the worker-type badge downward is untouched.
-    // Uses a cover-fit draw rather than stretching the source into the
-    // circle, so non-square logos aren't distorted.
-    const logoSize = 56, logoCx = (CARD_W / 2) * S, logoCy = (12 + logoSize / 2) * S, logoR = (logoSize / 2) * S;
-    ctx.fillStyle = GOLD;
-    ctx.beginPath(); ctx.arc(logoCx, logoCy, logoR, 0, Math.PI * 2); ctx.fill();
-    if (logoImage) {
-      ctx.save();
-      ctx.beginPath(); ctx.arc(logoCx, logoCy, logoR - S, 0, Math.PI * 2); ctx.clip();
-      drawImageCover(ctx, logoImage, logoCx - logoR + S, logoCy - logoR + S, (logoR - S) * 2, (logoR - S) * 2);
-      ctx.restore();
+    // Logo — top-center on a white rounded "plate" with a thin gold border, in the same 56px band the old circle used (y 12..68). The logo is
+    // drawn inside at its natural aspect ratio (contain: never cropped or stretched), so the plate follows the logo's shape (see lib/idCardLogo.ts).
+    // No logo: the company initial on a plate of the same style.
+    const logoCx = (CARD_W / 2) * S;
+    const bandTop = 12, bandH = ID_LOGO.plateMaxH;
+    const natW = logoImage ? (logoImage.naturalWidth || logoImage.width) : 0, natH = logoImage ? (logoImage.naturalHeight || logoImage.height) : 0;
+    const fit = logoImage ? fitInside(natW, natH, PLATE_IMG_MAX_W, PLATE_IMG_MAX_H) : null;
+    const plateW = fit ? fit.w + 2 * PLATE_INSET : bandH, plateH = fit ? fit.h + 2 * PLATE_INSET : bandH;
+    const plateX = CARD_W / 2 - plateW / 2, plateY = bandTop + (bandH - plateH) / 2;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.roundRect(plateX * S, plateY * S, plateW * S, plateH * S, ID_LOGO.plateRadius * S); ctx.fill();
+    ctx.strokeStyle = GOLD; ctx.lineWidth = ID_LOGO.plateBorder * S;
+    ctx.beginPath(); ctx.roundRect((plateX + ID_LOGO.plateBorder / 2) * S, (plateY + ID_LOGO.plateBorder / 2) * S, (plateW - ID_LOGO.plateBorder) * S, (plateH - ID_LOGO.plateBorder) * S, (ID_LOGO.plateRadius - ID_LOGO.plateBorder / 2) * S); ctx.stroke();
+    if (logoImage && fit) {
+      drawImageContain(ctx, logoImage, (plateX + PLATE_INSET) * S, (plateY + PLATE_INSET) * S, fit.w * S, fit.h * S, S);
     } else {
       ctx.fillStyle = NAVY_BASE;
       ctx.font = `bold ${20 * S}px sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(companyName.charAt(0).toUpperCase(), logoCx, logoCy);
+      ctx.fillText(companyName.charAt(0).toUpperCase(), logoCx, (bandTop + bandH / 2) * S);
       ctx.textBaseline = "alphabetic";
     }
 
@@ -173,7 +177,7 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     if (photo) {
       ctx.save();
       ctx.beginPath(); ctx.roundRect((px + 1) * S, (py + 1) * S, (pw - 2) * S, (ph - 2) * S, 4 * S); ctx.clip();
-      ctx.drawImage(photo, (px + 1) * S, (py + 1) * S, (pw - 2) * S, (ph - 2) * S);
+      drawImageCover(ctx, photo, (px + 1) * S, (py + 1) * S, (pw - 2) * S, (ph - 2) * S);
       ctx.restore();
     }
 
@@ -273,18 +277,14 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     ctx.fillStyle = NAVY_TINT;
     ctx.beginPath(); ctx.roundRect(0, 0, W, H, 10 * S); ctx.fill();
 
-    // Logo — top-center, smaller than the front's (back is the secondary
-    // face). Also switched to the cover-fit draw so non-square logos don't
-    // stretch — this face had the same distortion issue the front used to.
-    const cx = (CARD_W / 2) * S, cy = 36 * S, r = 13 * S;
-    ctx.fillStyle = NAVY_BASE;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    // Logo — top-center, smaller than the front's (back is the secondary face). No plate: the logo at its natural aspect ratio (contain, never
+    // cropped or stretched), centred in the band the old small circle used (y 23..49), at most 26px tall and half the card wide.
+    const cx = (CARD_W / 2) * S, cy = 36 * S;
     if (logoImage) {
-      ctx.save();
-      ctx.beginPath(); ctx.arc(cx, cy, r - S, 0, Math.PI * 2); ctx.clip();
-      drawImageCover(ctx, logoImage, cx - r + S, cy - r + S, (r - S) * 2, (r - S) * 2);
-      ctx.restore();
+      drawImageContain(ctx, logoImage, cx - (ID_LOGO.backMaxW / 2) * S, cy - (ID_LOGO.backMaxH / 2) * S, ID_LOGO.backMaxW * S, ID_LOGO.backMaxH * S, S);
     } else {
+      ctx.fillStyle = NAVY_BASE;
+      ctx.beginPath(); ctx.roundRect(cx - (ID_LOGO.backMaxH / 2) * S, cy - (ID_LOGO.backMaxH / 2) * S, ID_LOGO.backMaxH * S, ID_LOGO.backMaxH * S, 6 * S); ctx.fill();
       ctx.fillStyle = "#fff";
       ctx.font = `bold ${6 * S}px sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -459,7 +459,7 @@ img{width:${W/S}px;height:${H/S}px}
         <div style={{ width:CARD_W, height:CARD_H, borderRadius:10, overflow:"hidden", background:NAVY_BASE, color:"#fff", display:"flex", flexDirection:"column", boxShadow:"0 4px 20px rgba(0,0,0,0.4)", margin:"0 auto", position:"relative" }}>
           <div style={{ height:5, background:GOLD, flexShrink:0 }} />
 
-          <div style={{ position:"absolute", top:9, right:10, background:"rgba(201,168,76,0.15)", border:"1px solid rgba(201,168,76,0.4)", color:GOLD, fontSize:7, fontWeight:700, padding:"2px 5px", borderRadius:3, textAlign:"center", lineHeight:1.4, zIndex:1 }}>OFFICIAL<br/>ID</div>
+          <div style={{ position:"absolute", top:9, right:213 - BADGE_X - BADGE_W, width:BADGE_W, boxSizing:"border-box", background:"rgba(201,168,76,0.15)", border:"1px solid rgba(201,168,76,0.4)", color:GOLD, fontSize:6, fontWeight:700, padding:"2px 0", borderRadius:3, textAlign:"center", lineHeight:1.4, zIndex:1 }}>OFFICIAL<br/>ID</div>
 
           {/* Content is intrinsically taller than the fixed CARD_H once every
               element is stacked (logo+photo+name+up to 3 info rows+QR can
@@ -469,12 +469,8 @@ img{width:${W/S}px;height:${H/S}px}
               instead of relying on flex layout alone to hold it in place
               (it doesn't — see footer note). */}
           <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", padding:"10px 14px 32px", overflow:"hidden" }}>
-            {/* Logo top-center — larger/more prominent than the back's */}
-            <div style={{ width:56, height:56, borderRadius:"50%", overflow:"hidden", background:GOLD, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-              {companySettings?.logo_url
-                ? <img src={companySettings.logo_url} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                : <span style={{ fontSize:22, fontWeight:800, color:NAVY_BASE }}>{companyName.charAt(0).toUpperCase()}</span>}
-            </div>
+            {/* Logo top-center on a white plate — larger/more prominent than the back's */}
+            <FrontLogoPlate logoUrl={companySettings?.logo_url} initial={companyName.charAt(0).toUpperCase()} gold={GOLD} navy={NAVY_BASE} />
             <div style={{ fontSize:7, fontWeight:600, color:"#fff", textTransform:"uppercase", letterSpacing:1, marginTop:6, textAlign:"center" }}>{companyName}</div>
 
             <div style={{ width:"100%", borderTop:"1px solid rgba(255,255,255,0.12)", margin:"6px 0" }} />
@@ -531,12 +527,8 @@ img{width:${W/S}px;height:${H/S}px}
         {/* Back preview — portrait, logo top-center, no watermark */}
         <div style={{ width:CARD_W, height:CARD_H, borderRadius:10, overflow:"hidden", background:NAVY_TINT, color:INK, display:"flex", flexDirection:"column", boxShadow:"0 4px 20px rgba(0,0,0,0.25)", margin:"14px auto 0", position:"relative" }}>
           <div style={{ display:"flex", justifyContent:"center", padding:"14px 14px 0" }}>
-            {/* Smaller than the front's logo — back is the secondary face */}
-            <div style={{ width:26, height:26, borderRadius:"50%", overflow:"hidden", background:NAVY_BASE, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center" }}>
-              {companySettings?.logo_url
-                ? <img src={companySettings.logo_url} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                : <span style={{ fontSize:6, fontWeight:800, color:"#fff" }}>MB</span>}
-            </div>
+            {/* Smaller than the front's logo, no plate — back is the secondary face */}
+            <BackLogoMark logoUrl={companySettings?.logo_url} initial="MB" navy={NAVY_BASE} initialSize={6} />
           </div>
 
           <div style={{ background:AMBER, color:NAVY_BASE, fontSize:7, fontWeight:700, textAlign:"center", padding:"5px 10px", letterSpacing:0.5, marginTop:10, lineHeight:1.4 }}>
@@ -660,6 +652,21 @@ function drawImageCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x:
   const scale = Math.max(w / iw, h / ih);
   const dw = iw * scale, dh = ih * scale;
   const dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
+}
+
+// Canvas equivalent of CSS object-fit: contain with max-width/max-height — the whole image is shown at its natural aspect ratio, centred in the
+// x/y/w/h box, never cropped or stretched. maxScale caps how far it may be enlarged beyond its natural size, in canvas pixels per image pixel (callers pass the
+// canvas scale S, i.e. one card pixel per image pixel), matching what the on-screen preview does. Counterpart of drawImageCover (still used for photos).
+function drawImageContain(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, y: number, w: number, h: number, maxScale = 1) {
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  if (!iw || !ih) { ctx.drawImage(img, x, y, w, h); return; }
+  const scale = Math.min(w / iw, h / ih, maxScale);
+  const dw = iw * scale, dh = ih * scale;
+  const dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, dx, dy, dw, dh);
 }
 

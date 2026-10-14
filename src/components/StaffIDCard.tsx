@@ -12,6 +12,8 @@
 import React, { useEffect, useState } from "react";
 import { User as UserIcon, QrCode } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { frontLogoPlateHtml, backLogoHtml } from "../lib/idCardLogo";
+import { FrontLogoPlate, BackLogoMark } from "./IdCardLogo";
 
 interface StaffProfile {
   id: string;
@@ -110,24 +112,14 @@ function InfoRow({ label, value, valueColor }: { label: string; value: string; v
   );
 }
 
+// Front: the logo on a white plate with a thin gold border, at its natural aspect ratio (never cropped). Back: the logo alone, no plate.
+// The layout numbers live in lib/idCardLogo.ts so the preview and the print page agree.
 function FrontLogo({ company, companyName }: { company: CompanyInfo | null; companyName: string }) {
-  return (
-    <div style={{ width: 56, height: 56, borderRadius: "50%", overflow: "hidden", background: GOLD, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-      {company?.logo_url
-        ? <img src={company.logo_url} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        : <span style={{ fontSize: 22, fontWeight: 800, color: NAVY }}>{companyName.charAt(0).toUpperCase()}</span>}
-    </div>
-  );
+  return <FrontLogoPlate logoUrl={company?.logo_url} initial={companyName.charAt(0).toUpperCase()} gold={GOLD} navy={NAVY} />;
 }
 
 function BackLogo({ company, companyName }: { company: CompanyInfo | null; companyName: string }) {
-  return (
-    <div style={{ width: 26, height: 26, borderRadius: "50%", overflow: "hidden", background: NAVY, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      {company?.logo_url
-        ? <img src={company.logo_url} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        : <span style={{ fontSize: 9, fontWeight: 800, color: "#fff" }}>{companyName.charAt(0).toUpperCase()}</span>}
-    </div>
-  );
+  return <BackLogoMark logoUrl={company?.logo_url} initial={companyName.charAt(0).toUpperCase()} navy={NAVY} initialSize={9} />;
 }
 
 function CardFront({ staff, company, companyName }: { staff: StaffProfile; company: CompanyInfo | null; companyName: string }) {
@@ -145,7 +137,7 @@ function CardFront({ staff, company, companyName }: { staff: StaffProfile; compa
       <div style={{ height: 5, background: GOLD, flexShrink: 0 }} />
 
       {/* OFFICIAL badge — top right, matches WorkerIDCard's exactly */}
-      <div style={{ position: "absolute", top: 9, right: 10, background: "rgba(201,168,76,0.15)", border: "1px solid rgba(201,168,76,0.4)", color: GOLD, fontSize: 7, fontWeight: 700, padding: "2px 5px", borderRadius: 3, textAlign: "center", lineHeight: 1.4, zIndex: 1 }}>OFFICIAL<br/>ID</div>
+      <div style={{ position: "absolute", top: 9, right: 7, width: 36, boxSizing: "border-box", background: "rgba(201,168,76,0.15)", border: "1px solid rgba(201,168,76,0.4)", color: GOLD, fontSize: 6, fontWeight: 700, padding: "2px 0", borderRadius: 3, textAlign: "center", lineHeight: 1.4, zIndex: 1 }}>OFFICIAL<br/>ID</div>
 
       {/* Content is intrinsically taller than the fixed CARD_H once every
           element is stacked (logo+photo+name+rows+QR ≈ 320px against a
@@ -318,18 +310,16 @@ export function StaffIDCard({ userId, onClose }: Props) {
     // Portrait CR80 (54mm x 85.6mm) — matches WorkerIDCard.tsx's print size.
     const frontFaceStyle = `width:54mm;height:85.6mm;background:${NAVY};color:#fff;border-radius:3mm;overflow:hidden;position:relative;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;`;
     const backFaceStyle = `width:54mm;height:85.6mm;background:${NAVY_TINT};color:${INK};border-radius:3mm;overflow:hidden;position:relative;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;`;
-    const logoHTML = (size: string, bg: string, fg: string) => company?.logo_url
-      ? `<img src="${company.logo_url}" style="width:100%;height:100%;object-fit:cover"/>`
-      : `<span style="font-size:${size};font-weight:800;color:${fg}">${companyName.charAt(0).toUpperCase()}</span>`;
+    // Card pixels (the 213px-wide card) -> mm on the 54mm-wide print, so the logo lays out exactly as in the preview.
+    const u = (px: number) => `${(px * 54 / 213).toFixed(3)}mm`;
+    const initial = companyName.charAt(0).toUpperCase();
 
     const frontHTML = `
       <div class="card" style="${frontFaceStyle}">
         <div style="height:1.3mm;background:${GOLD}"></div>
-        <div style="position:absolute;top:2.4mm;right:2.6mm;background:rgba(201,168,76,0.15);border:0.2mm solid rgba(201,168,76,0.4);color:${GOLD};font-size:1.6mm;font-weight:700;padding:0.5mm 1.3mm;border-radius:0.8mm;text-align:center;line-height:1.4;z-index:1">OFFICIAL<br/>ID</div>
+        <div style="position:absolute;top:2.4mm;right:${u(7)};width:${u(36)};box-sizing:border-box;background:rgba(201,168,76,0.15);border:0.2mm solid rgba(201,168,76,0.4);color:${GOLD};font-size:${u(6)};font-weight:700;padding:0.5mm 0;border-radius:0.8mm;text-align:center;line-height:1.4;z-index:1">OFFICIAL<br/>ID</div>
         <div style="display:flex;flex-direction:column;align-items:center;padding:2.6mm 3.6mm 0;position:relative;z-index:1">
-          <div style="width:14mm;height:14mm;border-radius:50%;overflow:hidden;background:${GOLD};display:flex;align-items:center;justify-content:center">
-            ${logoHTML("5.6mm", GOLD, NAVY)}
-          </div>
+          ${frontLogoPlateHtml({ logoUrl: company?.logo_url, initial, u, bandHeight: "14mm", gold: GOLD, navy: NAVY })}
           <div style="font-size:1.8mm;font-weight:600;color:#fff;text-transform:uppercase;letter-spacing:0.3mm;margin-top:1.5mm;text-align:center">${companyName}</div>
           <div style="width:100%;border-top:0.1mm solid rgba(255,255,255,0.12);margin:1.5mm 0"></div>
           <div style="width:16.5mm;height:20mm;border-radius:1.3mm;overflow:hidden;border:0.4mm solid rgba(201,168,76,0.6);background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center">
@@ -366,9 +356,7 @@ export function StaffIDCard({ userId, onClose }: Props) {
     const backHTML = `
       <div class="card" style="${backFaceStyle}">
         <div style="display:flex;justify-content:center;padding:3mm 3.6mm 0">
-          <div style="width:6.5mm;height:6.5mm;border-radius:50%;overflow:hidden;background:${NAVY};display:flex;align-items:center;justify-content:center">
-            ${logoHTML("2.6mm", NAVY, "#fff")}
-          </div>
+          ${backLogoHtml({ logoUrl: company?.logo_url, initial, u, bandHeight: "6.5mm", navy: NAVY, initialSize: "2.6mm" })}
         </div>
         <div style="background:${AMBER};color:${NAVY};font-size:1.8mm;font-weight:700;text-align:center;padding:1.3mm 2.6mm;letter-spacing:0.15mm;margin-top:2.6mm;line-height:1.4">
           IF FOUND, RETURN TO ISSUING COMPANY BELOW
