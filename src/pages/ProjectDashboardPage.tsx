@@ -4,13 +4,14 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import FieldOfficerPortalCard from "../components/FieldOfficerPortalCard";
 import CopyMilestoneForBasesModal from "../components/CopyMilestoneForBasesModal";
+import { SaveAsTemplateModal, MilestoneTemplatesModal, TemplateAddedModal } from "../components/MilestoneTemplates";
 import {
   Ruler, ShoppingCart, Wallet, FileText, BarChart3,
   ArrowRight, DollarSign, Users, Package, Receipt,
   Clock, CheckCircle2, AlertCircle, TrendingUp,
   TrendingDown, Building2, RefreshCw, ChevronLeft,
   Plus, X, Save, ListTodo, Trash2, Edit2, Flag,
-  Calendar, Target, Layers, Map, Copy
+  Calendar, Target, Layers, Map, Copy, BookmarkPlus, LayoutTemplate
 } from "lucide-react";
 
 function fmtJMD(n: number) {
@@ -99,6 +100,10 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   const [savingMS, setSavingMS] = useState(false);
   // "Copy for bases…": the milestone being copied (null = modal closed)
   const [copyMS, setCopyMS] = useState<any|null>(null);
+  // Milestone templates: "Save as template" (the milestone being saved), the "Add from template" picker, and the "Copy for bases now?" offer after adding
+  const [saveTplMS, setSaveTplMS] = useState<any|null>(null);
+  const [showTplPicker, setShowTplPicker] = useState(false);
+  const [addedTpl, setAddedTpl] = useState<{milestone:any;taskCount:number;name:string}|null>(null);
 
   // Task form
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -749,13 +754,49 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
 
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Project Milestones</span>
-              <button onClick={openNewMS}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition">
-                <Plus size={12}/> Add Milestone
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={()=>setShowTplPicker(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-white/[0.09] transition">
+                  <LayoutTemplate size={12}/> Add from template
+                </button>
+                <button onClick={openNewMS}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition">
+                  <Plus size={12}/> Add Milestone
+                </button>
+              </div>
             </div>
 
             {/* Milestone Form Modal */}
+            {saveTplMS&&(
+              <SaveAsTemplateModal
+                milestone={saveTplMS}
+                taskCount={tasks.filter(t=>t.milestone_id===saveTplMS.id).length}
+                onClose={()=>setSaveTplMS(null)}
+                onSaved={(name)=>{
+                  setSaveTplMS(null);
+                  alert(`Saved the template "${name}". Use "Add from template" in any project to reuse it.`);
+                }}
+              />
+            )}
+            {showTplPicker&&(
+              <MilestoneTemplatesModal
+                projectId={projectId||""}
+                onClose={()=>setShowTplPicker(false)}
+                onApplied={async(milestone,taskCount,name)=>{
+                  setShowTplPicker(false);
+                  await loadMilestones(); await loadTasks();
+                  setAddedTpl({milestone,taskCount,name});
+                }}
+              />
+            )}
+            {addedTpl&&(
+              <TemplateAddedModal
+                name={addedTpl.name}
+                taskCount={addedTpl.taskCount}
+                onNotNow={()=>setAddedTpl(null)}
+                onCopyForBases={()=>{ const m=addedTpl.milestone; setAddedTpl(null); setCopyMS(m); }}
+              />
+            )}
             {copyMS&&(
               <CopyMilestoneForBasesModal
                 projectId={projectId||""}
@@ -929,6 +970,10 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                           <button onClick={()=>openNewTask(ms.id)}
                             className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/20 transition">
                             <Plus size={10}/> Task
+                          </button>
+                          <button onClick={()=>setSaveTplMS(ms)} title="Save as template"
+                            className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 text-[10px] font-semibold hover:bg-slate-200 dark:hover:bg-white/[0.09] transition">
+                            <BookmarkPlus size={10}/> Save as template
                           </button>
                           <button onClick={()=>setCopyMS(ms)} title="Copy for bases…"
                             className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 text-[10px] font-semibold hover:bg-slate-200 dark:hover:bg-white/[0.09] transition">
