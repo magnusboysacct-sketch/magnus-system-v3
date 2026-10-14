@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { companyDisplayName } from "../lib/companyName";
+import { printHtmlDocument } from "../lib/printHtml";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
@@ -381,7 +382,8 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
     }
   }
 
-  async function printProposal() {
+  // Builds the proposal's HTML (all the data lookups happen here). The document itself is unchanged.
+  async function buildProposalHtml(): Promise<string> {
     const fmtJMD = (n: number) => new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD",minimumFractionDigits:2}).format(n);
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -563,11 +565,23 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
 
     </body></html>`;
 
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
+    return html;
+  }
+
+  // Print: prepare the document, then print it through a hidden iframe (no pop-up: a window.open() after the lookups above would be blocked
+  // because the click's user activation has expired). Any failure is shown, never swallowed.
+  const [printing, setPrinting] = useState(false);
+  async function printProposal() {
+    if (printing) return;
+    setPrinting(true);
+    try {
+      await printHtmlDocument(await buildProposalHtml());
+    } catch (e) {
+      console.error("Print proposal failed:", e);
+      alert("Could not print the proposal: " + (e instanceof Error && e.message ? e.message : "please try again."));
+    } finally {
+      setPrinting(false);
+    }
   }
   return (
     <>
@@ -834,9 +848,9 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
             </button>
           )}
           <div className="flex-1"/>
-          <button onClick={printProposal}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition">
-            <Printer size={14}/> Print
+          <button onClick={printProposal} disabled={printing}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold transition disabled:opacity-60 disabled:cursor-wait">
+            <Printer size={14}/> {printing ? "Preparing…" : "Print"}
           </button>
           <button onClick={onClose}
             className="px-4 py-2 rounded-xl border border-slate-200 dark:border-white/[0.08] text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.05] transition">
