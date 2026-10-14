@@ -37,17 +37,16 @@ function printWhenImagesReady(w: Window, maxWaitMs = 8000) {
   }
 }
 
-export function openPrintWindow(html: string, options: PrintOptions = {}): boolean {
-  const { title = "Magnus Boys ERP", watermark, tagline, waitForImages, existingWindow } = options;
-  const w = existingWindow ?? window.open("", "_blank");
-  if (!w) return false;
-  if (existingWindow) w.document.open(); // clear the placeholder before writing the real document
+// The full document openPrintWindow writes (title + base styles + the html + the optional watermark). Exported so a caller can print the
+// very same document through printHtmlDocument (hidden iframe, no pop-up) instead of a window.
+export function buildPrintDocument(html: string, options: PrintOptions = {}): string {
+  const { title = "Magnus Boys ERP", watermark, tagline } = options;
 
   const wmHtml = watermark?.url
     ? `<img class="wm" src="${watermark.url}"/>${tagline ? `<div class="wm-tag">${tagline.toUpperCase()}</div>` : ""}`
     : "";
 
-  w.document.write(`<!DOCTYPE html><html><head>
+  return `<!DOCTYPE html><html><head>
     <title>${title}</title>
     <style>
       *{box-sizing:border-box;margin:0;padding:0}
@@ -56,8 +55,16 @@ export function openPrintWindow(html: string, options: PrintOptions = {}): boole
       .wm-tag{position:fixed;bottom:3mm;right:6mm;text-align:right;font-size:7px;letter-spacing:2px;text-transform:uppercase;color:#bbb;pointer-events:none;z-index:-1}
       @media print{@page{size:A4 portrait;margin:15mm}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
     </style>
-  </head><body>${html}${wmHtml}</body></html>`);
+  </head><body>${html}${wmHtml}</body></html>`;
+}
 
+export function openPrintWindow(html: string, options: PrintOptions = {}): boolean {
+  const { waitForImages, existingWindow } = options;
+  const w = existingWindow ?? window.open("", "_blank");
+  if (!w) return false;
+  if (existingWindow) w.document.open(); // clear the placeholder before writing the real document
+
+  w.document.write(buildPrintDocument(html, options));
   w.document.close();
   if (waitForImages) printWhenImagesReady(w);
   else setTimeout(() => w.print(), 600);

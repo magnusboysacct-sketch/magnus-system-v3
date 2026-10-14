@@ -5,7 +5,8 @@ import { companyDisplayName } from "../lib/companyName";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { FieldPaymentForm, generateReceiptHTML } from "../components/FieldPaymentForm";
-import { openPrintWindow } from "../lib/printUtils";
+import { buildPrintDocument } from "../lib/printUtils";
+import { printHtmlDocument } from "../lib/printHtml";
 import html2canvas from "html2canvas";
 import {
   Plus, Search, HandCoins, DollarSign, Users,
@@ -75,6 +76,7 @@ export default function FieldPaymentsPage() {
   const [company, setCompany] = useState<any>(null);
   const [logoBase64, setLogoBase64] = useState<string|null>(null);
   const [sharingReceiptId, setSharingReceiptId] = useState<string|null>(null);
+  const [printingReceiptId, setPrintingReceiptId] = useState<string|null>(null);
   const [watermark, setWatermark] = useState<{url:string;opacity:number;size?:number}|null>(null);
   const [workerHistory, setWorkerHistory] = useState<Payment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -176,8 +178,8 @@ export default function FieldPaymentsPage() {
     }
   }
 
-  // Generate PDF from stored payment data
-  async function generatePDF(p: Payment) {
+  // Builds the receipt's print document from stored payment data (the logo is fetched here). The document itself is unchanged.
+  async function buildReceiptPrintHtml(p: Payment): Promise<string> {
     let logo = logoBase64;
     if(!logo && company?.logo_url) {
       try {
@@ -206,7 +208,23 @@ export default function FieldPaymentsPage() {
       created_at: p.created_at,
     };
     const html = generateReceiptHTML(paymentData, company, logo, watermark);
-    if(html) openPrintWindow(html, { title: 'Receipt - ' + p.worker_name, watermark: watermark||undefined, tagline: company?.tagline||undefined });
+    if(!html) throw new Error("the receipt could not be generated.");
+    return buildPrintDocument(html, { title: 'Receipt - ' + p.worker_name, watermark: watermark||undefined, tagline: company?.tagline||undefined });
+  }
+
+  // Generate PDF: prepare the receipt, then print it through a hidden iframe (no pop-up: a window.open() after the logo fetch above would be
+  // blocked because the click's user activation has expired). Any failure is shown, never swallowed.
+  async function generatePDF(p: Payment) {
+    if(printingReceiptId) return;
+    setPrintingReceiptId(p.id);
+    try {
+      await printHtmlDocument(await buildReceiptPrintHtml(p));
+    } catch(e) {
+      console.error("Print receipt failed:", e);
+      alert("Could not print the receipt: " + (e instanceof Error && e.message ? e.message : "please try again."));
+    } finally {
+      setPrintingReceiptId(null);
+    }
   }
   async function shareReceiptImage(p: Payment) {
     setSharingReceiptId(p.id);
@@ -590,9 +608,9 @@ export default function FieldPaymentsPage() {
                 )}
 
                 {/* Generate PDF */}
-                <button onClick={()=>generatePDF(selected)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.1] hover:border-white/[0.2] bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-200 dark:bg-white/[0.06] text-slate-800 dark:text-slate-200 font-semibold transition text-sm">
-                  <Printer size={15}/> Generate & Print Receipt PDF
+                <button onClick={()=>generatePDF(selected)} disabled={printingReceiptId===selected.id}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/[0.1] hover:border-white/[0.2] bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-200 dark:bg-white/[0.06] text-slate-800 dark:text-slate-200 font-semibold transition text-sm disabled:opacity-60 disabled:cursor-wait">
+                  <Printer size={15}/> {printingReceiptId===selected.id ? "Preparing…" : "Generate & Print Receipt PDF"}
                 </button>
 
                 <button onClick={()=>shareReceiptImage(selected)} disabled={sharingReceiptId===selected.id}

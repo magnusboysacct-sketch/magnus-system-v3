@@ -4,6 +4,7 @@ import { companyDisplayName } from "../lib/companyName";
 import QRCode from "qrcode";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
+import { printHtmlDocument } from "../lib/printHtml";
 
 interface Worker {
   id: string;
@@ -77,6 +78,7 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
   const [worker, setWorker] = useState<Worker | null>(null);
   const [loading, setLoading] = useState(true);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [printing, setPrinting] = useState(false);
 
   const cs: any = companySettings || {};
 
@@ -370,8 +372,9 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
   // Portrait cards are narrow and tall, so side-by-side keeps the printed
   // sheet close to a standard portrait page instead of stacking two tall
   // cards into one very long strip.
-  async function handlePrint() {
-    if (!worker) return;
+  // Builds the print page's HTML (the QR codes, photo and logo are loaded here). The page itself is unchanged.
+  async function buildIdCardPrintHtml(): Promise<string> {
+    if (!worker) throw new Error("the worker has not loaded yet.");
     const photoUrl = worker.passport_photo_url || worker.id_photo_url || "";
     const scanUrl = `${BASE_URL}/verify/${workerId}`;
 
@@ -411,15 +414,26 @@ export function WorkerIDCard({ workerId, companyName: propCompanyName, onClose }
     drawCutGuide(ctx, backX, backY, CARD_W * S, CARD_H * S);
 
     const dataUrl = canvas.toDataURL("image/png");
-    const win = window.open("", "_blank", "width=800,height=650");
-    if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><title>ID Card — ${worker.first_name} ${worker.last_name}</title>
+    return `<!DOCTYPE html><html><head><title>ID Card — ${worker.first_name} ${worker.last_name}</title>
 <style>*{margin:0;padding:0}body{background:#f0f0f0;display:flex;align-items:center;justify-content:center;min-height:100vh}
 img{width:${W/S}px;height:${H/S}px}
 @media print{body{background:#fff;margin:0}}</style>
-</head><body><img src="${dataUrl}"/></body></html>`);
-    win.document.close();
-    setTimeout(() => win.print(), 600);
+</head><body><img src="${dataUrl}"/></body></html>`;
+  }
+
+  // Print: prepare the page, then print it through a hidden iframe (no pop-up: a window.open() after the awaits above would be blocked because
+  // the click's user activation has expired). Any failure is shown, never swallowed.
+  async function handlePrint() {
+    if (!worker || printing) return;
+    setPrinting(true);
+    try {
+      await printHtmlDocument(await buildIdCardPrintHtml());
+    } catch (e) {
+      console.error("Print ID card failed:", e);
+      alert("Could not print the ID card: " + (e instanceof Error && e.message ? e.message : "please try again."));
+    } finally {
+      setPrinting(false);
+    }
   }
 
   if (loading) return (
@@ -565,8 +579,8 @@ img{width:${W/S}px;height:${H/S}px}
         <p className="text-center text-xs text-gray-400 mt-3">Prints front + back side by side with cut guides — trim along the dashed border, then glue back-to-back.</p>
 
         <div className="flex gap-3 mt-3">
-          <button onClick={handlePrint} className="flex-1 bg-blue-700 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors">
-            🖨️ Print ID Card
+          <button onClick={handlePrint} disabled={printing} className="flex-1 bg-blue-700 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-wait">
+            {printing ? "Preparing…" : "🖨️ Print ID Card"}
           </button>
           <button onClick={onClose} className="px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
             Close

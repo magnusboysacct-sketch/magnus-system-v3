@@ -1,3 +1,5 @@
+import { printHtmlDocument } from "../lib/printHtml";
+
 type Section = {
   id: string;
   masterCategoryId: string | null;
@@ -371,33 +373,8 @@ function getUnitLabel(unitId: string | null): string {
   return unitMap[unitId] || unitId;
 }
 
-export function printBOQPacket(html: string) {
-  const iframe = document.createElement("iframe");
-  iframe.style.position = "fixed";
-  iframe.style.top = "-10000px";
-  iframe.style.left = "-10000px";
-  iframe.style.width = "1px";
-  iframe.style.height = "1px";
-
-  document.body.appendChild(iframe);
-
-  const iframeDoc = iframe.contentWindow?.document;
-  if (!iframeDoc) {
-    document.body.removeChild(iframe);
-    throw new Error("Failed to access iframe document");
-  }
-
-  iframeDoc.open();
-  iframeDoc.write(html);
-  iframeDoc.close();
-
-  iframe.contentWindow?.focus();
-
-  setTimeout(() => {
-    iframe.contentWindow?.print();
-
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-    }, 1000);
-  }, 500);
+// Prints through the shared hidden-iframe helper: it waits for the company logo to load (or fail) before printing, then removes the frame.
+// Resolves once the print dialog has been requested; rejects if the packet could not be prepared.
+export function printBOQPacket(html: string): Promise<void> {
+  return printHtmlDocument(html);
 }

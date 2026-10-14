@@ -15,7 +15,8 @@ import {
   ArrowDownRight, Layers, Settings, Download, Printer
 } from "lucide-react";
 import { useCompanySettings } from "../hooks/useCompanySettings";
-import { openPrintWindow } from "../lib/printUtils";
+import { buildPrintDocument } from "../lib/printUtils";
+import { printHtmlDocument } from "../lib/printHtml";
 import { AddAccountModal } from "../components/AddAccountModal";
 
 type Tab = "overview" | "accounts" | "ledger" | "reports";
@@ -97,8 +98,9 @@ const ACCOUNT_TYPE_BG: Record<string, string> = {
 
 // ─── Export Reports — CSV mirrors ExpensesPage.tsx's own exportCSV()
 // (Blob + object URL + synthetic <a download> click), PDF reuses
-// printUtils.ts's openPrintWindow() (the same mechanism ContractsPage.tsx
-// and Secretary Workspace's Correspondence letters already use). Both
+// printUtils.ts's print document (buildPrintDocument, the same page
+// ContractsPage.tsx and Secretary Workspace's Correspondence letters print),
+// printed through a hidden iframe so no pop-up blocker can swallow it. Both
 // carry company name/branding + a generation timestamp, since these are
 // for audit/review per the section's own subtitle. ──────────────────────
 
@@ -142,7 +144,7 @@ function downloadReportCSV(companyName: string, table: ReportTable) {
   a.click();
 }
 
-function downloadReportPDF(companyName: string, logoUrl: string | null, table: ReportTable) {
+function downloadReportPDF(companyName: string, logoUrl: string | null, table: ReportTable): Promise<void> {
   const logoImg = logoUrl
     ? `<img src="${logoUrl}" alt="logo" style="display:block;width:auto;height:auto;max-height:90px;max-width:260px;object-fit:contain;margin:0 auto 14px"/>`
     : "";
@@ -165,7 +167,7 @@ function downloadReportPDF(companyName: string, logoUrl: string | null, table: R
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>`;
-  openPrintWindow(html, { title: table.title });
+  return printHtmlDocument(buildPrintDocument(html, { title: table.title }));
 }
 
 export default function FinanceDashboardPage() {
@@ -220,6 +222,7 @@ export default function FinanceDashboardPage() {
   // (Cash Flow's especially, which fetches live) is in flight.
   const { settings: companySettings } = useCompanySettings();
   const [exportingKey, setExportingKey] = useState<string | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "pdf" | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -536,6 +539,7 @@ export default function FinanceDashboardPage() {
 
   async function handleExport(reportKey: string, format: "csv" | "pdf") {
     setExportingKey(reportKey);
+    setExportingFormat(format);
     try {
       const table = reportKey === "trial_balance" ? buildTrialBalanceTable()
         : reportKey === "pnl" ? buildPnLTable()
@@ -543,12 +547,15 @@ export default function FinanceDashboardPage() {
         : await buildCashFlowTable();
       const companyName = companyDisplayName(companySettings?.company_name);
       if (format === "csv") downloadReportCSV(companyName, table);
-      else downloadReportPDF(companyName, companySettings?.logo_url ?? null, table);
+      else await downloadReportPDF(companyName, companySettings?.logo_url ?? null, table);
     } catch (e: any) {
       console.error("Export failed:", e);
-      setError("Export failed: " + (e.message || "unknown error"));
+      const msg = "Export failed: " + (e?.message || "unknown error");
+      setError(msg);
+      alert(msg);
     } finally {
       setExportingKey(null);
+      setExportingFormat(null);
     }
   }
 
@@ -995,7 +1002,7 @@ export default function FinanceDashboardPage() {
                         onClick={() => handleExport(r.key, "csv")}>CSV</Btn>
                       <Btn variant="secondary" size="xs" icon={<Printer size={11}/>}
                         disabled={exportingKey === r.key}
-                        onClick={() => handleExport(r.key, "pdf")}>PDF</Btn>
+                        onClick={() => handleExport(r.key, "pdf")}>{exportingKey === r.key && exportingFormat === "pdf" ? "Preparing…" : "PDF"}</Btn>
                     </div>
                   </div>
                 ))}
