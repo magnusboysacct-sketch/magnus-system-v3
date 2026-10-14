@@ -1,5 +1,5 @@
 // src/pages/secretary/CorrespondenceSection.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { companyDisplayName } from "../../lib/companyName";
 import { Plus, FileText, Send, Search, Sparkles, CheckCircle2, XCircle, Printer, Eye, Pencil, Trash2, Mail } from "lucide-react";
 import { Card, CardHeader, Btn, Badge, Table, Th, Tr, Td, Modal, Field, Input, Select, Textarea, Alert, Spinner, Empty } from "../../components/ui";
@@ -9,6 +9,11 @@ import { canApproveSecretaryDocuments } from "../../lib/permissions";
 import { magnusAI } from "../../lib/magnusAI";
 import { openPrintWindow } from "../../lib/printUtils";
 import { useCompanySettings, type CompanySettings } from "../../hooks/useCompanySettings";
+import {
+  EMPTY_RECIPIENT, TO_WHOM, WORKER_PLACEHOLDER, recipientPreset, recipientSection, recipientBrackets,
+  replaceRecipientSection, forceReplaceRecipientSection,
+  type Recipient, type RecipientPreset,
+} from "../../lib/letterRecipient";
 
 type DocType = "job_letter" | "employment_letter" | "reference_letter";
 type DocStatus = "draft" | "pending_approval" | "approved" | "printed" | "rejected";
@@ -75,18 +80,23 @@ function todayLong() {
 // like an unfilled template to whoever's reading the letter. It gets a
 // plain, non-bracket note instead, and the on-screen Field hint below warns
 // the secretary before they print.
-function starterBody(type: DocType, worker: Worker | null, companyName: string): string {
+//
+// The top of every letter is: date, then the recipient section (optional address block, optional "Re:" line, salutation — built by
+// lib/letterRecipient.ts, so the recipient can be changed later without touching the rest), then the body paragraphs below. With the default
+// recipient ("To whom it may concern") the text is exactly what it was before recipients existed.
+function starterBody(type: DocType, worker: Worker | null, companyName: string, recipient: Recipient = EMPTY_RECIPIENT): string {
   const name = worker ? fullName(worker) : "[Worker Name]";
   const title = worker ? (worker.job_title || "(job title not on file)") : "[Job Title]";
   const since = worker
     ? (worker.hire_date ? formatDate(worker.hire_date) : "(start date not on file)")
     : "[Start Date]";
   const empId = worker?.employee_id ? ` (Employee ID: ${worker.employee_id})` : "";
+  const top = `${todayLong()}
+
+${recipientSection(type, name, recipient)}`;
 
   if (type === "job_letter") {
-    return `${todayLong()}
-
-TO WHOM IT MAY CONCERN
+    return `${top}
 
 This letter confirms that ${name}${empId} is currently employed with ${companyName} in the position of ${title}, since ${since}.
 
@@ -101,9 +111,7 @@ ${companyName}`;
   }
 
   if (type === "employment_letter") {
-    return `${todayLong()}
-
-Dear ${name},
+    return `${top}
 
 This letter confirms your employment with ${companyName} in the position of ${title}, effective ${since}.
 
@@ -117,9 +125,7 @@ _____________________
 ${companyName}`;
   }
 
-  return `${todayLong()}
-
-TO WHOM IT MAY CONCERN
+  return `${top}
 
 I am writing to provide a reference for ${name}, who has worked with ${companyName} as ${title} since ${since}.
 
@@ -295,6 +301,14 @@ export default function CorrespondenceSection({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiErr, setAiErr] = useState("");
 
+  // "Addressed to": the recipient fields feed the top of the letter body (see lib/letterRecipient.ts). lastSectionRef is the recipient section
+  // this form last wrote into the body, so a later change can tell "untouched, safe to replace" from "the secretary edited it by hand".
+  // null = unknown (a re-opened saved letter: its text is shown as saved and never parsed).
+  const [recipient, setRecipient] = useState<Recipient>(EMPTY_RECIPIENT);
+  const [recipientPresetKey, setRecipientPresetKey] = useState<RecipientPreset | null>(null);
+  const [topEdited, setTopEdited] = useState(false);
+  const lastSectionRef = useRef<string | null>(null);
+
   // Send-by-email dialog state. emailTarget non-null = dialog open for that
   // row. No worker-email pre-fill yet — that depends on secretary_documents
   // having a real worker_id column, which Veron hasn't confirmed is applied
@@ -330,6 +344,7 @@ export default function CorrespondenceSection({
     setSelectedWorkerId(quickCreateWorkerId);
     setWorkerSearch("");
     setTitle(w ? `${tpl.name} — ${fullName(w)}` : "");
+    resetRecipient(type, w, true);
     setBody(starterBody(type, w, companyName));
     setSaveErr("");
     setAiErr("");
@@ -380,6 +395,7 @@ export default function CorrespondenceSection({
     setSelectedWorkerId("");
     setWorkerSearch("");
     setTitle("");
+    resetRecipient(type, null, true);
     setBody(starterBody(type, null, companyName));
     setSaveErr("");
     setAiErr("");
@@ -401,24 +417,78 @@ export default function CorrespondenceSection({
     setWorkerSearch("");
     setTitle(doc.title);
     setBody(doc.content || "");
+    resetRecipient(tpl.type, null, false); // a saved letter shows its text as saved; its top is not parsed
     setSaveErr("");
     setAiErr("");
     setCreateOpen(true);
   }
 
+  // Picking a worker or a letter type regenerates the whole body (as before — see the modal subtitle), now including the current recipient.
   function onSelectWorker(id: string) {
     setSelectedWorkerId(id);
     const w = workers.find(x => x.id === id) || null;
     const tpl = TEMPLATES.find(t => t.type === docType)!;
     setTitle(w ? `${tpl.name} — ${fullName(w)}` : "");
-    setBody(starterBody(docType, w, companyName));
+    // a "Re:" line that names the previous worker (or the [Worker Name] placeholder) follows the newly picked worker
+    const prevName = selectedWorker ? fullName(selectedWorker) : WORKER_PLACEHOLDER;
+    const newName = w ? fullName(w) : WORKER_PLACEHOLDER;
+    const nextRecipient: Recipient = { ...recipient, re: recipient.re.split(prevName).join(newName) };
+    setRecipient(nextRecipient);
+    setBody(starterBody(docType, w, companyName, nextRecipient));
+    lastSectionRef.current = recipientSection(docType, newName, nextRecipient);
+    setTopEdited(false);
   }
 
   function onDocTypeChange(type: DocType) {
     setDocType(type);
     const tpl = TEMPLATES.find(t => t.type === type)!;
     setTitle(selectedWorker ? `${tpl.name} — ${fullName(selectedWorker)}` : "");
-    setBody(starterBody(type, selectedWorker, companyName));
+    setBody(starterBody(type, selectedWorker, companyName, recipient));
+    lastSectionRef.current = recipientSection(type, selectedWorker ? fullName(selectedWorker) : WORKER_PLACEHOLDER, recipient);
+    setTopEdited(false);
+  }
+
+  // ── Addressed to ──
+  function resetRecipient(type: DocType, w: Worker | null, known: boolean) {
+    setRecipient(EMPTY_RECIPIENT);
+    setRecipientPresetKey(null);
+    setTopEdited(false);
+    lastSectionRef.current = known ? recipientSection(type, w ? fullName(w) : WORKER_PLACEHOLDER, EMPTY_RECIPIENT) : null;
+  }
+
+  // Writes the recipient into the body, replacing only the part between the date and the first body paragraph. If that part was edited by
+  // hand (or the greeting can't be found) nothing is changed: topEdited is raised and the secretary is asked (see replaceTopSection).
+  function applyRecipient(next: Recipient) {
+    const name = selectedWorker ? fullName(selectedWorker) : WORKER_PLACEHOLDER;
+    const section = recipientSection(docType, name, next);
+    const safe = [lastSectionRef.current, TO_WHOM, `Dear ${name},`, `Dear ${WORKER_PLACEHOLDER},`].filter((s): s is string => !!s);
+    const res = replaceRecipientSection(body, section, safe);
+    if (res.status === "replaced") {
+      setBody(res.body);
+      lastSectionRef.current = section;
+      setTopEdited(false);
+    } else {
+      setTopEdited(true);
+    }
+  }
+
+  function changeRecipient(next: Recipient, preset: RecipientPreset | null = recipientPresetKey) {
+    setRecipient(next);
+    setRecipientPresetKey(preset);
+    if (!topEdited) applyRecipient(next);
+  }
+
+  function pickPreset(key: RecipientPreset) {
+    changeRecipient(recipientPreset(key, selectedWorker ? fullName(selectedWorker) : WORKER_PLACEHOLDER), key);
+  }
+
+  function replaceTopSection() {
+    if (!window.confirm("Replace the address and greeting under the date with these details? Everything else in the letter stays as you typed it.")) return;
+    const name = selectedWorker ? fullName(selectedWorker) : WORKER_PLACEHOLDER;
+    const section = recipientSection(docType, name, recipient);
+    setBody(forceReplaceRecipientSection(body, section));
+    lastSectionRef.current = section;
+    setTopEdited(false);
   }
 
   // AI assist is a pure convenience layer over the manual textarea — a
@@ -434,6 +504,7 @@ export default function CorrespondenceSection({
         `You are an HR/admin assistant for a Jamaica construction company (${companyName}).
 Improve and expand the following draft ${tpl.name.toLowerCase()} into a complete, professional letter.
 Keep any real details (name, job title, dates) exactly as given — do not invent facts you weren't given.
+Keep the date, the recipient's address block, any "Re:" line and the greeting at the top exactly as they are, on separate lines.
 Worker: ${selectedWorker ? fullName(selectedWorker) : "not selected"}
 Job Title: ${selectedWorker?.job_title || "unknown"}
 Employed since: ${selectedWorker?.hire_date ? formatDate(selectedWorker.hire_date) : "unknown"}
@@ -743,6 +814,56 @@ Respond with ONLY the improved letter body text, no preamble or explanation.`
 
           <Field label="Title">
             <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Job Letter — Marcus Bailey" />
+          </Field>
+
+          <Field label="Addressed to" hint="Fills in the address and greeting at the top of the letter. You can still edit the letter text below by hand.">
+            <div className="space-y-3 rounded-lg border border-slate-200 dark:border-white/[0.07] p-3">
+              <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-700 dark:text-slate-300">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="recipient-mode" checked={recipient.mode === "whom"} onChange={() => changeRecipient({ ...recipient, mode: "whom" }, null)} />
+                  To whom it may concern
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="recipient-mode" checked={recipient.mode === "specific"} onChange={() => changeRecipient({ ...recipient, mode: "specific" })} />
+                  A specific recipient
+                </label>
+              </div>
+
+              {recipient.mode === "specific" && (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Quick fill</span>
+                    <Btn variant={recipientPresetKey === "embassy" ? "primary" : "secondary"} size="xs" onClick={() => pickPreset("embassy")}>Embassy / Visa</Btn>
+                    <Btn variant={recipientPresetKey === "bank" ? "primary" : "secondary"} size="xs" onClick={() => pickPreset("bank")}>Bank / Loan</Btn>
+                    <Btn variant={recipientPresetKey === "other" ? "primary" : "secondary"} size="xs" onClick={() => pickPreset("other")}>Other</Btn>
+                  </div>
+                  <Field label="Attention / Person (optional)">
+                    <Input value={recipient.attention} onChange={e => changeRecipient({ ...recipient, attention: e.target.value })} placeholder="e.g. Mr. John Brown, or The Consular Section" />
+                  </Field>
+                  <Field label="Organisation">
+                    <Input value={recipient.org} onChange={e => changeRecipient({ ...recipient, org: e.target.value })} placeholder="e.g. Embassy of the United States of America" />
+                  </Field>
+                  <Field label="Address">
+                    <Textarea value={recipient.address} onChange={e => changeRecipient({ ...recipient, address: e.target.value })} rows={3} placeholder="Street, city, country — each line prints on its own line" />
+                  </Field>
+                  <Field label="Re: subject line (optional)">
+                    <Input value={recipient.re} onChange={e => changeRecipient({ ...recipient, re: e.target.value })} placeholder="e.g. Employment confirmation – Marcus Bailey" />
+                  </Field>
+                  {recipientBrackets(recipient).length > 0 && (
+                    <p className="text-[10px] text-amber-500">
+                      Still to fill in: {recipientBrackets(recipient).join(", ")} — the letter can't be submitted, printed or emailed until these are replaced.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {topEdited && (
+                <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] text-amber-600 dark:text-amber-400 flex flex-wrap items-center gap-2">
+                  <span>The address and greeting at the top of the letter were edited by hand, so they haven't been changed.</span>
+                  <Btn variant="secondary" size="xs" onClick={replaceTopSection}>Replace them with these details</Btn>
+                </div>
+              )}
+            </div>
           </Field>
 
           <Field label="Letter Body" hint="Pre-filled from the template — edit freely before saving">
