@@ -1,4 +1,4 @@
-import { printHtmlDocument } from "../lib/printHtml";
+import { showPrintPreview } from "../lib/printPreview";
 
 type Section = {
   id: string;
@@ -373,8 +373,7 @@ function getUnitLabel(unitId: string | null): string {
   return unitMap[unitId] || unitId;
 }
 
-// Prints through the shared hidden-iframe helper: it waits for the company logo to load (or fail) before printing, then removes the frame.
-// Resolves once the print dialog has been requested; rejects if the packet could not be prepared.
-export function printBOQPacket(html: string): Promise<void> {
-  return printHtmlDocument(html);
+// Shows the packet in the in-app print preview; Print is pressed there.
+export function printBOQPacket(html: string): void {
+  showPrintPreview(html);
 }

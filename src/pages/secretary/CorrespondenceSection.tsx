@@ -7,7 +7,8 @@ import { supabase } from "../../lib/supabase";
 import { useProjectContext } from "../../context/ProjectContext";
 import { canApproveSecretaryDocuments } from "../../lib/permissions";
 import { magnusAI } from "../../lib/magnusAI";
-import { openPrintWindow } from "../../lib/printUtils";
+import { openPrintPreview } from "../../lib/printUtils";
+import { showPrintPreview } from "../../lib/printPreview";
 import { useCompanySettings, type CompanySettings } from "../../hooks/useCompanySettings";
 import {
   EMPTY_RECIPIENT, TO_WHOM, WORKER_PLACEHOLDER, recipientPreset, recipientSection, recipientBrackets,
@@ -153,24 +154,18 @@ function findUnresolvedBrackets(content: string | null | undefined): string[] {
   return Array.from(new Set(matches));
 }
 
-// Same window/style shell as printUtils.ts's openPrintWindow, minus the
-// w.print() call — a faithful visual preview of exactly what Print would
-// produce, without triggering the browser's print dialog. Kept local to
-// this file rather than added as an option on the shared printUtils.ts,
-// since that file is used by other pages (ContractsPage.tsx) this task
-// doesn't touch.
+// Same style shell as printUtils.ts's print document — a faithful visual
+// preview of exactly what Print would produce. Shown in the in-app print
+// preview WITHOUT a Print button (previewing never prints or changes status).
 function openPreviewWindow(html: string, title: string) {
-  const w = window.open("", "_blank");
-  if (!w) return;
-  w.document.write(`<!DOCTYPE html><html><head>
+  showPrintPreview(`<!DOCTYPE html><html><head>
     <title>${title} — Preview</title>
     <style>
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:Georgia,serif;color:#1a1a1a;background:white}
       @media print{@page{size:A4 portrait;margin:15mm}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
     </style>
-  </head><body>${html}</body></html>`);
-  w.document.close();
+  </head><body>${html}</body></html>`, { allowPrint: false });
 }
 
 // Compact address block beside the logo — company name + address lines +
@@ -606,10 +601,14 @@ Respond with ONLY the improved letter body text, no preamble or explanation.`
   // secretary's own-row updates to draft/pending_approval, so an
   // approved -> printed write from a secretary would silently no-op. Print is
   // gated to canApprove below for exactly that reason, not an arbitrary choice.
-  async function printDoc(doc: SecretaryDoc) {
+  // The letter opens in the in-app print preview; it is marked printed when
+  // Print is actually pressed there (not merely because the preview opened).
+  function printDoc(doc: SecretaryDoc) {
     if (blockedByBrackets(doc)) return;
-    openPrintWindow(letterHtml(doc.content || "", settings), { title: doc.title });
-    await updateStatus(doc, "printed");
+    openPrintPreview(letterHtml(doc.content || "", settings), {
+      title: doc.title,
+      onPrint: () => { void updateStatus(doc, "printed"); },
+    });
   }
 
   function openEmailDialog(doc: SecretaryDoc) {

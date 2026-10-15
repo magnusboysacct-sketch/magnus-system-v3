@@ -1,4 +1,5 @@
 import type { FieldPayment, FieldPaymentSignature } from "./fieldPayments";
+import { showPrintPreview } from "./printPreview";
 
 interface FieldPaymentReceiptData {
   payment: FieldPayment;
@@ -437,76 +438,9 @@ export function generateFieldPaymentReceiptHTML(data: FieldPaymentReceiptData): 
 </html>`;
 }
 
-export async function generatePDFFromHTML(htmlContent: string): Promise<Blob> {
-  // Create a temporary iframe to render the HTML
-  const iframe = document.createElement("iframe");
-  iframe.style.position = "absolute";
-  iframe.style.left = "-9999px";
-  iframe.style.width = "210mm"; // A4 width
-  iframe.style.height = "297mm"; // A4 height
-  document.body.appendChild(iframe);
-
-  return new Promise((resolve, reject) => {
-    iframe.onload = () => {
-      try {
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-        if (!iframeDoc) {
-          reject(new Error("Could not access iframe document"));
-          return;
-        }
-
-        // Wait for images to load
-        const images = iframeDoc.getElementsByTagName("img");
-        const imagePromises = Array.from(images).map(img => {
-          return new Promise((imgResolve) => {
-            if (img.complete) {
-              imgResolve(img);
-            } else {
-              img.onload = () => imgResolve(img);
-              img.onerror = () => imgResolve(img); // Continue even if image fails
-            }
-          });
-        });
-
-        Promise.all(imagePromises).then(() => {
-          // Use window.print() to generate PDF
-          iframe.contentWindow?.print();
-          
-          // For now, return HTML as blob (in production, you'd use a PDF library)
-          const blob = new Blob([htmlContent], { type: "text/html" });
-          resolve(blob);
-          
-          // Clean up
-          document.body.removeChild(iframe);
-        }).catch(reject);
-      } catch (error) {
-        reject(error);
-        document.body.removeChild(iframe);
-      }
-    };
-
-    iframe.srcdoc = htmlContent;
-  });
-}
-
-// Alternative: Simple HTML to PDF conversion using browser print
+// Shows the receipt in the in-app print preview (Print is pressed there).
 export function downloadFieldPaymentReceipt(data: FieldPaymentReceiptData) {
-  const htmlContent = generateFieldPaymentReceiptHTML(data);
-  
-  // Create a new window and print
-  const printWindow = window.open("", "_blank");
-  if (printWindow) {
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    
-    // Wait for content to load, then print
-    printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 500);
-    };
-  }
+  showPrintPreview(generateFieldPaymentReceiptHTML(data));
 }
 
 // WhatsApp sharing function

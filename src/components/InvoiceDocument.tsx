@@ -1,7 +1,7 @@
 // src/components/InvoiceDocument.tsx
 //
 // THE printable invoice. Modeled on ContractDocument: one component that takes plain data only (no database access) and is
-// printed through the shared openPrintWindow helper. It is rendered to static markup at print time, so nothing about the
+// printed through the shared in-app print preview. It is rendered to static markup at print time, so nothing about the
 // on-screen Invoice Details modal changes.
 //   invoice    the client_invoices row (invoice_number, invoice_date, due_date, status, subtotal, tax_rate, tax_amount,
 //              total_amount, amount_paid, balance_due, terms; the internal notes field is never printed)
@@ -15,7 +15,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { supabase } from "../lib/supabase";
-import { openPrintWindow } from "../lib/printUtils";
+import { openPrintPreview } from "../lib/printUtils";
 import { formatContractDate } from "../lib/contractDocument";
 import { resolveCompanySignature, resolveUserSignature, type ResolvedSignature } from "../lib/userSignature";
 import { watermarkFromCompany } from "./ContractDocument";
@@ -244,7 +244,7 @@ export default function InvoiceDocument({ invoice, lineItems, payments, client, 
   );
 }
 
-// Renders the invoice to markup ready for openPrintWindow.
+// Renders the invoice to markup ready for openPrintPreview.
 export function renderInvoiceHtml(props: InvoiceDocumentProps): string {
   return `<style>${INVOICE_PRINT_CSS}</style>${renderToStaticMarkup(<InvoiceDocument {...props} />)}`;
 }
@@ -275,18 +275,12 @@ async function resolveInvoiceSignature(invoice: any): Promise<InvoiceSignatureBl
   return { src: resolved.url };
 }
 
-// Prints an invoice. The window is opened synchronously (pop-up blockers only allow that inside the click) and shows a short
-// "preparing" message while the company, client and signature are loaded, then the real document replaces it.
-// Returns false when the browser blocked the window. Anything that can't be loaded is simply left off the document.
+// Prints an invoice: loads the company, client and signature, then opens the in-app print preview (callers show "Preparing…" meanwhile).
+// Anything that can't be loaded is simply left off the document.
 export async function printInvoiceFresh(opts: { invoice: any; lineItems: any[]; payments: any[] }): Promise<boolean> {
   const { invoice, lineItems, payments } = opts;
-  const w = window.open("", "_blank");
-  if (!w) return false;
-  try {
-    w.document.write('<!DOCTYPE html><html><head><title>Preparing invoice…</title></head><body style="font-family:sans-serif;color:#555;padding:24px">Preparing invoice…</body></html>');
-  } catch { /* the placeholder is cosmetic */ }
 
-  try {
+  {
     const [company, client, signature] = await Promise.all([
       (async () => {
         try {
@@ -306,15 +300,10 @@ export async function printInvoiceFresh(opts: { invoice: any; lineItems: any[]; 
     ]);
 
     const html = renderInvoiceHtml({ invoice, lineItems, payments, client, projectName: invoice?.projects?.name ?? null, company, signature });
-    return openPrintWindow(html, {
+    return openPrintPreview(html, {
       title: escapeHtml(`Invoice ${invoice?.invoice_number || ""}`.trim()),
       watermark: watermarkFromCompany(company),
       tagline: company?.tagline ?? undefined,
-      waitForImages: true,
-      existingWindow: w,
     });
-  } catch (e) {
-    try { w.close(); } catch { /* ignore */ }
-    throw e;
   }
 }

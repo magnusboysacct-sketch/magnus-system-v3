@@ -10,7 +10,7 @@
 // The contract's internal `notes` field is deliberately never read here.
 import React from "react";
 import { companyDisplayName } from "../lib/companyName";
-import { openPrintWindow } from "../lib/printUtils";
+import { openPrintPreview } from "../lib/printUtils";
 import type { SignatureSrcs } from "../lib/contractSignatures";
 import { formatContractDate, formatJamaicaDateTimeFull } from "../lib/contractDocument";
 
@@ -63,16 +63,14 @@ export function watermarkFromCompany(company: any): ContractWatermark | null {
   return null;
 }
 
-// Prints the rendered document (staff and client use this same path).
+// Shows the rendered document in the in-app print preview (staff and client use this same path); Print is pressed there.
 export function printContractDocument(opts: {
   title: string;
   watermark?: ContractWatermark | null;
   tagline?: string | null;
   variant?: "print" | "pdf";
-  waitForImages?: boolean;
   // Freshly signed signature URLs to print instead of whatever the on-screen images currently point at.
   signatureSrcs?: SignatureSrcs | null;
-  existingWindow?: Window | null;
 }): boolean {
   let html = "";
   const el = document.getElementById(CONTRACT_DOCUMENT_ID);
@@ -85,34 +83,26 @@ export function printContractDocument(opts: {
     html = clone.innerHTML;
   }
   const extraCss = opts.variant === "pdf" ? CONTRACT_PDF_CSS : CONTRACT_PRINT_CSS;
-  return openPrintWindow(`<style>${extraCss}</style>${html}`, {
+  return openPrintPreview(`<style>${extraCss}</style>${html}`, {
     title: opts.title,
     watermark: opts.watermark,
     tagline: opts.tagline ?? undefined,
-    waitForImages: opts.waitForImages,
-    existingWindow: opts.existingWindow,
   });
 }
 
-// Prints after re-resolving fresh signature URLs, so a document left open for a while never prints an expired signature.
-// The print window is opened synchronously (pop-up blockers only allow that inside the click) and shows a short
-// "preparing" message while the signatures are re-signed, then the real document replaces it.
+// Opens the print preview after re-resolving fresh signature URLs, so a document left open for a while never prints an expired signature.
+// Callers show "Preparing…" while this runs. There is no window to open, so nothing here can be blocked.
 export async function printContractDocumentFresh(
-  opts: Omit<Parameters<typeof printContractDocument>[0], "signatureSrcs" | "existingWindow"> & {
+  opts: Omit<Parameters<typeof printContractDocument>[0], "signatureSrcs"> & {
     refreshSignatures: () => Promise<SignatureSrcs>;
   },
 ): Promise<boolean> {
   const { refreshSignatures, ...printOpts } = opts;
-  const w = window.open("", "_blank");
-  if (!w) return false;
-  try {
-    w.document.write('<!DOCTYPE html><html><head><title>Preparing document…</title></head><body style="font-family:sans-serif;color:#555;padding:24px">Preparing document…</body></html>');
-  } catch { /* the placeholder is cosmetic */ }
   let signatureSrcs: SignatureSrcs | null = null;
   try {
     signatureSrcs = await refreshSignatures();
   } catch { /* print with whatever the screen already shows */ }
-  return printContractDocument({ ...printOpts, signatureSrcs, existingWindow: w, waitForImages: true });
+  return printContractDocument({ ...printOpts, signatureSrcs });
 }
 
 export interface ContractDocumentProps {

@@ -49,6 +49,7 @@ export default function AccountsReceivablePage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [printingInvoice, setPrintingInvoice] = useState(false);
   const [invoiceLineItems, setInvoiceLineItems] = useState<ClientInvoiceLineItem[]>([]);
   const [invoicePayments, setInvoicePayments] = useState<ClientPayment[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -1298,15 +1299,18 @@ export default function AccountsReceivablePage() {
 
             <div className="flex justify-end gap-3 pt-6 border-t border-slate-200 dark:border-slate-800 mt-6">
               <button
+                disabled={printingInvoice}
                 onClick={() => {
+                  if (printingInvoice) return;
+                  setPrintingInvoice(true);
                   printInvoiceFresh({ invoice: selectedInvoice, lineItems: invoiceLineItems, payments: invoicePayments })
-                    .then((opened) => { if (!opened) alert("Could not open the print window. Please allow pop-ups for this site and try again."); })
-                    .catch(() => alert("Could not prepare the invoice for printing. Please try again."));
+                    .catch(() => alert("Could not prepare the invoice for printing. Please try again."))
+                    .finally(() => setPrintingInvoice(false));
                 }}
-                className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60 disabled:cursor-wait"
               >
                 <Printer size={14} />
-                Print / Save as PDF
+                {printingInvoice ? "Preparing…" : "Print / Save as PDF"}
               </button>
               {selectedInvoice.status !== "cancelled" && (
                 <button

@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { ReceiptScanner } from "../components/ReceiptScanner";
 import { supabase } from "../lib/supabase";
+import { showPrintPreview } from "../lib/printPreview";
 import { useProjectContext } from "../context/ProjectContext";
 import { postExpenseToLedger, expenseLedgerState, POSTABLE_STATUSES, isPaidFromAccount, detectNonJmdCurrency } from "../lib/expensePosting";
 import type { LedgerAccount, PostExpenseResult } from "../lib/expensePosting";
@@ -659,7 +660,7 @@ export default function ExpensesPage() {
                               className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 text-[10px] transition">
                               👁 View
                             </button>
-                            <button onClick={()=>{const w=window.open("","_blank");if(w){w.document.write(`<html><body style="margin:0"><img src="${e.receipt_url}" style="max-width:100%"/></body></html>`);w.document.close();setTimeout(()=>w.print(),500);}}}
+                            <button onClick={()=>showPrintPreview(`<!DOCTYPE html><html><head><title>Receipt</title></head><body style="margin:0"><img src="${e.receipt_url}" style="max-width:100%"/></body></html>`)}
                               className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 text-[10px] transition">
                               🖨 Print
                             </button>

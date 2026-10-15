@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { showPrintPreview } from "../lib/printPreview";
 import { cn } from "../components/ui";
 import { Download, Send, Pin, Bell } from "lucide-react";
 import {
@@ -234,11 +235,7 @@ export default function WorkerPortalPage() {
     e.stopPropagation();
     if (!workerInfo) return;
     const html = generatePayslipHTML(payslip, workerInfo, branding);
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
+    showPrintPreview(html);
   }
 
   const unreadNotices = notices.filter(n => !readIds.has(n.id)).length;

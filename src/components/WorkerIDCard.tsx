@@ -4,7 +4,7 @@ import { companyDisplayName } from "../lib/companyName";
 import QRCode from "qrcode";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
-import { printHtmlDocument } from "../lib/printHtml";
+import { showPrintPreview } from "../lib/printPreview";
 import { ID_LOGO, PLATE_IMG_MAX_W, PLATE_IMG_MAX_H, PLATE_INSET, fitInside } from "../lib/idCardLogo";
 import { FrontLogoPlate, BackLogoMark } from "./IdCardLogo";
 
@@ -421,13 +421,13 @@ img{width:${W/S}px;height:${H/S}px}
 </head><body><img src="${dataUrl}"/></body></html>`;
   }
 
-  // Print: prepare the page, then print it through a hidden iframe (no pop-up: a window.open() after the awaits above would be blocked because
-  // the click's user activation has expired). Any failure is shown, never swallowed.
+  // Print: prepare the page, then show it in the in-app print preview (Print is pressed there, so nothing can be blocked by the awaits above).
+  // Any failure is shown, never swallowed.
   async function handlePrint() {
     if (!worker || printing) return;
     setPrinting(true);
     try {
-      await printHtmlDocument(await buildIdCardPrintHtml());
+      showPrintPreview(await buildIdCardPrintHtml());
     } catch (e) {
       console.error("Print ID card failed:", e);
       alert("Could not print the ID card: " + (e instanceof Error && e.message ? e.message : "please try again."));

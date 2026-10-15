@@ -2,6 +2,7 @@
 // Admin/Director only — print company worker IDs and field worker file sheets
 import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { showPrintPreview } from "../lib/printPreview";
 import { useNavigate } from "react-router-dom";
 import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Briefcase, IdCard, Camera, X } from "lucide-react";
 import { StaffIDCard } from "../components/StaffIDCard";
@@ -390,11 +391,7 @@ export default function SettingsRecordsPage() {
     ${watermark?`<img src="${watermark.url}" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);width:60%;opacity:${watermark.opacity};pointer-events:none;z-index:0"/>`:""}
     <div style="margin-top:24px;text-align:center;font-size:10px;color:#999">${company?.company_name||""} · ${company?.tagline?`"${company.tagline}" · `:""}CONFIDENTIAL</div>
     </body></html>`;
-    const w = window.open("","_blank");
-    if(!w) return;
-    w.document.write(html);
-    w.document.close();
-    setTimeout(()=>w.print(),600);
+    showPrintPreview(html);
   }
 
   function printFieldWorkerFile(worker: any) {
@@ -472,11 +469,7 @@ export default function SettingsRecordsPage() {
     ${watermark?`<img src="${watermark.url}" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);width:60%;opacity:${watermark.opacity};pointer-events:none;z-index:0"/>`:""}
     <div style="margin-top:24px;text-align:center;font-size:10px;color:#999">${company?.company_name||""} · CONFIDENTIAL</div>
     </body></html>`;
-    const w = window.open("","_blank");
-    if(!w) return;
-    w.document.write(html);
-    w.document.close();
-    setTimeout(()=>w.print(),600);
+    showPrintPreview(html);
   }
 
   if(allowed===null) return <div className="p-8 text-slate-500 text-sm">Checking access...</div>;

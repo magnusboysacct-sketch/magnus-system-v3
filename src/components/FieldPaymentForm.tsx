@@ -3,6 +3,7 @@
 // Receipt generated from text data on demand — no image storage
 import React, { useRef, useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { showPrintPreview } from "../lib/printPreview";
 import { useProjectContext } from "../context/ProjectContext";
 import { SimpleIDScanner } from "./SimpleIDScanner";
 import html2canvas from "html2canvas";
@@ -475,13 +476,9 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
       created_at:new Date().toISOString(),
     };
     const html=generateReceiptHTML(paymentData,company);
-    const w=window.open("","_blank");
-    if(!w)return;
-    w.document.write(`<!DOCTYPE html><html><head><title>Receipt ${receiptNumber}</title>
+    showPrintPreview(`<!DOCTYPE html><html><head><title>Receipt ${receiptNumber}</title>
     <style>*{box-sizing:border-box}body{margin:0;background:white}@media print{body{margin:0}}</style>
     </head><body>${html}</body></html>`);
-    w.document.close();
-    setTimeout(()=>w.print(),600);
   }
 
   // WhatsApp — text summary (receipt shown in print)

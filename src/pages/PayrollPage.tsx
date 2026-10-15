@@ -3,6 +3,7 @@
 // (worker_id FK's to workers(id)) — see staff_payroll_runs migration notes.
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { showPrintPreview } from "../lib/printPreview";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field, Empty, Tabs, Alert, cn
 } from "../components/ui";
@@ -518,11 +519,7 @@ export default function PayrollPage() {
     };
     const period = `${MONTH_NAMES[run.period_month - 1]} ${run.period_year}`;
     const html = generatePayslipHTML(staffForPrint, run, period, company);
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
+    showPrintPreview(html);
   }
 
   async function resendEmail(run: PayrollRun) {
@@ -574,11 +571,7 @@ export default function PayrollPage() {
     </table>
     <p style="font-size:11px;color:#999;">Status: ${r.status === "paid" ? `Paid ${r.paid_date ? fmtDate(r.paid_date) : ""}` : "Pending"}</p>
     </body></html>`;
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 600);
+    showPrintPreview(html);
   }
 
   return (

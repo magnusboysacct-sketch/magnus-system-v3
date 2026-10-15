@@ -1,4 +1,5 @@
 import type { PurchaseOrderWithItems } from "./purchaseOrders";
+import { showPrintPreview } from "./printPreview";
 
 interface POPrintData {
   purchaseOrder: PurchaseOrderWithItems;
@@ -357,62 +358,8 @@ export function generatePOPrintHTML(data: POPrintData): string {
 export function printPurchaseOrder(data: POPrintData): void {
   const html = generatePOPrintHTML(data);
 
-  // Remove any existing print containers
-  const existingContainer = document.getElementById('po-print-container');
-  if (existingContainer) {
-    existingContainer.remove();
-  }
-
-  // Create a hidden container for the print content
-  const printContainer = document.createElement('div');
-  printContainer.id = 'po-print-container';
-  printContainer.style.position = 'fixed';
-  printContainer.style.top = '0';
-  printContainer.style.left = '0';
-  printContainer.style.width = '100%';
-  printContainer.style.height = '100%';
-  printContainer.style.zIndex = '9999';
-  printContainer.style.backgroundColor = 'white';
-  printContainer.style.overflow = 'auto';
-  printContainer.innerHTML = html;
-
-  // Add print-specific styles
-  const style = document.createElement('style');
-  style.textContent = `
-    @media screen {
-      body:has(#po-print-container) > *:not(#po-print-container) {
-        display: none !important;
-      }
-    }
-    @media print {
-      body > *:not(#po-print-container) {
-        display: none !important;
-      }
-      #po-print-container {
-        position: static !important;
-        width: 100% !important;
-        height: auto !important;
-        overflow: visible !important;
-      }
-    }
-  `;
-  printContainer.appendChild(style);
-
-  // Append to body
-  document.body.appendChild(printContainer);
-
-  // Trigger print after a short delay to ensure rendering
-  setTimeout(() => {
-    window.print();
-
-    // Clean up after print
-    const cleanup = () => {
-      printContainer.remove();
-      window.removeEventListener('afterprint', cleanup);
-    };
-
-    window.addEventListener('afterprint', cleanup);
-  }, 100);
+  // Shown in the in-app print preview (Print is pressed there); no page takeover, no timer, nothing a pop-up blocker could stop.
+  showPrintPreview(html);
 }
 
 function getStatusLabel(status: string): string {

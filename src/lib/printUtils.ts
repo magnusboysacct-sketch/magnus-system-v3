@@ -1,44 +1,14 @@
 ﻿// src/lib/printUtils.ts — Centralized print utility for Magnus Boys ERP
 // All print functions across the app should use this
+import { showPrintPreview } from "./printPreview";
 
 export interface PrintOptions {
   title?: string;
   watermark?: { url: string; opacity: number; size?: number } | null;
   tagline?: string;
-  // Wait until every <img> in the print window has loaded (or failed) before printing, instead of a
-  // fixed delay. Off by default so existing prints behave exactly as before.
-  waitForImages?: boolean;
-  // A window the caller already opened (synchronously, inside the click handler, so pop-up blockers allow it) and
-  // may have shown a placeholder in. It is reset and used instead of opening a new one.
-  existingWindow?: Window | null;
 }
 
-// Prints once every image in the window has loaded or failed. A slow or broken image never blocks
-// printing: after maxWaitMs it prints anyway. print() is called at most once.
-function printWhenImagesReady(w: Window, maxWaitMs = 8000) {
-  let printed = false;
-  const go = () => {
-    if (printed) return;
-    printed = true;
-    try { w.focus(); w.print(); } catch { /* ignore */ }
-  };
-  try {
-    const pending = Array.from(w.document.images).filter((img) => !img.complete);
-    if (pending.length === 0) { setTimeout(go, 150); return; }
-    let left = pending.length;
-    const settled = () => { left -= 1; if (left <= 0) setTimeout(go, 100); };
-    pending.forEach((img) => {
-      img.addEventListener("load", settled, { once: true });
-      img.addEventListener("error", settled, { once: true });
-    });
-    setTimeout(go, maxWaitMs);
-  } catch {
-    setTimeout(go, 600);
-  }
-}
-
-// The full document openPrintWindow writes (title + base styles + the html + the optional watermark). Exported so a caller can print the
-// very same document through printHtmlDocument (hidden iframe, no pop-up) instead of a window.
+// The full document that gets printed (title + base styles + the html + the optional watermark).
 export function buildPrintDocument(html: string, options: PrintOptions = {}): string {
   const { title = "Magnus Boys ERP", watermark, tagline } = options;
 
@@ -58,15 +28,9 @@ export function buildPrintDocument(html: string, options: PrintOptions = {}): st
   </head><body>${html}${wmHtml}</body></html>`;
 }
 
-export function openPrintWindow(html: string, options: PrintOptions = {}): boolean {
-  const { waitForImages, existingWindow } = options;
-  const w = existingWindow ?? window.open("", "_blank");
-  if (!w) return false;
-  if (existingWindow) w.document.open(); // clear the placeholder before writing the real document
-
-  w.document.write(buildPrintDocument(html, options));
-  w.document.close();
-  if (waitForImages) printWhenImagesReady(w);
-  else setTimeout(() => w.print(), 600);
+// Shows the document in the in-app print preview (components/PrintPreview.tsx): no pop-up window, so nothing can block it. Print is pressed in
+// the preview. onPrint runs when Print was pressed; allowPrint:false shows the document without a Print button.
+export function openPrintPreview(html: string, options: PrintOptions & { onPrint?: () => void; allowPrint?: boolean } = {}): boolean {
+  showPrintPreview(buildPrintDocument(html, options), { title: options.title, onPrint: options.onPrint, allowPrint: options.allowPrint });
   return true;
 }

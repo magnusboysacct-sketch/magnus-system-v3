@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { buildPrintDocument } from "../lib/printUtils";
-import { printHtmlDocument } from "../lib/printHtml";
+import { showPrintPreview } from "../lib/printPreview";
 import { AddAccountModal } from "../components/AddAccountModal";
 
 type Tab = "overview" | "accounts" | "ledger" | "reports";
@@ -100,7 +100,7 @@ const ACCOUNT_TYPE_BG: Record<string, string> = {
 // (Blob + object URL + synthetic <a download> click), PDF reuses
 // printUtils.ts's print document (buildPrintDocument, the same page
 // ContractsPage.tsx and Secretary Workspace's Correspondence letters print),
-// printed through a hidden iframe so no pop-up blocker can swallow it. Both
+// shown in the in-app print preview so no pop-up blocker can swallow it. Both
 // carry company name/branding + a generation timestamp, since these are
 // for audit/review per the section's own subtitle. ──────────────────────
 
@@ -144,7 +144,7 @@ function downloadReportCSV(companyName: string, table: ReportTable) {
   a.click();
 }
 
-function downloadReportPDF(companyName: string, logoUrl: string | null, table: ReportTable): Promise<void> {
+function downloadReportPDF(companyName: string, logoUrl: string | null, table: ReportTable): void {
   const logoImg = logoUrl
     ? `<img src="${logoUrl}" alt="logo" style="display:block;width:auto;height:auto;max-height:90px;max-width:260px;object-fit:contain;margin:0 auto 14px"/>`
     : "";
@@ -167,7 +167,7 @@ function downloadReportPDF(companyName: string, logoUrl: string | null, table: R
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>`;
-  return printHtmlDocument(buildPrintDocument(html, { title: table.title }));
+  showPrintPreview(buildPrintDocument(html, { title: table.title }), { title: table.title });
 }
 
 export default function FinanceDashboardPage() {
@@ -547,7 +547,7 @@ export default function FinanceDashboardPage() {
         : await buildCashFlowTable();
       const companyName = companyDisplayName(companySettings?.company_name);
       if (format === "csv") downloadReportCSV(companyName, table);
-      else await downloadReportPDF(companyName, companySettings?.logo_url ?? null, table);
+      else downloadReportPDF(companyName, companySettings?.logo_url ?? null, table);
     } catch (e: any) {
       console.error("Export failed:", e);
       const msg = "Export failed: " + (e?.message || "unknown error");

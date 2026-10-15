@@ -13,6 +13,7 @@ import React, { useEffect, useState } from "react";
 import { User as UserIcon, QrCode } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { frontLogoPlateHtml, backLogoHtml } from "../lib/idCardLogo";
+import { showPrintPreview } from "../lib/printPreview";
 import { FrontLogoPlate, BackLogoMark } from "./IdCardLogo";
 
 interface StaffProfile {
@@ -297,8 +298,6 @@ export function StaffIDCard({ userId, onClose }: Props) {
 
   function handlePrint() {
     if (!staff) return;
-    const win = window.open("", "_blank", "width=700,height=650");
-    if (!win) return;
     // Both faces are re-rendered as static HTML rather than reusing the React
     // tree — printed output needs to live in an independent document.
     const companyName = company?.company_name || "Company";
@@ -383,7 +382,7 @@ export function StaffIDCard({ userId, onClose }: Props) {
         </div>
       </div>`;
 
-    win.document.write(`<!DOCTYPE html><html><head><title>Staff ID — ${staff.full_name || ""}</title>
+    const printHtml = `<!DOCTYPE html><html><head><title>Staff ID — ${staff.full_name || ""}</title>
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: #f0f0f0; display: flex; gap: 10mm; align-items: center; justify-content: center; min-height: 100vh; padding: 10mm; }
@@ -391,9 +390,8 @@ export function StaffIDCard({ userId, onClose }: Props) {
           body { background: #fff; padding: 0; gap: 8mm; }
           .card { page-break-inside: avoid; }
         }
-      </style></head><body>${frontHTML}${backHTML}</body></html>`);
-    win.document.close();
-    setTimeout(() => win.print(), 600);
+      </style></head><body>${frontHTML}${backHTML}</body></html>`;
+    showPrintPreview(printHtml);
   }
 
   if (loading) {

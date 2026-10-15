@@ -6,7 +6,7 @@ import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { FieldPaymentForm, generateReceiptHTML } from "../components/FieldPaymentForm";
 import { buildPrintDocument } from "../lib/printUtils";
-import { printHtmlDocument } from "../lib/printHtml";
+import { showPrintPreview } from "../lib/printPreview";
 import html2canvas from "html2canvas";
 import {
   Plus, Search, HandCoins, DollarSign, Users,
@@ -212,13 +212,13 @@ export default function FieldPaymentsPage() {
     return buildPrintDocument(html, { title: 'Receipt - ' + p.worker_name, watermark: watermark||undefined, tagline: company?.tagline||undefined });
   }
 
-  // Generate PDF: prepare the receipt, then print it through a hidden iframe (no pop-up: a window.open() after the logo fetch above would be
-  // blocked because the click's user activation has expired). Any failure is shown, never swallowed.
+  // Generate PDF: prepare the receipt, then show it in the in-app print preview (Print is pressed there, so nothing can be blocked by the fetch
+  // above). Any failure is shown, never swallowed.
   async function generatePDF(p: Payment) {
     if(printingReceiptId) return;
     setPrintingReceiptId(p.id);
     try {
-      await printHtmlDocument(await buildReceiptPrintHtml(p));
+      showPrintPreview(await buildReceiptPrintHtml(p));
     } catch(e) {
       console.error("Print receipt failed:", e);
       alert("Could not print the receipt: " + (e instanceof Error && e.message ? e.message : "please try again."));

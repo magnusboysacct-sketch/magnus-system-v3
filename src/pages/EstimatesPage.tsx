@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { companyDisplayName } from "../lib/companyName";
-import { printHtmlDocument } from "../lib/printHtml";
+import { showPrintPreview } from "../lib/printPreview";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
@@ -568,14 +568,14 @@ function EstimateDetailModal({ estimate, items, companyId, onUpdateStatus, onSen
     return html;
   }
 
-  // Print: prepare the document, then print it through a hidden iframe (no pop-up: a window.open() after the lookups above would be blocked
-  // because the click's user activation has expired). Any failure is shown, never swallowed.
+  // Print: prepare the document, then show it in the in-app print preview (Print is pressed there, so nothing can be blocked by the awaits above).
+  // Any failure is shown, never swallowed.
   const [printing, setPrinting] = useState(false);
   async function printProposal() {
     if (printing) return;
     setPrinting(true);
     try {
-      await printHtmlDocument(await buildProposalHtml());
+      showPrintPreview(await buildProposalHtml());
     } catch (e) {
       console.error("Print proposal failed:", e);
       alert("Could not print the proposal: " + (e instanceof Error && e.message ? e.message : "please try again."));

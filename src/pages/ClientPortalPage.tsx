@@ -355,11 +355,14 @@ function PortalContractViewer({contract,company,sessionToken,onClose}:{contract:
   const signed=!!contract.client_signed_at;
   const schedule=useContractSchedule(contract.id,sessionToken);
   const {srcs:sigSrcs,refresh:refreshSigs}=useContractSignatureSrcs(contract,(c,o)=>resolvePortalSignatures(c,sessionToken,o.force));
+  const [printing,setPrinting]=useState(false);
   function printCopy(){
-    // Re-signs the signatures right before printing (a viewer left open for a while must not print an expired link).
+    if(printing)return;
+    setPrinting(true);
+    // Re-signs the signatures right before printing (a viewer left open for a while must not print an expired link), then opens the in-app print preview.
     printContractDocumentFresh({variant:"print",title:`${contract.contract_number||"Contract"} - ${contract.contract_name||""}`,watermark:watermarkFromCompany(company),tagline:company?.tagline,refreshSignatures:refreshSigs})
-      .then(opened=>{if(!opened)alert("Could not open the print window. Please allow pop-ups for this site and try again.");})
-      .catch(()=>alert("Could not open the print window. Please allow pop-ups for this site and try again."));
+      .catch(()=>alert("Could not prepare the contract for printing. Please try again."))
+      .finally(()=>setPrinting(false));
   }
   return <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#f8fafc",borderRadius:16,width:"100%",maxWidth:900,maxHeight:"92vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.35)"}}>
@@ -374,7 +377,7 @@ function PortalContractViewer({contract,company,sessionToken,onClose}:{contract:
         <ContractDocument contract={contract} schedule={schedule} company={company} signRecord={null} contractorSignatureSrc={sigSrcs.contractor} clientSignatureSrc={sigSrcs.client}/>
       </div>
       <div style={{display:"flex",gap:8,padding:"12px 18px",borderTop:"1px solid #e2e8f0"}}>
-        {signed&&<button onClick={printCopy} style={{flex:1.4,padding:"11px 0",background:"#0891b2",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Print / Save as PDF</button>}
+        {signed&&<button onClick={printCopy} disabled={printing} style={{flex:1.4,padding:"11px 0",background:"#0891b2",border:"none",borderRadius:10,color:"#fff",fontSize:13,fontWeight:700,cursor:printing?"wait":"pointer",opacity:printing?0.7:1}}>{printing?"Preparing…":"Print / Save as PDF"}</button>}
         <button onClick={onClose} style={{flex:1,padding:"11px 0",background:"#ffffff",border:"1px solid #cbd5e1",borderRadius:10,color:"#475569",fontSize:13,fontWeight:600,cursor:"pointer"}}>Close</button>
       </div>
     </div>

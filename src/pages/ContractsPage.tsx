@@ -222,13 +222,26 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
   // Signatures are stored as storage paths and signed on read; refreshSignatures re-signs right before printing.
   const { srcs: signatureSrcs, refresh: refreshSignatures } = useContractSignatureSrcs(contract, staffSignatureResolver);
 
-  function downloadPDF() {
-    void printContractDocumentFresh({ variant: "pdf", title: contract.contract_number + "-" + contract.contract_name, watermark, tagline: company?.tagline, refreshSignatures });
+  // Both buttons open the in-app print preview after re-signing the signatures; "Preparing…" shows meanwhile. Failures are shown, never swallowed.
+  const [preparing, setPreparing] = useState<null | "pdf" | "print">(null);
+  async function openPreview(kind: "pdf" | "print") {
+    if (preparing) return;
+    setPreparing(kind);
+    try {
+      await printContractDocumentFresh({
+        variant: kind,
+        title: kind === "pdf" ? contract.contract_number + "-" + contract.contract_name : contract.contract_name,
+        watermark, tagline: company?.tagline, refreshSignatures,
+      });
+    } catch (e) {
+      console.error("Contract print preview failed:", e);
+      alert("Could not prepare the contract for printing: " + (e instanceof Error && e.message ? e.message : "please try again."));
+    } finally {
+      setPreparing(null);
+    }
   }
-
-  function printContract() {
-    void printContractDocumentFresh({ variant: "print", title: contract.contract_name, watermark, tagline: company?.tagline, refreshSignatures });
-  }
+  function downloadPDF() { void openPreview("pdf"); }
+  function printContract() { void openPreview("print"); }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col">
@@ -240,13 +253,13 @@ function ContractPDFPreview({ contract, schedule, company, onClose, watermark }:
           <span className="text-xs text-slate-500 dark:text-slate-600 font-mono">{contract.contract_number}</span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={downloadPDF}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition">
-            <Download size={12}/> Save as PDF
+          <button onClick={downloadPDF} disabled={!!preparing}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition disabled:opacity-60 disabled:cursor-wait">
+            <Download size={12}/> {preparing === "pdf" ? "Preparing…" : "Save as PDF"}
           </button>
-          <button onClick={printContract}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition">
-            <Printer size={12}/> Print
+          <button onClick={printContract} disabled={!!preparing}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition disabled:opacity-60 disabled:cursor-wait">
+            <Printer size={12}/> {preparing === "print" ? "Preparing…" : "Print"}
           </button>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-200 dark:bg-white/[0.06] text-slate-500 hover:text-slate-700 dark:text-slate-300 transition">
             <X size={15}/>
