@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
       .ilike("email", email)
       .maybeSingle();
 
-    let companyName = "Magnus System";
+    let companyName = "Your Company";
     let companyLogo = "";
     let companyTagline = "Secure. Simple. Built for Construction.";
     let companyWebsite = APP_URL;

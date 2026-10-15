@@ -1376,7 +1376,7 @@ export default function EstimatesPage() {
             detailOptions
             buildSnapshot={buildSendSnapshot}
             messageText={(url) =>
-              `Hello ${sendTarget.client.contact_name || sendTarget.client.name}, your estimate for ${sendTarget.projectName} is ready to view in your client portal: ${url}\n\n${companyDisplayName(companySettings?.company_name)}`
+              `Hello ${sendTarget.client.contact_name || sendTarget.client.name}, your estimate for ${sendTarget.projectName} is ready to view in your client portal:\n\n${url}\n\n${companyDisplayName(companySettings?.company_name)}`
             }
             onChanged={() => refreshEstimateShare(est.id)}
           />

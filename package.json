@@ -7,10 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:share": "tsx --test scripts/tests/sharePreview.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
+    "@vercel/og": "^1.0.3",
     "expr-eval": "^2.0.2",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",

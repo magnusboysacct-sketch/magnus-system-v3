@@ -1292,7 +1292,7 @@ Adjust percentages based on the project type and value. Make sure they add up to
           sharedAt={isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at)}
           sharedVia={isSharedNow(viewingContract.shared_at, viewingContract.withdrawn_at) ? (viewingContract.shared_via || null) : null}
           messageText={(url) =>
-            `Hello ${sendClient.contact_name || sendClient.name}, your contract ${viewingContract.contract_number} - ${viewingContract.contract_name} is ready to review and sign in your client portal: ${url}\n\n${companyDisplayName(company?.company_name)}`
+            `Hello ${sendClient.contact_name || sendClient.name}, your contract ${viewingContract.contract_number} - ${viewingContract.contract_name} is ready to review and sign in your client portal:\n\n${url}\n\n${companyDisplayName(company?.company_name)}`
           }
           canWithdraw={!viewingContract.client_signed_at}
           note={viewingContract.contractor_signed_at ? null : "You haven't signed this contract yet. The client will see it but can only sign after you do."}

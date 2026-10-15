@@ -1343,7 +1343,7 @@ export default function AccountsReceivablePage() {
           sharedAt={isSharedNow(selectedInvoice.shared_at, selectedInvoice.withdrawn_at)}
           sharedVia={isSharedNow(selectedInvoice.shared_at, selectedInvoice.withdrawn_at) ? (selectedInvoice.shared_via || null) : null}
           messageText={(url) =>
-            `Hello ${sendClient.contact_name || sendClient.name}, your invoice ${selectedInvoice.invoice_number} for ${new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD" }).format(Number(selectedInvoice.total_amount) || 0)} is ready. View it in your client portal: ${url}\n\n${companyDisplayName(companySettings?.company_name)}`
+            `Hello ${sendClient.contact_name || sendClient.name}, your invoice ${selectedInvoice.invoice_number} for ${new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD" }).format(Number(selectedInvoice.total_amount) || 0)} is ready. View it in your client portal:\n\n${url}\n\n${companyDisplayName(companySettings?.company_name)}`
           }
           onChanged={refreshSharedState}
         />

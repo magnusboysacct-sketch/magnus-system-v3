@@ -1,7 +1,22 @@
 {
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/portal/contact/:token",
+      "has": [{ "type": "header", "key": "user-agent", "value": ".*(WhatsApp|facebookexternalhit|Facebot|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot).*" }],
+      "destination": "/api/share-preview?kind=contact&token=:token"
+    },
+    {
+      "source": "/portal/:token",
+      "has": [{ "type": "header", "key": "user-agent", "value": ".*(WhatsApp|facebookexternalhit|Facebot|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot).*" }],
+      "destination": "/api/share-preview?kind=portal&token=:token"
+    },
+    {
+      "source": "/shared/:token",
+      "has": [{ "type": "header", "key": "user-agent", "value": ".*(WhatsApp|facebookexternalhit|Facebot|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot).*" }],
+      "destination": "/api/share-preview?kind=photos&token=:token"
+    },
+    {
+      "source": "/((?!api/).*)",
       "destination": "/"
     }
   ],

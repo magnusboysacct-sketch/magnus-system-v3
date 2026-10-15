@@ -8,6 +8,8 @@ import {
   type ShareExpiryDays,
 } from "../lib/photoShare";
 import { buildMailtoUrl, buildWhatsAppUrl } from "../lib/portalShare";
+import { useCompanySettings } from "../hooks/useCompanySettings";
+import { companyDisplayName } from "../lib/companyName";
 
 interface Props {
   open: boolean;
@@ -28,6 +30,7 @@ export default function PhotoShareModal({ open, projectId, projectName, photoIds
   const [link, setLink] = useState<PhotoShareLink | null>(null);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
+  const { settings: companySettings } = useCompanySettings();
 
   useEffect(() => {
     if (!open) return;
@@ -59,7 +62,7 @@ export default function PhotoShareModal({ open, projectId, projectName, photoIds
   const until = link ? formatShareDate(link.expires_at) : "";
   const heading = link?.title || "Project photos";
   const message = link
-    ? `${heading} - ${projectName}\n\nView the photos here (no login needed):\n${url}\n\nThis link is available until ${until}.`
+    ? `${heading} - ${projectName}\n\nView the photos here (no login needed):\n\n${url}\n\nThis link is available until ${until}.\n\n${companyDisplayName(companySettings?.company_name)}`
     : "";
 
   async function copy() {
