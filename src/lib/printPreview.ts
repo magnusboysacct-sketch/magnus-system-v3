@@ -9,6 +9,7 @@
 //   - the page behind it does not scroll
 //   - a hidden copy of the document sits in the main page, and @media print rules hide the app and show only that copy. It is what prints if
 //     the browser prints the whole page instead of the frame (iOS Safari), or if the frame's own print() fails and window.print() is used.
+// On iPhone / iPad that main-page print is the primary path (see components/PrintPreview.tsx), so the hidden copy must be a faithful rendering.
 // Only one preview is open at a time; opening another replaces the first.
 import React from "react";
 import { createRoot, type Root } from "react-dom/client";
