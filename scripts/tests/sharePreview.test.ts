@@ -14,6 +14,7 @@ import { createRequire } from "node:module";
 import handler from "../../api/share-preview";
 
 const SUPABASE = "https://abcdefgh.supabase.co";
+const VALID_TOKEN = "0f8fad5b-d9cb-469f-a165-70867728950e";
 const GOOD_LOGO = `${SUPABASE}/storage/v1/object/public/company-logos/co-1/logo/123_logo.png`;
 
 // ── a tiny PNG writer (solid colour) so the card can be rendered without any image files ──────────────────────────────────
@@ -124,9 +125,13 @@ test("card URL: fingerprint changes with the logo or name", () => {
   assert.notEqual(cardVersion("Acme", "a"), cardVersion("Acme", "b"));
   assert.notEqual(cardVersion("Acme", null), cardVersion("Acme2", null));
   assert.equal(cardVersion("Acme", GOOD_LOGO), cardVersion("Acme", GOOD_LOGO));
-  const u = new URL(buildCardUrl("https://app.magnusboys.com", "Acme Ltd", GOOD_LOGO));
+  const u = new URL(buildCardUrl("https://app.magnusboys.com", "portal", VALID_TOKEN, "Acme Ltd", GOOD_LOGO));
   assert.equal(u.origin + u.pathname, "https://app.magnusboys.com/api/share-card");
-  assert.equal(u.searchParams.get("n"), "Acme Ltd"); assert.equal(u.searchParams.get("l"), GOOD_LOGO); assert.ok(u.searchParams.get("v"));
+  assert.deepEqual([...u.searchParams.keys()].sort(), ["k", "t", "v"], "the URL carries only kind, token and the cache-buster — never a name or a logo URL");
+  assert.equal(u.searchParams.get("k"), "portal"); assert.equal(u.searchParams.get("t"), VALID_TOKEN);
+  assert.equal(u.searchParams.get("v"), cardVersion("Acme Ltd", GOOD_LOGO));
+  assert.equal(u.toString().includes("Acme"), false);
+  assert.equal(u.toString().includes("supabase"), false);
 });
 
 test("logo URL allow-list: only our Supabase company-logos bucket", () => {
@@ -189,7 +194,7 @@ test("loadLogo: fetches only the allowed URL, with no redirects; non-images, big
 
 // ── the card ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 // @vercel/og's Node build expects a CommonJS require() to exist; the edge build used in production does not (so it is loaded here, lazily).
-async function render(logo: { w: number; h: number } | null, cache = "public, max-age=31536000, immutable") {
+function ensureOgNode() {
   const req = createRequire(import.meta.url);
   const g = globalThis as unknown as { require?: NodeRequire; __dirname?: string; __filename?: string };
   g.require ??= req;
@@ -199,6 +204,9 @@ async function render(logo: { w: number; h: number } | null, cache = "public, ma
     fs.copyFileSync(req.resolve("harfbuzzjs/hb.wasm"), path.join(dir, "hb.wasm"));
     g.__dirname = dir; g.__filename = path.join(dir, "index.js");
   }
+}
+async function render(logo: { w: number; h: number } | null, cache = "public, max-age=31536000, immutable") {
+  ensureOgNode();
   const { renderCard } = await import("../../api/_lib/card");
   const l = logo ? { dataUri: `data:image/png;base64,${Buffer.from(solidPng(logo.w, logo.h, [200, 30, 60])).toString("base64")}`, width: logo.w, height: logo.h } : null;
   const res = renderCard({ name: "Veron Williams Construction", logo: l }, cache);
@@ -248,7 +256,9 @@ test("endpoint: a link-preview bot gets the sending company's tags; a person get
     assert.equal(bot.status, 200); assert.equal(bot.headers.get("cache-control"), "no-store");
     assert.match(html, /og:title" content="Project portal – Veron Williams"/);
     assert.match(html, /og:site_name" content="Veron Williams"/);
-    assert.match(html, new RegExp(`og:image" content="https://app\\.magnusboys\\.com/api/share-card\\?n=Veron\\+Williams&amp;l=${encodeURIComponent(GOOD_LOGO).replace(/\./g, "\\.")}&amp;v=`));
+    assert.match(html, new RegExp(`og:image" content="https://app\\.magnusboys\\.com/api/share-card\\?k=portal&amp;t=${VALID}&amp;v=[0-9a-z]+"`));
+    assert.equal(/share-card\?[^"]*\b(n|l)=/.test(html), false, "no name or logo URL in the card URL");
+    assert.equal(html.includes("supabase.co"), false);
     assert.match(html, new RegExp(`og:url" content="https://app\\.magnusboys\\.com/portal/${VALID}"`));
     assert.equal(html.includes("leak@example.com") || html.includes("LEAK"), false);
     assert.deepEqual(f.seen[0].body, { p_kind: "portal", p_token: VALID });
@@ -256,6 +266,8 @@ test("endpoint: a link-preview bot gets the sending company's tags; a person get
     assert.match(contact, new RegExp(`og:url" content="https://app\\.magnusboys\\.com/portal/contact/${VALID}"`));
     const photos = await (await call(`/api/share-preview?kind=photos&token=${VALID}`, "facebookexternalhit/1.1")).text();
     assert.match(photos, new RegExp(`og:url" content="https://app\\.magnusboys\\.com/shared/${VALID}"`));
+    assert.match(photos, new RegExp(`share-card\\?k=photos&amp;t=${VALID}&amp;v=`));
+    assert.match(contact, new RegExp(`share-card\\?k=contact&amp;t=${VALID}&amp;v=`));
     const calls = f.seen.length;
     const human = await call(`/api/share-preview?kind=portal&token=${VALID}`, CHROME);
     assert.equal(await human.text(), APP_HTML);
@@ -290,4 +302,126 @@ test("endpoint: falls back to the normal app if the database call fails or env i
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => { const u = String(input); if (u.endsWith("/index.html")) return new Response(APP_HTML); assert.equal((init?.headers as Record<string, string>).apikey, "anon-key"); return new Response(JSON.stringify({ company_name: "Acme" })); }) as typeof fetch;
     assert.match(await (await call(`/api/share-preview?kind=portal&token=${VALID}`, WA)).text(), /og:site_name" content="Acme"/);
   } finally { globalThis.fetch = real; }
+});
+
+// ── the card endpoint: renders only from the database result for kind + token ────────────────────────────────────────────────
+const MAGNUS_PNG = solidPng(1200, 630, [11, 22, 99]);
+const EVIL_LOGO = "https://evil.example.com/logo.png";
+function withCardFetch(rpc: (body: { p_kind: string; p_token: string }) => unknown, opts: { ogImage?: boolean } = {}) {
+  const real = globalThis.fetch;
+  const seen: string[] = []; const rpcCalls: Array<{ p_kind: string; p_token: string }> = [];
+  const logoBytes = solidPng(1200, 403, [200, 30, 60]);
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input); seen.push(url);
+    if (url.includes("/rest/v1/rpc/get_share_preview")) { const body = JSON.parse(String(init?.body)); rpcCalls.push(body); return new Response(JSON.stringify(rpc(body)), { status: 200, headers: { "content-type": "application/json" } }); }
+    if (url === "https://app.magnusboys.com/og-image.png") { if (opts.ogImage === false) throw new Error("static file unavailable"); return new Response(MAGNUS_PNG as BodyInit, { status: 200, headers: { "content-type": "image/png" } }); }
+    if (url === GOOD_LOGO) return new Response(logoBytes as BodyInit, { status: 200, headers: { "content-type": "image/png" } });
+    throw new Error("unexpected fetch " + url);
+  }) as typeof fetch;
+  return { seen, rpcCalls, restore: () => { globalThis.fetch = real; } };
+}
+const VALID_COMPANY = () => ({ company_name: "Veron Williams", logo_url: GOOD_LOGO, title: "x", description: "y", token: "LEAK" });
+async function cardCall(qs: string) {
+  ensureOgNode();
+  const h = (await import("../../api/share-card")).default;
+  const res = await h(new Request("https://app.magnusboys.com/api/share-card?" + qs));
+  return { res, bytes: new Uint8Array(await res.arrayBuffer()) };
+}
+const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
+const LONG_CC = "public, max-age=31536000, s-maxage=31536000, immutable", SHORT_CC = "public, max-age=300, s-maxage=300";
+
+test("card endpoint: kind + token -> the card for THAT company, built from the database result, cached for a year", async () => {
+  process.env.SUPABASE_URL = SUPABASE; process.env.SUPABASE_ANON_KEY = "anon-key";
+  const f = withCardFetch(VALID_COMPANY);
+  try {
+    const v = cardVersion("Veron Williams", GOOD_LOGO);
+    const { res, bytes } = await cardCall("k=portal&t=" + VALID_TOKEN + "&v=" + v);
+    assert.equal(res.status, 200); assert.equal(res.headers.get("content-type"), "image/png");
+    assert.equal(res.headers.get("cache-control"), LONG_CC);
+    assert.deepEqual(pngSize(bytes), [1200, 630]);
+    assert.equal(same(bytes, MAGNUS_PNG), false, "a real company gets its own card, not the platform's");
+    assert.deepEqual(f.rpcCalls, [{ p_kind: "portal", p_token: VALID_TOKEN }]);
+    assert.ok(f.seen.includes(GOOD_LOGO), "the company's logo was loaded");
+    for (const [k, t] of [["contact", VALID_TOKEN], ["photos", VALID_TOKEN]]) { const r = await cardCall("k=" + k + "&t=" + t + "&v=" + v); assert.equal(r.res.headers.get("content-type"), "image/png"); }
+    assert.deepEqual(f.rpcCalls.map((c) => c.p_kind), ["portal", "contact", "photos"]);
+  } finally { f.restore(); }
+});
+
+test("card endpoint: a URL with a made-up name or logo renders NOTHING custom", async () => {
+  process.env.SUPABASE_URL = SUPABASE; process.env.SUPABASE_ANON_KEY = "anon-key";
+  const f = withCardFetch(VALID_COMPANY);
+  try {
+    // the old shape (?n=...&l=...) and any other name-ish parameters with no valid kind + token: the platform's own card, no lookups at all
+    for (const qs of ["n=FREE+TEXT+ON+OUR+DOMAIN", "n=EVIL&l=" + encodeURIComponent(EVIL_LOGO), "name=EVIL&logo=" + encodeURIComponent(EVIL_LOGO), "", "k=portal", "t=" + VALID_TOKEN, "k=bogus&t=" + VALID_TOKEN, "k=portal&t=short&n=EVIL"]) {
+      const { res, bytes } = await cardCall(qs);
+      assert.equal(res.headers.get("content-type"), "image/png", qs);
+      assert.ok(same(bytes, MAGNUS_PNG), "platform card for: " + qs);
+    }
+    assert.equal(f.rpcCalls.length, 0, "no database call, and nothing was rendered");
+    assert.equal(f.seen.some((u) => u.includes("evil.example.com")), false);
+
+    // even WITH a valid kind + token, extra n / l parameters are ignored: the result is byte-identical to the request without them
+    const v = cardVersion("Veron Williams", GOOD_LOGO);
+    const plain = await cardCall("k=portal&t=" + VALID_TOKEN + "&v=" + v);
+    const decorated = await cardCall("k=portal&t=" + VALID_TOKEN + "&v=" + v + "&n=" + encodeURIComponent("SOMETHING ELSE ENTIRELY") + "&l=" + encodeURIComponent(EVIL_LOGO));
+    assert.ok(same(plain.bytes, decorated.bytes), "n and l change nothing");
+    assert.equal(decorated.res.headers.get("cache-control"), LONG_CC);
+    assert.equal(f.seen.some((u) => u.includes("evil.example.com")), false, "the logo URL from the query string was never fetched");
+  } finally { f.restore(); }
+});
+
+test("card endpoint: unknown, revoked, expired, malformed all get the platform's card, identically (no probing)", async () => {
+  process.env.SUPABASE_URL = SUPABASE; process.env.SUPABASE_ANON_KEY = "anon-key";
+  const f = withCardFetch(() => null);
+  try {
+    const answers = [];
+    for (const qs of ["k=portal&t=" + VALID_TOKEN, "k=photos&t=" + VALID_TOKEN, "k=contact&t=" + VALID_TOKEN + "&v=abc", "k=portal&t=nope", "k=portal", ""]) {
+      const { res, bytes } = await cardCall(qs);
+      answers.push({ status: res.status, ct: res.headers.get("content-type"), cc: res.headers.get("cache-control"), same: same(bytes, MAGNUS_PNG) });
+    }
+    for (const a of answers) assert.deepEqual(a, answers[0]);
+    assert.deepEqual(answers[0], { status: 200, ct: "image/png", cc: SHORT_CC, same: true });
+  } finally { f.restore(); }
+});
+
+test("card endpoint: database trouble, missing env, or a missing static card all fail safe", async () => {
+  process.env.SUPABASE_URL = SUPABASE; process.env.SUPABASE_ANON_KEY = "anon-key";
+  const real = globalThis.fetch;
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL) => { if (String(input).endsWith("/og-image.png")) return new Response(MAGNUS_PNG as BodyInit, { headers: { "content-type": "image/png" } }); throw new Error("db down"); }) as typeof fetch;
+    assert.ok(same((await cardCall("k=portal&t=" + VALID_TOKEN)).bytes, MAGNUS_PNG));
+    delete process.env.SUPABASE_URL; delete process.env.SUPABASE_ANON_KEY; delete process.env.VITE_SUPABASE_URL; delete process.env.VITE_SUPABASE_ANON_KEY;
+    assert.ok(same((await cardCall("k=portal&t=" + VALID_TOKEN)).bytes, MAGNUS_PNG));
+    globalThis.fetch = (async () => { throw new Error("nothing works"); }) as typeof fetch;
+    const { res } = await cardCall("k=portal&t=short");
+    assert.equal(res.status, 302); assert.equal(res.headers.get("location"), "/og-image.png");
+    // a static-file request that comes back as the app's HTML (not an image) is not served as a card
+    globalThis.fetch = (async (input: RequestInfo | URL) => { if (String(input).endsWith("/og-image.png")) return new Response("<!doctype html>", { status: 200, headers: { "content-type": "text/html" } }); throw new Error("x"); }) as typeof fetch;
+    assert.equal((await cardCall("k=portal&t=short")).res.status, 302);
+  } finally { globalThis.fetch = real; process.env.SUPABASE_URL = SUPABASE; process.env.SUPABASE_ANON_KEY = "anon-key"; }
+});
+
+test("card endpoint: cache is long only when the fingerprint is current and the logo loaded; the logo allow-list still applies", async () => {
+  process.env.SUPABASE_URL = SUPABASE; process.env.SUPABASE_ANON_KEY = "anon-key";
+  let f = withCardFetch(VALID_COMPANY);
+  try {
+    const v = cardVersion("Veron Williams", GOOD_LOGO);
+    assert.equal((await cardCall("k=portal&t=" + VALID_TOKEN + "&v=" + v)).res.headers.get("cache-control"), LONG_CC);
+    assert.equal((await cardCall("k=portal&t=" + VALID_TOKEN + "&v=stale")).res.headers.get("cache-control"), SHORT_CC, "stale fingerprint (the company changed its logo since)");
+    assert.equal((await cardCall("k=portal&t=" + VALID_TOKEN)).res.headers.get("cache-control"), SHORT_CC, "no fingerprint");
+  } finally { f.restore(); }
+  // a company whose logo URL is not in our company-logos bucket: never fetched; the name-only card, cached briefly
+  f = withCardFetch(() => ({ ...VALID_COMPANY(), logo_url: EVIL_LOGO }));
+  try {
+    const { res, bytes } = await cardCall("k=portal&t=" + VALID_TOKEN + "&v=" + cardVersion("Veron Williams", EVIL_LOGO));
+    assert.equal(res.headers.get("content-type"), "image/png"); assert.deepEqual(pngSize(bytes), [1200, 630]);
+    assert.equal(res.headers.get("cache-control"), SHORT_CC);
+    assert.equal(f.seen.includes(EVIL_LOGO), false);
+  } finally { f.restore(); }
+  // a company with no logo at all is a settled answer: long cache
+  f = withCardFetch(() => ({ company_name: "Beta Builders" }));
+  try {
+    const { res } = await cardCall("k=portal&t=" + VALID_TOKEN + "&v=" + cardVersion("Beta Builders", null));
+    assert.equal(res.headers.get("cache-control"), LONG_CC);
+  } finally { f.restore(); }
 });

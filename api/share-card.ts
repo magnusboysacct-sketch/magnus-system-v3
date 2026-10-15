@@ -1,26 +1,42 @@
-// api/share-card.ts — GET /api/share-card?n=<company name>&l=<logo url>&v=<fingerprint>  ->  1200x630 PNG for link previews.
+// api/share-card.ts — GET /api/share-card?k=<portal|contact|photos>&t=<token>&v=<fingerprint>  ->  1200x630 PNG for link previews.
 //
-// The logo may only come from our own Supabase company-logos storage (so this cannot be used to fetch arbitrary URLs); the name is plain text.
-// The URL carries a fingerprint of name + logo (see cardVersion), so a new logo is a new URL and the card can be cached for a year.
-// If the logo is missing, unreadable or not a supported format the card shows the company name large, and is cached only briefly in case the
-// logo is merely slow to load.
+// The card is addressed by the same kind + token as the share link. It looks the company up ITSELF (get_share_preview) and draws only what the database
+// returns: nothing about what is drawn — no name, no logo URL — is read from the request, so it cannot be used to put arbitrary text or images on our
+// domain. Anything the database does not recognise (unknown, revoked, expired token; malformed parameters; database trouble) gets the platform's own
+// card, /og-image.png — exactly what the page itself shows in that case.
+//
+// The logo may only come from our own Supabase company-logos storage, over https, with no redirects, at most 4 MB and 4 s. v is only a cache-buster (the
+// fingerprint of the name + logo the preview page built the URL for): when it matches the current data the card is cached for a year; when it does not
+// (the company changed its logo since), or the logo could not be loaded, the card is cached only briefly.
 import { renderCard } from "./_lib/card";
-import { loadLogo, stripControl } from "./_lib/sharePreview";
+import { cardVersion, fetchSharePreview, isShareKind, isValidToken, loadLogo, previewEnv } from "./_lib/sharePreview";
 
 export const config = { runtime: "edge" };
 
 const LONG = "public, max-age=31536000, s-maxage=31536000, immutable";
 const SHORT = "public, max-age=300, s-maxage=300";
 
+// The platform's own card, as the page uses it.
+async function platformCard(request: Request): Promise<Response> {
+  try {
+    const res = await fetch(new URL("/og-image.png", request.url));
+    // (a real static file; if a rewrite handed back the app's HTML instead, that is not an image)
+    if (res.ok && (res.headers.get("content-type") || "").startsWith("image/")) return new Response(await res.arrayBuffer(), { status: 200, headers: { "Content-Type": "image/png", "Cache-Control": SHORT } });
+  } catch { /* fall through */ }
+  return new Response(null, { status: 302, headers: { Location: "/og-image.png", "Cache-Control": "no-store" } });
+}
+
 export default async function handler(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const name = stripControl(url.searchParams.get("n"), 80);
-  if (!name) return new Response("Missing name", { status: 400, headers: { "Cache-Control": "no-store" } });
+  const kind = url.searchParams.get("k");
+  const token = url.searchParams.get("t");
+  if (!isShareKind(kind) || !isValidToken(token)) return platformCard(request);
 
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const logoParam = url.searchParams.get("l");
-  const logo = logoParam ? await loadLogo(logoParam, supabaseUrl) : null;
+  const preview = await fetchSharePreview(kind, token);
+  if (!preview) return platformCard(request);
 
-  // No logo on purpose (no l=) is a settled answer; a logo that was asked for but could not be loaded is retried soon.
-  return renderCard({ name, logo }, !logoParam || logo ? LONG : SHORT);
+  const logo = preview.logo_url ? await loadLogo(preview.logo_url, previewEnv()?.url) : null;
+  const settled = !preview.logo_url || !!logo;                                            // a logo that failed to load is retried soon
+  const current = url.searchParams.get("v") === cardVersion(preview.company_name, preview.logo_url);
+  return renderCard({ name: preview.company_name, logo }, settled && current ? LONG : SHORT);
 }

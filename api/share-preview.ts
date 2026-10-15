@@ -6,7 +6,7 @@
 //
 // An unknown, revoked or expired token — or anything malformed — gets exactly the same answer as no token at all: the normal index.html with the
 // platform's own preview tags. Nothing in the response tells them apart, so tokens cannot be probed.
-import { buildCardUrl, buildPreviewHtml, isPreviewBot, isShareKind, isValidToken, normalizePreview, sharePath } from "./_lib/sharePreview";
+import { buildCardUrl, buildPreviewHtml, fetchSharePreview, isPreviewBot, isShareKind, isValidToken, sharePath } from "./_lib/sharePreview";
 
 export const config = { runtime: "edge" };
 
@@ -26,22 +26,7 @@ export default async function handler(request: Request): Promise<Response> {
   const token = url.searchParams.get("token");
   if (!isPreviewBot(request.headers.get("user-agent")) || !isShareKind(kind) || !isValidToken(token)) return normalApp(request);
 
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !anonKey) return normalApp(request);
-
-  let raw: unknown = null;
-  try {
-    const res = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/rest/v1/rpc/get_share_preview`, {
-      method: "POST",
-      headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ p_kind: kind, p_token: token }),
-      signal: AbortSignal.timeout(4000),
-    });
-    if (res.ok) raw = await res.json();
-  } catch { /* treated as "no preview" */ }
-
-  const preview = normalizePreview(raw, kind);
+  const preview = await fetchSharePreview(kind, token);
   if (!preview) return normalApp(request);
 
   const host = request.headers.get("x-forwarded-host") || url.host;
@@ -51,7 +36,7 @@ export default async function handler(request: Request): Promise<Response> {
     description: preview.description,
     company: preview.company_name,
     pageUrl: origin + sharePath(kind, token),
-    imageUrl: buildCardUrl(origin, preview.company_name, preview.logo_url),
+    imageUrl: buildCardUrl(origin, kind, token, preview.company_name, preview.logo_url),
   });
   return new Response(html, { status: 200, headers: HTML_HEADERS });
 }

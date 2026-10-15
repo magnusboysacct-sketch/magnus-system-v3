@@ -89,12 +89,37 @@ export function cardVersion(name: string, logo: string | null): string {
   return h.toString(36);
 }
 
-export function buildCardUrl(origin: string, name: string, logo: string | null): string {
+// The card is addressed by the SAME kind + token as the share link (k, t); the endpoint looks the company up itself, so nothing about what the card shows
+// (name, logo) can be supplied in the URL. v is only the cache-buster: the fingerprint of the name + logo the card was built for.
+export function buildCardUrl(origin: string, kind: ShareKind, token: string, name: string, logo: string | null): string {
   const u = new URL("/api/share-card", origin);
-  u.searchParams.set("n", name);
-  if (logo) u.searchParams.set("l", logo);
+  u.searchParams.set("k", kind);
+  u.searchParams.set("t", token);
   u.searchParams.set("v", cardVersion(name, logo));
   return u.toString();
+}
+
+// ── The one database lookup both endpoints use ──────────────────────────────────────────────────────────────────────────
+export function previewEnv(env: Record<string, string | undefined> = process.env): { url: string; key: string } | null {
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const key = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  return url && key ? { url: url.replace(/\/+$/, ""), key } : null;
+}
+
+// get_share_preview(kind, token) -> the four public fields, or null for anything unknown / revoked / expired / failed (all identical to the caller).
+export async function fetchSharePreview(kind: ShareKind, token: string, fetchImpl: typeof fetch = fetch, env = previewEnv()): Promise<SharePreview | null> {
+  if (!env) return null;
+  try {
+    const res = await fetchImpl(`${env.url}/rest/v1/rpc/get_share_preview`, {
+      method: "POST",
+      headers: { apikey: env.key, Authorization: `Bearer ${env.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_kind: kind, p_token: token }),
+      signal: AbortSignal.timeout(4000),
+    });
+    return res.ok ? normalizePreview(await res.json(), kind) : null;
+  } catch {
+    return null;
+  }
 }
 
 // Only our own Supabase company-logos bucket may be fetched for a card (the endpoint must not become an open proxy).
