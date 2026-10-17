@@ -97,14 +97,14 @@ export default function IdCardColors({ companyId, companyName, tagline, logoUrl 
       const { data, error } = await supabase.from("company_settings")
         .update({ id_card_primary: primary, id_card_accent: accent }).eq("company_id", companyId).select("company_id");
       if (error) throw error;
-      if (!data || data.length === 0) throw new Error("Company settings were not found. Save the company details first, then try again.");
+      if (!data || data.length === 0) throw new Error("director or admin");          // row security hides the row from anyone else (or there is no settings row yet)
       invalidateCompanyCache();
       const next = normalizeTheme({ primary, accent });
       setSaved(next); setDraft(next);
       setMsg({ type: "success", text: done });
     } catch (e) {
       const m = e instanceof Error ? e.message : (e as { message?: string })?.message || "please try again.";
-      setMsg({ type: "error", text: /director or admin/i.test(m) ? "Only a director or admin can change the ID card colours." : "Could not save: " + m });
+      setMsg({ type: "error", text: /director or admin/i.test(m) ? "The colours were not saved. Only a director or admin can change the ID card colours, and the company details must be saved first." : "Could not save: " + m });
     } finally {
       setBusy(false);
     }
