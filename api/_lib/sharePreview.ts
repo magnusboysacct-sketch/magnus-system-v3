@@ -91,12 +91,10 @@ export function cardVersion(name: string, logo: string | null): string {
 
 // The card is addressed by the SAME kind + token as the share link (k, t); the endpoint looks the company up itself, so nothing about what the card shows
 // (name, logo) can be supplied in the URL. v is only the cache-buster: the fingerprint of the name + logo the card was built for.
+// The URL ends in .png (vercel.json rewrites /api/share-card/<kind>/<token>/<v>.png to the same handler): to WhatsApp and friends it then looks exactly like a
+// plain static image file, which they show as the large image across the top. The old query form (?k=&t=&v=) still works.
 export function buildCardUrl(origin: string, kind: ShareKind, token: string, name: string, logo: string | null): string {
-  const u = new URL("/api/share-card", origin);
-  u.searchParams.set("k", kind);
-  u.searchParams.set("t", token);
-  u.searchParams.set("v", cardVersion(name, logo));
-  return u.toString();
+  return new URL(`/api/share-card/${kind}/${token}/${cardVersion(name, logo)}.png`, origin).toString();
 }
 
 // ── The one database lookup both endpoints use ──────────────────────────────────────────────────────────────────────────
@@ -156,7 +154,7 @@ export function buildPreviewHtml(o: { title: string; description: string; compan
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="${c}">
+<meta property="og:image:alt" content="${c} logo">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${t}">
 <meta name="twitter:description" content="${d}">
@@ -207,9 +205,9 @@ export function imageInfo(b: Uint8Array): ImageInfo | null {
   return null;
 }
 
-// The logo sits at its natural aspect ratio ("contain"), inside the centre square of the card so a square crop still shows all of it:
-// at most 560px wide and 60% of the card's height; never enlarged more than 2x its own pixel size.
-export const CARD = { width: 1200, height: 630, logoMaxW: 560, logoMaxH: Math.round(630 * 0.6), maxUpscale: 2 } as const;
+// The logo sits at its natural aspect ratio ("contain"): at most 900px wide (75% of the card) and 400px tall (about 63% of its height), leaving room for the
+// company name underneath; never enlarged more than 2x its own pixel size. A response above maxBytes is not sent with a raster logo (see card.ts).
+export const CARD = { width: 1200, height: 630, logoMaxW: 900, logoMaxH: 400, maxUpscale: 2, maxBytes: 300_000 } as const;
 
 export function fitLogo(iw: number, ih: number): { w: number; h: number } {
   const scale = Math.min(CARD.logoMaxW / iw, CARD.logoMaxH / ih, CARD.maxUpscale);

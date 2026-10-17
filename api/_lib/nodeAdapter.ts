@@ -10,9 +10,11 @@ export function toNodeHandler(handler: (request: Request) => Promise<Response>) 
       const headers = new Headers();
       for (const [k, v] of Object.entries(req.headers)) if (v !== undefined) headers.set(k, Array.isArray(v) ? v.join(", ") : v);
       const response = await handler(new Request(`${proto}://${host}${req.url || "/"}`, { method: "GET", headers }));
+      const body = Buffer.from(await response.arrayBuffer());
       res.statusCode = response.status;
       response.headers.forEach((value, key) => res.setHeader(key, value));
-      res.end(Buffer.from(await response.arrayBuffer()));
+      res.setHeader("Content-Length", String(body.length));      // the whole body at once with its length: never chunked
+      res.end(body);
     } catch {
       res.statusCode = 500;
       res.setHeader("Cache-Control", "no-store");

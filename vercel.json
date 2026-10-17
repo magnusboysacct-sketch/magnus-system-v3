@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/share-card/:kind/:token/:v.png",
+      "destination": "/api/share-card?k=:kind&t=:token&v=:v"
+    },
+    {
       "source": "/portal/contact/:token",
       "has": [
         {

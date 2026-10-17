@@ -110,9 +110,9 @@ test("normalizePreview keeps ONLY the four public fields, whatever else the data
 });
 
 test("the preview page: all required tags, escaped values, and nothing but the four fields + the page URL", () => {
-  const html = buildPreviewHtml({ title: 'Project portal – "Acme" <b>&Co', description: "Sign in.", company: 'Acme "&" <Co>', pageUrl: "https://app.magnusboys.com/portal/tok-1234567", imageUrl: "https://app.magnusboys.com/api/share-card?n=Acme&v=1" });
+  const html = buildPreviewHtml({ title: 'Project portal – "Acme" <b>&Co', description: "Sign in.", company: 'Acme "&" <Co>', pageUrl: "https://app.magnusboys.com/portal/tok-1234567", imageUrl: "https://app.magnusboys.com/api/share-card/portal/tok-1234567/1g9bd16.png" });
   for (const needle of [
-    'property="og:title"', 'property="og:description"', 'property="og:image" content="https://app.magnusboys.com/api/share-card?n=Acme&amp;v=1"', 'property="og:image:width" content="1200"',
+    'property="og:title"', 'property="og:description"', 'property="og:image" content="https://app.magnusboys.com/api/share-card/portal/tok-1234567/1g9bd16.png"', 'property="og:image:secure_url" content="https://app.magnusboys.com/api/share-card/portal/tok-1234567/1g9bd16.png"', 'property="og:image:alt" content="Acme &quot;&amp;&quot; &lt;Co&gt; logo"', 'name="twitter:image" content="https://app.magnusboys.com/api/share-card/portal/tok-1234567/1g9bd16.png"', 'property="og:image:width" content="1200"',
     'property="og:image:height" content="630"', 'property="og:image:type" content="image/png"', 'name="twitter:card" content="summary_large_image"',
     'property="og:url" content="https://app.magnusboys.com/portal/tok-1234567"', 'property="og:site_name" content="Acme &quot;&amp;&quot; &lt;Co&gt;"',
   ]) assert.ok(html.includes(needle), needle);
@@ -125,10 +125,10 @@ test("card URL: fingerprint changes with the logo or name", () => {
   assert.notEqual(cardVersion("Acme", null), cardVersion("Acme2", null));
   assert.equal(cardVersion("Acme", GOOD_LOGO), cardVersion("Acme", GOOD_LOGO));
   const u = new URL(buildCardUrl("https://app.magnusboys.com", "portal", VALID_TOKEN, "Acme Ltd", GOOD_LOGO));
-  assert.equal(u.origin + u.pathname, "https://app.magnusboys.com/api/share-card");
-  assert.deepEqual([...u.searchParams.keys()].sort(), ["k", "t", "v"], "the URL carries only kind, token and the cache-buster — never a name or a logo URL");
-  assert.equal(u.searchParams.get("k"), "portal"); assert.equal(u.searchParams.get("t"), VALID_TOKEN);
-  assert.equal(u.searchParams.get("v"), cardVersion("Acme Ltd", GOOD_LOGO));
+  assert.equal(u.origin, "https://app.magnusboys.com");
+  assert.equal(u.pathname, "/api/share-card/portal/" + VALID_TOKEN + "/" + cardVersion("Acme Ltd", GOOD_LOGO) + ".png", "a plain .png path: kind / token / cache-buster");
+  assert.equal(u.search, "", "no query string at all");
+  for (const kind of ["contact", "photos"] as const) assert.match(buildCardUrl("https://app.magnusboys.com", kind, VALID_TOKEN, "Acme", null), new RegExp("/api/share-card/" + kind + "/" + VALID_TOKEN + "/[0-9a-z]+\\.png$"));
   assert.equal(u.toString().includes("Acme"), false);
   assert.equal(u.toString().includes("supabase"), false);
 });
@@ -160,13 +160,13 @@ test("image sizes are read from the file headers", () => {
   assert.equal(imageInfo(new TextEncoder().encode("RIFFxxxxWEBPVP8 ")), null);
 });
 
-test("logo geometry: natural shape, inside the centre square, at most 60% of the height", () => {
+test("logo geometry: natural shape, large (up to 900x400), never enlarged past 2x", () => {
   const wide = fitLogo(4000, 1343);
-  assert.equal(wide.w, 560); assert.ok(Math.abs(wide.w / wide.h - 4000 / 1343) < 0.02);
-  const square = fitLogo(1000, 1000); assert.equal(square.w, 378); assert.equal(square.h, 378);
-  const tall = fitLogo(400, 900); assert.equal(tall.h, 378); assert.ok(tall.w < 378);
+  assert.equal(wide.w, 900); assert.ok(Math.abs(wide.w / wide.h - 4000 / 1343) < 0.02); assert.ok(wide.w > 560, "larger than the old 560px box");
+  const square = fitLogo(1000, 1000); assert.equal(square.w, 400); assert.equal(square.h, 400);
+  const tall = fitLogo(400, 900); assert.equal(tall.h, 400); assert.ok(tall.w < 400);
   const tiny = fitLogo(50, 50); assert.equal(tiny.w, 100);
-  for (const f of [wide, square, tall, tiny]) { assert.ok(f.w <= 560 && f.h <= 378); }
+  for (const f of [wide, square, tall, tiny]) { assert.ok(f.w <= 900 && f.h <= 400); }
 });
 
 test("card cache header is exactly what the caller asks for (a short cache for a card whose logo failed)", async () => {
@@ -202,6 +202,7 @@ for (const [label, logo] of [["wide logo (4000x1343 shape)", { w: 1200, h: 403 }
   test(`card renders a 1200x630 PNG: ${label}`, async () => {
     const { res, bytes } = await render(logo);
     assert.equal(res.headers.get("content-type"), "image/png");
+    assert.equal(res.headers.get("content-length"), String(bytes.length), "Content-Length matches the body");
     assert.equal(res.headers.get("cache-control"), "public, max-age=31536000, immutable", "exactly one Cache-Control, the one we asked for");
     assert.deepEqual(Array.from(bytes.subarray(0, 8)), [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     assert.deepEqual(pngSize(bytes), [1200, 630]);
@@ -209,6 +210,40 @@ for (const [label, logo] of [["wide logo (4000x1343 shape)", { w: 1200, h: 403 }
     if (process.env.SHARE_CARD_OUT) fs.writeFileSync(`${process.env.SHARE_CARD_OUT}/card-${label.replace(/[^a-z0-9]+/gi, "-")}.png`, bytes);
   });
 }
+
+test("card stays under 300 KB: a logo too detailed for that is left off and the name is drawn alone", async () => {
+  // an incompressible (random) logo: its PNG alone is several hundred KB
+  const w = 700, h = 240, raw = Buffer.alloc(h * (1 + w * 3));
+  for (let y = 0; y < h; y++) { raw[y * (1 + w * 3)] = 0; for (let x = 0; x < w * 3; x++) raw[y * (1 + w * 3) + 1 + x] = (Math.imul(y * 7919 + x, 2654435761) >>> 24) & 255; }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const noisy = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), crcChunk("IHDR", ihdr), crcChunk("IDAT", zlib.deflateSync(raw, { level: 0 })), crcChunk("IEND", Buffer.alloc(0))]);
+  assert.ok(noisy.length > 300_000, "the test logo is big (" + noisy.length + " bytes)");
+  const res = await renderCard({ name: "Veron Williams", logo: { dataUri: "data:image/png;base64," + noisy.toString("base64"), width: w, height: h } }, "public, max-age=300");
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  assert.ok(bytes.length <= 300_000, "card is " + bytes.length + " bytes");
+  assert.deepEqual(pngSize(bytes), [1200, 630]);
+  assert.equal(res.headers.get("content-length"), String(bytes.length));
+});
+
+test("node adapter: always sends the whole body with a Content-Length (never chunked), plus the handler's own headers", async () => {
+  const { toNodeHandler } = await import("../../api/_lib/nodeAdapter");
+  const body = Buffer.from([1, 2, 3, 4, 5]);
+  const out: { status?: number; headers: Record<string, string>; body?: Buffer } = { headers: {} };
+  const res = { setHeader: (k: string, v: string) => { out.headers[k.toLowerCase()] = v; }, set statusCode(v: number) { out.status = v; }, end: (b?: Buffer) => { out.body = b; } };
+  await toNodeHandler(async () => new Response(body as BodyInit, { status: 200, headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=60" } }))(
+    { url: "/x", method: "GET", headers: { host: "app.magnusboys.com" } } as never, res as never);
+  assert.equal(out.status, 200); assert.equal(out.headers["content-type"], "image/png"); assert.equal(out.headers["content-length"], "5"); assert.equal(out.headers["cache-control"], "public, max-age=60");
+  assert.deepEqual([...out.body!], [1, 2, 3, 4, 5]);
+  assert.equal("transfer-encoding" in out.headers, false);
+});
+
+test("vercel.json: the .png card path is rewritten to the card handler, ahead of the bot rewrites and the catch-all", () => {
+  const cfg = JSON.parse(fs.readFileSync(new URL("../../vercel.json", import.meta.url), "utf8"));
+  const first = cfg.rewrites[0];
+  assert.equal(first.source, "/api/share-card/:kind/:token/:v.png");
+  assert.equal(first.destination, "/api/share-card?k=:kind&t=:token&v=:v");
+  assert.equal(first.has, undefined, "for everyone: the card is public, like a static image");
+});
 
 // ── the crawler endpoint (token -> company mapping goes through the database function; here it is faked) ───────────────────────
 const APP_HTML = "<!doctype html><title>Magnus System</title><meta property=\"og:image\" content=\"https://app.magnusboys.com/og-image.png\">";
@@ -241,8 +276,11 @@ test("endpoint: a link-preview bot gets the sending company's tags; a person get
     assert.equal(bot.status, 200); assert.equal(bot.headers.get("cache-control"), "no-store");
     assert.match(html, /og:title" content="Project portal – Veron Williams"/);
     assert.match(html, /og:site_name" content="Veron Williams"/);
-    assert.match(html, new RegExp(`og:image" content="https://app\\.magnusboys\\.com/api/share-card\\?k=portal&amp;t=${VALID}&amp;v=[0-9a-z]+"`));
-    assert.equal(/share-card\?[^"]*\b(n|l)=/.test(html), false, "no name or logo URL in the card URL");
+    assert.match(html, new RegExp(`og:image" content="https://app\\.magnusboys\\.com/api/share-card/portal/${VALID}/[0-9a-z]+\\.png"`));
+    assert.match(html, new RegExp(`og:image:secure_url" content="https://app\\.magnusboys\\.com/api/share-card/portal/${VALID}/[0-9a-z]+\\.png"`));
+    assert.match(html, new RegExp(`twitter:image" content="https://app\\.magnusboys\\.com/api/share-card/portal/${VALID}/[0-9a-z]+\\.png"`));
+    assert.match(html, /og:image:alt" content="Veron Williams logo"/);
+    assert.equal(/share-card[^"]*[?&](n|l)=/.test(html), false, "no name or logo URL in the card URL");
     assert.equal(html.includes("supabase.co"), false);
     assert.match(html, new RegExp(`og:url" content="https://app\\.magnusboys\\.com/portal/${VALID}"`));
     assert.equal(html.includes("leak@example.com") || html.includes("LEAK"), false);
@@ -251,8 +289,8 @@ test("endpoint: a link-preview bot gets the sending company's tags; a person get
     assert.match(contact, new RegExp(`og:url" content="https://app\\.magnusboys\\.com/portal/contact/${VALID}"`));
     const photos = await (await call(`/api/share-preview?kind=photos&token=${VALID}`, "facebookexternalhit/1.1")).text();
     assert.match(photos, new RegExp(`og:url" content="https://app\\.magnusboys\\.com/shared/${VALID}"`));
-    assert.match(photos, new RegExp(`share-card\\?k=photos&amp;t=${VALID}&amp;v=`));
-    assert.match(contact, new RegExp(`share-card\\?k=contact&amp;t=${VALID}&amp;v=`));
+    assert.match(photos, new RegExp(`share-card/photos/${VALID}/[0-9a-z]+\\.png`));
+    assert.match(contact, new RegExp(`share-card/contact/${VALID}/[0-9a-z]+\\.png`));
     const calls = f.seen.length;
     const human = await call(`/api/share-preview?kind=portal&token=${VALID}`, CHROME);
     assert.equal(await human.text(), APP_HTML);

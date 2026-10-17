@@ -15,18 +15,17 @@ export interface CardInput {
   logo: { dataUri: string; width: number; height: number } | null;
 }
 
-// Card-image elements. With a logo: logo (contain), name under it. Without: the name alone, large. Everything stays inside the centre
-// 630x630 square (width <= 560) so a square crop by a chat app still shows it whole.
+// Card-image elements. With a logo: the logo (contain, as large as the box in sharePreview.ts allows), name under it. Without: the name alone, large.
 export function cardElement({ name, logo }: CardInput): ReactElement {
   const nameStyle = (size: number, clamp: number) => ({
-    display: "flex", maxWidth: 560, textAlign: "center", justifyContent: "center", fontSize: size, fontWeight: 600, color: "#111827", lineHeight: 1.15,
+    display: "flex", maxWidth: 900, textAlign: "center", justifyContent: "center", fontSize: size, fontWeight: 600, color: "#111827", lineHeight: 1.15,
     lineClamp: clamp, wordBreak: "break-word",
   });
   const root = (children: unknown) =>
     h("div", { width: CARD.width, height: CARD.height, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#ffffff" }, children);
 
   if (!logo) {
-    const size = name.length <= 14 ? 96 : name.length <= 28 ? 72 : 56;
+    const size = name.length <= 14 ? 120 : name.length <= 28 ? 92 : 68;
     return root(h("div", nameStyle(size, 3), name)) as unknown as ReactElement;
   }
   const { w, h: ph } = fitLogo(logo.width, logo.height);
@@ -53,9 +52,16 @@ function init() {
   return ready;
 }
 
-export async function renderCard(input: CardInput, cacheControl: string): Promise<Response> {
+async function rasterise(input: CardInput): Promise<Uint8Array> {
   const { satori, Resvg, font } = await init();
   const svg = await satori(cardElement(input), { width: CARD.width, height: CARD.height, fonts: [{ name: "Geist", data: font, weight: 400, style: "normal" }] });
-  const png = new Resvg(svg, { fitTo: { mode: "width", value: CARD.width } }).render().asPng();
-  return new Response(png as BodyInit, { status: 200, headers: { "Content-Type": "image/png", "Cache-Control": cacheControl } });
+  return new Resvg(svg, { fitTo: { mode: "width", value: CARD.width } }).render().asPng();
+}
+
+// The PNG is always sent whole with a Content-Length (nodeAdapter.ts) and stays under CARD.maxBytes: link-preview apps drop or shrink big images. A logo
+// that is photographic enough to push the card past the limit is left off (the name is drawn alone) rather than risk the preview.
+export async function renderCard(input: CardInput, cacheControl: string): Promise<Response> {
+  let png = await rasterise(input);
+  if (png.length > CARD.maxBytes && input.logo) png = await rasterise({ ...input, logo: null });
+  return new Response(png as BodyInit, { status: 200, headers: { "Content-Type": "image/png", "Content-Length": String(png.length), "Cache-Control": cacheControl } });
 }
