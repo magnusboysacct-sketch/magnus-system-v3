@@ -4,8 +4,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import zlib from "node:zlib";
+import sharp from "sharp";
 import {
-  BOT_UA_NAMES, buildCardUrl, buildPreviewHtml, cardVersion, fitLogo, imageInfo, isAllowedLogoUrl, isPreviewBot, loadLogo,
+  BOT_UA_NAMES, CARD, CARD_LAYOUT, buildCardUrl, buildPreviewHtml, cardVersion, fitLogo, imageInfo, isAllowedLogoUrl, isPreviewBot, layoutCard, loadLogo,
   normalizePreview, parseSharePath, sharePath,
 } from "../../api/_lib/sharePreview";
 import { renderCard } from "../../api/_lib/card";
@@ -160,13 +161,36 @@ test("image sizes are read from the file headers", () => {
   assert.equal(imageInfo(new TextEncoder().encode("RIFFxxxxWEBPVP8 ")), null);
 });
 
-test("logo geometry: natural shape, large (up to 900x400), never enlarged past 2x", () => {
+test("logo geometry: natural shape, as large as the centre square allows (550x550 inside 40px padding), never enlarged past 2x", () => {
   const wide = fitLogo(4000, 1343);
-  assert.equal(wide.w, 900); assert.ok(Math.abs(wide.w / wide.h - 4000 / 1343) < 0.02); assert.ok(wide.w > 560, "larger than the old 560px box");
-  const square = fitLogo(1000, 1000); assert.equal(square.w, 400); assert.equal(square.h, 400);
-  const tall = fitLogo(400, 900); assert.equal(tall.h, 400); assert.ok(tall.w < 400);
+  assert.equal(wide.w, 550); assert.ok(Math.abs(wide.w / wide.h - 4000 / 1343) < 0.02);
+  const square = fitLogo(1000, 1000); assert.deepEqual(square, { w: 550, h: 550 });
+  const tall = fitLogo(400, 900); assert.equal(tall.h, 550); assert.ok(tall.w < 550);
   const tiny = fitLogo(50, 50); assert.equal(tiny.w, 100);
-  for (const f of [wide, square, tall, tiny]) { assert.ok(f.w <= 900 && f.h <= 400); }
+  for (const f of [wide, square, tall, tiny]) assert.ok(f.w <= 550 && f.h <= 550);
+  assert.deepEqual(CARD.square, { x: 285, size: 630, pad: 40 });
+  assert.equal(CARD.inner, CARD.square.size - 2 * CARD.square.pad);
+  // a vector logo has arbitrary units (Magnus Boys' SVG is 76.2 x 76.2): it scales up to fill the box instead of stopping at 2x
+  assert.deepEqual(fitLogo(76.2, 76.2, true), { w: 550, h: 550 });
+  assert.deepEqual(fitLogo(76.2, 76.2, false), { w: 152, h: 152 });
+});
+
+test("card layout: the name goes under the logo only if it still fits inside the square", () => {
+  const wide = layoutCard("Veron Williams", { width: 4000, height: 1343 });
+  assert.equal(wide.showName, true); assert.ok(wide.logo!.h + 24 + 46 <= 550);
+  assert.equal(layoutCard("Magnus Boys Construction Limited", { width: 4000, height: 1343 }).nameLines, 2);
+  assert.equal(layoutCard("Acme", { width: 1000, height: 1000 }).showName, false, "a square logo fills the square: no room for the name");
+  assert.equal(layoutCard("Acme", { width: 400, height: 900 }).showName, false, "a tall logo fills the square: no room for the name");
+  assert.equal(layoutCard("Acme", { width: 1200, height: 700 }).showName, true, "a 550x321 logo leaves room");
+  const none = layoutCard("Veron Williams", null);
+  assert.equal(none.logo, null); assert.equal(none.showName, true);
+});
+
+test("card fingerprint includes the layout revision (bumping it gives every card a new URL)", () => {
+  assert.ok(CARD_LAYOUT >= 2);
+  let h = 0x811c9dc5; const legacy = `${"Acme"}\u0000${GOOD_LOGO}`;   // the pre-layout-2 formula
+  for (let i = 0; i < legacy.length; i++) { h ^= legacy.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  assert.notEqual(cardVersion("Acme", GOOD_LOGO), h.toString(36));
 });
 
 test("card cache header is exactly what the caller asks for (a short cache for a card whose logo failed)", async () => {
@@ -182,6 +206,9 @@ test("loadLogo: fetches only the allowed URL, with no redirects; non-images, big
   const ok = (async (u: string, init?: RequestInit) => { calls++; assert.equal(init?.redirect, "error"); return new Response(png as BodyInit, { status: 200, headers: { "content-type": "image/png" } }); }) as unknown as typeof fetch;
   const got = await loadLogo(GOOD_LOGO, SUPABASE, ok);
   assert.ok(got && got.width === 300 && got.height === 100 && got.dataUri.startsWith("data:image/png;base64,"));
+  assert.equal(got!.vector, false);
+  const svg = await loadLogo(GOOD_LOGO.replace("logo.png","logo.svg"), SUPABASE, (async () => new Response("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"76.2\" height=\"76.2\"></svg>", { status: 200 })) as unknown as typeof fetch);
+  assert.ok(svg && svg.vector === true && svg.dataUri.startsWith("data:image/svg+xml;base64,"));
   assert.equal(await loadLogo("https://evil.example.com/x.png", SUPABASE, ok), null);
   assert.equal(calls, 1, "the disallowed URL was never fetched");
   assert.equal(await loadLogo(GOOD_LOGO, SUPABASE, (async () => new Response("<html>", { status: 200 })) as unknown as typeof fetch), null);
@@ -481,5 +508,67 @@ test("deployment: vercel.json ships the font and both wasm files with the card f
   for (const need of ["node_modules/@resvg/resvg-wasm/index_bg.wasm", "node_modules/harfbuzzjs/hb.wasm", "api/_lib/Geist-Regular.ttf"]) {
     assert.ok(inc.includes(need), need);
     assert.ok(fs.existsSync(new URL("../../" + need, import.meta.url)), need + " exists");
+  }
+});
+
+
+// ── the card is designed for the square crop: nothing outside the centre 630x630 square, content inside the 40px padding ─────────────
+async function ink(png: Uint8Array) {
+  const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  let minX = info.width, maxX = -1, minY = info.height, maxY = -1, outside = 0;
+  for (let y = 0; y < info.height; y++) for (let x = 0; x < info.width; x++) {
+    const i = (y * info.width + x) * 3;
+    if (data[i] < 250 || data[i + 1] < 250 || data[i + 2] < 250) {
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      if (x < CARD.square.x || x >= CARD.square.x + CARD.square.size) outside++;
+    }
+  }
+  return { minX, maxX, minY, maxY, outside, width: info.width, height: info.height };
+}
+for (const [label, logo, wantW, wantH, name] of [
+  ["wide logo (4000x1343 shape)", { w: 1200, h: 403 }, 550, 185, "Veron Williams"],
+  ["square logo", { w: 600, h: 600 }, 550, 550, "Acme"],
+  ["tall logo", { w: 300, h: 700 }, 236, 550, "Acme"],
+] as const) {
+  test("square-crop card, " + label + ": all ink inside the centre square and its padding, logo as large as fits", async () => {
+    const l = { dataUri: "data:image/png;base64," + Buffer.from(solidPng(logo.w, logo.h, [200, 30, 60])).toString("base64"), width: logo.w, height: logo.h };
+    const res = await renderCard({ name, logo: l }, "public, max-age=60");
+    const png = new Uint8Array(await res.arrayBuffer());
+    const k = await ink(png);
+    assert.deepEqual([k.width, k.height], [1200, 630]);
+    assert.equal(k.outside, 0, "nothing at all drawn outside x 285-915");
+    assert.ok(k.minX >= CARD.square.x + CARD.square.pad - 2 && k.maxX <= CARD.square.x + CARD.square.size - CARD.square.pad + 2, "inside the horizontal padding: " + k.minX + ".." + k.maxX);
+    assert.ok(k.minY >= CARD.square.pad - 2 && k.maxY <= 630 - CARD.square.pad + 2, "inside the vertical padding: " + k.minY + ".." + k.maxY);
+    // the red logo block itself (the name text is dark, not red)
+    const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    let rx0 = 9999, rx1 = -1, ry0 = 9999, ry1 = -1;
+    for (let y = 0; y < info.height; y++) for (let x = 0; x < info.width; x++) { const i = (y * info.width + x) * 3; if (data[i] > 150 && data[i + 1] < 80 && data[i + 2] < 110) { rx0 = Math.min(rx0, x); rx1 = Math.max(rx1, x); ry0 = Math.min(ry0, y); ry1 = Math.max(ry1, y); } }
+    assert.ok(Math.abs((rx1 - rx0 + 1) - wantW) <= 4 && Math.abs((ry1 - ry0 + 1) - wantH) <= 4, "logo is " + (rx1 - rx0 + 1) + "x" + (ry1 - ry0 + 1) + ", wanted about " + wantW + "x" + wantH);
+    assert.ok(Math.abs((rx0 + rx1) / 2 - 600) <= 3, "logo is centred horizontally");
+    assert.equal(png.length < CARD.maxBytes, true);
+    if (process.env.SHARE_CARD_OUT) fs.writeFileSync(process.env.SHARE_CARD_OUT + "/square-" + label.replace(/[^a-z0-9]+/gi, "-") + ".png", png);
+  });
+}
+
+test("square-crop card: the name appears under a wide logo, and is left off a square or tall one", async () => {
+  const mk = (w: number, h: number) => ({ dataUri: "data:image/png;base64," + Buffer.from(solidPng(w, h, [200, 30, 60])).toString("base64"), width: w, height: h });
+  const inkBelowLogo = async (w: number, h: number) => {
+    const png = new Uint8Array(await (await renderCard({ name: "Veron Williams", logo: mk(w, h) }, "x")).arrayBuffer());
+    const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    let dark = 0;
+    for (let y = 0; y < info.height; y++) for (let x = 0; x < info.width; x++) { const i = (y * info.width + x) * 3; if (data[i] < 90 && data[i + 1] < 90 && data[i + 2] < 110) dark++; }
+    return dark;
+  };
+  assert.ok(await inkBelowLogo(1200, 403) > 500, "wide logo: the dark name text is drawn");
+  assert.equal(await inkBelowLogo(600, 600), 0, "square logo: no name");
+  assert.equal(await inkBelowLogo(300, 700), 0, "tall logo: no name");
+});
+
+test("square-crop card: a name-only card (no logo) stays inside the square, including a very long name", async () => {
+  for (const name of ["Veron Williams", "Magnus Boys Construction & Engineering Services Limited"]) {
+    const png = new Uint8Array(await (await renderCard({ name, logo: null }, "x")).arrayBuffer());
+    const k = await ink(png);
+    assert.equal(k.outside, 0, name);
+    assert.ok(k.minX >= CARD.square.x + CARD.square.pad - 2 && k.maxX <= CARD.square.x + CARD.square.size - CARD.square.pad + 2, name + ": " + k.minX + ".." + k.maxX);
   }
 });

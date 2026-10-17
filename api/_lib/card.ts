@@ -4,7 +4,7 @@
 // serverless function. The font and the resvg .wasm are read from files that vercel.json ("functions" -> includeFiles) puts into the function.
 import { readFileSync } from "node:fs";
 import type { ReactElement } from "react";
-import { CARD, fitLogo } from "./sharePreview.js";
+import { CARD, layoutCard } from "./sharePreview.js";
 
 type Node = { type: string; props: Record<string, unknown> };
 // Plain element objects (what JSX would produce) so this file needs no React or JSX setup.
@@ -12,27 +12,25 @@ const h = (type: string, style: Record<string, unknown>, children?: unknown, ext
 
 export interface CardInput {
   name: string;
-  logo: { dataUri: string; width: number; height: number } | null;
+  logo: { dataUri: string; width: number; height: number; vector?: boolean } | null;
 }
 
-// Card-image elements. With a logo: the logo (contain, as large as the box in sharePreview.ts allows), name under it. Without: the name alone, large.
+// Card-image elements, laid out by layoutCard() (sharePreview.ts): everything sits inside the centre 630x630 square, because WhatsApp crops every
+// preview to it. With a logo: the logo as large as the square allows, the name under it only if it fits. Without: the name alone, large.
 export function cardElement({ name, logo }: CardInput): ReactElement {
+  const layout = layoutCard(name, logo);
   const nameStyle = (size: number, clamp: number) => ({
-    display: "flex", maxWidth: 900, textAlign: "center", justifyContent: "center", fontSize: size, fontWeight: 600, color: "#111827", lineHeight: 1.15,
+    display: "flex", maxWidth: CARD.inner, textAlign: "center", justifyContent: "center", fontSize: size, fontWeight: 600, color: "#111827", lineHeight: 1.15,
     lineClamp: clamp, wordBreak: "break-word",
   });
   const root = (children: unknown) =>
     h("div", { width: CARD.width, height: CARD.height, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#ffffff" }, children);
 
-  if (!logo) {
-    const size = name.length <= 14 ? 120 : name.length <= 28 ? 92 : 68;
-    return root(h("div", nameStyle(size, 3), name)) as unknown as ReactElement;
-  }
-  const { w, h: ph } = fitLogo(logo.width, logo.height);
-  return root([
-    h("img", { width: w, height: ph, objectFit: "contain" }, undefined, { src: logo.dataUri, width: w, height: ph }),
-    h("div", { ...nameStyle(40, 2), marginTop: 28 }, name),
-  ]) as unknown as ReactElement;
+  if (!logo || !layout.logo) return root(h("div", nameStyle(layout.nameSize, layout.nameLines), name)) as unknown as ReactElement;
+  const { w, h: ph } = layout.logo;
+  const children: Node[] = [h("img", { width: w, height: ph, objectFit: "contain" }, undefined, { src: logo.dataUri, width: w, height: ph })];
+  if (layout.showName) children.push(h("div", { ...nameStyle(layout.nameSize, layout.nameLines), marginTop: layout.gap }, name));
+  return root(children) as unknown as ReactElement;
 }
 
 // Loaded once per function instance. The paths are relative to this file; in the deployed function the project layout is kept, so they resolve to

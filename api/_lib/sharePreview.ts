@@ -81,10 +81,13 @@ export function normalizePreview(raw: unknown, kind: ShareKind): SharePreview | 
 }
 
 // ── The card URL ────────────────────────────────────────────────────────────────────────────────────────────────────────
-// Short, stable fingerprint of company + logo: a new logo (or name) gives a new URL, so the long-lived cache never serves a stale card.
+// Bump this whenever the card's LAYOUT changes: it is part of the fingerprint below, so every card URL changes and new links get the new image.
+export const CARD_LAYOUT = 2;
+
+// Short, stable fingerprint of layout + company + logo: a new logo (or name, or layout) gives a new URL, so the long-lived cache never serves a stale card.
 export function cardVersion(name: string, logo: string | null): string {
   let h = 0x811c9dc5;
-  const s = `${name}\u0000${logo || ""}`;
+  const s = `${CARD_LAYOUT}\u0000${name}\u0000${logo || ""}`;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
   return h.toString(36);
 }
@@ -205,13 +208,46 @@ export function imageInfo(b: Uint8Array): ImageInfo | null {
   return null;
 }
 
-// The logo sits at its natural aspect ratio ("contain"): at most 900px wide (75% of the card) and 400px tall (about 63% of its height), leaving room for the
-// company name underneath; never enlarged more than 2x its own pixel size. A response above maxBytes is not sent with a raster logo (see card.ts).
-export const CARD = { width: 1200, height: 630, logoMaxW: 900, logoMaxH: 400, maxUpscale: 2, maxBytes: 300_000 } as const;
+// ── The card is designed for the SQUARE crop ─────────────────────────────────────────────────────────────────────────────────────
+// WhatsApp (desktop and phone) shows every link preview as a small SQUARE thumbnail cut from the centre of the image, so the card is 1200x630 but
+// everything that matters lives in the centre 630x630 square (x 285-915). The logo goes inside it, as large as fits with 40px of padding all round
+// (a 550x550 box), at its natural shape ("contain"), vertically centred; never enlarged past 2x its own pixel size. The company name goes under it
+// only if that still fits inside the same box; otherwise it is left off (the name is already in the preview title). Nothing is drawn outside the square.
+export const CARD = {
+  width: 1200, height: 630,
+  square: { x: 285, size: 630, pad: 40 },
+  inner: 550,                       // square.size - 2 * square.pad
+  maxUpscale: 2,
+  maxBytes: 300_000,                // a response above this is not sent with a raster logo (see card.ts)
+} as const;
 
-export function fitLogo(iw: number, ih: number): { w: number; h: number } {
-  const scale = Math.min(CARD.logoMaxW / iw, CARD.logoMaxH / ih, CARD.maxUpscale);
+// A raster logo is never enlarged past 2x its pixels; a vector (SVG) logo has no pixels — its width/height are arbitrary units (the Magnus Boys logo is
+// "76.2 x 76.2") — so it scales freely to fill the box.
+export function fitLogo(iw: number, ih: number, vector = false): { w: number; h: number } {
+  const scale = Math.min(CARD.inner / iw, CARD.inner / ih, vector ? Infinity : CARD.maxUpscale);
   return { w: Math.max(1, Math.round(iw * scale)), h: Math.max(1, Math.round(ih * scale)) };
+}
+
+export interface CardLayout {
+  logo: { w: number; h: number } | null;   // the logo's size on the card (null = no logo: the name is the card)
+  showName: boolean;
+  nameSize: number;
+  nameLines: number;                       // lines reserved / allowed for the name
+  gap: number;                             // space between logo and name
+}
+
+const NAME_SIZE = 40, NAME_LINE = 1.15, NAME_GAP = 24;
+
+// Pure geometry (so it can be tested): what goes where on the card, and whether the name fits under the logo.
+export function layoutCard(name: string, logo: { width: number; height: number; vector?: boolean } | null): CardLayout {
+  if (!logo) {
+    const nameSize = name.length <= 14 ? 96 : name.length <= 28 ? 72 : 56;
+    return { logo: null, showName: true, nameSize, nameLines: 3, gap: 0 };
+  }
+  const fit = fitLogo(logo.width, logo.height, logo.vector);
+  const nameLines = name.length > 26 ? 2 : 1;                               // about 26 characters of 40px type fit across 550px
+  const nameBlock = NAME_GAP + Math.ceil(nameLines * NAME_SIZE * NAME_LINE);
+  return { logo: fit, showName: fit.h + nameBlock <= CARD.inner, nameSize: NAME_SIZE, nameLines, gap: NAME_GAP };
 }
 
 export function toBase64(bytes: Uint8Array): string {
@@ -225,7 +261,7 @@ export async function loadLogo(
   url: string | null,
   supabaseUrl: string | null | undefined,
   fetchImpl: typeof fetch = fetch,
-): Promise<{ dataUri: string; width: number; height: number } | null> {
+): Promise<{ dataUri: string; width: number; height: number; vector: boolean } | null> {
   if (!url || !isAllowedLogoUrl(url, supabaseUrl)) return null;
   try {
     const res = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(4000) });
@@ -236,7 +272,7 @@ export async function loadLogo(
     if (bytes.length === 0 || bytes.length > 4_000_000) return null;
     const info = imageInfo(bytes);
     if (!info) return null;
-    return { dataUri: `data:${info.mime};base64,${toBase64(bytes)}`, width: info.width, height: info.height };
+    return { dataUri: `data:${info.mime};base64,${toBase64(bytes)}`, width: info.width, height: info.height, vector: info.mime === "image/svg+xml" };
   } catch {
     return null;
   }
