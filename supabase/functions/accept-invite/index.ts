@@ -89,6 +89,10 @@ Deno.serve(async (req) => {
       if (error || !data) {
         return jsonResponse({ error: "Invitation not found" }, 404);
       }
+      // An invitation can only be accepted by the person it was sent to: the e-mail comes from the signed-in session, never from the request.
+      if (String(data.email || "").trim().toLowerCase() !== newUserEmail) {
+        return jsonResponse({ error: "This invitation was sent to a different e-mail address" }, 403);
+      }
       invite = data;
     } else {
       const { data, error } = await supabaseAdmin

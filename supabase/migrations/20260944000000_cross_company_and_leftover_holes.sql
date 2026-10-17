@@ -15,6 +15,11 @@
 --  5. workers: bank account number, bank routing number and SSN last 4 are no longer readable or writable by ordinary signed-in users (column privileges);
 --     payroll staff (director / admin / secretary) use get_worker_payroll_fields() / set_worker_payroll_fields(). Every other worker column is unchanged.
 --
+--  6. Sign-up: handle_new_user (the trigger on auth.users) put a new account into ANY company when the sign-up form's user metadata named that company
+--     (company_id + invited_role), so anyone could join a company as its director from the public /login page. It now links an invited user only when a pending,
+--     unexpired invitation for that e-mail in that company exists (the admin-invite-user function writes it first), and takes the role from the invitation.
+--  7. A company can never lose its last active director through the API (role change or disabling, including a director doing it to themselves).
+--
 -- Functions created here start with REVOKE ALL ... FROM PUBLIC, anon.  Read-only on data.
 
 BEGIN;
@@ -227,6 +232,13 @@ BEGIN
     IF NEW.role IS DISTINCT FROM OLD.role AND (NEW.role = 'director' OR OLD.role = 'director') AND v_role <> 'director' THEN
       RAISE EXCEPTION 'Not allowed: only a director can grant or remove the director role' USING ERRCODE = '42501';
     END IF;
+    -- the last active director of a company can be neither demoted nor disabled (by anyone, themselves included)
+    IF coalesce(OLD.role, '') = 'director' AND coalesce(OLD.status, 'active') = 'active'
+       AND (NEW.role IS DISTINCT FROM OLD.role OR coalesce(NEW.status, 'active') <> 'active') THEN
+      IF NOT EXISTS (SELECT 1 FROM user_profiles o WHERE o.company_id = OLD.company_id AND o.id <> OLD.id AND o.role = 'director' AND coalesce(o.status, 'active') = 'active') THEN
+        RAISE EXCEPTION 'Not allowed: a company must keep at least one active director' USING ERRCODE = '42501';
+      END IF;
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -296,6 +308,65 @@ END;
 $$;
 REVOKE ALL ON FUNCTION public.get_worker_payroll_fields(uuid[]), public.set_worker_payroll_fields(uuid, text, text, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_worker_payroll_fields(uuid[]), public.set_worker_payroll_fields(uuid, text, text, text) TO authenticated;
+
+-- ── 5b. Sign-up (trigger on auth.users): user metadata can NAME a company but no longer decides it ─────────────────────────────────
+-- Same function as before (same attributes, same new-company path) with one change: the "invited user" branch used raw_user_meta_data->>'company_id' and
+-- ->>'invited_role' as typed by whoever called signUp. Now it needs a matching pending invitation, and the role comes from the invitation row.
+CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
+AS $$
+DECLARE
+  v_company_id    uuid;
+  v_company_name  text;
+  v_full_name     text;
+  v_claimed_co_id uuid;
+  v_inv_company   uuid;
+  v_inv_role      text;
+BEGIN
+  v_full_name := COALESCE(NULLIF(trim(NEW.raw_user_meta_data->>'full_name'), ''), split_part(NEW.email, '@', 1));
+
+  BEGIN v_claimed_co_id := (NEW.raw_user_meta_data->>'company_id')::uuid; EXCEPTION WHEN others THEN v_claimed_co_id := NULL; END;
+
+  IF v_claimed_co_id IS NOT NULL THEN
+    SELECT i.company_id, i.role INTO v_inv_company, v_inv_role
+      FROM public.company_invitations i
+     WHERE i.company_id = v_claimed_co_id
+       AND lower(i.email) = lower(NEW.email)
+       AND i.status = 'pending'
+       AND (i.expires_at IS NULL OR i.expires_at > now())
+     ORDER BY i.created_at DESC
+     LIMIT 1;
+  END IF;
+
+  IF v_inv_company IS NOT NULL THEN
+    -- ── INVITED USER: link to the inviting company with the invited role (from the invitation); do NOT create a new company.
+    INSERT INTO public.user_profiles (id, company_id, email, full_name, role, finance_access_level, status)
+    VALUES (NEW.id, v_inv_company, NEW.email, v_full_name, v_inv_role,
+            CASE WHEN v_inv_role IN ('director', 'admin', 'accounts') THEN 'full' ELSE 'none' END, 'active')
+    ON CONFLICT (id) DO UPDATE SET company_id = EXCLUDED.company_id, email = EXCLUDED.email, full_name = EXCLUDED.full_name,
+                                   role = EXCLUDED.role, finance_access_level = EXCLUDED.finance_access_level;
+    RETURN NEW;
+  END IF;
+
+  -- ── NEW SIGNUP (also: a sign-up that merely CLAIMS a company without an invitation): a new company, the person is its director.
+  v_company_name := COALESCE(NULLIF(trim(NEW.raw_user_meta_data->>'company_name'), ''), 'My Company');
+
+  INSERT INTO public.companies (name) VALUES (v_company_name) RETURNING id INTO v_company_id;
+
+  INSERT INTO public.user_profiles (id, company_id, email, full_name, role, finance_access_level, status)
+  VALUES (NEW.id, v_company_id, NEW.email, v_full_name, 'director', 'full', 'active')
+  ON CONFLICT (id) DO UPDATE SET company_id = EXCLUDED.company_id, email = EXCLUDED.email, full_name = EXCLUDED.full_name,
+                                 role = EXCLUDED.role, finance_access_level = EXCLUDED.finance_access_level;
+
+  INSERT INTO public.company_settings (company_id, company_name, trial_expires_at, subscription_status)
+  VALUES (v_company_id, v_company_name, now() + interval '14 days', 'inactive')
+  ON CONFLICT (company_id) DO NOTHING;
+
+  RETURN NEW;
+EXCEPTION WHEN others THEN
+  RAISE WARNING 'handle_new_user failed for %: %', NEW.id, SQLERRM;
+  RETURN NEW;
+END;
+$$;
 
 -- ── 6. Safety checks: stop and change nothing if something unexpected is left ───────────────────────────────────────────────
 -- (a) no "true" policy left on the tables fixed above; (b) the policy sets on them are exactly the expected ones
