@@ -15,11 +15,10 @@ type VerifyResult = {
   status: "active" | "inactive" | "terminated";
   employee_id: string | null;
   hire_date: string | null;
-  passport_photo_url: string | null;
-  id_photo_url: string | null;
+  photo_url: string | null;   // the passport / profile photo only: an ID-document scan is never sent to this public page
   company_name: string | null;
   logo_url: string | null;
-  // from verify_worker: whether the card is still valid / past its expiry (not shown yet)
+  // from verify_worker: still valid (active and not past its expiry) / past its expiry
   valid?: boolean;
   expired?: boolean;
 };
@@ -47,6 +46,7 @@ export default function WorkerVerifyPage() {
   const [worker, setWorker] = useState<VerifyResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -56,8 +56,7 @@ export default function WorkerVerifyPage() {
       if (error || !data) {
         setNotFound(true);
       } else {
-        const { photo_url, ...rest } = data as Omit<VerifyResult, "passport_photo_url" | "id_photo_url"> & { photo_url: string | null };
-        setWorker({ ...rest, passport_photo_url: photo_url, id_photo_url: null });
+        setWorker(data as VerifyResult);
       }
       setLoading(false);
     }
@@ -74,7 +73,8 @@ export default function WorkerVerifyPage() {
 
   const theme = notFound || !worker ? NOT_FOUND_THEME : STATUS_THEME[worker.status] || STATUS_THEME.inactive;
   const Icon = theme.Icon;
-  const photoUrl = worker?.passport_photo_url || worker?.id_photo_url || "";
+  const photoUrl = photoFailed ? "" : (worker?.photo_url || "");
+  const initials = worker ? ((worker.first_name || "").trim().charAt(0) + (worker.last_name || "").trim().charAt(0)).toUpperCase() : "";
 
   return (
     <div style={{ minHeight: "100vh", background: "#0B1220", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "system-ui, -apple-system, sans-serif" }}>
@@ -107,7 +107,7 @@ export default function WorkerVerifyPage() {
             {/* Worker identity */}
             <div style={{ display: "flex", gap: 14, padding: "22px 24px 18px", alignItems: "center" }}>
               <div style={{ width: 56, height: 70, borderRadius: 8, overflow: "hidden", background: "#1a2436", border: "1px solid rgba(255,255,255,0.1)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {photoUrl ? <img src={photoUrl} alt={worker.first_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 22, opacity: 0.3 }}>👤</span>}
+                {photoUrl ? <img src={photoUrl} alt={worker.first_name} onError={() => setPhotoFailed(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 22, fontWeight: 700, letterSpacing: 1, color: "rgba(255,255,255,0.55)" }}>{initials || "—"}</span>}
               </div>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 17, fontWeight: 700, color: "#fff", lineHeight: 1.2 }}>
@@ -116,6 +116,11 @@ export default function WorkerVerifyPage() {
                 <div style={{ fontSize: 11, color: "#7FA8C9", fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>
                   {roleLabel(worker.worker_type)}
                 </div>
+                {worker.expired ? (
+                  <span style={{ display: "inline-block", marginTop: 8, padding: "3px 10px", borderRadius: 999, background: "#7A1F2B", color: "#FFD9DE", fontSize: 11, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase" }}>Expired</span>
+                ) : worker.valid ? (
+                  <span style={{ display: "inline-block", marginTop: 8, padding: "3px 10px", borderRadius: 999, background: "#14532d", color: "#bbf7d0", fontSize: 11, fontWeight: 800, letterSpacing: 0.8, textTransform: "uppercase" }}>Valid ID</span>
+                ) : null}
               </div>
             </div>
 

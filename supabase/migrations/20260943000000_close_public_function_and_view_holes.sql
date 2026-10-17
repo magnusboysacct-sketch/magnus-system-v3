@@ -25,6 +25,7 @@ BEGIN;
 
 -- ── 1. Public ID-card check ────────────────────────────────────────────────────────────────────────────────────────────────────
 -- Exactly what WorkerVerifyPage shows: name, role, status, employee number, hire date, photo, company name and logo; plus whether the card is still valid
+-- The photo is the passport / profile photo ONLY: id_photo_url (the scan of the ID document) is never returned.
 -- (status active and not past its expiry; the expiry is id_expiry_date, or hire date + 2 years when unset, as the ID card itself does). NULL if unknown.
 CREATE OR REPLACE FUNCTION public.verify_worker(p_worker_id uuid)
 RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
@@ -37,7 +38,7 @@ AS $$
            'status', w.status,
            'employee_id', w.employee_id,
            'hire_date', w.hire_date,
-           'photo_url', coalesce(nullif(btrim(w.passport_photo_url), ''), nullif(btrim(w.id_photo_url), '')),
+           'photo_url', nullif(btrim(w.passport_photo_url), ''),
            'company_name', cs.company_name,
            'logo_url', cs.logo_url,
            'expired', coalesce(coalesce(w.id_expiry_date, w.hire_date + interval '2 years') < current_date, false),
@@ -174,6 +175,16 @@ END $$;
 REVOKE ALL ON FUNCTION public.admin_delete_auth_user(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_delete_auth_user(uuid) TO service_role;
 
+-- 2d. A policy that applies to signed-out users (PUBLIC / anon) and calls a function closed to anon above would make an anon query on that table ERROR
+-- instead of returning nothing. The only one is assemblies_write_admin (calls is_company_admin()); it only ever matched signed-in company admins, so it is
+-- restricted to signed-in users, which changes nothing for anyone who could use it.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'assemblies' AND policyname = 'assemblies_write_admin') THEN
+    ALTER POLICY assemblies_write_admin ON public.assemblies TO authenticated;
+  END IF;
+END $$;
+
 -- NOTE for new functions: Postgres still gives EXECUTE to PUBLIC on every new function, so every future RPC migration must start with
 --   REVOKE ALL ON FUNCTION ... FROM PUBLIC, anon;   (and GRANT ... TO anon only for a function a signed-out page needs), as the receipt / verify ones do.
 
@@ -195,7 +206,23 @@ CREATE POLICY "access_logs_insert_admin" ON public.access_logs FOR INSERT TO aut
   WITH CHECK (company_id IN (SELECT up.company_id FROM public.user_profiles up WHERE up.id = auth.uid() AND up.role IN ('director', 'admin')));
 REVOKE ALL ON public.access_logs FROM anon;
 
--- ── 5. Safety check: stop and change nothing if an unexpected policy is on these two tables ────────────────────────────────────
+-- ── 5. Safety checks: stop and change nothing if something unexpected is left ────────────────────────────────────────────────
+-- (a) a policy for signed-out users (PUBLIC / anon, any table, any schema incl. storage) that still calls a function anon can no longer execute
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT DISTINCT p.schemaname, p.tablename, p.policyname, f.proname
+      FROM pg_policies p
+      JOIN pg_proc f ON f.pronamespace = 'public'::regnamespace AND f.prokind = 'f' AND NOT has_function_privilege('anon', f.oid, 'EXECUTE')
+     WHERE p.roles && ARRAY['public', 'anon']::name[]
+       AND (coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '')) ~ ('(^|[^a-zA-Z0-9_])' || f.proname || '\s*\(')
+  LOOP
+    RAISE EXCEPTION 'Policy % on %.% (for signed-out users) calls %(), which anon can no longer execute. Nothing was changed.', r.policyname, r.schemaname, r.tablename, r.proname;
+  END LOOP;
+END $$;
+
+-- (b) an unexpected policy on projects / access_logs
 DO $$
 DECLARE r record;
 BEGIN
