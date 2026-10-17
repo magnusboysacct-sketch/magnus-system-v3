@@ -19,6 +19,9 @@ type VerifyResult = {
   id_photo_url: string | null;
   company_name: string | null;
   logo_url: string | null;
+  // from verify_worker: whether the card is still valid / past its expiry (not shown yet)
+  valid?: boolean;
+  expired?: boolean;
 };
 
 function roleLabel(t?: string | null) {
@@ -48,15 +51,13 @@ export default function WorkerVerifyPage() {
   useEffect(() => {
     async function load() {
       if (!workerId) { setNotFound(true); setLoading(false); return; }
-      const { data, error } = await supabase
-        .from("worker_verify_view")
-        .select("*")
-        .eq("id", workerId)
-        .maybeSingle();
+      // One worker at a time, only what this page shows (verify_worker); the old all-workers view is closed to signed-out users.
+      const { data, error } = await supabase.rpc("verify_worker", { p_worker_id: workerId });
       if (error || !data) {
         setNotFound(true);
       } else {
-        setWorker(data as VerifyResult);
+        const { photo_url, ...rest } = data as Omit<VerifyResult, "passport_photo_url" | "id_photo_url"> & { photo_url: string | null };
+        setWorker({ ...rest, passport_photo_url: photo_url, id_photo_url: null });
       }
       setLoading(false);
     }
