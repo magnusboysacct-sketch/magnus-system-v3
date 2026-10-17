@@ -63,6 +63,28 @@ export async function getPreviousAdvances(paymentId: string): Promise<number> {
   return Number(data) || 0;
 }
 
+// The same rule for a payment that is not saved yet (the payment form): the worker's earlier advances on this project / task / milestone, as of now.
+// field_payment_advances_before is what field_payment_previous_advances (and so the receipt) calls, so the form and the receipt agree.
+export interface AdvancesScope {
+  companyId: string;
+  workerRef: string;
+  workerName: string;
+  workerIdNumber: string;
+  projectId: string | null;
+  projectName: string | null;
+  milestoneName: string | null;
+  taskName: string | null;
+}
+export async function getAdvancesSoFar(s: AdvancesScope): Promise<number> {
+  const { data, error } = await supabase.rpc("field_payment_advances_before", {
+    p_company_id: s.companyId, p_worker_ref: s.workerRef, p_worker_name: s.workerName, p_worker_id_number: s.workerIdNumber || null,
+    p_project_id: s.projectId, p_project_name: s.projectName, p_milestone_name: s.milestoneName, p_task_name: s.taskName,
+    p_before: new Date().toISOString(),
+  });
+  if (error) throw new Error(error.message);
+  return Number(data) || 0;
+}
+
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);

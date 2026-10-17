@@ -5,7 +5,7 @@ import React, { useRef, useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { showPrintPreview } from "../lib/printPreview";
 import { generateReceiptHTML } from "../lib/receiptHtml";
-import { copyToClipboard, createReceiptLink, errorMessage, findReceiptLink, getPreviousAdvances, openEmail, openWhatsApp, receiptUrl, revokeReceiptLink, withReceiptLink } from "../lib/receiptLinks";
+import { copyToClipboard, createReceiptLink, errorMessage, findReceiptLink, getAdvancesSoFar, getPreviousAdvances, openEmail, openWhatsApp, receiptUrl, revokeReceiptLink, withReceiptLink } from "../lib/receiptLinks";
 import { useProjectContext } from "../context/ProjectContext";
 import { SimpleIDScanner } from "./SimpleIDScanner";
 import html2canvas from "html2canvas";
@@ -216,6 +216,24 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     setTotalAdvanced(total);
   }
 
+  // "Previous advances" / "Less Advances" use the SAME rule as the receipt (field_payment_advances_before): this worker's earlier advances on this
+  // project (and task / milestone when chosen), not everything ever advanced to them. Recomputed when the worker, project, milestone or task changes.
+  const advProject=selectedProject?.name||null, advMilestone=selectedMilestone?.milestone_name||null;
+  const advKey=[companyId,form.worker_ref,form.worker_name.trim(),form.worker_id_number.trim(),form.project_id,advProject,advMilestone,form.task_name].join("|");
+  const [advResult,setAdvResult]=useState<{key:string;value:number|null}|null>(null);
+  useEffect(()=>{
+    if(!companyId||!form.worker_ref||step==="done")return;
+    let cancelled=false;
+    getAdvancesSoFar({companyId,workerRef:form.worker_ref,workerName:form.worker_name.trim(),workerIdNumber:form.worker_id_number.trim(),
+      projectId:form.project_id||null,projectName:advProject,milestoneName:advMilestone,taskName:form.task_name||null})
+      .then(value=>{if(!cancelled)setAdvResult({key:advKey,value});})
+      .catch(()=>{if(!cancelled)setAdvResult({key:advKey,value:null});});
+    return()=>{cancelled=true;};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[advKey,step]);
+  const advNow=advResult&&advResult.key===advKey?advResult.value:undefined;   // undefined = still loading, null = could not be checked
+  const prevAdv=advNow??0;
+
   // Load project balance (received from client minus money already paid out)
   // so field crews can see whether there's room to keep paying before they enter
   // an amount. client_payments has no project_id column (only invoice_id), so
@@ -395,7 +413,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     // "Previous advances" on a final payment comes from the one shared calculation (same figure on the public receipt and the payments list).
     let previousAdvances=0;
     if(form.payment_type==="final"){
-      try{previousAdvances=savedPaymentId?await getPreviousAdvances(savedPaymentId):totalAdvanced;}
+      try{previousAdvances=savedPaymentId?await getPreviousAdvances(savedPaymentId):prevAdv;}
       catch(e){alert("Could not print the receipt: "+errorMessage(e));return;}
     }
     const paymentData={
@@ -584,7 +602,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
             {totalAdvanced>0&&(
               <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-amber-600 mb-2">Worker Advance History</div>
-                <div className="text-sm font-bold text-amber-400">Total Advanced: {fmtJMD(totalAdvanced)}</div>
+                <div className="text-sm font-bold text-amber-400">Total Advanced (all projects): {fmtJMD(totalAdvanced)}</div>
                 <div className="text-[10px] text-slate-800 dark:text-slate-600 mt-1">{workerAdvances.length} advance{workerAdvances.length!==1?"s":""} on record</div>
                 {workerAdvances.slice(0,3).map((a:any,i:number)=>(
                   <div key={i} className="text-[10px] text-slate-800 dark:text-slate-600 mt-0.5">· {new Date(a.created_at).toLocaleDateString()} — {fmtJMD(a.total_amount)}</div>
@@ -670,7 +688,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
               {selectedProject&&<div className="text-[10px] text-slate-800 dark:text-slate-600">📁 {selectedProject.name}</div>}
               {selectedMilestone&&<div className="text-[10px] text-slate-800 dark:text-slate-600">🚩 {selectedMilestone.milestone_name}</div>}
               {form.task_name&&<div className="text-[10px] text-slate-800 dark:text-slate-600">✅ {form.task_name}</div>}
-              {totalAdvanced>0&&<div className="text-[10px] text-amber-500">⚡ Previous advances: {fmtJMD(totalAdvanced)}</div>}
+              {prevAdv>0&&<div className="text-[10px] text-amber-500">⚡ Previous advances: {fmtJMD(prevAdv)}</div>}
             </div>
 
             <div className="space-y-3">
@@ -681,8 +699,8 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                   <input type="number" value={form.advance_amount} onChange={setF("advance_amount")} placeholder="0.00"
                     className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl px-4 py-3 text-2xl font-bold text-amber-400 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-amber-500/50"/>
                   <div className="text-[11px] text-slate-800 dark:text-slate-600 text-center">This advance will be deducted from final payment</div>
-                  {totalAdvanced>0&&(
-                    <div className="text-[11px] text-amber-500 text-center">Running total after this: {fmtJMD(totalAdvanced+(parseFloat(form.advance_amount)||0))}</div>
+                  {prevAdv>0&&(
+                    <div className="text-[11px] text-amber-500 text-center">Running total after this: {fmtJMD(prevAdv+(parseFloat(form.advance_amount)||0))}</div>
                   )}
                 </div>
               )}
@@ -752,12 +770,15 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                       className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-xl px-4 py-3 text-xl font-bold text-emerald-400 placeholder-slate-400 dark:placeholder-slate-700 outline-none"/></div>
 
                   {/* Final payment — show advance deduction */}
-                  {form.payment_type==="final"&&totalAdvanced>0&&totalAmount>0&&(
+                  {form.payment_type==="final"&&advNow===null&&(
+                    <div className="text-[11px] text-red-400">Could not check this worker's previous advances. The receipt will still show the correct figure.</div>
+                  )}
+                  {form.payment_type==="final"&&prevAdv>0&&totalAmount>0&&(
                     <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/[0.06] p-3 space-y-1.5">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-cyan-600">Final Settlement</div>
                       <div className="flex justify-between text-sm"><span className="text-slate-800 dark:text-slate-400">Total Earned</span><span className="text-slate-900 dark:text-slate-200 font-bold">{fmtJMD(totalAmount)}</span></div>
-                      <div className="flex justify-between text-sm"><span className="text-slate-800 dark:text-slate-400">Less Advances</span><span className="text-amber-400 font-bold">- {fmtJMD(totalAdvanced)}</span></div>
-                      <div className="border-t border-slate-200 dark:border-white/[0.08] pt-1.5 flex justify-between text-sm font-bold"><span className="text-slate-900 dark:text-slate-200">Balance to Pay</span><span className="text-emerald-600 dark:text-emerald-400">{fmtJMD(Math.max(0,totalAmount-totalAdvanced))}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-800 dark:text-slate-400">Less Advances</span><span className="text-amber-400 font-bold">- {fmtJMD(prevAdv)}</span></div>
+                      <div className="border-t border-slate-200 dark:border-white/[0.08] pt-1.5 flex justify-between text-sm font-bold"><span className="text-slate-900 dark:text-slate-200">Balance to Pay</span><span className="text-emerald-600 dark:text-emerald-400">{fmtJMD(Math.max(0,totalAmount-prevAdv))}</span></div>
                     </div>
                   )}
                 </>
@@ -807,8 +828,8 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                   </div>
                 </div>
               </div>
-              {form.payment_type==="final"&&totalAdvanced>0&&(
-                <div className="text-[11px] text-slate-800 dark:text-slate-500 mt-1">Previous advances: {fmtJMD(totalAdvanced)} will be settled</div>
+              {form.payment_type==="final"&&prevAdv>0&&(
+                <div className="text-[11px] text-slate-800 dark:text-slate-500 mt-1">Previous advances: {fmtJMD(prevAdv)} will be settled</div>
               )}
             </div>
 

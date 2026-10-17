@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.receipt_share_links (
   kind        text        NOT NULL CHECK (kind IN ('field_payment', 'client_payment')),
   payment_id  uuid        NOT NULL,                       -- field_payments.id or client_payments.id, by kind (no FK: two possible tables)
   token       text        NOT NULL UNIQUE DEFAULT encode(extensions.gen_random_bytes(32), 'hex'),
-  created_by  uuid        DEFAULT auth.uid() REFERENCES public.user_profiles(id),
+  created_by  uuid        DEFAULT auth.uid() REFERENCES public.user_profiles(id) ON DELETE SET NULL,   -- a link never blocks deleting its creator
   created_at  timestamptz NOT NULL DEFAULT now(),
   revoked_at  timestamptz,
   CONSTRAINT receipt_share_links_token_shape CHECK (token ~ '^[0-9a-f]{64}$')
@@ -53,7 +53,7 @@ CREATE POLICY receipt_links_insert ON public.receipt_share_links FOR INSERT TO a
   WITH CHECK (company_id = public._receipt_staff_company() AND created_by = auth.uid());
 DROP POLICY IF EXISTS receipt_links_update ON public.receipt_share_links;
 CREATE POLICY receipt_links_update ON public.receipt_share_links FOR UPDATE TO authenticated
-  USING (company_id = public._receipt_staff_company()) WITH CHECK (company_id = public._receipt_staff_company());
+  USING (company_id = public._receipt_staff_company()) WITH CHECK (company_id = public._receipt_staff_company() AND revoked_at IS NOT NULL);   -- revoking is one-way
 -- (no DELETE policy: a link is revoked, never deleted)
 
 REVOKE ALL ON public.receipt_share_links FROM PUBLIC, anon, authenticated;
