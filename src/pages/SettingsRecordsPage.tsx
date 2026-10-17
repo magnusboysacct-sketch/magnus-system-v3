@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Briefcase, IdCard, Camera, X } from "lucide-react";
 import { StaffIDCard } from "../components/StaffIDCard";
 import { WorkerIDCard } from "../components/WorkerIDCard";
+import { IdCardBatchDownload } from "../components/IdCardDownload";
 import { canManageStaff } from "../lib/permissions";
 import { WORKER_SAFE_COLUMNS } from "../lib/workers";
 import { fetchStaffHrFields, withStaffHr } from "../lib/staffHr";
@@ -37,6 +38,11 @@ export default function SettingsRecordsPage() {
   const [staffError, setStaffError] = useState<string|null>(null);
   const [idCardStaffId, setIdCardStaffId] = useState<string|null>(null);
   const [idCardWorkerId, setIdCardWorkerId] = useState<string|null>(null);
+  // Tick several staff -> one card PDF and one print sheet PDF with all of them
+  const [staffPickMode, setStaffPickMode] = useState(false);
+  const [staffPicked, setStaffPicked] = useState<Set<string>>(new Set());
+  const [staffBatch, setStaffBatch] = useState<{ kind: "staff"; id: string }[] | null>(null);
+  const toggleStaffPicked = (id: string) => setStaffPicked(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<any|null>(null);
   const [staffForm, setStaffForm] = useState({ full_name:"", job_title:"", employee_number:"", trn:"", id_issued_date:"", id_expiry_date:"" });
@@ -601,8 +607,29 @@ export default function SettingsRecordsPage() {
             </div>
           )}
           {filteredStaff.length===0&&<div className="text-center py-8 text-xs text-slate-500 dark:text-slate-600">No staff found</div>}
+          {filteredStaff.length>0&&(
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={()=>{setStaffPickMode(m=>!m);setStaffPicked(new Set());}}
+                className={`px-3 py-2 rounded-lg border text-xs font-semibold transition ${staffPickMode?"border-[#C9A84C] text-[#C9A84C] bg-[#C9A84C]/10":"border-slate-300 dark:border-white/[0.12] text-slate-600 dark:text-slate-300 hover:bg-slate-500/10"}`}>
+                {staffPickMode?"Cancel selecting":"Select for ID cards"}
+              </button>
+              {staffPickMode&&(
+                <>
+                  <span className="text-xs text-slate-600 dark:text-slate-300">{staffPicked.size} selected</span>
+                  <button className="text-xs underline text-slate-600 dark:text-slate-300" onClick={()=>setStaffPicked(new Set(filteredStaff.map(x=>x.id)))}>Select all {filteredStaff.length} shown</button>
+                  <button className="text-xs underline text-slate-600 dark:text-slate-300" onClick={()=>setStaffPicked(new Set())}>Clear</button>
+                  <button disabled={staffPicked.size===0}
+                    onClick={()=>setStaffBatch(filteredStaff.filter(x=>staffPicked.has(x.id)).map(x=>({kind:"staff" as const,id:x.id})))}
+                    className="px-3 py-2 rounded-lg bg-[#C9A84C] text-[#0f2744] text-xs font-bold disabled:opacity-50">
+                    Download ID cards ({staffPicked.size})
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           {filteredStaff.map(s=>(
             <div key={s.id} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-4 flex items-center gap-4">
+              {staffPickMode&&<input type="checkbox" className="w-4 h-4" checked={staffPicked.has(s.id)} onChange={()=>toggleStaffPicked(s.id)} aria-label={"Select "+(s.full_name||s.email)}/>}
               {s.avatar_url?(
                 <img src={s.avatar_url} className="w-12 h-12 rounded-full object-cover border border-slate-300 dark:border-white/[0.1]"/>
               ):(
@@ -630,6 +657,8 @@ export default function SettingsRecordsPage() {
           ))}
         </div>
       )}
+
+      {staffBatch && <IdCardBatchDownload refs={staffBatch} onClose={()=>setStaffBatch(null)}/>}
 
       {idCardStaffId && (
         <StaffIDCard userId={idCardStaffId} onClose={()=>setIdCardStaffId(null)}/>

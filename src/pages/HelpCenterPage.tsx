@@ -3,6 +3,7 @@
 // DEFAULT_ARTICLES into the help_articles table on first load if empty.
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { BEFORE_YOU_GO, CARD_SPEC_LINES, GLOSSARY, GUIDE_ARTICLE_TITLE, WHEN_YOU_PICK_UP, WHICH_FILE, shopMessage } from "../lib/idCardGuide";
 import { useProjectContext } from "../context/ProjectContext";
 import {
   Search, BookOpen, ChevronRight, Play,
@@ -12,8 +13,61 @@ import {
   Volume2, Pause, Square
 } from "lucide-react";
 
+// "Printing ID cards at a print shop": the same wording as the Download for printing dialog and PRINT INSTRUCTIONS.pdf (lib/idCardGuide.ts).
+const PRINT_ID_CARDS_ARTICLE = {
+  module: "field-ops",
+  title: GUIDE_ARTICLE_TITLE,
+  slug: "printing-id-cards",
+  sort_order: 3,
+  roles: [] as string[],
+  content: `# ${GUIDE_ARTICLE_TITLE}
+
+Staff and worker ID cards are standard bank-card size. You can print them yourself, or send the files to a print shop. This guide shows which file to take and what to check.
+
+## Getting the files
+
+1. Open the person's ID card (**People → Workers**, or **Settings → Records → Staff**)
+2. Click **Download for printing**
+3. To do several people at once, click **Select for ID cards**, tick the people, then click **Download ID cards**. You get one card file and one print sheet with everyone in it.
+
+## Which file to take
+
+${WHICH_FILE.map(([n, t]) => "- **" + n + "** — " + t).join(String.fromCharCode(10))}
+
+## What to tell the print shop
+
+Copy this message and send it by WhatsApp or email, or click **Share on WhatsApp** in the download window. It has your company name and the number of cards filled in.
+
+${shopMessage("[Company]", ["staff"]).replace("1 staff ID card printed", "[N] staff ID cards printed")}
+
+The specification in short:
+
+${CARD_SPEC_LINES.map((t) => "- " + t).join(String.fromCharCode(10))}
+
+## Words you may hear
+
+${GLOSSARY.map(([w, d]) => "- **" + w + "** = " + d).join(String.fromCharCode(10))}
+
+## Before you go
+
+${BEFORE_YOU_GO.map((t, i) => (i + 1) + ". " + t).join(String.fromCharCode(10))}
+
+## When you pick them up
+
+${WHEN_YOU_PICK_UP.map((t, i) => (i + 1) + ". " + t).join(String.fromCharCode(10))}
+
+## About the QR code
+
+The QR code on every card opens a page that shows the person's name, job title, photo, company and whether the card is valid or expired. It never shows TRN, ID number, phone number or employee number. If a card is lost, set the person to inactive and the card shows as not valid when scanned.
+
+In the app, tap the QR code on the card to open it large and scan it from another phone.`,
+  video_url: "",
+};
+
 // ─── Default articles seeded into DB ────────────────────────────────────────
 const DEFAULT_ARTICLES = [
+  PRINT_ID_CARDS_ARTICLE,
+
   // GETTING STARTED
   {
     module: "getting-started",
@@ -1259,6 +1313,8 @@ function SpeechPlayer({ text }: { text: string }) {
   );
 }
 
+const TOP_UP_FLAG = "help-article-printing-id-cards-added";
+
 // ─── Main component ───────────────────────────────────────────────────────
 export default function HelpCenterPage() {
   const { userRole } = useProjectContext();
@@ -1285,7 +1341,16 @@ export default function HelpCenterPage() {
       .select("*")
       .order("sort_order");
     if (data && data.length > 0) {
-      setArticles(data);
+      let rows = data;
+      // Databases seeded before this article existed get it added once (new default articles are not re-seeded otherwise).
+      if (!rows.some((a: { slug?: string }) => a.slug === PRINT_ID_CARDS_ARTICLE.slug) && !localStorage.getItem(TOP_UP_FLAG)) {
+        try { localStorage.setItem(TOP_UP_FLAG, "1"); } catch { /* private mode */ }
+        const { data: added } = await supabase.from("help_articles")
+          .upsert([{ ...PRINT_ID_CARDS_ARTICLE, company_id: null }], { onConflict: "slug", ignoreDuplicates: true })
+          .select();
+        if (added && added.length) rows = [...rows, ...added];
+      }
+      setArticles(rows);
     } else {
       // Seed default articles
       await seedDefaultArticles();

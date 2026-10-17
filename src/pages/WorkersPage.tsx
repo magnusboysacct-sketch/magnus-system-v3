@@ -8,6 +8,7 @@ import { canManageWorkers } from "../lib/permissions";
 import { WORKER_SAFE_COLUMNS } from "../lib/workers";
 import EditableDropdown from "../components/common/EditableDropdown";
 import { WorkerIDCard } from "../components/WorkerIDCard";
+import { IdCardBatchDownload } from "../components/IdCardDownload";
 import { SimpleIDScanner } from "../components/SimpleIDScanner";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field,
@@ -448,6 +449,11 @@ export default function WorkersPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [idCardWorker, setIdCardWorker] = useState<Worker | null>(null);
+  // Tick several workers -> one card PDF and one print sheet PDF with all of them
+  const [pickMode, setPickMode] = useState(false);
+  const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
+  const [batchRefs, setBatchRefs] = useState<{ kind: "worker"; id: string }[] | null>(null);
+  const togglePicked = (id: string) => setPickedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [companyId, setCompanyId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -778,7 +784,22 @@ export default function WorkersPage() {
               <List size={13}/>
             </button>
           </div>
+          <button onClick={() => { setPickMode(m => !m); setPickedIds(new Set()); }}
+            className={cn("px-3 py-2 rounded-lg border text-xs font-medium transition-colors", pickMode ? "border-cyan-500 text-cyan-500 bg-cyan-500/10" : "border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.04]")}>
+            {pickMode ? "Cancel selecting" : "Select for ID cards"}
+          </button>
         </div>
+        {pickMode && (
+          <div className="flex items-center gap-3 flex-wrap rounded-lg border border-cyan-500/30 bg-cyan-500/5 px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
+            <span>{pickedIds.size} selected</span>
+            <button className="underline" onClick={() => setPickedIds(new Set(filtered.map(w => w.id)))}>Select all {filtered.length} shown</button>
+            <button className="underline" onClick={() => setPickedIds(new Set())}>Clear</button>
+            <Btn variant="primary" disabled={pickedIds.size === 0}
+              onClick={() => setBatchRefs(filtered.filter(w => pickedIds.has(w.id)).map(w => ({ kind: "worker" as const, id: w.id })))}>
+              Download ID cards ({pickedIds.size})
+            </Btn>
+          </div>
+        )}
 
         {/* Content */}
         {loading ? (
@@ -797,12 +818,20 @@ export default function WorkersPage() {
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map(w => (
-              <WorkerCard key={w.id} worker={w}
-                onEdit={openEdit}
-                onView={w => setSelectedWorker(w)}
-                onDelete={id => setDeleteConfirm(id)}
-                onIdCard={w => setIdCardWorker(workers.find(x => x.id === w.id) || w)}
-              />
+              <div key={w.id} className="relative">
+                {pickMode && (
+                  <label className="absolute top-2 left-2 z-10 flex items-center gap-1.5 bg-white/90 dark:bg-slate-900/90 rounded-md px-2 py-1 text-[10px] text-slate-700 dark:text-slate-200 cursor-pointer shadow">
+                    <input type="checkbox" checked={pickedIds.has(w.id)} onChange={() => togglePicked(w.id)} aria-label={"Select " + fullName(w)} />
+                    Select
+                  </label>
+                )}
+                <WorkerCard worker={w}
+                  onEdit={openEdit}
+                  onView={w => setSelectedWorker(w)}
+                  onDelete={id => setDeleteConfirm(id)}
+                  onIdCard={w => setIdCardWorker(workers.find(x => x.id === w.id) || w)}
+                />
+              </div>
             ))}
           </div>
         ) : (
@@ -810,6 +839,7 @@ export default function WorkersPage() {
             <Table>
               <thead>
                 <tr>
+                  {pickMode && <Th>Select</Th>}
                   <Th>Worker</Th>
                   <Th>Type</Th>
                   <Th>Phone</Th>
@@ -822,6 +852,7 @@ export default function WorkersPage() {
               <tbody>
                 {filtered.map(w => (
                   <Tr key={w.id}>
+                    {pickMode && <Td><input type="checkbox" checked={pickedIds.has(w.id)} onChange={() => togglePicked(w.id)} aria-label={"Select " + fullName(w)} /></Td>}
                     <Td>
                       <div className="flex items-center gap-2.5">
                         <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold border flex-shrink-0 overflow-hidden", TYPE_BG[w.worker_type], TYPE_COLOR[w.worker_type])}>
@@ -1209,6 +1240,7 @@ export default function WorkersPage() {
           </div>
         </div>
       </Modal>
+      {batchRefs && <IdCardBatchDownload refs={batchRefs} onClose={() => setBatchRefs(null)} />}
       {idCardWorker && (
         <WorkerIDCard
           workerId={idCardWorker.id}

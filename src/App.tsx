@@ -71,6 +71,7 @@ import SettingsEstimatesPage   from "./pages/SettingsEstimatesPage";
 import SettingsRecordsPage     from "./pages/SettingsRecordsPage";
 import SettingsCompanyPage      from "./pages/SettingsCompanyPage";
 import WorkerVerifyPage         from "./pages/WorkerVerifyPage";
+import IdVerifyPage            from "./pages/IdVerifyPage";
 import SettingsMasterListsPage      from "./pages/SettingsMasterListsPage";
 import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import SettingsCostCodesPage  from "./pages/SettingsCostCodesPage";
@@ -246,6 +247,7 @@ export default function App() {
           <Routes>
             {/* Public */}
             <Route path="/verify/:workerId" element={<WorkerVerifyPage />} />
+            <Route path="/v/:code" element={<IdVerifyPage />} />
             <Route path="/login"          element={<LoginPage />} />
             <Route path="/accept-invite"  element={<AcceptInvitePage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
