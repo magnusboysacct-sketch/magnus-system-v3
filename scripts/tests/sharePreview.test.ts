@@ -65,7 +65,7 @@ test("bot detection: every link-preview bot is detected, ordinary browsers (incl
 test("vercel.json: the bot rewrites match exactly the same user agents, go before the SPA catch-all, and the catch-all leaves /api alone", () => {
   const cfg = JSON.parse(fs.readFileSync(new URL("../../vercel.json", import.meta.url), "utf8"));
   const rw = cfg.rewrites as Array<{ source: string; destination: string; has?: Array<{ type: string; key: string; value: string }> }>;
-  const bot = rw.filter((r) => r.has && !r.source.startsWith("/share-test"));   // (the temporary /share-test rewrite is tested in shareTest.test.ts)
+  const bot = rw.filter((r) => r.has);
   assert.deepEqual(bot.map((r) => r.destination), [
     "/api/share-preview?kind=contact&token=:token", "/api/share-preview?kind=portal&token=:token", "/api/share-preview?kind=photos&token=:token",
   ]);

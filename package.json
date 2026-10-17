@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:share": "tsx --test scripts/tests/sharePreview.test.ts scripts/tests/shareTest.test.ts"
+    "test:share": "tsx --test scripts/tests/sharePreview.test.ts"
   },
   "dependencies": {
     "@resvg/resvg-wasm": "2.4.1",
