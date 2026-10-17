@@ -119,36 +119,9 @@ export async function fetchWorkerInfo(workerId: string) {
 
 export async function fetchWorkerPayslips(workerId: string, limit: number = 12) {
   try {
-    const { data, error } = await supabase
-      .from("payroll_entries")
-      .select(`
-        id,
-        payroll_period_id,
-        regular_hours,
-        overtime_hours,
-        regular_pay,
-        overtime_pay,
-        gross_pay,
-        federal_tax,
-        state_tax,
-        social_security,
-        medicare,
-        health_insurance,
-        retirement_401k,
-        other_deductions,
-        total_deductions,
-        net_pay,
-        status,
-        created_at,
-        payroll_periods (
-          period_start,
-          period_end,
-          pay_date
-        )
-      `)
-      .eq("worker_id", workerId)
-      .order("created_at", { ascending: false })
-      .limit(limit);
+    // Own entries only, with the pay-period dates: a database function (payroll_entries / payroll_periods are not readable by a worker account).
+    const { data: rows, error } = await supabase.rpc("worker_portal_payslips", { p_limit: limit });
+    const data = ((rows || []) as Array<{ worker_id: string } & Record<string, unknown>>).filter((r) => r.worker_id === workerId);
 
     if (error) {
       console.error("Error fetching worker payslips:", error);
@@ -319,30 +292,10 @@ export async function sendWorkerMessage(companyId: string, workerUserId: string,
 export async function fetchWorkerYTDSummary(workerId: string, year?: number) {
   try {
     const currentYear = year || new Date().getFullYear();
-    const startDate = `${currentYear}-01-01`;
-    const endDate = `${currentYear}-12-31`;
 
-    const { data, error } = await supabase
-      .from("payroll_entries")
-      .select(`
-        gross_pay,
-        federal_tax,
-        state_tax,
-        social_security,
-        medicare,
-        health_insurance,
-        retirement_401k,
-        total_deductions,
-        net_pay,
-        payroll_periods!inner (
-          period_start,
-          period_end
-        )
-      `)
-      .eq("worker_id", workerId)
-      .eq("status", "paid")
-      .gte("payroll_periods.period_end", startDate)
-      .lte("payroll_periods.period_end", endDate);
+    // Own paid entries of the year, from a database function (see fetchWorkerPayslips).
+    const { data: rows, error } = await supabase.rpc("worker_portal_ytd", { p_year: currentYear });
+    const data = ((rows || []) as Array<{ worker_id: string } & Record<string, unknown>>).filter((r) => r.worker_id === workerId);
 
     if (error) {
       console.error("Error fetching YTD summary:", error);
