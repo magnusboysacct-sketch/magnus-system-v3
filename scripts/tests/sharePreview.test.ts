@@ -3,15 +3,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import zlib from "node:zlib";
 import {
   BOT_UA_NAMES, buildCardUrl, buildPreviewHtml, cardVersion, fitLogo, imageInfo, isAllowedLogoUrl, isPreviewBot, loadLogo,
   normalizePreview, parseSharePath, sharePath,
 } from "../../api/_lib/sharePreview";
-import { createRequire } from "node:module";
-import handler from "../../api/share-preview";
+import { renderCard } from "../../api/_lib/card";
+import { sharePreviewHandler as handler } from "../../api/_lib/previewHandler";
+import { shareCardHandler } from "../../api/_lib/cardHandler";
 
 const SUPABASE = "https://abcdefgh.supabase.co";
 const VALID_TOKEN = "0f8fad5b-d9cb-469f-a165-70867728950e";
@@ -193,23 +192,9 @@ test("loadLogo: fetches only the allowed URL, with no redirects; non-images, big
 });
 
 // ── the card ───────────────────────────────────────────────────────────────────────────────────────────────────────────
-// @vercel/og's Node build expects a CommonJS require() to exist; the edge build used in production does not (so it is loaded here, lazily).
-function ensureOgNode() {
-  const req = createRequire(import.meta.url);
-  const g = globalThis as unknown as { require?: NodeRequire; __dirname?: string; __filename?: string };
-  g.require ??= req;
-  // The Node build looks for hb.wasm (the text shaper) next to itself; the package keeps it in harfbuzzjs. Production uses the edge build, which has it built in.
-  if (!g.__dirname) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "og-"));
-    fs.copyFileSync(req.resolve("harfbuzzjs/hb.wasm"), path.join(dir, "hb.wasm"));
-    g.__dirname = dir; g.__filename = path.join(dir, "index.js");
-  }
-}
 async function render(logo: { w: number; h: number } | null, cache = "public, max-age=31536000, immutable") {
-  ensureOgNode();
-  const { renderCard } = await import("../../api/_lib/card");
   const l = logo ? { dataUri: `data:image/png;base64,${Buffer.from(solidPng(logo.w, logo.h, [200, 30, 60])).toString("base64")}`, width: logo.w, height: logo.h } : null;
-  const res = renderCard({ name: "Veron Williams Construction", logo: l }, cache);
+  const res = await renderCard({ name: "Veron Williams Construction", logo: l }, cache);
   const bytes = new Uint8Array(await res.arrayBuffer());
   return { res, bytes };
 }
@@ -322,9 +307,7 @@ function withCardFetch(rpc: (body: { p_kind: string; p_token: string }) => unkno
 }
 const VALID_COMPANY = () => ({ company_name: "Veron Williams", logo_url: GOOD_LOGO, title: "x", description: "y", token: "LEAK" });
 async function cardCall(qs: string) {
-  ensureOgNode();
-  const h = (await import("../../api/share-card")).default;
-  const res = await h(new Request("https://app.magnusboys.com/api/share-card?" + qs));
+  const res = await shareCardHandler(new Request("https://app.magnusboys.com/api/share-card?" + qs));
   return { res, bytes: new Uint8Array(await res.arrayBuffer()) };
 }
 const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
@@ -424,4 +407,41 @@ test("card endpoint: cache is long only when the fingerprint is current and the 
     const { res } = await cardCall("k=portal&t=" + VALID_TOKEN + "&v=" + cardVersion("Beta Builders", null));
     assert.equal(res.headers.get("cache-control"), LONG_CC);
   } finally { f.restore(); }
+});
+
+// ── deployment guards (things that only break on Vercel, found by `vercel build`) ───────────────────────────────────────────────
+const readRepo = (p: string) => fs.readFileSync(new URL("../../" + p, import.meta.url), "utf8");
+const importsOf = (src: string) => [...src.matchAll(/(?:from|import\()\s*["']([^"']+)["']/g)].map((m) => m[1]);
+
+test("deployment: no edge runtime and no @vercel/* import in api/ (Vercel rejects '@vercel' modules in edge functions)", () => {
+  for (const f of ["api/share-preview.ts", "api/share-card.ts", "api/_lib/cardHandler.ts", "api/_lib/previewHandler.ts", "api/_lib/card.ts", "api/_lib/nodeAdapter.ts", "api/_lib/sharePreview.ts"]) {
+    const src = readRepo(f);
+    assert.equal(/runtime\s*:\s*["']edge["']/.test(src), false, f + " must run on the Node.js runtime");
+    assert.equal(importsOf(src).some((i) => i.startsWith("@vercel/")), false, f);
+  }
+});
+
+test("deployment: every relative import in api/ has the .js extension (Node ESM + Vercel's TypeScript check)", () => {
+  for (const f of ["api/share-preview.ts", "api/share-card.ts", "api/_lib/cardHandler.ts", "api/_lib/previewHandler.ts", "api/_lib/card.ts", "api/_lib/nodeAdapter.ts", "api/_lib/sharePreview.ts"]) {
+    for (const spec of importsOf(readRepo(f)).filter((i) => i.startsWith("."))) assert.match(spec, /\.js$/, f + " imports " + spec);
+  }
+});
+
+test("deployment: the preview function does not pull in the card renderer (satori / resvg need files that only the card function ships)", () => {
+  for (const f of ["api/share-preview.ts", "api/_lib/previewHandler.ts", "api/_lib/nodeAdapter.ts", "api/_lib/sharePreview.ts"]) {
+    const specs = importsOf(readRepo(f));
+    assert.equal(specs.some((i) => /card|satori|resvg/i.test(i)), false, f + ": " + specs.join(", "));
+  }
+  // and the card renderer itself loads satori/resvg lazily, so a missing file can only fail a render (-> platform card), never the function start
+  const card = readRepo("api/_lib/card.ts");
+  assert.equal(/^import .* from ["'](satori|@resvg\/resvg-wasm)["']/m.test(card), false);
+});
+
+test("deployment: vercel.json ships the font and both wasm files with the card function", () => {
+  const cfg = JSON.parse(readRepo("vercel.json"));
+  const inc: string = cfg.functions["api/share-card.ts"].includeFiles;
+  for (const need of ["node_modules/@resvg/resvg-wasm/index_bg.wasm", "node_modules/harfbuzzjs/hb.wasm", "api/_lib/Geist-Regular.ttf"]) {
+    assert.ok(inc.includes(need), need);
+    assert.ok(fs.existsSync(new URL("../../" + need, import.meta.url)), need + " exists");
+  }
 });

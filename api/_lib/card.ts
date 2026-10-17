@@ -1,7 +1,10 @@
 // api/_lib/card.ts — renders the 1200x630 link-preview card (white, company logo centred at its natural shape, company name underneath).
-import { ImageResponse } from "@vercel/og";
+//
+// satori turns the element tree into an SVG and resvg (WebAssembly build: no native binaries) rasterises it to a PNG. This runs in a normal Node.js
+// serverless function. The font and the resvg .wasm are read from files that vercel.json ("functions" -> includeFiles) puts into the function.
+import { readFileSync } from "node:fs";
 import type { ReactElement } from "react";
-import { CARD, fitLogo } from "./sharePreview";
+import { CARD, fitLogo } from "./sharePreview.js";
 
 type Node = { type: string; props: Record<string, unknown> };
 // Plain element objects (what JSX would produce) so this file needs no React or JSX setup.
@@ -33,9 +36,26 @@ export function cardElement({ name, logo }: CardInput): ReactElement {
   ]) as unknown as ReactElement;
 }
 
-// ImageResponse adds its own (always year-long, immutable) Cache-Control, so the body is re-wrapped to make ours the only one: a card for a logo that
-// could not be loaded must NOT be cached for a year.
-export function renderCard(input: CardInput, cacheControl: string): Response {
-  const img = new ImageResponse(cardElement(input), { width: CARD.width, height: CARD.height });
-  return new Response(img.body, { status: 200, headers: { "Content-Type": "image/png", "Cache-Control": cacheControl } });
+// Loaded once per function instance. The paths are relative to this file; in the deployed function the project layout is kept, so they resolve to
+// the same node_modules / api/_lib files that the build includes (vercel.json "functions" -> includeFiles).
+const FONT_URL = new URL("./Geist-Regular.ttf", import.meta.url);
+const WASM_URL = new URL("../../node_modules/@resvg/resvg-wasm/index_bg.wasm", import.meta.url);
+// satori and resvg are loaded lazily, inside renderCard: if anything about them is missing or broken in a deployment, only the card render fails (the
+// caller then serves the platform card) — it can never stop the function from starting.
+let ready: Promise<{ satori: typeof import("satori").default; Resvg: typeof import("@resvg/resvg-wasm").Resvg; font: Buffer }> | null = null;
+function init() {
+  ready ??= (async () => {
+    const [{ default: satori }, resvg] = await Promise.all([import("satori"), import("@resvg/resvg-wasm")]);
+    await resvg.initWasm(readFileSync(WASM_URL));
+    return { satori, Resvg: resvg.Resvg, font: readFileSync(FONT_URL) };
+  })();
+  ready.catch(() => { ready = null; });                 // a failed start is retried on the next request
+  return ready;
+}
+
+export async function renderCard(input: CardInput, cacheControl: string): Promise<Response> {
+  const { satori, Resvg, font } = await init();
+  const svg = await satori(cardElement(input), { width: CARD.width, height: CARD.height, fonts: [{ name: "Geist", data: font, weight: 400, style: "normal" }] });
+  const png = new Resvg(svg, { fitTo: { mode: "width", value: CARD.width } }).render().asPng();
+  return new Response(png as BodyInit, { status: 200, headers: { "Content-Type": "image/png", "Cache-Control": cacheControl } });
 }

@@ -11,8 +11,8 @@
     "test:share": "tsx --test scripts/tests/sharePreview.test.ts"
   },
   "dependencies": {
+    "@resvg/resvg-wasm": "2.4.1",
     "@supabase/supabase-js": "^2.97.0",
-    "@vercel/og": "^1.0.3",
     "expr-eval": "^2.0.2",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
@@ -26,6 +26,7 @@
     "react-image-crop": "^11.0.10",
     "react-router-dom": "^7.13.0",
     "recharts": "^3.10.1",
+    "satori": "0.33.5",
     "tesseract.js": "^7.0.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz"
   },
