@@ -11,15 +11,19 @@
 --     (payroll_periods carries company-wide totals, so a worker must not be given SELECT on it just to show a pay date);
 --   * the owner-rights views and the company-id-taking SECURITY DEFINER functions that bypassed these policies (and were open to anon) are closed.
 --
--- No existing account is affected: today's seven roles are all "staff" for the workers / time / field-payment tables, and director + admin keep the payroll
--- tables. Run once; read-only on data.
+-- Who gets what (all allow-lists): staff directory / time / field payments = the seven roles; payroll (entries, periods, tax numbers, the /payroll page's
+-- runs and remittances) = director, admin, secretary; payroll governance (comparison reviews, migration approvals) and owner finance (owner salary, owner
+-- accounts, owner draws) = director, admin; cash-flow functions = users whose finance_access_level is 'full' (what the Cash Flow page checks).
+-- Run once; read-only on data.
 
 BEGIN;
 
 -- ── 1. Who is who ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 -- Tier 1 (people directory, time, field payments): the seven roles user_profiles.role allows today.
--- Tier 2 (payroll money: entries, periods, tax numbers, owner salary): director and admin, the same as the app's own /payroll guard.
--- Both are allow-lists, so a role that is not listed (a 'worker', or any role added later) gets nothing by default.
+-- Tier 2 (payroll: entries, periods, tax numbers, calculation audit, configuration): director, admin and secretary, who run payroll (the app's /payroll guard).
+-- Payroll governance (comparison reviews, migration approvals) stays director + admin, like their screens; owner finance is director + admin;
+-- the cash functions need finance_access_level = 'full', like the Cash Flow page.
+-- All are allow-lists, so a role that is not listed (a 'worker', or any role added later) gets nothing by default.
 CREATE OR REPLACE FUNCTION public._hr_staff_company()
 RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
 AS $$
@@ -32,7 +36,30 @@ $$;
 CREATE OR REPLACE FUNCTION public._payroll_staff_company()
 RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
 AS $$
+  SELECT up.company_id FROM user_profiles up WHERE up.id = auth.uid() AND up.role IN ('director', 'admin', 'secretary') LIMIT 1;
+$$;
+
+CREATE OR REPLACE FUNCTION public._payroll_admin_company()
+RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
+AS $$
   SELECT up.company_id FROM user_profiles up WHERE up.id = auth.uid() AND up.role IN ('director', 'admin') LIMIT 1;
+$$;
+
+CREATE OR REPLACE FUNCTION public._owner_finance_company()
+RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
+AS $$
+  SELECT up.company_id FROM user_profiles up WHERE up.id = auth.uid() AND up.role IN ('director', 'admin') LIMIT 1;
+$$;
+
+-- Same test as the app's FinanceGuard level="full" / canViewCashFlow (user_profiles.finance_access_level = 'full'), for a staff role.
+CREATE OR REPLACE FUNCTION public._finance_full_company()
+RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
+AS $$
+  SELECT up.company_id FROM user_profiles up
+   WHERE up.id = auth.uid()
+     AND up.finance_access_level = 'full'
+     AND up.role IN ('director', 'admin', 'estimator', 'supervisor', 'office_user', 'site_user', 'secretary')
+   LIMIT 1;
 $$;
 
 -- The workers row(s) of the signed-in account: same company, active, and the worker's e-mail is the account's LOGIN e-mail (auth.users, which the user
@@ -49,8 +76,10 @@ AS $$
      AND lower(btrim(w.email)) = lower(btrim(u.email));
 $$;
 
-REVOKE ALL ON FUNCTION public._hr_staff_company(), public._payroll_staff_company(), public._hr_self_worker_ids() FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public._hr_staff_company(), public._payroll_staff_company(), public._hr_self_worker_ids() TO authenticated;
+REVOKE ALL ON FUNCTION public._hr_staff_company(), public._payroll_staff_company(), public._payroll_admin_company(), public._owner_finance_company(),
+                       public._finance_full_company(), public._hr_self_worker_ids() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public._hr_staff_company(), public._payroll_staff_company(), public._payroll_admin_company(), public._owner_finance_company(),
+                          public._finance_full_company(), public._hr_self_worker_ids() TO authenticated;
 
 -- ── 2. workers: staff see the company; anyone else only their own row ───────────────────────────────────────────────────────────
 -- (INSERT "Managers can insert company workers" and DELETE "workers_delete_policy" are already role-gated and stay as they are.)
@@ -82,9 +111,10 @@ DROP POLICY IF EXISTS "payroll_entries_delete_staff" ON public.payroll_entries;
 CREATE POLICY "payroll_entries_delete_staff" ON public.payroll_entries FOR DELETE TO authenticated
   USING (company_id = (SELECT public._payroll_staff_company()));
 
--- ── 4. Payroll-only tables (no own-row access): payroll staff, nobody else ──────────────────────────────────────────────────────
--- worker_tax_info (TRN / NIS numbers), payroll_periods (company totals), payroll_comparison_reviews, payroll_calculation_audit, payroll_configuration,
--- payroll_migration_approvals, owner_salary (the "Owners can view their own salary" policy stays), payroll_tax_settings (read; its writes are already director-only).
+-- ── 4. Payroll-only tables (no own-row access): payroll staff (director / admin / secretary), nobody else ────────────────────────
+-- worker_tax_info (TRN / NIS numbers), payroll_periods (company totals), payroll_calculation_audit, payroll_configuration, payroll_tax_settings (read; its
+-- writes are already director-only). payroll_comparison_reviews and payroll_migration_approvals are the payroll-engine cut-over governance screens
+-- (director / admin only in the app), so they stay director + admin. owner_salary and the other owner tables are in section 4b.
 DROP POLICY IF EXISTS "Users can view their company worker tax info" ON public.worker_tax_info;
 DROP POLICY IF EXISTS "Users can manage their company worker tax info" ON public.worker_tax_info;
 DROP POLICY IF EXISTS "worker_tax_info_staff" ON public.worker_tax_info;
@@ -101,7 +131,7 @@ DROP POLICY IF EXISTS "Users can view their company payroll comparison reviews" 
 DROP POLICY IF EXISTS "Users can manage their company payroll comparison reviews" ON public.payroll_comparison_reviews;
 DROP POLICY IF EXISTS "payroll_comparison_reviews_staff" ON public.payroll_comparison_reviews;
 CREATE POLICY "payroll_comparison_reviews_staff" ON public.payroll_comparison_reviews FOR ALL TO authenticated
-  USING (company_id = (SELECT public._payroll_staff_company())) WITH CHECK (company_id = (SELECT public._payroll_staff_company()));
+  USING (company_id = (SELECT public._payroll_admin_company())) WITH CHECK (company_id = (SELECT public._payroll_admin_company()));
 
 DROP POLICY IF EXISTS "Users can view own company payroll audit" ON public.payroll_calculation_audit;
 DROP POLICY IF EXISTS "Users can insert own company payroll audit" ON public.payroll_calculation_audit;
@@ -121,18 +151,56 @@ DROP POLICY IF EXISTS "Users can view their company payroll migration approvals"
 DROP POLICY IF EXISTS "Users can manage their company payroll migration approvals" ON public.payroll_migration_approvals;
 DROP POLICY IF EXISTS "payroll_migration_approvals_staff" ON public.payroll_migration_approvals;
 CREATE POLICY "payroll_migration_approvals_staff" ON public.payroll_migration_approvals FOR ALL TO authenticated
-  USING (company_id = (SELECT public._payroll_staff_company())) WITH CHECK (company_id = (SELECT public._payroll_staff_company()));
+  USING (company_id = (SELECT public._payroll_admin_company())) WITH CHECK (company_id = (SELECT public._payroll_admin_company()));
 
 DROP POLICY IF EXISTS "Users can view their company owner salary" ON public.owner_salary;
 DROP POLICY IF EXISTS "Users can manage their company owner salary" ON public.owner_salary;
 DROP POLICY IF EXISTS "owner_salary_staff" ON public.owner_salary;
 CREATE POLICY "owner_salary_staff" ON public.owner_salary FOR ALL TO authenticated
-  USING (company_id = (SELECT public._payroll_staff_company())) WITH CHECK (company_id = (SELECT public._payroll_staff_company()));
+  USING (company_id = (SELECT public._owner_finance_company())) WITH CHECK (company_id = (SELECT public._owner_finance_company()));
 
 DROP POLICY IF EXISTS "payroll_tax_settings_select" ON public.payroll_tax_settings;
 DROP POLICY IF EXISTS "payroll_tax_settings_select" ON public.payroll_tax_settings;
 CREATE POLICY "payroll_tax_settings_select" ON public.payroll_tax_settings FOR SELECT TO authenticated
   USING (company_id = (SELECT public._payroll_staff_company()));
+
+-- ── 4b. Owner finance (owner salary, accounts, draws): director + admin; each owner still reads their own rows ─────────────────────
+-- owner_accounts and owner_draws are what v_owner_financial_summary (section 7) reads, so they are covered here too. Their own-rows policies stay.
+DROP POLICY IF EXISTS "Users can view their company owner accounts" ON public.owner_accounts;
+DROP POLICY IF EXISTS "Users can manage their company owner accounts" ON public.owner_accounts;
+DROP POLICY IF EXISTS "owner_accounts_staff" ON public.owner_accounts;
+CREATE POLICY "owner_accounts_staff" ON public.owner_accounts FOR ALL TO authenticated
+  USING (company_id = (SELECT public._owner_finance_company())) WITH CHECK (company_id = (SELECT public._owner_finance_company()));
+
+DROP POLICY IF EXISTS "Users can view their company owner draws" ON public.owner_draws;
+DROP POLICY IF EXISTS "Users can manage their company owner draws" ON public.owner_draws;
+DROP POLICY IF EXISTS "owner_draws_staff" ON public.owner_draws;
+CREATE POLICY "owner_draws_staff" ON public.owner_draws FOR ALL TO authenticated
+  USING (company_id = (SELECT public._owner_finance_company())) WITH CHECK (company_id = (SELECT public._owner_finance_company()));
+
+-- ── 4c. The /payroll page's own tables (staff payroll runs, government remittances): the secretary runs payroll, so she is added ──
+-- Same policies as before (director / admin; 'accounts' is not a live role and is kept only so nothing else changes) plus 'secretary'.
+DROP POLICY IF EXISTS "staff_payroll_runs_select" ON public.staff_payroll_runs;
+CREATE POLICY "staff_payroll_runs_select" ON public.staff_payroll_runs FOR SELECT TO authenticated
+  USING (company_id IN (SELECT up.company_id FROM public.user_profiles up WHERE up.id = auth.uid() AND up.role = ANY (ARRAY['director', 'admin', 'accounts', 'secretary'])));
+DROP POLICY IF EXISTS "staff_payroll_runs_insert" ON public.staff_payroll_runs;
+CREATE POLICY "staff_payroll_runs_insert" ON public.staff_payroll_runs FOR INSERT TO authenticated
+  WITH CHECK (company_id IN (SELECT up.company_id FROM public.user_profiles up WHERE up.id = auth.uid() AND up.role = ANY (ARRAY['director', 'admin', 'accounts', 'secretary'])));
+DROP POLICY IF EXISTS "staff_payroll_runs_update" ON public.staff_payroll_runs;
+CREATE POLICY "staff_payroll_runs_update" ON public.staff_payroll_runs FOR UPDATE TO authenticated
+  USING (company_id IN (SELECT up.company_id FROM public.user_profiles up WHERE up.id = auth.uid() AND up.role = ANY (ARRAY['director', 'admin', 'accounts', 'secretary'])))
+  WITH CHECK (company_id IN (SELECT up.company_id FROM public.user_profiles up WHERE up.id = auth.uid() AND up.role = ANY (ARRAY['director', 'admin', 'accounts', 'secretary'])));
+
+DROP POLICY IF EXISTS "government_remittances_select" ON public.government_remittances;
+CREATE POLICY "government_remittances_select" ON public.government_remittances FOR SELECT TO authenticated
+  USING (company_id IN (SELECT up.company_id FROM public.user_profiles up WHERE up.id = auth.uid() AND up.role = ANY (ARRAY['director', 'admin', 'accounts', 'secretary'])));
+DROP POLICY IF EXISTS "government_remittances_insert" ON public.government_remittances;
+CREATE POLICY "government_remittances_insert" ON public.government_remittances FOR INSERT TO authenticated
+  WITH CHECK (company_id IN (SELECT up.company_id FROM public.user_profiles up WHERE up.id = auth.uid() AND up.role = ANY (ARRAY['director', 'admin', 'accounts', 'secretary'])));
+DROP POLICY IF EXISTS "government_remittances_update" ON public.government_remittances;
+CREATE POLICY "government_remittances_update" ON public.government_remittances FOR UPDATE TO authenticated
+  USING (company_id IN (SELECT up.company_id FROM public.user_profiles up WHERE up.id = auth.uid() AND up.role = ANY (ARRAY['director', 'admin', 'accounts', 'secretary'])))
+  WITH CHECK (company_id IN (SELECT up.company_id FROM public.user_profiles up WHERE up.id = auth.uid() AND up.role = ANY (ARRAY['director', 'admin', 'accounts', 'secretary'])));
 
 -- ── 5. Field-side HR records (time entries, field payments with workers' ID numbers / phones / signatures): staff roles only ─────
 DROP POLICY IF EXISTS "Users can view their company time entries" ON public.time_entries;
@@ -160,7 +228,7 @@ CREATE POLICY "field_payment_receipts_staff" ON public.field_payment_receipts FO
   USING (company_id = (SELECT public._hr_staff_company())) WITH CHECK (company_id = (SELECT public._hr_staff_company()));
 
 -- Nothing signed-out has any business here (the policies above never matched anon, this removes the table privilege too).
-REVOKE ALL ON public.workers, public.payroll_entries, public.worker_tax_info, public.owner_salary, public.payroll_periods, public.payroll_comparison_reviews,
+REVOKE ALL ON public.workers, public.payroll_entries, public.worker_tax_info, public.owner_salary, public.owner_accounts, public.owner_draws, public.payroll_periods, public.payroll_comparison_reviews,
               public.payroll_calculation_audit, public.payroll_configuration, public.payroll_migration_approvals, public.time_entries,
               public.field_payments, public.field_payment_signatures, public.field_payment_receipts FROM anon;
 
@@ -211,9 +279,9 @@ ALTER VIEW public.field_payment_summary     SET (security_invoker = true);
 REVOKE ALL ON public.v_owner_financial_summary, public.field_payment_summary FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.v_owner_financial_summary, public.field_payment_summary TO authenticated;
 
--- (b) Three SECURITY DEFINER functions took the company id from the CALLER, were executable by anon, and return payroll totals: anyone who knew a company id
---     could read its payroll figures. The original bodies are kept (renamed, not callable by clients) and the public names now check that the caller is staff
---     of exactly that company first. Same arguments, same result columns.
+-- (b) Three SECURITY DEFINER functions took the company id from the CALLER, were executable by anon, and return payroll and cash totals: anyone who knew a
+--     company id could read its figures. The original bodies are kept (renamed, not callable by clients) and the public names now check that the caller has
+--     full finance access (finance_access_level = 'full', what the Cash Flow page requires) in exactly that company. Same arguments, same result columns.
 DO $$
 BEGIN
   IF to_regprocedure('public.get_upcoming_payroll_unchecked(uuid, integer)') IS NULL THEN
@@ -234,7 +302,7 @@ RETURNS TABLE(period_id uuid, period_start date, period_end date, pay_date date,
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
 AS $$
 BEGIN
-  IF p_company_id IS NULL OR p_company_id IS DISTINCT FROM (SELECT public._hr_staff_company()) THEN RAISE EXCEPTION 'Not allowed' USING ERRCODE = '42501'; END IF;
+  IF p_company_id IS NULL OR p_company_id IS DISTINCT FROM (SELECT public._finance_full_company()) THEN RAISE EXCEPTION 'Not allowed' USING ERRCODE = '42501'; END IF;
   RETURN QUERY SELECT * FROM public.get_upcoming_payroll_unchecked(p_company_id, p_weeks_ahead);
 END;
 $$;
@@ -245,7 +313,7 @@ RETURNS TABLE(period_start date, period_end date, period_label text, expected_in
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
 AS $$
 BEGIN
-  IF p_company_id IS NULL OR p_company_id IS DISTINCT FROM (SELECT public._hr_staff_company()) THEN RAISE EXCEPTION 'Not allowed' USING ERRCODE = '42501'; END IF;
+  IF p_company_id IS NULL OR p_company_id IS DISTINCT FROM (SELECT public._finance_full_company()) THEN RAISE EXCEPTION 'Not allowed' USING ERRCODE = '42501'; END IF;
   RETURN QUERY SELECT * FROM public.get_cash_flow_forecast_unchecked(p_company_id, p_start_date, p_end_date, p_interval);
 END;
 $$;
@@ -256,7 +324,7 @@ RETURNS TABLE(current_cash_balance numeric, total_receivables numeric, total_pay
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public', 'pg_temp'
 AS $$
 BEGIN
-  IF p_company_id IS NULL OR p_company_id IS DISTINCT FROM (SELECT public._hr_staff_company()) THEN RAISE EXCEPTION 'Not allowed' USING ERRCODE = '42501'; END IF;
+  IF p_company_id IS NULL OR p_company_id IS DISTINCT FROM (SELECT public._finance_full_company()) THEN RAISE EXCEPTION 'Not allowed' USING ERRCODE = '42501'; END IF;
   RETURN QUERY SELECT * FROM public.get_cash_position_summary_unchecked(p_company_id);
 END;
 $$;
@@ -273,8 +341,8 @@ BEGIN
       FROM pg_policies p
      WHERE p.schemaname = 'public'
        AND p.tablename IN ('workers', 'payroll_entries', 'worker_tax_info', 'payroll_periods', 'payroll_comparison_reviews', 'payroll_calculation_audit',
-                           'payroll_configuration', 'payroll_migration_approvals', 'owner_salary', 'payroll_tax_settings', 'time_entries',
-                           'field_payments', 'field_payment_signatures', 'field_payment_receipts')
+                           'payroll_configuration', 'payroll_migration_approvals', 'owner_salary', 'owner_accounts', 'owner_draws', 'staff_payroll_runs',
+                           'government_remittances', 'payroll_tax_settings', 'time_entries', 'field_payments', 'field_payment_signatures', 'field_payment_receipts')
        AND (p.tablename, p.policyname) NOT IN (
          ('workers', 'workers_select_staff_or_self'), ('workers', 'workers_update_staff'), ('workers', 'Managers can insert company workers'), ('workers', 'workers_delete_policy'),
          ('payroll_entries', 'payroll_entries_select_staff_or_self'), ('payroll_entries', 'payroll_entries_insert_staff'),
@@ -282,6 +350,10 @@ BEGIN
          ('worker_tax_info', 'worker_tax_info_staff'), ('payroll_periods', 'payroll_periods_staff'), ('payroll_comparison_reviews', 'payroll_comparison_reviews_staff'),
          ('payroll_calculation_audit', 'payroll_calculation_audit_staff'), ('payroll_configuration', 'payroll_configuration_staff'),
          ('payroll_migration_approvals', 'payroll_migration_approvals_staff'), ('owner_salary', 'owner_salary_staff'), ('owner_salary', 'Owners can view their own salary'),
+         ('owner_accounts', 'owner_accounts_staff'), ('owner_accounts', 'Owners can view their own accounts'),
+         ('owner_draws', 'owner_draws_staff'), ('owner_draws', 'Owners can view their own draws'),
+         ('staff_payroll_runs', 'staff_payroll_runs_select'), ('staff_payroll_runs', 'staff_payroll_runs_insert'), ('staff_payroll_runs', 'staff_payroll_runs_update'),
+         ('government_remittances', 'government_remittances_select'), ('government_remittances', 'government_remittances_insert'), ('government_remittances', 'government_remittances_update'),
          ('payroll_tax_settings', 'payroll_tax_settings_select'), ('payroll_tax_settings', 'payroll_tax_settings_insert'),
          ('payroll_tax_settings', 'payroll_tax_settings_update'), ('payroll_tax_settings', 'payroll_tax_settings_delete'),
          ('time_entries', 'time_entries_staff'), ('field_payments', 'field_payments_staff'),

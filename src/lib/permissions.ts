@@ -62,6 +62,16 @@ export function canManageStaff(role: string | null | undefined): boolean {
   return !!role && (STAFF_MANAGER_ROLES as readonly string[]).includes(role);
 }
 
+// Payroll ceiling — who can open the Payroll page (staff payroll runs, payslips, government remittances) and see the payroll-due reminders. The secretary runs
+// payroll. Mirrors the data layer: the database's staff_payroll_runs / government_remittances policies and _payroll_staff_company() (migration
+// 20260942000000_restrict_payroll_hr_access.sql) allow exactly these roles. The payroll-engine cut-over tools (comparison review, migration approvals,
+// activation, rollback) are deliberately NOT included: they stay director/admin.
+export const PAYROLL_ROLES: readonly Role[] = ["director", "admin", "secretary"];
+
+export function canAccessPayroll(role: string | null | undefined): boolean {
+  return !!role && (PAYROLL_ROLES as readonly string[]).includes(role);
+}
+
 // Director Dashboard ceiling — deliberately director-only, not
 // director+admin like STAFF_MANAGER_ROLES above. This surfaces company-
 // wide financials (cash position, owner draws, P&L) that admin doesn't

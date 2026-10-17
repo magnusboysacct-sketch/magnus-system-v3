@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
 import { supabase } from "../lib/supabase";
+import { canAccessPayroll } from "../lib/permissions";
 import { PageHeader, Card, CardHeader, Badge, Btn, Empty, cn } from "../components/ui";
 import { FolderOpen, ShoppingCart, Users, DollarSign, ArrowRight, BarChart3, Hammer, CheckCircle2, Clock, Plus, TrendingUp } from "lucide-react";
 
@@ -113,7 +114,7 @@ export default function DashboardPage() {
 
         // accounts dropped — not a real user_profiles.role value (role-vocabulary
         // audit); office_user was explicitly ruled out for Finance-touching views.
-        if (["director", "admin"].includes(userRole || "")) {
+        if (canAccessPayroll(userRole)) {
           const { data: remittances } = await supabase
             .from("government_remittances")
             .select("period_month, period_year, due_date, total_due")

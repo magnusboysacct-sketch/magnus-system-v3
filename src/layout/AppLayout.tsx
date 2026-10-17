@@ -17,7 +17,7 @@ import {
   ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase, PenTool
 } from "lucide-react";
 import { cn, SectionLabel } from "../components/ui";
-import { canAccessSecretaryWorkspace, canApproveSecretaryDocuments } from "../lib/permissions";
+import { canAccessSecretaryWorkspace, canApproveSecretaryDocuments, canAccessPayroll } from "../lib/permissions";
 
 // ─── Nav structure ────────────────────────────────────────────────────────────
 
@@ -294,7 +294,7 @@ export default function AppLayout() {
   const isDirector = userRole === "director";
   const canSeeWorkers = isDirector || userRole === "supervisor" || userRole === "site_user";
   const canSeeFieldPayments = isDirector || userRole === "supervisor" || userRole === "site_user";
-  const canSeePayroll = isDirector || userRole === "admin";
+  const canSeePayroll = canAccessPayroll(userRole);
   const canSeeSecretaryWorkspace = canAccessSecretaryWorkspace(userRole);
   const canApproveSecretaryDocs = canApproveSecretaryDocuments(userRole);
 
