@@ -62,6 +62,13 @@ export function canManageStaff(role: string | null | undefined): boolean {
   return !!role && (STAFF_MANAGER_ROLES as readonly string[]).includes(role);
 }
 
+// Workers page ceiling — the /workers route guard, the sidebar link and the dashboard "Add Worker" shortcut all use this one list.
+export const WORKERS_PAGE_ROLES: readonly Role[] = ["director", "supervisor", "site_user"];
+
+export function canAccessWorkersPage(role: string | null | undefined): boolean {
+  return !!role && (WORKERS_PAGE_ROLES as readonly string[]).includes(role);
+}
+
 // Payroll ceiling — who can open the Payroll page (staff payroll runs, payslips, government remittances) and see the payroll-due reminders. The secretary runs
 // payroll. Mirrors the data layer: the database's staff_payroll_runs / government_remittances policies and _payroll_staff_company() (migration
 // 20260942000000_restrict_payroll_hr_access.sql) allow exactly these roles. The payroll-engine cut-over tools (comparison review, migration approvals,

@@ -3,7 +3,8 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
 import { supabase } from "../lib/supabase";
-import { canAccessPayroll } from "../lib/permissions";
+import { canAccessPayroll, canAccessWorkersPage } from "../lib/permissions";
+import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { PageHeader, Card, CardHeader, Badge, Btn, Empty, cn } from "../components/ui";
 import { FolderOpen, ShoppingCart, Users, DollarSign, ArrowRight, BarChart3, Hammer, CheckCircle2, Clock, Plus, TrendingUp } from "lucide-react";
 
@@ -21,6 +22,7 @@ const REMITTANCE_URGENCY_STYLE: Record<string, { icon: string; label: string; cl
 
 export default function DashboardPage() {
   const { projects, totalProjectsCount, loadingProjects, userRole } = useProjectContext();
+  const { canAccessFullFinance, loading: financeLoading } = useFinanceAccess();
   const [loading, setLoading] = useState(true);
   // active/total intentionally NOT tracked here — they're derived directly
   // from `projects` (context) below, the same source the "Active Projects"
@@ -263,14 +265,15 @@ export default function DashboardPage() {
             <Card className="shadow-sm dark:shadow-none">
               <CardHeader title="Quick Actions"/>
               <div className="space-y-1.5">
+                {/* Only the actions this user can open: the same checks as the route guards (Expenses / Cash Flow: full finance access; Workers: the workers-page roles) */}
                 {[
-                  { label: "New Estimate",   icon: <BarChart3 size={12}/>,   to: "/estimates",   color: "bg-blue-500/10 text-blue-400" },
-                  { label: "Create PO",      icon: <ShoppingCart size={12}/>,to: "/procurement", color: "bg-amber-500/10 text-amber-400" },
-                  { label: "Log Expense",    icon: <DollarSign size={12}/>,  to: "/expenses",    color: "bg-emerald-500/10 text-emerald-400" },
-                  { label: "Takeoff",        icon: <Hammer size={12}/>,      to: "/takeoff",     color: "bg-cyan-500/10 text-cyan-400" },
-                  { label: "Add Worker",     icon: <Users size={12}/>,       to: "/workers",     color: "bg-violet-500/10 text-violet-400" },
-                  { label: "Cash Flow",      icon: <TrendingUp size={12}/>,  to: "/cash-flow",   color: "bg-pink-500/10 text-pink-400" },
-                ].map(a => (
+                  { label: "New Estimate",   icon: <BarChart3 size={12}/>,   to: "/estimates",   color: "bg-blue-500/10 text-blue-400",       show: true },
+                  { label: "Create PO",      icon: <ShoppingCart size={12}/>,to: "/procurement", color: "bg-amber-500/10 text-amber-400",     show: true },
+                  { label: "Log Expense",    icon: <DollarSign size={12}/>,  to: "/expenses",    color: "bg-emerald-500/10 text-emerald-400", show: !financeLoading && canAccessFullFinance },
+                  { label: "Takeoff",        icon: <Hammer size={12}/>,      to: "/takeoff",     color: "bg-cyan-500/10 text-cyan-400",       show: true },
+                  { label: "Add Worker",     icon: <Users size={12}/>,       to: "/workers",     color: "bg-violet-500/10 text-violet-400",   show: canAccessWorkersPage(userRole) },
+                  { label: "Cash Flow",      icon: <TrendingUp size={12}/>,  to: "/cash-flow",   color: "bg-pink-500/10 text-pink-400",       show: !financeLoading && canAccessFullFinance },
+                ].filter(a => a.show).map(a => (
                   <button key={a.to} onClick={() => nav(a.to)} className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors text-left group">
                     <div className={cn("w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0", a.color)}>{a.icon}</div>
                     <span className="text-xs text-slate-600 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-300 transition-colors">{a.label}</span>

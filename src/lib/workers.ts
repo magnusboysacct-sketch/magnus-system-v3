@@ -4,6 +4,12 @@ export type WorkerType = "employee" | "subcontractor" | "crew_lead";
 export type WorkerStatus = "active" | "inactive" | "terminated";
 export type PayType = "hourly" | "salary" | "contract";
 
+// Every workers column except ssn_last_4, bank_account_number and bank_routing_number, which only payroll staff can read (get_worker_payroll_fields).
+// select("*") would now be refused by the database, so worker reads name their columns.
+export const WORKER_SAFE_COLUMNS =
+  "id,company_id,worker_type,first_name,last_name,email,phone,address,city,state,zip,hire_date,termination_date,status,pay_type,pay_rate,overtime_rate,employee_id,notes," +
+  "created_at,updated_at,created_by,id_number,id_photo_url,national_id_type,passport_photo_url,job_title,id_expiry_date";
+
 export interface Worker {
   id: string;
   company_id: string;
@@ -63,12 +69,12 @@ export interface Crew {
 export async function fetchWorkers(companyId: string) {
   const { data, error } = await supabase
     .from("workers")
-    .select("*")
+    .select(WORKER_SAFE_COLUMNS)
     .eq("company_id", companyId)
     .order("last_name", { ascending: true });
 
   if (error) throw error;
-  return data as Worker[];
+  return data as unknown as Worker[];
 }
 
 export async function createWorker(worker: Partial<Worker>) {
@@ -82,11 +88,11 @@ export async function createWorker(worker: Partial<Worker>) {
         created_by: user?.id,
       },
     ])
-    .select()
+    .select(WORKER_SAFE_COLUMNS)
     .single();
 
   if (error) throw error;
-  return data as Worker;
+  return data as unknown as Worker;
 }
 
 export async function updateWorker(id: string, updates: Partial<Worker>) {
@@ -94,11 +100,11 @@ export async function updateWorker(id: string, updates: Partial<Worker>) {
     .from("workers")
     .update(updates)
     .eq("id", id)
-    .select()
+    .select(WORKER_SAFE_COLUMNS)
     .single();
 
   if (error) throw error;
-  return data as Worker;
+  return data as unknown as Worker;
 }
 
 export async function deleteWorker(id: string) {

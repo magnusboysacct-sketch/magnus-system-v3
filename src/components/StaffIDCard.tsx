@@ -12,6 +12,7 @@
 import React, { useEffect, useState } from "react";
 import { User as UserIcon, QrCode } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { fetchStaffHrFields } from "../lib/staffHr";
 import { frontLogoPlateHtml, backLogoHtml } from "../lib/idCardLogo";
 import { showPrintPreview } from "../lib/printPreview";
 import { FrontLogoPlate, BackLogoMark } from "./IdCardLogo";
@@ -277,11 +278,13 @@ export function StaffIDCard({ userId, onClose }: Props) {
       // without-job_title fallback that used to live here is gone.
       const { data: profile, error } = await supabase
         .from("user_profiles")
-        .select("id, full_name, email, role, job_title, trn, avatar_url, employee_number, id_issued_date, id_expiry_date, company_id, created_at")
+        .select("id, full_name, email, role, job_title, avatar_url, company_id, created_at")
         .eq("id", userId)
         .maybeSingle();
       if (error) console.error("StaffIDCard load error:", error);
-      setStaff(profile as StaffProfile | null);
+      // TRN, employee number and card dates come through get_staff_hr_fields (the owner, or payroll staff / director / admin)
+      const hr = profile ? (await fetchStaffHrFields([userId])).get(userId) : undefined;
+      setStaff(profile ? ({ ...profile, trn: hr?.trn ?? null, employee_number: hr?.employee_number ?? null, id_issued_date: hr?.id_issued_date ?? null, id_expiry_date: hr?.id_expiry_date ?? null } as StaffProfile) : null);
 
       if (profile?.company_id) {
         const { data: cs } = await supabase

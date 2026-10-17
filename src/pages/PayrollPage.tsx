@@ -3,6 +3,7 @@
 // (worker_id FK's to workers(id)) — see staff_payroll_runs migration notes.
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { fetchStaffHrFields, withStaffHr } from "../lib/staffHr";
 import { showPrintPreview } from "../lib/printPreview";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field, Empty, Tabs, Alert, cn
@@ -335,11 +336,13 @@ export default function PayrollPage() {
     if (!companyId) return;
     const { data, error } = await supabase
       .from("user_profiles")
-      .select("id, full_name, email, role, trn")
+      .select("id, full_name, email, role")
       .eq("company_id", companyId)
       .order("full_name");
     if (error) { console.error("loadStaffList error:", error); return; }
-    setStaffList((data || []) as StaffMember[]);
+    // the TRN is not readable by colleagues: payroll staff get it through get_staff_hr_fields
+    const rows = data || [];
+    setStaffList(withStaffHr(rows, await fetchStaffHrFields(rows.map((r) => r.id))) as unknown as StaffMember[]);
   }
 
   // Plain rows + a separate user_profiles lookup, not an embedded join —

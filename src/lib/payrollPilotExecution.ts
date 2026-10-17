@@ -3,6 +3,7 @@
 // PHASE 2D-4 PILOT EXECUTION FRAMEWORK ONLY — NOT ACTIVE PAYROLL
 
 import { supabase } from './supabase';
+import { WORKER_SAFE_COLUMNS } from './workers';
 import { jamaicanPayrollCalculator } from './jamaicanPayroll';
 import { payrollValidator } from './payrollValidation';
 import { payrollMonitor } from './payrollMonitoring';
@@ -550,7 +551,7 @@ export async function executeWorkerShadowPayroll(
     // Get worker data for Jamaican calculation
     const { data: workerData, error: workerError } = await supabase
       .from('workers')
-      .select('*')
+      .select(WORKER_SAFE_COLUMNS)
       .eq('id', workerId)
       .single();
 

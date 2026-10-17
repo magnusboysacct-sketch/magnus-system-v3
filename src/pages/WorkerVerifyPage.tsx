@@ -39,6 +39,9 @@ const STATUS_THEME: Record<string, { band: string; bandSoft: string; label: stri
   terminated: { band: "#7A1F2B", bandSoft: "#931F2D", label: "NOT AUTHORIZED",     sub: "Employment has ended",        Icon: ShieldX },
 };
 
+// An expired ID turns the whole band red, whatever the worker's status
+const EXPIRED_THEME = { band: "#7A1F2B", bandSoft: "#931F2D", label: "ID EXPIRED", sub: "This ID card has expired", Icon: ShieldX };
+
 const NOT_FOUND_THEME = { band: "#7A1F2B", bandSoft: "#931F2D", label: "NOT A VALID ID", sub: "This card could not be verified", Icon: ShieldX };
 
 export default function WorkerVerifyPage() {
@@ -71,7 +74,7 @@ export default function WorkerVerifyPage() {
     );
   }
 
-  const theme = notFound || !worker ? NOT_FOUND_THEME : STATUS_THEME[worker.status] || STATUS_THEME.inactive;
+  const theme = notFound || !worker ? NOT_FOUND_THEME : worker.expired ? EXPIRED_THEME : STATUS_THEME[worker.status] || STATUS_THEME.inactive;
   const Icon = theme.Icon;
   const photoUrl = photoFailed ? "" : (worker?.photo_url || "");
   const initials = worker ? ((worker.first_name || "").trim().charAt(0) + (worker.last_name || "").trim().charAt(0)).toUpperCase() : "";

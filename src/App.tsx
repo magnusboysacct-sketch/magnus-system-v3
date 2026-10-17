@@ -19,7 +19,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProjectProvider, useProjectContext } from "./context/ProjectContext";
 import { useFinanceAccess } from "./hooks/useFinanceAccess";
 import { supabase } from "./lib/supabase";
-import { canAccessDirectorDashboard, PAYROLL_ROLES } from "./lib/permissions";
+import { canAccessDirectorDashboard, PAYROLL_ROLES, WORKERS_PAGE_ROLES } from "./lib/permissions";
 
 // --- Pages -------------------------------------------------------------------
 import LoginPage              from "./pages/LoginPage";
@@ -303,7 +303,7 @@ export default function App() {
               <Route path="/payroll"                 element={<RoleGuard allowedRoles={[...PAYROLL_ROLES]}><PayrollPage /></RoleGuard>} />
 
               {/* People */}
-              <Route path="/workers"                 element={<RoleGuard allowedRoles={["director","supervisor","site_user"]}><WorkersPage /></RoleGuard>} />
+              <Route path="/workers"                 element={<RoleGuard allowedRoles={[...WORKERS_PAGE_ROLES]}><WorkersPage /></RoleGuard>} />
               <Route path="/suppliers"               element={<RoleGuard allowedRoles={["director","supervisor","site_user"]}><SuppliersPage /></RoleGuard>} />
               <Route path="/staff-portal"            element={<RoleGuard allowedRoles={["director","admin"]}><StaffPortalManagerPage /></RoleGuard>} />
 

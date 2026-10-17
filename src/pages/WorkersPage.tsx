@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { useProjectContext } from "../context/ProjectContext";
 import { canManageWorkers } from "../lib/permissions";
+import { WORKER_SAFE_COLUMNS } from "../lib/workers";
 import EditableDropdown from "../components/common/EditableDropdown";
 import { WorkerIDCard } from "../components/WorkerIDCard";
 import { SimpleIDScanner } from "../components/SimpleIDScanner";
@@ -502,13 +503,13 @@ export default function WorkersPage() {
       let from = 0;
       for (let guard = 0; guard < 200; guard++) { // hard safety stop (200,000 rows) against a runaway loop, not a realistic ceiling
         const { data: page, error: e } = await supabase
-          .from("workers").select("*").eq("company_id", companyId!).order("first_name", { ascending: true }).range(from, from + PAGE - 1);
+          .from("workers").select(WORKER_SAFE_COLUMNS).eq("company_id", companyId!).order("first_name", { ascending: true }).range(from, from + PAGE - 1);
         if (e) throw e;
         all = all.concat(page || []);
         if (!page || page.length < PAGE) break;
         from += PAGE;
       }
-      const { count } = await supabase.from("workers").select("*", { count: "exact", head: true }).eq("company_id", companyId!);
+      const { count } = await supabase.from("workers").select("id", { count: "exact", head: true }).eq("company_id", companyId!);
       setWorkers(all);
       setTotalCount(count ?? null);
       console.log("FELICA PASSPORT:", all.find((w:any)=>w.first_name==="FELICA")?.passport_photo_url);

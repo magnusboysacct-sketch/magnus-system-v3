@@ -8,6 +8,8 @@ import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Brief
 import { StaffIDCard } from "../components/StaffIDCard";
 import { WorkerIDCard } from "../components/WorkerIDCard";
 import { canManageStaff } from "../lib/permissions";
+import { WORKER_SAFE_COLUMNS } from "../lib/workers";
+import { fetchStaffHrFields, withStaffHr } from "../lib/staffHr";
 import EditableDropdown from "../components/common/EditableDropdown";
 import PhotoCropModal from "../components/PhotoCropModal";
 
@@ -82,7 +84,7 @@ export default function SettingsRecordsPage() {
     if(!companyId) return;
     setLoadingWorkers(true);
     Promise.all([
-      supabase.from("workers").select("*").eq("company_id",companyId).order("last_name"),
+      supabase.from("workers").select(WORKER_SAFE_COLUMNS).eq("company_id",companyId).order("last_name"),
       supabase.from("field_payments").select("*").eq("company_id",companyId).order("created_at",{ascending:false}),
     ]).then(([{data:w},{data:fp}])=>{
       setCompanyWorkers(w||[]);
@@ -119,7 +121,7 @@ export default function SettingsRecordsPage() {
     // that's the actual fix for the original bug (a failed query silently
     // becoming "no staff" instead of showing what went wrong).
     const { data, error } = await supabase.from("user_profiles")
-      .select("id, full_name, email, role, job_title, avatar_url, employee_number, trn, id_issued_date, id_expiry_date")
+      .select("id, full_name, email, role, job_title, avatar_url")
       .eq("company_id",companyId).order("full_name");
     if (error) {
       console.error("loadStaff error:", error);
@@ -127,7 +129,9 @@ export default function SettingsRecordsPage() {
       setStaffProfiles([]);
       return;
     }
-    setStaffProfiles(data||[]);
+    // TRN, employee number and ID card dates are not readable by colleagues: fetched through get_staff_hr_fields (director / admin / secretary see them all)
+    const rows = data || [];
+    setStaffProfiles(withStaffHr(rows, await fetchStaffHrFields(rows.map((r) => r.id))));
   }
 
   // Distinct job titles already in use, across both field workers and staff,
@@ -161,11 +165,8 @@ export default function SettingsRecordsPage() {
 
   async function generateEmployeeNumber(): Promise<string> {
     const prefix = deriveIdPrefix(company?.company_name || "");
-    const { data } = await supabase
-      .from("user_profiles")
-      .select("employee_number")
-      .eq("company_id", companyId)
-      .not("employee_number", "is", null);
+    const hr = await fetchStaffHrFields();
+    const data = Array.from(hr.values()).filter(r => r.employee_number);
     let maxNum = 0;
     const re = new RegExp(`^${prefix}-(\\d+)$`, "i");
     (data || []).forEach((row: any) => {
