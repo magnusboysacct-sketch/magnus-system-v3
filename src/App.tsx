@@ -10,6 +10,7 @@ import ProjectIssuesPage from './pages/ProjectIssuesPage';
 import ProjectLogsPage from './pages/ProjectLogsPage';
 import ProjectPhotosPage from './pages/ProjectPhotosPage';
 import SharedPhotosPage from './pages/SharedPhotosPage';
+import PublicReceiptPage from './pages/PublicReceiptPage';
 import MySignaturePage from './pages/MySignaturePage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import AppLayout from "./layout/AppLayout";
@@ -346,6 +347,8 @@ export default function App() {
             <Route path="/portal/contact/:contactToken" element={<ClientPortalPage />} />
             {/* Public, no login: a photo share link (checked server-side by the photo-share-resolve function) */}
             <Route path="/shared/:token" element={<SharedPhotosPage />} />
+            {/* Public, no login: a payment receipt link (checked by the get_public_receipt database function) */}
+            <Route path="/receipt/:token" element={<PublicReceiptPage />} />
             <Route path="/client-login" element={<ClientLoginPage />} />
             <Route path="/client-reset-password" element={<ClientResetPasswordPage />} />
             {/* Session-based login (ClientLoginPage.tsx's email+password flow)

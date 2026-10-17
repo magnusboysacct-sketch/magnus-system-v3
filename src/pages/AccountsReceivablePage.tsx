@@ -26,6 +26,7 @@ import { printInvoiceFresh } from "../components/InvoiceDocument";
 import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
 import { SeenBadge, SeenDetail } from "../components/PortalSeen";
 import { useItemViews } from "../lib/useItemViews";
+import { copyToClipboard, createReceiptLink, errorMessage, findReceiptLink, openEmail, openWhatsApp, receiptUrl, revokeReceiptLink, withReceiptLink } from "../lib/receiptLinks";
 
 const fmtAdvance = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD", minimumFractionDigits: 2 }).format(n);
 
@@ -56,7 +57,8 @@ export default function AccountsReceivablePage() {
   const [companySettings, setCompanySettings] = useState<any>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [showThankYouModal, setShowThankYouModal] = useState(false);
-  const [thankYouData, setThankYouData] = useState<{client: any; amount: number; invoiceNumber: string} | null>(null);
+  const [thankYouData, setThankYouData] = useState<{client: any; amount: number; invoiceNumber: string; paymentId?: string} | null>(null);
+  const [receiptLinkNote, setReceiptLinkNote] = useState("");
   const [reminderForm, setReminderForm] = useState({ reminder_enabled: true, reminder_days_before: 3, reminder_repeat_days: 7 });
   const [savingReminder, setSavingReminder] = useState(false);
   const [reminderSent, setReminderSent] = useState(false);
@@ -454,7 +456,7 @@ export default function AccountsReceivablePage() {
     try {
       if (!selectedInvoice || !companyId) return;
 
-      await createClientPayment({
+      const newPayment = await createClientPayment({
         company_id: companyId,
         client_id: selectedInvoice.client_id,
         invoice_id: selectedInvoice.id,
@@ -472,7 +474,8 @@ export default function AccountsReceivablePage() {
       if (notificationsEnabled) {
         const client = clients.find(c => c.id === selectedInvoice.client_id);
         if (client && (client.email || client.phone)) {
-          setThankYouData({ client, amount: parseFloat(paymentData.amount), invoiceNumber: selectedInvoice.invoice_number });
+          setReceiptLinkNote("");
+          setThankYouData({ client, amount: parseFloat(paymentData.amount), invoiceNumber: selectedInvoice.invoice_number, paymentId: newPayment?.id });
           setShowThankYouModal(true);
         }
       }
@@ -486,6 +489,24 @@ export default function AccountsReceivablePage() {
       console.error("Error recording payment:", error);
       alert("Failed to record payment");
     }
+  }
+
+  // Receipt links for client payments: made only when someone presses WhatsApp / Copy receipt link / Email (create_receipt_link reuses the active link).
+  function receiptLinkFailed(e: unknown) { setReceiptLinkNote(""); alert("Could not create the receipt link: " + errorMessage(e)); }
+  async function copyClientReceiptLink(paymentId: string) {
+    try {
+      const url = receiptUrl(await createReceiptLink("client_payment", paymentId));
+      setReceiptLinkNote(await copyToClipboard(url) ? "Receipt link copied." : url);
+    } catch (e) { receiptLinkFailed(e); }
+  }
+  async function revokeClientReceiptLink(paymentId: string) {
+    try {
+      const token = await findReceiptLink("client_payment", paymentId);
+      if (!token) { setReceiptLinkNote("There is no active receipt link for this payment."); return; }
+      if (!window.confirm("Revoke the receipt link? Anyone who has it will no longer be able to open the receipt.")) return;
+      await revokeReceiptLink(token);
+      setReceiptLinkNote("Receipt link revoked.");
+    } catch (e) { alert("Could not revoke the receipt link: " + errorMessage(e)); }
   }
 
   async function deleteInvoice(invoice: ClientInvoice) {
@@ -1230,6 +1251,14 @@ export default function AccountsReceivablePage() {
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <div className="font-medium text-green-600 dark:text-green-400">${Number(payment.amount).toFixed(2)}</div>
+                        <button onClick={() => copyClientReceiptLink(payment.id!)} title="Copy a link to this payment's receipt"
+                          className="px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                          Copy receipt link
+                        </button>
+                        <button onClick={() => revokeClientReceiptLink(payment.id!)} title="Stop this payment's receipt link from working"
+                          className="px-2 py-1 rounded-lg text-[11px] font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors">
+                          Revoke link
+                        </button>
                         {userRole === "director" && (
                           <button onClick={() => deletePayment(payment.id!, selectedInvoice.id)}
                             className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors">
@@ -1243,6 +1272,7 @@ export default function AccountsReceivablePage() {
               ) : (
                 <div className="text-sm text-slate-500 dark:text-slate-400">No payments recorded</div>
               )}
+              {receiptLinkNote && showDetailModal && <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 break-all">{receiptLinkNote}</div>}
             </div>
 
             <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
@@ -1609,8 +1639,9 @@ ${companyDisplayName(companySettings?.company_name)}`}
                 <button
                   onClick={() => {
                     const msg = `Hi ${thankYouData.client.contact_name||thankYouData.client.name},\n\nThank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(thankYouData.amount)} for Invoice #${thankYouData.invoiceNumber}.\n\nWe appreciate your business.\n\n${companyDisplayName(companySettings?.company_name)}`;
-                    const phone = thankYouData.client.phone.replace(/\D/g,"");
-                    window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`, "_blank");
+                    const paymentId = thankYouData.paymentId;
+                    if (!paymentId) { openWhatsApp(thankYouData.client.phone, async () => msg).catch(receiptLinkFailed); return; }
+                    openWhatsApp(thankYouData.client.phone, async () => withReceiptLink(msg, await createReceiptLink("client_payment", paymentId))).catch(receiptLinkFailed);
                   }}
                   className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-sm font-semibold transition"
                 >
@@ -1620,9 +1651,10 @@ ${companyDisplayName(companySettings?.company_name)}`}
               {thankYouData.client.email && (
                 <button
                   onClick={() => {
-                    const subject = encodeURIComponent(`Payment Received - Invoice #${thankYouData.invoiceNumber}`);
-                    const body = encodeURIComponent(`Hi ${thankYouData.client.contact_name||thankYouData.client.name},\n\nThank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(thankYouData.amount)} for Invoice #${thankYouData.invoiceNumber}.\n\nWe appreciate your business.\n\n${companyDisplayName(companySettings?.company_name)}`);
-                    window.open(`mailto:${thankYouData.client.email}?subject=${subject}&body=${body}`, "_blank");
+                    const subject = `Payment Received - Invoice #${thankYouData.invoiceNumber}`;
+                    const body = (`Hi ${thankYouData.client.contact_name||thankYouData.client.name},\n\nThank you! We've received your payment of ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(thankYouData.amount)} for Invoice #${thankYouData.invoiceNumber}.\n\nWe appreciate your business.\n\n${companyDisplayName(companySettings?.company_name)}`);
+                    const paymentId = thankYouData.paymentId;
+                    openEmail(subject, async () => paymentId ? withReceiptLink(body, await createReceiptLink("client_payment", paymentId)) : body, thankYouData.client.email).catch(receiptLinkFailed);
                   }}
                   className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-blue-300 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/20 text-blue-700 dark:text-blue-400 text-sm font-semibold transition"
                 >
@@ -1630,6 +1662,15 @@ ${companyDisplayName(companySettings?.company_name)}`}
                 </button>
               )}
             </div>
+            {thankYouData.paymentId && (
+              <button
+                onClick={() => copyClientReceiptLink(thankYouData.paymentId!)}
+                className="w-full mt-2 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-sm font-semibold transition"
+              >
+                🔗 Copy receipt link
+              </button>
+            )}
+            {receiptLinkNote && <div className="mt-2 text-[11px] text-center text-slate-500 dark:text-slate-400 break-all">{receiptLinkNote}</div>}
             <button
               onClick={() => { setShowThankYouModal(false); setThankYouData(null); }}
               className="w-full mt-3 py-2 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"

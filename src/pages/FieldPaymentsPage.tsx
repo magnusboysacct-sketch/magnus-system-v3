@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import { FieldPaymentForm, generateReceiptHTML } from "../components/FieldPaymentForm";
 import { buildPrintDocument } from "../lib/printUtils";
+import { copyToClipboard, createReceiptLink, errorMessage, findReceiptLink, getPreviousAdvances, openEmail, openWhatsApp, receiptUrl, revokeReceiptLink, withReceiptLink } from "../lib/receiptLinks";
 import { showPrintPreview } from "../lib/printPreview";
 import html2canvas from "html2canvas";
 import {
@@ -77,6 +78,7 @@ export default function FieldPaymentsPage() {
   const [logoBase64, setLogoBase64] = useState<string|null>(null);
   const [sharingReceiptId, setSharingReceiptId] = useState<string|null>(null);
   const [printingReceiptId, setPrintingReceiptId] = useState<string|null>(null);
+  const [linkNote, setLinkNote] = useState("");
   const [watermark, setWatermark] = useState<{url:string;opacity:number;size?:number}|null>(null);
   const [workerHistory, setWorkerHistory] = useState<Payment[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -112,6 +114,7 @@ export default function FieldPaymentsPage() {
   },[]);
 
   useEffect(()=>{ if(companyId) loadPayments(); },[companyId]);
+  useEffect(()=>{ setLinkNote(""); },[selected?.id]);
 
   async function loadPayments() {
     setLoading(true);
@@ -178,6 +181,11 @@ export default function FieldPaymentsPage() {
     }
   }
 
+  // "Previous advances" on a final payment: the one shared calculation (database function), the same figure the public receipt link shows.
+  async function previousAdvancesFor(p: Payment): Promise<number> {
+    return p.payment_type === "final" ? getPreviousAdvances(p.id) : 0;
+  }
+
   // Builds the receipt's print document from stored payment data (the logo is fetched here). The document itself is unchanged.
   async function buildReceiptPrintHtml(p: Payment): Promise<string> {
     let logo = logoBase64;
@@ -198,7 +206,7 @@ export default function FieldPaymentsPage() {
       payment_method: p.payment_method,
       total_amount: p.total_amount,
       payment_type: p.payment_type||"payment",
-      previous_advances: 0,
+      previous_advances: await previousAdvancesFor(p),
       notes: p.notes,
       signature_data: p.signature_url,
       supervisor_name: p.supervisor_name,
@@ -247,7 +255,7 @@ export default function FieldPaymentsPage() {
         payment_method: p.payment_method,
         total_amount: p.total_amount,
         payment_type: p.payment_type || "payment",
-        previous_advances: 0,
+        previous_advances: await previousAdvancesFor(p),
         notes: p.notes,
         signature_data: p.signature_url,
         supervisor_name: p.supervisor_name,
@@ -305,13 +313,30 @@ export default function FieldPaymentsPage() {
 
   function sendWhatsApp(p: Payment) {
     const msg=`*${companyDisplayName(company?.company_name)}*\n*${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT":"PAYMENT RECEIPT"}*\n\nReceipt #: ${p.receipt_number||""}\nWorker: ${p.worker_name}\nID: ${p.worker_id_number||"—"}\nDate: ${fmtDate(p.work_date)}\nPayment: ${p.payment_method}\n\n*AMOUNT: ${fmtJMD(p.total_amount)}*\n\nPaid by: ${p.supervisor_name||""} · ${fmtDate(p.created_at)}`;
-    const phone=p.worker_phone?.replace(/\D/g,"");
-    window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`,"_blank");
+    openWhatsApp(p.worker_phone,async()=>withReceiptLink(msg,await createReceiptLink("field_payment",p.id))).catch(linkFailed);
+  }
+
+  // Links are made only when someone presses WhatsApp / Copy receipt link / Email (create_receipt_link reuses the payment's active link).
+  function linkFailed(e: unknown) { setLinkNote(""); alert("Could not create the receipt link: " + errorMessage(e)); }
+  async function copyReceiptLink(p: Payment) {
+    try {
+      const url = receiptUrl(await createReceiptLink("field_payment", p.id));
+      setLinkNote(await copyToClipboard(url) ? "Receipt link copied." : url);
+    } catch (e) { linkFailed(e); }
+  }
+  async function revokeLink(p: Payment) {
+    try {
+      const token = await findReceiptLink("field_payment", p.id);
+      if (!token) { setLinkNote("There is no active receipt link for this payment."); return; }
+      if (!confirm("Revoke the receipt link? Anyone who has it will no longer be able to open the receipt.")) return;
+      await revokeReceiptLink(token);
+      setLinkNote("Receipt link revoked.");
+    } catch (e) { alert("Could not revoke the receipt link: " + errorMessage(e)); }
   }
 
   function sendEmail(p: Payment) {
-    const subject=encodeURIComponent(`Payment Receipt - ${p.worker_name} - ${p.receipt_number}`);
-    const body=encodeURIComponent(
+    const subject=`Payment Receipt - ${p.worker_name} - ${p.receipt_number}`;
+    const body=(
       `${companyDisplayName(company?.company_name)}\n\n`+
       `${p.payment_type==="advance"?"ADVANCE PAYMENT":p.payment_type==="final"?"FINAL PAYMENT — PAID IN FULL":"PAYMENT RECEIPT"}\n`+
       `Receipt #: ${p.receipt_number}\nDate: ${fmtDate(p.work_date)}\n\n`+
@@ -319,7 +344,7 @@ export default function FieldPaymentsPage() {
       `Work: ${p.work_type||""}\nPayment: ${p.payment_method}\n\n`+
       `AMOUNT: ${fmtJMD(p.total_amount)}\n\nPaid by: ${p.supervisor_name||""}`
     );
-    window.open(`mailto:?subject=${subject}&body=${body}`,"_blank");
+    openEmail(subject,async()=>withReceiptLink(body,await createReceiptLink("field_payment",p.id))).catch(linkFailed);
   }
 
   // Start new payment for same worker
@@ -629,6 +654,18 @@ export default function FieldPaymentsPage() {
                     <Mail size={14}/> Email
                   </button>
                 </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={()=>copyReceiptLink(selected)}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.1] bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-700 dark:text-slate-300 transition text-sm font-semibold">
+                    🔗 Copy receipt link
+                  </button>
+                  <button onClick={()=>revokeLink(selected)}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition text-sm font-semibold">
+                    Revoke link
+                  </button>
+                </div>
+                {linkNote&&<div className="text-[11px] text-slate-600 dark:text-slate-400 text-center break-all">{linkNote}</div>}
 
                 <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-2 mt-3">Continue with this Worker</div>
 

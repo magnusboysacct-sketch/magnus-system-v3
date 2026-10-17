@@ -4,7 +4,7 @@
 // TypeScript with no framework imports so it runs unchanged on Vercel's edge runtime and under the unit tests (scripts/tests/).
 // (Files under api/ whose name starts with "_" are not deployed as routes.)
 
-export type ShareKind = "portal" | "contact" | "photos";
+export type ShareKind = "portal" | "contact" | "photos" | "receipt";
 
 export interface SharePreview {
   company_name: string;
@@ -28,10 +28,10 @@ export function isPreviewBot(userAgent: string | null | undefined): boolean {
 // ── Share URL patterns ──────────────────────────────────────────────────────────────────────────────────────────────────
 const TOKEN_RE = /^[A-Za-z0-9_-]{8,128}$/;
 export const isValidToken = (t: unknown): t is string => typeof t === "string" && TOKEN_RE.test(t);
-export const isShareKind = (k: unknown): k is ShareKind => k === "portal" || k === "contact" || k === "photos";
+export const isShareKind = (k: unknown): k is ShareKind => k === "portal" || k === "contact" || k === "photos" || k === "receipt";
 
 export function sharePath(kind: ShareKind, token: string): string {
-  return kind === "contact" ? `/portal/contact/${token}` : kind === "photos" ? `/shared/${token}` : `/portal/${token}`;
+  return kind === "contact" ? `/portal/contact/${token}` : kind === "photos" ? `/shared/${token}` : kind === "receipt" ? `/receipt/${token}` : `/portal/${token}`;
 }
 
 // The same three patterns the app's routes (and vercel.json) use. Anything else is not a share link.
@@ -42,6 +42,8 @@ export function parseSharePath(pathname: string): { kind: ShareKind; token: stri
   if (m && m[1] !== "contact" && isValidToken(m[1])) return { kind: "portal", token: m[1] };
   m = /^\/shared\/([^/]+)\/?$/.exec(pathname);
   if (m && isValidToken(m[1])) return { kind: "photos", token: m[1] };
+  m = /^\/receipt\/([^/]+)\/?$/.exec(pathname);
+  if (m && isValidToken(m[1])) return { kind: "receipt", token: m[1] };
   return null;
 }
 
@@ -55,14 +57,16 @@ export function stripControl(v: unknown, max: number): string {
 const clean = stripControl;
 
 export function genericTitle(kind: ShareKind, company: string): string {
-  return kind === "photos" ? `Project photos – ${company}` : `Project portal – ${company}`;
+  return kind === "photos" ? `Project photos – ${company}` : kind === "receipt" ? `Payment receipt – ${company}` : `Project portal – ${company}`;
 }
 export function genericDescription(kind: ShareKind): string {
   return kind === "photos"
     ? "View the shared project photos. No login needed."
     : kind === "contact"
       ? "Open this link to set up your project portal access."
-      : "Sign in to view your project updates and documents.";
+      : kind === "receipt"
+        ? "Open to view and save your receipt."
+        : "Sign in to view your project updates and documents.";
 }
 
 // Takes whatever get_share_preview returned and keeps ONLY the four public fields (anything else — however it got there — is dropped).

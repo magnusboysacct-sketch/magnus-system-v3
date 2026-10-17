@@ -67,9 +67,9 @@ test("vercel.json: the bot rewrites match exactly the same user agents, go befor
   const rw = cfg.rewrites as Array<{ source: string; destination: string; has?: Array<{ type: string; key: string; value: string }> }>;
   const bot = rw.filter((r) => r.has);
   assert.deepEqual(bot.map((r) => r.destination), [
-    "/api/share-preview?kind=contact&token=:token", "/api/share-preview?kind=portal&token=:token", "/api/share-preview?kind=photos&token=:token",
+    "/api/share-preview?kind=contact&token=:token", "/api/share-preview?kind=portal&token=:token", "/api/share-preview?kind=photos&token=:token", "/api/share-preview?kind=receipt&token=:token",
   ]);
-  assert.deepEqual(bot.map((r) => r.source), ["/portal/contact/:token", "/portal/:token", "/shared/:token"]);
+  assert.deepEqual(bot.map((r) => r.source), ["/portal/contact/:token", "/portal/:token", "/shared/:token", "/receipt/:token"]);
   for (const r of bot) {
     assert.equal(r.has!.length, 1); assert.equal(r.has![0].type, "header"); assert.equal(r.has![0].key, "user-agent");
     const re = new RegExp(r.has![0].value);
@@ -571,4 +571,57 @@ test("square-crop card: a name-only card (no logo) stays inside the square, incl
     assert.equal(k.outside, 0, name);
     assert.ok(k.minX >= CARD.square.x + CARD.square.pad - 2 && k.maxX <= CARD.square.x + CARD.square.size - CARD.square.pad + 2, name + ": " + k.minX + ".." + k.maxX);
   }
+});
+// ── receipt links: kind "receipt" ────────────────────────────────────────────────────────────────────────────────────────────
+const RECEIPT_TOKEN = "ab".repeat(32);   // 64 hex characters, like a real receipt link token
+
+test("receipt links: /receipt/<token> is a share URL (64-hex token), and only that shape", () => {
+  assert.deepEqual(parseSharePath("/receipt/" + RECEIPT_TOKEN), { kind: "receipt", token: RECEIPT_TOKEN });
+  assert.deepEqual(parseSharePath("/receipt/" + RECEIPT_TOKEN + "/"), { kind: "receipt", token: RECEIPT_TOKEN });
+  for (const bad of ["/receipt/", "/receipt/short", "/receipt/" + RECEIPT_TOKEN + "/extra", "/receipts/" + RECEIPT_TOKEN]) assert.equal(parseSharePath(bad), null, bad);
+  assert.equal(sharePath("receipt", RECEIPT_TOKEN), "/receipt/" + RECEIPT_TOKEN);
+});
+
+test("receipt links: preview title and description are generic ('Payment receipt – <company>'), with no amount or name", () => {
+  const p = normalizePreview({ company_name: "Veron Williams", logo_url: GOOD_LOGO, amount: 50000, party_name: "Jane Doe" }, "receipt")!;
+  assert.equal(p.title, "Payment receipt – Veron Williams");
+  assert.equal(p.description, "Open to view and save your receipt.");
+  assert.equal(JSON.stringify(p).includes("50000") || JSON.stringify(p).includes("Jane"), false);
+  const url = new URL(buildCardUrl("https://app.magnusboys.com", "receipt", RECEIPT_TOKEN, "Veron Williams", GOOD_LOGO));
+  assert.equal(url.pathname, "/api/share-card/receipt/" + RECEIPT_TOKEN + "/" + cardVersion("Veron Williams", GOOD_LOGO) + ".png");
+});
+
+test("receipt links: the preview page for a bot names the company; revoked/unknown gets the normal app, identically", async () => {
+  process.env.SUPABASE_URL = SUPABASE; process.env.SUPABASE_ANON_KEY = "anon-key";
+  const f = withFetch(({ p_kind }) => (p_kind === "receipt" ? { company_name: "Veron Williams", logo_url: GOOD_LOGO, title: "Payment receipt – Veron Williams", description: "Open to view and save your receipt." } : null));
+  try {
+    const ok = await (await call("/api/share-preview?kind=receipt&token=" + RECEIPT_TOKEN, WA)).text();
+    assert.match(ok, /og:title" content="Payment receipt – Veron Williams"/);
+    assert.match(ok, /og:description" content="Open to view and save your receipt\."/);
+    assert.match(ok, new RegExp("og:url\" content=\"https://app\\.magnusboys\\.com/receipt/" + RECEIPT_TOKEN + "\""));
+    assert.match(ok, new RegExp("share-card/receipt/" + RECEIPT_TOKEN + "/[0-9a-z]+\\.png"));
+    assert.deepEqual(f.seen[0].body, { p_kind: "receipt", p_token: RECEIPT_TOKEN });
+    f.restore();
+    const g = withFetch(() => null);   // revoked: the database function returns null
+    try {
+      const a = await call("/api/share-preview?kind=receipt&token=" + RECEIPT_TOKEN, WA);
+      const b = await call("/api/share-preview?kind=receipt&token=short", WA);
+      assert.equal(await a.text(), APP_HTML); assert.equal(await b.text(), APP_HTML);
+      assert.equal(a.status, b.status); assert.equal(a.headers.get("cache-control"), b.headers.get("cache-control"));
+    } finally { g.restore(); }
+  } finally { f.restore(); }
+});
+
+test("receipt links: the card endpoint serves a receipt token through the same database lookup (and the platform card when it is unknown)", async () => {
+  process.env.SUPABASE_URL = SUPABASE; process.env.SUPABASE_ANON_KEY = "anon-key";
+  const f = withCardFetch(({ p_kind }) => (p_kind === "receipt" ? { company_name: "Veron Williams", logo_url: GOOD_LOGO } : null));
+  try {
+    const v = cardVersion("Veron Williams", GOOD_LOGO);
+    const ok = await cardCall("k=receipt&t=" + RECEIPT_TOKEN + "&v=" + v);
+    assert.equal(ok.res.headers.get("cache-control"), LONG_CC);
+    assert.equal(same(ok.bytes, MAGNUS_PNG), false);
+    assert.deepEqual(f.rpcCalls, [{ p_kind: "receipt", p_token: RECEIPT_TOKEN }]);
+  } finally { f.restore(); }
+  const g = withCardFetch(() => null);
+  try { assert.ok(same((await cardCall("k=receipt&t=" + RECEIPT_TOKEN)).bytes, MAGNUS_PNG)); } finally { g.restore(); }
 });

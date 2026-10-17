@@ -4,6 +4,8 @@
 import React, { useRef, useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { showPrintPreview } from "../lib/printPreview";
+import { generateReceiptHTML } from "../lib/receiptHtml";
+import { copyToClipboard, createReceiptLink, errorMessage, findReceiptLink, getPreviousAdvances, openEmail, openWhatsApp, receiptUrl, revokeReceiptLink, withReceiptLink } from "../lib/receiptLinks";
 import { useProjectContext } from "../context/ProjectContext";
 import { SimpleIDScanner } from "./SimpleIDScanner";
 import html2canvas from "html2canvas";
@@ -121,79 +123,10 @@ function StepBar({step, paymentType}:{step:Step; paymentType:PaymentType}) {
   );
 }
 
-// ── Receipt Generator ─────────────────────────────────────────────────────────
-// Generates receipt HTML from payment data — no image stored
-export function generateReceiptHTML(payment: any, company: any, logoBase64?: string|null, watermark?: {url:string;opacity:number}|null) {
-  const totalAdvances = payment.previous_advances||0;
-  const earned = Number(payment.total_amount||0);
-  const balance = earned - totalAdvances;
-  
-  return `
-  <div style="background:#fff;padding:32px;font-family:Georgia,serif;color:#1a1a1a;max-width:600px;margin:0 auto">
-    <div style="text-align:center;border-bottom:3px solid #1a1a1a;padding-bottom:20px;margin-bottom:20px">
-      ${logoBase64?`<img src="${logoBase64}" style="display:block;width:auto;height:auto;max-height:90px;max-width:260px;object-fit:contain;margin:0 auto 10px"/>`:""}
-      <div style="font-size:18px;font-weight:900;letter-spacing:2px;text-transform:uppercase">${company?.company_name||""}</div>
-      ${company?.address_line1?`<div style="font-size:11px;color:#666;margin-top:3px">${company.address_line1}${company?.parish?`, ${company.parish}`:""}${company?.country?`, ${company.country}`:""}</div>`:""}
-      <div style="font-size:11px;color:#666">${company?.phone?`Tel: ${company.phone}`:""}${company?.phone&&company?.email?" · ":""}${company?.email||""}</div>
-      <div style="margin-top:12px">
-        <div style="font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:${payment.payment_type==="advance"?"#d97706":payment.payment_type==="final"?"#16a34a":"#0891b2"}">
-          ${payment.payment_type==="advance"?"⚡ ADVANCE PAYMENT":payment.payment_type==="final"?"✅ FINAL PAYMENT — PAID IN FULL":"💰 PAYMENT RECEIPT"}
-        </div>
-        <div style="font-size:20px;font-weight:900;text-transform:uppercase;letter-spacing:3px;margin-top:4px">Payment Receipt</div>
-        <div style="font-size:11px;color:#666;margin-top:3px">Receipt #${payment.receipt_number} · ${new Date(payment.created_at||Date.now()).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
-      </div>
-    </div>
-    
-    ${payment.project_name||payment.milestone_name||payment.task_name?`
-    <div style="background:#f0f9ff;border-left:4px solid #0891b2;border-radius:8px;padding:12px 16px;margin-bottom:16px">
-      ${payment.project_name?`<div style="font-size:12px;margin-bottom:3px"><span style="color:#666;width:80px;display:inline-block">Project:</span><strong>${payment.project_name}</strong></div>`:""}
-      ${payment.milestone_name?`<div style="font-size:12px;margin-bottom:3px"><span style="color:#666;width:80px;display:inline-block">Milestone:</span><strong>${payment.milestone_name}</strong></div>`:""}
-      ${payment.task_name?`<div style="font-size:12px"><span style="color:#666;width:80px;display:inline-block">Task:</span><strong>${payment.task_name}</strong></div>`:""}
-    </div>`:""}
+// The receipt document now lives in lib/receiptHtml.ts (shared with the public receipt page); re-exported for existing imports.
+export { generateReceiptHTML };
 
-    <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
-      <tbody>
-        <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px;width:140px">Worker</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right">${payment.worker_name}</td></tr>
-        ${payment.worker_id_number?`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">ID Number</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right">${payment.worker_id_number}</td></tr>`:""}
-        ${payment.worker_phone?`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Phone</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right">${payment.worker_phone}</td></tr>`:""}
-        ${payment.trade_type?`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Trade</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right">${payment.trade_type}</td></tr>`:""}
-        <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Work Date</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right">${new Date(payment.work_date||Date.now()).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</td></tr>
-        <tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Payment Method</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right;text-transform:uppercase">${(payment.payment_method||"cash").replace("_"," ")}</td></tr>
-        ${payment.work_type?`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Work Done</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right">${payment.work_type}</td></tr>`:""}
-        ${totalAdvances>0?`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Previous Advances</td><td style="padding:7px 0;font-size:13px;font-weight:600;text-align:right;color:#d97706">- ${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(totalAdvances)}</td></tr>`:""}
-        ${payment.notes?`<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:7px 0;color:#666;font-size:12px">Notes</td><td style="padding:7px 0;font-size:13px;text-align:right">${payment.notes}</td></tr>`:""}
-      </tbody>
-    </table>
-
-    <div style="border-top:3px solid #1a1a1a;border-bottom:3px solid #1a1a1a;padding:12px 0;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <span style="font-size:16px;font-weight:900">${payment.payment_type==="advance"?"ADVANCE PAID":"TOTAL PAID"}</span>
-      <span style="font-size:26px;font-weight:900;color:${payment.payment_type==="advance"?"#d97706":"#16a34a"}">${new Intl.NumberFormat("en-US",{style:"currency",currency:"JMD"}).format(earned)}</span>
-    </div>
-
-    ${payment.payment_type==="advance"?`
-    <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#92400e">
-      ⚡ This is an advance payment. Balance will be settled upon completion of work.
-    </div>`:""}
-
-    ${payment.payment_type==="final"?`
-    <div style="background:#d1fae5;border:1px solid #10b981;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065f46;text-align:center;font-weight:700">
-      ✅ PAID IN FULL — All advances settled. Thank you!
-    </div>`:""}
-
-    ${payment.signature_data?`
-    <div style="border-top:1px solid #e5e7eb;padding-top:14px;margin-top:8px">
-      <div style="font-size:10px;color:#999;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Worker Signature</div>
-      <img src="${payment.signature_data}" style="height:56px;border:1px solid #e5e7eb;border-radius:6px;padding:4px"/>
-      <div style="font-size:11px;color:#666;margin-top:4px">${payment.worker_name}</div>
-    </div>`:""}
-
-    ${watermark?.url?`<img src="${watermark.url}" style="position:fixed;bottom:6mm;right:6mm;height:${(watermark as any).size||25}mm;width:${(watermark as any).size||25}mm;object-fit:contain;object-position:bottom right;opacity:${watermark.opacity};pointer-events:none;z-index:0;-webkit-print-color-adjust:exact;print-color-adjust:exact"/>`:""}
-    <div style="border-top:1px solid #e5e7eb;margin-top:16px;padding-top:12px;text-align:center;font-size:10px;color:#999">
-      Paid by: ${payment.supervisor_name||""} · ${new Date(payment.created_at||Date.now()).toLocaleDateString()}<br/>
-      ${company?.company_name||""}${company?.tagline?` · "${company.tagline}"`:""}
-    </div>
-  </div>`;
-}interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; prefillWorker?:{name:string;id_number:string;phone:string;payment_type:string}|null; }
+interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; prefillWorker?:{name:string;id_number:string;phone:string;payment_type:string}|null; }
 
 export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldPaymentFormProps) {
   const { projects } = useProjectContext();
@@ -203,6 +136,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
   const [error, setError] = useState<string|null>(null);
   const [receiptNumber, setReceiptNumber] = useState("");
   const [savedPaymentId, setSavedPaymentId] = useState<string|null>(null);
+  const [linkNote, setLinkNote] = useState("");
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [supervisorId, setSupervisorId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
@@ -404,6 +338,9 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
         advance_amount:form.payment_type==="advance"?amount:0,
         balance_due:form.payment_type==="advance"?amount:0,
         worker_ref:workerRef,
+        project_name:selectedProject?.name||null,
+        milestone_name:selectedMilestone?.milestone_name||null,
+        task_name:form.task_name||null,
         signature_url:form.signature_data||null,
       }).select().maybeSingle();
       if(pe)throw pe;
@@ -454,7 +391,13 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
   }
 
   // Generate and print receipt from stored data
-  function generateAndPrint() {
+  async function generateAndPrint() {
+    // "Previous advances" on a final payment comes from the one shared calculation (same figure on the public receipt and the payments list).
+    let previousAdvances=0;
+    if(form.payment_type==="final"){
+      try{previousAdvances=savedPaymentId?await getPreviousAdvances(savedPaymentId):totalAdvanced;}
+      catch(e){alert("Could not print the receipt: "+errorMessage(e));return;}
+    }
     const paymentData={
       receipt_number:receiptNumber,
       worker_name:form.worker_name,
@@ -466,7 +409,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
       payment_method:form.payment_method,
       total_amount:form.payment_type==="advance"?parseFloat(form.advance_amount)||0:parseFloat(form.total_amount)||0,
       payment_type:form.payment_type,
-      previous_advances:form.payment_type==="final"?totalAdvanced:0,
+      previous_advances:previousAdvances,
       notes:form.notes,
       signature_data:form.signature_data,
       supervisor_name:form.supervisor_name,
@@ -485,14 +428,36 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
   function sendWhatsApp() {
     const amount=form.payment_type==="advance"?parseFloat(form.advance_amount)||0:parseFloat(form.total_amount)||0;
     const msg=`*${company?.company_name||""}*\n*${form.payment_type==="advance"?"⚡ ADVANCE PAYMENT":form.payment_type==="final"?"✅ FINAL PAYMENT":"💰 PAYMENT RECEIPT"}*\n\nReceipt #: ${receiptNumber}\nWorker: ${form.worker_name}\nID: ${form.worker_id_number||"—"}\n${selectedProject?`Project: ${selectedProject.name}\n`:""}${selectedMilestone?`Milestone: ${selectedMilestone.milestone_name}\n`:""}${form.task_name?`Task: ${form.task_name}\n`:""}Payment: ${form.payment_method.replace("_"," ")}\n\n*AMOUNT: ${fmtJMD(amount)}*\n${form.payment_type==="advance"?"⚡ This is an advance. Balance due on completion.":form.payment_type==="final"?"✅ PAID IN FULL. All advances settled.":""}\n\nPaid by: ${form.supervisor_name} · ${new Date().toLocaleDateString()}`;
-    const phone=form.worker_phone?.replace(/\D/g,"");
-    window.open(`https://wa.me/${phone?`1${phone}`:""}?text=${encodeURIComponent(msg)}`,"_blank");
+    openWhatsApp(form.worker_phone,async()=>withReceiptLink(msg,await ensureLink())).catch(linkFailed);
+  }
+
+  // The receipt link is made only when someone presses WhatsApp / Copy receipt link / Email (create_receipt_link reuses the payment's active link).
+  async function ensureLink():Promise<string>{
+    if(!savedPaymentId)throw new Error("Save the payment first.");
+    return createReceiptLink("field_payment",savedPaymentId);
+  }
+  function linkFailed(e:unknown){setLinkNote("");alert("Could not create the receipt link: "+errorMessage(e));}
+  async function copyReceiptLink(){
+    try{
+      const url=receiptUrl(await ensureLink());
+      setLinkNote(await copyToClipboard(url)?"Receipt link copied.":url);
+    }catch(e){linkFailed(e);}
+  }
+  async function revokeLink(){
+    if(!savedPaymentId)return;
+    try{
+      const token=await findReceiptLink("field_payment",savedPaymentId);
+      if(!token){setLinkNote("There is no active receipt link for this payment.");return;}
+      if(!confirm("Revoke the receipt link? Anyone who has it will no longer be able to open the receipt."))return;
+      await revokeReceiptLink(token);
+      setLinkNote("Receipt link revoked.");
+    }catch(e){alert("Could not revoke the receipt link: "+errorMessage(e));}
   }
 
   function sendEmail() {
     const amount=form.payment_type==="advance"?parseFloat(form.advance_amount)||0:parseFloat(form.total_amount)||0;
-    const subject=encodeURIComponent(`Payment Receipt - ${form.worker_name} - ${receiptNumber}`);
-    const body=encodeURIComponent(
+    const subject=`Payment Receipt - ${form.worker_name} - ${receiptNumber}`;
+    const body=(
       `${company?.company_name||""}\n\n`+
       `${form.payment_type==="advance"?"ADVANCE PAYMENT":form.payment_type==="final"?"FINAL PAYMENT — PAID IN FULL":"PAYMENT RECEIPT"}\n`+
       `Receipt #: ${receiptNumber}\nDate: ${new Date().toLocaleDateString()}\n\n`+
@@ -506,7 +471,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
       `${form.payment_type==="final"?"PAID IN FULL. All advances settled. Thank you!":""}`+
       `\n\nPaid by: ${form.supervisor_name} · ${new Date().toLocaleDateString()}`
     );
-    window.open(`mailto:?subject=${subject}&body=${body}`,"_blank");
+    openEmail(subject,async()=>withReceiptLink(body,await ensureLink())).catch(linkFailed);
   }
 
   const totalAmount=parseFloat(form.total_amount)||0;
@@ -920,6 +885,17 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
                   <span>📧</span> Email
                 </button>
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={copyReceiptLink}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-200 dark:border-white/[0.1] bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/[0.06] text-slate-700 dark:text-slate-300 transition text-sm font-semibold">
+                  <span>🔗</span> Copy receipt link
+                </button>
+                <button onClick={revokeLink}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 transition text-sm font-semibold">
+                  Revoke link
+                </button>
+              </div>
+              {linkNote&&<div className="text-[11px] text-slate-600 dark:text-slate-400 text-center break-all">{linkNote}</div>}
               <div className="text-[10px] text-slate-500 dark:text-slate-700 text-center">Receipt saved — generate again anytime from the payment list</div>
             </div>
 
