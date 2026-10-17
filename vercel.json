@@ -16,6 +16,17 @@
       "destination": "/api/share-preview?kind=contact&token=:token"
     },
     {
+      "source": "/share-test/:variant",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(WhatsApp|facebookexternalhit|Facebot|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot).*"
+        }
+      ],
+      "destination": "/api/share-test?variant=:variant"
+    },
+    {
       "source": "/portal/:token",
       "has": [
         {

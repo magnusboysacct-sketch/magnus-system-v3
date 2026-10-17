@@ -2,6 +2,7 @@
 // runtime (nodeAdapter.ts); the unit tests call it directly.
 import { renderCard } from "./card.js";
 import { cardVersion, fetchSharePreview, isShareKind, isValidToken, loadLogo, previewEnv } from "./sharePreview.js";
+import { resolveTestAlias } from "./shareTest.js";   // TEMPORARY (A/B test of the preview image) — removed with the test
 
 // ── GET /api/share-card?k=<portal|contact|photos>&t=<token>&v=<fingerprint>  ->  1200x630 PNG for link previews ────────────────
 // The card is addressed by the same kind + token as the share link. It looks the company up ITSELF (get_share_preview) and draws only what the database
@@ -27,8 +28,9 @@ async function platformCard(request: Request): Promise<Response> {
 
 export async function shareCardHandler(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const kind = url.searchParams.get("k");
-  const token = url.searchParams.get("t");
+  const alias = resolveTestAlias(url.searchParams.get("k"), url.searchParams.get("t"));   // TEMPORARY: /api/share-card/test/<alias>/<v>.png
+  const kind = alias ? alias.kind : url.searchParams.get("k");
+  const token = alias ? alias.token : url.searchParams.get("t");
   if (!isShareKind(kind) || !isValidToken(token)) return platformCard(request);
 
   const preview = await fetchSharePreview(kind, token);
