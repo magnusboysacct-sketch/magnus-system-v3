@@ -9,6 +9,7 @@ import {
 import { Building2, Save, RefreshCw, Globe, Phone, Mail, MapPin, ImageIcon, Upload, Eye, EyeOff, PenTool } from "lucide-react";
 import SignaturePad from "../components/SignaturePad";
 import PhotoCropModal from "../components/PhotoCropModal";
+import IdCardColors from "../components/IdCardColors";
 
 type CompanySettings = {
   id: number;
@@ -297,6 +298,9 @@ export default function SettingsCompanyPage() {
             </div>
           </div>
         </Card>
+
+        {/* ID card colours — presets, from-logo suggestions, custom, live preview */}
+        <IdCardColors companyId={companyId} companyName={form.company_name} tagline={form.tagline} logoUrl={logoUrl}/>
 
         {/* Authorized signature — drawn once here, reused on ID card backs */}
         <Card>

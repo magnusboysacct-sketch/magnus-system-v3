@@ -5,6 +5,7 @@ import { supabase } from "./supabase";
 import { fetchStaffHrFields } from "./staffHr";
 import { companyDisplayName } from "./companyName";
 import { ALERT_RED, type IdCardCompany, type IdCardData, type IdCardImages } from "./idCardRender";
+import { DEFAULT_THEME, normalizeTheme, type IdCardTheme } from "./idCardTheme";
 import type { CardItem } from "./idCardExport";
 
 const GOLD = "#C9A84C";
@@ -28,6 +29,17 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
 }
 const tryImage = async (url?: string | null) => { if (!url) return null; try { return await loadImage(url); } catch { return null; } };
 
+// The company's saved card colours. A separate, tolerant query: if the colour columns are not there yet (or cannot be read) the card is simply navy & gold.
+export async function loadCompanyTheme(companyId: string | null | undefined): Promise<IdCardTheme> {
+  if (!companyId) return { ...DEFAULT_THEME };
+  try {
+    const { data, error } = await supabase.from("company_settings").select("id_card_primary, id_card_accent").eq("company_id", companyId).maybeSingle();
+    if (error || !data) return { ...DEFAULT_THEME };
+    return normalizeTheme({ primary: data.id_card_primary, accent: data.id_card_accent });
+  } catch { return { ...DEFAULT_THEME }; }
+}
+
+export const invalidateCompanyCache = () => companyCache.clear();
 const companyCache = new Map<string, Promise<CompanyBundle>>();
 // The company block for the back of the card + the logo and signature, once per company per dialog.
 export function loadCompanyBundle(companyId: string | null | undefined, nameOverride?: string | null): Promise<CompanyBundle> {
@@ -49,12 +61,13 @@ export function loadCompanyBundle(companyId: string | null | undefined, nameOver
         cs?.email ? `Email: ${cs.email}` : "",
       ].filter(Boolean) as string[];
       return {
-        company: { name: companyDisplayName(nameOverride || cs?.company_name), tagline: cs?.tagline || "Building With Integrity", contactLines },
+        company: { name: companyDisplayName(nameOverride || cs?.company_name), tagline: cs?.tagline || "Building With Integrity", contactLines, theme: await loadCompanyTheme(companyId) },
         logo: await tryImage(cs?.logo_url),
         signature: await tryImage(cs?.signature_url),
       };
     })();
     companyCache.set(key, p);
+    setTimeout(() => companyCache.delete(key), 20000);          // kept only long enough for one batch; a changed logo or colour shows up on the next card
     p.catch(() => companyCache.delete(key));
   }
   return p;

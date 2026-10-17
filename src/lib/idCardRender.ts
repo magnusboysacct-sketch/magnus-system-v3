@@ -11,6 +11,7 @@
 //     margin excluded) on the printed card.
 //   * Nothing here touches the DOM except the default canvas factory, so the same code runs in the tests (see setCanvasFactory).
 import QRCode from "qrcode";
+import { resolvePalette, rgba, type MaybeTheme } from "./idCardTheme";
 
 // ── Sizes (mm) ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export const CARD_W_MM = 54;
@@ -24,13 +25,8 @@ export const PRINT_PPM = 600 / 25.4;         // pixels per mm at 600 dpi
 export const SCREEN_PPM = 9;                 // on-screen preview: the QR plate is about 185 px
 const QR_PLATE_MM = 22;                      // the layout reserves this much room for the QR plate (symbol + margin)
 
-// ── Palette (unchanged from the previous cards) ───────────────────────────────────────────────────────────────────────────────
-const NAVY = "#15315A";
-const NAVY_TINT = "#E7EDF6";
-const NAVY_TINT_LINE = "#C7D4E6";
-const AMBER = "#F2A93B";
-const INK = "#15315A";
-const GOLD = "#C9A84C";
+// ── Colours: the card colours come from the company (idCardTheme.ts); only the QR and the alert red are fixed ──────────────────
+const NAVY = "#15315A";                  // the QR code: always dark navy on a pure white plate, whatever the card colours
 export const ALERT_RED = "#DC2626";
 const FONT = `"Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif`;
 const MONO = `Consolas, "Courier New", monospace`;
@@ -57,6 +53,7 @@ export interface IdCardCompany {
   name: string;
   tagline: string;
   contactLines: string[];
+  theme?: MaybeTheme | null;              // the company's card colours (null / missing = navy & gold)
 }
 type Img = CanvasImageSource & { width: number; height: number; naturalWidth?: number; naturalHeight?: number };
 export interface IdCardImages { photo?: Img | null; logo?: Img | null; signature?: Img | null }
@@ -155,6 +152,8 @@ export function renderIdCardFace(face: "front" | "back", data: IdCardData, compa
   const content: Rect[] = [];
   const url = verifyUrl(data.verifyCode);
   const W = CARD_W_MM, H = CARD_H_MM, B = bleedMm;
+  const P = resolvePalette(company.theme);              // the colours of this company's card (readable whatever was chosen, see idCardTheme.ts)
+  const fa = (a: number) => rgba(P.fg, a);               // decoration (hairlines, placeholders) in the text colour
 
   const note = (what: string, x0: number, y0: number, x1: number, y1: number) => content.push({ what, x0, y0, x1, y1 });
   // Edges that reach the bleed edge are pushed out to the canvas edge, so rounding of the canvas size never leaves a half-painted last pixel row / column.
@@ -218,14 +217,14 @@ export function renderIdCardFace(face: "front" | "back", data: IdCardData, compa
   let qr: RenderedFace["qr"];
 
   if (face === "front") {
-    fillBox(NAVY, -B, -B, W + B, H + B);
-    fillBox(GOLD, -B, -B, W + B, 1.3);                                           // top stripe (runs into the bleed)
+    fillBox(P.primary, -B, -B, W + B, H + B);
+    fillBox(P.accent, -B, -B, W + B, 1.3);                                           // top stripe (runs into the bleed)
 
     // OFFICIAL ID badge, top right, clear of the widest logo plate
-    ctx.fillStyle = "rgba(201,168,76,0.15)"; ctx.strokeStyle = "rgba(201,168,76,0.4)"; ctx.lineWidth = Math.max(1, L(0.15));
+    ctx.fillStyle = rgba(P.accent, 0.15); ctx.strokeStyle = rgba(P.accent, 0.4); ctx.lineWidth = Math.max(1, L(0.15));
     ctx.fillRect(X(42.6), Y(3.2), L(8.4), L(5)); ctx.strokeRect(X(42.6), Y(3.2), L(8.4), L(5));
     note("badge", 42.6, 3.2, 51, 8.2);
-    ctx.fillStyle = GOLD; ctx.font = `700 ${1.15 * ppm}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = P.accent; ctx.font = `700 ${1.15 * ppm}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
     ctx.fillText("OFFICIAL", X(46.8), Y(5.6)); ctx.fillText("ID", X(46.8), Y(7.3));
 
     // Logo on a white plate with a thin gold border, natural aspect ratio (never cropped or stretched)
@@ -235,17 +234,17 @@ export function renderIdCardFace(face: "front" | "back", data: IdCardData, compa
     if (images.logo) { const f = fit(images.logo, plateMaxW - 2 * inset, bandH - 2 * inset); fw = f.w; fh = f.h; pw = fw + 2 * inset; ph = fh + 2 * inset; }
     const px0 = W / 2 - pw / 2, py0 = bandTop + (bandH - ph) / 2;
     ctx.fillStyle = "#ffffff"; roundRectPath(ctx, X(px0), Y(py0), L(pw), L(ph), L(1.8)); ctx.fill();
-    ctx.strokeStyle = GOLD; ctx.lineWidth = Math.max(1, L(0.25)); roundRectPath(ctx, X(px0 + 0.125), Y(py0 + 0.125), L(pw - 0.25), L(ph - 0.25), L(1.7)); ctx.stroke();
+    ctx.strokeStyle = P.accent; ctx.lineWidth = Math.max(1, L(0.25)); roundRectPath(ctx, X(px0 + 0.125), Y(py0 + 0.125), L(pw - 0.25), L(ph - 0.25), L(1.7)); ctx.stroke();
     note("logo plate", px0, py0, px0 + pw, py0 + ph);
     if (images.logo) ctx.drawImage(images.logo, X(px0 + inset), Y(py0 + inset), L(fw), L(fh));
-    else { ctx.fillStyle = NAVY; ctx.font = `800 ${5 * ppm}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText((company.name.charAt(0) || "?").toUpperCase(), X(W / 2), Y(bandTop + bandH / 2)); ctx.textBaseline = "alphabetic"; }
+    else { ctx.fillStyle = P.logoInitial; ctx.font = `800 ${5 * ppm}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText((company.name.charAt(0) || "?").toUpperCase(), X(W / 2), Y(bandTop + bandH / 2)); ctx.textBaseline = "alphabetic"; }
 
-    text(company.name, W / 2, 17.4, { size: 1.75, color: "#ffffff", weight: 600, align: "center", upper: true, maxWidth: 46 });
-    line(4, 18.5, 50, 18.5, "rgba(255,255,255,0.12)", 0.1);
+    text(company.name, W / 2, 17.4, { size: 1.75, color: P.fg, weight: 600, align: "center", upper: true, maxWidth: 46 });
+    line(4, 18.5, 50, 18.5, fa(0.12), 0.1);
 
     // Photo (profile / passport photo only)
     const phx = (W - 13) / 2, phy = 19.8, phw = 13, phh = 16;
-    ctx.fillStyle = "rgba(255,255,255,0.05)"; roundRectPath(ctx, X(phx), Y(phy), L(phw), L(phh), L(1.3)); ctx.fill();
+    ctx.fillStyle = fa(0.05); roundRectPath(ctx, X(phx), Y(phy), L(phw), L(phh), L(1.3)); ctx.fill();
     note("photo", phx, phy, phx + phw, phy + phh);
     if (images.photo) {
       ctx.save(); roundRectPath(ctx, X(phx + 0.2), Y(phy + 0.2), L(phw - 0.4), L(phh - 0.4), L(1.1)); ctx.clip();
@@ -254,34 +253,34 @@ export function renderIdCardFace(face: "front" | "back", data: IdCardData, compa
       ctx.drawImage(images.photo, X(phx + 0.2 + ((phw - 0.4) - dw) / 2), Y(phy + 0.2 + ((phh - 0.4) - dh) / 2), L(dw), L(dh));
       ctx.restore();
     } else {
-      ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.font = `700 ${5.2 * ppm}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = fa(0.35); ctx.font = `700 ${5.2 * ppm}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(data.initials || "?", X(W / 2), Y(phy + phh / 2)); ctx.textBaseline = "alphabetic";
     }
-    ctx.strokeStyle = "rgba(201,168,76,0.6)"; ctx.lineWidth = Math.max(1, L(0.3)); roundRectPath(ctx, X(phx), Y(phy), L(phw), L(phh), L(1.3)); ctx.stroke();
+    ctx.strokeStyle = rgba(P.accent, 0.6); ctx.lineWidth = Math.max(1, L(0.3)); roundRectPath(ctx, X(phx), Y(phy), L(phw), L(phh), L(1.3)); ctx.stroke();
 
-    text(data.title, W / 2, 38.5, { size: 1.7, color: GOLD, align: "center", upper: true, maxWidth: 46 });
-    text(data.name, W / 2, 42.1, { size: 3.3, color: "#ffffff", weight: 700, align: "center", upper: true, maxWidth: 46 });
-    text(data.cardTitle, W / 2, 44.2, { size: 1.45, color: "rgba(255,255,255,0.55)", align: "center", upper: true });
-    line(4, 45.4, 50, 45.4, "rgba(255,255,255,0.12)", 0.1);
+    text(data.title, W / 2, 38.5, { size: 1.7, color: P.accent, align: "center", upper: true, maxWidth: 46 });
+    text(data.name, W / 2, 42.1, { size: 3.3, color: P.fg, weight: 700, align: "center", upper: true, maxWidth: 46 });
+    text(data.cardTitle, W / 2, 44.2, { size: 1.45, color: P.fgA(0.55), align: "center", upper: true });
+    line(4, 45.4, 50, 45.4, fa(0.12), 0.1);
 
     if (data.detail && data.detail.value) {
-      text(data.detail.label, 4, 48.2, { size: 1.3, color: "rgba(255,255,255,0.45)", upper: true });
-      text(data.detail.value, 50, 48.2, { size: 1.8, color: "rgba(255,255,255,0.9)", weight: 600, align: "right", mono: true, maxWidth: 32 });
+      text(data.detail.label, 4, 48.2, { size: 1.3, color: P.fgA(0.45), upper: true });
+      text(data.detail.value, 50, 48.2, { size: 1.8, color: P.fgA(0.9), weight: 600, align: "right", mono: true, maxWidth: 32 });
     }
 
     qr = qrPlate(null, 49.8, null);
-    text("SCAN TO VERIFY", W / 2, (qr.y - oy + qr.h) / ppm + 2.6, { size: 1.3, color: "rgba(255,255,255,0.6)", align: "center" });
+    text("SCAN TO VERIFY", W / 2, (qr.y - oy + qr.h) / ppm + 2.6, { size: 1.3, color: P.fgA(0.6), align: "center" });
 
     // Footer bar (runs into the bleed)
-    ctx.fillStyle = "rgba(201,168,76,0.12)"; ctx.fillRect(0, Y(75.6), widthPx, heightPx - Y(75.6));
-    line(-B, 75.6, W + B, 75.6, "rgba(201,168,76,0.35)", 0.15);
-    text("ISSUED", 4, 78.2, { size: 1.25, color: "rgba(255,255,255,0.4)" });
-    text(data.issuedLabel, 4, 80.7, { size: 1.9, color: GOLD, weight: 700 });
-    text(data.expired ? "EXPIRED" : "EXPIRES", 50, 78.2, { size: 1.25, color: data.expired ? ALERT_RED : "rgba(255,255,255,0.4)", align: "right" });
-    text(data.expiresLabel, 50, 80.7, { size: 1.9, color: data.expiryColor, weight: 700, align: "right" });
-    fillBox(GOLD, -B, H - 0.8, W + B, H + B);                                   // bottom stripe (runs into the bleed)
+    ctx.fillStyle = rgba(P.accent, 0.12); ctx.fillRect(0, Y(75.6), widthPx, heightPx - Y(75.6));
+    line(-B, 75.6, W + B, 75.6, rgba(P.accent, 0.35), 0.15);
+    text("ISSUED", 4, 78.2, { size: 1.25, color: P.fgA(0.4) });
+    text(data.issuedLabel, 4, 80.7, { size: 1.9, color: P.accent, weight: 700 });
+    text(data.expired ? "EXPIRED" : "EXPIRES", 50, 78.2, { size: 1.25, color: data.expired ? P.status(ALERT_RED) : P.fgA(0.4), align: "right" });
+    text(data.expiresLabel, 50, 80.7, { size: 1.9, color: P.status(data.expiryColor), weight: 700, align: "right" });
+    fillBox(P.accent, -B, H - 0.8, W + B, H + B);                                   // bottom stripe (runs into the bleed)
   } else {
-    fillBox(NAVY_TINT, -B, -B, W + B, H + B);
+    fillBox(P.tint, -B, -B, W + B, H + B);
 
     // Logo, no plate
     const cy = 6.3;
@@ -290,32 +289,32 @@ export function renderIdCardFace(face: "front" | "back", data: IdCardData, compa
       ctx.drawImage(images.logo, X(W / 2 - f.w / 2), Y(cy - f.h / 2), L(f.w), L(f.h));
       note("logo", W / 2 - f.w / 2, cy - f.h / 2, W / 2 + f.w / 2, cy + f.h / 2);
     } else {
-      ctx.fillStyle = NAVY; roundRectPath(ctx, X(W / 2 - 3.3), Y(cy - 3.3), L(6.6), L(6.6), L(1.5)); ctx.fill();
+      ctx.fillStyle = P.primary; roundRectPath(ctx, X(W / 2 - 3.3), Y(cy - 3.3), L(6.6), L(6.6), L(1.5)); ctx.fill();
       note("logo", W / 2 - 3.3, cy - 3.3, W / 2 + 3.3, cy + 3.3);
-      ctx.fillStyle = "#fff"; ctx.font = `800 ${2.4 * ppm}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = P.fg; ctx.font = `800 ${2.4 * ppm}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText((company.name.charAt(0) || "?").toUpperCase(), X(W / 2), Y(cy)); ctx.textBaseline = "alphabetic";
     }
 
     // Amber banner (runs into the bleed)
-    fillBox(AMBER, -B, 11.5, W + B, 17.2);
-    text("IF FOUND, RETURN TO ISSUING COMPANY BELOW", W / 2, 15.1, { size: 1.45, color: NAVY, weight: 700, align: "center", maxWidth: 46 });
+    fillBox(P.banner, -B, 11.5, W + B, 17.2);
+    text("IF FOUND, RETURN TO ISSUING COMPANY BELOW", W / 2, 15.1, { size: 1.45, color: P.bannerText, weight: 700, align: "center", maxWidth: 46 });
 
-    text(company.name, W / 2, 22.2, { size: 2.5, color: INK, weight: 700, align: "center", upper: true, maxWidth: 48 });
-    text(company.tagline, W / 2, 24.8, { size: 1.65, color: "rgba(28,26,20,0.55)", align: "center", maxWidth: 46 });
-    line(4, 26.2, 50, 26.2, NAVY_TINT_LINE, 0.15);
+    text(company.name, W / 2, 22.2, { size: 2.5, color: P.ink, weight: 700, align: "center", upper: true, maxWidth: 48 });
+    text(company.tagline, W / 2, 24.8, { size: 1.65, color: P.inkA(0.55), align: "center", maxWidth: 46 });
+    line(4, 26.2, 50, 26.2, P.tintLine, 0.15);
 
     let y = 29.2;
-    company.contactLines.slice(0, 4).forEach((l) => { text(l, 4, y, { size: 1.65, color: "rgba(28,26,20,0.72)", maxWidth: 46 }); y += 2.4; });
+    company.contactLines.slice(0, 4).forEach((l) => { text(l, 4, y, { size: 1.65, color: P.inkA(0.72), maxWidth: 46 }); y += 2.4; });
 
-    const last = wrap(data.statement, 4, y + 1.4, 46, 2.25, { size: 1.55, color: "rgba(28,26,20,0.85)", italic: true }, 4);
+    const last = wrap(data.statement, 4, y + 1.4, 46, 2.25, { size: 1.55, color: P.inkA(0.85), italic: true }, 4);
 
     if (data.bearer && data.bearer.length) {
       const ly = Math.max(last + 2.4, 49.2);
-      line(4, ly, 50, ly, NAVY_TINT_LINE, 0.15);
+      line(4, ly, 50, ly, P.tintLine, 0.15);
       let by = ly + 2.9;
       data.bearer.slice(0, 2).forEach(([label, value]) => {
-        text(label, 4, by, { size: 1.3, color: "rgba(28,26,20,0.5)", upper: true });
-        text(value, 14, by, { size: 1.65, color: "rgba(28,26,20,0.8)", maxWidth: 36 });
+        text(label, 4, by, { size: 1.3, color: P.inkA(0.5), upper: true });
+        text(value, 14, by, { size: 1.65, color: P.inkA(0.8), maxWidth: 36 });
         by += 2.5;
       });
     }
@@ -328,7 +327,7 @@ export function renderIdCardFace(face: "front" | "back", data: IdCardData, compa
       note("signature", 4 + (23 - f.w) / 2, sigLineY - 0.4 - f.h, 4 + (23 - f.w) / 2 + f.w, sigLineY - 0.4);
     }
     line(4, sigLineY, 27, sigLineY, "rgba(28,26,20,0.4)", 0.15);
-    text("AUTHORIZED SIGNATURE", 4, 81.7, { size: 1.25, color: "rgba(28,26,20,0.5)" });
+    text("AUTHORIZED SIGNATURE", 4, 81.7, { size: 1.25, color: P.inkA(0.5) });
     qr = qrPlate(W - SAFE_MM, 0, H - SAFE_MM);
   }
 

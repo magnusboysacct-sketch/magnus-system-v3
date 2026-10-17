@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { ShieldCheck, ShieldAlert, ShieldX, Calendar, Briefcase, User } from "lucide-react";
+import VerifyHeader from "../components/VerifyHeader";
 
 type VerifyIdResult = {
   kind: "staff" | "worker";
@@ -13,6 +14,8 @@ type VerifyIdResult = {
   photo_url: string | null;
   company_name: string | null;
   logo_url: string | null;
+  id_card_primary?: string | null;
+  id_card_accent?: string | null;
   status: "active" | "inactive" | string;
   valid: boolean;
   expired: boolean;
@@ -65,6 +68,7 @@ export default function IdVerifyPage() {
   return (
     <div style={{ minHeight: "100vh", background: "#0B1220", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, fontFamily: "system-ui, -apple-system, sans-serif" }}>
       <div style={{ width: "100%", maxWidth: 380, borderRadius: 20, overflow: "hidden", background: "#101826", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+        {result && <VerifyHeader logoUrl={result.logo_url} companyName={result.company_name} theme={{ primary: result.id_card_primary, accent: result.id_card_accent }} />}
         <div style={{ background: theme.band, padding: "32px 24px 28px", textAlign: "center", position: "relative" }}>
           <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${theme.band}, ${theme.bandSoft})` }} />
           <div style={{ position: "relative" }}>
@@ -113,11 +117,6 @@ export default function IdVerifyPage() {
         )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 24px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.2)" }}>
-          {result?.logo_url ? (
-            <img src={result.logo_url} alt="logo" style={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
-          ) : (
-            <div style={{ width: 20, height: 20, borderRadius: "50%", background: "rgba(255,255,255,0.1)", flexShrink: 0 }} />
-          )}
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 0.3 }}>
             Verified live against {result?.company_name || "company"} records · not a stored screenshot
           </div>
@@ -129,12 +128,12 @@ export default function IdVerifyPage() {
 
 function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, color: "rgba(255,255,255,0.45)" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, color: "rgba(255,255,255,0.45)", flexShrink: 0 }}>
         {icon}
         <span style={{ fontSize: 11, letterSpacing: 0.3 }}>{label}</span>
       </div>
-      <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.9)", fontWeight: 600 }}>{value}</span>
+      <span style={{ textAlign: "right", fontSize: 12.5, color: "rgba(255,255,255,0.9)", fontWeight: 600 }}>{value}</span>
     </div>
   );
 }

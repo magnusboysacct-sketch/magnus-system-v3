@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:share": "tsx --test scripts/tests/sharePreview.test.ts scripts/tests/receiptHtml.test.ts",
-    "test:idcard": "tsx --test scripts/tests/idCard.test.ts"
+    "test:idcard": "tsx --test scripts/tests/idCard.test.ts scripts/tests/idCardColors.test.ts"
   },
   "dependencies": {
     "@resvg/resvg-wasm": "2.4.1",
