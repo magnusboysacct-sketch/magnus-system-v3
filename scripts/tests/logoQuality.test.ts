@@ -8,7 +8,8 @@ import JSZip from "jszip";
 import { BLEED_MM, PRINT_PPM, drawLogo, fitLogoMm, prepareLogo, renderIdCardFace, safeZoneViolations, setCanvasFactory, type IdCardCompany, type IdCardData } from "../../src/lib/idCardRender";
 import { buildPngZip } from "../../src/lib/idCardExport";
 import {
-  LOGO_MAX_BYTES, LOGO_MIN_WIDTH, LOGO_SMALL_WARNING, describeLogo, logoExtension, logoIsSmall, logoType, marginsAreWasteful, measureMargins, svgDimensions, svgIsSafe, svgWithSize, validateLogoFile,
+  LOGO_ACCEPT, LOGO_ALLOWED_TYPES, LOGO_MAX_BYTES, LOGO_MIN_WIDTH, LOGO_SMALL_WARNING, TRIM_DEFAULT_ABOVE, describeLogo, logoExtension, logoIsSmall, logoType, marginsAreWasteful, measureMargins,
+  svgDimensions, svgIsSafe, svgWithSize, trimBox, trimIsWorthIt, trimRect, validateLogoFile,
 } from "../../src/lib/logoImage";
 
 setCanvasFactory((w, h) => createCanvas(w, h) as unknown as HTMLCanvasElement);
@@ -18,32 +19,78 @@ const staff = (): IdCardData => ({ kind: "staff", id: "s1", name: "Amanda Clarke
   detail: null, bearer: [], issuedLabel: "Jan 2026", expiresLabel: "Jan 2028", expired: false, expiryColor: "#4ade80", statement: "This card certifies the bearer." });
 
 // ── upload rules ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-test("upload: PNG, JPG, WEBP and SVG up to 5 MB are allowed; anything else is refused with a readable message", () => {
-  for (const [type, ext] of [["image/png", "png"], ["image/jpeg", "jpg"], ["image/webp", "webp"], ["image/svg+xml", "svg"]]) {
+test("upload: only PNG and JPG up to 5 MB are accepted; WEBP and SVG are refused with a readable message", () => {
+  assert.deepEqual([...LOGO_ALLOWED_TYPES], ["image/png", "image/jpeg"]);
+  assert.ok(!/webp|svg/i.test(LOGO_ACCEPT), "the file picker does not offer WEBP or SVG: " + LOGO_ACCEPT);
+  for (const [type, ext] of [["image/png", "png"], ["image/jpeg", "jpg"]]) {
     assert.equal(validateLogoFile({ type, name: "logo." + ext, size: 1000 }), null, type);
     assert.equal(logoExtension(type), ext);
   }
   assert.equal(validateLogoFile({ type: "image/png", name: "a.png", size: LOGO_MAX_BYTES }), null, "exactly 5 MB is fine");
   assert.match(validateLogoFile({ type: "image/png", name: "a.png", size: LOGO_MAX_BYTES + 1 })!, /at most 5 MB/);
-  assert.match(validateLogoFile({ type: "image/gif", name: "a.gif", size: 10 })!, /PNG, JPG, WEBP or SVG/);
-  assert.match(validateLogoFile({ type: "application/pdf", name: "a.pdf", size: 10 })!, /PNG, JPG, WEBP or SVG/);
+  assert.match(validateLogoFile({ type: "image/webp", name: "a.webp", size: 10 })!, /PNG or JPG/);
+  assert.match(validateLogoFile({ type: "image/svg+xml", name: "a.svg", size: 10 })!, /SVG logos are not accepted yet/);
+  assert.match(validateLogoFile({ type: "image/gif", name: "a.gif", size: 10 })!, /PNG or JPG/);
+  assert.match(validateLogoFile({ type: "application/pdf", name: "a.pdf", size: 10 })!, /PNG or JPG/);
   assert.match(validateLogoFile({ type: "image/png", name: "a.png", size: 0 })!, /empty/);
-  // some browsers give no type for .svg / .webp: the extension decides
+  // some browsers give no type: the extension decides (so a .svg or .webp with no type is still refused)
   assert.equal(logoType({ type: "", name: "Logo.SVG" }), "image/svg+xml");
-  assert.equal(logoType({ type: "application/octet-stream", name: "x.webp" }), "image/webp");
+  assert.match(validateLogoFile({ type: "", name: "Logo.SVG", size: 5 })!, /SVG logos are not accepted/);
+  assert.match(validateLogoFile({ type: "application/octet-stream", name: "x.webp", size: 5 })!, /PNG or JPG/);
   assert.equal(logoType({ type: "image/jpg", name: "x.jpg" }), "image/jpeg");
-  assert.equal(validateLogoFile({ type: "", name: "x.svg", size: 5 }), null);
+  assert.equal(validateLogoFile({ type: "", name: "x.png", size: 5 }), null);
 });
 
-test("upload: a raster logo under 1000 px wide gets the warning; SVG and larger logos do not", () => {
+test("upload: a raster logo under 1000 px wide gets the warning; larger logos do not (judged on the picked file, not on the trimmed copy)", () => {
   assert.equal(LOGO_MIN_WIDTH, 1000);
   assert.equal(logoIsSmall({ vector: false, width: 999 }), true);
   assert.equal(logoIsSmall({ vector: false, width: 1000 }), false);
-  assert.equal(logoIsSmall({ vector: true, width: 24 }), false, "a vector logo is sharp at any size");
-  assert.equal(LOGO_SMALL_WARNING, "This logo is small and may look blurry on cards and documents. Upload a larger PNG or SVG for best quality.");
+  assert.equal(logoIsSmall({ vector: false, width: 792, sourceWidth: 1200 }), false, "a trimmed copy is not warned about when the picked file was big enough");
+  assert.equal(logoIsSmall({ vector: false, width: 700, sourceWidth: 800 }), true);
+  assert.equal(logoIsSmall({ vector: true, width: 24 }), false, "a vector logo that is already stored is sharp at any size");
+  assert.equal(LOGO_SMALL_WARNING, "This logo is small and may look blurry on cards and documents. Upload a larger PNG for best quality.");
   assert.equal(describeLogo({ type: "image/png", width: 1200, height: 744, vector: false, bytes: 74311, margins: null }), "PNG · 1200 × 744 px · 73 KB");
+  assert.equal(describeLogo({ type: "image/png", width: 800, height: 610, vector: false, bytes: 50000, margins: null, trimmedFrom: { width: 1200, height: 744 } }),
+    "PNG · 800 × 610 px · 49 KB (empty space trimmed; original 1200 × 744 px kept)");
   assert.equal(describeLogo({ type: "image/svg+xml", width: 76, height: 76, vector: true, margins: null }), "SVG (vector, sharp at any size)");
   assert.equal(describeLogo({ type: "image/jpeg", width: 3000, height: 1000, vector: false, bytes: 2.5 * 1048576, margins: null }), "JPG · 3000 × 1000 px · 2.5 MB");
+});
+
+test("trim: the artwork's box is found (transparent margins, or near-white margins when the logo has no transparency) and offered when over 10% is empty", () => {
+  const W = 200, H = 100;
+  const make = (fill: [number, number, number, number], art: [number, number, number, number], box: [number, number, number, number]) => {
+    const buf = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < buf.length; i += 4) { buf[i] = fill[0]; buf[i + 1] = fill[1]; buf[i + 2] = fill[2]; buf[i + 3] = fill[3]; }
+    for (let y = box[1]; y < box[3]; y++) for (let x = box[0]; x < box[2]; x++) { const i = (y * W + x) * 4; buf[i] = art[0]; buf[i + 1] = art[1]; buf[i + 2] = art[2]; buf[i + 3] = art[3]; }
+    return buf;
+  };
+  // transparent margins
+  const t = trimBox(make([0, 0, 0, 0], [185, 28, 28, 255], [50, 20, 150, 70]), W, H)!;
+  assert.deepEqual([t.x0, t.y0, t.x1, t.y1, t.basis], [50, 20, 150, 70, "transparent"]);
+  assert.ok(Math.abs(t.emptyShare - (1 - (100 * 50) / (W * H))) < 1e-9);
+  assert.equal(trimIsWorthIt(t), true);
+  // near-white margins on a logo with no transparency (a JPG / a PNG on white)
+  const w = trimBox(make([255, 255, 255, 255], [20, 40, 120, 255], [30, 10, 170, 90]), W, H)!;
+  assert.deepEqual([w.x0, w.y0, w.x1, w.y1, w.basis], [30, 10, 170, 90, "white"]);
+  const off = trimBox(make([250, 250, 250, 255], [20, 40, 120, 255], [30, 10, 170, 90]), W, H)!;
+  assert.deepEqual([off.x0, off.x1], [30, 170], "off-white margins count as margin too");
+  // a WHITE logo on a transparent background is kept whole (white is artwork when there is transparency)
+  const whiteLogo = trimBox(make([0, 0, 0, 0], [255, 255, 255, 255], [50, 20, 150, 70]), W, H)!;
+  assert.deepEqual([whiteLogo.x0, whiteLogo.x1], [50, 150]);
+  // little margin: not offered (the threshold is 10% of the image)
+  assert.equal(TRIM_DEFAULT_ABOVE, 0.1);
+  const tight = trimBox(make([0, 0, 0, 0], [1, 2, 3, 255], [4, 2, 196, 98]), W, H)!;
+  assert.equal(trimIsWorthIt(tight), false);
+  const nearTen = trimBox(make([0, 0, 0, 0], [1, 2, 3, 255], [0, 0, 190, 100]), W, H)!;      // 5% empty
+  assert.equal(trimIsWorthIt(nearTen), false);
+  const abovTen = trimBox(make([0, 0, 0, 0], [1, 2, 3, 255], [0, 0, 170, 100]), W, H)!;      // 15% empty
+  assert.equal(trimIsWorthIt(abovTen), true);
+  // nothing but background: nothing to crop to
+  assert.equal(trimBox(make([255, 255, 255, 255], [255, 255, 255, 255], [0, 0, 1, 1]), W, H), null);
+  assert.equal(trimBox(new Uint8ClampedArray(W * H * 4), W, H), null);
+  // the crop keeps a little air and never leaves the image
+  assert.deepEqual(trimRect(t, W, H), { x: 48, y: 18, w: 104, h: 54 });
+  assert.deepEqual(trimRect({ ...abovTen }, W, H), { x: 0, y: 0, w: 172, h: 100 });
 });
 
 test("svg: scripts and embedded content are refused; the drawing's size is read from width / height or the viewBox", () => {

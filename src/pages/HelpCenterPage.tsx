@@ -77,18 +77,18 @@ Your logo appears on the sidebar, invoices, contracts, receipts, letters, emails
 
 ## The best logo file
 
-- **SVG** is best. It is made of lines and shapes, so it stays perfectly sharp at any size, from a small ID card to a big printout.
-- **A PNG at least 2000 pixels wide, with a transparent background** is the next best. Transparent means no white box around the logo.
-- JPG and WEBP also work (up to 5 MB), but a JPG cannot be transparent and has a solid background.
-- The system keeps exactly the file you upload. It never shrinks, compresses or converts it, and it never replaces an earlier logo file.
+- **A PNG at least 2000 pixels wide, with a transparent background**, is best. Transparent means no white box around the logo.
+- A JPG also works (up to 5 MB), but a JPG cannot be transparent and has a solid background.
+- Only PNG and JPG can be uploaded. WEBP is not accepted because WhatsApp link previews cannot show it. SVG (a sharp, shape-based logo) is not accepted yet; if you only have an SVG, export it as a large PNG.
+- The system never shrinks or compresses your file. A logo you uploaded earlier is never replaced; the new one is saved as a new file.
 
 ## After you upload
 
-Settings → Company shows the logo's size in pixels. If it is under 1000 pixels wide you will see a warning: it may look blurry on cards and documents. Upload a larger PNG or an SVG.
+Settings → Company shows the logo's size in pixels. If it is under 1000 pixels wide you will see a warning: it may look blurry on cards and documents. Upload a larger PNG.
 
-## Empty space around the logo
+## Trim empty space
 
-Many logo files have a wide empty margin around the artwork. The margin takes up room, so the logo shows smaller than it could. Trim the empty space before you upload, or ask your designer for a version cropped tightly to the artwork. ID cards trim the margin for you, other places show the file as it is.
+Many logo files have a wide empty margin around the artwork. The margin takes up room, so the logo shows smaller than it could. When you pick a file, Settings → Company shows a before and after picture and a **Trim empty space** box, switched on when more than a tenth of the image is empty. Trimming only crops the empty edges (it does not shrink or change the logo). The trimmed copy is used as your logo and your original file is kept as well. ID cards also trim empty edges when they draw the logo.
 
 ## Small text in a logo
 
@@ -96,7 +96,7 @@ Very small text, such as a line like "Construction Limited" under the name, cann
 
 ## Tips
 
-- Use a PNG or SVG, not a screenshot or a photo of the logo.
+- Use a PNG, not a screenshot or a photo of the logo.
 - Dark logos on a transparent background show well on white documents. If your logo is white, upload a dark version.
 - Avoid very thin lines. They disappear when the logo is small.`,
   video_url: "",

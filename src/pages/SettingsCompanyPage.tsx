@@ -10,7 +10,8 @@ import { Building2, Save, RefreshCw, Globe, Phone, Mail, MapPin, ImageIcon, Uplo
 import SignaturePad from "../components/SignaturePad";
 import PhotoCropModal from "../components/PhotoCropModal";
 import IdCardColors from "../components/IdCardColors";
-import { LOGO_ACCEPT, LOGO_SMALL_WARNING, LOGO_MARGIN_HINT, analyzeLogoFile, describeLogo, loadLogoImage, logoExtension, logoIsSmall, logoType, marginsAreWasteful, type LogoInfo } from "../lib/logoImage";
+import LogoUploadPanel from "../components/LogoUploadPanel";
+import { LOGO_SMALL_WARNING, LOGO_MARGIN_HINT, describeLogo, loadLogoImage, logoIsSmall, marginsAreWasteful, type LogoInfo } from "../lib/logoImage";
 
 type CompanySettings = {
   id: number;
@@ -55,7 +56,6 @@ export default function SettingsCompanyPage() {
   const [paymentNotificationsEnabled, setPaymentNotificationsEnabled] = useState(true);
   const [watermarkOpacity, setWatermarkOpacity] = useState(0.15);
   const [uploadingWatermark, setUploadingWatermark] = useState(false);
-  const [uploadingLogo, setUploadingLogo] = useState(false);
   // What the stored logo is (pixel size, type, size on disk) and any quality warning: shown under the logo picker
   const [logoInfo, setLogoInfo] = useState<LogoInfo | null>(null);
   const [watermarkSize, setWatermarkSize] = useState(25);
@@ -65,7 +65,7 @@ export default function SettingsCompanyPage() {
     let alive = true;
     if (!logoUrl) { setLogoInfo(null); return; }
     setLogoInfo((cur) => (cur && cur.bytes ? cur : null));           // keep the upload's own details (with the file size) until the URL changes
-    loadLogoImage(logoUrl).then((l) => { if (alive) setLogoInfo((cur) => ({ ...l.info, type: cur?.type || l.info.type, bytes: cur?.bytes })); }).catch(() => undefined);
+    loadLogoImage(logoUrl).then((l) => { if (alive) setLogoInfo((cur) => ({ ...l.info, type: cur?.type || l.info.type, bytes: cur?.bytes, sourceWidth: cur?.sourceWidth, trimmedFrom: cur?.trimmedFrom })); }).catch(() => undefined);
     return () => { alive = false; };
   }, [logoUrl]);
 
@@ -276,37 +276,10 @@ export default function SettingsCompanyPage() {
               <div className="text-xs text-slate-400 mb-1">
                 {logoUrl ? "Logo loaded" : "No logo uploaded"}
               </div>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-slate-300 dark:border-white/[0.1] hover:border-cyan-500/40 cursor-pointer transition">
-                  <Upload size={13} className="text-slate-600"/>
-                  <span className="text-[11px] text-slate-500">{uploadingLogo ? "Uploading..." : "Click to upload PNG, JPG, WEBP or SVG (up to 5 MB)"}</span>
-                  <input type="file" accept={LOGO_ACCEPT} className="hidden" disabled={uploadingLogo} onChange={async (e) => {
-                    const f = e.target.files?.[0]; e.target.value = ""; if (!f || !companyId) return;
-                    setUploadingLogo(true); setMsg(null);
-                    try {
-                      // The original is stored exactly as picked: no resize, no compression, no conversion (PNG / WEBP transparency and SVG stay as they are).
-                      // A new file name every time, so an earlier logo is never overwritten.
-                      const info = await analyzeLogoFile(f);       // PNG, JPG, WEBP or SVG up to 5 MB, else a readable message
-                      const type = logoType(f);
-                      const path = `${companyId}/logo/${Date.now()}_logo.${logoExtension(type)}`;
-                      const { error: ue } = await supabase.storage.from("company-logos").upload(path, f, { upsert: false, contentType: type });
-                      if (ue) { setMsg({ type: "error", text: ue.message }); }
-                      else {
-                        const { data: ud } = supabase.storage.from("company-logos").getPublicUrl(path);
-                        setLogoInfo(info);
-                        setLogoUrl(ud.publicUrl);
-                      }
-                    } catch (err) {
-                      setMsg({ type: "error", text: err instanceof Error ? err.message : "The logo could not be uploaded." });
-                    } finally {
-                      setUploadingLogo(false);
-                    }
-                  }}/>
-                </label>
-                {logoUrl && (
-                  <button onClick={() => setLogoUrl(null)} className="text-[11px] text-red-400 hover:text-red-300">Remove</button>
-                )}
-              </div>
+              <LogoUploadPanel companyId={companyId} hasLogo={!!logoUrl}
+                onUploaded={(url, info) => { setLogoInfo(info); setLogoUrl(url); }}
+                onRemove={() => setLogoUrl(null)}
+                onError={(text) => setMsg({ type: "error", text })}/>
               <div className="text-[10px] text-slate-700 mt-1.5">
                 This logo appears on your dashboard, reports, and client-facing documents.
               </div>

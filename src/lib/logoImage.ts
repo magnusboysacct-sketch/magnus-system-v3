@@ -3,14 +3,18 @@
 //
 //   * The ORIGINAL upload is stored untouched (no resize, no re-compression, no JPEG conversion, transparency kept). Everything that shows the logo uses the
 //     original, or draws from it at full resolution; nothing is ever scaled up.
-//   * Allowed: PNG, JPG, WEBP and SVG, up to 5 MB. A raster logo narrower than 1000 px gets a warning (it will look blurry on cards and documents).
-//   * Pure helpers (validation, SVG size / safety checks, margin measuring) have no DOM and are covered by the tests; the loaders use the browser.
+//   * Uploads: PNG and JPG, up to 5 MB. (WEBP is not accepted: WhatsApp link previews cannot draw it. SVG is not accepted for now: the file is public and no
+//     server-side check of its content exists yet. An SVG logo that is already stored still displays and still draws vector-sharp.)
+//   * "Trim empty space": transparent (or, for a logo without transparency, near-white) margins are cropped in the browser; the cropped PNG becomes the logo and
+//     the untouched original is kept as a separate file.
+//   * A raster logo narrower than 1000 px gets a warning (it will look blurry on cards and documents).
+//   * Pure helpers (validation, trim box, SVG size / safety checks for stored SVGs, margin measuring) have no DOM and are covered by the tests; the loaders use the browser.
 
-export const LOGO_ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"] as const;
+export const LOGO_ALLOWED_TYPES = ["image/png", "image/jpeg"] as const;
 export const LOGO_MAX_BYTES = 5 * 1024 * 1024;
 export const LOGO_MIN_WIDTH = 1000;
-export const LOGO_ACCEPT = ".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml";
-export const LOGO_SMALL_WARNING = "This logo is small and may look blurry on cards and documents. Upload a larger PNG or SVG for best quality.";
+export const LOGO_ACCEPT = ".png,.jpg,.jpeg,image/png,image/jpeg";
+export const LOGO_SMALL_WARNING = "This logo is small and may look blurry on cards and documents. Upload a larger PNG for best quality.";
 export const LOGO_MARGIN_HINT = "has a lot of empty space around it, so it shows smaller than it could. Trimming the empty space before uploading makes it larger on cards and documents.";
 
 const EXT_BY_TYPE: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/svg+xml": "svg" };
@@ -29,7 +33,8 @@ export const isSvgUrl = (url: string) => /^data:image\/svg\+xml/i.test(url) || /
 // null = fine; otherwise the sentence to show the person.
 export function validateLogoFile(file: { type?: string; name?: string; size: number }): string | null {
   const t = logoType(file);
-  if (!(LOGO_ALLOWED_TYPES as readonly string[]).includes(t)) return "Use a PNG, JPG, WEBP or SVG file for the logo.";
+  if (t === "image/svg+xml") return "SVG logos are not accepted yet. Use a PNG (best: at least 2000 px wide with a transparent background) or a JPG.";
+  if (!(LOGO_ALLOWED_TYPES as readonly string[]).includes(t)) return "Use a PNG or JPG file for the logo.";
   if (file.size > LOGO_MAX_BYTES) return `This file is ${(file.size / 1048576).toFixed(1)} MB. The logo can be at most 5 MB.`;
   if (file.size === 0) return "This file is empty.";
   return null;
@@ -80,13 +85,41 @@ export function measureMargins(rgba: ArrayLike<number>, w: number, h: number, al
 // True when the empty margins cost the logo real size (more than 30% of the width or 35% of the height is empty).
 export const marginsAreWasteful = (m: Margins | null) => !!m && (m.left + m.right > 0.3 || m.top + m.bottom > 0.35);
 
+// ── "Trim empty space" ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+// The box of the artwork. A logo with transparency: every pixel that is not (almost) transparent is artwork. A logo without any transparency (a JPG, or a PNG on
+// a white background): every pixel that is not near-white is artwork. (A white logo on a transparent background is therefore kept whole.)
+export interface TrimBox { x0: number; y0: number; x1: number; y1: number; basis: "transparent" | "white"; emptyShare: number }
+export function trimBox(rgba: ArrayLike<number>, w: number, h: number): TrimBox | null {
+  let seeThrough = false;
+  for (let i = 3; i < w * h * 4; i += 4) if (rgba[i] < 250) { seeThrough = true; break; }
+  const isArt = (i: number) => (seeThrough ? rgba[i + 3] >= 9 : rgba[i + 3] >= 9 && !(rgba[i] >= 240 && rgba[i + 1] >= 240 && rgba[i + 2] >= 240));
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (isArt((y * w + x) * 4)) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return null;                                              // nothing but background: nothing to crop to
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  return { x0, y0, x1: x1 + 1, y1: y1 + 1, basis: seeThrough ? "transparent" : "white", emptyShare: 1 - (bw * bh) / (w * h) };
+}
+export const TRIM_DEFAULT_ABOVE = 0.1;              // "Trim empty space" starts switched on when more than 10% of the image is empty margin
+export const trimIsWorthIt = (b: TrimBox | null) => !!b && b.emptyShare > TRIM_DEFAULT_ABOVE;
+// the crop rectangle: the artwork's box plus a little air (1% of the longer side, at least 2 px), never outside the image
+export function trimRect(b: TrimBox, w: number, h: number) {
+  const pad = Math.max(2, Math.round(0.01 * Math.max(w, h)));
+  const x0 = Math.max(0, b.x0 - pad), y0 = Math.max(0, b.y0 - pad), x1 = Math.min(w, b.x1 + pad), y1 = Math.min(h, b.y1 + pad);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
 // ── what to tell the person after an upload ───────────────────────────────────────────────────────────────────────────────────
-export interface LogoInfo { type: string; width: number; height: number; vector: boolean; bytes?: number; margins: Margins | null }
-export const logoIsSmall = (i: Pick<LogoInfo, "vector" | "width">) => !i.vector && i.width < LOGO_MIN_WIDTH;
+export interface LogoInfo {
+  type: string; width: number; height: number; vector: boolean; bytes?: number; margins: Margins | null;
+  trimmedFrom?: { width: number; height: number };      // the logo is the trimmed copy; the untouched original (this size) is kept as a separate file
+  sourceWidth?: number;                                  // width of the file that was picked (the warning is about that, not about the trimmed copy)
+}
+export const logoIsSmall = (i: Pick<LogoInfo, "vector" | "width" | "sourceWidth">) => !i.vector && (i.sourceWidth ?? i.width) < LOGO_MIN_WIDTH;
 export function describeLogo(i: LogoInfo): string {
   const kind = { "image/png": "PNG", "image/jpeg": "JPG", "image/webp": "WEBP", "image/svg+xml": "SVG" }[i.type] || "image";
   const size = i.vector ? `${kind} (vector, sharp at any size)` : `${kind} · ${i.width} × ${i.height} px`;
-  return i.bytes ? `${size} · ${i.bytes >= 1048576 ? (i.bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(i.bytes / 1024)) + " KB"}` : size;
+  const withSize = i.bytes ? `${size} · ${i.bytes >= 1048576 ? (i.bytes / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(i.bytes / 1024)) + " KB"}` : size;
+  return i.trimmedFrom ? `${withSize} (empty space trimmed; original ${i.trimmedFrom.width} × ${i.trimmedFrom.height} px kept)` : withSize;
 }
 
 // ── browser: measuring and loading ──────────────────────────────────────────────────────────────────────────────────────────
@@ -118,20 +151,40 @@ export async function analyzeLogoFile(file: File): Promise<LogoInfo> {
   const type = logoType(file);
   const bad = validateLogoFile(file);
   if (bad) throw new Error(bad);
-  if (type === "image/svg+xml") {
-    const text = await file.text();
-    if (!svgIsSafe(text)) throw new Error("This SVG contains scripts or embedded content and cannot be used. Export a plain SVG from your design tool.");
-    const sized = svgWithSize(text);
-    if (!sized) throw new Error("This SVG has no size (no width / height or viewBox). Export it again from your design tool.");
-    const url = URL.createObjectURL(new Blob([sized.text], { type: "image/svg+xml" }));
-    try { const img = await imageFromUrl(url, false); return { type, width: sized.width, height: sized.height, vector: true, bytes: file.size, margins: marginsOf(img) }; }
-    finally { URL.revokeObjectURL(url); }
-  }
   const url = URL.createObjectURL(file);
   try {
     const img = await imageFromUrl(url, false);
     return { type, width: img.naturalWidth, height: img.naturalHeight, vector: false, bytes: file.size, margins: marginsOf(img) };
   } finally { URL.revokeObjectURL(url); }
+}
+
+// The picked logo with its empty margins cropped away, as a PNG (full resolution, nothing scaled). null when there is nothing worth cropping, the picture cannot
+// be read, or the cropped PNG would be over the size limit. The original file is never touched.
+export interface TrimmedLogo { blob: Blob; width: number; height: number; fromWidth: number; fromHeight: number; emptyShare: number; basis: "transparent" | "white" }
+export async function trimLogoFile(file: File): Promise<TrimmedLogo | null> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await imageFromUrl(url, false);
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return null;
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    const box = trimBox(ctx.getImageData(0, 0, w, h).data, w, h);
+    if (!box || !trimIsWorthIt(box)) return null;
+    const r = trimRect(box, w, h);
+    const out = document.createElement("canvas");
+    out.width = r.w; out.height = r.h;
+    const octx = out.getContext("2d");
+    if (!octx) return null;
+    octx.drawImage(c, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+    const blob: Blob | null = await new Promise((res) => out.toBlob((bl) => res(bl), "image/png"));
+    if (!blob || blob.size > LOGO_MAX_BYTES) return null;
+    return { blob, width: r.w, height: r.h, fromWidth: w, fromHeight: h, emptyShare: box.emptyShare, basis: box.basis };
+  } catch { return null; }
+  finally { URL.revokeObjectURL(url); }
 }
 
 // The stored logo, as an image ready to draw. A vector (SVG) logo is given a size so it can be measured, and stays vector.
