@@ -596,7 +596,7 @@ export default function WorkersPage() {
           const ppPath = privatePath(companyId, "workers/passport", safeUploadName("passport"));
           const { error: ppErr } = await supabase.storage
             .from("private-files")
-            .upload(ppPath, passportPhotoFileRef.current!, { upsert: true });
+            .upload(ppPath, passportPhotoFileRef.current!, { upsert: false, contentType: "image/jpeg" });      // never upsert: an upsert needs read access to the new row, which a site_user does not have for ID scans
           if (!ppErr) payload.passport_photo_url = ppPath;      // the PATH is stored; a short-lived signed URL is made whenever the photo is shown
         } catch (e) { console.error("PASSPORT CATCH ERROR:", e); }
       }
@@ -607,7 +607,7 @@ export default function WorkersPage() {
           const path = privatePath(companyId, "workers/ids", safeUploadName("id"));      // (the ID number is no longer part of the file name)
           const { error: upErr } = await supabase.storage
             .from("private-files")
-            .upload(path, idPhotoFileRef.current!, { upsert: true });
+            .upload(path, idPhotoFileRef.current!, { upsert: false, contentType: idPhotoFileRef.current!.type || "image/jpeg" });      // never upsert (see above): a supervisor or site_user can upload an ID scan but cannot read it back
           if (upErr) {
             console.error("ID photo upload error:", upErr);
           } else {

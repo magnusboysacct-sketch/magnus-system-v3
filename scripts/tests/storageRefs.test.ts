@@ -3,6 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { PRIVATE_FILES_BUCKET, needsSigning, parseStorageRef, privatePath, safeUploadName, toStoredRef } from "../../src/lib/storageRefsCore";
+import { verifyPhotoInfo } from "../../src/lib/verifyPhotoCore";
 import { isShowablePhotoPath, parsePhotoRequest, privatePhotoPath } from "../../supabase/functions/verify-photo/logic";
 
 const CO = "813ffe22-b75c-49c5-b41e-3ab185e2724c";
@@ -64,4 +65,38 @@ test("verify-photo: only a staff / passport photo of a company folder is ever ha
   for (const p of [`${CO}/workers/ids/id.jpg`, `${CO}/field-payments/ids/id.jpg`, `${CO}/receipts/r.jpg`, `${CO}/bank-statements/s.pdf`, `${CO}/user-signatures/s.png`, `${CO}/contract-signatures/s.png`,
                    `${CO}/workers/x.jpg`, "staff-photos/u.png", "workers/passport/p.jpg", `not-a-company/staff-photos/u.png`, `${CO}/staff-photos`, ""])
     assert.equal(isShowablePhotoPath(p), false, p);
+});
+
+// ── the front end before and after migration 20260948 ──────────────────────────────────────────────────────────────────────────
+test("verify pages: work with the database function before the migration (photo_url) and after it (has_photo)", () => {
+  const signed = `${BASE}/sign/private-files/${CO}/workers/passport/1_passport.jpg?token=abc`;
+  // after: has_photo only
+  assert.deepEqual(verifyPhotoInfo({ has_photo: true }), { hasPhoto: true, legacyUrl: null });
+  assert.deepEqual(verifyPhotoInfo({ has_photo: false }), { hasPhoto: false, legacyUrl: null });
+  // before: photo_url only - an old long-lived signed URL is a usable fallback; a plain storage path (a photo saved by the new app) is not a link a browser can show
+  assert.deepEqual(verifyPhotoInfo({ photo_url: signed }), { hasPhoto: true, legacyUrl: signed });
+  assert.deepEqual(verifyPhotoInfo({ photo_url: `${CO}/workers/passport/1_passport.jpg` }), { hasPhoto: true, legacyUrl: null });
+  assert.deepEqual(verifyPhotoInfo({ photo_url: null }), { hasPhoto: false, legacyUrl: null });
+  assert.deepEqual(verifyPhotoInfo({ photo_url: "  " }), { hasPhoto: false, legacyUrl: null });
+  // both present (never, but): has_photo decides
+  assert.deepEqual(verifyPhotoInfo({ has_photo: false, photo_url: signed }), { hasPhoto: false, legacyUrl: signed });
+  assert.deepEqual(verifyPhotoInfo(null), { hasPhoto: false, legacyUrl: null });
+  assert.deepEqual(verifyPhotoInfo(undefined), { hasPhoto: false, legacyUrl: null });
+  // http (not https) pictures are never used
+  assert.equal(verifyPhotoInfo({ photo_url: "http://x.test/a.jpg" }).legacyUrl, null);
+});
+
+test("the verify-photo function accepts what the database holds before and after the migration (a path, or an old signed / public URL of the private bucket)", () => {
+  const path = `${CO}/workers/passport/1_passport.jpg`;
+  assert.equal(privatePhotoPath(path), path);
+  assert.equal(privatePhotoPath(`${BASE}/sign/private-files/${path}?token=abc`), path);
+  assert.equal(isShowablePhotoPath(path), true);
+});
+
+test("the app reads both forms of stored value (path or URL) and saves paths: a URL that is read back and saved again becomes the same path", () => {
+  const path = `${CO}/receipts/2026/10/1790_receipt.jpg`;
+  const asUrl = `${BASE}/sign/private-files/${path}?token=abc.def`;
+  assert.deepEqual(parseStorageRef(asUrl), parseStorageRef(path));
+  assert.equal(toStoredRef(asUrl), toStoredRef(path));
+  assert.equal(needsSigning(asUrl), needsSigning(path));
 });

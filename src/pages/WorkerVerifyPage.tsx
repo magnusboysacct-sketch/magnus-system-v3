@@ -8,6 +8,7 @@ import { supabase } from "../lib/supabase";
 import { ShieldCheck, ShieldAlert, ShieldX, Calendar, Hash, Briefcase } from "lucide-react";
 import VerifyHeader from "../components/VerifyHeader";
 import { useVerifyPhoto } from "../lib/verifyPhoto";
+import { verifyPhotoInfo } from "../lib/verifyPhotoCore";
 
 type VerifyResult = {
   id: string;
@@ -55,7 +56,8 @@ export default function WorkerVerifyPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
-  const photoSrc = useVerifyPhoto({ workerId }, !!worker && (worker.has_photo ?? !!worker.photo_url), worker?.photo_url);
+  const photoInfo = verifyPhotoInfo(worker);
+  const photoSrc = useVerifyPhoto({ workerId }, photoInfo.hasPhoto, photoInfo.legacyUrl);
 
   useEffect(() => {
     async function load() {

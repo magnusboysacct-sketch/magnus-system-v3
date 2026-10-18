@@ -26,22 +26,25 @@
 --   4. company-assets (signature, watermark: they are printed on documents and put in emails, so the bucket stays public to read): only a director or admin of the
 --      company can write.
 --   5. Anonymous listing of project-photos, company-logos and company-assets is closed (the three "Public read" policies are dropped). Public URLs still work; the
---      portal, share links, emails and PDFs are unaffected. Signed-in staff keep their own policies.
+--      portal, share links, emails and PDFs are unaffected. Signed-in staff of a company can read (and so upload-with-replace) their OWN company's folder in
+--      company-assets and company-logos; the old policy that let every signed-in user read the whole company-assets bucket is dropped.
 --   6. verify_id() / verify_worker() no longer hand out a photo URL: they say has_photo, and the verify-photo edge function (supabase/functions/verify-photo) returns a
 --      5-minute signed URL for the profile / passport photo of the card that was scanned (never an ID scan).
 --   7. The three 3-argument procurement functions and their *_unchecked helpers are dropped (nothing calls them; the 2-argument versions already use auth.uid()).
 --
--- BEFORE YOU APPLY: deploy the new front end and the verify-photo function with this migration (the app reads paths and signs them; the verify pages need the
--- function), and run the migrate-storage-to-private function once more in dry-run: this migration stops, changing nothing, if a stored public project-files URL
--- is still in the database.
+-- BEFORE YOU APPLY: deploy the new front end (it works before and after this migration) and the verify-photo function, and run the migrate-storage-to-private
+-- function: this migration scans EVERY text / varchar / json(b) column of every table in public and stops, changing nothing, with a per-column count if a link into
+-- project-files (public, or signed and about to expire) is still stored. Left alone on purpose: storage_migration_log (the audit trail of the copy) and the
+-- takeoff_sessions.pdf_file(s) entries that carry a storagePath (the app signs those from the path; the old signed URL in the entry is never used).
 --
 -- Functions created here start with REVOKE ALL ... FROM PUBLIC, anon. Safety: the migration stops, changing nothing, on any storage policy it does not know.
 
 BEGIN;
+SET LOCAL statement_timeout = 0;                -- the scan of every column below can take half a minute on a big database
 
 -- ── 0. Check what is there ──────────────────────────────────────────────────────────────────────────────────────────────────
 DO $$
-DECLARE r record; v_n bigint;
+DECLARE r record; c record; v_n bigint; v_sql text; v_total bigint := 0; v_report text := '';
 BEGIN
   FOR r IN SELECT x FROM unnest(ARRAY['private-files', 'project-files', 'company-assets', 'company-logos', 'project-photos']) AS x
             WHERE NOT EXISTS (SELECT 1 FROM storage.buckets b WHERE b.id = x)
@@ -59,7 +62,7 @@ BEGIN
          'private-files access read', 'private-files access insert', 'private-files access update', 'private-files access delete',
          'Public read', 'company logos public read', 'Public read company-assets 11180r7_0', 'Authenticated write company-assets 11180r7_2',
          'company-assets company write', 'company-assets company update', 'company-assets company delete',
-         'company-assets admin write', 'company-assets admin update', 'company-assets admin delete',
+         'company-assets admin write', 'company-assets admin update', 'company-assets admin delete', 'company-assets staff read', 'company-logos staff read',
          'company-logos admin insert', 'company-logos admin update', 'company-logos admin delete',
          'Company members can delete staff photos', 'Company members can update staff photos', 'Company members can upload staff photos', 'Company members can view staff photos',
          'Project access for project-files delete', 'Project access for project-files insert', 'Project access for project-files select',
@@ -76,14 +79,32 @@ BEGIN
     RAISE EXCEPTION 'Storage policy "%" can write to any bucket (it names no bucket). Nothing was changed.', r.policyname;
   END LOOP;
 
-  -- A stored PUBLIC project-files URL would stop working when that bucket becomes private: the one-time copy must have been run for it (migrate-storage-to-private).
-  SELECT (SELECT count(*) FROM workers WHERE coalesce(id_photo_url, '') LIKE '%/object/public/project-files/%' OR coalesce(passport_photo_url, '') LIKE '%/object/public/project-files/%')
-       + (SELECT count(*) FROM field_payments WHERE coalesce(id_photo_url, '') LIKE '%/object/public/project-files/%')
-       + (SELECT count(*) FROM user_profiles WHERE coalesce(avatar_url, '') LIKE '%/object/public/project-files/%')
-       + (SELECT count(*) FROM expenses WHERE coalesce(receipt_url, '') LIKE '%/object/public/project-files/%')
-    INTO v_n;
-  IF v_n > 0 THEN
-    RAISE EXCEPTION '% stored file link(s) still point at the public project-files bucket. Run the migrate-storage-to-private function (dry run first) and apply this migration afterwards. Nothing was changed.', v_n;
+  -- Any link into project-files that is still stored, in ANY table: a public link stops working when the bucket becomes private, and a signed link would expire into
+  -- a private path the app cannot sign. Every text / varchar / json / jsonb / text[] column of every table in public is checked (not views).
+  -- Not counted: storage_migration_log (the audit trail of the copy, which keeps the old links on purpose) and the takeoff_sessions pdf_file / pdf_files entries
+  -- that carry a "storagePath" (the app signs those from the path and never uses the old URL kept beside it).
+  FOR c IN
+    SELECT col.table_name, col.column_name
+      FROM information_schema.columns col
+      JOIN information_schema.tables t ON t.table_schema = col.table_schema AND t.table_name = col.table_name AND t.table_type = 'BASE TABLE'
+     WHERE col.table_schema = 'public'
+       AND (col.data_type IN ('text', 'character varying', 'jsonb', 'json') OR (col.data_type = 'ARRAY' AND col.udt_name IN ('_text', '_varchar')))
+       AND col.table_name <> 'storage_migration_log'
+     ORDER BY col.table_name, col.column_name
+  LOOP
+    v_sql := format('SELECT count(*) FROM public.%I WHERE (%I::text LIKE %L OR %I::text LIKE %L)',
+                    c.table_name, c.column_name, '%/object/public/project-files/%', c.column_name, '%/object/sign/project-files/%');
+    IF c.table_name = 'takeoff_sessions' AND c.column_name IN ('pdf_file', 'pdf_files') THEN
+      v_sql := v_sql || format(' AND %I::text NOT LIKE %L', c.column_name, '%"storagePath"%');
+    END IF;
+    EXECUTE v_sql INTO v_n;
+    IF v_n > 0 THEN
+      v_report := v_report || format(E'\n  %s.%s: %s row(s)', c.table_name, c.column_name, v_n);
+      v_total := v_total + v_n;
+    END IF;
+  END LOOP;
+  IF v_total > 0 THEN
+    RAISE EXCEPTION E'% stored link(s) into project-files would break when it becomes private:%\nRun the migrate-storage-to-private function (dry run first), or clear them, and apply this migration afterwards. Nothing was changed.', v_total, v_report;
   END IF;
 END $$;
 
@@ -215,6 +236,18 @@ CREATE POLICY "company-assets admin delete" ON storage.objects FOR DELETE TO aut
 DROP POLICY IF EXISTS "Public read" ON storage.objects;
 DROP POLICY IF EXISTS "company logos public read" ON storage.objects;
 DROP POLICY IF EXISTS "Public read company-assets 11180r7_0" ON storage.objects;
+-- ...and a signed-in user no longer sees other companies' files in them either: the old "Authenticated write company-assets 11180r7_2" was a SELECT for every
+-- signed-in user on the whole bucket. In its place, staff of a company can read their OWN company's folder (first folder = their company). That is what an upload
+-- with replace (upsert: the signature and the watermark use it), a download, a list or a signed URL needs; plain public URLs need no policy at all.
+DROP POLICY IF EXISTS "Authenticated write company-assets 11180r7_2" ON storage.objects;
+DROP POLICY IF EXISTS "company-assets staff read" ON storage.objects;
+DROP POLICY IF EXISTS "company-logos staff read" ON storage.objects;
+CREATE POLICY "company-assets staff read" ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'company-assets'
+         AND (storage.foldername(name))[1] = (SELECT up.company_id::text FROM public.user_profiles up WHERE up.id = auth.uid() LIMIT 1));
+CREATE POLICY "company-logos staff read" ON storage.objects FOR SELECT TO authenticated
+  USING (bucket_id = 'company-logos'
+         AND (storage.foldername(name))[1] = (SELECT up.company_id::text FROM public.user_profiles up WHERE up.id = auth.uid() LIMIT 1));
 
 -- ── 6. The public verify pages ──────────────────────────────────────────────────────────────────────────────────────────────
 -- Same as 20260946000000, but no photo URL: has_photo, and the verify-photo edge function signs the picture for five minutes.
@@ -341,6 +374,14 @@ BEGIN
        AND p.policyname NOT IN ('company-assets admin write', 'company-assets admin update', 'company-assets admin delete', 'company-logos admin insert', 'company-logos admin update', 'company-logos admin delete')
   LOOP
     RAISE EXCEPTION 'Policy "%" still lets someone other than a director or admin write to company-assets / company-logos. Nothing was changed.', r.policyname;
+  END LOOP;
+  FOR r IN
+    SELECT p.policyname FROM pg_policies p
+     WHERE p.schemaname = 'storage' AND p.tablename = 'objects' AND p.cmd = 'SELECT'
+       AND (coalesce(p.qual, '') ~ '(company-assets|company-logos)')
+       AND p.policyname NOT IN ('company-assets staff read', 'company-logos staff read')
+  LOOP
+    RAISE EXCEPTION 'Policy "%" still lets people read company-assets / company-logos beyond their own company. Nothing was changed.', r.policyname;
   END LOOP;
   IF (SELECT count(*) FROM pg_policies p WHERE p.schemaname = 'storage' AND p.tablename = 'objects' AND p.policyname LIKE 'private-files access %') <> 4 THEN
     RAISE EXCEPTION 'The private-files policies are not all in place. Nothing was changed.';

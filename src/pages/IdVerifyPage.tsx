@@ -7,6 +7,7 @@ import { supabase } from "../lib/supabase";
 import { ShieldCheck, ShieldAlert, ShieldX, Calendar, Briefcase, User } from "lucide-react";
 import VerifyHeader from "../components/VerifyHeader";
 import { useVerifyPhoto } from "../lib/verifyPhoto";
+import { verifyPhotoInfo } from "../lib/verifyPhotoCore";
 
 type VerifyIdResult = {
   kind: "staff" | "worker";
@@ -40,7 +41,8 @@ export default function IdVerifyPage() {
   const [result, setResult] = useState<VerifyIdResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [photoFailed, setPhotoFailed] = useState(false);
-  const photoSrc = useVerifyPhoto({ code }, !!result && (result.has_photo ?? !!result.photo_url), result?.photo_url);
+  const photoInfo = verifyPhotoInfo(result);
+  const photoSrc = useVerifyPhoto({ code }, photoInfo.hasPhoto, photoInfo.legacyUrl);
 
   useEffect(() => {
     let alive = true;
