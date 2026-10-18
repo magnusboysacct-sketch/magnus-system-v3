@@ -77,25 +77,23 @@ export function usePayrollActivationAccess() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-          setAccess(prev => ({ ...prev, loading: false }));
           return;
         }
 
-        // Get user profile with role information
+        // The user's role. user_profiles is keyed by "id" (the signed-in user's id); it has no "user_id" and no "is_super_admin" column.
         const { data: profile } = await supabase
           .from('user_profiles')
-          .select('role, is_super_admin')
-          .eq('user_id', user.id)
-          .single();
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
 
         if (!profile) {
           console.error('User profile not found for access check');
-          setAccess(prev => ({ ...prev, loading: false }));
           return;
         }
 
         const userRole = profile.role;
-        const isSuperAdmin = profile.is_super_admin || false;
+        const isSuperAdmin = false;                 // there is no super-admin concept in user_profiles; kept so the shape of the result is unchanged
 
         // Define access based on role
         const newAccess: PayrollActivationAccess = {
@@ -135,7 +133,6 @@ export function usePayrollActivationAccess() {
         console.error('Failed to check payroll activation access:', error);
         setAccess(prev => ({ 
           ...prev, 
-          loading: false,
           canViewActivationDashboard: false,
           canViewPilotManagement: false,
           canViewRollbackManagement: false,
@@ -160,7 +157,7 @@ export function usePayrollActivationAccess() {
       }
     };
 
-    checkAccess();
+    checkAccess().finally(() => setLoading(false));      // (it used to stay "loading" forever)
   }, []);
 
   return { access, loading };

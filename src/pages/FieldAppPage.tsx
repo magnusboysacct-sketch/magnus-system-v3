@@ -1,5 +1,6 @@
 // src/pages/FieldAppPage.tsx — Magnus Boys Field Worker PWA — Phase 1
 // Digital Signature + Receipt Scan + Expense Logging + Full Mobile ERP
+import { resolveFileUrl, safeUploadName } from "../lib/storageRefs";
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { resolveProjectPhotoUrls } from "../lib/privateFiles";
@@ -504,9 +505,7 @@ function PaymentsScreen({ companyId, projectId, payments, onBack, onRefresh, sho
         const { error:ue } = await supabase.storage.from("private-files").upload(path, blob, {contentType:"image/png",upsert:false});
         if (ue) throw ue;
         uploadedPath = path;
-        const { data:sd, error:se } = await supabase.storage.from("private-files").createSignedUrl(path, 60 * 60 * 24 * 365);
-        if (se || !sd?.signedUrl) throw se || new Error("the signature link could not be created");
-        sigUrl = sd.signedUrl;
+        sigUrl = path;                                    // the PATH is stored; a short-lived signed URL is made when the signature is shown
       } catch (e:any) {
         sigError = e?.message || "unknown error";
         if (uploadedPath) { try { await supabase.storage.from("private-files").remove([uploadedPath]); } catch {} } // no orphaned file
@@ -625,7 +624,8 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [form, setForm] = useState({ description:"", amount:"", vendor:"", category:"Materials", date:new Date().toISOString().slice(0,10), notes:"" });
   const [saving, setSaving] = useState(false);
-  const [receiptUrl, setReceiptUrl] = useState<string|null>(null);
+  const [receiptUrl, setReceiptUrl] = useState<string|null>(null);          // the stored path
+  const [receiptShown, setReceiptShown] = useState<string|null>(null);      // a short-lived signed URL, for the preview only
 
   useEffect(()=>{
     if(companyId) supabase.from("expenses").select("*").eq("company_id",companyId).order("created_at",{ascending:false}).limit(10).then(({data})=>setExpenses(data||[]));
@@ -636,12 +636,11 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
     setScanning(true);
     try {
       // Upload photo first
-      const path = `${companyId}/receipts/${Date.now()}-${file.name}`;
+      const path = `${companyId}/receipts/${safeUploadName("receipt")}`;
       const { error:receiptUpErr } = await supabase.storage.from("private-files").upload(path,file,{cacheControl:"3600",upsert:false});
       if (!receiptUpErr) {
-        // 1 year, same expiry as lib/fieldPayments.ts
-        const { data:sd } = await supabase.storage.from("private-files").createSignedUrl(path, 60 * 60 * 24 * 365);
-        if (sd?.signedUrl) setReceiptUrl(sd.signedUrl);
+        setReceiptUrl(path);                              // the PATH is stored
+        setReceiptShown(await resolveFileUrl(path));      // the preview uses a short-lived signed URL
       }
 
       // Convert to base64 for AI
@@ -688,7 +687,7 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
     });
     setSaving(false);
     setForm({ description:"", amount:"", vendor:"", category:"Materials", date:new Date().toISOString().slice(0,10), notes:"" });
-    setReceiptUrl(null);
+    setReceiptUrl(null); setReceiptShown(null);
     showToast("Expense logged!");
     const {data} = await supabase.from("expenses").select("*").eq("company_id",companyId).order("created_at",{ascending:false}).limit(10);
     setExpenses(data||[]);
@@ -709,9 +708,9 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
         {scanning ? <><Loader size={18} style={{animation:"spin 0.8s linear infinite"}}/> AI Reading Receipt…</> : <><Camera size={18}/> Scan Receipt / Invoice</>}
       </button>
 
-      {receiptUrl && (
+      {receiptUrl && receiptShown && (
         <div style={{marginBottom:12,borderRadius:12,overflow:"hidden",border:"1px solid rgba(124,58,237,0.3)"}}>
-          <img src={receiptUrl} style={{width:"100%",maxHeight:160,objectFit:"cover"}}/>
+          <img src={receiptShown} style={{width:"100%",maxHeight:160,objectFit:"cover"}}/>
           <div style={{padding:"8px 12px",background:"rgba(124,58,237,0.1)",fontSize:11,color:"#a78bfa",fontWeight:600}}>✓ Receipt uploaded · AI has read this</div>
         </div>
       )}

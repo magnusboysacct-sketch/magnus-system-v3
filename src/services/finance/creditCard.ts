@@ -288,10 +288,10 @@ export async function uploadCreditCardStatement(
 
   // Upload file to storage (using existing pattern)
   const fileExt = file.name.split(".").pop();
-  const fileName = `credit-card-statements/${account.company_id}/${Date.now()}_${file.name}`;
+  const fileName = `${account.company_id}/credit-card-statements/${Date.now()}_${file.name}`;      // company id first: the private bucket's policies key on it
   
   const { data: uploadData, error: uploadError } = await supabase.storage
-    .from("project-files") // Reuse existing bucket
+    .from("private-files") // private: statements are never public
     .upload(fileName, file);
 
   if (uploadError) throw uploadError;

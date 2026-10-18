@@ -6,6 +6,7 @@ import { useCompanySettings } from "../hooks/useCompanySettings";
 import { useProjectContext } from "../context/ProjectContext";
 import { canManageWorkers } from "../lib/permissions";
 import { WORKER_SAFE_COLUMNS } from "../lib/workers";
+import { privatePath, safeUploadName, toStoredRef, withResolvedUrls } from "../lib/storageRefs";
 import EditableDropdown from "../components/common/EditableDropdown";
 import { WorkerIDCard } from "../components/WorkerIDCard";
 import { IdCardBatchDownload } from "../components/IdCardDownload";
@@ -442,6 +443,10 @@ export default function WorkersPage() {
   const idPhotoFileRef = useRef<File | null>(null);
   const passportPhotoFileRef = useRef<File | null>(null);
   const [passportPhotoPreview, setPassportPhotoPreview] = useState<string | null>(null);
+  // The database holds the storage PATH of the passport photo and the ID scan; `workers` carries URLs made for showing (signed when loaded). The paths are kept here
+  // so editing a worker never writes a temporary URL (or an empty value, for someone not allowed to see the scan) back over the stored path.
+  const photoRefs = useRef<Map<string, { passport: string | null; id: string | null }>>(new Map());
+  const [editPassportDisplay, setEditPassportDisplay] = useState<string | null>(null);
   const passportGalleryInputRef = useRef<HTMLInputElement>(null);
   const passportCameraInputRef = useRef<HTMLInputElement>(null);
   const [passportCropSrc, setPassportCropSrc] = useState<string | null>(null);
@@ -516,9 +521,10 @@ export default function WorkersPage() {
         from += PAGE;
       }
       const { count } = await supabase.from("workers").select("id", { count: "exact", head: true }).eq("company_id", companyId!);
+      photoRefs.current = new Map(all.map((w: any) => [w.id, { passport: w.passport_photo_url || null, id: w.id_photo_url || null }]));
+      all = await withResolvedUrls(all, ["passport_photo_url", "id_photo_url"]);      // signed for showing (an ID scan only for the roles allowed to see it)
       setWorkers(all);
       setTotalCount(count ?? null);
-      console.log("FELICA PASSPORT:", all.find((w:any)=>w.first_name==="FELICA")?.passport_photo_url);
       return all;
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
@@ -578,46 +584,34 @@ export default function WorkersPage() {
         employee_id: form.employee_id.trim() || null,
         notes: form.notes.trim() || null,
         id_number: form.id_number?.trim() || null,
-        id_photo_url: form.id_photo_url || null,
+        id_photo_url: toStoredRef(form.id_photo_url),
         national_id_type: form.national_id_type?.trim() || null,
-        passport_photo_url: form.passport_photo_url || null,
+        passport_photo_url: toStoredRef(form.passport_photo_url),
       };
 
       // Upload passport photo to Supabase storage
       console.log("PASSPORT REF:", passportPhotoFileRef.current, "COMPANY:", companyId);
       if (passportPhotoFileRef.current && companyId) {
         try {
-          const ppPath = `${companyId}/workers/passport/${Date.now()}_passport.jpg`;
+          const ppPath = privatePath(companyId, "workers/passport", safeUploadName("passport"));
           const { error: ppErr } = await supabase.storage
             .from("private-files")
             .upload(ppPath, passportPhotoFileRef.current!, { upsert: true });
-          if (!ppErr) {
-          console.log("PASSPORT UPLOAD RESULT - ppErr:", ppErr);
-            // Private bucket: store a 1-year signed URL in the same column (same expiry as lib/fieldPayments.ts).
-            const { data: ppUrl } = await supabase.storage.from("private-files").createSignedUrl(ppPath, 60 * 60 * 24 * 365);
-            if (ppUrl?.signedUrl) {
-              payload.passport_photo_url = ppUrl.signedUrl;
-              console.log("PASSPORT SAVED TO PAYLOAD");
-            }
-          }
+          if (!ppErr) payload.passport_photo_url = ppPath;      // the PATH is stored; a short-lived signed URL is made whenever the photo is shown
         } catch (e) { console.error("PASSPORT CATCH ERROR:", e); }
       }
       // Upload ID photo to Supabase storage
       console.log("Checking ID photo ref:", idPhotoFileRef.current, companyId);
       if (idPhotoFileRef.current && companyId) {
         try {
-          const path = `${companyId}/workers/ids/${Date.now()}_${form.id_number || "id"}.jpg`;
+          const path = privatePath(companyId, "workers/ids", safeUploadName("id"));      // (the ID number is no longer part of the file name)
           const { error: upErr } = await supabase.storage
             .from("private-files")
             .upload(path, idPhotoFileRef.current!, { upsert: true });
           if (upErr) {
             console.error("ID photo upload error:", upErr);
           } else {
-            const { data: urlData } = await supabase.storage.from("private-files").createSignedUrl(path, 60 * 60 * 24 * 365); // 1 year
-            if (urlData?.signedUrl) {
-              payload.id_photo_url = urlData.signedUrl;
-              console.log("ID photo uploaded");
-            }
+            payload.id_photo_url = path;
           }
         } catch (upEx) {
           console.error("ID photo upload exception:", upEx);
@@ -631,7 +625,6 @@ export default function WorkersPage() {
         if (e) throw e;
       }
       const freshWorkers = await loadWorkers();
-      console.log('FRESH WORKERS:', JSON.stringify(freshWorkers?.map((w:any) => ({id:w.id,name:w.first_name,passport:w.passport_photo_url}))))
       if (freshWorkers && editWorker) {
         const refreshed = freshWorkers.find((w: any) => w.id === editWorker.id);
         if (refreshed) setIdCardWorker(refreshed);
@@ -652,6 +645,8 @@ export default function WorkersPage() {
 
   function openEdit(worker: Worker) {
     setEditWorker(worker);
+    const refs = photoRefs.current.get(worker.id);
+    setEditPassportDisplay(worker.passport_photo_url || null);
     setForm({
       first_name: worker.first_name,
       last_name: worker.last_name,
@@ -670,9 +665,9 @@ export default function WorkersPage() {
       employee_id: worker.employee_id || "",
       notes: worker.notes || "",
       id_number: worker.id_number || "",
-      id_photo_url: worker.id_photo_url || "",
+      id_photo_url: refs?.id || "",
       national_id_type: worker.national_id_type || "",
-      passport_photo_url: worker.passport_photo_url || "",
+      passport_photo_url: refs?.passport || "",
     });
     setShowNew(true);
   }
@@ -680,7 +675,7 @@ export default function WorkersPage() {
   function closeModal() {
     idPhotoFileRef.current = null;
     setShowIDScanner(false);
-    setShowNew(false); setEditWorker(null);
+    setShowNew(false); setEditWorker(null); setEditPassportDisplay(null);
     setForm(EMPTY_FORM); setError(null);
   }
 
@@ -958,8 +953,8 @@ export default function WorkersPage() {
           <div className="flex items-center gap-4 p-3 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5">
             <div className="relative flex-shrink-0">
               <div className="w-16 h-20 rounded-lg border-2 border-amber-500/40 overflow-hidden bg-slate-800 flex items-center justify-center">
-                {passportPhotoPreview || form.passport_photo_url ? (
-                  <img src={passportPhotoPreview || form.passport_photo_url || undefined} alt="Passport" className="w-full h-full object-cover" />
+                {passportPhotoPreview || (form.passport_photo_url && editPassportDisplay) ? (
+                  <img src={passportPhotoPreview || editPassportDisplay || undefined} alt="Passport" className="w-full h-full object-cover" />
                 ) : (
                   <span className="text-2xl opacity-30">👤</span>
                 )}
@@ -1187,7 +1182,7 @@ export default function WorkersPage() {
                 </div>
               ) : (
                 <div className="rounded-xl border border-dashed border-slate-200 dark:border-white/[0.08] p-6 text-center">
-                  <div className="text-[10px] text-slate-600">No ID photo stored</div>
+                  <div className="text-[10px] text-slate-600">{photoRefs.current.get(selectedWorker.id)?.id ? "ID photo on file (only some roles can open it)" : "No ID photo stored"}</div>
                 </div>
               )}
               {/* Details */}

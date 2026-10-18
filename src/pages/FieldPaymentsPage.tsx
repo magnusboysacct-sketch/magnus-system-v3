@@ -1,5 +1,6 @@
 ﻿// src/pages/FieldPaymentsPage.tsx — Complete rebuild
 // Payment list + detail modal with PDF, WhatsApp, Email, New Advance, Pay Work, Final Payment
+import { withResolvedUrls } from "../lib/storageRefs";
 import React, { useEffect, useState } from "react";
 import { companyDisplayName } from "../lib/companyName";
 import { supabase } from "../lib/supabase";
@@ -122,7 +123,8 @@ export default function FieldPaymentsPage() {
       const {data,error}=await supabase.from("field_payments").select("*")
         .eq("company_id",companyId!).order("created_at",{ascending:false});
       if(error)throw error;
-      setPayments(data||[]);
+      // ID scans are stored as paths; made into short-lived signed URLs for showing (an ID scan only for the roles allowed to open it)
+      setPayments(await withResolvedUrls((data||[]) as Payment[], ["id_photo_url", "signature_url"]));
     } catch(e){console.error(e);}
     setLoading(false);
   }

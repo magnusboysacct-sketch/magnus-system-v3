@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:share": "tsx --test scripts/tests/sharePreview.test.ts scripts/tests/receiptHtml.test.ts",
+    "test:storage": "tsx --test scripts/tests/storageRefs.test.ts",
     "test:settings": "tsx --test scripts/tests/settingsTabs.test.ts",
     "test:idcard": "tsx --test scripts/tests/idCard.test.ts scripts/tests/idCardColors.test.ts scripts/tests/logoQuality.test.ts"
   },

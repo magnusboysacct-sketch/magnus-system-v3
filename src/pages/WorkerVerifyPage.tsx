@@ -7,6 +7,7 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { ShieldCheck, ShieldAlert, ShieldX, Calendar, Hash, Briefcase } from "lucide-react";
 import VerifyHeader from "../components/VerifyHeader";
+import { useVerifyPhoto } from "../lib/verifyPhoto";
 
 type VerifyResult = {
   id: string;
@@ -16,7 +17,8 @@ type VerifyResult = {
   status: "active" | "inactive" | "terminated";
   employee_id: string | null;
   hire_date: string | null;
-  photo_url: string | null;   // the passport / profile photo only: an ID-document scan is never sent to this public page
+  has_photo?: boolean;        // the picture itself comes from the verify-photo function (a 5-minute signed URL): the passport / profile photo only, never an ID scan
+  photo_url?: string | null;  // (older database function: a ready URL)
   company_name: string | null;
   logo_url: string | null;
   id_card_primary?: string | null;
@@ -53,6 +55,7 @@ export default function WorkerVerifyPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
+  const photoSrc = useVerifyPhoto({ workerId }, !!worker && (worker.has_photo ?? !!worker.photo_url), worker?.photo_url);
 
   useEffect(() => {
     async function load() {
@@ -79,7 +82,7 @@ export default function WorkerVerifyPage() {
 
   const theme = notFound || !worker ? NOT_FOUND_THEME : worker.expired ? EXPIRED_THEME : STATUS_THEME[worker.status] || STATUS_THEME.inactive;
   const Icon = theme.Icon;
-  const photoUrl = photoFailed ? "" : (worker?.photo_url || "");
+  const photoUrl = photoFailed ? "" : (photoSrc || "");
   const initials = worker ? ((worker.first_name || "").trim().charAt(0) + (worker.last_name || "").trim().charAt(0)).toUpperCase() : "";
 
   return (

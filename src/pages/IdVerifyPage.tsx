@@ -6,12 +6,14 @@ import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { ShieldCheck, ShieldAlert, ShieldX, Calendar, Briefcase, User } from "lucide-react";
 import VerifyHeader from "../components/VerifyHeader";
+import { useVerifyPhoto } from "../lib/verifyPhoto";
 
 type VerifyIdResult = {
   kind: "staff" | "worker";
   name: string;
   title: string | null;
-  photo_url: string | null;
+  has_photo?: boolean;                    // the picture itself comes from the verify-photo function (a 5-minute signed URL)
+  photo_url?: string | null;              // (older database function: a ready URL)
   company_name: string | null;
   logo_url: string | null;
   id_card_primary?: string | null;
@@ -38,6 +40,7 @@ export default function IdVerifyPage() {
   const [result, setResult] = useState<VerifyIdResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [photoFailed, setPhotoFailed] = useState(false);
+  const photoSrc = useVerifyPhoto({ code }, !!result && (result.has_photo ?? !!result.photo_url), result?.photo_url);
 
   useEffect(() => {
     let alive = true;
@@ -62,7 +65,7 @@ export default function IdVerifyPage() {
   // Expired wins over everything; then anything not active is grey; only an active, in-date card is green.
   const theme = !result ? NOT_FOUND_THEME : result.expired ? EXPIRED_THEME : result.valid ? VALID_THEME : INACTIVE_THEME;
   const Icon = theme.Icon;
-  const photoUrl = photoFailed ? "" : (result?.photo_url || "");
+  const photoUrl = photoFailed ? "" : (photoSrc || "");
   const initials = result ? result.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") : "";
 
   return (

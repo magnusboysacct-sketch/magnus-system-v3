@@ -6,6 +6,7 @@ import { fetchStaffHrFields } from "./staffHr";
 import { companyDisplayName } from "./companyName";
 import { ALERT_RED, type IdCardCompany, type IdCardData, type IdCardImages } from "./idCardRender";
 import { loadLogoImage } from "./logoImage";
+import { resolveFileUrl } from "./storageRefs";
 import { DEFAULT_THEME, normalizeTheme, type IdCardTheme } from "./idCardTheme";
 import type { CardItem } from "./idCardExport";
 
@@ -80,7 +81,7 @@ export function loadCompanyBundle(companyId: string | null | undefined, nameOver
 // ── Worker ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export async function loadWorkerCard(workerId: string, companyNameOverride?: string | null): Promise<LoadedCard | null> {
   const { data: w, error } = await supabase.from("workers")
-    .select("id,company_id,first_name,last_name,worker_type,job_title,id_number,national_id_type,address,city,phone,hire_date,id_expiry_date,passport_photo_url,id_photo_url,verify_code")
+    .select("id,company_id,first_name,last_name,worker_type,job_title,id_number,national_id_type,address,city,phone,hire_date,id_expiry_date,passport_photo_url,verify_code")
     .eq("id", workerId).maybeSingle();
   if (error) throw error;
   if (!w) return null;
@@ -106,7 +107,8 @@ export async function loadWorkerCard(workerId: string, companyNameOverride?: str
     expired, expiryColor: expired ? ALERT_RED : GOLD,
     statement: `This card certifies the bearer is an authorized worker of ${bundle.company.name}. This card remains company property and must be surrendered upon termination.`,
   };
-  const photo = await tryImage(w.passport_photo_url || w.id_photo_url);
+  // the passport photo only (never the ID scan), signed for a moment: it is stored as a path in the private bucket
+  const photo = await tryImage(await resolveFileUrl(w.passport_photo_url));
   return { data, company: bundle.company, images: { photo, logo: bundle.logo, logoVector: bundle.logoVector, signature: bundle.signature } };
 }
 
@@ -139,7 +141,7 @@ export async function loadStaffCard(userId: string): Promise<LoadedCard | null> 
     expired, expiryColor,
     statement: `This card certifies the bearer is an authorized staff member of ${bundle.company.name}. This card remains company property and must be surrendered upon termination.`,
   };
-  const photo = await tryImage(p.avatar_url);
+  const photo = await tryImage(await resolveFileUrl(p.avatar_url));
   return { data, company: bundle.company, images: { photo, logo: bundle.logo, logoVector: bundle.logoVector, signature: bundle.signature } };
 }
 

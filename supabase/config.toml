@@ -51,6 +51,13 @@ verify_jwt = true
 import_map = "./functions/photo-share-resolve/deno.json"
 entrypoint = "./functions/photo-share-resolve/index.ts"
 
+# The photo on the public ID verify pages: a signed URL (5 minutes) for the profile / passport photo of the card that was scanned. Called with the anon key (a JWT).
+[functions.verify-photo]
+enabled = true
+verify_jwt = true
+import_map = "./functions/verify-photo/deno.json"
+entrypoint = "./functions/verify-photo/index.ts"
+
 # JWT verification for the portal functions, matching what is live (checked 2026-10-13 with `supabase functions list`),
 # so a future deploy cannot flip it. Browser callers send the anon key, which is a valid JWT.
 [functions.client-portal-login]

@@ -309,9 +309,10 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
     try {
       let idPhotoUrl="";
       if(idPhotoFile&&companyId){
-        const path=`${companyId}/field-payments/ids/${Date.now()}_${form.worker_id_number||"id"}.jpg`;
-        const {error:ue}=await supabase.storage.from("private-files").upload(path,idPhotoFile,{upsert:true});
-        if(!ue){const {data:ud}=await supabase.storage.from("private-files").createSignedUrl(path,60*60*24*365);if(ud?.signedUrl)idPhotoUrl=ud.signedUrl;} // 1 year, same as lib/fieldPayments.ts
+        // the PATH is stored (not a long-lived URL), and the ID number is not put in the file name; a short-lived signed URL is made when the scan is shown
+        const path=`${companyId}/field-payments/ids/${Date.now()}_${Math.random().toString(36).slice(2,8)}_id.jpg`;
+        const {error:ue}=await supabase.storage.from("private-files").upload(path,idPhotoFile,{upsert:false,contentType:idPhotoFile.type||"image/jpeg"});
+        if(!ue)idPhotoUrl=path;
       }
 
       const recNum=`FP-${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,"0")}-${Date.now().toString().slice(-6)}`;

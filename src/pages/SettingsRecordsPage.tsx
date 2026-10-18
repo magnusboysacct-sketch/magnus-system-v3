@@ -8,6 +8,7 @@ import { Printer, Search, User, FileText, ChevronLeft, Shield, CreditCard, Brief
 import { StaffIDCard } from "../components/StaffIDCard";
 import { WorkerIDCard } from "../components/WorkerIDCard";
 import { IdCardBatchDownload } from "../components/IdCardDownload";
+import { resolveFileUrl, withResolvedUrls } from "../lib/storageRefs";
 import { canManageStaff } from "../lib/permissions";
 import { WORKER_SAFE_COLUMNS } from "../lib/workers";
 import { fetchStaffHrFields, withStaffHr } from "../lib/staffHr";
@@ -52,7 +53,8 @@ export default function SettingsRecordsPage() {
   // is saved to a real record, it naturally shows up here on next load — no
   // separate master list to keep in sync.
   const [jobTitleOptions, setJobTitleOptions] = useState<string[]>([]);
-  const [newPhotoUrl, setNewPhotoUrl] = useState<string|null>(null);
+  const [newPhotoUrl, setNewPhotoUrl] = useState<string|null>(null);           // what is shown (a short-lived signed URL)
+  const [newPhotoPath, setNewPhotoPath] = useState<string|null>(null);         // what is stored (the storage path)
   const [photoRemoved, setPhotoRemoved] = useState(false); // distinguishes "explicitly cleared" from "no change" (newPhotoUrl is null in both cases)
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [cropSrc, setCropSrc] = useState<string|null>(null); // object URL of the just-selected file, pending crop
@@ -92,7 +94,11 @@ export default function SettingsRecordsPage() {
     Promise.all([
       supabase.from("workers").select(WORKER_SAFE_COLUMNS).eq("company_id",companyId).order("last_name"),
       supabase.from("field_payments").select("*").eq("company_id",companyId).order("created_at",{ascending:false}),
-    ]).then(([{data:w},{data:fp}])=>{
+    ]).then(async ([{data:w0},{data:fp0}])=>{
+      // photos and ID scans are stored as paths; made into short-lived signed URLs for showing (an ID scan only for the roles allowed to open it)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const w = await withResolvedUrls((w0||[]) as any[], ["passport_photo_url","id_photo_url"]);
+      const fp = await withResolvedUrls(fp0||[], ["id_photo_url"]);
       setCompanyWorkers(w||[]);
       setFieldPayments(fp||[]);
       // Group field payments by worker_ref
@@ -136,7 +142,7 @@ export default function SettingsRecordsPage() {
       return;
     }
     // TRN, employee number and ID card dates are not readable by colleagues: fetched through get_staff_hr_fields (director / admin / secretary see them all)
-    const rows = data || [];
+    const rows = await withResolvedUrls(data || [], ["avatar_url"]);
     setStaffProfiles(withStaffHr(rows, await fetchStaffHrFields(rows.map((r) => r.id))));
   }
 
@@ -192,7 +198,7 @@ export default function SettingsRecordsPage() {
       id_issued_date: s.id_issued_date || "",
       id_expiry_date: s.id_expiry_date || "",
     });
-    setNewPhotoUrl(null);
+    setNewPhotoUrl(null); setNewPhotoPath(null);
     setPhotoRemoved(false);
     setEditModalOpen(true);
     // No employee number yet — assign the next one now so it's ready by the
@@ -233,11 +239,10 @@ export default function SettingsRecordsPage() {
       .from("private-files")
       .upload(path, file, { upsert: true, contentType: "image/png" });
     if (error) { console.error("Photo upload error:", error); return null; }
-    const { data, error: signError } = await supabase.storage
-      .from("private-files")
-      .createSignedUrl(path, 60 * 60 * 24 * 365); // 1 year
-    if (signError || !data?.signedUrl) { console.error("Photo signing error:", signError); return null; }
-    return data.signedUrl;
+    const shown = await resolveFileUrl(path);                       // short-lived, only for the preview; the path is what gets stored
+    if (!shown) { console.error("Photo signing error"); return null; }
+    setNewPhotoPath(path);
+    return shown;
   }
 
   // Selecting a file no longer uploads it directly — it opens the crop
@@ -284,7 +289,7 @@ export default function SettingsRecordsPage() {
       try { await supabase.storage.from("private-files").remove([`${companyId}/staff-photos/${selectedStaff.id}.png`]); } catch {}
       try { await supabase.storage.from("project-files").remove([`${companyId}/staff-photos/${selectedStaff.id}.png`]); } catch {}
     }
-    setNewPhotoUrl(null);
+    setNewPhotoUrl(null); setNewPhotoPath(null);
     setPhotoRemoved(true);
   }
 
@@ -307,7 +312,7 @@ export default function SettingsRecordsPage() {
         id_expiry_date: staffForm.id_expiry_date || null,
       };
       if (photoRemoved) updates.avatar_url = null;
-      else if (newPhotoUrl) updates.avatar_url = newPhotoUrl;
+      else if (newPhotoPath) updates.avatar_url = newPhotoPath;
 
       const { error } = await supabase
         .from("user_profiles")

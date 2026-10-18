@@ -1,4 +1,5 @@
 ﻿// src/pages/AccessLogPage.tsx
+import { resolveFileUrls } from "../lib/storageRefs";
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { Card, Badge, Table, Th, Tr, Td, Empty } from "../components/ui";
@@ -16,7 +17,6 @@ interface LogEntry {
     worker_type: string;
     status: string;
     passport_photo_url?: string | null;
-    id_photo_url?: string | null;
     employee_id?: string | null;
   };
 }
@@ -67,9 +67,12 @@ export default function AccessLogPage() {
     setLoading(true);
     const { data } = await supabase
       .from("access_logs")
-      .select("id,scanned_at,action,device_info,worker:worker_id(first_name,last_name,worker_type,status,passport_photo_url,id_photo_url,employee_id)")
+      .select("id,scanned_at,action,device_info,worker:worker_id(first_name,last_name,worker_type,status,passport_photo_url,employee_id)")
       .eq("company_id", cid).order("scanned_at", { ascending: false }).limit(500);
-    setLogs((data as any) || []);
+    // the passport photo is stored as a path; a short-lived signed URL is made for showing (the ID scan is not needed here and is no longer loaded)
+    const rows = (data as unknown as typeof logs) || [];
+    const urls = await resolveFileUrls(rows.map((r) => r.worker?.passport_photo_url));
+    setLogs(rows.map((r) => (r.worker?.passport_photo_url ? { ...r, worker: { ...r.worker, passport_photo_url: urls.get(r.worker.passport_photo_url) ?? null } } : r)));
     setSelected(new Set());
     setLoading(false);
   }
@@ -181,7 +184,7 @@ export default function AccessLogPage() {
             <tbody>
               {filtered.map(log => {
                 const w = log.worker;
-                const photo = w?.passport_photo_url||w?.id_photo_url||"";
+                const photo = w?.passport_photo_url||"";
                 const authorized = w?.status==="active";
                 return (
                   <Tr key={log.id}>

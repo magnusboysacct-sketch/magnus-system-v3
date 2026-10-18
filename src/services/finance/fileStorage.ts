@@ -1,3 +1,4 @@
+import { resolveFileUrl } from "../../lib/storageRefs";
 import { supabase } from "../../lib/supabase";
 
 // =====================================================
@@ -128,7 +129,7 @@ export function generateFileName(originalName: string, date: Date = new Date()):
  * Get complete storage path information
  */
 export function getStoragePathInfo(file: File, type: FinanceFileType, date: Date = new Date()): StoragePathInfo {
-  const bucket = "project-files"; // Reuse existing bucket
+  const bucket = "private-files"; // finance files are never public: private bucket, company id as the first folder (see uploadFinanceFile)
   const path = generateStoragePath(type, date);
   const fileName = generateFileName(file.name, date);
   const fullPath = `${path}/${fileName}`;
@@ -178,6 +179,7 @@ export async function uploadFinanceFile(
 
     const uploadDate = options.uploadDate || new Date();
     const storageInfo = getStoragePathInfo(file, type, uploadDate);
+    storageInfo.fullPath = `${profile.company_id}/${storageInfo.fullPath}`;      // the bucket's policies key on the company id being the first folder
 
     // Upload file to storage
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -189,10 +191,6 @@ export async function uploadFinanceFile(
       throw uploadError;
     }
 
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from(storageInfo.bucket)
-      .getPublicUrl(storageInfo.fullPath);
 
     // Create finance file record
     const { data: fileData, error: fileError } = await supabase
@@ -205,7 +203,7 @@ export async function uploadFinanceFile(
           file_path: storageInfo.fullPath,
           file_size: file.size,
           file_type_mime: file.type,
-          storage_url: urlData.publicUrl,
+          storage_url: storageInfo.fullPath,      // the storage PATH (never a public URL); a short-lived signed URL is made when the file is opened
           upload_date: uploadDate.toISOString().split('T')[0],
           uploaded_by: user.id,
           description: options.description,
@@ -323,7 +321,7 @@ export async function deleteFinanceFile(fileId: string): Promise<void> {
     // Delete from storage
     if (file.file_path) {
       const { error: storageError } = await supabase.storage
-        .from("project-files")
+        .from("private-files")
         .remove([file.file_path]);
 
       if (storageError) {
@@ -682,16 +680,18 @@ export function validateFileSize(file: File, maxSizeMB: number = 50): boolean {
 /**
  * Generate download URL for file
  */
-export function generateDownloadUrl(file: FinanceFile): string {
-  return file.storage_url;
+export async function generateDownloadUrl(file: FinanceFile): Promise<string | null> {
+  return resolveFileUrl(file.storage_url || file.file_path);
 }
 
 /**
  * Create download link for file
  */
-export function createDownloadLink(file: FinanceFile): void {
+export async function createDownloadLink(file: FinanceFile): Promise<void> {
+  const url = await generateDownloadUrl(file);
+  if (!url) return;
   const link = document.createElement('a');
-  link.href = generateDownloadUrl(file);
+  link.href = url;
   link.download = file.file_name;
   link.target = '_blank';
   document.body.appendChild(link);

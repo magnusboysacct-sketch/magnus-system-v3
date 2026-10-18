@@ -1,5 +1,6 @@
 ﻿// src/pages/ExpensesPage.tsx
-import React, { useEffect, useState } from "react";
+import { safeUploadName, toStoredRef, withResolvedUrls } from "../lib/storageRefs";
+import React, { useEffect, useRef, useState } from "react";
 import { ReceiptScanner } from "../components/ReceiptScanner";
 import { supabase } from "../lib/supabase";
 import { showPrintPreview } from "../lib/printPreview";
@@ -142,10 +143,12 @@ export default function ExpensesPage() {
   // Expense" modal, pre-filled, instead of a separate edit modal. Null
   // means the modal (if open) is in "create new" mode.
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const receiptRefs = useRef<Map<string, string | null>>(new Map());          // expense id -> the stored receipt path
 
   function handleExpenseScan(result: any, receiptFile?: File) {
     setShowExpenseScanner(false);
-    if(receiptFile&&companyId){const now=new Date();const p=companyId+"/receipts/"+now.getFullYear()+"/"+String(now.getMonth()+1).padStart(2,"0")+"/"+Date.now()+"_receipt.jpg";supabase.storage.from("private-files").upload(p,receiptFile,{upsert:true}).then(async({error:ue})=>{if(!ue){const{data:ud}=await supabase.storage.from("private-files").createSignedUrl(p,60*60*24*365);if(ud?.signedUrl)setForm(f=>({...f,receipt_url:ud.signedUrl}));}});}
+    // the PATH is stored (not a long-lived URL); a short-lived signed URL is made when the receipt is shown
+    if(receiptFile&&companyId){const now=new Date();const p=companyId+"/receipts/"+now.getFullYear()+"/"+String(now.getMonth()+1).padStart(2,"0")+"/"+safeUploadName("receipt");supabase.storage.from("private-files").upload(p,receiptFile,{upsert:false,contentType:receiptFile.type||"image/jpeg"}).then(({error:ue})=>{if(!ue)setForm(f=>({...f,receipt_url:p}));});}
     setForm(f => ({
       ...f,
       description: result.vendor ? `${result.vendor} - Receipt` : f.description,
@@ -213,6 +216,10 @@ export default function ExpensesPage() {
         .from("expenses")
         .select("*", { count: "exact", head: true })
         .eq("company_id", companyId!);
+      // receipts are stored as paths; made into short-lived signed URLs for showing. The stored paths are kept so an edit never writes a temporary URL (or nothing, for
+      // someone who may not open receipts) over them.
+      receiptRefs.current = new Map(all.map((x: Expense) => [x.id, x.receipt_url || null]));
+      all = await withResolvedUrls(all, ["receipt_url"]);
       setExpenses(all);
       setTotalCount(count ?? null);
     } catch (e: any) { setError(e.message); }
@@ -265,7 +272,7 @@ export default function ExpensesPage() {
       chart_account_id: effectiveAccountId(exp) || "",
       project_id: exp.project_id || "",
       status: exp.status || "pending",
-      receipt_url: exp.receipt_url || "",
+      receipt_url: receiptRefs.current.get(exp.id) || "",
       paid_from_account_id: exp.paid_from_account_id || "",
     });
     setShowNew(true);
@@ -312,7 +319,7 @@ export default function ExpensesPage() {
         category_id: accountUnchanged ? (editingExpense!.category_id ?? null) : (linkedCategories.length === 1 ? linkedCategories[0].id : null),
         project_id: form.project_id || null,
         status: form.status,
-        receipt_url: form.receipt_url || null,
+        receipt_url: toStoredRef(form.receipt_url),
         paid_from_account_id: form.paid_from_account_id || null,
       };
       // Once an expense is on the ledger, what the entry was built from can't be changed here (that would leave the books wrong).
