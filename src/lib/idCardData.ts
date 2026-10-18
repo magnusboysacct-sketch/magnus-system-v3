@@ -5,13 +5,14 @@ import { supabase } from "./supabase";
 import { fetchStaffHrFields } from "./staffHr";
 import { companyDisplayName } from "./companyName";
 import { ALERT_RED, type IdCardCompany, type IdCardData, type IdCardImages } from "./idCardRender";
+import { loadLogoImage } from "./logoImage";
 import { DEFAULT_THEME, normalizeTheme, type IdCardTheme } from "./idCardTheme";
 import type { CardItem } from "./idCardExport";
 
 const GOLD = "#C9A84C";
 
 export interface LoadedCard extends CardItem { company: IdCardCompany }
-export interface CompanyBundle { company: IdCardCompany; logo: HTMLImageElement | null; signature: HTMLImageElement | null }
+export interface CompanyBundle { company: IdCardCompany; logo: HTMLImageElement | null; logoVector: boolean; signature: HTMLImageElement | null }
 
 const cap = (s: string) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const initialsOf = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
@@ -60,9 +61,12 @@ export function loadCompanyBundle(companyId: string | null | undefined, nameOver
         cs?.phone ? `Tel: ${cs.phone}` : "",
         cs?.email ? `Email: ${cs.email}` : "",
       ].filter(Boolean) as string[];
+      // the ORIGINAL logo, at full resolution (an SVG stays vector); a logo that cannot be read simply leaves the card without one
+      const lg = cs?.logo_url ? await loadLogoImage(cs.logo_url).catch(() => null) : null;
       return {
         company: { name: companyDisplayName(nameOverride || cs?.company_name), tagline: cs?.tagline || "Building With Integrity", contactLines, theme: await loadCompanyTheme(companyId) },
-        logo: await tryImage(cs?.logo_url),
+        logo: lg ? lg.image : null,
+        logoVector: !!lg?.vector,
         signature: await tryImage(cs?.signature_url),
       };
     })();
@@ -103,7 +107,7 @@ export async function loadWorkerCard(workerId: string, companyNameOverride?: str
     statement: `This card certifies the bearer is an authorized worker of ${bundle.company.name}. This card remains company property and must be surrendered upon termination.`,
   };
   const photo = await tryImage(w.passport_photo_url || w.id_photo_url);
-  return { data, company: bundle.company, images: { photo, logo: bundle.logo, signature: bundle.signature } };
+  return { data, company: bundle.company, images: { photo, logo: bundle.logo, logoVector: bundle.logoVector, signature: bundle.signature } };
 }
 
 // ── Staff ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -136,7 +140,7 @@ export async function loadStaffCard(userId: string): Promise<LoadedCard | null> 
     statement: `This card certifies the bearer is an authorized staff member of ${bundle.company.name}. This card remains company property and must be surrendered upon termination.`,
   };
   const photo = await tryImage(p.avatar_url);
-  return { data, company: bundle.company, images: { photo, logo: bundle.logo, signature: bundle.signature } };
+  return { data, company: bundle.company, images: { photo, logo: bundle.logo, logoVector: bundle.logoVector, signature: bundle.signature } };
 }
 
 export interface CardRef { kind: "staff" | "worker"; id: string }

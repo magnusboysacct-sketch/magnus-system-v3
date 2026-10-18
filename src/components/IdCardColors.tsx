@@ -8,7 +8,8 @@ import { Palette, Wand2, RotateCcw, Save } from "lucide-react";
 import { DEFAULT_THEME, THEME_PRESETS, contrast, isHex, isDefaultTheme, normalizeTheme, readableOn, resolvePalette, type IdCardTheme } from "../lib/idCardTheme";
 import { extractDominantColors, logoPixels, suggestThemes } from "../lib/logoColors";
 import { renderIdCardFace, type IdCardData } from "../lib/idCardRender";
-import { invalidateCompanyCache, loadCompanyTheme, loadImage } from "../lib/idCardData";
+import { invalidateCompanyCache, loadCompanyTheme } from "../lib/idCardData";
+import { loadLogoImage } from "../lib/logoImage";
 
 interface Props { companyId: string | null; companyName: string; tagline?: string; logoUrl: string | null }
 
@@ -18,13 +19,13 @@ const SAMPLE: IdCardData = {
   statement: "This card certifies the bearer is an authorized staff member of the company. This card remains company property and must be surrendered upon termination.",
 };
 
-function cardUrl(face: "front" | "back", theme: IdCardTheme, name: string, tagline: string, logo: HTMLImageElement | null, ppm: number) {
-  const r = renderIdCardFace(face, SAMPLE, { name, tagline, contactLines: ["Address line", "Parish, Country", "Tel: 000-000-0000"], theme }, { logo }, { ppm, bleedMm: 0 });
+function cardUrl(face: "front" | "back", theme: IdCardTheme, name: string, tagline: string, logo: HTMLImageElement | null, ppm: number, logoVector = false) {
+  const r = renderIdCardFace(face, SAMPLE, { name, tagline, contactLines: ["Address line", "Parish, Country", "Tel: 000-000-0000"], theme }, { logo, logoVector }, { ppm, bleedMm: 0 });
   return r.canvas.toDataURL("image/png");
 }
 
-function MiniCard({ theme, name, tagline, logo, width = 84 }: { theme: IdCardTheme; name: string; tagline: string; logo: HTMLImageElement | null; width?: number }) {
-  const src = useMemo(() => cardUrl("front", theme, name, tagline, logo, 3), [theme, name, tagline, logo]);
+function MiniCard({ theme, name, tagline, logo, vector = false, width = 84 }: { theme: IdCardTheme; name: string; tagline: string; logo: HTMLImageElement | null; vector?: boolean; width?: number }) {
+  const src = useMemo(() => cardUrl("front", theme, name, tagline, logo, 3, vector), [theme, name, tagline, logo, vector]);
   return <img src={src} alt="" style={{ width, height: "auto", display: "block", borderRadius: 3, boxShadow: "0 1px 4px rgba(0,0,0,0.35)" }} />;
 }
 
@@ -54,6 +55,7 @@ export default function IdCardColors({ companyId, companyName, tagline, logoUrl 
   const [saved, setSaved] = useState<IdCardTheme>({ ...DEFAULT_THEME });
   const [draft, setDraft] = useState<IdCardTheme>({ ...DEFAULT_THEME });
   const [logo, setLogo] = useState<HTMLImageElement | null>(null);
+  const [logoVector, setLogoVector] = useState(false);
   const [suggestions, setSuggestions] = useState<IdCardTheme[] | null>(null);
   const [suggestMsg, setSuggestMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,15 +70,15 @@ export default function IdCardColors({ companyId, companyName, tagline, logoUrl 
 
   useEffect(() => {
     let alive = true;
-    setLogo(null); setSuggestions(null); setSuggestMsg("");
-    if (logoUrl) loadImage(logoUrl).then((i) => { if (alive) setLogo(i); }).catch(() => undefined);
+    setLogo(null); setLogoVector(false); setSuggestions(null); setSuggestMsg("");
+    if (logoUrl) loadLogoImage(logoUrl).then((l) => { if (alive) { setLogo(l.image); setLogoVector(l.vector); } }).catch(() => undefined);
     return () => { alive = false; };
   }, [logoUrl]);
 
   const palette = useMemo(() => resolvePalette(draft), [draft]);
   const previews = useMemo(() => ({
-    front: cardUrl("front", draft, name, tag, logo, 4), back: cardUrl("back", draft, name, tag, logo, 4),
-  }), [draft, name, tag, logo]);
+    front: cardUrl("front", draft, name, tag, logo, 4, logoVector), back: cardUrl("back", draft, name, tag, logo, 4, logoVector),
+  }), [draft, name, tag, logo, logoVector]);
   const dirty = !same(draft, saved);
   const accentAdjusted = palette.accent.toUpperCase() !== draft.accent.toUpperCase();
 
@@ -123,7 +125,7 @@ export default function IdCardColors({ companyId, companyName, tagline, logoUrl 
           return (
             <button key={p.id} type="button" onClick={() => setDraft({ ...p.theme })} aria-pressed={active} aria-label={p.name}
               className={"flex flex-col items-center gap-1.5 p-2 rounded-xl border transition " + (active ? "border-cyan-500 bg-cyan-500/10" : "border-slate-200 dark:border-white/[0.08] hover:border-slate-400")}>
-              <MiniCard theme={p.theme} name={name} tagline={tag} logo={logo} width={64} />
+              <MiniCard theme={p.theme} name={name} tagline={tag} logo={logo} vector={logoVector} width={64} />
               <span className="text-[10px] text-slate-600 dark:text-slate-300 w-20 text-center leading-tight">{p.name}{p.id === "navy-gold" ? " (default)" : ""}</span>
             </button>
           );
@@ -139,7 +141,7 @@ export default function IdCardColors({ companyId, companyName, tagline, logoUrl 
             {suggestions.map((t, i) => (
               <button key={i} type="button" onClick={() => setDraft({ ...t })} aria-label={`Use suggestion ${i + 1}`}
                 className={"flex flex-col items-center gap-1.5 p-2 rounded-xl border transition " + (same(draft, t) ? "border-cyan-500 bg-cyan-500/10" : "border-slate-200 dark:border-white/[0.08] hover:border-slate-400")}>
-                <MiniCard theme={t} name={name} tagline={tag} logo={logo} width={72} />
+                <MiniCard theme={t} name={name} tagline={tag} logo={logo} vector={logoVector} width={72} />
                 <span className="text-[10px] text-slate-600 dark:text-slate-300">Suggestion {i + 1}</span>
               </button>
             ))}

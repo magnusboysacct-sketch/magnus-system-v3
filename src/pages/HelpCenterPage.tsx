@@ -64,9 +64,50 @@ In the app, tap the QR code on the card to open it large and scan it from anothe
   video_url: "",
 };
 
+// "Your company logo: getting the best quality" (Settings -> Company -> Company Logo).
+const LOGO_QUALITY_ARTICLE = {
+  module: "settings",
+  title: "Your company logo: getting the best quality",
+  slug: "company-logo-quality",
+  sort_order: 2,
+  roles: ["director", "admin"] as string[],
+  content: `# Your company logo: getting the best quality
+
+Your logo appears on the sidebar, invoices, contracts, receipts, letters, emails, ID cards, the page people see when they scan an ID card, and the preview when you share a link on WhatsApp. A good logo file makes all of them look sharp.
+
+## The best logo file
+
+- **SVG** is best. It is made of lines and shapes, so it stays perfectly sharp at any size, from a small ID card to a big printout.
+- **A PNG at least 2000 pixels wide, with a transparent background** is the next best. Transparent means no white box around the logo.
+- JPG and WEBP also work (up to 5 MB), but a JPG cannot be transparent and has a solid background.
+- The system keeps exactly the file you upload. It never shrinks, compresses or converts it, and it never replaces an earlier logo file.
+
+## After you upload
+
+Settings → Company shows the logo's size in pixels. If it is under 1000 pixels wide you will see a warning: it may look blurry on cards and documents. Upload a larger PNG or an SVG.
+
+## Empty space around the logo
+
+Many logo files have a wide empty margin around the artwork. The margin takes up room, so the logo shows smaller than it could. Trim the empty space before you upload, or ask your designer for a version cropped tightly to the artwork. ID cards trim the margin for you, other places show the file as it is.
+
+## Small text in a logo
+
+Very small text, such as a line like "Construction Limited" under the name, cannot be read when the logo is shown small. On an ID card the logo is only about 1 cm tall, and fine text in it is smaller than a full stop. Consider a simplified version of the logo for cards: the symbol and the company name, without the small line.
+
+## Tips
+
+- Use a PNG or SVG, not a screenshot or a photo of the logo.
+- Dark logos on a transparent background show well on white documents. If your logo is white, upload a dark version.
+- Avoid very thin lines. They disappear when the logo is small.`,
+  video_url: "",
+};
+
+// Default articles added to a help table that was seeded before they existed (once per browser; see loadArticles).
+const EXTRA_ARTICLES = [PRINT_ID_CARDS_ARTICLE, LOGO_QUALITY_ARTICLE];
+
 // ─── Default articles seeded into DB ────────────────────────────────────────
 const DEFAULT_ARTICLES = [
-  PRINT_ID_CARDS_ARTICLE,
+  ...EXTRA_ARTICLES,
 
   // GETTING STARTED
   {
@@ -1313,8 +1354,6 @@ function SpeechPlayer({ text }: { text: string }) {
   );
 }
 
-const TOP_UP_FLAG = "help-article-printing-id-cards-added";
-
 // ─── Main component ───────────────────────────────────────────────────────
 export default function HelpCenterPage() {
   const { userRole } = useProjectContext();
@@ -1342,11 +1381,14 @@ export default function HelpCenterPage() {
       .order("sort_order");
     if (data && data.length > 0) {
       let rows = data;
-      // Databases seeded before this article existed get it added once (new default articles are not re-seeded otherwise).
-      if (!rows.some((a: { slug?: string }) => a.slug === PRINT_ID_CARDS_ARTICLE.slug) && !localStorage.getItem(TOP_UP_FLAG)) {
-        try { localStorage.setItem(TOP_UP_FLAG, "1"); } catch { /* private mode */ }
+      // Databases seeded before an article existed get it added once per browser (new default articles are not re-seeded otherwise).
+      for (const art of EXTRA_ARTICLES) {
+        const flag = "help-article-" + art.slug + "-added";
+        let done = false; try { done = !!localStorage.getItem(flag); } catch { /* private mode */ }
+        if (rows.some((x: { slug?: string }) => x.slug === art.slug) || done) continue;
+        try { localStorage.setItem(flag, "1"); } catch { /* private mode */ }
         const { data: added } = await supabase.from("help_articles")
-          .upsert([{ ...PRINT_ID_CARDS_ARTICLE, company_id: null }], { onConflict: "slug", ignoreDuplicates: true })
+          .upsert([{ ...art, company_id: null }], { onConflict: "slug", ignoreDuplicates: true })
           .select();
         if (added && added.length) rows = [...rows, ...added];
       }

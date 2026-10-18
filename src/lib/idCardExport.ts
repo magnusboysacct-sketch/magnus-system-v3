@@ -5,7 +5,7 @@ import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 import {
   BLEED_MM, CARD_H_MM, CARD_W_MM, PRINT_PPM, makeCanvas, renderIdCardFace,
-  type IdCardCompany, type IdCardData, type IdCardImages,
+  drawLogo, prepareLogo, type IdCardCompany, type IdCardData, type IdCardImages,
 } from "./idCardRender";
 import { BEFORE_YOU_GO, CARD_SPEC_LINES, GLOSSARY, WHEN_YOU_PICK_UP, kindWord, shopMessage } from "./idCardGuide";
 
@@ -138,13 +138,13 @@ export async function buildPngZip(items: CardItem[], company: IdCardCompany, onP
       await yieldUi();
     }
   }
-  zip.file("PRINT INSTRUCTIONS.pdf", await (await buildInstructionsPdf(items, company, items[0]?.images.logo)).arrayBuffer());
+  zip.file("PRINT INSTRUCTIONS.pdf", await (await buildInstructionsPdf(items, company, items[0]?.images.logo, !!items[0]?.images.logoVector)).arrayBuffer());
   onProgress?.(1);
   return zip.generateAsync({ type: "blob", compression: "STORE" });
 }
 
 // ── d) PRINT INSTRUCTIONS.pdf: one A4 page (more pages only for a very long list of names) ──────────────────────────────────
-export async function buildInstructionsPdf(items: CardItem[], company: IdCardCompany, logo?: IdCardImages["logo"]): Promise<Blob> {
+export async function buildInstructionsPdf(items: CardItem[], company: IdCardCompany, logo?: IdCardImages["logo"], logoVector = false): Promise<Blob> {
   const dpi = 200, ppm = dpi / 25.4, W = 210, H = 297;
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
   doc.setProperties({ title: `${company.name} ID cards: print instructions`, creator: "Magnus System" });
@@ -177,9 +177,9 @@ export async function buildInstructionsPdf(items: CardItem[], company: IdCardCom
       // company logo and name at the top
       let x = 15;
       if (logo) {
-        const nw = (logo.naturalWidth || logo.width) as number, nh = (logo.naturalHeight || logo.height) as number;
-        const s = Math.min(45 / nw, 18 / nh); const lw = nw * s, lh = nh * s;
-        ctx.drawImage(logo, mm(15), mm(y - 2), mm(lw), mm(lh)); x = 15 + lw + 5;
+        const lp = prepareLogo(logo, !!logoVector);              // trimmed of empty margins, drawn from the original at full resolution
+        const s = Math.min(45 / lp.sw, 18 / lp.sh); const lw = lp.sw * s, lh = lp.sh * s;
+        drawLogo(ctx, lp, mm(15), mm(y - 2), mm(lw), mm(lh)); x = 15 + lw + 5;
       }
       font(7, 700); ctx.fillStyle = "#15315A"; ctx.textAlign = "left"; ctx.fillText(company.name, mm(x), mm(y + 6));
       font(3.6, 400); ctx.fillStyle = "#6b7280"; ctx.fillText(new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }), mm(x), mm(y + 12));

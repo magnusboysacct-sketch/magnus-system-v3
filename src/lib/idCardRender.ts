@@ -12,6 +12,7 @@
 //   * Nothing here touches the DOM except the default canvas factory, so the same code runs in the tests (see setCanvasFactory).
 import QRCode from "qrcode";
 import { resolvePalette, rgba, type MaybeTheme } from "./idCardTheme";
+import { measureMargins } from "./logoImage";
 
 // ── Sizes (mm) ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export const CARD_W_MM = 54;
@@ -56,7 +57,7 @@ export interface IdCardCompany {
   theme?: MaybeTheme | null;              // the company's card colours (null / missing = navy & gold)
 }
 type Img = CanvasImageSource & { width: number; height: number; naturalWidth?: number; naturalHeight?: number };
-export interface IdCardImages { photo?: Img | null; logo?: Img | null; signature?: Img | null }
+export interface IdCardImages { photo?: Img | null; logo?: Img | null; signature?: Img | null; logoVector?: boolean }   // logoVector: the logo is an SVG (drawn sharp at any size)
 export interface Rect { x0: number; y0: number; x1: number; y1: number; what: string }       // mm, trim coordinates (0,0 = top-left corner of the trim)
 export interface RenderedFace {
   canvas: HTMLCanvasElement;
@@ -138,6 +139,61 @@ function fit(img: Img, maxW: number, maxH: number) {
   const nw = n.w * MM_PER_UNIT, nh = n.h * MM_PER_UNIT;
   const s = Math.min(1, maxW / nw, maxH / nh);
   return { w: nw * s, h: nh * s };
+}
+
+// ── The logo: trimmed of empty margins, drawn from the original at full resolution ────────────────────────────────────────────
+// A logo file often has a wide transparent margin around the artwork (ours: a third of the width). On a card that wastes the little room there is, so the
+// artwork's own box (the non-transparent pixels) is what gets fitted and drawn. A logo with no transparency is drawn whole. The file itself is never altered.
+export interface PreparedLogo { img: Img; sx: number; sy: number; sw: number; sh: number; vector: boolean }
+const prepared = new WeakMap<object, PreparedLogo>();
+export function prepareLogo(img: Img, vector = false): PreparedLogo {
+  const hit = prepared.get(img as object);
+  if (hit && hit.vector === vector) return hit;
+  const n = natural(img);
+  let p: PreparedLogo = { img, sx: 0, sy: 0, sw: n.w, sh: n.h, vector };
+  if (n.w > 0 && n.h > 0) {
+    try {
+      const s = Math.min(1, 400 / Math.max(n.w, n.h));
+      const cw = Math.max(1, Math.round(n.w * s)), ch = Math.max(1, Math.round(n.h * s));
+      const c = factory(cw, ch), cx = c.getContext("2d") as CanvasRenderingContext2D;
+      cx.drawImage(img, 0, 0, cw, ch);
+      const m = measureMargins(cx.getImageData(0, 0, cw, ch).data, cw, ch);
+      if (m) {
+        const pad = 1;                                                               // one sampled pixel of air, so antialiased edges are never cut
+        const x0 = Math.max(0, Math.floor((m.box.x0 - pad) / s)), y0 = Math.max(0, Math.floor((m.box.y0 - pad) / s));
+        const x1 = Math.min(n.w, Math.ceil((m.box.x1 + pad) / s)), y1 = Math.min(n.h, Math.ceil((m.box.y1 + pad) / s));
+        if (x1 - x0 > 0 && y1 - y0 > 0 && (x1 - x0 < n.w * 0.98 || y1 - y0 < n.h * 0.98)) p = { img, sx: x0, sy: y0, sw: x1 - x0, sh: y1 - y0, vector };
+      }
+    } catch { /* an unreadable canvas: draw the logo whole */ }
+  }
+  prepared.set(img as object, p);
+  return p;
+}
+// contain-fit the (trimmed) logo into maxW x maxH mm. A raster logo is never enlarged past its own pixels; a vector (SVG) logo scales freely.
+function fitLogo(p: PreparedLogo, maxW: number, maxH: number) {
+  if (!p.sw || !p.sh) { const s = Math.min(maxW, maxH); return { w: s, h: s }; }
+  if (p.vector) { const s = Math.min(maxW / p.sw, maxH / p.sh); return { w: p.sw * s, h: p.sh * s }; }
+  const nw = p.sw * MM_PER_UNIT, nh = p.sh * MM_PER_UNIT;
+  const s = Math.min(1, maxW / nw, maxH / nh);
+  return { w: nw * s, h: nh * s };
+}
+export const fitLogoMm = fitLogo;
+// Draws the logo into the box (canvas pixels). A raster logo is shrunk in steps of at most half (so thin strokes are averaged, not skipped) with the high
+// quality filter; a vector logo is drawn by the browser at the target size, so it is sharp at any resolution.
+export function drawLogo(ctx: CanvasRenderingContext2D, p: PreparedLogo, dx: number, dy: number, dw: number, dh: number) {
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  if (p.vector || !p.sw || !p.sh) { ctx.drawImage(p.img, p.sx, p.sy, p.sw || 1, p.sh || 1, dx, dy, dw, dh); return; }
+  let src: CanvasImageSource = p.img;
+  let sx = p.sx, sy = p.sy, sw = p.sw, sh = p.sh;
+  while (sw > dw * 2 && sh > dh * 2) {
+    const nw = Math.max(Math.ceil(dw), Math.floor(sw / 2)), nh = Math.max(Math.ceil(dh), Math.floor(sh / 2));
+    const c = factory(nw, nh), cx = c.getContext("2d") as CanvasRenderingContext2D;
+    cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high";
+    cx.drawImage(src, sx, sy, sw, sh, 0, 0, nw, nh);
+    src = c; sx = 0; sy = 0; sw = nw; sh = nh;
+  }
+  ctx.drawImage(src, sx, sy, sw, sh, dx, dy, dw, dh);
 }
 
 interface TextOpts { size: number; color: string; weight?: number; align?: "left" | "center" | "right"; mono?: boolean; italic?: boolean; maxWidth?: number; upper?: boolean }
@@ -231,12 +287,13 @@ export function renderIdCardFace(face: "front" | "back", data: IdCardData, compa
     const bandTop = 3, bandH = 12, inset = 6 * MM_PER_UNIT;
     const plateMaxW = 30;
     let pw = bandH, ph = bandH, fw = 0, fh = 0;
-    if (images.logo) { const f = fit(images.logo, plateMaxW - 2 * inset, bandH - 2 * inset); fw = f.w; fh = f.h; pw = fw + 2 * inset; ph = fh + 2 * inset; }
+    const logoP = images.logo ? prepareLogo(images.logo, !!images.logoVector) : null;
+    if (logoP) { const f = fitLogo(logoP, plateMaxW - 2 * inset, bandH - 2 * inset); fw = f.w; fh = f.h; pw = fw + 2 * inset; ph = fh + 2 * inset; }
     const px0 = W / 2 - pw / 2, py0 = bandTop + (bandH - ph) / 2;
     ctx.fillStyle = "#ffffff"; roundRectPath(ctx, X(px0), Y(py0), L(pw), L(ph), L(1.8)); ctx.fill();
     ctx.strokeStyle = P.accent; ctx.lineWidth = Math.max(1, L(0.25)); roundRectPath(ctx, X(px0 + 0.125), Y(py0 + 0.125), L(pw - 0.25), L(ph - 0.25), L(1.7)); ctx.stroke();
     note("logo plate", px0, py0, px0 + pw, py0 + ph);
-    if (images.logo) ctx.drawImage(images.logo, X(px0 + inset), Y(py0 + inset), L(fw), L(fh));
+    if (logoP) drawLogo(ctx, logoP, X(px0 + inset), Y(py0 + inset), L(fw), L(fh));
     else { ctx.fillStyle = P.logoInitial; ctx.font = `800 ${5 * ppm}px ${FONT}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText((company.name.charAt(0) || "?").toUpperCase(), X(W / 2), Y(bandTop + bandH / 2)); ctx.textBaseline = "alphabetic"; }
 
     text(company.name, W / 2, 17.4, { size: 1.75, color: P.fg, weight: 600, align: "center", upper: true, maxWidth: 46 });
@@ -285,8 +342,9 @@ export function renderIdCardFace(face: "front" | "back", data: IdCardData, compa
     // Logo, no plate
     const cy = 6.3;
     if (images.logo) {
-      const f = fit(images.logo, 26.9, 6.6);
-      ctx.drawImage(images.logo, X(W / 2 - f.w / 2), Y(cy - f.h / 2), L(f.w), L(f.h));
+      const lp = prepareLogo(images.logo, !!images.logoVector);
+      const f = fitLogo(lp, 26.9, 6.6);
+      drawLogo(ctx, lp, X(W / 2 - f.w / 2), Y(cy - f.h / 2), L(f.w), L(f.h));
       note("logo", W / 2 - f.w / 2, cy - f.h / 2, W / 2 + f.w / 2, cy + f.h / 2);
     } else {
       ctx.fillStyle = P.primary; roundRectPath(ctx, X(W / 2 - 3.3), Y(cy - 3.3), L(6.6), L(6.6), L(1.5)); ctx.fill();

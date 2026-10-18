@@ -31,7 +31,7 @@ export function IdCardDownloadDialog({ cards, onClose }: { cards: LoadedCard[]; 
       if (key === "card") saveBlob(await buildCardPdf(cards, company, setProgress), cardPdfName(cards, company));
       else if (key === "sheet") saveBlob(await buildSheetPdf(cards, company, paper, setProgress), sheetPdfName(cards, company, paper));
       else if (key === "png") saveBlob(await buildPngZip(cards, company, setProgress), pngZipName(cards, company));
-      else saveBlob(await buildInstructionsPdf(cards, company, logo), "PRINT INSTRUCTIONS.pdf");
+      else saveBlob(await buildInstructionsPdf(cards, company, logo, !!cards[0].images.logoVector), "PRINT INSTRUCTIONS.pdf");
     } catch (e) {
       console.error("ID card download failed:", e);
       setError("Could not make the file: " + (e instanceof Error && e.message ? e.message : "please try again."));
