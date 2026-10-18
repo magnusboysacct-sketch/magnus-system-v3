@@ -2,6 +2,7 @@
 // editable in-app by directors/admins. Articles are seeded from
 // DEFAULT_ARTICLES into the help_articles table on first load if empty.
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { BEFORE_YOU_GO, CARD_SPEC_LINES, GLOSSARY, GUIDE_ARTICLE_TITLE, WHEN_YOU_PICK_UP, WHICH_FILE, shopMessage } from "../lib/idCardGuide";
 import { useProjectContext } from "../context/ProjectContext";
@@ -1362,10 +1363,19 @@ export default function HelpCenterPage() {
   const [search, setSearch] = useState("");
   const [activeModule, setActiveModule] = useState<string|null>(null);
   const [activeArticle, setActiveArticle] = useState<any|null>(null);
+  // /help?article=<slug> opens that article (used by links from other pages, e.g. Settings -> Branding & ID Cards -> printing guide)
+  const [searchParams] = useSearchParams();
+  const wantedSlug = searchParams.get("article");
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ title: "", content: "", video_url: "" });
   const [saving, setSaving] = useState(false);
   const [seeded, setSeeded] = useState(false);
+
+  useEffect(() => {
+    if (!wantedSlug || activeArticle) return;
+    const hit = articles.find((x: { slug?: string }) => x.slug === wantedSlug);
+    if (hit) { setActiveModule(hit.module); setActiveArticle(hit); }
+  }, [wantedSlug, articles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load articles
   useEffect(() => {

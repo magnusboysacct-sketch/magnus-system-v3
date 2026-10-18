@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { PageHeader } from "../components/ui";
+import { useReportDirty, useSettingsEmbed } from "../components/settingsEmbed";
 import { Save, Percent, DollarSign, FileText, ArrowLeft, Building } from "lucide-react";
 
 type EstimateSettings = {
@@ -44,6 +45,10 @@ export default function SettingsEstimatesPage() {
   const [saved, setSaved] = useState(false);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [settings, setSettings] = useState<EstimateSettings>(DEFAULTS);
+  const { embedded } = useSettingsEmbed();
+  // unsaved changes: what is on screen against what was loaded / last saved (the Settings shell warns before leaving)
+  const [baseline, setBaseline] = useState<string | null>(null);
+  useReportDirty("estimates", baseline !== null && JSON.stringify(settings) !== baseline);
 
   useEffect(() => {
     async function load() {
@@ -58,14 +63,13 @@ export default function SettingsEstimatesPage() {
         .select(Object.keys(DEFAULTS).join(","))
         .eq("company_id", profile.company_id)
         .maybeSingle();
+      let loaded: EstimateSettings = DEFAULTS;
       if (data) {
-        setSettings(s => ({
-          ...s,
-          ...Object.fromEntries(
-            Object.keys(DEFAULTS).map(k => [k, (data as any)[k] ?? (s as any)[k]])
-          ),
-        }));
+        const row = data as unknown as Record<string, unknown>;
+        loaded = { ...DEFAULTS, ...Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, row[k] ?? (DEFAULTS as unknown as Record<string, unknown>)[k]])) } as EstimateSettings;
+        setSettings(loaded);
       }
+      setBaseline(JSON.stringify(loaded));
       setLoading(false);
     }
     load();
@@ -79,6 +83,7 @@ export default function SettingsEstimatesPage() {
       ...settings,
     }, { onConflict: "company_id" });
     setSaving(false);
+    setBaseline(JSON.stringify(settings));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
@@ -103,12 +108,12 @@ export default function SettingsEstimatesPage() {
       <PageHeader
         title="Estimate Settings"
         subtitle="Default markup, contingency and payment terms applied to all new estimates"
-        actions={
+        actions={embedded ? undefined : (
           <button onClick={() => nav("/settings")}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-xs font-semibold text-slate-600 dark:text-slate-300 transition">
             <ArrowLeft size={13}/> Back to Settings
           </button>
-        }
+        )}
       />
       <div className="max-w-2xl mx-auto p-6 space-y-8">
 

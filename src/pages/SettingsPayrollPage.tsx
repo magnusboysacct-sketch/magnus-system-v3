@@ -1,6 +1,7 @@
 // src/pages/SettingsPayrollPage.tsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useReportDirty, useSettingsEmbed } from "../components/settingsEmbed";
 import { useProjectContext } from "../context/ProjectContext";
 import { supabase } from "../lib/supabase";
 import { PageHeader } from "../components/ui";
@@ -48,6 +49,11 @@ export default function SettingsPayrollPage() {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [settings, setSettings] = useState<PayrollRates>(DEFAULTS);
   const [lastUpdated, setLastUpdated] = useState<{ date: string; by: string } | null>(null);
+  const { embedded } = useSettingsEmbed();
+  // unsaved changes: what is on screen against what was loaded / last saved (the Settings shell warns before leaving)
+  const [baseline, setBaseline] = useState<string | null>(null);
+  useEffect(() => { if (!loading && baseline === null) setBaseline(JSON.stringify(settings)); }, [loading, baseline, settings]);
+  useReportDirty("payroll-rates", baseline !== null && JSON.stringify(settings) !== baseline);
 
   useEffect(() => {
     async function load() {
@@ -131,6 +137,7 @@ export default function SettingsPayrollPage() {
         return;
       }
       setLastUpdated({ date: new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }), by: "you" });
+      setBaseline(JSON.stringify(settings));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e: any) {
@@ -184,12 +191,12 @@ export default function SettingsPayrollPage() {
       <PageHeader
         title="Payroll & Tax Rates"
         subtitle="Jamaican statutory deduction rates. Update here when government changes rates."
-        actions={
+        actions={embedded ? undefined : (
           <button onClick={() => nav("/settings")}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-xs font-semibold text-slate-600 dark:text-slate-300 transition">
             <ArrowLeft size={13}/> Back to Settings
           </button>
-        }
+        )}
       />
       <div className="max-w-2xl mx-auto p-6 space-y-8">
 

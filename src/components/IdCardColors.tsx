@@ -9,6 +9,7 @@ import { DEFAULT_THEME, THEME_PRESETS, contrast, isHex, isDefaultTheme, normaliz
 import { extractDominantColors, logoPixels, suggestThemes } from "../lib/logoColors";
 import { renderIdCardFace, type IdCardData } from "../lib/idCardRender";
 import { invalidateCompanyCache, loadCompanyTheme } from "../lib/idCardData";
+import { useReportDirty } from "./settingsEmbed";
 import { loadLogoImage } from "../lib/logoImage";
 
 interface Props { companyId: string | null; companyName: string; tagline?: string; logoUrl: string | null }
@@ -80,6 +81,7 @@ export default function IdCardColors({ companyId, companyName, tagline, logoUrl 
     front: cardUrl("front", draft, name, tag, logo, 4, logoVector), back: cardUrl("back", draft, name, tag, logo, 4, logoVector),
   }), [draft, name, tag, logo, logoVector]);
   const dirty = !same(draft, saved);
+  useReportDirty("branding", dirty);                  // the Settings shell warns before leaving with unsaved colours
   const accentAdjusted = palette.accent.toUpperCase() !== draft.accent.toUpperCase();
 
   function suggest() {

@@ -64,19 +64,12 @@ import ContractsPage          from "./pages/ContractsPage";
 import HelpCenterPage         from "./pages/HelpCenterPage";
 import StaffPortalManagerPage from "./pages/StaffPortalManagerPage";
 import PayrollPage            from "./pages/PayrollPage";
-import SettingsPayrollPage    from "./pages/SettingsPayrollPage";
 
-import SettingsPage           from "./pages/SettingsPage";
-import SettingsEstimatesPage   from "./pages/SettingsEstimatesPage";
-import SettingsRecordsPage     from "./pages/SettingsRecordsPage";
-import SettingsCompanyPage      from "./pages/SettingsCompanyPage";
 import WorkerVerifyPage         from "./pages/WorkerVerifyPage";
 import IdVerifyPage            from "./pages/IdVerifyPage";
-import SettingsMasterListsPage      from "./pages/SettingsMasterListsPage";
+import SettingsShell from "./pages/settings/SettingsShell";
 import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import SettingsCostCodesPage  from "./pages/SettingsCostCodesPage";
-import SettingsUsersPage      from "./pages/SettingsUsersPage";
-import SettingsImportPage     from "./pages/SettingsImportPage";
 import BillingPage            from "./pages/BillingPage";
 import UpgradePage from "./pages/UpgradePage";
 import JamaicanPayrollMonitoringPage from "./pages/JamaicanPayrollMonitoringPage";
@@ -325,17 +318,12 @@ export default function App() {
               <Route path="/billing"                       element={<BillingPage />} />
               <Route path="/upgrade" element={<UpgradePage />} />
               <Route path="/materials-library" element={<Navigate to="/rates" replace />} />
-              <Route path="/settings"                      element={<RoleGuard allowedRoles={["director"]}><SettingsPage /></RoleGuard>} />
-              <Route path="/settings/company"              element={<RoleGuard allowedRoles={["director"]}><SettingsCompanyPage /></RoleGuard>} />
-              <Route path="/settings/estimates"            element={<RoleGuard allowedRoles={["director"]}><SettingsEstimatesPage /></RoleGuard>} />
-              <Route path="/settings/payroll-rates"        element={<RoleGuard allowedRoles={["director"]}><SettingsPayrollPage /></RoleGuard>} />
-              <Route path="/settings/master-lists"         element={<RoleGuard allowedRoles={["director"]}><SettingsMasterListsPage /></RoleGuard>} />
+              {/* Settings: one shell with a tab per section (company, branding, documents, estimates, payroll-rates, master-lists, users, records, notifications, import). */}
+              {/* /settings opens the first tab; the old page URLs are the same tab ids, so they keep working. Two pages that no screen links to stay as they were. */}
+              <Route path="/settings"                      element={<Navigate to="/settings/company" replace />} />
               <Route path="/settings/master-categories"    element={<RoleGuard allowedRoles={["director"]}><SettingsMasterCategoriesPage /></RoleGuard>} />
               <Route path="/settings/cost-codes"           element={<RoleGuard allowedRoles={["director"]}><SettingsCostCodesPage /></RoleGuard>} />
-              <Route path="/settings/users"                element={<RoleGuard allowedRoles={["director"]}><SettingsUsersPage /></RoleGuard>} />
-              <Route path="/settings/records"              element={<RoleGuard allowedRoles={["director"]}><SettingsRecordsPage /></RoleGuard>} />
-              <Route path="/settings/import"               element={<RoleGuard allowedRoles={["director"]}><SettingsImportPage /></RoleGuard>} />
-              <Route path="/settings/company"              element={<Navigate to="/settings" replace />} />
+              <Route path="/settings/:tab"                 element={<RoleGuard allowedRoles={["director"]}><SettingsShell /></RoleGuard>} />
 
               {/* Admin / Payroll */}
               <Route path="/admin/jamaican-payroll-monitoring"          element={<JamaicanPayrollMonitoringPage />} />
