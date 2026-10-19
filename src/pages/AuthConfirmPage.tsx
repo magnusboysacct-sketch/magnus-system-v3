@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { planConfirm } from "../lib/authConfirmCore";
+import { clearPendingSignup, setWelcomeFlag } from "../lib/signupPending";
 
 export default function AuthConfirmPage() {
   const navigate = useNavigate();
@@ -27,6 +28,11 @@ export default function AuthConfirmPage() {
       if (err) {
         setError(err.message || "This link is invalid or has expired.");
         return;
+      }
+      if (plan.type === "signup") {
+        // the signup link: land on the dashboard with a one-time welcome (WelcomeConfirmedBanner reads the flag)
+        setWelcomeFlag();
+        clearPendingSignup();
       }
       navigate(plan.next, { replace: true });
     })();

@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
+import WelcomeConfirmedBanner from "../components/WelcomeConfirmedBanner";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
@@ -475,6 +476,7 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <WelcomeConfirmedBanner />
     </div>
   );
 }

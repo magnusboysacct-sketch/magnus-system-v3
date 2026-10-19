@@ -3,6 +3,11 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { passwordErrorMessage, validatePassword } from "../lib/passwordPolicy";
 import PasswordRules from "../components/PasswordRules";
+import { CheckYourEmail, EmailNotConfirmedPanel } from "../components/CheckYourEmail";
+import {
+  clearPendingSignup, isEmailNotConfirmed, isExistingAccountSignup, readPendingSignup, savePendingSignup, setWelcomeFlag,
+  type PendingSignup,
+} from "../lib/signupPending";
 
 type Mode = "signin" | "signup";
 
@@ -54,11 +59,45 @@ export default function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Signed up, waiting for the person to click the link in the email. Kept in sessionStorage so a refresh does not lose it.
+  const [pending, setPending] = useState<PendingSignup | null>(() => readPendingSignup());
+  const [showPending, setShowPending] = useState(() => readPendingSignup() !== null);
+  // Tried to sign in before confirming the email.
+  const [notConfirmed, setNotConfirmed] = useState<PendingSignup | null>(null);
+
+  // The email link was opened in another tab of this browser: this tab is signed in too, so move on.
+  // Only when nobody was signed in to begin with, and only for the address that signed up (a leftover session of someone else must not count).
+  const pendingEmail = showPending && pending ? pending.email.trim().toLowerCase() : "";
+  useEffect(() => {
+    if (!pendingEmail) return;
+    let alive = true;
+    let sub: { unsubscribe: () => void } | null = null;
+    supabase.auth.getSession().then(({ data: current }) => {
+      if (!alive || current.session) return;
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === "SIGNED_IN" && session && (session.user.email ?? "").toLowerCase() === pendingEmail) {
+          clearPendingSignup();
+          setWelcomeFlag();
+          nav("/", { replace: true });
+        }
+      });
+      sub = data.subscription;
+    });
+    return () => { alive = false; sub?.unsubscribe(); };
+  }, [pendingEmail, nav]);
 
   function switchMode(newMode: Mode) {
     setMode(newMode);
     setErr(null);
     setSuccess(null);
+    setNotConfirmed(null);
+  }
+
+  function pendingSent(sentAt: number) {
+    if (!pending) return;
+    const next = { ...pending, lastSentAt: sentAt };
+    setPending(next);
+    savePendingSignup(next);
   }
 
 
@@ -66,6 +105,7 @@ export default function LoginPage() {
     e.preventDefault();
     setErr(null);
     setSuccess(null);
+    setNotConfirmed(null);
     if (mode === "signup") {
       const weak = validatePassword(password);
       if (weak) { setErr(weak); return; }
@@ -85,6 +125,13 @@ export default function LoginPage() {
         });
 
         if (error) {
+          if (isEmailNotConfirmed(error)) {
+            // an inline panel (not an error line) with the way forward: resend the link
+            const mine = readPendingSignup();
+            const same = mine && mine.email.trim().toLowerCase() === email.trim().toLowerCase();
+            setNotConfirmed({ email: email.trim(), lastSentAt: same ? mine.lastSentAt : 0 });
+            return;
+          }
           if (error.message.toLowerCase().includes('invalid') && error.message.toLowerCase().includes('credentials')) {
             setErr("Invalid email/password. Check your credentials and try again.");
           } else {
@@ -102,6 +149,7 @@ export default function LoginPage() {
           // remembering is a convenience only
         }
 
+        clearPendingSignup();
         const next = new URLSearchParams(loc.search).get("next") || "/";
         nav(next, { replace: true });
       } else {
@@ -126,7 +174,23 @@ export default function LoginPage() {
           return;
         }
 
+        if (isExistingAccountSignup(data)) {
+          // Supabase pretends it worked, but nothing is emailed: do not send the person to wait for a message that will not come
+          setErr("An account with this email already exists. Sign in instead, or use \"Forgot password?\" if you do not remember the password.");
+          return;
+        }
+
+        if (data?.user && !data.session) {
+          // Email confirmation is on: no session until the link in the email is used. Show the full "check your email" step, which stays until the person acts.
+          const p = { email: email.trim(), lastSentAt: Date.now() };
+          setPending(p);
+          savePendingSignup(p);
+          setShowPending(true);
+          return;
+        }
+
         if (data?.user) {
+          // signed up and already signed in (email confirmation is off)
           setSuccess("Account created successfully! You can now sign in.");
           setEmail("");
           setPassword("");
@@ -144,7 +208,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-slate-50 to-blue-50 text-slate-800">
+    <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-slate-50 to-blue-50 text-slate-800">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
         <div className="p-6 border-b border-slate-100">
           <div>
@@ -155,11 +219,35 @@ export default function LoginPage() {
               className="block h-auto w-auto max-h-14 max-w-full object-contain"
             />
             <div className="text-xs text-slate-500 mt-2">
-              {mode === "signin" ? "Sign in to continue" : "Create your account"}
+              {showPending && pending ? "Almost there" : mode === "signin" ? "Sign in to continue" : "Create your account"}
             </div>
           </div>
         </div>
 
+        {showPending && pending ? (
+          <CheckYourEmail
+            email={pending.email}
+            lastSentAt={pending.lastSentAt}
+            onSent={pendingSent}
+            onBack={() => {
+              // back to the signup form with everything typed so far kept
+              clearPendingSignup();
+              setPending(null);
+              setShowPending(false);
+              setEmail(pending.email);
+              setMode("signup");
+              setErr(null);
+            }}
+            onConfirmed={() => {
+              // only now the sign-in form, with the email filled in (the pending note is cleared once the sign-in works)
+              setShowPending(false);
+              setEmail(pending.email);
+              setMode("signin");
+              setErr(null);
+            }}
+          />
+        ) : (
+        <>
         <div className="flex border-b border-slate-100">
           <button
             type="button"
@@ -251,6 +339,18 @@ export default function LoginPage() {
             </div>
           )}
 
+          {notConfirmed && (
+            <EmailNotConfirmedPanel
+              email={notConfirmed.email}
+              lastSentAt={notConfirmed.lastSentAt}
+              onSent={(t) => {
+                setNotConfirmed({ ...notConfirmed, lastSentAt: t });
+                const mine = readPendingSignup();
+                if (mine && mine.email.trim().toLowerCase() === notConfirmed.email.toLowerCase()) savePendingSignup({ ...mine, lastSentAt: t });
+              }}
+            />
+          )}
+
           {err && (
             <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
               {err}
@@ -271,7 +371,7 @@ export default function LoginPage() {
               !password ||
               (mode === "signup" && (!fullName.trim() || !companyName.trim()))
             }
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-md px-4 py-2 text-sm font-semibold transition disabled:opacity-50"
+            className="w-full min-h-[44px] bg-blue-600 hover:bg-blue-500 text-white rounded-md px-4 py-2 text-sm font-semibold transition disabled:opacity-50"
           >
             {busy
               ? mode === "signin"
@@ -313,6 +413,8 @@ export default function LoginPage() {
             </div>
           )}
         </form>
+        </>
+        )}
       </div>
       {showForgot && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
