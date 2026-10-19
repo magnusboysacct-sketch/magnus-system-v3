@@ -4,7 +4,8 @@ import { companyDisplayName } from "../lib/companyName";
 import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { useProjectContext } from "../context/ProjectContext";
-import { canManageWorkers } from "../lib/permissions";
+import { canManageWorkers, canManageWorkerPortal } from "../lib/permissions";
+import WorkerPortalAccessCard from "../components/WorkerPortalAccessCard";
 import { WORKER_SAFE_COLUMNS } from "../lib/workers";
 import { privatePath, safeUploadName, toStoredRef, withResolvedUrls } from "../lib/storageRefs";
 import EditableDropdown from "../components/common/EditableDropdown";
@@ -1211,6 +1212,8 @@ export default function WorkersPage() {
                   </div>
                 ))}
               </div>
+              {/* Worker portal access: director, admin, secretary */}
+              {canManageWorkerPortal(userRole) && <div className="pt-3"><WorkerPortalAccessCard workerId={selectedWorker.id} workerName={fullName(selectedWorker)} /></div>}
               {/* Print + Delete */}
               <div className="flex gap-2 pt-3 border-t border-slate-200 dark:border-white/[0.06] mt-2">
                 <button onClick={() => window.print()}

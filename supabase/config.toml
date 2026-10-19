@@ -60,6 +60,19 @@ entrypoint = "./functions/verify-photo/index.ts"
 
 # JWT verification for the portal functions, matching what is live (checked 2026-10-13 with `supabase functions list`),
 # so a future deploy cannot flip it. Browser callers send the anon key, which is a valid JWT.
+# The worker portal (migration 20260952000000): browser callers send the anon key (a valid JWT); the staff function needs the signed-in user's token.
+[functions.worker-portal-login]
+enabled = true
+verify_jwt = true
+
+[functions.worker-portal-files]
+enabled = true
+verify_jwt = true
+
+[functions.worker-portal-admin]
+enabled = true
+verify_jwt = true
+
 [functions.client-portal-login]
 enabled = true
 verify_jwt = true

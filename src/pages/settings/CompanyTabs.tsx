@@ -81,8 +81,8 @@ function WorkerNumberSection() {
     <Card>
       <CardHeader title="Worker Numbers" subtitle="Every worker gets a number like the example below when they are added" />
       <div className="space-y-3">
-        <Field label="Prefix (2 to 5 letters)">
-          <Input placeholder="MBW" maxLength={5} value={form.worker_number_prefix} onChange={(e) => set("worker_number_prefix")({ target: { value: normalizeWorkerPrefix(e.target.value) } } as never)} />
+        <Field label="Prefix (2 to 5 letters, unique to your company)">
+          <Input placeholder="MBW" maxLength={7} value={form.worker_number_prefix} onChange={(e) => set("worker_number_prefix")({ target: { value: normalizeWorkerPrefix(e.target.value) } } as never)} />
         </Field>
         <div className="text-xs text-slate-500 dark:text-slate-400" data-testid="worker-number-preview">
           Preview: <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{previewWorkerNumber(form.worker_number_prefix)}</span>, then {previewWorkerNumber(form.worker_number_prefix).replace("001", "002")}, and so on.

@@ -17,12 +17,17 @@ test("the default prefix is the initials + W, the same as worker_number_prefix_f
 
 test("a prefix is made of 2-5 capital letters, fixed as it is typed, with a message when it is not", () => {
   assert.equal(normalizeWorkerPrefix("mbw"), "MBW");
-  assert.equal(normalizeWorkerPrefix(" m-b w1 "), "MBW");
+  assert.equal(normalizeWorkerPrefix(" m-b w1 "), "MBW1");
+  assert.equal(normalizeWorkerPrefix("vww2"), "VWW2");
+  assert.equal(normalizeWorkerPrefix("12ab"), "AB");
+  assert.equal(normalizeWorkerPrefix("abcdefg123"), "ABCDE12");
+  assert.equal(normalizeWorkerPrefix("mb1w"), "MB1");
   assert.equal(normalizeWorkerPrefix("abcdefgh"), "ABCDE");
   assert.equal(validateWorkerPrefix("MBW"), null);
   assert.equal(validateWorkerPrefix("AB"), null);
   assert.equal(validateWorkerPrefix("ABCDE"), null);
-  for (const bad of ["", "M", "mbw", "ABCDEF", "MB1", "MB-W"]) assert.match(String(validateWorkerPrefix(bad)), /prefix/, bad);
+  for (const ok of ["VWW2", "MB12", "ABCDE99"]) assert.equal(validateWorkerPrefix(ok), null, ok);
+  for (const bad of ["", "M", "mbw", "ABCDEF", "1ABC", "MB-W", "ABC123", "AB1C"]) assert.match(String(validateWorkerPrefix(bad)), /prefix/, bad);
 });
 
 test("numbers are zero padded to 3 digits and grow past 999", () => {

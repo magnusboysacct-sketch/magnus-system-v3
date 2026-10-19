@@ -166,10 +166,11 @@ export default function FieldAppPage() {
   async function loadProjectData(pid: string, cid: string) {
     const [logRes, payRes, photoRes] = await Promise.all([
       supabase.from("daily_logs").select("*").eq("project_id",pid).eq("log_date",today).maybeSingle(),
-      supabase.from("field_payments").select("amount,paid_at,payment_method,signature_url,worker:worker_id(first_name,last_name)").eq("company_id",cid).order("paid_at",{ascending:false}).limit(10),
+      supabase.from("field_payments").select("id,worker_name,total_amount,work_date,created_at,payment_method,payment_type,status,signature_url").eq("company_id",cid).order("created_at",{ascending:false}).limit(10),
       supabase.from("project_photos").select("*").eq("project_id",pid).order("created_at",{ascending:false}).limit(6),
     ]);
     setTodayLog(logRes.data);
+    if (payRes.error) showToast("Could not load the payments: " + payRes.error.message);
     setRecentPayments(payRes.data||[]);
     // photo_url is a storage path (private-files for field photos); sign it on read.
     const photoRows = photoRes.data||[];
@@ -339,10 +340,10 @@ function HomeScreen({ project, weather, todayLog, recentPayments, photos, safety
           {recentPayments.slice(0,3).map((p:any,i:number)=>(
             <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
               <div>
-                <div style={{fontSize:12,fontWeight:600,color:"#e2e8f0"}}>{p.worker?.first_name} {p.worker?.last_name}</div>
-                <div style={{fontSize:10,color:"#475569"}}>{p.payment_method||"Cash"} · {new Date(p.paid_at).toLocaleDateString()}{p.signature_url?" · ✍️ Signed":""}</div>
+                <div style={{fontSize:12,fontWeight:600,color:"#e2e8f0"}}>{p.worker_name}</div>
+                <div style={{fontSize:10,color:"#475569"}}>{p.payment_method||"cash"} · {new Date(p.created_at).toLocaleDateString()}{p.signature_url?" · ✍️ Signed":""}</div>
               </div>
-              <div style={{fontSize:14,fontWeight:800,color:"#22c55e"}}>{fmtJMD(Number(p.amount||0))}</div>
+              <div style={{fontSize:14,fontWeight:800,color:"#22c55e"}}>{fmtJMD(Number(p.total_amount||0))}</div>
             </div>
           ))}
         </div>
@@ -485,7 +486,7 @@ function PaymentsScreen({ companyId, projectId, payments, onBack, onRefresh, sho
   const selectedWorker = workers.find(w=>w.id===selWorker);
 
   useEffect(()=>{
-    if(companyId) supabase.from("workers").select("id,first_name,last_name").eq("company_id",companyId).eq("status","active").then(({data})=>setWorkers(data||[]));
+    if(companyId) supabase.from("workers").select("id,first_name,last_name,phone,id_number,address").eq("company_id",companyId).eq("status","active").order("first_name",{ascending:true}).then(({data})=>setWorkers(data||[]));
   },[companyId]);
 
   async function savePayment() {
@@ -517,18 +518,29 @@ Save the payment WITHOUT a signature? Press Cancel to go back and try again.`)) 
         return;
       }
     }
-    await supabase.from("field_payments").insert({
+    // the real field_payments columns (worker_id is the registered worker; the amount is total_amount; the method must be one of cash / bank_transfer / check / other)
+    const w = selectedWorker;
+    const now = new Date();
+    const methodValue = method === "Cheque" ? "check" : method === "Transfer" ? "bank_transfer" : "cash";
+    const { error: insertError } = await supabase.from("field_payments").insert({
       company_id:companyId, project_id:projectId||null, worker_id:selWorker,
-      amount:parseFloat(amount), payment_method:method,
-      paid_at:new Date().toISOString(), status:"paid",
-      notes:notes||null, signature_url:sigUrl,
+      worker_name:`${w?.first_name||""} ${w?.last_name||""}`.trim() || "Worker", worker_phone:w?.phone||null, worker_id_number:w?.id_number||null, worker_address:w?.address||null,
+      work_type:"Field payment", work_date:now.toISOString().slice(0,10), total_amount:parseFloat(amount), payment_type:"payment", payment_method:methodValue,
+      receipt_number:`FP-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}-${Date.now().toString().slice(-6)}`,
+      // signed = the worker signed for it; without a signature it stays a draft for the office to complete (a draft has no receipt)
+      status:sigUrl ? "signed" : "draft", signature_url:sigUrl, notes:notes||null, synced_to_finance:false,
     });
+    if (insertError) {
+      setSaving(false);
+      showToast("The payment was NOT saved: " + insertError.message);
+      return;
+    }
     setSaving(false); setShowAdd(false); setSelWorker(""); setAmount(""); setNotes(""); setSigDataUrl(null);
-    showToast(sigUrl ? "Payment saved with signature!" : "Payment saved (no signature).");
+    showToast(sigUrl ? "Payment saved with signature!" : "Saved as a draft (no signature): the office can complete it.");
     if(onRefresh) onRefresh();
   }
 
-  const total = payments.reduce((s:number,p:any)=>s+Number(p.amount||0),0);
+  const total = payments.reduce((s:number,p:any)=>s+Number(p.total_amount||0),0);
 
   return (
     <div style={{padding:16}}>
@@ -604,13 +616,13 @@ Save the payment WITHOUT a signature? Press Cancel to go back and try again.`)) 
       ) : payments.map((p:any,i:number)=>(
         <div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"14px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
-            <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0"}}>{p.worker?.first_name} {p.worker?.last_name}</div>
+            <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0"}}>{p.worker_name}</div>
             <div style={{fontSize:11,color:"#475569",marginTop:2}}>
-              {p.payment_method||"Cash"} · {new Date(p.paid_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}
+              {p.payment_method||"cash"} · {new Date(p.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}
               {p.signature_url && <span style={{color:"#22c55e"}}> · ✍️ Signed</span>}
             </div>
           </div>
-          <div style={{fontSize:18,fontWeight:800,color:"#22c55e"}}>{fmtJMD(Number(p.amount||0))}</div>
+          <div style={{fontSize:18,fontWeight:800,color:"#22c55e"}}>{fmtJMD(Number(p.total_amount||0))}</div>
         </div>
       ))}
     </div>

@@ -27,7 +27,8 @@ import AcceptInvitePage       from "./pages/AcceptInvitePage";
 import ResetPasswordPage      from "./pages/ResetPasswordPage";
 import AuthConfirmPage        from "./pages/AuthConfirmPage";
 import ClientProjectPage      from "./pages/ClientProjectPage";
-import WorkerPortalPage       from "./pages/WorkerPortalPage";
+import WorkerLoginPage        from "./pages/WorkerLoginPage";
+import WorkerHomePage         from "./pages/WorkerHomePage";
 import FieldOpsPage           from "./pages/FieldOpsPage";
 import FieldAppPage           from "./pages/FieldAppPage";
 import DashboardPage          from "./pages/DashboardPage";
@@ -249,7 +250,10 @@ export default function App() {
 
             {/* Standalone portals */}
             <Route path="/client/projects/:projectId" element={<RequireAuth><ClientProjectPage /></RequireAuth>} />
-            <Route path="/worker/portal"              element={<RequireAuth><WorkerPortalPage /></RequireAuth>} />
+            {/* The worker portal: workers sign in with their worker number + PIN (no Supabase login, see lib/workerPortalApi.ts). The old /worker/portal page needed a staff-style login that cannot exist. */}
+            <Route path="/worker"                     element={<WorkerLoginPage />} />
+            <Route path="/worker/home"                element={<WorkerHomePage />} />
+            <Route path="/worker/portal"              element={<Navigate to="/worker" replace />} />
             <Route path="/field-ops"                  element={<RequireAuth><FieldOpsPage /></RequireAuth>} />
             <Route path="/field"                      element={<Navigate to="/field-payments" replace />} />
 

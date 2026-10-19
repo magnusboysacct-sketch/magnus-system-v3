@@ -63,7 +63,14 @@ export function canManageStaff(role: string | null | undefined): boolean {
 }
 
 // Workers page ceiling — the /workers route guard, the sidebar link and the dashboard "Add Worker" shortcut all use this one list.
-export const WORKERS_PAGE_ROLES: readonly Role[] = ["director", "supervisor", "site_user"];
+// admin and secretary are on the list so they can open a worker and manage the worker portal access (PORTAL_ACCESS_ROLES); what each may do on the page is decided per action below / in the page.
+export const WORKERS_PAGE_ROLES: readonly Role[] = ["director", "admin", "secretary", "supervisor", "site_user"];
+
+// Who may give a worker portal access, reset a PIN, unlock or switch it off (the worker-portal-admin edge function and the database check the same three roles).
+export const PORTAL_ACCESS_ROLES: readonly Role[] = ["director", "admin", "secretary"];
+export function canManageWorkerPortal(role: string | null | undefined): boolean {
+  return !!role && (PORTAL_ACCESS_ROLES as readonly string[]).includes(role);
+}
 
 export function canAccessWorkersPage(role: string | null | undefined): boolean {
   return !!role && (WORKERS_PAGE_ROLES as readonly string[]).includes(role);
