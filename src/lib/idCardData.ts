@@ -81,7 +81,7 @@ export function loadCompanyBundle(companyId: string | null | undefined, nameOver
 // ── Worker ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export async function loadWorkerCard(workerId: string, companyNameOverride?: string | null): Promise<LoadedCard | null> {
   const { data: w, error } = await supabase.from("workers")
-    .select("id,company_id,first_name,last_name,worker_type,job_title,id_number,national_id_type,address,city,phone,hire_date,id_expiry_date,passport_photo_url,verify_code")
+    .select("id,company_id,first_name,last_name,worker_type,job_title,employee_id,address,city,phone,hire_date,id_expiry_date,passport_photo_url,verify_code")
     .eq("id", workerId).maybeSingle();
   if (error) throw error;
   if (!w) return null;
@@ -100,7 +100,7 @@ export async function loadWorkerCard(workerId: string, companyNameOverride?: str
     initials: initialsOf(name),
     verifyCode: w.verify_code,
     cardTitle: "SITE IDENTIFICATION CARD",
-    detail: w.id_number ? { label: w.national_id_type || "ID", value: w.id_number } : null,
+    detail: w.employee_id?.trim() ? { label: "Worker No", value: w.employee_id.trim() } : null,     // the worker number (MBW-001); the national ID number is no longer on the card
     bearer,
     issuedLabel: fmtFull(w.hire_date ? new Date(w.hire_date) : new Date()),
     expiresLabel: fmtFull(exp),

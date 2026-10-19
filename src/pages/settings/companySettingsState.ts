@@ -5,13 +5,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { loadLogoImage, type LogoInfo } from "../../lib/logoImage";
+import { normalizeWorkerPrefix, validateWorkerPrefix } from "../../lib/workerNumber";
 
 type CompanySettings = {
   id: number; company_id: string; company_name: string; logo_url: string | null; tagline: string | null; address_line1: string | null; address_line2: string | null;
   parish: string | null; country: string | null; phone: string | null; email: string | null; website: string | null;
 };
 type Message = { type: "success" | "error"; text: string } | null;
-const EMPTY_FORM = { company_name: "", tagline: "", address_line1: "", address_line2: "", parish: "", country: "", phone: "", email: "", website: "" };
+const EMPTY_FORM = { company_name: "", tagline: "", address_line1: "", address_line2: "", parish: "", country: "", phone: "", email: "", website: "", worker_number_prefix: "" };
 
 export function useCompanySettingsState(resetToken: number) {
   const [loading, setLoading] = useState(true);
@@ -84,6 +85,7 @@ export function useCompanySettingsState(resetToken: number) {
         setForm({
           company_name: settings.company_name || "", tagline: settings.tagline || "", address_line1: settings.address_line1 || "", address_line2: settings.address_line2 || "",
           parish: settings.parish || "", country: settings.country || "", phone: settings.phone || "", email: settings.email || "", website: settings.website || "",
+          worker_number_prefix: normalizeWorkerPrefix(s.worker_number_prefix as string),
         });
       }
       setPendingBaseline(true);
@@ -96,6 +98,8 @@ export function useCompanySettingsState(resetToken: number) {
 
   async function saveSettings() {
     if (!companyId) return;
+    const prefixProblem = validateWorkerPrefix(form.worker_number_prefix);
+    if (prefixProblem) { setMsg({ type: "error", text: prefixProblem }); return; }
     setSaving(true); setMsg(null);
     try {
       const { error } = await supabase.from("company_settings").upsert({
@@ -109,6 +113,7 @@ export function useCompanySettingsState(resetToken: number) {
         phone:         form.phone.trim()           || null,
         email:         form.email.trim()           || null,
         website:       form.website.trim()         || null,
+        worker_number_prefix: form.worker_number_prefix,
         logo_url:          logoUrl || null,
         signature_url:     signatureUrl || null,
         watermark_url:     watermarkUrl || null,

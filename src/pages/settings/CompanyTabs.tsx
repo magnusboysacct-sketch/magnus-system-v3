@@ -9,6 +9,7 @@ import LogoUploadPanel from "../../components/LogoUploadPanel";
 import { LOGO_SMALL_WARNING, LOGO_MARGIN_HINT, describeLogo, logoIsSmall, marginsAreWasteful } from "../../lib/logoImage";
 import { supabase } from "../../lib/supabase";
 import { useCompanySettingsForm } from "./companySettingsState";
+import { normalizeWorkerPrefix, previewWorkerNumber, validateWorkerPrefix } from "../../lib/workerNumber";
 
 function TabFrame({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   const c = useCompanySettingsForm();
@@ -68,6 +69,26 @@ function CompanyInfoSection() {
       <div className="space-y-4">
         <Field label="Company Name"><Input placeholder="e.g. Magnus Construction Ltd" value={form.company_name} onChange={set("company_name")} /></Field>
         <Field label="Tagline (optional)"><Input placeholder="e.g. Building Jamaica's Future" value={form.tagline} onChange={set("tagline")} /></Field>
+      </div>
+    </Card>
+  );
+}
+
+function WorkerNumberSection() {
+  const { form, set } = useCompanySettingsForm();
+  const problem = validateWorkerPrefix(form.worker_number_prefix);
+  return (
+    <Card>
+      <CardHeader title="Worker Numbers" subtitle="Every worker gets a number like the example below when they are added" />
+      <div className="space-y-3">
+        <Field label="Prefix (2 to 5 letters)">
+          <Input placeholder="MBW" maxLength={5} value={form.worker_number_prefix} onChange={(e) => set("worker_number_prefix")({ target: { value: normalizeWorkerPrefix(e.target.value) } } as never)} />
+        </Field>
+        <div className="text-xs text-slate-500 dark:text-slate-400" data-testid="worker-number-preview">
+          Preview: <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{previewWorkerNumber(form.worker_number_prefix)}</span>, then {previewWorkerNumber(form.worker_number_prefix).replace("001", "002")}, and so on.
+        </div>
+        {problem && <div className="text-[11px] text-amber-600 dark:text-amber-400">{problem}</div>}
+        <div className="text-[10px] text-slate-500">Changing the prefix only affects workers added from now on. Numbers already given keep their prefix and are never reused.</div>
       </div>
     </Card>
   );
@@ -231,6 +252,7 @@ export function CompanyTab() {
     <TabFrame title="Company" subtitle="Your company profile, contact details and logo">
       <LogoSection />
       <CompanyInfoSection />
+      <WorkerNumberSection />
       <ContactSection />
       <AddressSection />
     </TabFrame>

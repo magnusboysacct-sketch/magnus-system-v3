@@ -28,6 +28,7 @@ type FormData = {
   worker_name: string; worker_id_number: string;
   worker_phone: string; worker_address: string;
   worker_ref: string; // worker_name + id_number combined key
+  worker_id: string;  // the registered worker this payment is for ("" = casual labour, only a typed name)
   // Project/Milestone/Task
   project_id: string; milestone_id: string; task_id: string;
   task_name: string; trade_type: string; unit: string;
@@ -126,7 +127,7 @@ function StepBar({step, paymentType}:{step:Step; paymentType:PaymentType}) {
 // The receipt document now lives in lib/receiptHtml.ts (shared with the public receipt page); re-exported for existing imports.
 export { generateReceiptHTML };
 
-interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; prefillWorker?:{name:string;id_number:string;phone:string;payment_type:string}|null; }
+interface FieldPaymentFormProps { onComplete:()=>void; onCancel:()=>void; prefillWorker?:{name:string;id_number:string;phone:string;payment_type:string;worker_id?:string|null}|null; }
 
 export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldPaymentFormProps) {
   const { projects } = useProjectContext();
@@ -138,6 +139,8 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
   const [savedPaymentId, setSavedPaymentId] = useState<string|null>(null);
   const [linkNote, setLinkNote] = useState("");
   const [companyId, setCompanyId] = useState<string|null>(null);
+  // registered workers of the company, for the "pick a worker" list (the payment is then linked to the worker: field_payments.worker_id)
+  const [workerList, setWorkerList] = useState<{id:string;first_name:string;last_name:string;phone:string|null;id_number:string|null;address:string|null;employee_id:string|null}[]>([]);
   const [supervisorId, setSupervisorId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
   const [logoBase64, setLogoBase64] = useState<string>("");
@@ -158,7 +161,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
   const [form, setForm] = useState<FormData>({
     payment_type:(prefillWorker?.payment_type as PaymentType)||"payment",
     worker_name:prefillWorker?.name||"", worker_id_number:prefillWorker?.id_number||"", worker_phone:prefillWorker?.phone||"",
-    worker_address:"", worker_ref:"",
+    worker_address:"", worker_ref:"", worker_id:prefillWorker?.worker_id||"",
     project_id:"", milestone_id:"", task_id:"",
     task_name:"", trade_type:"", unit:"",
     rate_type:"task", task_quantity:"", task_unit_rate:"",
@@ -200,6 +203,23 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
         });
     });
   },[]);
+
+  useEffect(()=>{
+    if(!companyId)return;
+    supabase.from("workers").select("id,first_name,last_name,phone,id_number,address,employee_id").eq("company_id",companyId).eq("status","active").order("first_name",{ascending:true})
+      .then(({data})=>setWorkerList((data||[]) as any[]));
+  },[companyId]);
+
+  // Picking a registered worker fills the details and links the payment; "casual labour" keeps a typed name with no link.
+  function pickWorker(id:string){
+    const w=workerList.find(x=>x.id===id);
+    if(!w){setForm(f=>({...f,worker_id:""}));return;}
+    setForm(f=>({...f,worker_id:w.id,worker_name:`${w.first_name} ${w.last_name}`.trim(),worker_id_number:w.id_number||"",worker_phone:w.phone||"",worker_address:w.address||""}));
+  }
+  function typeWorkerName(name:string){
+    // editing the name of a picked worker means it is someone else: drop the link
+    setForm(f=>{const w=workerList.find(x=>x.id===f.worker_id);return {...f,worker_name:name,worker_id:w&&`${w.first_name} ${w.last_name}`.trim()===name.trim()?f.worker_id:""};});
+  }
 
   // Load worker advance history when worker ID confirmed
   async function loadWorkerHistory(workerRef: string) {
@@ -300,7 +320,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
 
   function handleIDScanResult(ocr:any, photoFile?: File) {
     const name=[ocr.firstName,ocr.middleName,ocr.lastName].filter(Boolean).join(" ");
-    setForm(f=>({...f,worker_name:name||f.worker_name,worker_id_number:ocr.idNumber||ocr.documentNumber||f.worker_id_number,worker_address:ocr.address||f.worker_address}));
+    setForm(f=>({...f,worker_id:name?"":f.worker_id,worker_name:name||f.worker_name,worker_id_number:ocr.idNumber||ocr.documentNumber||f.worker_id_number,worker_address:ocr.address||f.worker_address}));
     if(photoFile) setIdPhotoFile(photoFile);
   }
 
@@ -334,6 +354,7 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
       const {data:payment,error:pe}=await supabase.from("field_payments").insert({
         company_id:companyId,
         project_id:form.project_id||null,
+        ...(form.worker_id?{worker_id:form.worker_id}:{}),      // only when a registered worker was picked (casual labour sends nothing)
         worker_name:form.worker_name.trim(),
         worker_id_number:form.worker_id_number.trim()||null,
         worker_phone:form.worker_phone.trim()||null,
@@ -555,8 +576,16 @@ export function FieldPaymentForm({ onComplete, onCancel, prefillWorker }: FieldP
               <div className="text-[10px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600">
                 Worker Details {form.worker_name&&<span className="text-emerald-400 ml-2">✓ Auto-filled</span>}
               </div>
+              <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Registered worker</label>
+                <select value={form.worker_id} onChange={e=>pickWorker(e.target.value)} data-testid="worker-picker"
+                  className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200">
+                  <option value="">Casual labour / not registered (type the name below)</option>
+                  {workerList.map(w=><option key={w.id} value={w.id}>{`${w.first_name} ${w.last_name}`.trim()}{w.employee_id?` (${w.employee_id})`:""}</option>)}
+                </select>
+                {form.worker_id&&<div className="text-[10px] text-emerald-500 mt-1">This payment will be linked to the registered worker.</div>}
+              </div>
               <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">Full Name *</label>
-                <input value={form.worker_name} onChange={setF("worker_name")} placeholder="Worker full name"
+                <input value={form.worker_name} onChange={e=>typeWorkerName(e.target.value)} placeholder="Worker full name"
                   className="w-full bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-700 outline-none focus:border-cyan-500/50"/></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-[9px] font-bold uppercase tracking-widest text-slate-800 dark:text-slate-600 block mb-1">ID Number</label>

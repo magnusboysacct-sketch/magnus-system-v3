@@ -32,6 +32,7 @@ type Payment = {
   advance_amount: number|null;
   balance_due: number|null;
   worker_ref: string|null;
+  worker_id?: string|null;
   days_worked: number|null;
   hours_worked: number|null;
   rate_per_day: number|null;
@@ -72,7 +73,7 @@ export default function FieldPaymentsPage() {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const [showForm, setShowForm] = useState(false);
-  const [prefillWorker, setPrefillWorker] = useState<{name:string;id_number:string;phone:string;payment_type:string}|null>(null);
+  const [prefillWorker, setPrefillWorker] = useState<{name:string;id_number:string;phone:string;payment_type:string;worker_id?:string|null}|null>(null);
   const [selected, setSelected] = useState<Payment|null>(null);
   const [companyId, setCompanyId] = useState<string|null>(null);
   const [company, setCompany] = useState<any>(null);
@@ -672,17 +673,17 @@ export default function FieldPaymentsPage() {
                 <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 mb-2 mt-3">Continue with this Worker</div>
 
                 <div className="grid grid-cols-3 gap-2">
-                  <button onClick={()=>{const w=selected;setSelected(null);setPrefillWorker({name:w?.worker_name||"",id_number:w?.worker_id_number||"",phone:w?.worker_phone||"",payment_type:"advance"});setShowForm(true);}}
+                  <button onClick={()=>{const w=selected;setSelected(null);setPrefillWorker({name:w?.worker_name||"",id_number:w?.worker_id_number||"",phone:w?.worker_phone||"",payment_type:"advance",worker_id:w?.worker_id||null});setShowForm(true);}}
                     className="flex flex-col items-center gap-1 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 transition">
                     <TrendingUp size={15}/>
                     <span className="text-[10px] font-bold">New Advance</span>
                   </button>
-                  <button onClick={()=>{const w=selected;setSelected(null);setPrefillWorker({name:w?.worker_name||"",id_number:w?.worker_id_number||"",phone:w?.worker_phone||"",payment_type:"payment"});setShowForm(true);}}
+                  <button onClick={()=>{const w=selected;setSelected(null);setPrefillWorker({name:w?.worker_name||"",id_number:w?.worker_id_number||"",phone:w?.worker_phone||"",payment_type:"payment",worker_id:w?.worker_id||null});setShowForm(true);}}
                     className="flex flex-col items-center gap-1 py-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 transition">
                     <DollarSign size={15}/>
                     <span className="text-[10px] font-bold">Pay Work</span>
                   </button>
-                  <button onClick={()=>{const w=selected;setSelected(null);setPrefillWorker({name:w?.worker_name||"",id_number:w?.worker_id_number||"",phone:w?.worker_phone||"",payment_type:"final"});setShowForm(true);}}
+                  <button onClick={()=>{const w=selected;setSelected(null);setPrefillWorker({name:w?.worker_name||"",id_number:w?.worker_id_number||"",phone:w?.worker_phone||"",payment_type:"final",worker_id:w?.worker_id||null});setShowForm(true);}}
                     className="flex flex-col items-center gap-1 py-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 transition">
                     <CheckCircle2 size={15}/>
                     <span className="text-[10px] font-bold">Final Pay</span>

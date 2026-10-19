@@ -181,7 +181,7 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
           {worker.worker_type.replace("_", " ")}
         </div>
         {worker.employee_id && (
-          <div className="text-[9px] text-slate-700 mt-0.5">ID: {worker.employee_id}</div>
+          <div className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono">No. {worker.employee_id}</div>
         )}
         {worker.id_expiry_date && (
           <div className="mt-1"><IdExpiryBadge idExpiryDate={worker.id_expiry_date}/></div>
@@ -426,6 +426,8 @@ export default function WorkersPage() {
   const { userRole } = useProjectContext();
   const canDelete = userRole === "director" || userRole === "supervisor" || userRole === "site_user";
   const canAddWorker = canManageWorkers(userRole);
+  // The worker number (MBW-001) is assigned by the database; only a director or admin may change it (the database refuses anyone else).
+  const canEditWorkerNumber = userRole === "director" || userRole === "admin";
   const [workers, setWorkers] = useState<Worker[]>([]);
   // Exact row count, independent of the fetch above — see loadWorkers().
   const [totalCount, setTotalCount] = useState<number | null>(null);
@@ -581,7 +583,6 @@ export default function WorkersPage() {
         pay_type: form.pay_type || null,
         pay_rate: form.pay_rate ? parseFloat(form.pay_rate) : null,
         overtime_rate: form.overtime_rate ? parseFloat(form.overtime_rate) : null,
-        employee_id: form.employee_id.trim() || null,
         notes: form.notes.trim() || null,
         id_number: form.id_number?.trim() || null,
         id_photo_url: toStoredRef(form.id_photo_url),
@@ -617,6 +618,8 @@ export default function WorkersPage() {
           console.error("ID photo upload exception:", upEx);
         }
       }
+      // the number: assigned by the database for a new worker; changed only by a director / admin (and only when they actually changed it)
+      if (editWorker && canEditWorkerNumber && form.employee_id.trim() && form.employee_id.trim() !== (editWorker.employee_id || "")) payload.employee_id = form.employee_id.trim();
       if (editWorker) {
         const { error: e } = await supabase.from("workers").update(payload).eq("id", editWorker.id);
         if (e) throw e;
@@ -860,7 +863,7 @@ export default function WorkersPage() {
                         <div>
                           <button onClick={() => setSelectedWorker(w)} className="font-semibold text-slate-800 dark:text-slate-200 text-xs hover:text-cyan-400 transition-colors text-left">{fullName(w)}</button>
                           {w.job_title && <div className="text-[9px] text-slate-500 dark:text-slate-400">{w.job_title}</div>}
-                          {w.employee_id && <div className="text-[9px] text-slate-700">#{w.employee_id}</div>}
+                          {w.employee_id && <div className="text-[9px] text-slate-500 dark:text-slate-400 font-mono">{w.employee_id}</div>}
                           {w.id_expiry_date && <div className="mt-0.5"><IdExpiryBadge idExpiryDate={w.id_expiry_date}/></div>}
                         </div>
                       </div>
@@ -1056,9 +1059,12 @@ export default function WorkersPage() {
               <Input type="date" value={form.hire_date}
                 onChange={e => setForm(f => ({ ...f, hire_date: e.target.value }))}/>
             </Field>
-            <Field label="Employee ID (optional)">
-              <Input placeholder="EMP-001" value={form.employee_id}
-                onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))}/>
+            <Field label="Worker No.">
+              {!editWorker
+                ? <div className="text-xs text-slate-500 dark:text-slate-400 py-2">Given automatically when you save (for example MBW-014).</div>
+                : canEditWorkerNumber
+                  ? <Input value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))}/>
+                  : <div className="text-sm font-mono font-semibold text-slate-800 dark:text-slate-200 py-2">{form.employee_id || "-"}</div>}
             </Field>
           </div>
 
@@ -1188,6 +1194,7 @@ export default function WorkersPage() {
               {/* Details */}
               <div className="grid grid-cols-2 gap-2">
                 {[
+                  { label:"Worker No.",  value: selectedWorker.employee_id },
                   { label:"ID Number",   value: selectedWorker.id_number },
                   { label:"ID Type",     value: selectedWorker.national_id_type?.replace("_"," ") },
                   { label:"Phone",       value: selectedWorker.phone },
