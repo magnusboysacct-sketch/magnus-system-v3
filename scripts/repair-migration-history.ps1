@@ -1,8 +1,8 @@
 # Marks migrations whose effects are already on the live database as applied in the migration history table.
-# It changes ONLY supabase_migrations.schema_migrations - it does not run any migration SQL.
+# It changes ONLY supabase_migrations.schema_migrations - it does not run any migration SQL. It covers all 88 local-only migrations.
 # Generated from the audit in supabase/migration-history-audit.md (2026-10-19). NOT run yet - review, then run from the repo root:
 #   powershell -ExecutionPolicy Bypass -File scripts/repair-migration-history.ps1
-# Afterwards `npx supabase migration list --linked` should show only the migrations listed in the "decide" section at the end as pending.
+# Afterwards `npx supabase migration list --linked` should show only 20260949000000 as pending (that one is applied by you, not by this script).
 $ErrorActionPreference = "Stop"
 
 # SUPERSEDED: Table, columns, RLS and email index are live [replay would be harmful]
@@ -14,6 +14,11 @@ if ($LASTEXITCODE -ne 0) { throw "repair failed for 20260628000001" }
 # 20260628000002_fix_remaining_fk_cascades.sql
 npx supabase migration repair --status applied 20260628000002 --linked
 if ($LASTEXITCODE -ne 0) { throw "repair failed for 20260628000002" }
+
+# SUPERSEDED by 20260949000000: live admin_delete_user was hand-edited and lost the 'only a director can remove a director' rule; 20260949000000 puts it back on top of the live body, so this older body must never be replayed
+# 20260628000003_admin_delete_user_rpc.sql
+npx supabase migration repair --status applied 20260628000003 --linked
+if ($LASTEXITCODE -ne 0) { throw "repair failed for 20260628000003" }
 
 # SUPERSEDED: admin_delete_auth_user and the other objects are live [replay would be harmful]
 # 20260629000001_session_schema_additions.sql
@@ -159,6 +164,11 @@ if ($LASTEXITCODE -ne 0) { throw "repair failed for 20260821000000" }
 # 20260822000000_add_monthly_pnl_function.sql
 npx supabase migration repair --status applied 20260822000000 --linked
 if ($LASTEXITCODE -ne 0) { throw "repair failed for 20260822000000" }
+
+# SUPERSEDED by 20260949000000: it is the security_invoker fix for v_project_finance_summary, which was never applied (cross-company read); 20260949000000 does that and more
+# 20260822010000_fix_project_finance_summary_security_invoker.sql
+npx supabase migration repair --status applied 20260822010000 --linked
+if ($LASTEXITCODE -ne 0) { throw "repair failed for 20260822010000" }
 
 # APPLIED: chart_of_accounts_check / chart_of_accounts_check1 no longer exist
 # 20260822020000_allow_negative_equity_liability_balances.sql
@@ -436,16 +446,6 @@ npx supabase migration repair --status applied 20260935000000 --linked
 if ($LASTEXITCODE -ne 0) { throw "repair failed for 20260935000000" }
 
 # ---------------------------------------------------------------------------------------------------------------------------
-# NOT marked above - decide for each (see supabase/migration-history-audit.md):
-#
-# 20260628000003_admin_delete_user_rpc.sql  [PARTIAL]
-#   invitations_accept_own policy is live and identical. Live admin_delete_user was hand-edited: it LACKS the 'Only a director can remove another director' guard, so an admin can delete a director. Not superseded by any migration.
-#   Replay harmful: no (replay would add the missing guard) - but live has a gap, see report
-#   If you apply it yourself: review it, run it, then: npx supabase migration repair --status applied 20260628000003 --linked
-#   If you decide it is not wanted: delete or rewrite the local file so it no longer shows as pending.
-#
-# 20260822010000_fix_project_finance_summary_security_invoker.sql  [NOT APPLIED]
-#   v_project_finance_summary still has NO security_invoker (reloptions empty), owner postgres. Confirmed live: a user of company VERON'S sees 24 rows through the view but only 2 of their own projects - a cross-company read of project financials.
-#   Replay harmful: no (it is the fix) - URGENT to apply
-#   If you apply it yourself: review it, run it, then: npx supabase migration repair --status applied 20260822010000 --linked
-#   If you decide it is not wanted: delete or rewrite the local file so it no longer shows as pending.
+# Every one of the 88 local-only migrations is marked above. Nothing is left to decide.
+# 20260949000000_finance_view_and_admin_delete_fix.sql is NOT listed: it is the one new migration that really has to be applied
+# (apply it yourself first, see "Deploying database changes" in README.md, then run: npx supabase migration repair --status applied 20260949000000 --linked).

@@ -1,0 +1,23 @@
+-- Add optional_flag to assembly_components — the live "component_toggle"
+-- system extending what "sides" (a formula_variable) already did for
+-- formula constants, now for whether a component exists at all.
+--
+-- Previously, ~56 "include_X" toggles (mortar, grout, primer, purlins,
+-- insulation, door frame/hardware/paint, etc.) decided at wizard-creation
+-- time whether generateComponents() pushed a component at all — a toggled-
+-- off component was never saved as a row, and changing your mind meant
+-- re-creating the whole assembly. AssemblyWizard.tsx now always generates
+-- every one of these components, tagging each with optional_flag (e.g.
+-- "include_mortar") — the same string as a component_toggle entry's `key`
+-- in metadata.configurable_options. BOQPage.tsx's "Add From Assembly" modal
+-- renders a live Toggle per component_toggle option and passes the resolved
+-- values to explodeAssembly, which skips a component whose optional_flag is
+-- explicitly toggled off for that particular use.
+--
+-- Nullable, no default — matches every other schema addition this session
+-- (e.g. 20260906000000_add_boq_assembly_grouping_fields.sql). A null value
+-- means "not behind a toggle, always included", which is what every
+-- pre-existing row already implicitly is — no backfill needed, no existing
+-- assembly's behavior changes.
+ALTER TABLE assembly_components
+ADD COLUMN IF NOT EXISTS optional_flag text;

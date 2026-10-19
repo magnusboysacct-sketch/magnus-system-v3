@@ -2,15 +2,15 @@
 
 Checked on 2026-10-19 against the live database (project julylfxbdwgekzqsxykb), read-only. `supabase migration list --linked` showed 88 migrations that exist locally but are not recorded as applied on live, and none recorded on live that are missing locally.
 
-- APPLIED / SUPERSEDED / data-only: 86 (their effects are live, or later migrations replaced them) - marked in `scripts/repair-migration-history.ps1`
-- Need a decision: 2 (20260628000003, 20260822010000)
+- APPLIED / SUPERSEDED / data-only: 88 (their effects are live, or later migrations replaced them) - all marked in `scripts/repair-migration-history.ps1`
+- Need a decision: none. The two that were open (`20260628000003`, a live `admin_delete_user` missing the director rule, and `20260822010000`, the finance view that leaks across companies) are replaced by the new migration `20260949000000_finance_view_and_admin_delete_fix.sql`, which has to be applied.
 - Harmful if replayed (would undo a security or behaviour fix): 20 - this is why `supabase db push` must not be run while they show as pending
 
 | Migration | Classification | Evidence | Harmful if replayed |
 |---|---|---|---|
 | 20260628000001_capture_company_invitations.sql | SUPERSEDED | Table, columns, RLS and email index are live. The 3 policies invitations_select/insert/update are gone, replaced by 'directors can create/update/view company invites'; the company+status index is covered by separate company_id and status indexes. | YES - replay re-opens invitation reads to every company member |
 | 20260628000002_fix_remaining_fk_cascades.sql | APPLIED | All 106 foreign keys to auth.users / user_profiles are CASCADE or SET NULL; none are NO ACTION / RESTRICT. | no (dynamic, idempotent) |
-| 20260628000003_admin_delete_user_rpc.sql | PARTIAL | invitations_accept_own policy is live and identical. Live admin_delete_user was hand-edited: it LACKS the 'Only a director can remove another director' guard, so an admin can delete a director. Not superseded by any migration. | no (replay would add the missing guard) - but live has a gap, see report |
+| 20260628000003_admin_delete_user_rpc.sql | SUPERSEDED by 20260949000000 (was PARTIAL) | invitations_accept_own policy is live and identical. Live admin_delete_user was hand-edited: it LACKS the 'Only a director can remove another director' guard, so an admin can delete a director. Not superseded by any migration. | no (replay would add the missing guard) - but live has a gap, see report |
 | 20260629000001_session_schema_additions.sql | SUPERSEDED | admin_delete_auth_user and the other objects are live. The 'allow updates to client_comments' USING(true) WITH CHECK(true) policy is gone (replaced by 'Staff can update their company client comments'). | YES - re-opens client_comments to unrestricted UPDATE |
 | 20260711000000_add_boq_item_measurements.sql | APPLIED | Column present. | no |
 | 20260712000000_add_cost_items_grade.sql | APPLIED | Column present. | no |
@@ -40,7 +40,7 @@ Checked on 2026-10-19 against the live database (project julylfxbdwgekzqsxykb), 
 | 20260820030000_fix_circular_reference_trigger_syntax.sql | APPLIED | Trigger present. | no |
 | 20260821000000_add_fund_transfer_source_type.sql | APPLIED | 'fund_transfer' is in both source_type checks. | no |
 | 20260822000000_add_monthly_pnl_function.sql | APPLIED | get_monthly_pnl present, body identical. | no |
-| 20260822010000_fix_project_finance_summary_security_invoker.sql | NOT APPLIED | v_project_finance_summary still has NO security_invoker (reloptions empty), owner postgres. Confirmed live: a user of company VERON'S sees 24 rows through the view but only 2 of their own projects - a cross-company read of project financials. | no (it is the fix) - URGENT to apply |
+| 20260822010000_fix_project_finance_summary_security_invoker.sql | SUPERSEDED by 20260949000000 (was NOT APPLIED) | v_project_finance_summary still has NO security_invoker (reloptions empty), owner postgres. Confirmed live: a user of company VERON'S sees 24 rows through the view but only 2 of their own projects - a cross-company read of project financials. | no (it is the fix) - URGENT to apply |
 | 20260822020000_allow_negative_equity_liability_balances.sql | APPLIED | chart_of_accounts_check / chart_of_accounts_check1 no longer exist. | no |
 | 20260822030000_add_ar_ap_aging_function.sql | SUPERSEDED | get_ar_ap_aging redefined by 20260822040000 (live body equals it). | YES - reverts the aging function (no not-yet-due bucket) |
 | 20260822040000_add_not_yet_due_aging_bucket.sql | APPLIED | get_ar_ap_aging body identical to live. | no |
