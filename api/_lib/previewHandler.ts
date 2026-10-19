@@ -19,7 +19,7 @@ async function normalApp(request: Request): Promise<Response> {
     const res = await fetch(new URL("/index.html", request.url), { headers: { Accept: "text/html" } });
     if (res.ok) return new Response(await res.text(), { status: 200, headers: HTML_HEADERS });
   } catch { /* fall through */ }
-  return new Response("<!doctype html><title>Magnus System</title>", { status: 200, headers: HTML_HEADERS });
+  return new Response("<!doctype html><title>Magnus Boy's System</title>", { status: 200, headers: HTML_HEADERS });
 }
 
 export async function sharePreviewHandler(request: Request): Promise<Response> {

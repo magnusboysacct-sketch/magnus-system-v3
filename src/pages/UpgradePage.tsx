@@ -66,7 +66,7 @@ export default function UpgradePage() {
           <div className="w-8 h-8 rounded-lg bg-cyan-500/15 border border-cyan-500/25 flex items-center justify-center">
             <Shield size={15} className="text-cyan-400"/>
           </div>
-          <span className="text-sm font-bold text-slate-200">Magnus Boys Construction ERP</span>
+          <span className="text-sm font-bold text-slate-200">Magnus Boy&apos;s System</span>
         </div>
         <button onClick={handleSignOut}
           className="text-xs text-slate-600 hover:text-slate-400 transition">

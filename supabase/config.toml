@@ -76,21 +76,21 @@ verify_jwt = true
 # These apply to a local `supabase start`. The live project's templates are set in the dashboard (Authentication -> Emails -> Templates); see supabase/templates/README.md.
 # Do NOT run `supabase config push` for this: this file has no [auth] section for the rest of the live auth settings, and a push would write the defaults over them.
 [auth.email.template.confirmation]
-subject = "Confirm your Magnus System account"
+subject = "Confirm your Magnus Boy's System account"
 content_path = "./supabase/templates/confirm-signup.html"
 
 [auth.email.template.recovery]
-subject = "Reset your Magnus System password"
+subject = "Reset your Magnus Boy's System password"
 content_path = "./supabase/templates/reset-password.html"
 
 [auth.email.template.magic_link]
-subject = "Your Magnus System sign-in link"
+subject = "Your Magnus Boy's System sign-in link"
 content_path = "./supabase/templates/magic-link.html"
 
 [auth.email.template.invite]
-subject = "You have been invited to Magnus System"
+subject = "You have been invited to Magnus Boy's System"
 content_path = "./supabase/templates/invite.html"
 
 [auth.email.template.email_change]
-subject = "Confirm your new email address for Magnus System"
+subject = "Confirm your new email address for Magnus Boy's System"
 content_path = "./supabase/templates/change-email.html"

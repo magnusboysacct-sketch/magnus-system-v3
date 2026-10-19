@@ -321,7 +321,7 @@ export default function ContractDocument({ contract, schedule, company, signReco
 
               {/* Footer */}
               <div style={{borderTop:"2px solid #1a1a1a",paddingTop:16,textAlign:"center",fontSize:11,color:"#9ca3af"}}>
-                {companyDisplayName(company?.company_name)} · {company?.phone || ""} · {company?.email || ""} · Powered by Magnus ERP
+                {companyDisplayName(company?.company_name)} · {company?.phone || ""} · {company?.email || ""} · Powered by Magnus Boy&apos;s System
               </div>
             </div>
           </div>

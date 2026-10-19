@@ -309,7 +309,7 @@ Deno.serve(async (req) => {
       brand: { logoUrl: companyLogo, companyName, tagline: companyTagline },
       bodyHtml: `
           <h2 style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:20px;color:#111111;">You've been invited</h2>
-          <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">You've been invited to join <strong>${esc(companyName)}</strong> on the Magnus construction management platform.</p>
+          <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">You've been invited to join <strong>${esc(companyName)}</strong> on Magnus Boy&#39;s System.</p>
           <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">Click the button below to accept your invitation and activate your account.</p>
           ${emailButton(inviteUrl, "Accept Invitation")}
           <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;font-size:13px;color:#777777;">If the button does not work, copy and paste this link into your browser:</p>

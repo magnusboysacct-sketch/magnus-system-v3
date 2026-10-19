@@ -273,7 +273,7 @@ test("vercel.json: the .png card path is rewritten to the card handler, ahead of
 });
 
 // ── the crawler endpoint (token -> company mapping goes through the database function; here it is faked) ───────────────────────
-const APP_HTML = "<!doctype html><title>Magnus System</title><meta property=\"og:image\" content=\"https://app.magnusboys.com/og-image.png\">";
+const APP_HTML = "<!doctype html><title>Magnus Boy's System</title><meta property=\"og:image\" content=\"https://app.magnusboys.com/og-image.png\">";
 function withFetch(rpc: (body: { p_kind: string; p_token: string }) => unknown) {
   const real = globalThis.fetch;
   const seen: Array<{ url: string; body?: unknown }> = [];

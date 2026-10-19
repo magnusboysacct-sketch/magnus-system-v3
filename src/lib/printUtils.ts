@@ -10,7 +10,7 @@ export interface PrintOptions {
 
 // The full document that gets printed (title + base styles + the html + the optional watermark).
 export function buildPrintDocument(html: string, options: PrintOptions = {}): string {
-  const { title = "Magnus Boys ERP", watermark, tagline } = options;
+  const { title = "Magnus Boy's System", watermark, tagline } = options;
 
   const wmHtml = watermark?.url
     ? `<img class="wm" src="${watermark.url}"/>${tagline ? `<div class="wm-tag">${tagline.toUpperCase()}</div>` : ""}`

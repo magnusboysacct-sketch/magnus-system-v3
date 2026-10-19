@@ -142,7 +142,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
       <div className="mb-8 flex flex-col items-center px-8">
         <img src="/icon-512x512.png" alt="Magnus Boys Construction"
           className="w-40 h-40 object-contain mb-6"/>
-        <h1 className="text-2xl font-bold text-slate-800 tracking-tight text-center">Magnus System</h1>
+        <h1 className="text-2xl font-bold text-slate-800 tracking-tight text-center">Magnus Boy&apos;s System</h1>
         <p className="text-sm text-slate-500 mt-1 text-center">Construction ERP</p>
       </div>
       <div className="w-48 h-1.5 bg-slate-200 rounded-full overflow-hidden">

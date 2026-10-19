@@ -268,7 +268,7 @@ export default function ClientLoginPage() {
         </div>
 
         <div className="text-center mt-6 text-[10px] text-slate-400">
-          {company?.company_name} · Client Portal · Powered by Magnus ERP
+          {company?.company_name} · Client Portal · Powered by Magnus Boy&apos;s System
         </div>
       </div>
     </div>

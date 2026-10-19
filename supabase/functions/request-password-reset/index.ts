@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
       brand: { logoUrl: companyLogo, companyName, tagline: companyTagline },
       bodyHtml: `
           <h2 style="margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;font-size:20px;color:#111111;">Reset your password</h2>
-          <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">We received a request to reset the password for your account on the Magnus construction management platform.</p>
+          <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">We received a request to reset the password for your account on Magnus Boy&#39;s System.</p>
           <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;">Click the button below to choose a new password. If you didn't request this, you can safely ignore this email.</p>
           ${emailButton(resetUrl, "Reset Password")}
           <p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;color:#222222;font-size:13px;color:#777777;">If the button does not work, copy and paste this link into your browser:</p>

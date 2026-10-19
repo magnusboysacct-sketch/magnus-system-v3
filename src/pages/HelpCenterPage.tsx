@@ -113,13 +113,13 @@ const DEFAULT_ARTICLES = [
   // GETTING STARTED
   {
     module: "getting-started",
-    title: "Welcome to Magnus Boys ERP",
+    title: "Welcome to Magnus Boy's System",
     slug: "welcome",
     sort_order: 1,
     roles: ["director","admin","estimator","supervisor","office_user","site_user"],
-    content: `# Welcome to Magnus Boys Construction ERP
+    content: `# Welcome to Magnus Boy's System
 
-Magnus Boys ERP is a complete construction management system built specifically for Magnus Boys Construction Limited. It manages everything from the first client meeting to the final payment.
+Magnus Boy's System is a complete construction management system built specifically for Magnus Boys Construction Limited. It manages everything from the first client meeting to the final payment.
 
 ## What this system does
 
@@ -173,7 +173,7 @@ Use the **❓ Help** button in the sidebar at any time to find guides for the pa
     slug: "navigation",
     sort_order: 2,
     roles: ["director","admin","estimator","supervisor","office_user","site_user"],
-    content: `# Navigating Magnus Boys ERP
+    content: `# Navigating Magnus Boy's System
 
 ## The Sidebar
 
@@ -1016,7 +1016,7 @@ Most reports can be:
 
 ## Overview
 
-Settings is where you configure Magnus Boys ERP for your company. Only Directors can access Settings.
+Settings is where you configure Magnus Boy's System for your company. Only Directors can access Settings.
 
 ## Company Settings
 
@@ -1624,7 +1624,7 @@ export default function HelpCenterPage() {
             📚 Help Center
           </h1>
           <p className="text-slate-500 dark:text-slate-400">
-            Training guides for Magnus Boys Construction ERP
+            Training guides for Magnus Boy&apos;s System
           </p>
         </div>
 

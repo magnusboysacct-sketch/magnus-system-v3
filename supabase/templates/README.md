@@ -17,11 +17,11 @@ Supabase dashboard -> **Authentication -> Emails -> Templates**. Paste the whole
 
 | Dashboard template | Subject | File | Link it builds |
 |---|---|---|---|
-| Confirm signup | `Confirm your Magnus System account` | `confirm-signup.html` | `type=signup&next=/` |
-| Invite user | `You have been invited to Magnus System` | `invite.html` | `type=invite&next=/accept-invite` |
-| Magic link | `Your Magnus System sign-in link` | `magic-link.html` | `type=magiclink&next=/` |
-| Change email address | `Confirm your new email address for Magnus System` | `change-email.html` | `type=email_change&next=/` |
-| Reset password | `Reset your Magnus System password` | `reset-password.html` | `type=recovery&next=/reset-password` |
+| Confirm signup | `Confirm your Magnus Boy's System account` | `confirm-signup.html` | `type=signup&next=/` |
+| Invite user | `You have been invited to Magnus Boy's System` | `invite.html` | `type=invite&next=/accept-invite` |
+| Magic link | `Your Magnus Boy's System sign-in link` | `magic-link.html` | `type=magiclink&next=/` |
+| Change email address | `Confirm your new email address for Magnus Boy's System` | `change-email.html` | `type=email_change&next=/` |
+| Reset password | `Reset your Magnus Boy's System password` | `reset-password.html` | `type=recovery&next=/reset-password` |
 
 "Reauthentication" is not used by the app and is left as it is.
 
@@ -34,9 +34,9 @@ Supabase dashboard -> **Authentication -> Emails -> Templates**. Paste the whole
 
 ## What the templates look like
 
-Same layout as the portal emails (`supabase/functions/_shared/emailLayout.ts`): white card, gold top border, gold button, grey footer, light-only colours so dark-mode mail apps leave it alone. The header says "Magnus System" (no company logo, so it is right for every company). Each email has a short explanation, the button, the link written out as plain text, an expiry note and "If you did not request this, you can safely ignore this email". Plain inline-styled HTML tables: no scripts, no tracking pixels, no images.
+Same layout as the portal emails (`supabase/functions/_shared/emailLayout.ts`): white card, gold top border, gold button, grey footer, light-only colours so dark-mode mail apps leave it alone. The header says "Magnus Boy's System" (no company logo, so it is right for every company). Each email has a short explanation, the button, the link written out as plain text, an expiry note and "If you did not request this, you can safely ignore this email". Plain inline-styled HTML tables: no scripts, no tracking pixels, no images.
 
-To add a logo later, put an `<img>` (hosted on `https://app.magnusboys.com`, with `width`/`height` and `alt="Magnus System"`) in place of the `<h2>Magnus System</h2>` line of each file.
+To add a logo later, put an `<img>` (hosted on `https://app.magnusboys.com`, with `width`/`height` and `alt="Magnus Boy's System"`) in place of the `<h2>Magnus Boy's System</h2>` line of each file.
 
 ## config.toml
 

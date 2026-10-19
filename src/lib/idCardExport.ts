@@ -33,7 +33,7 @@ const png = (c: HTMLCanvasElement) => c.toDataURL("image/png");
 // ── a) Card PDF: 2 pages per person (front, back), each 60 x 91.6 mm = 54 x 85.6 mm trim + 3 mm bleed ───────────────────────
 export async function buildCardPdf(items: CardItem[], company: IdCardCompany, onProgress?: Progress): Promise<Blob> {
   const doc = new jsPDF({ unit: "mm", format: [PAGE_W_MM, PAGE_H_MM], orientation: "portrait", compress: true });
-  doc.setProperties({ title: `${company.name} ID cards (CR80, 3 mm bleed)`, creator: "Magnus System" });
+  doc.setProperties({ title: `${company.name} ID cards (CR80, 3 mm bleed)`, creator: "Magnus Boy's System" });
   let n = 0;
   for (const item of items) {
     for (const face of ["front", "back"] as const) {
@@ -68,7 +68,7 @@ export function cellOrigin(paper: Paper, i: number, back: boolean) {
 export async function buildSheetPdf(items: CardItem[], company: IdCardCompany, paper: Paper, onProgress?: Progress): Promise<Blob> {
   const L = sheetLayout(paper);
   const doc = new jsPDF({ unit: "mm", format: [L.pw, L.ph], orientation: "portrait", compress: true });
-  doc.setProperties({ title: `${company.name} ID cards (print sheet, ${paper.toUpperCase()})`, creator: "Magnus System" });
+  doc.setProperties({ title: `${company.name} ID cards (print sheet, ${paper.toUpperCase()})`, creator: "Magnus Boy's System" });
   const pages = Math.ceil(items.length / L.perPage);
   let done = 0, first = true;
   const marks = () => {
@@ -147,7 +147,7 @@ export async function buildPngZip(items: CardItem[], company: IdCardCompany, onP
 export async function buildInstructionsPdf(items: CardItem[], company: IdCardCompany, logo?: IdCardImages["logo"], logoVector = false): Promise<Blob> {
   const dpi = 200, ppm = dpi / 25.4, W = 210, H = 297;
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
-  doc.setProperties({ title: `${company.name} ID cards: print instructions`, creator: "Magnus System" });
+  doc.setProperties({ title: `${company.name} ID cards: print instructions`, creator: "Magnus Boy's System" });
   const kinds = items.map((i) => i.data.kind);
   const nStaff = kinds.filter((k) => k === "staff").length, nWorker = kinds.length - nStaff;
   const FONT = `"Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif`;

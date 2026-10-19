@@ -1240,7 +1240,7 @@ export default function ClientPortalPage() {
     </div>
 
     <div style={{borderTop:"1px solid #e2e8f0",padding:"16px 0",textAlign:"center",fontSize:11,color:"#94a3b8"}}>
-      {companyDisplayName(company?.company_name)} … Secured Portal … Powered by Magnus ERP
+      {companyDisplayName(company?.company_name)} … Secured Portal … Powered by Magnus Boy&apos;s System
     </div>
 
     {lightbox&&<div onClick={()=>setLightbox(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.93)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,cursor:"zoom-out"}}>

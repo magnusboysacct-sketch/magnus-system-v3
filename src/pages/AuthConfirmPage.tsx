@@ -35,7 +35,7 @@ export default function AuthConfirmPage() {
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex items-center justify-center p-6">
       <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-800 shadow-xl border border-slate-200 dark:border-slate-700 p-8">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Magnus System</h1>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Magnus Boy&apos;s System</h1>
 
         {!error && (
           <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
