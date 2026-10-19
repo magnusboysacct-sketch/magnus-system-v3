@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { emailButton, renderEmail } from "../_shared/emailLayout.ts";
+import { parseInviteRole } from "./inviteRole.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -102,23 +103,13 @@ Deno.serve(async (req) => {
       body.email || body.inviteEmail || body.userEmail || body.to || ""
     ).trim().toLowerCase();
 
-    const rawRole = String(body.role || "site_user").trim();
-    // Must match user_profiles.role CHECK constraint exactly (live constraint,
-    // confirmed via pg_get_constraintdef — see role-vocabulary audit).
-    // 'secretary' added after that audit, once the Secretary Workspace
-    // migration landed and the role went live — this whitelist was never
-    // updated to match at the time, so inviting anyone as Secretary
-    // silently fell back to site_user until now.
-    const allowedRoles = [
-      "director",
-      "admin",
-      "estimator",
-      "supervisor",
-      "office_user",
-      "site_user",
-      "secretary",
-    ];
-    const role = allowedRoles.includes(rawRole) ? rawRole : "site_user";
+    // Must match the user_profiles.role CHECK constraint exactly (see inviteRole.ts). An unknown or missing role is refused: it used to be turned into
+    // "site_user" quietly, so a mistyped role gave the new person staff access nobody asked for.
+    const parsedRole = parseInviteRole(body.role);
+    if (!parsedRole.ok) {
+      return jsonResponse({ error: parsedRole.error }, 400);
+    }
+    const role = parsedRole.role;
 
     if (!email) {
       return jsonResponse({ error: "Email is required", receivedBody: body }, 400);
