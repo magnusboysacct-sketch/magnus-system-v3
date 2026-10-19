@@ -71,3 +71,26 @@ verify_jwt = true
 [functions.portal-sign-contract]
 enabled = true
 verify_jwt = true
+
+# Auth email templates. The links point at our own domain ({{ .SiteURL }}/auth/confirm?token_hash=...) instead of <project>.supabase.co so Gmail does not flag them.
+# These apply to a local `supabase start`. The live project's templates are set in the dashboard (Authentication -> Emails -> Templates); see supabase/templates/README.md.
+# Do NOT run `supabase config push` for this: this file has no [auth] section for the rest of the live auth settings, and a push would write the defaults over them.
+[auth.email.template.confirmation]
+subject = "Confirm your Magnus System account"
+content_path = "./supabase/templates/confirm-signup.html"
+
+[auth.email.template.recovery]
+subject = "Reset your Magnus System password"
+content_path = "./supabase/templates/reset-password.html"
+
+[auth.email.template.magic_link]
+subject = "Your Magnus System sign-in link"
+content_path = "./supabase/templates/magic-link.html"
+
+[auth.email.template.invite]
+subject = "You have been invited to Magnus System"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.email_change]
+subject = "Confirm your new email address for Magnus System"
+content_path = "./supabase/templates/change-email.html"

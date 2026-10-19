@@ -25,6 +25,7 @@ import { canAccessDirectorDashboard, PAYROLL_ROLES, WORKERS_PAGE_ROLES } from ".
 import LoginPage              from "./pages/LoginPage";
 import AcceptInvitePage       from "./pages/AcceptInvitePage";
 import ResetPasswordPage      from "./pages/ResetPasswordPage";
+import AuthConfirmPage        from "./pages/AuthConfirmPage";
 import ClientProjectPage      from "./pages/ClientProjectPage";
 import WorkerPortalPage       from "./pages/WorkerPortalPage";
 import FieldOpsPage           from "./pages/FieldOpsPage";
@@ -244,6 +245,7 @@ export default function App() {
             <Route path="/login"          element={<LoginPage />} />
             <Route path="/accept-invite"  element={<AcceptInvitePage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/auth/confirm"   element={<AuthConfirmPage />} />
 
             {/* Standalone portals */}
             <Route path="/client/projects/:projectId" element={<RequireAuth><ClientProjectPage /></RequireAuth>} />
