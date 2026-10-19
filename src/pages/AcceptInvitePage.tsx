@@ -2,6 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { passwordErrorMessage, validatePassword } from "../lib/passwordPolicy";
+import PasswordRules from "../components/PasswordRules";
 
 export default function AcceptInvitePage() {
   const navigate = useNavigate();
@@ -58,8 +60,9 @@ export default function AcceptInvitePage() {
     e.preventDefault();
     setSaveError("");
 
-    if (!password || password.length < 6) {
-      setSaveError("Password must be at least 6 characters.");
+    const weak = validatePassword(password);
+    if (weak) {
+      setSaveError(weak);
       return;
     }
 
@@ -75,7 +78,7 @@ export default function AcceptInvitePage() {
 
     if (pwError) {
       setSaving(false);
-      setSaveError(pwError.message || "Failed to set password.");
+      setSaveError(passwordErrorMessage(pwError) || pwError.message || "Failed to set password.");
       return;
     }
 
@@ -141,6 +144,7 @@ export default function AcceptInvitePage() {
                 placeholder="Enter password"
                 autoComplete="new-password"
               />
+              <PasswordRules password={password} className="text-slate-600" />
             </div>
 
             <div>

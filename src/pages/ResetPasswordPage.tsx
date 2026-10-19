@@ -2,6 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { passwordErrorMessage, validatePassword } from "../lib/passwordPolicy";
+import PasswordRules from "../components/PasswordRules";
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -50,8 +52,9 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setSaveError("");
 
-    if (!password || password.length < 6) {
-      setSaveError("Password must be at least 6 characters.");
+    const weak = validatePassword(password);
+    if (weak) {
+      setSaveError(weak);
       return;
     }
     if (password !== confirmPassword) {
@@ -64,7 +67,7 @@ export default function ResetPasswordPage() {
     setSaving(false);
 
     if (error) {
-      setSaveError(error.message || "Failed to update password. Please try again.");
+      setSaveError(passwordErrorMessage(error) || error.message || "Failed to update password. Please try again.");
       return;
     }
 
@@ -118,10 +121,11 @@ export default function ResetPasswordPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white px-3 py-2.5 outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Min. 6 characters"
+                placeholder="New password"
                 autoComplete="new-password"
                 autoFocus
               />
+              <PasswordRules password={password} />
             </div>
 
             <div>

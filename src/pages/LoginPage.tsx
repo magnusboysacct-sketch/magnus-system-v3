@@ -1,6 +1,8 @@
 ﻿import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { passwordErrorMessage, validatePassword } from "../lib/passwordPolicy";
+import PasswordRules from "../components/PasswordRules";
 
 type Mode = "signin" | "signup";
 
@@ -64,6 +66,10 @@ export default function LoginPage() {
     e.preventDefault();
     setErr(null);
     setSuccess(null);
+    if (mode === "signup") {
+      const weak = validatePassword(password);
+      if (weak) { setErr(weak); return; }
+    }
     setBusy(true);
 
     try {
@@ -116,7 +122,7 @@ export default function LoginPage() {
         });
 
         if (error) {
-          setErr(error.message);
+          setErr(passwordErrorMessage(error) || error.message);
           return;
         }
 
@@ -227,6 +233,7 @@ export default function LoginPage() {
               placeholder="••••••••"
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
             />
+            {mode === "signup" && <PasswordRules password={password} />}
           </div>
 
           {mode === "signin" && (
