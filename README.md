@@ -75,3 +75,16 @@ export default defineConfig([
   },
 ])
 ```
+
+## Deploying database changes
+
+The live database has been changed by hand in the past, so the migration history on live and the files in `supabase/migrations` can disagree. Some old migrations would now undo security fixes if they were replayed (see `supabase/migration-history-audit.md`).
+
+- **Never run `supabase db push` until `npx supabase migration list --linked` shows nothing pending.** `db push` applies every pending file, not just the one you meant.
+- Applying a single migration safely:
+  1. Read the file. Check it against the live objects it touches (`npx supabase db query --linked "select ..."`, read-only).
+  2. Run just that file: `npx supabase db query --linked -f supabase/migrations/<version>_<name>.sql` (or paste it in the SQL editor). Keep it in one transaction (`BEGIN; ... COMMIT;`) so a failure leaves nothing half applied.
+  3. Record it: `npx supabase migration repair --status applied <version> --linked`.
+  4. Check `npx supabase migration list --linked`: local and remote columns should match for that version.
+- If you change the live database by hand, put the same SQL in a migration file in the same change and record it with step 3, so the two never drift again.
+- Never edit a migration that has already been applied; add a new one.
