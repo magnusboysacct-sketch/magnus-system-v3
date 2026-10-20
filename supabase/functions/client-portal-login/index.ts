@@ -32,6 +32,7 @@
 // portal_password_hash / password_hash never leave this function.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { generateToken, hashPassword, normalizeEmail, verifyPassword } from "../_shared/portalPassword.ts";
+import { findPortalClientByEmail } from "../_shared/portalClientLookup.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -132,13 +133,8 @@ Deno.serve(async (req) => {
 
     async function findClient(): Promise<ClientRow | null> {
       if (!email) return null;
-      const { data } = await supabaseAdmin
-        .from("clients")
-        .select(CLIENT_COLS)
-        .or(`email.eq.${email},portal_email.eq.${email}`)
-        .eq("portal_enabled", true)
-        .maybeSingle();
-      return (data as ClientRow) ?? null;
+      // a client with a portal_email is found only by it; the contact email counts only while there is none (_shared/portalClientLookup.ts)
+      return await findPortalClientByEmail<ClientRow>(supabaseAdmin, email, CLIENT_COLS);
     }
 
     async function findClientByToken(): Promise<ClientRow | null> {

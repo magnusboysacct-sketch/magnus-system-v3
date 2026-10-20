@@ -5,6 +5,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { equalStrings, generateToken, hashPassword, normalizeEmail } from "../_shared/portalPassword.ts";
 import { emailButton, renderEmail } from "../_shared/emailLayout.ts";
+import { findPortalClientByEmail } from "../_shared/portalClientLookup.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -92,12 +93,9 @@ Deno.serve(async (req) => {
       let kind: "manager" | "contact" = "manager";
       let companyId: string | null = null;
 
-      const { data: client } = await supabaseAdmin
-        .from("clients")
-        .select("id, name, contact_name, email, portal_email, portal_enabled, company_id")
-        .or(`email.eq.${email},portal_email.eq.${email}`)
-        .eq("portal_enabled", true)
-        .maybeSingle();
+      // a client with a portal_email is found only by it; the contact email counts only while there is none (_shared/portalClientLookup.ts)
+      const client = await findPortalClientByEmail<{ id: string; name: string | null; contact_name: string | null; email: string | null; portal_email: string | null; portal_enabled: boolean | null; company_id: string }>(
+        supabaseAdmin, email, "id, name, contact_name, email, portal_email, portal_enabled, company_id");
 
       if (client) {
         const { error: updateError } = await supabaseAdmin
@@ -245,14 +243,10 @@ Deno.serve(async (req) => {
         return jsonResponse({ success: true, message: "Password updated successfully. You can now sign in." });
       }
 
-      const { data: client, error: lookupError } = await supabaseAdmin
-        .from("clients")
-        .select("id, portal_reset_token, portal_reset_expires_at")
-        .or(`email.eq.${email},portal_email.eq.${email}`)
-        .eq("portal_enabled", true)
-        .maybeSingle();
+      const client = await findPortalClientByEmail<{ id: string; portal_email: string | null; portal_reset_token: string | null; portal_reset_expires_at: string | null }>(
+        supabaseAdmin, email, "id, portal_reset_token, portal_reset_expires_at");
 
-      if (lookupError || !client) {
+      if (!client) {
         return jsonResponse({ error: "Invalid or expired reset link." }, 400);
       }
 
