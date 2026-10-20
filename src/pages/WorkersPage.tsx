@@ -7,6 +7,7 @@ import { useProjectContext } from "../context/ProjectContext";
 import { canManageWorkers, canManageWorkerPortal } from "../lib/permissions";
 import WorkerPortalAccessCard from "../components/WorkerPortalAccessCard";
 import { WORKER_SAFE_COLUMNS } from "../lib/workers";
+import { NO_FILTERS, buildCategoryOptions, buildTypeOptions, filterWorkers, filtersActive } from "../lib/workerFilters";
 import { privatePath, safeUploadName, toStoredRef, withResolvedUrls } from "../lib/storageRefs";
 import EditableDropdown from "../components/common/EditableDropdown";
 import { WorkerIDCard } from "../components/WorkerIDCard";
@@ -436,6 +437,7 @@ export default function WorkersPage() {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const [typeFilter, setTypeFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [showNew, setShowNew] = useState(false);
   const [editWorker, setEditWorker] = useState<Worker | null>(null);
@@ -683,16 +685,12 @@ export default function WorkersPage() {
     setForm(EMPTY_FORM); setError(null);
   }
 
-  // Filter
-  const filtered = workers.filter(w => {
-    const matchSearch = fullName(w).toLowerCase().includes(search.toLowerCase()) ||
-      (w.email || "").toLowerCase().includes(search.toLowerCase()) ||
-      (w.phone || "").includes(search) ||
-      (w.employee_id || "").toLowerCase().includes(search.toLowerCase());
-    const matchTab = tab === "all" || w.status === tab;
-    const matchType = !typeFilter || w.worker_type === typeFilter;
-    return matchSearch && matchTab && matchType;
-  });
+  // Filter: search + status tab + worker type + trade, all combined (src/lib/workerFilters.ts)
+  const filters = { ...NO_FILTERS, search, status: tab, type: typeFilter, category: categoryFilter };
+  const filtered = filterWorkers(workers, filters);
+  const typeOptions = buildTypeOptions(filterWorkers(workers, filters, "type"));
+  const categoryOptions = buildCategoryOptions(workers, filterWorkers(workers, filters, "category"), jobTitles);
+  const clearFilters = () => { setSearch(""); setTab("all"); setTypeFilter(""); setCategoryFilter(""); };
 
   const stats = {
     total: totalCount ?? workers.length,
@@ -764,14 +762,16 @@ export default function WorkersPage() {
         <div className="flex items-center gap-3">
           <div className="relative flex-1 max-w-sm">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-700"/>
-            <Input className="pl-8" placeholder="Search name, email, ID..."
+            <Input className="pl-8" placeholder="Search name, number, phone, trade..."
               value={search} onChange={e => setSearch(e.target.value)}/>
           </div>
-          <Select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="w-40">
-            <option value="">All types</option>
-            <option value="employee">Employee</option>
-            <option value="subcontractor">Subcontractor</option>
-            <option value="crew_lead">Crew Lead</option>
+          <Select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="w-48" aria-label="Trade">
+            <option value="">All trades ({filterWorkers(workers, filters, "category").length})</option>
+            {categoryOptions.map(o => <option key={o.key} value={o.key}>{o.label} ({o.count})</option>)}
+          </Select>
+          <Select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="w-44" aria-label="Worker type">
+            <option value="">All types ({filterWorkers(workers, filters, "type").length})</option>
+            {typeOptions.map(o => <option key={o.value} value={o.value}>{o.label} ({o.count})</option>)}
           </Select>
           <div className="flex items-center gap-1 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] p-1">
             <button onClick={() => setViewMode("grid")}
@@ -808,9 +808,9 @@ export default function WorkersPage() {
         ) : filtered.length === 0 ? (
           <Empty
             icon={<HardHat size={20}/>}
-            title={search ? "No workers match your search" : "No workers yet"}
-            body={search ? "Try a different search." : "Add your first worker to get started."}
-            action={!search && canAddWorker ? <Btn variant="primary" icon={<Plus size={13}/>}
+            title={filtersActive(filters) && workers.length > 0 ? "No workers match" : "No workers yet"}
+            body={filtersActive(filters) && workers.length > 0 ? "Nothing fits the search and filters you have set." : "Add your first worker to get started."}
+            action={filtersActive(filters) && workers.length > 0 ? <Btn variant="secondary" onClick={clearFilters}>Clear filters</Btn> : canAddWorker ? <Btn variant="primary" icon={<Plus size={13}/>}
               onClick={() => { setEditWorker(null); setForm(EMPTY_FORM); setShowNew(true); }}>
               Add Worker</Btn> : undefined}
           />

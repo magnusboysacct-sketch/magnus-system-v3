@@ -14,6 +14,7 @@
     "test:clients": "tsx --test scripts/tests/clientPortalEmail.test.ts",
     "test:workerportal": "tsx --test scripts/tests/workerPortal.test.ts scripts/tests/workerPortalInstall.test.ts",
     "test:workernumber": "tsx --test scripts/tests/workerNumber.test.ts",
+    "test:workerfilters": "tsx --test scripts/tests/workerFilters.test.ts",
     "test:invite": "tsx --test scripts/tests/inviteRole.test.ts",
     "test:signup": "tsx --test scripts/tests/signupPending.test.ts",
     "test:password": "tsx --test scripts/tests/passwordPolicy.test.ts",
