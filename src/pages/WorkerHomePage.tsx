@@ -11,6 +11,10 @@ import { portalCardData, portalCardImages } from "../lib/workerPortalCard";
 import { SCREEN_PPM, renderIdCardFace, renderQrCanvas, verifyUrl, type IdCardCompany, type IdCardData, type IdCardImages } from "../lib/idCardRender";
 import { buildWhatsAppUrl } from "../lib/portalShare";
 import { weakPinReason, isPinShape } from "../../supabase/functions/_shared/workerPortal";
+import AddToHomeScreenTip from "../components/AddToHomeScreenTip";
+import { useWorkerPortalManifest } from "../hooks/useWorkerPortalManifest";
+import { logoIconDataUrl } from "../lib/workerPortalIcon";
+import { isStandalone, neverShowTip, shouldShowHomeTip, takeFreshLogin, tipDismissedForever, type ManifestIcon } from "../lib/workerPortalInstall";
 
 type Tab = "home" | "payments" | "card" | "notices" | "me";
 const NAVY = "#15315A";
@@ -94,6 +98,9 @@ export default function WorkerHomePage() {
   const [bigQr, setBigQr] = useState(false);
   const [receiptMsg, setReceiptMsg] = useState<string | null>(null);
   const [pinDone, setPinDone] = useState(false);
+  const [showTip, setShowTip] = useState(false);                         // the "Add to your home screen" tip
+  const [icons, setIcons] = useState<ManifestIcon[] | null>(null);       // the company logo as a home-screen icon
+  const [touchIcon, setTouchIcon] = useState<string | null>(null);
 
   const endSession = useCallback(() => { clearWorkerToken(); nav("/worker", { replace: true, state: { ended: true } }); }, [nav]);
 
@@ -110,7 +117,15 @@ export default function WorkerHomePage() {
       setPayments(p); setHasMore(p.length === PAGE); setAdvances(a); setNotices(n);
       const photo = h.worker?.has_photo ? await fetchWorkerPhotoUrl(t) : null;
       setPhotoUrl(photo);
-      setImages(await portalCardImages(h, photo));
+      const imgs = await portalCardImages(h, photo);
+      setImages(imgs);
+      // the home-screen icon: the company logo when it can be drawn (else the app icon stays)
+      if (imgs.logo) {
+        const i512 = logoIconDataUrl(imgs.logo, 512), i192 = logoIconDataUrl(imgs.logo, 192);
+        if (i512 && i192) { setIcons([{ src: i512, sizes: "512x512", type: "image/png", purpose: "any" }, { src: i192, sizes: "192x192", type: "image/png", purpose: "any" }]); setTouchIcon(logoIconDataUrl(imgs.logo, 180)); }
+      }
+      // after a fresh sign-in (not on every reload), unless "Don't show again" or already installed
+      if (shouldShowHomeTip({ freshLogin: takeFreshLogin(), dismissedForever: tipDismissedForever(), standalone: isStandalone() })) setShowTip(true);
     } catch (e) {
       setLoadErr(e instanceof Error && e.message ? e.message : "Could not load. Please try again.");
     } finally {
@@ -141,8 +156,12 @@ export default function WorkerHomePage() {
   async function logOut() {
     const t = token.current;
     if (t) await workerLogout(t);
-    clearWorkerToken();
+    clearWorkerToken();                       // the stored token is gone: the login screen is next
     nav("/worker", { replace: true });
+  }
+  // the "Sign out" in the header and under Me: always asks first
+  function confirmSignOut() {
+    if (window.confirm("Sign out of the worker portal?")) void logOut();
   }
 
   const card = useMemo(() => (home && !home.must_change_pin ? portalCardData(home) : null), [home]);
@@ -153,6 +172,8 @@ export default function WorkerHomePage() {
 
   const primary = home?.company?.id_card_primary || NAVY;
   const accent = home?.company?.id_card_accent || "#C9A84C";
+  // while this page is open the web manifest / home-screen icon / title are the worker portal's ("<Company> Workers")
+  useWorkerPortalManifest({ companyName: home?.company?.name, icons, themeColor: primary, touchIcon });
 
   // ── before anything: loading, the first-PIN screen, errors ─────────────────────────────────────────────────────────────────────────────────────────
   if (loading && !home) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-600 text-xl">Loading…</div>;
@@ -171,6 +192,7 @@ export default function WorkerHomePage() {
         <h1 className="text-2xl font-bold text-slate-900">Choose your own PIN</h1>
         <p className="mt-2 text-lg text-slate-600">Hello {home.first_name || ""}. The PIN the office gave you was only for the first sign-in. Choose a PIN that only you know.</p>
         <div className="mt-5"><PinForm token={token.current!} requireCurrent={false} onSessionEnded={endSession} onDone={() => { setPinDone(true); void load(); }} /></div>
+        <button onClick={confirmSignOut} className="mt-4 w-full min-h-[48px] text-lg text-slate-600 underline">Sign out</button>
       </div></div>
     );
   }
@@ -204,7 +226,8 @@ export default function WorkerHomePage() {
       <header className="px-4 py-4 text-white" style={{ background: primary }}>
         <div className="mx-auto max-w-md flex items-center gap-3">
           {co?.logo_url ? <span className="shrink-0 rounded-lg bg-white p-1.5"><img src={co.logo_url} alt={co.name || "Company"} style={{ display: "block", width: "auto", height: "auto", maxHeight: 40, maxWidth: 110 }} /></span> : null}
-          <div className="min-w-0"><div className="text-lg font-bold truncate">{co?.name || "Worker portal"}</div><div className="text-base opacity-90 truncate">{name} · <span className="font-mono">{w.employee_id}</span></div></div>
+          <div className="min-w-0 flex-1"><div className="text-lg font-bold truncate">{co?.name || "Worker portal"}</div><div className="text-base opacity-90 truncate">{name} · <span className="font-mono">{w.employee_id}</span></div></div>
+          <button onClick={confirmSignOut} className="shrink-0 min-h-[44px] rounded-lg border-2 border-white/70 px-3 text-base font-semibold text-white">Sign out</button>
         </div>
         <div className="mx-auto max-w-md mt-3 h-1 rounded" style={{ background: accent }} />
       </header>
@@ -285,7 +308,8 @@ export default function WorkerHomePage() {
           </div>
 
           <PinSection token={token.current!} onSessionEnded={endSession} />
-          <button onClick={() => void logOut()} className="w-full min-h-[56px] rounded-xl border-2 border-red-300 text-red-700 text-xl font-semibold">Log out</button>
+          <button onClick={() => setShowTip(true)} className="w-full min-h-[56px] rounded-xl border-2 border-slate-300 text-slate-800 text-xl font-semibold">Add to my home screen</button>
+          <button onClick={confirmSignOut} className="w-full min-h-[56px] rounded-xl border-2 border-red-300 text-red-700 text-xl font-semibold">Sign out</button>
         </>)}
       </main>
 
@@ -298,6 +322,7 @@ export default function WorkerHomePage() {
         </div>
       </nav>
 
+      {showTip && <AddToHomeScreenTip onClose={() => setShowTip(false)} onNever={() => { neverShowTip(); setShowTip(false); }} />}
       {bigQr && card && <BigQr code={card.data.verifyCode} name={card.data.name} number={w.employee_id} onClose={() => setBigQr(false)} />}
     </div>
   );

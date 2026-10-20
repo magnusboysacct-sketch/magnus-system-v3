@@ -61,7 +61,7 @@ test("the caller's address: the first x-forwarded-for entry, else cf-connecting-
 
 test("the message the office sends: company, link, worker number, temporary PIN and the instruction; plain text, no emoji", () => {
   const m = buildWorkerPortalMessage({ companyName: "Magnus Boys Construction Limited", employeeId: "MBW-007", pin: "482915" });
-  assert.equal(m, "Magnus Boys Construction Limited worker portal: https://app.magnusboys.com/worker\nWorker No: MBW-007\nTemporary PIN: 482915\nYou will be asked to choose your own PIN.");
+  assert.equal(m, "Magnus Boys Construction Limited worker portal: https://app.magnusboys.com/worker\nWorker No: MBW-007\nTemporary PIN: 482915\nYou will be asked to choose your own PIN.\nSave this link or add it to your home screen: https://app.magnusboys.com/worker");
   assert.equal(WORKER_PORTAL_URL, "https://app.magnusboys.com/worker");
   assert.doesNotMatch(m, /[^\x20-\x7e\n]/, "ASCII only");
   assert.match(buildWorkerPortalMessage({ companyName: "  ", employeeId: "X-1", pin: "123" }), /^Your company worker portal:/);

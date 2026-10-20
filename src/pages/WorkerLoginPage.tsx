@@ -4,9 +4,12 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useForceLightPage } from "../hooks/useForceLightPage";
 import { clearWorkerToken, fetchHome, getWorkerToken, workerLogin } from "../lib/workerPortalApi";
 import { isPinShape } from "../../supabase/functions/_shared/workerPortal";
+import { useWorkerPortalManifest } from "../hooks/useWorkerPortalManifest";
+import { markFreshLogin } from "../lib/workerPortalInstall";
 
 export default function WorkerLoginPage() {
   useForceLightPage();
+  useWorkerPortalManifest({});          // adding this page to the home screen makes an icon that opens /worker (not the staff app)
   const nav = useNavigate();
   const loc = useLocation();
   const ended = (loc.state as { ended?: boolean } | null)?.ended === true;
@@ -33,6 +36,7 @@ export default function WorkerLoginPage() {
     const r = await workerLogin(number.trim(), pin);
     setBusy(false);
     if (!r.ok) { setPin(""); setErr(r.error || "Employee number or PIN is wrong."); return; }
+    markFreshLogin();                    // the home page shows the "Add to your home screen" tip once after this sign-in
     nav("/worker/home", { replace: true });
   }
 
@@ -71,6 +75,7 @@ export default function WorkerLoginPage() {
           </button>
         </form>
         <p className="mt-6 text-center text-base text-slate-500">Forgot your PIN? Ask the office to reset it.</p>
+        <p className="mt-3 text-center text-base text-slate-500">You&apos;ll stay signed in on this phone. Sign out if you use a shared phone.</p>
       </div>
     </div>
   );

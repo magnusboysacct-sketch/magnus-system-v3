@@ -8,5 +8,6 @@ export function buildWorkerPortalMessage(o: { companyName: string; employeeId: s
     `Worker No: ${o.employeeId}`,
     `Temporary PIN: ${o.pin}`,
     "You will be asked to choose your own PIN.",
+    `Save this link or add it to your home screen: ${o.url || WORKER_PORTAL_URL}`,
   ].join("\n");
 }

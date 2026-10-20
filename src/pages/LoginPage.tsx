@@ -413,6 +413,12 @@ export default function LoginPage() {
             </div>
           )}
         </form>
+        {/* a worker who lands here (the staff sign-in) finds the way to the worker portal */}
+        <div className="px-6 pb-6">
+          <button type="button" onClick={() => nav("/worker")} className="w-full min-h-[48px] rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-sm font-semibold text-slate-700 transition">
+            Worker? Sign in here
+          </button>
+        </div>
         </>
         )}
       </div>
