@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test:share": "tsx --test scripts/tests/sharePreview.test.ts scripts/tests/receiptHtml.test.ts",
     "test:storage": "tsx --test scripts/tests/storageRefs.test.ts",
+    "test:clients": "tsx --test scripts/tests/clientPortalEmail.test.ts",
     "test:workerportal": "tsx --test scripts/tests/workerPortal.test.ts scripts/tests/workerPortalInstall.test.ts",
     "test:workernumber": "tsx --test scripts/tests/workerNumber.test.ts",
     "test:invite": "tsx --test scripts/tests/inviteRole.test.ts",

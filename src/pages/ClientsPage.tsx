@@ -13,7 +13,8 @@ import {
 import { fetchLastSeen, fetchClientActivity, formatJamaicaShort, timeAgoLabel, deviceLabel, activityLabel } from "../lib/portalSeen";
 import type { LastSeen, ActivityRow } from "../lib/portalSeen";
 import ClientContactsManager from "../components/ClientContactsManager";
-import { addClientContact, type ClientContact } from "../lib/clientContacts";
+import { addClientContact, fetchClientContacts, updateClientContact, type ClientContact } from "../lib/clientContacts";
+import ClientPortalEmail from "../components/ClientPortalEmail";
 import {
   Plus, Search, Building2, Phone, Mail,
   MapPin, ArrowRight, Edit2, Trash2, RefreshCw,
@@ -33,6 +34,8 @@ type Client = {
   status: "active" | "inactive";
   portal_enabled: boolean | null;
   portal_token: string | null;
+  portal_email?: string | null;
+  portal_activated_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -206,6 +209,7 @@ export default function ClientsPage() {
   // Contacts (see lib/clientContacts.ts): how many the open client has (null until known), and whether the contacts table exists yet.
   const [contactCount, setContactCount] = useState<number | null>(null);
   const [contactsReady, setContactsReady] = useState(true);
+  const [primaryName, setPrimaryName] = useState<string | null>(null);   // the primary contact: where the phone / email typed in the form are saved when there are contacts
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -346,6 +350,15 @@ export default function ClientsPage() {
         // they are not sent from this form - a stale copy must never overwrite them. Without contacts (or before the contacts table
         // exists) the form saves them exactly as before.
         const mirrored = contactsReady && (contactCount ?? 0) > 0;
+        // The form's Phone / Email are editable always. With contacts they belong to the PRIMARY contact, so that is where they are saved (the database then mirrors them onto
+        // the client, and keeps the portal login email as it is); a stale copy is still never written over the client directly.
+        if (mirrored) {
+          const list = await fetchClientContacts(editClient.id);
+          const primary = list.find((c) => c.is_primary) || list[0];
+          if (primary && ((primary.phone || "") !== form.phone.trim() || (primary.email || "") !== form.email.trim())) {
+            await updateClientContact(primary.id, { name: primary.name, title: primary.title, phone: form.phone, email: form.email });
+          }
+        }
         const { error: e } = await supabase.from("clients").update({
           name: form.name.trim(),
           ...(contactsReady ? {} : { contact_name: form.contact_name.trim() || null }),
@@ -448,6 +461,7 @@ export default function ClientsPage() {
     setEditClient(client);
     setContactCount(null);
     setContactsReady(true);
+    setPrimaryName(null);
     setForm({
       name: client.name,
       contact_name: client.contact_name || "",
@@ -473,6 +487,7 @@ export default function ClientsPage() {
   // change the fresh values are read back into the form and the list, and the form never saves a stale copy over them.
   async function handleContactsChanged(list: ClientContact[]) {
     setContactCount(list.length);
+    setPrimaryName((list.find((c) => c.is_primary) || list[0])?.name ?? null);
     if (!editClient) return;
     const { data } = await supabase.from("clients").select("contact_name, phone, email").eq("id", editClient.id).maybeSingle();
     if (!data) return;
@@ -480,7 +495,7 @@ export default function ClientsPage() {
     setClients(prev => prev.map(c => c.id === editClient.id ? { ...c, contact_name: data.contact_name, phone: data.phone, email: data.email } : c));
   }
 
-  // Phone / email are read-only while the client has contacts: they show the primary contact's details.
+  // With contacts the form's phone / email are the primary contact's details and are saved to it (they are never locked).
   const fromPrimary = !!editClient && contactsReady && (contactCount ?? 0) > 0;
 
 
@@ -691,17 +706,24 @@ export default function ClientsPage() {
           )}
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Phone" hint={fromPrimary ? "From the primary contact - change it under Contacts" : undefined}>
+            <Field label="Phone" hint={fromPrimary ? `Saved to the primary contact${primaryName ? ` (${primaryName})` : ""}` : undefined}>
               <Input placeholder="e.g. 876-555-0100"
-                value={form.phone} disabled={fromPrimary}
+                value={form.phone}
                 onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}/>
             </Field>
-            <Field label="Email" hint={fromPrimary ? "From the primary contact - change it under Contacts" : undefined}>
+            <Field label="Email" hint={fromPrimary ? `Saved to the primary contact${primaryName ? ` (${primaryName})` : ""}` : undefined}>
               <Input type="email" placeholder="e.g. john@abc.com"
-                value={form.email} disabled={fromPrimary}
+                value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}/>
             </Field>
           </div>
+
+          {editClient?.portal_enabled && (
+            <ClientPortalEmail
+              clientId={editClient.id} clientName={editClient.name} client={{ ...editClient, email: editClient.email, portal_email: editClient.portal_email }} role={userRole}
+              onChanged={(next) => { setEditClient((cur) => (cur ? { ...cur, portal_email: next } : cur)); setClients((prev) => prev.map((c) => (c.id === editClient.id ? { ...c, portal_email: next } : c))); }}
+            />
+          )}
 
           <Field label="Address">
             <Input placeholder="e.g. 12 Main Street, Kingston"
