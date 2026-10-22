@@ -18,6 +18,8 @@ import {
   ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase, PenTool
 } from "lucide-react";
 import { cn, SectionLabel } from "../components/ui";
+import { useSwitchProject } from "../lib/useSwitchProject";
+import { scopeNote } from "../lib/projectScope";
 import { canAccessSecretaryWorkspace, canApproveSecretaryDocuments, canAccessPayroll, canAccessWorkersPage } from "../lib/permissions";
 
 // ─── Nav structure ────────────────────────────────────────────────────────────
@@ -160,7 +162,10 @@ function NavGroup({ item, collapsed, defaultOpen, onNavigate }: { item: NavItem;
 // ─── Project Picker ───────────────────────────────────────────────────────────
 
 function ProjectPicker({ collapsed }: { collapsed: boolean }) {
-  const { projects: allProjects, currentProject, setCurrentProjectId, loadingProjects } = useProjectContext();
+  const { projects: allProjects, currentProject, loadingProjects } = useProjectContext();
+  const switchProject = useSwitchProject();
+  const location = useLocation();
+  const note = scopeNote(location.pathname);   // set on pages that cover all projects: the selector does not apply there
   const [open, setOpen] = useState(false);
   const projects = allProjects.filter(p => p.status !== "archived");
 
@@ -196,7 +201,7 @@ function ProjectPicker({ collapsed }: { collapsed: boolean }) {
             {projects.length === 0 ? (
               <div className="px-3 py-6 text-center text-[10px] text-slate-500 dark:text-slate-600">No projects yet</div>
             ) : projects.map(p => (
-              <button key={p.id} onClick={() => { setCurrentProjectId(p.id); setOpen(false); }}
+              <button key={p.id} onClick={() => { switchProject(p.id); setOpen(false); }}
                 className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-left transition-colors",
                   p.id === currentProject?.id ? "bg-cyan-500/10 text-cyan-700 dark:text-cyan-300" : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.05]")}>
                 <FolderOpen size={12} className="flex-shrink-0 opacity-60"/>
@@ -213,6 +218,9 @@ function ProjectPicker({ collapsed }: { collapsed: boolean }) {
             ))}
           </div>
         </div>
+      )}
+      {note && !collapsed && (
+        <div className="mt-1 px-1 text-[9px] leading-snug text-slate-400 dark:text-slate-500" data-testid="project-scope-note">{note}</div>
       )}
     </div>
   );

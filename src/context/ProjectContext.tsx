@@ -91,10 +91,17 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   // the mount-time call (or a previous retry) is still awaiting a response.
   const hasLoadedRef = useRef(false);
   const loadInFlightRef = useRef(false);
+  // Who the projects on screen belong to. If a DIFFERENT person signs in without the page being reloaded (sign out, then sign in as someone from another
+  // company), everything held here - the project list, the selected project, the role - is theirs no more and is dropped and loaded again.
+  const loadedForUserRef = useRef<string | null>(null);
+  const reloadPendingRef = useRef(false);
+  const loadGenRef = useRef(0);
+  const loadProjectsRef = useRef<() => Promise<void>>(async () => {});
 
   const loadProjects = useCallback(async () => {
     if (loadInFlightRef.current) return;
     loadInFlightRef.current = true;
+    const gen = loadGenRef.current;
     setLoadingProjects(true);
 
     try {
@@ -126,8 +133,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    if (gen !== loadGenRef.current) return;   // that person has signed out since: this answer is not for whoever is here now
     setUserRole(profileData.role ?? null);
     setUserId(profileData.id ?? null);
+    loadedForUserRef.current = profileData.id ?? null;
     hasLoadedRef.current = true;
 
     // Directors, admins, and secretaries see every project in the company.
@@ -199,6 +208,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     };
     let fetched = await fetchRows(PROJECT_COLS_WITH_CONTACT);
     if (fetched.error && /contact_id/i.test(String(fetched.error?.message ?? ""))) fetched = await fetchRows(PROJECT_COLS);
+    if (gen !== loadGenRef.current) return;
     const data = fetched.data;
     const error = fetched.error;
     const totalCount = fetched.totalCount;
@@ -224,32 +234,19 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setProjects(rows);
     setLoadingProjects(false);
 
+    // The saved project if it is still one of THIS user's projects; otherwise (nothing saved, or the saved one is another company's / deleted / no longer visible)
+    // the first one; with no projects, none. The saved value is corrected to match.
     const saved = localStorage.getItem(STORAGE_KEY);
-
-    if (saved) {
-      const exists = rows.some((p) => p.id === saved);
-      if (exists) {
-        setCurrentProjectIdState(saved);
-        return;
-      }
-    }
-
-    if (!saved && rows.length > 0) {
-      const firstId = rows[0].id;
-      setCurrentProjectIdState(firstId);
-      localStorage.setItem(STORAGE_KEY, firstId);
-      return;
-    }
-
-    if (rows.length === 0) {
-      setCurrentProjectIdState(null);
-      localStorage.removeItem(STORAGE_KEY);
-    }
+    const pick = (saved && rows.some((p) => p.id === saved) ? saved : null) ?? rows[0]?.id ?? null;
+    setCurrentProjectIdState(pick);
+    if (pick) localStorage.setItem(STORAGE_KEY, pick); else localStorage.removeItem(STORAGE_KEY);
 
     } finally {
       loadInFlightRef.current = false;
+      if (reloadPendingRef.current) { reloadPendingRef.current = false; void loadProjectsRef.current(); }
     }
   }, []);
+  loadProjectsRef.current = loadProjects;
 
   useEffect(() => {
     loadProjects();
@@ -269,7 +266,16 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     // nothing is already in flight — see the refs' own comments above
     // loadProjects for why both checks are needed to avoid a duplicate
     // fetch/flash in the ordinary, already-working case.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const uid = session?.user?.id ?? null;
+      if (event === "SIGNED_OUT" || (uid && loadedForUserRef.current && uid !== loadedForUserRef.current)) {
+        // signed out, or another person signed in: forget the previous person's projects at once, then (if someone is signed in) load theirs
+        setProjects([]); setTotalProjectsCount(null); setCurrentProjectIdState(null); setUserRole(null); setUserId(null); if (!uid) setLoadingProjects(false);
+        localStorage.removeItem(STORAGE_KEY);
+        hasLoadedRef.current = false; loadedForUserRef.current = null; loadGenRef.current++;
+        if (uid) { if (loadInFlightRef.current) reloadPendingRef.current = true; else loadProjects(); }
+        return;
+      }
       if (
         (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
         !hasLoadedRef.current &&

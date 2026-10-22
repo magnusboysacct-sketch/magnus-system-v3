@@ -1,6 +1,6 @@
 ﻿// src/pages/FinancePage.tsx
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useProjectContext } from "../context/ProjectContext";
 import {
@@ -34,6 +34,8 @@ const STATUS_COLOR: Record<string, any> = {
 export default function FinancePage() {
   const { projects } = useProjectContext();
   const nav = useNavigate();
+  const { projectId } = useParams();          // /projects/:projectId/finance: the project's own figures; the page is rebuilt when the project changes (App.tsx)
+  const projectName = projects.find((p) => p.id === projectId)?.name;
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -53,16 +55,19 @@ export default function FinancePage() {
     });
   }, []);
 
-  useEffect(() => { if (companyId) loadData(); }, [companyId]);
+  const loadSeq = useRef(0);
+  useEffect(() => { if (companyId) loadData(); }, [companyId, projectId]);
 
   async function loadData() {
+    const seq = ++loadSeq.current;   // only the newest request may fill the page
+    const scoped = <T,>(q: T): T => (projectId ? (q as any).eq("project_id", projectId) : q);
     setLoading(true);
     try {
       const [ciRes, siRes, expRes] = await Promise.all([
         // Client invoices — confirmed columns
-        supabase.from("client_invoices")
+        scoped(supabase.from("client_invoices")
           .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, project_id, client_id, clients(name), projects(name)")
-          .eq("company_id", companyId!)
+          .eq("company_id", companyId!))
           .order("due_date", { ascending: true })
           .limit(20),
         // Supplier invoices — confirmed columns. suppliers' real name
@@ -72,15 +77,15 @@ export default function FinancePage() {
         // emptying this whole query (siRes.data falls back to [] below,
         // with no error surfaced anywhere) rather than just showing a
         // blank Supplier cell.
-        supabase.from("supplier_invoices")
+        scoped(supabase.from("supplier_invoices")
           .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, suppliers(supplier_name), projects(name)")
-          .eq("company_id", companyId!)
+          .eq("company_id", companyId!))
           .order("due_date", { ascending: true })
           .limit(20),
         // Expenses — confirmed columns
-        supabase.from("expenses")
+        scoped(supabase.from("expenses")
           .select("id, amount, description, expense_date, status, chart_account_id, projects(name), expense_categories(name)")
-          .eq("company_id", companyId!)
+          .eq("company_id", companyId!))
           .order("created_at", { ascending: false })
           .limit(10),
       ]);
@@ -110,16 +115,17 @@ export default function FinancePage() {
 
       const totalExpenses = expenses.reduce((s: number, e: any) => s + (e.amount || 0), 0);
 
+      if (seq !== loadSeq.current) return;
       setStats({ totalReceivable, totalPayable, overdueInvoices, totalExpenses, clientInvoices, supplierInvoices, recentExpenses: expenses });
     } catch (e: any) { console.error(e); }
-    finally { setLoading(false); }
+    finally { if (seq === loadSeq.current) setLoading(false); }
   }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader
-        title="Finance"
-        subtitle="Financial overview"
+        title={projectName ? `Finance - ${projectName}` : "Finance"}
+        subtitle={projectName ? "Financial overview for this project" : "Financial overview"}
         actions={
           <>
             <Btn variant="ghost" size="sm" icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>} onClick={loadData}/>

@@ -1,7 +1,7 @@
 ﻿// src/App.tsx — Clean rebuild router
 // Same auth logic, same routes, new AppLayout replaces SidebarLayout
 
-import React, { useEffect, useState } from "react";
+import React, { Fragment, useEffect, useState } from "react";
 import ClientPortalPage from './pages/ClientPortalPage';
 import ClientLoginPage from './pages/ClientLoginPage';
 import ClientResetPasswordPage from './pages/ClientResetPasswordPage';
@@ -12,7 +12,8 @@ import ProjectPhotosPage from './pages/ProjectPhotosPage';
 import SharedPhotosPage from './pages/SharedPhotosPage';
 import PublicReceiptPage from './pages/PublicReceiptPage';
 import MySignaturePage from './pages/MySignaturePage';
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import ProjectUrlSync from "./components/ProjectUrlSync";
 import AppLayout from "./layout/AppLayout";
 import UpdateBanner from "./components/UpdateBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -79,6 +80,17 @@ import PayrollComparisonReviewPage   from "./pages/PayrollComparisonReviewPage";
 import PayrollSimulationCenterPage   from "./pages/PayrollSimulationCenterPage";
 
 // --- Auth hash handler --------------------------------------------------------
+
+// Project pages are rebuilt when their project changes: the old page (and any answer it is still waiting for) is dropped, the new one starts with its own loading state.
+// ByUrlProject: the project is in the address (/projects/<id>/...). ByCurrentProject: the page shows the project chosen in the sidebar. (See lib/projectScope.ts.)
+function ByUrlProject({ children }: { children: React.ReactNode }) {
+  const p = useParams();
+  return <Fragment key={p.projectId ?? p.currentProjectId ?? ""}>{children}</Fragment>;
+}
+function ByCurrentProject({ children }: { children: React.ReactNode }) {
+  const { currentProjectId } = useProjectContext();
+  return <Fragment key={currentProjectId ?? "none"}>{children}</Fragment>;
+}
 
 function AuthHashRouter() {
   const nav = useNavigate();
@@ -238,6 +250,7 @@ export default function App() {
       <ProjectProvider>
         <BrowserRouter>
           <AuthHashRouter />
+          <ProjectUrlSync />
           <UpdateBanner />
           <Routes>
             {/* Public */}
@@ -254,7 +267,7 @@ export default function App() {
             <Route path="/worker"                     element={<WorkerLoginPage />} />
             <Route path="/worker/home"                element={<WorkerHomePage />} />
             <Route path="/worker/portal"              element={<Navigate to="/worker" replace />} />
-            <Route path="/field-ops"                  element={<RequireAuth><FieldOpsPage /></RequireAuth>} />
+            <Route path="/field-ops"                  element={<ByCurrentProject><RequireAuth><FieldOpsPage /></RequireAuth></ByCurrentProject>} />
             <Route path="/field"                      element={<Navigate to="/field-payments" replace />} />
 
             {/* Protected app shell */}
@@ -264,36 +277,36 @@ export default function App() {
               {/* CRM */}
               <Route path="/clients"                element={<ClientsPage />} />
               <Route path="/projects"               element={<ProjectsPage />} />
-              <Route path="/projects/:projectId"    element={<ProjectDashboardPage />} />
+              <Route path="/projects/:projectId"    element={<ByUrlProject><ProjectDashboardPage /></ByUrlProject>} />
 
               {/* Project-scoped */}
-              <Route path="/projects/:projectId/boq"          element={<BOQPage />} />
-              <Route path="/projects/:projectId/takeoff"      element={<TakeoffPage />} />
-              <Route path="/projects/:projectId/procurement"  element={<ProcurementPage />} />
-              <Route path="/projects/:projectId/finance"      element={<FinanceGuard level="project"><FinancePage /></FinanceGuard>} />
-              <Route path="/projects/:projectId/finance/transactions" element={<FinanceTransactionsPage />} />
-              <Route path="/projects/:projectId/finance/reports"      element={<FinanceGuard level="project"><FinanceReportsPage /></FinanceGuard>} />
-              <Route path="/projects/:projectId/reports"      element={<ReportsPage />} />
+              <Route path="/projects/:projectId/boq"          element={<ByUrlProject><BOQPage /></ByUrlProject>} />
+              <Route path="/projects/:projectId/takeoff"      element={<ByUrlProject><TakeoffPage /></ByUrlProject>} />
+              <Route path="/projects/:projectId/procurement"  element={<ByUrlProject><ProcurementPage /></ByUrlProject>} />
+              <Route path="/projects/:projectId/finance"      element={<ByUrlProject><FinanceGuard level="project"><FinancePage /></FinanceGuard></ByUrlProject>} />
+              <Route path="/projects/:projectId/finance/transactions" element={<ByUrlProject><FinanceTransactionsPage /></ByUrlProject>} />
+              <Route path="/projects/:projectId/finance/reports"      element={<ByUrlProject><FinanceGuard level="project"><FinanceReportsPage /></FinanceGuard></ByUrlProject>} />
+              <Route path="/projects/:projectId/reports"      element={<ByUrlProject><ReportsPage /></ByUrlProject>} />
 
               {/* Estimating */}
               <Route path="/estimates"    element={<EstimatesPage />} />
               <Route path="/contracts"    element={<ContractsPage />} />
-              <Route path="/boq"          element={<BOQPage />} />
-              <Route path="/takeoff"      element={<TakeoffPage />} />
+              <Route path="/boq"          element={<ByCurrentProject><BOQPage /></ByCurrentProject>} />
+              <Route path="/takeoff"      element={<ByCurrentProject><TakeoffPage /></ByCurrentProject>} />
               <Route path="/assemblies"   element={<AssembliesPage />} />
               <Route path="/rates"        element={<RatesPage />} />
 
               {/* Procurement */}
-              <Route path="/procurement"     element={<ProcurementPage />} />
-              <Route path="/receiving"       element={<ReceivingPage />} />
-              <Route path="/receiving/:id"   element={<ReceivingPage />} />
-              <Route path="/supplier-prices" element={<SupplierPriceSyncPage />} />
+              <Route path="/procurement"     element={<ByCurrentProject><ProcurementPage /></ByCurrentProject>} />
+              <Route path="/receiving"       element={<ByCurrentProject><ReceivingPage /></ByCurrentProject>} />
+              <Route path="/receiving/:id"   element={<ByCurrentProject><ReceivingPage /></ByCurrentProject>} />
+              <Route path="/supplier-prices" element={<ByCurrentProject><SupplierPriceSyncPage /></ByCurrentProject>} />
 
               {/* Finance */}
               <Route path="/finance" element={<FinanceGuard level="full"><FinanceDashboardPage /></FinanceGuard>} />
               <Route path="/finance/journal-entry" element={<FinanceGuard level="full"><JournalEntryPage /></FinanceGuard>} />
-              <Route path="/finance/transactions"    element={<FinanceTransactionsPage />} />
-              <Route path="/finance/reports"         element={<FinanceGuard level="full"><FinanceReportsPage /></FinanceGuard>} />
+              <Route path="/finance/transactions"    element={<ByCurrentProject><FinanceTransactionsPage /></ByCurrentProject>} />
+              <Route path="/finance/reports"         element={<ByCurrentProject><FinanceGuard level="full"><FinanceReportsPage /></FinanceGuard></ByCurrentProject>} />
               <Route path="/expenses"                element={<FinanceGuard level="full"><ExpensesPage /></FinanceGuard>} />
               <Route path="/cash-flow"               element={<FinanceGuard level="full"><CashFlowPage /></FinanceGuard>} />
               <Route path="/finance/bank-accounts"   element={<FinanceGuard level="full"><BankAccountsPage /></FinanceGuard>} />
@@ -335,7 +348,7 @@ export default function App() {
               <Route path="/admin/jamaican-payroll-monitoring"          element={<JamaicanPayrollMonitoringPage />} />
               <Route path="/admin/payroll-comparison-review"            element={<PayrollComparisonReviewPage />} />
               <Route path="/admin/payroll-simulation-center"            element={<PayrollSimulationCenterPage />} />
-              <Route path="/projects/:currentProjectId/admin/payroll-simulation-center" element={<PayrollSimulationCenterPage />} />
+              <Route path="/projects/:currentProjectId/admin/payroll-simulation-center" element={<ByUrlProject><PayrollSimulationCenterPage /></ByUrlProject>} />
             </Route>
 
             <Route path="/portal/:token" element={<ClientPortalPage />} />
@@ -357,11 +370,11 @@ export default function App() {
                 forever. */}
             <Route path="/client-portal/session/:sessionToken" element={<ClientPortalPage />} />
             {/* Staff pages: full-screen (no sidebar), login required */}
-            <Route path="/projects/:projectId/site-visit" element={<RequireAuth><SiteVisitPage /></RequireAuth>} />
-            <Route path="/projects/:projectId/plans" element={<RequireAuth><ProjectPlansPage /></RequireAuth>} />
-            <Route path="/projects/:projectId/issues" element={<RequireAuth><ProjectIssuesPage /></RequireAuth>} />
-            <Route path="/projects/:projectId/logs" element={<RequireAuth><ProjectLogsPage /></RequireAuth>} />
-            <Route path="/projects/:projectId/photos" element={<RequireAuth><ProjectPhotosPage /></RequireAuth>} />
+            <Route path="/projects/:projectId/site-visit" element={<ByUrlProject><RequireAuth><SiteVisitPage /></RequireAuth></ByUrlProject>} />
+            <Route path="/projects/:projectId/plans" element={<ByUrlProject><RequireAuth><ProjectPlansPage /></RequireAuth></ByUrlProject>} />
+            <Route path="/projects/:projectId/issues" element={<ByUrlProject><RequireAuth><ProjectIssuesPage /></RequireAuth></ByUrlProject>} />
+            <Route path="/projects/:projectId/logs" element={<ByUrlProject><RequireAuth><ProjectLogsPage /></RequireAuth></ByUrlProject>} />
+            <Route path="/projects/:projectId/photos" element={<ByUrlProject><RequireAuth><ProjectPhotosPage /></RequireAuth></ByUrlProject>} />
             <Route path="/access-log" element={<RequireAuth><AccessLogPage /></RequireAuth>} />
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

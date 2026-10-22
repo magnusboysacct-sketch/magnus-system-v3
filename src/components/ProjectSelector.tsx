@@ -1,44 +1,15 @@
 import React from "react";
-import { useLocation, useNavigate } from "react-router-dom";
 import { useProjectContext } from "../context/ProjectContext";
+import { useSwitchProject } from "../lib/useSwitchProject";
 
+// A plain dropdown for the selected project. Changing it goes through useSwitchProject, the same as the sidebar picker: asks about unsaved changes,
+// sets the selector and moves the address to the same page for the new project.
 export default function ProjectSelector() {
-  const {
-    projects,
-    currentProjectId,
-    setCurrentProjectId,
-    loadingProjects,
-  } = useProjectContext();
-
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  function buildProjectAwarePath(projectId: string) {
-    const path = location.pathname;
-
-    if (path === "/boq" || path.startsWith("/projects/")) {
-      if (path.includes("/takeoff")) return `/projects/${projectId}/takeoff`;
-      if (path.includes("/procurement")) return `/projects/${projectId}/procurement`;
-      if (path.includes("/finance")) return `/projects/${projectId}/finance`;
-      if (path.includes("/reports")) return `/projects/${projectId}/reports`;
-      return `/projects/${projectId}/boq`;
-    }
-
-    if (path === "/takeoff") return `/projects/${projectId}/takeoff`;
-    if (path === "/procurement") return `/projects/${projectId}/procurement`;
-    if (path === "/finance") return `/projects/${projectId}/finance`;
-    if (path === "/reports") return `/projects/${projectId}/reports`;
-
-    return path;
-  }
+  const { projects, currentProjectId, loadingProjects } = useProjectContext();
+  const switchProject = useSwitchProject();
 
   function handleChange(projectId: string) {
-    const nextId = projectId || null;
-    setCurrentProjectId(nextId);
-
-    if (nextId) {
-      navigate(buildProjectAwarePath(nextId));
-    }
+    switchProject(projectId || null);
   }
 
   return (

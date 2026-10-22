@@ -1,5 +1,6 @@
 ﻿// src/pages/ReportsPage.tsx — Field Payment Reports v3
 // Company-wide with drill-down: cost per project, milestone, task, worker advances
+import { useParams } from "react-router-dom";
 import React, { useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import {
@@ -46,7 +47,8 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<ReportTab>("overview");
   const [dateRange, setDateRange] = useState<DateRange>("month");
-  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const { projectId: urlProjectId } = useParams();   // /projects/:projectId/reports shows that project only; /reports has its own project filter
+  const [projectFilter, setProjectFilter] = useState<string>(urlProjectId || "all");
   const [payments, setPayments] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [milestones, setMilestones] = useState<any[]>([]);
@@ -181,7 +183,7 @@ export default function ReportsPage() {
           className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 outline-none [&>option]:bg-white dark:[&>option]:bg-[#111820]">
           {DATE_RANGES.map(r=><option key={r.key} value={r.key}>{r.label}</option>)}
         </select>
-        <select value={projectFilter} onChange={e=>setProjectFilter(e.target.value)}
+        <select value={projectFilter} onChange={e=>setProjectFilter(e.target.value)} disabled={!!urlProjectId} title={urlProjectId ? "This page is for the project selected in the sidebar" : undefined}
           className="bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 outline-none [&>option]:bg-white dark:[&>option]:bg-[#111820]">
           <option value="all">All Projects</option>
           {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}

@@ -1000,6 +1000,8 @@ export default function EstimatesPage() {
     contingencyPct: number;
   } | null>(null);
   const [form, setForm] = useState({ title: "", project_id: currentProject?.id || "", notes: "", status: "draft" });
+  // "New estimate" starts with the project selected NOW (the form above was set when the page opened)
+  function openNewEstimate() { setForm((f) => ({ ...f, project_id: currentProject?.id || "" })); setShowNew(true); }
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -1224,7 +1226,7 @@ export default function EstimatesPage() {
             <Btn variant="ghost" size="sm"
               icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>}
               onClick={loadEstimates}/>
-            <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => setShowNew(true)}>
+            <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={openNewEstimate}>
               New Estimate
             </Btn>
           </>
@@ -1282,7 +1284,7 @@ export default function EstimatesPage() {
             icon={<FileText size={20}/>}
             title={search ? "No estimates match your search" : "No estimates yet"}
             body={search ? "Try a different search." : "Create your first estimate or generate one from a BOQ."}
-            action={!search ? <Btn variant="primary" icon={<Plus size={13}/>} onClick={() => setShowNew(true)}>New Estimate</Btn> : undefined}
+            action={!search ? <Btn variant="primary" icon={<Plus size={13}/>} onClick={openNewEstimate}>New Estimate</Btn> : undefined}
           />
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

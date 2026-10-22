@@ -119,7 +119,8 @@ export default function PayrollSimulationCenterPage({}: PayrollSimulationCenterP
   const financeAccess = useFinanceAccess();
   
   // Safe local fallbacks
-  const currentProject = currentProjectContext?.projects?.[0] ?? null;
+  // the project in the address (/projects/:id/admin/...), else the one chosen in the sidebar
+  const currentProject = currentProjectContext?.projects?.find((p) => p.id === (currentProjectId || currentProjectContext.currentProjectId)) ?? null;
   const currentProjectLoading = false;
   const hasFinanceAccess = true;
   const accessLoading = false;

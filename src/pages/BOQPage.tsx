@@ -27,6 +27,7 @@ import {
   type BoqInvoiceLineMode,
 } from "../lib/boqToInvoice";
 import { useProjectContext } from "../context/ProjectContext";
+import { useUnsavedChanges } from "../lib/unsavedChanges";
 import { SmartItemSelector } from "../components/SmartItemSelector";
 import { magnusAI } from "../lib/magnusAI";
 import { BOQSuggestionCard } from "../components/BOQSuggestionCard";
@@ -1823,6 +1824,11 @@ useEffect(() => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Asked when the project is switched from the sidebar: edits not saved yet (an approved BOQ cannot hold any). The page then saves them as a draft before it goes (the flush above).
+  useUnsavedChanges(
+    () => boqIdRef.current !== null && statusRef.current === "draft" && lastSavedFpRef.current !== null && boqFingerprint(sectionsRef.current) !== lastSavedFpRef.current,
+    "the BOQ", "They will be saved as a draft of this project's BOQ before the page changes.");
 
   function handleNewBoq() {
     function reset() {
