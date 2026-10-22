@@ -125,6 +125,7 @@ export function shareViaLabel(via: string | null | undefined): string {
     case "link": return "link";
     case "whatsapp": return "WhatsApp";
     case "email": return "email";
+    case "marked": return "a manual mark (nothing emailed)";
     default: return via || "portal";
   }
 }

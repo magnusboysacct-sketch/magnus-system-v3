@@ -22,6 +22,9 @@ import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
 import { useProjectContext } from "../context/ProjectContext";
 import { Send } from "lucide-react";
 import SendToClientModal from "../components/SendToClientModal";
+import MarkAsSentModal from "../components/MarkAsSentModal";
+import { canMarkSent, canUndoMarkedSent, isMarkedSent, markedSentDetails, markedSentLine } from "../lib/invoiceMarkSent";
+import { undoMarkedSent } from "../lib/invoiceMarkSentApi";
 import { printInvoiceFresh } from "../components/InvoiceDocument";
 import { isSharedNow, formatJamaicaDateTime, shareViaLabel } from "../lib/portalShare";
 import { SeenBadge, SeenDetail } from "../components/PortalSeen";
@@ -68,6 +71,7 @@ export default function AccountsReceivablePage() {
   const [showProgressBilling, setShowProgressBilling] = useState(false);
   const [selectedContract, setSelectedContract] = useState<any>(null);
   const [showSendModal, setShowSendModal] = useState(false);
+  const [markTarget, setMarkTarget] = useState<{ invoice: any; clientName: string | null; clientHasPortal: boolean } | null>(null);
   const [sendClient, setSendClient] = useState<any>(null);
   // Advance payments: money received for a project before any invoice exists (client_payments with project_id, no invoice_id).
   const [advances, setAdvances] = useState<ClientPayment[]>([]);
@@ -370,6 +374,36 @@ export default function AccountsReceivablePage() {
     }
   }
 
+  // -- Mark as sent (invoice handed over / never sent: recorded for the books, nothing is emailed) ------------------------
+  async function openMarkSentModal(invoice: any) {
+    try {
+      let clientHasPortal = false;
+      if (invoice?.client_id) {
+        const { supabase } = await import("../lib/supabase");
+        const { data } = await supabase.from("clients").select("portal_enabled").eq("id", invoice.client_id).maybeSingle();
+        clientHasPortal = !!data?.portal_enabled;
+      }
+      setMarkTarget({ invoice, clientName: invoice?.clients?.name ?? null, clientHasPortal });
+    } catch (e: any) {
+      alert("Could not open Mark as sent: " + (e?.message || "unknown error"));
+    }
+  }
+
+  async function handleMarkedSent() {
+    setMarkTarget(null);
+    await refreshSharedState();
+  }
+
+  async function undoMarkSent(invoice: any) {
+    if (!window.confirm(`Take Invoice #${invoice.invoice_number} back to draft?\n\nIt will stop counting as sent (receivables and aging) and leave the client portal. Nothing has been paid on it.`)) return;
+    try {
+      await undoMarkedSent(invoice.id);
+      await refreshSharedState();
+    } catch (e: any) {
+      alert(e?.message || "Could not take the invoice back to draft.");
+    }
+  }
+
   // Called after a send/withdraw: pull the new share state into the open
   // invoice, then refresh the list.
   async function refreshSharedState() {
@@ -378,7 +412,7 @@ export default function AccountsReceivablePage() {
         const { supabase } = await import("../lib/supabase");
         const { data } = await supabase
           .from("client_invoices")
-          .select("status, sent_date, shared_at, shared_via, shared_by, withdrawn_at")
+          .select("status, sent_date, shared_at, shared_via, shared_by, withdrawn_at, reminder_enabled, sent_method, marked_sent_at, marked_sent_by_name, marked_sent_note, marked_sent_reminders, marked_sent_portal")
           .eq("id", selectedInvoice.id)
           .maybeSingle();
         if (data) setSelectedInvoice((prev: any) => (prev ? { ...prev, ...data } : prev));
@@ -854,6 +888,13 @@ export default function AccountsReceivablePage() {
                         >
                           Sent
                         </span>
+                      ) : isMarkedSent(inv) ? (
+                        <span
+                          title={markedSentLine(inv)}
+                          className="ml-1.5 inline-flex rounded-full px-2 py-1 text-[10px] font-medium bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                        >
+                          Marked sent
+                        </span>
                       ) : (
                         <span
                           title="Not shared with the client yet"
@@ -875,6 +916,15 @@ export default function AccountsReceivablePage() {
                       >
                         View
                       </button>
+                      {inv.status === "draft" && canMarkSent(userRole) && (
+                        <button
+                          onClick={() => openMarkSentModal(inv)}
+                          title="Record that this invoice was delivered without sending it from the app"
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
+                        >
+                          Mark as sent
+                        </button>
+                      )}
                       <button
                         onClick={() => openEditInvoice(inv)}
                         className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
@@ -1169,6 +1219,13 @@ export default function AccountsReceivablePage() {
               </div>
             )}
 
+            {isMarkedSent(selectedInvoice) && (
+              <div className="mb-4 rounded-lg border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/60 dark:bg-emerald-500/5 px-3 py-2" data-testid="marked-sent-info">
+                <div className="text-sm font-medium text-emerald-800 dark:text-emerald-300">{markedSentLine(selectedInvoice)}</div>
+                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{markedSentDetails(selectedInvoice).join(" · ")}</div>
+              </div>
+            )}
+
             {selectedInvoice.notes && (
               <div className="mb-6">
                 <div className="text-sm text-slate-500 dark:text-slate-400 mb-1">Notes</div>
@@ -1342,6 +1399,23 @@ export default function AccountsReceivablePage() {
                 <Printer size={14} />
                 {printingInvoice ? "Preparing…" : "Print / Save as PDF"}
               </button>
+              {selectedInvoice.status === "draft" && canMarkSent(userRole) && (
+                <button
+                  onClick={() => openMarkSentModal(selectedInvoice)}
+                  className="flex items-center gap-2 rounded-lg border border-emerald-300 dark:border-emerald-500/40 px-4 py-2 text-sm font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
+                >
+                  <CheckCircle size={14} />
+                  Mark as sent
+                </button>
+              )}
+              {isMarkedSent(selectedInvoice) && canUndoMarkedSent(userRole) && Number(selectedInvoice.amount_paid || 0) === 0 && invoicePayments.length === 0 && (
+                <button
+                  onClick={() => undoMarkSent(selectedInvoice)}
+                  className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Undo - back to draft
+                </button>
+              )}
               {selectedInvoice.status !== "cancelled" && (
                 <button
                   onClick={() => openSendModal(selectedInvoice)}
@@ -1361,6 +1435,15 @@ export default function AccountsReceivablePage() {
           </div>
         </div>
       )}
+
+      <MarkAsSentModal
+        open={!!markTarget}
+        invoice={markTarget?.invoice ?? null}
+        clientName={markTarget?.clientName}
+        clientHasPortal={!!markTarget?.clientHasPortal}
+        onClose={() => setMarkTarget(null)}
+        onDone={() => void handleMarkedSent()}
+      />
 
       {sendClient && selectedInvoice && (
         <SendToClientModal
