@@ -79,6 +79,15 @@ test("the migration: columns, the two functions, their permissions, the hidden-f
   assert.match(sql, /v_role NOT IN \('director', 'admin'\)/, "undo: director / admin");
   assert.match(sql, /p_reminders boolean DEFAULT false/, "reminders default off");
   for (const c of ["sent_method", "marked_sent_by_name", "marked_sent_note", "marked_sent_reminders", "marked_sent_portal"]) assert.ok(new RegExp(`get_portal_invoices[\\s\\S]*- '${c}'`).test(sql), `the portal hides ${c}`);
+  // section 4 is the LIVE function (manager-only through the contact-scoped helper of 20260936), guarded, with only the column list changed
+  assert.match(sql, /LIVE function \(pg_get_functiondef on production/);
+  assert.doesNotMatch(sql, /Same function as 20260922000000/);
+  assert.match(sql, /_portal_session_client\(\) is not the contact-scoped version \(migration 20260936000000\)/, "refuses to run without the contact-scoped helper");
+  assert.match(sql, /get_portal_invoices\(\) is not the version this file was written against/, "refuses to replace some other version");
+  assert.match(sql, /v_client uuid := public\._portal_session_client\(p_session_token\)/);
+  assert.match(sql, /WHERE i\.client_id = v_client AND i\.shared_at IS NOT NULL/);
+  assert.doesNotMatch(sql.slice(sql.indexOf("-- ── 4.")), /GRANT|REVOKE/, "section 4 leaves the grants alone");
+  assert.doesNotMatch(sql, /CREATE (OR REPLACE )?FUNCTION public\._portal_session_(client|ctx)/, "the contact-scoped helpers are not touched");
   assert.doesNotMatch(sql, /UPDATE\s+(public\.)?client_invoices\s+SET[^;]*WHERE\s+(true|1\s*=\s*1)/i, "no blanket update of existing invoices");
   assert.doesNotMatch(sql, /\bgl_(transactions|entries)\b/, "the ledger is not touched (a normal send posts nothing either)");
 });

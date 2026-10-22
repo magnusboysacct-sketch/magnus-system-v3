@@ -29,6 +29,18 @@ BEGIN
   IF (SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = '_portal_staff_company') <> 1 THEN
     RAISE EXCEPTION 'Function public._portal_staff_company() was not found (migration 20260919120000). Nothing was changed.';
   END IF;
+  -- section 4 replaces get_portal_invoices(); it must be the manager-only version this file was written against, with the contact-scoped helper (20260936) behind it
+  IF to_regprocedure('public.get_portal_invoices(text)') IS NULL OR to_regprocedure('public._portal_session_client(text)') IS NULL OR to_regprocedure('public._portal_session_ctx(text)') IS NULL THEN
+    RAISE EXCEPTION 'get_portal_invoices, _portal_session_client or _portal_session_ctx was not found. Nothing was changed.';
+  END IF;
+  IF pg_get_functiondef('public._portal_session_client(text)'::regprocedure) NOT LIKE '%_portal_session_ctx%'
+     OR pg_get_functiondef('public._portal_session_client(text)'::regprocedure) NOT LIKE '%contact_id IS NULL%' THEN
+    RAISE EXCEPTION '_portal_session_client() is not the contact-scoped version (migration 20260936000000). Nothing was changed.';
+  END IF;
+  IF pg_get_functiondef('public.get_portal_invoices(text)'::regprocedure) NOT LIKE '%public._portal_session_client(p_session_token)%'
+     OR pg_get_functiondef('public.get_portal_invoices(text)'::regprocedure) NOT LIKE '%i.client_id = v_client AND i.shared_at IS NOT NULL%' THEN
+    RAISE EXCEPTION 'get_portal_invoices() is not the version this file was written against. Review it first. Nothing was changed.';
+  END IF;
 END $$;
 
 -- ── 1. what was recorded ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -187,7 +199,11 @@ GRANT EXECUTE ON FUNCTION public.mark_invoice_sent(uuid, date, text, text, boole
 GRANT EXECUTE ON FUNCTION public.unmark_invoice_sent(uuid) TO authenticated, service_role;
 
 -- ── 4. the client portal must never see the staff-only columns ────────────────────────────────────────────────────────
--- Same function as 20260922000000 (grants unchanged); it removes the new columns from the row it returns.
+-- This is the LIVE function (pg_get_functiondef on production, 2026-10-21), changed ONLY in the column list: sent_method, marked_sent_at, marked_sent_by,
+-- marked_sent_by_name, marked_sent_note, marked_sent_reminders and marked_sent_portal are removed from the row the client gets. Contact-scoped access (20260936) is
+-- not in this function but in public._portal_session_client(), which this file does not touch: it returns NULL for a contact (field officer) session, so a contact login
+-- gets no invoices from here, exactly as today; only the client-level manager login does, and only for its own client's invoices that were sent to it.
+-- CREATE OR REPLACE keeps the grants (postgres, anon, authenticated, service_role); they are not repeated.
 CREATE OR REPLACE FUNCTION public.get_portal_invoices(p_session_token text)
 RETURNS SETOF jsonb
 LANGUAGE plpgsql SECURITY DEFINER
