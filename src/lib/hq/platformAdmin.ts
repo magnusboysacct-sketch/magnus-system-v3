@@ -97,3 +97,21 @@ export async function verifyTotpCode(factorId: string, code: string): Promise<vo
   const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code: code.trim() });
   if (error) throw new Error(error.message);
 }
+
+// ─── Security scan (Health tab) ───────────────────────────────────────────────
+
+export type ScanLevel = "problem" | "warn" | "ok";
+export type ScanKind = "rls_off" | "no_policies" | "true_policy" | "definer_search_path";
+
+export type SecurityFinding = {
+  level: ScanLevel;
+  kind: ScanKind;
+  object: string;
+  detail: string;
+};
+
+export async function runSecurityScan(): Promise<SecurityFinding[]> {
+  const { data, error } = await supabase.rpc("hq_security_scan");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as SecurityFinding[];
+}

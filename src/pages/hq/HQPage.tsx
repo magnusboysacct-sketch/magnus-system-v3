@@ -17,11 +17,13 @@ import { usePlatformStatus } from "../../hooks/usePlatformStatus";
 import { useIdleSignOut } from "../../hooks/useIdleSignOut";
 import HQMfaGate from "./HQMfaGate";
 import HQAdminsTab from "./HQAdminsTab";
+import HQHealthTab from "./HQHealthTab";
 
 const IDLE_LIMIT_MS = 30 * 60 * 1000;
 
 const TABS = [
   { key: "overview", label: "Overview" },
+  { key: "health", label: "Health" },
   { key: "admins", label: "Admins" },
 ] as const;
 
@@ -102,6 +104,7 @@ export default function HQPage() {
             <p className="mt-3 text-xs text-slate-500">Platform numbers, the attention list and charts arrive in the next steps.</p>
           </Card>
         )}
+        {tab === "health" && <HQHealthTab />}
         {tab === "admins" && <HQAdminsTab isOwner={!!status.is_owner} />}
       </main>
     </Page>

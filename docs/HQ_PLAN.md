@@ -186,3 +186,7 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   Files: `src/lib/hq/platformAdmin.ts`, `src/hooks/usePlatformStatus.ts`, `src/hooks/useIdleSignOut.ts`,
   `src/pages/hq/HQPage.tsx`, `HQMfaGate.tsx`, `HQAdminsTab.tsx`; edits to `src/App.tsx` (lazy `/hq` route, system companies
   never expire and open HQ at "/") and `src/layout/AppLayout.tsx` (Magnus HQ shield link, admins only).
+- **Step 2 - Security check:** built. Migrations `20260956000000_hq_security_scan.sql` (scan + `platform_security_notes` for
+  "OK on purpose" items), `20260956010000_definer_functions_search_path.sql` (33 functions), `20260956020000_rls_migration_conflicts.sql`,
+  `20260956030000_rls_project_actuals.sql` (fixes close-out + estimate suggestions, which silently failed). HQ Health tab shows the scan.
+  `rate_update_batches` read stays open on purpose (see 20260944). The public health check (Step 6) will include the scan counts.
