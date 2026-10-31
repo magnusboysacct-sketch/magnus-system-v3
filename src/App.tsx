@@ -1,7 +1,7 @@
 ﻿// src/App.tsx — Clean rebuild router
 // Same auth logic, same routes, new AppLayout replaces SidebarLayout
 
-import React, { Fragment, useEffect, useState } from "react";
+import React, { Fragment, Suspense, lazy, useEffect, useState } from "react";
 import ClientPortalPage from './pages/ClientPortalPage';
 import ClientLoginPage from './pages/ClientLoginPage';
 import ClientResetPasswordPage from './pages/ClientResetPasswordPage';
@@ -79,6 +79,9 @@ import JamaicanPayrollMonitoringPage from "./pages/JamaicanPayrollMonitoringPage
 import PayrollComparisonReviewPage   from "./pages/PayrollComparisonReviewPage";
 import PayrollSimulationCenterPage   from "./pages/PayrollSimulationCenterPage";
 
+// Magnus HQ (platform owner control room): loaded on its own so normal users never download it.
+const HQPage = lazy(() => import("./pages/hq/HQPage"));
+
 // --- Auth hash handler --------------------------------------------------------
 
 // Project pages are rebuilt when their project changes: the old page (and any answer it is still waiting for) is dropped, the new one starts with its own loading state.
@@ -116,6 +119,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const [checking, setChecking] = useState(true);
   const [authed, setAuthed] = useState(false);
   const [subscriptionExpired, setSubscriptionExpired] = useState(false);
+  // System companies (templates, the Magnus HQ login's own company) never expire and never count as tenants.
+  const [systemCompany, setSystemCompany] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -129,12 +134,16 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
           if (user) {
             const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
             if (profile?.company_id) {
+              // companies.is_system arrives with migration 20260955; before that this just comes back empty.
+              const { data: co } = await supabase.from("companies").select("is_system").eq("id", profile.company_id).maybeSingle();
+              const isSystem = !!(co as { is_system?: boolean } | null)?.is_system;
+              if (alive) setSystemCompany(isSystem);
               const { data: cs } = await supabase.from("company_settings").select("trial_expires_at,subscription_status,subscription_expires_at").eq("company_id", profile.company_id).maybeSingle();
               if (cs) {
                 const now = new Date();
                 const trialExpired = cs.trial_expires_at ? new Date(cs.trial_expires_at) < now : false;
                 const subActive = cs.subscription_status === "active" && (!cs.subscription_expires_at || new Date(cs.subscription_expires_at) > now);
-                if (trialExpired && !subActive) { if (alive) setSubscriptionExpired(true); }
+                if (trialExpired && !subActive && !isSystem) { if (alive) setSubscriptionExpired(true); }
               }
             }
           }
@@ -170,7 +179,12 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
     return <Navigate to={`/login?next=${next}`} replace />;
   }
 
-  if (subscriptionExpired && loc.pathname !== "/upgrade" && loc.pathname !== "/settings/company") {
+  // The Magnus HQ login's own company is a system company: its home is HQ, not a company dashboard.
+  if (systemCompany && loc.pathname === "/") {
+    return <Navigate to="/hq" replace />;
+  }
+
+  if (subscriptionExpired && loc.pathname !== "/upgrade" && loc.pathname !== "/settings/company" && !loc.pathname.startsWith("/hq")) {
     return <Navigate to="/upgrade" replace />;
   }
 
@@ -376,6 +390,9 @@ export default function App() {
             <Route path="/projects/:projectId/logs" element={<ByUrlProject><RequireAuth><ProjectLogsPage /></RequireAuth></ByUrlProject>} />
             <Route path="/projects/:projectId/photos" element={<ByUrlProject><RequireAuth><ProjectPhotosPage /></RequireAuth></ByUrlProject>} />
             <Route path="/access-log" element={<RequireAuth><AccessLogPage /></RequireAuth>} />
+            {/* Magnus HQ: platform admins only, 2-step login required. Not wrapped in RequireAuth on purpose:
+                signed-out visitors and non-admins are sent to "/" exactly like an unknown address. */}
+            <Route path="/hq" element={<Suspense fallback={null}><HQPage /></Suspense>} />
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </BrowserRouter>

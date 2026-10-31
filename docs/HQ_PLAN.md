@@ -174,3 +174,15 @@ All counts only - no rows, names or amounts from inside a company. Template comp
 - B. HQ account's auto-made company: mark as system (recommended) - OK? (item 2)
 - C. Daily job: pg_cron (recommended) or Vercel cron? (item 5)
 - D. Data fetching: existing hook pattern (recommended) or add React Query? (item 1)
+
+### Decisions made (2026-10-28)
+- A. Front page on **app.magnusboys.com** for now (no DNS change). magnusboys.com can point to it later.
+- B. HQ account's auto-made company is marked **system** and never counted.
+- C. Daily job runs on **pg_cron**; only push sending runs in an API function.
+- D. Keep the **existing hook pattern** (no React Query).
+
+## Progress
+- **Step 1 - Platform admin foundation:** built. Migration `20260955000000_platform_admin_foundation.sql`.
+  Files: `src/lib/hq/platformAdmin.ts`, `src/hooks/usePlatformStatus.ts`, `src/hooks/useIdleSignOut.ts`,
+  `src/pages/hq/HQPage.tsx`, `HQMfaGate.tsx`, `HQAdminsTab.tsx`; edits to `src/App.tsx` (lazy `/hq` route, system companies
+  never expire and open HQ at "/") and `src/layout/AppLayout.tsx` (Magnus HQ shield link, admins only).

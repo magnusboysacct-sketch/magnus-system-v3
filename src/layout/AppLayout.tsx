@@ -9,13 +9,14 @@ import { supabase } from "../lib/supabase";
 import { useCompanySettings } from "../hooks/useCompanySettings";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { useTheme } from "../hooks/useTheme";
+import { usePlatformStatus } from "../hooks/usePlatformStatus";
 import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
   ChevronLeft, ChevronRight, Building2, Layers,
   Receipt, Truck, HardHat, Banknote, BookOpen,
   ClipboardList, Package, PieChart, Wrench, Landmark,
-  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase, PenTool
+  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase, PenTool, ShieldCheck
 } from "lucide-react";
 import { cn, SectionLabel } from "../components/ui";
 import { useSwitchProject } from "../lib/useSwitchProject";
@@ -288,6 +289,9 @@ export default function AppLayout() {
       .then(({ count }) => setClientMessagesUnread(count || 0));
   }, [co?.company_id]);
 
+  // Magnus HQ shield link: only platform admins ever see it.
+  const { status: platform } = usePlatformStatus();
+
   async function handleLogout() {
     await supabase.auth.signOut();
     navigate("/login");
@@ -450,6 +454,13 @@ export default function AppLayout() {
                 <div className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 truncate">{user.email}</div>
               </div>
             </div>
+          )}
+          {platform?.is_admin && (
+            <button onClick={() => navigate("/hq")} title="Magnus HQ"
+              className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+              <ShieldCheck size={13}/>
+              {!collapsed && <span>Magnus HQ</span>}
+            </button>
           )}
           <button onClick={() => navigate("/my-signature")}
             className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
