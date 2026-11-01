@@ -10,11 +10,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, LogOut, ShieldCheck } from "lucide-react";
+import { ArrowLeft, LogOut, Moon, ShieldCheck, Sun } from "lucide-react";
 import { Badge, Btn, Page, Spinner, Tabs } from "../../components/ui";
 import { supabase } from "../../lib/supabase";
 import { usePlatformStatus } from "../../hooks/usePlatformStatus";
 import { useIdleSignOut } from "../../hooks/useIdleSignOut";
+import { useTheme } from "../../hooks/useTheme";
 import HQMfaGate from "./HQMfaGate";
 import HQAdminsTab from "./HQAdminsTab";
 import HQHealthTab from "./HQHealthTab";
@@ -72,6 +73,8 @@ export default function HQPage() {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const { status, refresh } = usePlatformStatus();
+  // Same saved light/dark choice as the rest of the app (HQ is outside the app layout, so it applies it itself).
+  const { theme, toggleTheme } = useTheme();
   const [signingOut, setSigningOut] = useState(false);
   // Control room mode (a computer that stays open): pauses the idle sign-out, switches itself off after 12 hours.
   const [controlRoom, setControlRoomState] = useState<boolean>(controlRoomFromStorage);
@@ -127,6 +130,10 @@ export default function HQPage() {
           <Badge color={status.is_owner ? "violet" : "slate"}>{status.is_owner ? "Owner" : "Admin"}</Badge>
         </div>
         <div className="flex items-center gap-2">
+          <button type="button" onClick={toggleTheme} title={theme === "dark" ? "Light mode" : "Dark mode"} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5">
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           <NotificationBell className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5" />
           <Btn variant="ghost" icon={<ArrowLeft size={13} />} onClick={() => nav("/")}>Back to app</Btn>
           <Btn icon={<LogOut size={13} />} onClick={() => { void signOut(); }}>Sign out</Btn>
