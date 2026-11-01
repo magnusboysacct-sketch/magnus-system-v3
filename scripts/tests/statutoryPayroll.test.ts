@@ -1,7 +1,7 @@
 // scripts/tests/statutoryPayroll.test.ts — Jamaican deductions worked by hand with the 1 April 2026 rates.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calculateMonthly, payDateFor, type StatutoryRates } from "../../src/lib/statutoryPayroll.ts";
+import { calculateMonthly, payDateFor, type StatutoryRates } from "../../src/lib/statutoryPayrollCore.ts";
 
 const R2026: StatutoryRates = {
   effective_from: "2026-04-01", nis_employee_rate: 0.03, nis_employer_rate: 0.03, nis_annual_ceiling: 5_000_000,
