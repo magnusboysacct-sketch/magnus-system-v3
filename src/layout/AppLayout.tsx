@@ -494,6 +494,12 @@ export default function AppLayout() {
             <PenTool size={13}/>
             {!collapsed && <span>My Signature</span>}
           </button>
+          {/* Opens the public feedback page (anyone can send ideas, signed in or not). */}
+          <a href="/feedback" title="Ideas & feedback"
+            className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+            <MessageSquare size={13}/>
+            {!collapsed && <span>Ideas & feedback</span>}
+          </a>
           <button onClick={() => navigate("/help")}
             className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
             <HelpCircle size={13}/>

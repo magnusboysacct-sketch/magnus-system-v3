@@ -49,6 +49,61 @@
       "destination": "/api/share-preview?kind=receipt&token=:token"
     },
     {
+      "source": "/pricing",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(WhatsApp|facebookexternalhit|Facebot|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot).*"
+        }
+      ],
+      "destination": "/api/og-page?page=pricing"
+    },
+    {
+      "source": "/status",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(WhatsApp|facebookexternalhit|Facebot|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot).*"
+        }
+      ],
+      "destination": "/api/og-page?page=status"
+    },
+    {
+      "source": "/feedback",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(WhatsApp|facebookexternalhit|Facebot|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot).*"
+        }
+      ],
+      "destination": "/api/og-page?page=feedback"
+    },
+    {
+      "source": "/privacy",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(WhatsApp|facebookexternalhit|Facebot|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot).*"
+        }
+      ],
+      "destination": "/api/og-page?page=privacy"
+    },
+    {
+      "source": "/terms",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(WhatsApp|facebookexternalhit|Facebot|Twitterbot|Slackbot|TelegramBot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot).*"
+        }
+      ],
+      "destination": "/api/og-page?page=terms"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/"
     }

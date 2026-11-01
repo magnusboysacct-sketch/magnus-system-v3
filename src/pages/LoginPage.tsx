@@ -25,7 +25,8 @@ export default function LoginPage() {
   const nav = useNavigate();
   const loc = useLocation();
 
-  const [mode, setMode] = useState<Mode>("signin");
+  // "Start free trial" on the front page opens this page on the Sign Up tab (/login?mode=signup).
+  const [mode, setMode] = useState<Mode>(() => new URLSearchParams(loc.search).get("mode") === "signup" ? "signup" : "signin");
   // New sign-ups can be closed in Magnus HQ (invited people still sign up through their invitation link).
   const { signupsOpen } = usePlatformSettings();
   const [email, setEmail] = useState(() => readRememberedEmail());
@@ -426,6 +427,16 @@ export default function LoginPage() {
           <button type="button" onClick={() => nav("/worker")} className="w-full min-h-[48px] rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-sm font-semibold text-slate-700 transition">
             Worker? Sign in here
           </button>
+          <details className="mt-4 text-xs text-slate-500">
+            <summary className="cursor-pointer text-center hover:text-slate-700">Forgot your password, or new here?</summary>
+            <ul className="mt-2 space-y-1.5 list-disc pl-4">
+              <li><b>Forgot password:</b> tap “Forgot password?” above and we&apos;ll email you a link.</li>
+              <li><b>Invited by your company:</b> use the link in your invitation email. Don&apos;t sign up separately.</li>
+              <li><b>New company:</b> tap Sign Up to start a free trial, or <a href="/#demo" className="underline">book a demo</a>.</li>
+              <li><b>A client or field officer:</b> use the portal link your contractor sent you.</li>
+            </ul>
+          </details>
+          <a href="/" className="mt-4 block text-center text-xs text-slate-400 hover:text-slate-600">← Back to the Magnus Boy&apos;s System home page</a>
         </div>
         </>
         )}

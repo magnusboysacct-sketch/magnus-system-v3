@@ -258,3 +258,10 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   2-step, and log every call (first view notifies the company). Never shown: password/PIN/token/session/salt/bank/routing/
   SSN/TRN columns and login/session/share-link tables. Overview shows open grants (info). App: `/support-access` page +
   sidebar link for directors/admins, HQ Support tab. There is no other path for HQ to read company records.
+
+## Step 10 — Public website (done)
+- Migration `20260965000000_public_site_leads_feedback.sql`: leads, feedback, legal_docs (privacy/terms v1 DRAFT), public form rate limit (5 per visitor per hour, 60 total per hour; IP never stored, only a salted hash), get_public_site, get_legal, submit_lead, submit_feedback. get_platform_settings no longer exposes billing/push/limits/form_salt.
+- `src/public/*`: small separate bundle (~140 KB gzip) for signed-out visitors on `/` and always on /pricing, /privacy, /terms, /status, /feedback. Signed-in users on `/` still get the dashboard.
+- Login: `?mode=signup`, help block, link back to home page.
+- robots.txt, sitemap.xml, `/api/og-page` link previews for WhatsApp/Facebook bots (vercel.json rewrites).
+- HQ Leads / Feedback / Website tabs come in Step 11 (HQ Overview already shows new demo requests and problem reports).

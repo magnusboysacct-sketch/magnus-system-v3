@@ -1,0 +1,11 @@
+# Magnus Boy's System
+User-agent: *
+Allow: /$
+Allow: /pricing
+Allow: /privacy
+Allow: /terms
+Allow: /status
+Allow: /feedback
+Disallow: /
+
+Sitemap: https://app.magnusboys.com/sitemap.xml
