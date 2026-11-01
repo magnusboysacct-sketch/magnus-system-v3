@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Bot, Check, ChevronRight, Send, Sparkles, Trash2, X } from "lucide-react";
+import { Bot, Check, ChevronRight, Send, Sparkles, Square, Trash2, Volume2, X } from "lucide-react";
 import { Alert, Btn, Card, Input, Spinner, Textarea } from "../../components/ui";
 import { cn } from "../../lib/theme";
 import { refreshPlatformSettings } from "../../lib/platformSettings";
@@ -14,6 +14,55 @@ import {
 } from "../../lib/hq/ask";
 
 type Turn = AskMessage & { suggestions?: Suggestion[]; cost?: number | null; problem?: boolean };
+
+/** Answers are plain text: drop markdown marks (**bold**, # headings) the model sometimes adds anyway. */
+function plain(t: string): string {
+  return t.replace(/\*\*(.+?)\*\*/g, "$1").replace(/__(.+?)__/g, "$1").replace(/^#{1,6}\s+/gm, "").replace(/`([^`]+)`/g, "$1");
+}
+
+const canSpeak = typeof window !== "undefined" && "speechSynthesis" in window;
+
+/** Words read better than symbols: "US$1.24" → "1.24 US dollars", "J$" → "Jamaican dollars", list dashes dropped. */
+function forSpeech(t: string): string {
+  return plain(t)
+    .replace(/US\$\s?([\d,.]+)/g, "$1 US dollars")
+    .replace(/J\$\s?([\d,.]+)/g, "$1 Jamaican dollars")
+    .replace(/^\s*[-•]\s+/gm, "")
+    .replace(/(\d+)%/g, "$1 percent");
+}
+
+function pickVoice(): SpeechSynthesisVoice | undefined {
+  const voices = window.speechSynthesis.getVoices();
+  return voices.find((v) => /en[-_]JM/i.test(v.lang)) ?? voices.find((v) => /en[-_]GB/i.test(v.lang) && /natural|google|online/i.test(v.name))
+    ?? voices.find((v) => /^en/i.test(v.lang) && /natural|google|online/i.test(v.name)) ?? voices.find((v) => /^en/i.test(v.lang));
+}
+
+/** Speaker button: reads one answer out loud with the device's own voice (free, nothing sent anywhere). Tap again to stop. */
+function SpeakButton({ text, id, speaking, setSpeaking }: { text: string; id: number; speaking: number | null; setSpeaking: (v: number | null) => void }) {
+  if (!canSpeak) return null;
+  const on = speaking === id;
+  function toggle() {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    if (on) { setSpeaking(null); return; }
+    const u = new SpeechSynthesisUtterance(forSpeech(text));
+    const v = pickVoice();
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = "en-US";
+    u.rate = 0.95;
+    u.onend = () => setSpeaking(null);
+    u.onerror = () => setSpeaking(null);
+    setSpeaking(id);
+    synth.speak(u);
+  }
+  return (
+    <button type="button" onClick={toggle} aria-label={on ? "Stop reading" : "Read it out loud"}
+      className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors",
+        on ? "border-cyan-500 bg-cyan-50 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300"
+          : "border-slate-300 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/[0.06]")}>
+      {on ? <Square size={12} /> : <Volume2 size={13} />} {on ? "Stop" : "Read it to me"}
+    </button>
+  );
+}
 
 const STARTERS = ["Is everything OK?", "What needs my attention today?", "Explain the newest error in plain words", "How is money looking this month?"];
 
@@ -83,6 +132,10 @@ export default function HQAskTab({ onOpenTab }: { onOpenTab: (tab: string) => vo
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ msg: string; ok: boolean } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const [speaking, setSpeaking] = useState<number | null>(null);
+
+  // Stop reading when leaving the tab.
+  useEffect(() => () => { if (canSpeak) window.speechSynthesis.cancel(); }, []);
 
   useEffect(() => {
     fetchAssistantStatus().then(setStatus, (e: unknown) => setStatusError(e instanceof Error ? e.message : String(e)));
@@ -151,12 +204,17 @@ export default function HQAskTab({ onOpenTab }: { onOpenTab: (tab: string) => vo
                 t.role === "user" ? "bg-cyan-600 text-white dark:bg-cyan-500/20 dark:text-cyan-100"
                   : t.problem ? "bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-500/20"
                     : "bg-white dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-800 dark:text-slate-200")}>
-                {t.content}
+                {t.role === "assistant" ? plain(t.content) : t.content}
               </div>
               {t.suggestions?.map((s, j) => (
                 <SuggestionCard key={j} s={s} onOpenTab={onOpenTab} onDone={(msg, ok) => setNote({ msg, ok })} />
               ))}
-              {t.cost != null && <div className="text-[10px] text-slate-500">Cost of this answer: {usd(t.cost, 3)}</div>}
+              {t.role === "assistant" && !t.problem && t.content && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <SpeakButton text={t.content} id={i} speaking={speaking} setSpeaking={setSpeaking} />
+                  {t.cost != null && <span className="text-[10px] text-slate-500">Cost of this answer: {usd(t.cost, 3)}</span>}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -171,7 +229,7 @@ export default function HQAskTab({ onOpenTab }: { onOpenTab: (tab: string) => vo
           className="shadow-sm" />
         <div className="flex flex-col gap-2">
           <Btn variant="primary" size="md" icon={<Send size={14} />} disabled={!!off || busy || !text.trim()} onClick={() => { void send(text); }}>Ask</Btn>
-          {turns.length > 0 && <Btn variant="ghost" icon={<Trash2 size={13} />} onClick={() => setTurns([])}>Clear</Btn>}
+          {turns.length > 0 && <Btn variant="ghost" icon={<Trash2 size={13} />} onClick={() => { if (canSpeak) window.speechSynthesis.cancel(); setSpeaking(null); setTurns([]); }}>Clear</Btn>}
         </div>
       </div>
       <p className="text-[10px] text-slate-500">
