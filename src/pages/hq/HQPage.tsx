@@ -11,13 +11,14 @@
 import { useCallback, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, LogOut, ShieldCheck } from "lucide-react";
-import { Badge, Btn, Card, Page, Spinner, Tabs } from "../../components/ui";
+import { Badge, Btn, Page, Spinner, Tabs } from "../../components/ui";
 import { supabase } from "../../lib/supabase";
 import { usePlatformStatus } from "../../hooks/usePlatformStatus";
 import { useIdleSignOut } from "../../hooks/useIdleSignOut";
 import HQMfaGate from "./HQMfaGate";
 import HQAdminsTab from "./HQAdminsTab";
 import HQHealthTab from "./HQHealthTab";
+import HQOverviewTab from "./HQOverviewTab";
 
 const IDLE_LIMIT_MS = 30 * 60 * 1000;
 
@@ -94,15 +95,12 @@ export default function HQPage() {
 
       <main className="max-w-6xl mx-auto p-4 sm:p-6">
         {tab === "overview" && (
-          <Card>
-            <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">HQ is set up</div>
-            <ul className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400 list-disc pl-4">
-              <li>You are signed in with 2-step login.</li>
-              <li>HQ signs you out after 30 minutes without activity.</li>
-              <li>Every HQ action is written to the activity log.</li>
-            </ul>
-            <p className="mt-3 text-xs text-slate-500">Platform numbers, the attention list and charts arrive in the next steps.</p>
-          </Card>
+          <HQOverviewTab
+            onOpenTab={(t) => {
+              const k = isTab(t) ? t : "overview";
+              setParams(k === "overview" ? {} : { tab: k }, { replace: true });
+            }}
+          />
         )}
         {tab === "health" && <HQHealthTab />}
         {tab === "admins" && <HQAdminsTab isOwner={!!status.is_owner} />}

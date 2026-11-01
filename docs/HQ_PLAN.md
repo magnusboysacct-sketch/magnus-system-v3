@@ -190,3 +190,8 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   "OK on purpose" items), `20260956010000_definer_functions_search_path.sql` (33 functions), `20260956020000_rls_migration_conflicts.sql`,
   `20260956030000_rls_project_actuals.sql` (fixes close-out + estimate suggestions, which silently failed). HQ Health tab shows the scan.
   `rate_update_batches` read stays open on purpose (see 20260944). The public health check (Step 6) will include the scan counts.
+- **Step 3 - Overview tab:** built. Migration `20260957000000_hq_overview.sql` (`platform_activity_days` + `record_activity()`,
+  `hq_overview()`). The app records one row per user per day (user, company, date only) from `AppLayout`
+  (`src/lib/hq/activity.ts`). Attention list today: security problems/warnings, maintenance mode, companies past due;
+  payments, bills, sign-ups, feedback and reminders join as their steps are built. Platform income arrives with Step 5.
+  Migrations 20260955-20260957 were test-run twice in a row on a scratch Postgres (PGlite) with stand-in tables.

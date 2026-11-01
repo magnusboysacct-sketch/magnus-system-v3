@@ -115,3 +115,35 @@ export async function runSecurityScan(): Promise<SecurityFinding[]> {
   if (error) throw new Error(error.message);
   return (data ?? []) as SecurityFinding[];
 }
+
+// ─── Overview tab ─────────────────────────────────────────────────────────────
+
+export type AttentionItem = {
+  level: "problem" | "warn" | "info";
+  /** HQ tab to open when tapped. */
+  tab: string;
+  title: string;
+  detail: string;
+};
+
+export type DailyPoint = { day: string; n: number };
+
+export type HQOverview = {
+  generated_at: string;
+  companies: { total: number; trial: number; paid: number; past_due: number; no_plan: number; closed: number; new_30d: number };
+  numbers: {
+    users: number; active_today: number; active_7d: number; workers: number;
+    projects: number; projects_active: number; payroll_runs_month: number;
+    invoices_month: number; invoices_total: number; files: number; storage_bytes: number;
+    income_month: number | null;
+  };
+  attention: AttentionItem[];
+  new_companies_daily: DailyPoint[];
+  active_users_daily: DailyPoint[];
+};
+
+export async function fetchOverview(): Promise<HQOverview> {
+  const { data, error } = await supabase.rpc("hq_overview");
+  if (error) throw new Error(error.message);
+  return data as HQOverview;
+}

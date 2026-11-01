@@ -10,6 +10,7 @@ import { useCompanySettings } from "../hooks/useCompanySettings";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { useTheme } from "../hooks/useTheme";
 import { usePlatformStatus } from "../hooks/usePlatformStatus";
+import { recordDailyActivity } from "../lib/hq/activity";
 import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
@@ -291,6 +292,11 @@ export default function AppLayout() {
 
   // Magnus HQ shield link: only platform admins ever see it.
   const { status: platform } = usePlatformStatus();
+
+  // Magnus HQ "active users" count: one tiny call per user per day (user, company and date only).
+  useEffect(() => {
+    if (user?.id) void recordDailyActivity(user.id);
+  }, [user?.id]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
