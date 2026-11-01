@@ -11,6 +11,7 @@ import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { useTheme } from "../hooks/useTheme";
 import { usePlatformStatus } from "../hooks/usePlatformStatus";
 import { recordDailyActivity } from "../lib/hq/activity";
+import { useCompanyStatus } from "../hooks/useCompanyStatus";
 import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
@@ -292,6 +293,8 @@ export default function AppLayout() {
 
   // Magnus HQ shield link: only platform admins ever see it.
   const { status: platform } = usePlatformStatus();
+  // Paused by Magnus HQ = read-only (the database refuses changes; this banner explains why).
+  const companyStatus = useCompanyStatus();
 
   // Magnus HQ "active users" count: one tiny call per user per day (user, company and date only).
   useEffect(() => {
@@ -498,6 +501,12 @@ export default function AppLayout() {
       {/* ── Main content ── */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080b10] pt-14 md:pt-0">
+          {companyStatus.status === "paused" && (
+            <div className="px-4 py-2.5 text-xs bg-amber-50 text-amber-800 border-b border-amber-200 dark:bg-amber-400/10 dark:text-amber-300 dark:border-amber-400/20">
+              <b>Read-only:</b> your company account is paused, so you can view and download everything but can&apos;t add or change anything.
+              {companyStatus.reason ? ` Reason: ${companyStatus.reason}.` : ""} Contact Magnus Boy&apos;s System support to unlock it.
+            </div>
+          )}
           <Outlet />
         </main>
       </div>

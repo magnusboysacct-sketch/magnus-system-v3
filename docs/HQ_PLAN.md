@@ -195,3 +195,11 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   (`src/lib/hq/activity.ts`). Attention list today: security problems/warnings, maintenance mode, companies past due;
   payments, bills, sign-ups, feedback and reminders join as their steps are built. Platform income arrives with Step 5.
   Migrations 20260955-20260957 were test-run twice in a row on a scratch Postgres (PGlite) with stand-in tables.
+- **Step 4 - Companies tab:** built. Migration `20260958000000_hq_companies.sql`: `companies.account_status`
+  (active / paused / closed), `is_test`, `purge_after`; RESTRICTIVE `hq_guard_*` policies on every company table
+  (paused = read-only, closed = no access), re-applied with `select public.hq_apply_company_guards();` and flagged by the
+  security scan if a new table lacks them; `hq_list_companies`, `hq_company_action`, `hq_company_delete_now` (test only),
+  `hq_company_export` (secrets left out), `hq_purge_expired_companies` (for the Step 5 daily job); `hq_overview` updated.
+  App: closed screen in `RequireAuth`, read-only banner in `AppLayout`. Known gaps, closed in Step 5: SECURITY DEFINER
+  functions and storage uploads are not yet blocked for paused companies; stored files of deleted companies are cleared
+  by the daily job. Per-company feature switches moved to Step 8. Test-run twice on PGlite (pause/close/reopen/delete/export).

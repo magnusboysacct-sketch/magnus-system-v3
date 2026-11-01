@@ -81,6 +81,7 @@ import PayrollSimulationCenterPage   from "./pages/PayrollSimulationCenterPage";
 
 // Magnus HQ (platform owner control room): loaded on its own so normal users never download it.
 const HQPage = lazy(() => import("./pages/hq/HQPage"));
+import { fetchCompanyStatus } from "./hooks/useCompanyStatus";
 
 // --- Auth hash handler --------------------------------------------------------
 
@@ -121,6 +122,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const [subscriptionExpired, setSubscriptionExpired] = useState(false);
   // System companies (templates, the Magnus HQ login's own company) never expire and never count as tenants.
   const [systemCompany, setSystemCompany] = useState(false);
+  // Closed by Magnus HQ: nobody in the company can use it (data is kept until the 90 days are up).
+  const [companyClosed, setCompanyClosed] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -138,6 +141,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
               const { data: co } = await supabase.from("companies").select("is_system").eq("id", profile.company_id).maybeSingle();
               const isSystem = !!(co as { is_system?: boolean } | null)?.is_system;
               if (alive) setSystemCompany(isSystem);
+              const st = await fetchCompanyStatus();
+              if (alive && st.status === "closed") setCompanyClosed(true);
               const { data: cs } = await supabase.from("company_settings").select("trial_expires_at,subscription_status,subscription_expires_at").eq("company_id", profile.company_id).maybeSingle();
               if (cs) {
                 const now = new Date();
@@ -177,6 +182,26 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!authed) {
     const next = encodeURIComponent(loc.pathname + loc.search);
     return <Navigate to={`/login?next=${next}`} replace />;
+  }
+
+  if (companyClosed && !loc.pathname.startsWith("/hq")) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
+        <div className="max-w-sm text-center">
+          <div className="text-4xl mb-4">🔒</div>
+          <h1 className="text-lg font-semibold text-slate-800 dark:text-slate-100">This company account is closed</h1>
+          <p className="text-sm text-slate-500 mt-2">
+            Nobody can sign in to it right now. If you think this is a mistake, contact Magnus Boy&apos;s System support.
+          </p>
+          <button
+            onClick={async () => { await supabase.auth.signOut(); nav("/login", { replace: true }); }}
+            className="mt-6 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm dark:bg-white dark:text-slate-900"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // The Magnus HQ login's own company is a system company: its home is HQ, not a company dashboard.

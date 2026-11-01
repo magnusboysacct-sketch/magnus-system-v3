@@ -147,3 +147,78 @@ export async function fetchOverview(): Promise<HQOverview> {
   if (error) throw new Error(error.message);
   return data as HQOverview;
 }
+
+// ─── Companies tab ────────────────────────────────────────────────────────────
+
+export type CompanyState = "trial" | "paid" | "past_due" | "no_plan" | "paused" | "closed";
+
+export type HQCompany = {
+  id: string;
+  name: string;
+  created_at: string;
+  account_status: "active" | "paused" | "closed";
+  status_reason: string | null;
+  closed_at: string | null;
+  purge_after: string | null;
+  is_test: boolean;
+  state: CompanyState;
+  plan: string | null;
+  trial_expires_at: string | null;
+  subscription_expires_at: string | null;
+  owner_email: string | null;
+  users: number;
+  workers: number | null;
+  projects: number | null;
+  clients: number | null;
+  payroll_runs: number | null;
+  invoices: number | null;
+  purchase_orders: number | null;
+  receipts: number | null;
+  files: number;
+  storage_bytes: number;
+  last_activity: string | null;
+};
+
+export async function listCompanies(): Promise<HQCompany[]> {
+  const { data, error } = await supabase.rpc("hq_list_companies");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as HQCompany[];
+}
+
+export type CompanyAction = "extend_trial" | "set_plan" | "pause" | "unpause" | "close" | "reopen" | "mark_test";
+
+export async function companyAction(
+  companyId: string,
+  action: CompanyAction,
+  reason: string,
+  args: Record<string, unknown> = {},
+): Promise<void> {
+  const { error } = await supabase.rpc("hq_company_action", {
+    p_company: companyId, p_action: action, p_reason: reason, p_args: args,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteCompanyNow(companyId: string, reason: string, confirmName: string) {
+  const { data, error } = await supabase.rpc("hq_company_delete_now", {
+    p_company: companyId, p_reason: reason, p_confirm_name: confirmName,
+  });
+  if (error) throw new Error(error.message);
+  return data as { rows_deleted: number; logins_deleted: number; files_left: number };
+}
+
+/** Downloads the company's data as a JSON file (logins, PINs, passwords and tokens left out). */
+export async function exportCompany(company: HQCompany, reason: string): Promise<void> {
+  const { data, error } = await supabase.rpc("hq_company_export", { p_company: company.id, p_reason: reason });
+  if (error) throw new Error(error.message);
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const safe = company.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "company";
+  a.href = url;
+  a.download = `magnus-export-${safe}-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
