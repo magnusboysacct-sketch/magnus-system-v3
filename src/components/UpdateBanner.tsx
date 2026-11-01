@@ -14,8 +14,14 @@ const CHECK_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes, within the 2-5 minute win
 // The hashed build filenames a page references (e.g. /assets/index-Cx7yT9kP.js, /assets/index-Cx7yT9kP.css),
 // sorted so tag order can't cause a false mismatch. In dev (an unhashed /src/main.tsx entry) this still runs
 // safely — the signature just always matches itself, so the banner never fires locally.
+//
+// Only the built entry <script src="/assets/..."> counts. Since the public site / app split (main.tsx loads App or
+// PublicSite with import()), Vite adds <link rel="modulepreload"> and chunk stylesheet <link>s to the running page
+// as screens load. Those are never in the served index.html, so counting <link>s made every check look like a new
+// deploy and the banner came back right after Refresh. The entry file's hash changes on every deploy that changes
+// any code (it names the hashed chunks it imports), so it alone is a reliable signature.
 function assetSignature(html: string): string {
-  const matches = Array.from(html.matchAll(/<(?:script|link)[^>]+?(?:src|href)="([^"]+\.(?:js|css)(?:\?[^"]*)?)"/gi));
+  const matches = Array.from(html.matchAll(/<script[^>]+?src="(\/assets\/[^"]+\.js)(?:\?[^"]*)?"/gi));
   return matches.map((m) => m[1]).sort().join("|");
 }
 
