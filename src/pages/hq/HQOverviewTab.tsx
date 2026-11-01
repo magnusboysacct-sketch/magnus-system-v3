@@ -3,7 +3,7 @@
 // Template companies and the HQ login's own company are never counted.
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ChevronRight, CircleCheck, ExternalLink, RefreshCw, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ChevronRight, CircleCheck, ExternalLink, Info, RefreshCw, ShieldAlert } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Alert, Btn, Card, CardHeader, Spinner, StatCard } from "../../components/ui";
 import { cn } from "../../lib/theme";
@@ -104,7 +104,9 @@ export default function HQOverviewTab({ onOpenTab }: { onOpenTab: (tab: string) 
               >
                 {a.level === "problem"
                   ? <ShieldAlert size={16} className="text-red-500 shrink-0" />
-                  : <AlertTriangle size={16} className="text-amber-500 shrink-0" />}
+                  : a.level === "info"
+                    ? <Info size={16} className="text-sky-500 shrink-0" />
+                    : <AlertTriangle size={16} className="text-amber-500 shrink-0" />}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium text-slate-800 dark:text-slate-200">{a.title}</div>
                   <div className="text-[11px] text-slate-500">{a.detail}</div>

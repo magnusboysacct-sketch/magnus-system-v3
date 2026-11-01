@@ -252,3 +252,9 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   company's own `payroll_tax_settings` exactly as before. Fixes vs the old defaults: NIS 2.75%→3% (employer 2.5%→3%) with the
   J$5M ceiling, Education Tax and PAYE on pay after NIS, no NHT cap, current threshold. Simulation/shadow calculators
   (`jamaicanPayroll.ts`, `payroll.ts`) are untouched and not used for live pay. Approved pension deductions not yet supported.
+- **Step 9 - Support without spying:** built. Migration `20260964000000_support_access.sql`: `support_grants` (24 h max,
+  one at a time, director/admin only, "End now"), `support_access_log`; `my_support_grant/end/status`; HQ side
+  `hq_support_grants`, `hq_support_tables`, `hq_support_read` are SELECT-only, need an active grant + platform admin with
+  2-step, and log every call (first view notifies the company). Never shown: password/PIN/token/session/salt/bank/routing/
+  SSN/TRN columns and login/session/share-link tables. Overview shows open grants (info). App: `/support-access` page +
+  sidebar link for directors/admins, HQ Support tab. There is no other path for HQ to read company records.

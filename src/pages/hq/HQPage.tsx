@@ -27,6 +27,7 @@ import HQSystemTab from "./HQSystemTab";
 import HQBillsTab from "./HQBillsTab";
 import HQSettingsTab from "./HQSettingsTab";
 import HQActivityTab from "./HQActivityTab";
+import HQSupportTab from "./HQSupportTab";
 import NotificationBell from "../../components/NotificationBell";
 import PlatformBanner from "../../components/PlatformBanner";
 
@@ -47,6 +48,7 @@ const TABS = [
   { key: "errors", label: "Errors" },
   { key: "traffic", label: "Traffic" },
   { key: "system", label: "System" },
+  { key: "support", label: "Support" },
   { key: "settings", label: "Settings" },
   { key: "activity", label: "Activity" },
   { key: "admins", label: "Admins" },
@@ -149,6 +151,7 @@ export default function HQPage() {
         {tab === "bills" && <HQBillsTab isOwner={!!status.is_owner} />}
         {tab === "settings" && <HQSettingsTab isOwner={!!status.is_owner} />}
         {tab === "activity" && <HQActivityTab />}
+        {tab === "support" && <HQSupportTab />}
         {tab === "admins" && <HQAdminsTab isOwner={!!status.is_owner} />}
       </main>
     </Page>

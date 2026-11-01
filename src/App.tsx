@@ -75,6 +75,7 @@ import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import SettingsCostCodesPage  from "./pages/SettingsCostCodesPage";
 // "My plan" (Step 5 of Magnus HQ) replaces the old BillingPage / UpgradePage; /billing and /upgrade both open it.
 import MyPlanPage             from "./pages/MyPlanPage";
+import SupportAccessPage      from "./pages/SupportAccessPage";
 import JamaicanPayrollMonitoringPage from "./pages/JamaicanPayrollMonitoringPage";
 import PayrollComparisonReviewPage   from "./pages/PayrollComparisonReviewPage";
 import PayrollSimulationCenterPage   from "./pages/PayrollSimulationCenterPage";
@@ -376,6 +377,8 @@ export default function App() {
               <Route path="/reports"                       element={<ReportsPage />} />
               <Route path="/billing"                       element={<MyPlanPage />} />
               <Route path="/upgrade"                       element={<MyPlanPage />} />
+              {/* Let Magnus support look at the company read-only for 24 hours (directors / admins; the page checks). */}
+              <Route path="/support-access"                element={<SupportAccessPage />} />
               <Route path="/materials-library" element={<Navigate to="/rates" replace />} />
               {/* Settings: one shell with a tab per section (company, branding, documents, estimates, payroll-rates, master-lists, users, records, notifications, import). */}
               {/* /settings opens the first tab; the old page URLs are the same tab ids, so they keep working. Two pages that no screen links to stay as they were. */}
