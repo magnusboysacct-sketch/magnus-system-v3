@@ -69,7 +69,9 @@ export async function getPushState(): Promise<PushState> {
   return sub ? "on" : "off";
 }
 
-function keyToBytes(base64url: string): Uint8Array<ArrayBuffer> {
+function keyToBytes(input: string): Uint8Array<ArrayBuffer> {
+  const base64url = input.replace(/["'\s]/g, "").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  if (!/^[A-Za-z0-9_-]+$/.test(base64url)) throw new Error("The phone-alert key on the server is not a valid key. Check VAPID_PUBLIC_KEY in Vercel.");
   const pad = "=".repeat((4 - (base64url.length % 4)) % 4);
   const raw = atob((base64url + pad).replace(/-/g, "+").replace(/_/g, "/"));
   const out = new Uint8Array(new ArrayBuffer(raw.length));
@@ -80,7 +82,8 @@ function keyToBytes(base64url: string): Uint8Array<ArrayBuffer> {
 export async function enablePush(): Promise<PushState> {
   if (!pushSupported()) return "unsupported";
   const res = await fetch("/api/push-config", { cache: "no-store" });
-  const { publicKey } = (await res.json().catch(() => ({}))) as { publicKey?: string | null };
+  const { publicKey, problem } = (await res.json().catch(() => ({}))) as { publicKey?: string | null; problem?: string | null };
+  if (problem) throw new Error(`Phone alerts aren't set up right: ${problem}`);
   if (!publicKey) return "not-configured";
 
   const permission = await Notification.requestPermission();

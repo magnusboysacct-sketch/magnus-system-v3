@@ -7,11 +7,24 @@ import webpush from "web-push";
 type Sub = { id: string; endpoint: string; keys: { p256dh: string; auth: string } };
 type Queued = { id: number; title: string; body: string | null; link: string | null; urgent: boolean; kind: string; subscriptions: Sub[] };
 
+/** Vercel values pasted by hand can carry a label, quotes, spaces or a line break. Keep only the key itself. */
+export function cleanKey(raw: string | undefined): string {
+  return String(raw ?? "")
+    .replace(/^\s*(public|private)\s*key\s*:?/i, "")
+    .replace(/["'\s]/g, "")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** A VAPID public key is 65 bytes = 87 base64url characters, starting with "B". */
+export function isPublicKey(k: string): boolean {
+  return /^B[A-Za-z0-9_-]{86}$/.test(k);
+}
+
 function serverEnv() {
   const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/+$/, "");
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  const pub = process.env.VAPID_PUBLIC_KEY || "";
-  const priv = process.env.VAPID_PRIVATE_KEY || "";
+  const pub = cleanKey(process.env.VAPID_PUBLIC_KEY);
+  const priv = cleanKey(process.env.VAPID_PRIVATE_KEY);
   const subject = process.env.VAPID_SUBJECT || "mailto:magnusboysacct@gmail.com";
   return url && key && pub && priv ? { url, key, pub, priv, subject } : null;
 }
@@ -78,8 +91,13 @@ export async function pushDispatchHandler(): Promise<Response> {
 
 /** The PUBLIC VAPID key the browser needs to subscribe. Public by design (the private key never leaves the server). */
 export async function pushConfigHandler(): Promise<Response> {
-  const pub = process.env.VAPID_PUBLIC_KEY || "";
-  return new Response(JSON.stringify({ publicKey: pub || null }), {
+  const pub = cleanKey(process.env.VAPID_PUBLIC_KEY);
+  const ok = isPublicKey(pub);
+  return new Response(JSON.stringify({
+    publicKey: ok ? pub : null,
+    problem: !pub ? "VAPID_PUBLIC_KEY is not set in Vercel." : ok ? null
+      : `VAPID_PUBLIC_KEY in Vercel doesn't look right (${pub.length} characters, should be 87 starting with B).`,
+  }), {
     status: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
