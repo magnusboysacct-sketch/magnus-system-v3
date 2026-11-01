@@ -24,6 +24,7 @@ import HQMoneyTab from "./HQMoneyTab";
 import HQErrorsTab from "./HQErrorsTab";
 import HQTrafficTab from "./HQTrafficTab";
 import HQSystemTab from "./HQSystemTab";
+import HQBillsTab from "./HQBillsTab";
 
 const IDLE_LIMIT_MS = 30 * 60 * 1000;
 const CONTROL_ROOM_KEY = "magnus.hq.controlRoomUntil";
@@ -37,6 +38,7 @@ const TABS = [
   { key: "overview", label: "Overview" },
   { key: "companies", label: "Companies" },
   { key: "money", label: "Money" },
+  { key: "bills", label: "Bills" },
   { key: "health", label: "Health" },
   { key: "errors", label: "Errors" },
   { key: "traffic", label: "Traffic" },
@@ -136,6 +138,7 @@ export default function HQPage() {
         {tab === "errors" && <HQErrorsTab />}
         {tab === "traffic" && <HQTrafficTab />}
         {tab === "system" && <HQSystemTab />}
+        {tab === "bills" && <HQBillsTab isOwner={!!status.is_owner} />}
         {tab === "admins" && <HQAdminsTab isOwner={!!status.is_owner} />}
       </main>
     </Page>

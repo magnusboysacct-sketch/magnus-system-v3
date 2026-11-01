@@ -124,6 +124,9 @@ export type AttentionItem = {
   tab: string;
   title: string;
   detail: string;
+  /** Optional outside link, e.g. a service's billing page ("Pay now"). */
+  link?: string | null;
+  link_label?: string | null;
 };
 
 export type DailyPoint = { day: string; n: number };

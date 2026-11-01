@@ -3,7 +3,7 @@
 // Template companies and the HQ login's own company are never counted.
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ChevronRight, CircleCheck, RefreshCw, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ChevronRight, CircleCheck, ExternalLink, RefreshCw, ShieldAlert } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Alert, Btn, Card, CardHeader, Spinner, StatCard } from "../../components/ui";
 import { cn } from "../../lib/theme";
@@ -65,6 +65,9 @@ export default function HQOverviewTab({ onOpenTab }: { onOpenTab: (tab: string) 
       : <div className="flex justify-center py-16"><Spinner /></div>;
   }
 
+  // Worst first: problems, then warnings, keeping the order the database gave within each level.
+  const rank = { problem: 0, warn: 1, info: 2 } as const;
+  const attention = data.attention.map((a, i) => ({ a, i })).sort((x, y) => rank[x.a.level] - rank[y.a.level] || x.i - y.i).map((x) => x.a);
   const c = data.companies;
   const x = data.numbers;
 
@@ -81,18 +84,21 @@ export default function HQOverviewTab({ onOpenTab }: { onOpenTab: (tab: string) 
             action={<Btn icon={<RefreshCw size={13} className={busy ? "animate-spin" : ""} />} onClick={() => { void load(); }} disabled={busy}>Refresh</Btn>}
           />
         </div>
-        {data.attention.length === 0 ? (
+        {attention.length === 0 ? (
           <div className="flex items-center gap-2 px-4 pb-4 text-sm text-emerald-700 dark:text-emerald-400">
             <CircleCheck size={16} /> Nothing needs you right now.
           </div>
         ) : (
           <div className="border-t border-slate-100 dark:border-white/[0.04]">
-            {data.attention.map((a, i) => (
-              <button
+            {attention.map((a, i) => (
+              <div
                 key={`${a.tab}:${a.title}:${i}`}
+                role="button"
+                tabIndex={0}
                 onClick={() => onOpenTab(a.tab)}
+                onKeyDown={(e) => { if (e.key === "Enter") onOpenTab(a.tab); }}
                 className={cn(
-                  "w-full flex items-center gap-3 px-4 py-3 text-left border-l-4 border-b border-b-slate-100 dark:border-b-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors",
+                  "w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer border-l-4 border-b border-b-slate-100 dark:border-b-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors",
                   a.level === "problem" ? "border-l-red-500" : a.level === "warn" ? "border-l-amber-400" : "border-l-sky-400",
                 )}
               >
@@ -103,8 +109,20 @@ export default function HQOverviewTab({ onOpenTab }: { onOpenTab: (tab: string) 
                   <div className="text-sm font-medium text-slate-800 dark:text-slate-200">{a.title}</div>
                   <div className="text-[11px] text-slate-500">{a.detail}</div>
                 </div>
+                {a.link && (
+                  <a
+                    href={a.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className={cn("shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold text-white",
+                      a.level === "problem" ? "bg-red-600" : "bg-amber-500")}
+                  >
+                    {a.link_label ?? "Open"} <ExternalLink size={10} />
+                  </a>
+                )}
                 <ChevronRight size={14} className="text-slate-400 shrink-0" />
-              </button>
+              </div>
             ))}
           </div>
         )}

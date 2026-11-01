@@ -222,3 +222,10 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   (`src/lib/hq/traffic.ts`), build version from VERCEL_GIT_COMMIT_SHA (vite.config.js). HQ tabs: Health (live checks +
   control room), Errors, Traffic, System. Control room pauses the 30-minute idle sign-out and turns itself off after 12 h.
   Tests: `npm run test:health`.
+- **Step 6b - Bills:** built. Migration `20260961000000_platform_subscriptions.sql`: `platform_subscriptions` (owner-only,
+  pre-filled with Supabase, Vercel, GoDaddy domain, GitHub, Anthropic, Resend, Google/Gmail, UptimeRobot, OpenWeather and their
+  real billing pages; cost and due date blank), `platform_subscription_payments`, save refuses passwords / full card numbers /
+  keys, "I paid it" moves the due date by a month or year, daily reminders (pg_cron 06:20 UTC) 14/7/3/1 days before and every
+  day while overdue, overdue critical bill = PROBLEM in the health check, Overview lines with a Pay now link via
+  `_hq_attention_extra()` (later steps add lines there instead of copying hq_overview again). HQ Bills tab with totals vs income,
+  domain expiry and Supabase space auto-checks.
