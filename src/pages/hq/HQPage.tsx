@@ -147,7 +147,7 @@ export default function HQPage() {
         {tab === "traffic" && <HQTrafficTab />}
         {tab === "system" && <HQSystemTab />}
         {tab === "bills" && <HQBillsTab isOwner={!!status.is_owner} />}
-        {tab === "settings" && <HQSettingsTab />}
+        {tab === "settings" && <HQSettingsTab isOwner={!!status.is_owner} />}
         {tab === "activity" && <HQActivityTab />}
         {tab === "admins" && <HQAdminsTab isOwner={!!status.is_owner} />}
       </main>

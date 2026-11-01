@@ -361,3 +361,43 @@ export async function fetchActivity(filters: { action?: string; admin?: string; 
   if (error) throw new Error(error.message);
   return (data ?? []) as ActivityRow[];
 }
+
+// ─── Statutory rates (Step 8b) ────────────────────────────────────────────────
+
+export type StatutoryRateSet = {
+  id: string;
+  effective_from: string;
+  nis_employee_rate: number;
+  nis_employer_rate: number;
+  nis_annual_ceiling: number | null;
+  nht_employee_rate: number;
+  nht_employer_rate: number;
+  edu_employee_rate: number;
+  edu_employer_rate: number;
+  heart_rate: number;
+  paye_threshold_annual: number;
+  paye_rate_band1: number;
+  paye_rate_band2: number;
+  paye_band1_ceiling: number;
+  source_note: string | null;
+  sources: { label: string; url: string }[];
+  confirmed_at: string | null;
+  confirmed_by_email: string | null;
+  in_use_now: boolean;
+};
+
+export async function fetchStatutoryRateSets(): Promise<StatutoryRateSet[]> {
+  const { data, error } = await supabase.rpc("hq_statutory_rates");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as StatutoryRateSet[];
+}
+
+export async function saveStatutoryRateSet(set: Partial<StatutoryRateSet>, reason: string): Promise<void> {
+  const { error } = await supabase.rpc("hq_statutory_rate_save", { p: set, p_reason: reason });
+  if (error) throw new Error(error.message);
+}
+
+export async function confirmStatutoryRateSet(id: string, confirm: boolean, reason: string): Promise<void> {
+  const { error } = await supabase.rpc("hq_statutory_rate_confirm", { p_id: id, p_confirm: confirm, p_reason: reason });
+  if (error) throw new Error(error.message);
+}

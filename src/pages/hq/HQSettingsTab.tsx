@@ -1,6 +1,6 @@
 // src/pages/hq/HQSettingsTab.tsx — Magnus HQ Settings: message to everyone, maintenance mode, new sign-ups,
 // feature switches and the support contact. Every change asks for a reason and goes in the activity log.
-// (Jamaican statutory rates arrive in Step 8b.)
+// Jamaican statutory rates: HQStatutoryRates (owner-admin confirms each set before payroll uses it).
 
 import { useCallback, useEffect, useState } from "react";
 import { Megaphone, Power, UserPlus, Wrench } from "lucide-react";
@@ -8,10 +8,11 @@ import { Alert, Badge, Btn, Card, CardHeader, Field, Input, Modal, Select, Spinn
 import { cn } from "../../lib/theme";
 import { fetchRawSettings, saveSetting } from "../../lib/hq/platformAdmin";
 import { FEATURE_NAMES, refreshPlatformSettings, type FeatureKey } from "../../lib/platformSettings";
+import HQStatutoryRates from "./HQStatutoryRates";
 
 type Pending = { key: string; value: unknown; title: string; danger?: boolean; note?: string } | null;
 
-export default function HQSettingsTab() {
+export default function HQSettingsTab({ isOwner }: { isOwner: boolean }) {
   const [s, setS] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -159,10 +160,7 @@ export default function HQSettingsTab() {
         <p className="text-[11px] text-slate-500 mt-3">When Charging is on, a company only gets the features in its plan. The Free plan gets everything.</p>
       </Card>
 
-      <Card>
-        <CardHeader title="Jamaican statutory rates" subtitle="NIS, NHT, Education Tax, PAYE with effective dates" />
-        <p className="text-xs text-slate-500">Arrives in the next step (8b), with the official sources for you to confirm before payroll uses them.</p>
-      </Card>
+      <HQStatutoryRates isOwner={isOwner} />
 
       <Modal open={!!pending} onClose={() => setPending(null)} title={pending?.title ?? ""}>
         <div className="space-y-3">

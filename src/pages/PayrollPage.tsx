@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { fetchStaffHrFields, withStaffHr } from "../lib/staffHr";
 import { showPrintPreview } from "../lib/printPreview";
+import { calculateMonthly, fetchStatutoryRates, payDateFor, type StatutoryRates } from "../lib/statutoryPayroll";
 import {
   PageHeader, Card, Badge, Btn, Input, Select, Field, Empty, Tabs, Alert, cn
 } from "../components/ui";
@@ -393,12 +394,34 @@ export default function PayrollPage() {
   const selectedStaff = staffList.find(s => s.id === selectedStaffId) || null;
   const periodLabel = `${MONTH_NAMES[periodMonth - 1]} ${periodYear}`;
 
-  const effectiveRates = taxRates || DEFAULT_RATES;
+  // Jamaican statutory rates confirmed in Magnus HQ for this pay month (last day of the month) win.
+  // If none are confirmed for that date, the company's own rates are used exactly as before.
+  const [statRates, setStatRates] = useState<StatutoryRates | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void fetchStatutoryRates(payDateFor(periodMonth, periodYear)).then((r) => { if (alive) setStatRates(r); });
+    return () => { alive = false; };
+  }, [periodMonth, periodYear]);
+
+  const effectiveRates: TaxRates = useMemo(() => statRates ? {
+    nis_employee_rate: statRates.nis_employee_rate,
+    nht_employee_rate: statRates.nht_employee_rate,
+    education_tax_employee_rate: statRates.edu_employee_rate,
+    paye_threshold_annual: statRates.paye_threshold_annual,
+    paye_rate_band1: statRates.paye_rate_band1,
+    paye_rate_band2: statRates.paye_rate_band2,
+    paye_band1_ceiling: statRates.paye_band1_ceiling,
+    nis_employer_rate: statRates.nis_employer_rate,
+    nht_employer_rate: statRates.nht_employer_rate,
+    education_tax_employer_rate: statRates.edu_employer_rate,
+    heart_trust_rate: statRates.heart_rate,
+    nht_monthly_cap: Number.POSITIVE_INFINITY,
+  } : (taxRates || DEFAULT_RATES), [statRates, taxRates]);
 
   const calcResult: PayrollCalcResult | null = useMemo(() => {
     if (!selectedStaffId || grossNum <= 0) return null;
-    return calculateWithRates(grossNum, effectiveRates);
-  }, [selectedStaffId, grossNum, effectiveRates]);
+    return statRates ? calculateMonthly(grossNum, statRates) : calculateWithRates(grossNum, effectiveRates);
+  }, [selectedStaffId, grossNum, effectiveRates, statRates]);
 
   async function updateRemittances(cid: string, month: number, year: number) {
     const { data: runs, error } = await supabase
@@ -638,7 +661,12 @@ export default function PayrollPage() {
             </Card>
 
             <Card>
-              <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-4">Breakdown — {periodLabel}</div>
+              <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">Breakdown — {periodLabel}</div>
+              <div className="text-[11px] text-slate-500 mb-4">
+                {statRates
+                  ? `Jamaican rates from ${new Date(`${statRates.effective_from.slice(0, 10)}T12:00:00`).toLocaleDateString("en-JM", { dateStyle: "medium" })} · tax-free J$${statRates.paye_threshold_annual.toLocaleString("en-JM")} a year · NIS up to J$${(statRates.nis_annual_ceiling ?? 0).toLocaleString("en-JM")} a year`
+                  : "Using your company's own rates (Settings → Payroll rates)."}
+              </div>
               {!calcResult ? (
                 <div className="text-sm text-slate-400 dark:text-slate-600 text-center py-12">
                   Select a staff member and enter a gross salary to see the calculation

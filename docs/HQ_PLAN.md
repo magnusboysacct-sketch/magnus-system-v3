@@ -244,3 +244,11 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   AI and scanning refuse in `magnusAI.call` and both `performOCR`s, Sign Up tab hidden when closed. HQ tabs: Settings,
   Activity; per-company switches in the company details. Known gap: the magnus-ai server function itself doesn't check the
   switch yet (the app does). Statutory rates = Step 8b.
+- **Step 8b - Statutory rates:** built. Migration `20260963010000_statutory_rates.sql`: `statutory_rates` with
+  effective_from, seeded UNCONFIRMED for 2025-04-01 (threshold J$1,799,376) and 2026-04-01 (J$1,902,360; NIS 3%+3% up to
+  J$5M; NHT 2%+3%; Ed Tax 2.25%+3.5% on pay after NIS; HEART 3%; PAYE 25% to J$6M, 30% above) with sources;
+  `get_statutory_rates(date)` returns only CONFIRMED sets; editing unconfirms. App: `src/lib/statutoryPayroll.ts`
+  (+ `npm run test:statutory`), PayrollPage uses it for the last day of the pay month when a confirmed set exists, else the
+  company's own `payroll_tax_settings` exactly as before. Fixes vs the old defaults: NIS 2.75%→3% (employer 2.5%→3%) with the
+  J$5M ceiling, Education Tax and PAYE on pay after NIS, no NHT cap, current threshold. Simulation/shadow calculators
+  (`jamaicanPayroll.ts`, `payroll.ts`) are untouched and not used for live pay. Approved pension deductions not yet supported.

@@ -200,6 +200,11 @@ export default function SettingsPayrollPage() {
       />
       <div className="max-w-2xl mx-auto p-6 space-y-8">
 
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200">
+          Magnus keeps the official Jamaican rates up to date for every company. When the platform rates are set for a pay month,
+          payroll uses those, and the rates below are only a backup.
+        </div>
+
         {lastUpdated && (
           <p className="text-xs text-slate-400">Last updated: {lastUpdated.date} by {lastUpdated.by}</p>
         )}
