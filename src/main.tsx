@@ -8,7 +8,7 @@ installGlobalErrorReporting()
 
 // The public website (front page, pricing, legal pages, status, feedback) is a small separate bundle, so a visitor on a
 // cheap phone doesn't download the whole app. Signed-in people at "/" still get the app (and land on their dashboard).
-const PUBLIC_ALWAYS = /^\/(pricing|privacy|terms|status|feedback)\/?$/
+const PUBLIC_ALWAYS = /^\/(home|pricing|privacy|terms|status|feedback)\/?$/  // /home = the home page even when signed in (HQ preview)
 
 function hasSession(): boolean {
   try {

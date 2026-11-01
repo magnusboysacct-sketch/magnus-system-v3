@@ -265,3 +265,8 @@ All counts only - no rows, names or amounts from inside a company. Template comp
 - Login: `?mode=signup`, help block, link back to home page.
 - robots.txt, sitemap.xml, `/api/og-page` link previews for WhatsApp/Facebook bots (vercel.json rewrites).
 - HQ Leads / Feedback / Website tabs come in Step 11 (HQ Overview already shows new demo requests and problem reports).
+
+## Step 11 — Leads, Feedback, Website in HQ (done)
+- Migration `20260966000000_hq_leads_feedback_website.sql`: hq_leads / hq_lead_save / hq_lead_add / hq_lead_delete (owner), hq_feedback / hq_feedback_save, hq_legal_list / hq_legal_publish (owner, new version every time, old kept), hq_setting_save accepts 'website' (headline, sub-line, up to 20 FAQ). Demo/problem alerts now open the Leads / Feedback tab. Every change is in the HQ activity log.
+- `src/lib/hq/website.ts`, `src/pages/hq/HQLeadsTab.tsx` (WhatsApp / Call / Email buttons, Jamaican numbers like 555-1234 become 1876…), `HQFeedbackTab.tsx`, `HQWebsiteTab.tsx`.
+- `/home` always shows the public home page (so a signed-in admin can preview it).

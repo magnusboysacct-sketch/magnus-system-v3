@@ -28,6 +28,9 @@ import HQBillsTab from "./HQBillsTab";
 import HQSettingsTab from "./HQSettingsTab";
 import HQActivityTab from "./HQActivityTab";
 import HQSupportTab from "./HQSupportTab";
+import HQLeadsTab from "./HQLeadsTab";
+import HQFeedbackTab from "./HQFeedbackTab";
+import HQWebsiteTab from "./HQWebsiteTab";
 import NotificationBell from "../../components/NotificationBell";
 import PlatformBanner from "../../components/PlatformBanner";
 
@@ -42,6 +45,7 @@ function controlRoomFromStorage(): boolean {
 const TABS = [
   { key: "overview", label: "Overview" },
   { key: "companies", label: "Companies" },
+  { key: "leads", label: "Leads" },
   { key: "money", label: "Money" },
   { key: "bills", label: "Bills" },
   { key: "health", label: "Health" },
@@ -49,6 +53,8 @@ const TABS = [
   { key: "traffic", label: "Traffic" },
   { key: "system", label: "System" },
   { key: "support", label: "Support" },
+  { key: "feedback", label: "Feedback" },
+  { key: "website", label: "Website" },
   { key: "settings", label: "Settings" },
   { key: "activity", label: "Activity" },
   { key: "admins", label: "Admins" },
@@ -152,6 +158,9 @@ export default function HQPage() {
         {tab === "settings" && <HQSettingsTab isOwner={!!status.is_owner} />}
         {tab === "activity" && <HQActivityTab />}
         {tab === "support" && <HQSupportTab />}
+        {tab === "leads" && <HQLeadsTab isOwner={!!status.is_owner} />}
+        {tab === "feedback" && <HQFeedbackTab />}
+        {tab === "website" && <HQWebsiteTab isOwner={!!status.is_owner} />}
         {tab === "admins" && <HQAdminsTab isOwner={!!status.is_owner} />}
       </main>
     </Page>
