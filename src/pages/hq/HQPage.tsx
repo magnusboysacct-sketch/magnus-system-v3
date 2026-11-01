@@ -25,6 +25,7 @@ import HQErrorsTab from "./HQErrorsTab";
 import HQTrafficTab from "./HQTrafficTab";
 import HQSystemTab from "./HQSystemTab";
 import HQBillsTab from "./HQBillsTab";
+import NotificationBell from "../../components/NotificationBell";
 
 const IDLE_LIMIT_MS = 30 * 60 * 1000;
 const CONTROL_ROOM_KEY = "magnus.hq.controlRoomUntil";
@@ -110,6 +111,7 @@ export default function HQPage() {
           <Badge color={status.is_owner ? "violet" : "slate"}>{status.is_owner ? "Owner" : "Admin"}</Badge>
         </div>
         <div className="flex items-center gap-2">
+          <NotificationBell className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5" />
           <Btn variant="ghost" icon={<ArrowLeft size={13} />} onClick={() => nav("/")}>Back to app</Btn>
           <Btn icon={<LogOut size={13} />} onClick={() => { void signOut(); }}>Sign out</Btn>
         </div>

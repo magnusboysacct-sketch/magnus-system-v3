@@ -12,6 +12,7 @@ import { useTheme } from "../hooks/useTheme";
 import { usePlatformStatus } from "../hooks/usePlatformStatus";
 import { recordDailyActivity } from "../lib/hq/activity";
 import { useCompanyStatus } from "../hooks/useCompanyStatus";
+import NotificationBell from "../components/NotificationBell";
 import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
@@ -464,6 +465,8 @@ export default function AppLayout() {
               </div>
             </div>
           )}
+          <NotificationBell label={!collapsed}
+            className={cn("w-full px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")} />
           {(userRole === "director" || userRole === "admin") && (
             <button onClick={() => navigate("/billing")} title="My plan"
               className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
@@ -507,6 +510,10 @@ export default function AppLayout() {
 
       {/* ── Main content ── */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+        {/* Phones: the bell sits top-right, opposite the menu button. */}
+        <div className="md:hidden fixed top-3 right-3 z-30">
+          <NotificationBell className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm text-slate-600 dark:text-slate-300" />
+        </div>
         <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080b10] pt-14 md:pt-0">
           {companyStatus.status === "active" && companyStatus.billing_locked && (
             <div className="px-4 py-2.5 text-xs bg-amber-50 text-amber-800 border-b border-amber-200 dark:bg-amber-400/10 dark:text-amber-300 dark:border-amber-400/20">

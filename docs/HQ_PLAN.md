@@ -229,3 +229,10 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   day while overdue, overdue critical bill = PROBLEM in the health check, Overview lines with a Pay now link via
   `_hq_attention_extra()` (later steps add lines there instead of copying hq_overview again). HQ Bills tab with totals vs income,
   domain expiry and Supabase space auto-checks.
+- **Step 7 - Phone alerts:** built. Migration `20260962000000_notifications_and_push.sql` (`notifications.push_state`,
+  `push_subscriptions` with own-row policies, `save_push_subscription`, `remove_push_subscription`, `send_test_notification`,
+  `push_claim_batch` / `push_report` for the service key only, `push_kick` every minute via pg_cron + pg_net, new-company
+  alert trigger, `hq_health_watch` every 5 minutes). Server: `api/push-dispatch.ts`, `api/push-config.ts` (`web-push`
+  package; env VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, SUPABASE_SERVICE_ROLE_KEY). App: `public/sw.js`
+  (push only, no caching), `src/lib/notifications.ts`, `NotificationBell` in the sidebar, phone top bar and HQ header.
+  Urgent notices use requireInteraction (stay on the lock screen). iPhone needs Add to Home Screen (iOS 16.4+).
