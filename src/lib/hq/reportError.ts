@@ -17,6 +17,9 @@ const IGNORE = [
   /AbortError/i,
   /Load failed$/i,
   /NetworkError when attempting to fetch/i,
+  // Supabase sign-in: two tabs (or a tab Chrome put to sleep) waiting for the same saved-login lock. It retries by
+  // itself and nobody is signed out, so it is noise, not a fault.
+  /Navigator LockManager lock .*timed out/i,
 ];
 
 function hash(s: string): string {
