@@ -130,12 +130,13 @@ export type DailyPoint = { day: string; n: number };
 
 export type HQOverview = {
   generated_at: string;
-  companies: { total: number; trial: number; paid: number; past_due: number; no_plan: number; closed: number; new_30d: number };
+  companies: { total: number; trial: number; paid: number; past_due: number; free?: number; paused?: number; no_plan: number; closed: number; new_30d: number };
   numbers: {
     users: number; active_today: number; active_7d: number; workers: number;
     projects: number; projects_active: number; payroll_runs_month: number;
     invoices_month: number; invoices_total: number; files: number; storage_bytes: number;
     income_month: number | null;
+    charging_on?: boolean;
   };
   attention: AttentionItem[];
   new_companies_daily: DailyPoint[];
@@ -150,7 +151,7 @@ export async function fetchOverview(): Promise<HQOverview> {
 
 // ─── Companies tab ────────────────────────────────────────────────────────────
 
-export type CompanyState = "trial" | "paid" | "past_due" | "no_plan" | "paused" | "closed";
+export type CompanyState = "trial" | "paid" | "past_due" | "free" | "no_plan" | "paused" | "closed";
 
 export type HQCompany = {
   id: string;

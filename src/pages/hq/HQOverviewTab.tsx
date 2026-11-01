@@ -118,7 +118,7 @@ export default function HQOverviewTab({ onOpenTab }: { onOpenTab: (tab: string) 
           <StatCard label="On trial" value={n(c.trial)} />
           <StatCard label="Paid" value={n(c.paid)} color="text-emerald-600 dark:text-emerald-400" />
           <StatCard label="Past due" value={n(c.past_due)} color={c.past_due > 0 ? "text-amber-600 dark:text-amber-400" : undefined} />
-          <StatCard label="Closed" value={n(c.closed)} sub="Arrives with the Companies tab" />
+          <StatCard label="Free / paused / closed" value={`${n(c.free)} / ${n(c.paused)} / ${n(c.closed)}`} sub={x.charging_on ? "Charging is ON" : "Charging is OFF: everyone is free"} />
         </div>
       </div>
 
@@ -132,7 +132,7 @@ export default function HQOverviewTab({ onOpenTab }: { onOpenTab: (tab: string) 
           <StatCard label="Payroll runs" value={n(x.payroll_runs_month)} sub="This month" />
           <StatCard label="Invoices raised" value={n(x.invoices_month)} sub={`This month · ${n(x.invoices_total)} in all`} />
           <StatCard label="Documents stored" value={n(x.files)} sub={fmtBytes(x.storage_bytes)} />
-          <StatCard label="Platform income" value={x.income_month == null ? "—" : `J$${n(x.income_month)}`} sub="This month · arrives with billing" />
+          <StatCard label="Platform income" value={`J$${n(x.income_month)}`} sub="Confirmed this month" />
         </div>
       </div>
 

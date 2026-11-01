@@ -18,7 +18,7 @@ import {
   ChevronLeft, ChevronRight, Building2, Layers,
   Receipt, Truck, HardHat, Banknote, BookOpen,
   ClipboardList, Package, PieChart, Wrench, Landmark,
-  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase, PenTool, ShieldCheck
+  ChevronDown, ChevronUp, Plus, Zap, Menu, X, HelpCircle, MessageSquare, Briefcase, PenTool, ShieldCheck, CreditCard
 } from "lucide-react";
 import { cn, SectionLabel } from "../components/ui";
 import { useSwitchProject } from "../lib/useSwitchProject";
@@ -464,6 +464,13 @@ export default function AppLayout() {
               </div>
             </div>
           )}
+          {(userRole === "director" || userRole === "admin") && (
+            <button onClick={() => navigate("/billing")} title="My plan"
+              className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
+              <CreditCard size={13}/>
+              {!collapsed && <span>My plan</span>}
+            </button>
+          )}
           {platform?.is_admin && (
             <button onClick={() => navigate("/hq")} title="Magnus HQ"
               className={cn("w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-slate-500 dark:text-slate-600 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors", collapsed && "justify-center")}>
@@ -501,6 +508,12 @@ export default function AppLayout() {
       {/* ── Main content ── */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080b10] pt-14 md:pt-0">
+          {companyStatus.status === "active" && companyStatus.billing_locked && (
+            <div className="px-4 py-2.5 text-xs bg-amber-50 text-amber-800 border-b border-amber-200 dark:bg-amber-400/10 dark:text-amber-300 dark:border-amber-400/20">
+              <b>Read-only:</b> your Magnus bill is overdue, so you can view and download everything but can&apos;t add or change anything.{" "}
+              <button onClick={() => navigate("/billing")} className="underline font-semibold">Open My plan</button> to pay. It unlocks as soon as the payment is confirmed.
+            </div>
+          )}
           {companyStatus.status === "paused" && (
             <div className="px-4 py-2.5 text-xs bg-amber-50 text-amber-800 border-b border-amber-200 dark:bg-amber-400/10 dark:text-amber-300 dark:border-amber-400/20">
               <b>Read-only:</b> your company account is paused, so you can view and download everything but can&apos;t add or change anything.

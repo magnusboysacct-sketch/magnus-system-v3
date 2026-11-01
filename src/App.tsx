@@ -73,8 +73,8 @@ import IdVerifyPage            from "./pages/IdVerifyPage";
 import SettingsShell from "./pages/settings/SettingsShell";
 import SettingsMasterCategoriesPage from "./pages/SettingsMasterCategoriesPage";
 import SettingsCostCodesPage  from "./pages/SettingsCostCodesPage";
-import BillingPage            from "./pages/BillingPage";
-import UpgradePage from "./pages/UpgradePage";
+// "My plan" (Step 5 of Magnus HQ) replaces the old BillingPage / UpgradePage; /billing and /upgrade both open it.
+import MyPlanPage             from "./pages/MyPlanPage";
 import JamaicanPayrollMonitoringPage from "./pages/JamaicanPayrollMonitoringPage";
 import PayrollComparisonReviewPage   from "./pages/PayrollComparisonReviewPage";
 import PayrollSimulationCenterPage   from "./pages/PayrollSimulationCenterPage";
@@ -119,7 +119,6 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   const nav = useNavigate();
   const [checking, setChecking] = useState(true);
   const [authed, setAuthed] = useState(false);
-  const [subscriptionExpired, setSubscriptionExpired] = useState(false);
   // System companies (templates, the Magnus HQ login's own company) never expire and never count as tenants.
   const [systemCompany, setSystemCompany] = useState(false);
   // Closed by Magnus HQ: nobody in the company can use it (data is kept until the 90 days are up).
@@ -143,13 +142,8 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
               if (alive) setSystemCompany(isSystem);
               const st = await fetchCompanyStatus();
               if (alive && st.status === "closed") setCompanyClosed(true);
-              const { data: cs } = await supabase.from("company_settings").select("trial_expires_at,subscription_status,subscription_expires_at").eq("company_id", profile.company_id).maybeSingle();
-              if (cs) {
-                const now = new Date();
-                const trialExpired = cs.trial_expires_at ? new Date(cs.trial_expires_at) < now : false;
-                const subActive = cs.subscription_status === "active" && (!cs.subscription_expires_at || new Date(cs.subscription_expires_at) > now);
-                if (trialExpired && !subActive && !isSystem) { if (alive) setSubscriptionExpired(true); }
-              }
+              // An ended trial no longer locks anyone out. Billing is decided by Magnus HQ's Charging switch:
+              // unpaid after the grace days = read-only (enforced by the database), never a lock-out.
             }
           }
         } catch {}
@@ -207,10 +201,6 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   // The Magnus HQ login's own company is a system company: its home is HQ, not a company dashboard.
   if (systemCompany && loc.pathname === "/") {
     return <Navigate to="/hq" replace />;
-  }
-
-  if (subscriptionExpired && loc.pathname !== "/upgrade" && loc.pathname !== "/settings/company" && !loc.pathname.startsWith("/hq")) {
-    return <Navigate to="/upgrade" replace />;
   }
 
   return <>{children}</>;
@@ -373,8 +363,8 @@ export default function App() {
 
               {/* Reports + Settings */}
               <Route path="/reports"                       element={<ReportsPage />} />
-              <Route path="/billing"                       element={<BillingPage />} />
-              <Route path="/upgrade" element={<UpgradePage />} />
+              <Route path="/billing"                       element={<MyPlanPage />} />
+              <Route path="/upgrade"                       element={<MyPlanPage />} />
               <Route path="/materials-library" element={<Navigate to="/rates" replace />} />
               {/* Settings: one shell with a tab per section (company, branding, documents, estimates, payroll-rates, master-lists, users, records, notifications, import). */}
               {/* /settings opens the first tab; the old page URLs are the same tab ids, so they keep working. Two pages that no screen links to stay as they were. */}

@@ -16,13 +16,14 @@ import {
 
 const QUIET_DAYS = 14;
 
-type Filter = "all" | "trial" | "paid" | "past_due" | "paused" | "closed" | "quiet" | "test";
+type Filter = "all" | "trial" | "paid" | "past_due" | "free" | "paused" | "closed" | "quiet" | "test";
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "trial", label: "Trial" },
   { key: "paid", label: "Paid" },
   { key: "past_due", label: "Past due" },
+  { key: "free", label: "Free" },
   { key: "paused", label: "Paused" },
   { key: "closed", label: "Closed" },
   { key: "quiet", label: `Quiet ${QUIET_DAYS}+ days` },
@@ -33,6 +34,7 @@ const STATE_BADGE: Record<CompanyState, { label: string; color: "cyan" | "green"
   trial: { label: "Trial", color: "cyan" },
   paid: { label: "Paid", color: "green" },
   past_due: { label: "Past due", color: "amber" },
+  free: { label: "Free", color: "slate" },
   no_plan: { label: "No plan", color: "slate" },
   paused: { label: "Paused", color: "orange" },
   closed: { label: "Closed", color: "red" },
@@ -95,7 +97,8 @@ function ActionModal({ company, pending, onClose, onDone }: {
         {pending.action === "set_plan" && (
           <Field label="Plan">
             <Select value={plan} onChange={(e) => setPlan(e.target.value)}>
-              <option value="">No plan</option>
+              <option value="">No plan (uses the default)</option>
+              <option value="free">Free (never billed)</option>
               <option value="starter">Starter</option>
               <option value="pro">Pro</option>
               <option value="enterprise">Enterprise</option>
@@ -302,7 +305,7 @@ function CompanyDetail({ company, isOwner, onClose, onChanged }: {
             <Stat label="Purchase orders" value={n(company.purchase_orders)} />
             <Stat label="Receipts" value={n(company.receipts)} />
           </div>
-          <p className="text-[10px] text-slate-500">Seat limits arrive with plans and prices (Step 5). Per-company feature switches arrive with Settings (Step 8).</p>
+          <p className="text-[10px] text-slate-500">Bills and payments for this company are on the Money tab. Per-company feature switches arrive with Settings (Step 8).</p>
 
           {error && <Alert type="error">{error}</Alert>}
 
@@ -385,7 +388,7 @@ export default function HQCompaniesTab({ isOwner }: { isOwner: boolean }) {
   useEffect(() => { void load(); }, [load]);
 
   const counts = useMemo(() => {
-    const c: Record<Filter, number> = { all: 0, trial: 0, paid: 0, past_due: 0, paused: 0, closed: 0, quiet: 0, test: 0 };
+    const c: Record<Filter, number> = { all: 0, trial: 0, paid: 0, past_due: 0, free: 0, paused: 0, closed: 0, quiet: 0, test: 0 };
     for (const r of rows ?? []) {
       c.all++;
       if (r.state in c) c[r.state as Filter]++;

@@ -20,12 +20,14 @@ import HQAdminsTab from "./HQAdminsTab";
 import HQHealthTab from "./HQHealthTab";
 import HQOverviewTab from "./HQOverviewTab";
 import HQCompaniesTab from "./HQCompaniesTab";
+import HQMoneyTab from "./HQMoneyTab";
 
 const IDLE_LIMIT_MS = 30 * 60 * 1000;
 
 const TABS = [
   { key: "overview", label: "Overview" },
   { key: "companies", label: "Companies" },
+  { key: "money", label: "Money" },
   { key: "health", label: "Health" },
   { key: "admins", label: "Admins" },
 ] as const;
@@ -105,6 +107,7 @@ export default function HQPage() {
           />
         )}
         {tab === "companies" && <HQCompaniesTab isOwner={!!status.is_owner} />}
+        {tab === "money" && <HQMoneyTab isOwner={!!status.is_owner} />}
         {tab === "health" && <HQHealthTab />}
         {tab === "admins" && <HQAdminsTab isOwner={!!status.is_owner} />}
       </main>

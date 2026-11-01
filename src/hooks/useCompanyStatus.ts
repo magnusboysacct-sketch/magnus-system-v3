@@ -4,7 +4,13 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-export type CompanyStatus = { status: "active" | "paused" | "closed"; reason?: string | null; purge_after?: string | null };
+export type CompanyStatus = {
+  status: "active" | "paused" | "closed";
+  reason?: string | null;
+  purge_after?: string | null;
+  /** Unpaid after the grace days: read-only until a payment is confirmed. */
+  billing_locked?: boolean;
+};
 
 const ACTIVE: CompanyStatus = { status: "active" };
 

@@ -203,3 +203,12 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   App: closed screen in `RequireAuth`, read-only banner in `AppLayout`. Known gaps, closed in Step 5: SECURITY DEFINER
   functions and storage uploads are not yet blocked for paused companies; stored files of deleted companies are cleared
   by the daily job. Per-company feature switches moved to Step 8. Test-run twice on PGlite (pause/close/reopen/delete/export).
+- **Step 5 - Money:** built. Migration `20260959000000_platform_billing.sql`: `platform_prices` (seeded Starter J$15,000 /
+  Pro J$35,000 / Enterprise custom, extras off), `platform_settings.billing` (Charging starts OFF), `platform_bills`,
+  `platform_payments`, `notifications`, `platform_job_runs`, `companies.billing_locked` (same guard as Pause),
+  `hq_daily_job()` scheduled with pg_cron at 06:10 UTC, `my_plan` / `my_claim_payment`, `hq_billing` and friends,
+  `get_public_prices()` for the front page, a "free" plan that is never billed, storage upload guard, and closed companies
+  refused by `_caller_may_use_company`. App: `MyPlanPage` at /billing and /upgrade (old BillingPage, UpgradePage,
+  plans.ts, usePlan, useSubscription removed); the old "trial ended = locked out" redirect is gone; read-only banner +
+  "My plan" link for directors/admins; HQ Money tab. Still open: paused / unpaid companies can write through the company
+  server functions that check `_caller_may_use_company` (closed ones can't). Test-run twice on PGlite.
