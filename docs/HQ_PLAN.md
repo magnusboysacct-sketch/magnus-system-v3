@@ -276,3 +276,9 @@ All counts only - no rows, names or amounts from inside a company. Template comp
 - `api/hq-ask.ts` + `api/_lib/hqAsk.ts`: Anthropic Messages API with 4 suggest-only tools; suggestions validated server-side; snapshot marked as data (prompt-injection guard). nodeAdapter now passes POST bodies through. Tests: `npm run test:hqask` (10 pass).
 - UI: HQ "Ask HQ" tab (chat, Confirm cards with reason → hq_setting_save, cost per answer), Settings → Ask HQ box, Errors → "Ask HQ about this".
 - Vercel server env: ANTHROPIC_API_KEY (new), SUPABASE_SERVICE_ROLE_KEY (already there for push).
+
+## Step 13 — Manuals (done)
+- `docs/HQ_MANUAL.md` (daily 10 minutes, every tab, security do / don't, when something goes wrong incl. lost authenticator, for your developer: env names, migrations, cron, health URL, tests) — shown in HQ → Manual (with read-aloud).
+- `docs/COMPANY_OWNER_GUIDE.md` (plan, paying, read-only, support access, feedback) — shown in Help → "Your Magnus account" for directors / admins; built into the app (not stored in help_articles) so it is always current and can't be edited or deleted.
+- Help Center's markdown renderer and read-aloud player moved unchanged to `src/components/help/HelpMarkdown.tsx` (shared with HQ).
+- README rewritten for Magnus (HQ section); new CLAUDE.md with the rules.

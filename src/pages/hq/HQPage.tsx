@@ -33,6 +33,7 @@ import HQLeadsTab from "./HQLeadsTab";
 import HQFeedbackTab from "./HQFeedbackTab";
 import HQWebsiteTab from "./HQWebsiteTab";
 import HQAskTab from "./HQAskTab";
+import HQManualTab from "./HQManualTab";
 import NotificationBell from "../../components/NotificationBell";
 import PlatformBanner from "../../components/PlatformBanner";
 
@@ -61,6 +62,7 @@ const TABS = [
   { key: "settings", label: "Settings" },
   { key: "activity", label: "Activity" },
   { key: "admins", label: "Admins" },
+  { key: "manual", label: "Manual" },
 ] as const;
 
 type HQTab = (typeof TABS)[number]["key"];
@@ -170,6 +172,7 @@ export default function HQPage() {
         {tab === "leads" && <HQLeadsTab isOwner={!!status.is_owner} />}
         {tab === "feedback" && <HQFeedbackTab />}
         {tab === "website" && <HQWebsiteTab isOwner={!!status.is_owner} />}
+        {tab === "manual" && <HQManualTab />}
         {tab === "ask" && (
           <HQAskTab onOpenTab={(t) => { const k = isTab(t) ? t : "overview"; setParams(k === "overview" ? {} : { tab: k }, { replace: true }); }} />
         )}
