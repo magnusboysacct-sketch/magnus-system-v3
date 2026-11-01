@@ -101,7 +101,7 @@ export async function verifyTotpCode(factorId: string, code: string): Promise<vo
 // ─── Security scan (Health tab) ───────────────────────────────────────────────
 
 export type ScanLevel = "problem" | "warn" | "ok";
-export type ScanKind = "rls_off" | "no_policies" | "true_policy" | "definer_search_path";
+export type ScanKind = "rls_off" | "no_policies" | "true_policy" | "definer_search_path" | "no_company_guard";
 
 export type SecurityFinding = {
   level: ScanLevel;
@@ -222,4 +222,101 @@ export async function exportCompany(company: HQCompany, reason: string): Promise
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// ─── Health, errors, traffic, system (Step 6) ─────────────────────────────────
+
+export type Level = "ok" | "warn" | "problem";
+
+export type HealthCheck = {
+  key: string;
+  level: Level;
+  label: string;
+  text: string;
+  used_bytes?: number;
+  limit_mb?: number;
+  pct?: number;
+  last_run?: string;
+};
+
+export type HQHealth = {
+  status: Level;
+  checked_at: string;
+  checks: HealthCheck[];
+  limits: { db_mb: number; storage_mb: number; plan?: string } | null;
+};
+
+export async function fetchHealth(): Promise<HQHealth> {
+  const { data, error } = await supabase.rpc("hq_health");
+  if (error) throw new Error(error.message);
+  return data as HQHealth;
+}
+
+export async function saveLimits(dbMb: number, storageMb: number, plan: string, reason: string): Promise<void> {
+  const { error } = await supabase.rpc("hq_limits_save", { p_db_mb: dbMb, p_storage_mb: storageMb, p_plan: plan, p_reason: reason });
+  if (error) throw new Error(error.message);
+}
+
+export type AppErrorGroup = {
+  fingerprint: string;
+  message: string;
+  stack: string | null;
+  screen: string | null;
+  first_seen: string;
+  last_seen: string;
+  total: number;
+  users: number;
+  anon: number;
+  device: string | null;
+  version: string | null;
+  status: "open" | "fixed" | "ignored";
+  fixed_at: string | null;
+  reopened_count: number;
+  note: string | null;
+  last_24h: number;
+};
+
+export async function fetchErrors(): Promise<AppErrorGroup[]> {
+  const { data, error } = await supabase.rpc("hq_errors");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as AppErrorGroup[];
+}
+
+export async function setErrorStatus(fingerprint: string, status: AppErrorGroup["status"], note: string): Promise<void> {
+  const { error } = await supabase.rpc("hq_error_set", { p_fingerprint: fingerprint, p_status: status, p_note: note || null });
+  if (error) throw new Error(error.message);
+}
+
+export type HQTraffic = {
+  by_hour: { hour: string; views: number; signed_in: number }[];
+  by_section: { section: string; views: number }[];
+  visitors_daily: { day: string; signed_in: number; visitors: number }[];
+};
+
+export async function fetchTraffic(): Promise<HQTraffic> {
+  const { data, error } = await supabase.rpc("hq_traffic");
+  if (error) throw new Error(error.message);
+  return data as HQTraffic;
+}
+
+export type ServiceStatus = { name: string; page: string; indicator: string; description: string };
+
+export type HQSystem = {
+  checked_at: string;
+  version: string | null;
+  services: ServiceStatus[];
+  domain: { domain: string; expires_at: string | null };
+  deploys: { configured: boolean; error?: string; deployments?: { url: string | null; state: string | null; target: string; created: number | null; branch: string | null; message: string | null }[] };
+  commits: { configured: boolean; repo: string; error?: string; commits?: { sha: string; message: string; author: string | null; date: string | null; url: string | null }[] };
+  backups: { configured: boolean; project_ref: string | null; error?: string; pitr_enabled?: boolean; count?: number; latest?: { inserted_at?: string; status?: string } | null };
+};
+
+/** Server-side checks (service status, domain, deploys, backups). The server re-checks that you are an HQ admin. */
+export async function fetchSystem(): Promise<HQSystem> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Not signed in.");
+  const res = await fetch("/api/hq-system", { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(res.status === 404 ? "System checks aren't available here (they run on the live site)." : `System checks failed (${res.status}).`);
+  return (await res.json()) as HQSystem;
 }

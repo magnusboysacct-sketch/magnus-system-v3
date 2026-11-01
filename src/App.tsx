@@ -82,6 +82,7 @@ import PayrollSimulationCenterPage   from "./pages/PayrollSimulationCenterPage";
 // Magnus HQ (platform owner control room): loaded on its own so normal users never download it.
 const HQPage = lazy(() => import("./pages/hq/HQPage"));
 import { fetchCompanyStatus } from "./hooks/useCompanyStatus";
+import { recordVisit } from "./lib/hq/traffic";
 
 // --- Auth hash handler --------------------------------------------------------
 
@@ -273,12 +274,20 @@ function FinanceGuard({
 
 // --- App ----------------------------------------------------------------------
 
+// Magnus HQ traffic: anonymous count of which section of the app is used (no names, no ids).
+function TrafficCounter() {
+  const loc = useLocation();
+  useEffect(() => { recordVisit(loc.pathname); }, [loc.pathname]);
+  return null;
+}
+
 export default function App() {
   return (
     <ErrorBoundary context="Application">
       <ProjectProvider>
         <BrowserRouter>
           <AuthHashRouter />
+          <TrafficCounter />
           <ProjectUrlSync />
           <UpdateBanner />
           <Routes>

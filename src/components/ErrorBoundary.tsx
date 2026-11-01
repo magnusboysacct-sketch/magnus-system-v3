@@ -2,6 +2,7 @@ import React, { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { TriangleAlert as AlertTriangle } from "lucide-react";
 import { errorLogger } from "../lib/errorLogger";
+import { reportError } from "../lib/hq/reportError";
 
 interface Props {
   children: ReactNode;
@@ -25,6 +26,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    reportError(error, `screen crashed (${this.props.context || "component"})`);
     errorLogger.log(
       `Error boundary caught error in ${this.props.context || "component"}`,
       error,

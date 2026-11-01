@@ -7,12 +7,14 @@ import { RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Alert, Btn, Card, CardHeader, Spinner } from "../../components/ui";
 import { cn } from "../../lib/theme";
 import { runSecurityScan, type ScanKind, type SecurityFinding } from "../../lib/hq/platformAdmin";
+import HQLiveHealth from "./HQLiveHealth";
 
 const KIND_LABEL: Record<ScanKind, string> = {
   rls_off: "RLS off",
   no_policies: "No policies",
   true_policy: "Open policy",
   definer_search_path: "Unsafe function",
+  no_company_guard: "No pause guard",
 };
 
 function FindingRow({ f }: { f: SecurityFinding }) {
@@ -43,7 +45,9 @@ function FindingRow({ f }: { f: SecurityFinding }) {
   );
 }
 
-export default function HQHealthTab() {
+export default function HQHealthTab({ isOwner, controlRoom, onControlRoom }: {
+  isOwner: boolean; controlRoom: boolean; onControlRoom: (on: boolean) => void;
+}) {
   const [rows, setRows] = useState<SecurityFinding[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,6 +74,7 @@ export default function HQHealthTab() {
 
   return (
     <div className="space-y-4">
+      <HQLiveHealth isOwner={isOwner} controlRoom={controlRoom} onControlRoom={onControlRoom} />
       {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
 
       <Card padding={false}>
@@ -131,8 +136,7 @@ export default function HQHealthTab() {
       </Card>
 
       <p className="text-[11px] text-slate-500">
-        Red means company data could be seen or changed by the wrong people. Gold means check it. Live service health (database, storage, daily job, errors)
-        is added to this tab in a later step.
+        Red means company data could be seen or changed by the wrong people. Gold means check it.
       </p>
     </div>
   );

@@ -8,7 +8,7 @@
 //  * Signs out automatically after 30 minutes without activity.
 //  * Loaded on its own (React.lazy in App.tsx), so normal users never download it.
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, LogOut, ShieldCheck } from "lucide-react";
 import { Badge, Btn, Page, Spinner, Tabs } from "../../components/ui";
@@ -21,14 +21,26 @@ import HQHealthTab from "./HQHealthTab";
 import HQOverviewTab from "./HQOverviewTab";
 import HQCompaniesTab from "./HQCompaniesTab";
 import HQMoneyTab from "./HQMoneyTab";
+import HQErrorsTab from "./HQErrorsTab";
+import HQTrafficTab from "./HQTrafficTab";
+import HQSystemTab from "./HQSystemTab";
 
 const IDLE_LIMIT_MS = 30 * 60 * 1000;
+const CONTROL_ROOM_KEY = "magnus.hq.controlRoomUntil";
+const CONTROL_ROOM_MS = 12 * 60 * 60 * 1000;
+
+function controlRoomFromStorage(): boolean {
+  try { return Number(localStorage.getItem(CONTROL_ROOM_KEY) || 0) > Date.now(); } catch { return false; }
+}
 
 const TABS = [
   { key: "overview", label: "Overview" },
   { key: "companies", label: "Companies" },
   { key: "money", label: "Money" },
   { key: "health", label: "Health" },
+  { key: "errors", label: "Errors" },
+  { key: "traffic", label: "Traffic" },
+  { key: "system", label: "System" },
   { key: "admins", label: "Admins" },
 ] as const;
 
@@ -43,17 +55,29 @@ export default function HQPage() {
   const [params, setParams] = useSearchParams();
   const { status, refresh } = usePlatformStatus();
   const [signingOut, setSigningOut] = useState(false);
+  // Control room mode (a computer that stays open): pauses the idle sign-out, switches itself off after 12 hours.
+  const [controlRoom, setControlRoomState] = useState<boolean>(controlRoomFromStorage);
+  const setControlRoom = useCallback((on: boolean) => {
+    try { if (on) localStorage.setItem(CONTROL_ROOM_KEY, String(Date.now() + CONTROL_ROOM_MS)); else localStorage.removeItem(CONTROL_ROOM_KEY); } catch { /* ignore */ }
+    setControlRoomState(on);
+  }, []);
+  useEffect(() => {
+    if (!controlRoom) return;
+    const t = window.setInterval(() => { if (!controlRoomFromStorage()) setControlRoomState(false); }, 60_000);
+    return () => window.clearInterval(t);
+  }, [controlRoom]);
 
   const tabParam = params.get("tab");
   const tab: HQTab = isTab(tabParam) ? tabParam : "overview";
 
   const signOut = useCallback(async () => {
     setSigningOut(true);
+    try { localStorage.removeItem(CONTROL_ROOM_KEY); } catch { /* ignore */ }
     await supabase.auth.signOut();
     nav("/login?next=%2Fhq", { replace: true });
   }, [nav]);
 
-  useIdleSignOut(IDLE_LIMIT_MS, () => { void signOut(); }, !!status?.is_admin);
+  useIdleSignOut(IDLE_LIMIT_MS, () => { void signOut(); }, !!status?.is_admin && !controlRoom);
 
   if (!status || signingOut) {
     return (
@@ -108,7 +132,10 @@ export default function HQPage() {
         )}
         {tab === "companies" && <HQCompaniesTab isOwner={!!status.is_owner} />}
         {tab === "money" && <HQMoneyTab isOwner={!!status.is_owner} />}
-        {tab === "health" && <HQHealthTab />}
+        {tab === "health" && <HQHealthTab isOwner={!!status.is_owner} controlRoom={controlRoom} onControlRoom={setControlRoom} />}
+        {tab === "errors" && <HQErrorsTab />}
+        {tab === "traffic" && <HQTrafficTab />}
+        {tab === "system" && <HQSystemTab />}
         {tab === "admins" && <HQAdminsTab isOwner={!!status.is_owner} />}
       </main>
     </Page>

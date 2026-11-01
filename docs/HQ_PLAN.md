@@ -212,3 +212,13 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   plans.ts, usePlan, useSubscription removed); the old "trial ended = locked out" redirect is gone; read-only banner +
   "My plan" link for directors/admins; HQ Money tab. Still open: paused / unpaid companies can write through the company
   server functions that check `_caller_may_use_company` (closed ones can't). Test-run twice on PGlite.
+- **Step 6 - Health, errors, control room:** built. Migration `20260960000000_health_errors_traffic.sql` (`_health_checks`,
+  `get_public_health` for /api/health, `hq_health`, space limits in `platform_settings.limits`, `platform_app_errors` +
+  hourly hits with caps, `log_app_error`, `hq_errors`, `hq_error_set`, `platform_traffic` / `platform_visitors`,
+  `log_visit`, `hq_traffic`, weekly `hq_prune_logs` via pg_cron, overview attention lines for space and errors).
+  Server: `api/health.ts` (public, 503 on problem) and `api/hq-system.ts` (admins with 2-step only; optional server env:
+  VERCEL_TOKEN, VERCEL_PROJECT_ID, VERCEL_TEAM_ID, GITHUB_TOKEN, GITHUB_REPO, SUPABASE_ACCESS_TOKEN, HQ_DOMAIN).
+  App: global error reporting (`src/lib/hq/reportError.ts`, ErrorBoundary, main.tsx), anonymous section counts
+  (`src/lib/hq/traffic.ts`), build version from VERCEL_GIT_COMMIT_SHA (vite.config.js). HQ tabs: Health (live checks +
+  control room), Errors, Traffic, System. Control room pauses the 30-minute idle sign-out and turns itself off after 12 h.
+  Tests: `npm run test:health`.
