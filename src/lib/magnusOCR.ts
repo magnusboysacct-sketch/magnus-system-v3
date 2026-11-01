@@ -3,6 +3,7 @@
 // Uses advanced image preprocessing + Tesseract.js
 // No external API costs — runs entirely in the browser
 
+import { requireFeature } from "./platformSettings";
 import { createWorker } from 'tesseract.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -302,6 +303,7 @@ export async function performOCR(
   file: File,
   onProgress?: (msg: string) => void
 ): Promise<OCRResult> {
+  await requireFeature('ocr'); // switched off in Magnus HQ: say so instead of scanning
   onProgress?.('Preprocessing image...');
 
   // Generate multiple preprocessed versions

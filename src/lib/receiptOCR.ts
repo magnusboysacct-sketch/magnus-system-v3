@@ -1,3 +1,4 @@
+import { requireFeature } from "./platformSettings";
 import { createWorker } from 'tesseract.js';
 import { supabase } from './supabase';
 import { classifyDocument, shouldUseInvoiceScanner, type DocumentType, type ClassificationResult } from './documentClassifier';
@@ -3724,6 +3725,7 @@ function createOCRResultFromFields(
 
 // Main OCR function with mode support
 export async function performOCR(file: File, mode: 'fast' | 'deep' = 'fast', scanType: ScanType = 'auto'): Promise<OCRResult | null> {
+  await requireFeature('ocr'); // switched off in Magnus HQ: say so instead of scanning
   try {
     console.log('OCR_PROCESSING_START:', { mode, scanType });
     

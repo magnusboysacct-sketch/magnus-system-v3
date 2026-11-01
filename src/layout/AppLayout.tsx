@@ -13,6 +13,7 @@ import { usePlatformStatus } from "../hooks/usePlatformStatus";
 import { recordDailyActivity } from "../lib/hq/activity";
 import { useCompanyStatus } from "../hooks/useCompanyStatus";
 import NotificationBell from "../components/NotificationBell";
+import PlatformBanner from "../components/PlatformBanner";
 import {
   LayoutDashboard, Users, FolderOpen, FileText, Ruler,
   ShoppingCart, Wallet, BarChart3, Settings, LogOut,
@@ -515,6 +516,7 @@ export default function AppLayout() {
           <NotificationBell className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm text-slate-600 dark:text-slate-300" />
         </div>
         <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-[#080b10] pt-14 md:pt-0">
+          <PlatformBanner />
           {companyStatus.status === "active" && companyStatus.billing_locked && (
             <div className="px-4 py-2.5 text-xs bg-amber-50 text-amber-800 border-b border-amber-200 dark:bg-amber-400/10 dark:text-amber-300 dark:border-amber-400/20">
               <b>Read-only:</b> your Magnus bill is overdue, so you can view and download everything but can&apos;t add or change anything.{" "}

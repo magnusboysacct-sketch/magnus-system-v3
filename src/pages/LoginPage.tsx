@@ -1,4 +1,5 @@
-﻿import React, { useEffect, useState } from "react";
+﻿import { usePlatformSettings } from "../lib/platformSettings";
+import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { passwordErrorMessage, validatePassword } from "../lib/passwordPolicy";
@@ -25,6 +26,8 @@ export default function LoginPage() {
   const loc = useLocation();
 
   const [mode, setMode] = useState<Mode>("signin");
+  // New sign-ups can be closed in Magnus HQ (invited people still sign up through their invitation link).
+  const { signupsOpen } = usePlatformSettings();
   const [email, setEmail] = useState(() => readRememberedEmail());
   const [password, setPassword] = useState("");
   const [rememberEmail, setRememberEmail] = useState(() => !!readRememberedEmail());
@@ -260,7 +263,7 @@ export default function LoginPage() {
           >
             Sign In
           </button>
-          <button
+          {signupsOpen && <button
             type="button"
             onClick={() => switchMode("signup")}
             className={`flex-1 py-3 text-sm transition ${
@@ -270,8 +273,13 @@ export default function LoginPage() {
             }`}
           >
             Sign Up
-          </button>
+          </button>}
         </div>
+        {!signupsOpen && mode === "signup" && (
+          <div className="mx-6 mt-4 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+            New sign-ups are closed right now. If you were invited, use the link in your invitation email.
+          </div>
+        )}
 
         <form className="p-6 space-y-4" onSubmit={onSubmit}>
           {mode === "signup" && (

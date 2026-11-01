@@ -4,6 +4,7 @@
 // If AI fails, app continues working — graceful fallback always
 
 import { supabase } from "./supabase";
+import { requireFeature } from "./platformSettings";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,8 @@ class MagnusAIProvider {
   // ── Core call ───────────────────────────────────────────────────────────────
 
   private async call(action: string, payload: any): Promise<any> {
+    // Switched off in Magnus HQ (platform or company): say so instead of calling the AI.
+    await requireFeature(/scan/i.test(action) ? "ocr" : "ai");
     const { data: { session } } = await supabase.auth.getSession();
 
     console.log("Magnus AI calling:", this.edgeFunctionUrl);

@@ -25,7 +25,10 @@ import HQErrorsTab from "./HQErrorsTab";
 import HQTrafficTab from "./HQTrafficTab";
 import HQSystemTab from "./HQSystemTab";
 import HQBillsTab from "./HQBillsTab";
+import HQSettingsTab from "./HQSettingsTab";
+import HQActivityTab from "./HQActivityTab";
 import NotificationBell from "../../components/NotificationBell";
+import PlatformBanner from "../../components/PlatformBanner";
 
 const IDLE_LIMIT_MS = 30 * 60 * 1000;
 const CONTROL_ROOM_KEY = "magnus.hq.controlRoomUntil";
@@ -44,6 +47,8 @@ const TABS = [
   { key: "errors", label: "Errors" },
   { key: "traffic", label: "Traffic" },
   { key: "system", label: "System" },
+  { key: "settings", label: "Settings" },
+  { key: "activity", label: "Activity" },
   { key: "admins", label: "Admins" },
 ] as const;
 
@@ -99,6 +104,7 @@ export default function HQPage() {
 
   return (
     <Page>
+      <PlatformBanner />
       <header className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-6 py-3 border-b border-slate-200 dark:border-white/[0.06] bg-white dark:bg-[#0c1018]">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-lg bg-slate-900 dark:bg-white/10 text-white flex items-center justify-center flex-shrink-0">
@@ -141,6 +147,8 @@ export default function HQPage() {
         {tab === "traffic" && <HQTrafficTab />}
         {tab === "system" && <HQSystemTab />}
         {tab === "bills" && <HQBillsTab isOwner={!!status.is_owner} />}
+        {tab === "settings" && <HQSettingsTab />}
+        {tab === "activity" && <HQActivityTab />}
         {tab === "admins" && <HQAdminsTab isOwner={!!status.is_owner} />}
       </main>
     </Page>

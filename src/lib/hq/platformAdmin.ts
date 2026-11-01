@@ -323,3 +323,41 @@ export async function fetchSystem(): Promise<HQSystem> {
   if (!res.ok) throw new Error(res.status === 404 ? "System checks aren't available here (they run on the live site)." : `System checks failed (${res.status}).`);
   return (await res.json()) as HQSystem;
 }
+
+// ─── Settings & activity (Step 8a) ────────────────────────────────────────────
+
+export async function fetchRawSettings(): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase.rpc("get_platform_settings");
+  if (error) throw new Error(error.message);
+  return (data ?? {}) as Record<string, unknown>;
+}
+
+export async function saveSetting(key: string, value: unknown, reason: string): Promise<void> {
+  const { error } = await supabase.rpc("hq_setting_save", { p_key: key, p_value: value, p_reason: reason });
+  if (error) throw new Error(error.message);
+}
+
+export type CompanyFeatureInfo = { off: string[]; effective: Record<string, boolean> };
+
+export async function fetchCompanyFeatures(): Promise<Record<string, CompanyFeatureInfo>> {
+  const { data, error } = await supabase.rpc("hq_company_features_list");
+  if (error) throw new Error(error.message);
+  return (data ?? {}) as Record<string, CompanyFeatureInfo>;
+}
+
+export async function saveCompanyFeatures(companyId: string, off: string[], reason: string): Promise<void> {
+  const { error } = await supabase.rpc("hq_company_features", { p_company: companyId, p_off: off, p_reason: reason });
+  if (error) throw new Error(error.message);
+}
+
+export type ActivityRow = {
+  id: number; at: string; admin: string; action: string; target: string | null; target_name: string | null; details: Record<string, unknown>;
+};
+
+export async function fetchActivity(filters: { action?: string; admin?: string; search?: string }): Promise<ActivityRow[]> {
+  const { data, error } = await supabase.rpc("hq_activity", {
+    p_action: filters.action || null, p_admin: filters.admin || null, p_search: filters.search || null, p_limit: 300,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ActivityRow[];
+}

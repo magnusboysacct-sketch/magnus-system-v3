@@ -13,6 +13,7 @@ import {
   companyAction, deleteCompanyNow, exportCompany, listCompanies,
   type CompanyAction, type CompanyState, type HQCompany,
 } from "../../lib/hq/platformAdmin";
+import HQCompanyFeatures from "./HQCompanyFeatures";
 
 const QUIET_DAYS = 14;
 
@@ -305,7 +306,9 @@ function CompanyDetail({ company, isOwner, onClose, onChanged }: {
             <Stat label="Purchase orders" value={n(company.purchase_orders)} />
             <Stat label="Receipts" value={n(company.receipts)} />
           </div>
-          <p className="text-[10px] text-slate-500">Bills and payments for this company are on the Money tab. Per-company feature switches arrive with Settings (Step 8).</p>
+          <p className="text-[10px] text-slate-500">Bills and payments for this company are on the Money tab.</p>
+
+          <HQCompanyFeatures companyId={company.id} />
 
           {error && <Alert type="error">{error}</Alert>}
 

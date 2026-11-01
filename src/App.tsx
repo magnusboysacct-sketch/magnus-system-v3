@@ -83,6 +83,7 @@ import PayrollSimulationCenterPage   from "./pages/PayrollSimulationCenterPage";
 const HQPage = lazy(() => import("./pages/hq/HQPage"));
 import { fetchCompanyStatus } from "./hooks/useCompanyStatus";
 import { recordVisit } from "./lib/hq/traffic";
+import { FeatureGate, MaintenanceGate } from "./components/PlatformGates";
 
 // --- Auth hash handler --------------------------------------------------------
 
@@ -290,6 +291,7 @@ export default function App() {
           <TrafficCounter />
           <ProjectUrlSync />
           <UpdateBanner />
+          <MaintenanceGate>
           <Routes>
             {/* Public */}
             <Route path="/verify/:workerId" element={<WorkerVerifyPage />} />
@@ -302,8 +304,8 @@ export default function App() {
             {/* Standalone portals */}
             <Route path="/client/projects/:projectId" element={<RequireAuth><ClientProjectPage /></RequireAuth>} />
             {/* The worker portal: workers sign in with their worker number + PIN (no Supabase login, see lib/workerPortalApi.ts). The old /worker/portal page needed a staff-style login that cannot exist. */}
-            <Route path="/worker"                     element={<WorkerLoginPage />} />
-            <Route path="/worker/home"                element={<WorkerHomePage />} />
+            <Route path="/worker"                     element={<FeatureGate feature="worker_portal"><WorkerLoginPage /></FeatureGate>} />
+            <Route path="/worker/home"                element={<FeatureGate feature="worker_portal"><WorkerHomePage /></FeatureGate>} />
             <Route path="/worker/portal"              element={<Navigate to="/worker" replace />} />
             <Route path="/field-ops"                  element={<ByCurrentProject><RequireAuth><FieldOpsPage /></RequireAuth></ByCurrentProject>} />
             <Route path="/field"                      element={<Navigate to="/field-payments" replace />} />
@@ -352,7 +354,7 @@ export default function App() {
               <Route path="/accounts-receivable"     element={<FinanceGuard level="full"><AccountsReceivablePage /></FinanceGuard>} />
               <Route path="/accounts-payable"        element={<FinanceGuard level="full"><AccountsPayablePage /></FinanceGuard>} />
               <Route path="/field-payments"          element={<RoleGuard allowedRoles={["director","supervisor","site_user"]}><FieldPaymentsPage /></RoleGuard>} />
-              <Route path="/payroll"                 element={<RoleGuard allowedRoles={[...PAYROLL_ROLES]}><PayrollPage /></RoleGuard>} />
+              <Route path="/payroll"                 element={<FeatureGate feature="payroll"><RoleGuard allowedRoles={[...PAYROLL_ROLES]}><PayrollPage /></RoleGuard></FeatureGate>} />
 
               {/* People */}
               <Route path="/workers"                 element={<RoleGuard allowedRoles={[...WORKERS_PAGE_ROLES]}><WorkersPage /></RoleGuard>} />
@@ -383,21 +385,21 @@ export default function App() {
               <Route path="/settings/:tab"                 element={<RoleGuard allowedRoles={["director"]}><SettingsShell /></RoleGuard>} />
 
               {/* Admin / Payroll */}
-              <Route path="/admin/jamaican-payroll-monitoring"          element={<JamaicanPayrollMonitoringPage />} />
-              <Route path="/admin/payroll-comparison-review"            element={<PayrollComparisonReviewPage />} />
-              <Route path="/admin/payroll-simulation-center"            element={<PayrollSimulationCenterPage />} />
-              <Route path="/projects/:currentProjectId/admin/payroll-simulation-center" element={<ByUrlProject><PayrollSimulationCenterPage /></ByUrlProject>} />
+              <Route path="/admin/jamaican-payroll-monitoring"          element={<FeatureGate feature="payroll"><JamaicanPayrollMonitoringPage /></FeatureGate>} />
+              <Route path="/admin/payroll-comparison-review"            element={<FeatureGate feature="payroll"><PayrollComparisonReviewPage /></FeatureGate>} />
+              <Route path="/admin/payroll-simulation-center"            element={<FeatureGate feature="payroll"><PayrollSimulationCenterPage /></FeatureGate>} />
+              <Route path="/projects/:currentProjectId/admin/payroll-simulation-center" element={<FeatureGate feature="payroll"><ByUrlProject><PayrollSimulationCenterPage /></ByUrlProject></FeatureGate>} />
             </Route>
 
-            <Route path="/portal/:token" element={<ClientPortalPage />} />
+            <Route path="/portal/:token" element={<FeatureGate feature="client_portal"><ClientPortalPage /></FeatureGate>} />
             {/* A field officer's own invite link: signs in as that one contact, who sees only their assigned projects */}
-            <Route path="/portal/contact/:contactToken" element={<ClientPortalPage />} />
+            <Route path="/portal/contact/:contactToken" element={<FeatureGate feature="client_portal"><ClientPortalPage /></FeatureGate>} />
             {/* Public, no login: a photo share link (checked server-side by the photo-share-resolve function) */}
             <Route path="/shared/:token" element={<SharedPhotosPage />} />
             {/* Public, no login: a payment receipt link (checked by the get_public_receipt database function) */}
-            <Route path="/receipt/:token" element={<PublicReceiptPage />} />
-            <Route path="/client-login" element={<ClientLoginPage />} />
-            <Route path="/client-reset-password" element={<ClientResetPasswordPage />} />
+            <Route path="/receipt/:token" element={<FeatureGate feature="public_receipts"><PublicReceiptPage /></FeatureGate>} />
+            <Route path="/client-login" element={<FeatureGate feature="client_portal"><ClientLoginPage /></FeatureGate>} />
+            <Route path="/client-reset-password" element={<FeatureGate feature="client_portal"><ClientResetPasswordPage /></FeatureGate>} />
             {/* Session-based login (ClientLoginPage.tsx's email+password flow)
                 is its own route with its own param name, distinct from
                 /portal/:token's magic-link flow above — the two used to
@@ -406,7 +408,7 @@ export default function App() {
                 actually read (wrong param name), so a client logging in
                 via email+password landed on a page stuck in "loading"
                 forever. */}
-            <Route path="/client-portal/session/:sessionToken" element={<ClientPortalPage />} />
+            <Route path="/client-portal/session/:sessionToken" element={<FeatureGate feature="client_portal"><ClientPortalPage /></FeatureGate>} />
             {/* Staff pages: full-screen (no sidebar), login required */}
             <Route path="/projects/:projectId/site-visit" element={<ByUrlProject><RequireAuth><SiteVisitPage /></RequireAuth></ByUrlProject>} />
             <Route path="/projects/:projectId/plans" element={<ByUrlProject><RequireAuth><ProjectPlansPage /></RequireAuth></ByUrlProject>} />
@@ -419,6 +421,7 @@ export default function App() {
             <Route path="/hq" element={<Suspense fallback={null}><HQPage /></Suspense>} />
             <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+          </MaintenanceGate>
         </BrowserRouter>
       </ProjectProvider>
     </ErrorBoundary>

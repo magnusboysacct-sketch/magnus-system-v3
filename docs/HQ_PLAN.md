@@ -236,3 +236,11 @@ All counts only - no rows, names or amounts from inside a company. Template comp
   package; env VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, SUPABASE_SERVICE_ROLE_KEY). App: `public/sw.js`
   (push only, no caching), `src/lib/notifications.ts`, `NotificationBell` in the sidebar, phone top bar and HQ header.
   Urgent notices use requireInteraction (stay on the lock screen). iPhone needs Add to Home Screen (iOS 16.4+).
+- **Step 8a - Settings:** built. Migration `20260963000000_platform_settings_features.sql` (`hq_setting_save` for banner /
+  maintenance / sign-ups / features / support contact, `companies.features_off`, `_effective_features` + `my_features`,
+  sign-up gate trigger on auth.users that still lets invited people in, `hq_company_features`, `hq_activity`).
+  App: `src/lib/platformSettings.ts` (shared, cached), `PlatformBanner` (AppLayout + HQ), `MaintenanceGate` around all routes
+  (admins, /hq, /login, /status stay open), `FeatureGate` on payroll / client portal / worker portal / public receipt routes,
+  AI and scanning refuse in `magnusAI.call` and both `performOCR`s, Sign Up tab hidden when closed. HQ tabs: Settings,
+  Activity; per-company switches in the company details. Known gap: the magnus-ai server function itself doesn't check the
+  switch yet (the app does). Statutory rates = Step 8b.
