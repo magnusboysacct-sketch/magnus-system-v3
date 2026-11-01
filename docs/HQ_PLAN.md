@@ -282,3 +282,8 @@ All counts only - no rows, names or amounts from inside a company. Template comp
 - `docs/COMPANY_OWNER_GUIDE.md` (plan, paying, read-only, support access, feedback) — shown in Help → "Your Magnus account" for directors / admins; built into the app (not stored in help_articles) so it is always current and can't be edited or deleted.
 - Help Center's markdown renderer and read-aloud player moved unchanged to `src/components/help/HelpMarkdown.tsx` (shared with HQ).
 - README rewritten for Magnus (HQ section); new CLAUDE.md with the rules.
+
+## After Step 13 — closing the gaps
+- `20260968000000_company_write_guard.sql`: BEFORE INSERT/UPDATE/DELETE trigger `hq_write_guard` on every public table with a uuid `company_id` (not platform_*, not the skip list: notifications, feedback, support_*, help_articles, user_profiles, ai_usage_log, portal/worker sessions & access, client_portal_activity, share links, leads). Refuses changes for paused / closed / billing_locked companies unless the caller is pg_cron / no app login, service_role or a platform admin. Closes the hole where security definer functions only refused closed companies. Tables without company_id (child rows keyed by a parent id) follow their parent through the app; same limit as the RLS guard.
+- `supabase/functions/magnus-ai`: checks `my_features()` with the caller's login (scan → ocr, else ai) before calling Anthropic, so the HQ switch can't be bypassed by calling the function directly.
+- UpdateBanner: signature = entry `<script src="/assets/...">` only (lazy chunks add <link>s at runtime → banner looped). reportError ignores the supabase-js Navigator LockManager timeout.

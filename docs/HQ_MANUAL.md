@@ -188,6 +188,7 @@ Use **Forgot password** on the login page. The 2-step code is still asked for be
 20260965000000_public_site_leads_feedback.sql
 20260966000000_hq_leads_feedback_website.sql
 20260967000000_hq_assistant.sql
+20260968000000_company_write_guard.sql
 ```
 
 Run each in the Supabase SQL Editor, then record it with npx supabase migration repair --status applied VERSION --linked.

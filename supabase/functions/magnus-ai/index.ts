@@ -223,6 +223,22 @@ Deno.serve(async (req) => {
 
     if (!action) throw new Error("action field is required");
 
+    // ── Feature switch (Magnus HQ): the same rule as the app. Scans count as "Receipt scanning" (ocr), the rest as
+    // "AI". Checked here too, so switching it off in HQ works even if someone calls this function directly.
+    // my_features() runs with the caller's own login, so it applies their company's plan and switches.
+    const feature = /scan/i.test(String(action)) ? "ocr" : "ai";
+    const { data: features, error: featuresError } = await supabaseUser.rpc("my_features");
+    if (featuresError || !features || (features as Record<string, boolean>)[feature] === false) {
+      return jsonResponse({
+        success: false,
+        error: featuresError
+          ? "Could not check whether this feature is switched on. Please try again."
+          : feature === "ocr"
+            ? "Receipt scanning is switched off for your company."
+            : "The AI assistant is switched off for your company.",
+      }, featuresError ? 503 : 403);
+    }
+
     let messages: any[] = [];
 
     if (action === "scan_id" || action === "scan_receipt" || action === "scan_invoice" || action === "scan_statement") {

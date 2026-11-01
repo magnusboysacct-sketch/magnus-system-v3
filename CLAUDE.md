@@ -26,6 +26,10 @@ Read this before changing anything. It applies to people and to AI editors alike
   policies. They are read and written ONLY through `security definer` functions that start with
   `platform_require()` (read) or `platform_check()` (change + activity log). Those require a platform admin with 2-step
   login (aal2) and raise "not found" for everyone else, so HQ never reveals that it exists.
+- Paused / closed / unpaid companies are read-only twice over: RLS guard policies (`hq_apply_company_guards()`) and a
+  write trigger that even security definer functions can't skip (`hq_apply_company_write_guards()`). After adding a new
+  table with `company_id`, run both: `select public.hq_apply_company_guards(); select public.hq_apply_company_write_guards();`
+  (put that line at the end of the migration that creates the table).
 - `set search_path = public, pg_temp` on every security definer function. Revoke from `public, anon` and grant only what is needed.
 - Company data stays private. HQ sees counts and totals per company, never another company's documents, payroll or
   clients, except during a support grant the company gave (24 h, read-only, every screen logged and shown to them).
