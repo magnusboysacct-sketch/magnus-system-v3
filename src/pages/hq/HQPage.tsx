@@ -31,6 +31,7 @@ import HQSupportTab from "./HQSupportTab";
 import HQLeadsTab from "./HQLeadsTab";
 import HQFeedbackTab from "./HQFeedbackTab";
 import HQWebsiteTab from "./HQWebsiteTab";
+import HQAskTab from "./HQAskTab";
 import NotificationBell from "../../components/NotificationBell";
 import PlatformBanner from "../../components/PlatformBanner";
 
@@ -44,6 +45,7 @@ function controlRoomFromStorage(): boolean {
 
 const TABS = [
   { key: "overview", label: "Overview" },
+  { key: "ask", label: "Ask HQ" },
   { key: "companies", label: "Companies" },
   { key: "leads", label: "Leads" },
   { key: "money", label: "Money" },
@@ -161,6 +163,9 @@ export default function HQPage() {
         {tab === "leads" && <HQLeadsTab isOwner={!!status.is_owner} />}
         {tab === "feedback" && <HQFeedbackTab />}
         {tab === "website" && <HQWebsiteTab isOwner={!!status.is_owner} />}
+        {tab === "ask" && (
+          <HQAskTab onOpenTab={(t) => { const k = isTab(t) ? t : "overview"; setParams(k === "overview" ? {} : { tab: k }, { replace: true }); }} />
+        )}
         {tab === "admins" && <HQAdminsTab isOwner={!!status.is_owner} />}
       </main>
     </Page>

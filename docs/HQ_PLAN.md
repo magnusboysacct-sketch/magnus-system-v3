@@ -270,3 +270,9 @@ All counts only - no rows, names or amounts from inside a company. Template comp
 - Migration `20260966000000_hq_leads_feedback_website.sql`: hq_leads / hq_lead_save / hq_lead_add / hq_lead_delete (owner), hq_feedback / hq_feedback_save, hq_legal_list / hq_legal_publish (owner, new version every time, old kept), hq_setting_save accepts 'website' (headline, sub-line, up to 20 FAQ). Demo/problem alerts now open the Leads / Feedback tab. Every change is in the HQ activity log.
 - `src/lib/hq/website.ts`, `src/pages/hq/HQLeadsTab.tsx` (WhatsApp / Call / Email buttons, Jamaican numbers like 555-1234 become 1876…), `HQFeedbackTab.tsx`, `HQWebsiteTab.tsx`.
 - `/home` always shows the public home page (so a signed-in admin can preview it).
+
+## Step 12 — Ask HQ assistant (done)
+- Started by a second editor (browser Claude), finished here. Migration `20260967000000_hq_assistant.sql`: platform_settings 'assistant' (on/off, cap_usd, model, price_in/out; starts OFF), platform_ai_usage (tokens + cost only, no text), hq_assistant_status / hq_assistant_save (owner) / hq_assistant_begin (admin login: on, cap incl. worst case, 60/hour, snapshot = overview + health + open errors + settings) / hq_assistant_record (service_role only).
+- `api/hq-ask.ts` + `api/_lib/hqAsk.ts`: Anthropic Messages API with 4 suggest-only tools; suggestions validated server-side; snapshot marked as data (prompt-injection guard). nodeAdapter now passes POST bodies through. Tests: `npm run test:hqask` (10 pass).
+- UI: HQ "Ask HQ" tab (chat, Confirm cards with reason → hq_setting_save, cost per answer), Settings → Ask HQ box, Errors → "Ask HQ about this".
+- Vercel server env: ANTHROPIC_API_KEY (new), SUPABASE_SERVICE_ROLE_KEY (already there for push).

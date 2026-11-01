@@ -2,7 +2,8 @@
 // "Copy note for developer" puts everything a developer needs on the clipboard. "Mark fixed": if it happens again it reopens.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Copy, EyeOff, RefreshCw, RotateCcw } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Bot, CheckCircle2, Copy, EyeOff, RefreshCw, RotateCcw } from "lucide-react";
 import { Alert, Badge, Btn, Card, Spinner } from "../../components/ui";
 import { cn } from "../../lib/theme";
 import { fetchErrors, setErrorStatus, type AppErrorGroup } from "../../lib/hq/platformAdmin";
@@ -38,6 +39,7 @@ export default function HQErrorsTab() {
   const [show, setShow] = useState<"open" | "all">("open");
   const [openFp, setOpenFp] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -93,6 +95,7 @@ export default function HQErrorsTab() {
               <pre className="text-[10px] leading-relaxed bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.06] rounded-lg p-3 overflow-x-auto max-h-64 whitespace-pre-wrap break-all">{e.stack || "(no stack)"}</pre>
               <div className="flex flex-wrap gap-2">
                 <Btn icon={<Copy size={13} />} onClick={() => { void copy(e); }}>Copy note for developer</Btn>
+                <Btn icon={<Bot size={13} />} onClick={() => navigate(`/hq?tab=ask&q=${encodeURIComponent(`Explain this error in plain words: "${e.message.slice(0, 200)}" on ${e.screen ?? "an unknown screen"}. What broke, who does it affect, and what should I tell the developer?`)}`)}>Ask HQ about this</Btn>
                 {e.status !== "fixed" && <Btn variant="primary" icon={<CheckCircle2 size={13} />} onClick={() => { void set(e, "fixed"); }}>Mark fixed</Btn>}
                 {e.status === "open" && <Btn icon={<EyeOff size={13} />} onClick={() => { void set(e, "ignored"); }}>Ignore</Btn>}
                 {e.status !== "open" && <Btn icon={<RotateCcw size={13} />} onClick={() => { void set(e, "open"); }}>Reopen</Btn>}

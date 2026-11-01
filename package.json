@@ -11,6 +11,7 @@
     "test:share": "tsx --test scripts/tests/sharePreview.test.ts scripts/tests/receiptHtml.test.ts",
     "test:health": "tsx --test scripts/tests/health.test.ts",
     "test:statutory": "tsx --test scripts/tests/statutoryPayroll.test.ts",
+    "test:hqask": "tsx --test scripts/tests/hqAsk.test.ts",
     "test:storage": "tsx --test scripts/tests/storageRefs.test.ts",
     "test:portallookup": "tsx --test scripts/tests/portalClientLookup.test.ts",
     "test:clients": "tsx --test scripts/tests/clientPortalEmail.test.ts",

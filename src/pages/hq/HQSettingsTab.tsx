@@ -9,6 +9,7 @@ import { cn } from "../../lib/theme";
 import { fetchRawSettings, saveSetting } from "../../lib/hq/platformAdmin";
 import { FEATURE_NAMES, refreshPlatformSettings, type FeatureKey } from "../../lib/platformSettings";
 import HQStatutoryRates from "./HQStatutoryRates";
+import HQAskSettings from "./HQAskSettings";
 
 type Pending = { key: string; value: unknown; title: string; danger?: boolean; note?: string } | null;
 
@@ -161,6 +162,7 @@ export default function HQSettingsTab({ isOwner }: { isOwner: boolean }) {
       </Card>
 
       <HQStatutoryRates isOwner={isOwner} />
+      <HQAskSettings isOwner={isOwner} />
 
       <Modal open={!!pending} onClose={() => setPending(null)} title={pending?.title ?? ""}>
         <div className="space-y-3">
