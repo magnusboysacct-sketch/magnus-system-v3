@@ -188,3 +188,24 @@ Screens: Payables **From a PO** (src/components/BillFromPOModal.tsx), and **Ente
 delivered Purchase Order (opens /accounts-payable?po=<id>). Flags show on the bill's lines.
 
 Next: Step 5 - bank statements and matching.
+
+## Step 5: bank statement lines - match or add (done)
+
+Migration `20260982000000_bank_review.sql`:
+- bank_transactions.review_action (matched / added / excluded; empty = to review), reviewed_by, reviewed_at.
+  Direction: transaction_type credit / transfer_in = money in; amount is stored positive.
+- gl_transactions.source_type also allows 'bank_line'.
+- bank_line_suggestions(line): posted entries on that bank's chart account, same direction and amount, within 10 days,
+  not matched to another line. bank_line_match(line, entry) links without posting. bank_line_add(line, account, project, note)
+  posts DR account / CR bank (money out) or DR bank / CR account (money in); refuses the bank itself, headings,
+  receivables / payables (use Record Payment / Pay bill, then Match), lines before the books start date.
+  bank_line_exclude(line, reason). bank_line_undo(line) - an added entry is reversed. bank_auto_match(bank account) matches
+  every line with exactly one candidate within 3 days. Director / admin / office user.
+
+Screens: **Bank review** (/finance/bank-review, src/pages/BankReviewPage.tsx): choose the bank account, "In your books" vs
+"Bank says" (latest statement balance), **Match the obvious ones**, then each line: Match a suggestion, Add to the books
+(account + project), or Exclude; Done / Excluded tabs with Undo. Upload Statement ends with "Review the lines".
+The Transactions page's old Post / Accept / Bulk post / Auto-post buttons posted with made-up account names ("cash",
+"expense", "revenue") and never worked: they now open Bank review for that bank account.
+
+Not yet: credit card statement lines; reconciliation (Step 6).

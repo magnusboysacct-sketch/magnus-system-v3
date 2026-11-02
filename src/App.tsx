@@ -54,6 +54,7 @@ import FinancePage            from "./pages/FinancePage";
 import FinanceTransactionsPage from "./pages/FinanceTransactionsPage";
 import FinanceReportsPage     from "./pages/FinanceReportsPage";
 import UploadStatementPage    from "./pages/UploadStatementPage";
+import BankReviewPage         from "./pages/BankReviewPage";
 import BankAccountsPage       from "./pages/BankAccountsPage";
 import ExpensesPage           from "./pages/ExpensesPage";
 import CashFlowPage           from "./pages/CashFlowPage";
@@ -352,6 +353,7 @@ export default function App() {
               <Route path="/cash-flow"               element={<FinanceGuard level="full"><CashFlowPage /></FinanceGuard>} />
               <Route path="/finance/bank-accounts"   element={<FinanceGuard level="full"><BankAccountsPage /></FinanceGuard>} />
               <Route path="/finance/upload-statement" element={<FinanceGuard level="full"><UploadStatementPage /></FinanceGuard>} />
+              <Route path="/finance/bank-review"     element={<FinanceGuard level="full"><BankReviewPage /></FinanceGuard>} />
               <Route path="/accounts-receivable"     element={<FinanceGuard level="full"><AccountsReceivablePage /></FinanceGuard>} />
               <Route path="/accounts-payable"        element={<FinanceGuard level="full"><AccountsPayablePage /></FinanceGuard>} />
               <Route path="/field-payments"          element={<RoleGuard allowedRoles={["director","supervisor","site_user"]}><FieldPaymentsPage /></RoleGuard>} />

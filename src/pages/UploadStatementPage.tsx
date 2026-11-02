@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { supabase } from "../lib/supabase";
+import { useNavigate } from "react-router-dom";
 import { magnusAI, type StatementTransaction } from "../lib/magnusAI";
 import { uploadBankStatement, storeBankTransactions } from "../services/finance/bankParser";
 import type { BankAccount as FinanceBankAccount } from "../lib/finance";
@@ -54,6 +55,7 @@ async function pdfToImages(file: File): Promise<File[]> {
 }
 
 export default function UploadStatementPage() {
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [accountId, setAccountId] = useState("");
   const [stage, setStage] = useState<Stage>("select");
@@ -371,8 +373,13 @@ export default function UploadStatementPage() {
         {stage === "done" && (
           <Card>
             <Empty icon={<Check size={20} className="text-emerald-400"/>} title="Statement uploaded"
-              body={`${extracted.length} transactions were added. Head to Finance > Transactions to review, classify, and match them.`}
-              action={<Btn variant="primary" size="sm" onClick={reset}>Upload Another</Btn>}/>
+              body={`${extracted.length} transactions were added. Now match each line to your books on Bank review.`}
+              action={
+                <div className="flex gap-2">
+                  <Btn variant="primary" size="sm" onClick={() => navigate(`/finance/bank-review?account=${accountId}`)}>Review the lines</Btn>
+                  <Btn variant="ghost" size="sm" onClick={reset}>Upload Another</Btn>
+                </div>
+              }/>
           </Card>
         )}
       </div>

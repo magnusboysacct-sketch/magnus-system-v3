@@ -33,7 +33,6 @@ import type {
 import { fetchBankAccounts } from "../lib/finance";
 import { fetchBankTransactions } from "../services/finance/bankParser";
 import { fetchCreditCardTransactions, fetchCreditCardAccounts } from "../services/finance/creditCard";
-import { postTransactionWithData } from "../services/finance/postingEngine";
 import type { BankAccount } from "../lib/finance";
 import type { BankTransaction } from "../services/finance/bankParser";
 import type { CreditCardTransaction } from "../services/finance/creditCard";
@@ -224,7 +223,7 @@ export default function FinanceTransactionsPage() {
   const [statusFilter, setStatusFilter] = useState<TransactionStatus>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [bulkBusy, setBulkBusy] = useState<BulkOperation>(null);
-  const [postingLoading, setPostingLoading] = useState<string | null>(null);
+  const [postingLoading] = useState<string | null>(null);   // was set by the old posting; bank lines are posted on Bank review now
 
   // Create transaction modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -576,45 +575,20 @@ export default function FinanceTransactionsPage() {
     }
   }
 
-  async function handleManualPost(transaction: CombinedTransaction) {
-    if (!companyId) return;
-
-    setPostingLoading(transaction.id);
-    try {
-      // Use posting engine for proper double-entry posting
-      await postTransactionWithData({
-        source_type: transaction.source_type || "manual",
-        source_id: transaction.source_id || "",
-        company_id: companyId,
-        transaction_date: transaction.transaction_date,
-        description: transaction.description,
-        amount: Math.abs(transaction.amount),
-        // Map to proper accounts based on transaction type
-        debit_account_id: transaction.amount >= 0 ? "cash" : "expense", // Simplified mapping
-        credit_account_id: transaction.amount >= 0 ? "revenue" : "cash", // Simplified mapping
-        project_id: detailForm.projectId || null,
-        notes: `Manual posting from ${transaction.type} transaction`,
-      });
-
-      const updatedTxn: CombinedTransaction = {
-        ...transaction,
-        match_status: "posted",
-        gl_transaction_id: `manual_${Date.now()}_${transaction.id}`,
-      };
-
-      updateTransactionInState(transaction.id, updatedTxn);
-      
-      // Clear selection if this was the selected transaction
-      if (selectedTransaction?.id === transaction.id) {
-        setSelectedTransaction(null);
-        setSelectedIds([]);
-      }
-    } catch (postError) {
-      console.error("Error posting transaction:", postError);
-      setError("Failed to post transaction");
-    } finally {
-      setPostingLoading(null);
+  // Banking Step 5: bank lines are matched to the books, or added with a real account, on Bank review
+  // (/finance/bank-review). The old posting here used made-up account names ("cash", "expense", "revenue") and
+  // could never post correctly, so these buttons now open Bank review for that bank account.
+  function openBankReview(transaction?: CombinedTransaction) {
+    if (transaction && transaction.type === "credit") {
+      setError("Credit card lines can't be posted from here yet. Bank lines are matched on Bank review.");
+      return;
     }
+    const account = transaction?.bank_account_id;
+    navigate(account ? `/finance/bank-review?account=${account}` : "/finance/bank-review");
+  }
+
+  async function handleManualPost(transaction: CombinedTransaction) {
+    openBankReview(transaction);
   }
 
   const isCreateFormValid = createForm.transaction_date && 
@@ -633,16 +607,7 @@ export default function FinanceTransactionsPage() {
     });
   }
 
-  function updateTransactionInState(transactionId: string, updatedTxn: CombinedTransaction) {
-    setTransactions((prev) =>
-      prev.map((txn) => (txn.id === transactionId ? updatedTxn : txn))
-    );
 
-    // Update selectedTransaction if it matches
-    if (selectedTransaction?.id === transactionId) {
-      setSelectedTransaction(updatedTxn);
-    }
-  }
 
   async function loadTransactionsData() {
     if (!projectId) {
@@ -759,44 +724,9 @@ export default function FinanceTransactionsPage() {
     }
   }
 
-  async function handleAcceptMatch(transaction: CombinedTransaction, match: MatchingResult) {
-    if (!companyId) return;
-
-    setPostingLoading(transaction.id);
-    try {
-      // Use posting engine with matched account
-      await postTransactionWithData({
-        source_type: transaction.source_type || "manual",
-        source_id: transaction.source_id || "",
-        company_id: companyId,
-        transaction_date: transaction.transaction_date,
-        description: transaction.description,
-        amount: Math.abs(transaction.amount),
-        debit_account_id: match.target_entity_id, // Use matched account
-        credit_account_id: transaction.amount >= 0 ? "revenue" : "cash",
-        project_id: detailForm.projectId || null,
-        notes: `Auto-match to ${match.target_entity_type}: ${match.target_entity_id}`,
-      });
-
-      const updatedTxn: CombinedTransaction = {
-        ...transaction,
-        match_status: "posted",
-        gl_transaction_id: `matched_${Date.now()}_${transaction.id}`,
-      };
-
-      setTransactions((prev) =>
-        prev.map((txn) => (txn.id === transaction.id ? updatedTxn : txn))
-      );
-
-      if (selectedTransaction?.id === transaction.id) {
-        setSelectedTransaction(updatedTxn);
-      }
-    } catch (postError) {
-      console.error("Error accepting match:", postError);
-      setError("Failed to accept match");
-    } finally {
-      setPostingLoading(null);
-    }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- kept so the existing "Accept" buttons still call it
+  async function handleAcceptMatch(transaction: CombinedTransaction, _match: MatchingResult) {
+    openBankReview(transaction);
   }
 
   async function handleIgnoreTransaction(transaction: CombinedTransaction) {
@@ -894,29 +824,7 @@ export default function FinanceTransactionsPage() {
   }
 
   async function handleBulkPost() {
-    if (!companyId) return;
-
-    setBulkBusy("post");
-    try {
-      // Only post transactions that are ready (matched or high confidence)
-      const readyTransactions = selectedTransactions.filter(
-        (txn) => txn.match_status === "matched" || (txn.confidence_score ?? 0) >= 0.7
-      );
-
-      await Promise.all(
-        readyTransactions.map((transaction) =>
-          handleManualPost(transaction)
-        )
-      );
-
-      setSelectedIds([]);
-      setSelectedTransaction(null);
-    } catch (error) {
-      console.error("Error bulk posting transactions:", error);
-      setError("Failed to post transactions");
-    } finally {
-      setBulkBusy(null);
-    }
+    openBankReview(selectedTransactions.find((t) => t.type === "bank"));
   }
 
   async function handleAcceptAiSuggestion() {
@@ -949,26 +857,7 @@ export default function FinanceTransactionsPage() {
   }
 
   async function handleAutoPostReady() {
-    if (!companyId) return;
-
-    const readyTransactions = filteredTransactions.filter(
-      (txn) => !txn.gl_transaction_id && (txn.confidence_score ?? 0) >= 0.7
-    );
-
-    if (!readyTransactions.length) {
-      setError("No transactions ready for auto-posting");
-      return;
-    }
-
-    setBulkBusy("post");
-    try {
-      await Promise.all(readyTransactions.map((txn) => handleManualPost(txn)));
-    } catch (error) {
-      console.error("Error auto-posting transactions:", error);
-      setError("Failed to auto-post transactions");
-    } finally {
-      setBulkBusy(null);
-    }
+    openBankReview(filteredTransactions.find((t) => t.type === "bank"));
   }
 
   function toggleRowSelection(id: string) {
@@ -1089,6 +978,13 @@ export default function FinanceTransactionsPage() {
         >
           <Upload className="h-4 w-4" />
           Upload Statement
+        </button>
+        <button
+          onClick={() => navigate("/finance/bank-review")}
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-sky-700"
+        >
+          <Check className="h-4 w-4" />
+          Bank review
         </button>
         <button
           onClick={() => navigate("/finance/bank-accounts")}
