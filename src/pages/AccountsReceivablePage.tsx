@@ -108,6 +108,8 @@ export default function AccountsReceivablePage() {
     deposit_account_id: "",
   });
   const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
 
   const [formData, setFormData] = useState({
     invoice_number: "",
@@ -511,14 +513,30 @@ export default function AccountsReceivablePage() {
       notes: "",
       deposit_account_id: "",
     });
+    setPaymentError("");
     setShowPaymentModal(true);
   }
 
   async function handlePaymentSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (savingPayment) return;   // a second click / Enter while saving would record the payment twice
+    setPaymentError("");
 
     try {
       if (!selectedInvoice || !companyId) return;
+
+      // Never more than is still owed (the standard rule). Extra money is an advance.
+      const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "JMD" }).format(n);
+      const amount = Math.round(parseFloat(paymentData.amount) * 100) / 100;
+      const owed = Math.round(Number(selectedInvoice.balance_due || 0) * 100) / 100;
+      if (!(amount > 0)) { setPaymentError("Type an amount above zero."); return; }
+      if (amount > owed) {
+        setPaymentError(owed > 0
+          ? `That is more than the ${fmt(owed)} still owed on this invoice. Record ${fmt(owed)} here, and the extra as an advance for the project.`
+          : "This invoice is already fully paid. Record the money as an advance for the project instead.");
+        return;
+      }
+      setSavingPayment(true);
 
       const newPayment = await createClientPayment({
         company_id: companyId,
@@ -552,7 +570,9 @@ export default function AccountsReceivablePage() {
       }
     } catch (error) {
       console.error("Error recording payment:", error);
-      alert("Failed to record payment");
+      setPaymentError("The payment was not saved. Please try again.");
+    } finally {
+      setSavingPayment(false);
     }
   }
 
@@ -1519,6 +1539,9 @@ export default function AccountsReceivablePage() {
             </div>
 
             <form onSubmit={handlePaymentSubmit} className="space-y-4">
+              {paymentError && (
+                <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">{paymentError}</div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Payment Date *</label>
@@ -1595,9 +1618,10 @@ export default function AccountsReceivablePage() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-slate-800 dark:bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-600"
+                  disabled={savingPayment}
+                  className="rounded-lg bg-slate-800 dark:bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Record Payment
+                  {savingPayment ? "Saving..." : "Record Payment"}
                 </button>
               </div>
             </form>
