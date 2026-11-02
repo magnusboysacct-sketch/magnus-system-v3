@@ -8,6 +8,7 @@
 // same shared, now-pagination-safe fetch backs both this page and
 // ProcurementPage.tsx's supplier picker.
 import React, { useEffect, useState } from "react";
+import { PARISHES } from "../lib/jamaica";
 import {
   listSuppliers, createSupplier, updateSupplier, deleteSupplier,
   type Supplier,
@@ -29,7 +30,7 @@ type Tab = "all" | "active" | "inactive";
 
 const EMPTY_FORM = {
   supplier_name: "", contact_name: "", phone: "",
-  email: "", address: "", payment_terms: "", notes: "", is_active: true,
+  email: "", address: "", parish: "", payment_terms: "", notes: "", is_active: true,
 };
 
 // ─── Supplier Card ────────────────────────────────────────────────────────────
@@ -80,10 +81,10 @@ function SupplierCard({ supplier, canDelete, onEdit, onDelete }: {
             <Mail size={9} className="flex-shrink-0"/> {supplier.email}
           </div>
         )}
-        {supplier.address && (
+        {(supplier.address || supplier.parish) && (
           <div className="flex items-center gap-1.5 text-[10px] text-slate-600">
             <MapPin size={9} className="flex-shrink-0"/>
-            <span className="truncate">{supplier.address}</span>
+            <span className="truncate">{[supplier.address, supplier.parish].filter(Boolean).join(", ")}</span>
           </div>
         )}
         {supplier.payment_terms && (
@@ -143,6 +144,7 @@ export default function SuppliersPage() {
         phone: form.phone.trim() || null,
         email: form.email.trim() || null,
         address: form.address.trim() || null,
+        parish: form.parish || null,
         payment_terms: form.payment_terms.trim() || null,
         notes: form.notes.trim() || null,
         is_active: form.is_active,
@@ -174,6 +176,7 @@ export default function SuppliersPage() {
       phone: supplier.phone || "",
       email: supplier.email || "",
       address: supplier.address || "",
+      parish: supplier.parish || "",
       payment_terms: supplier.payment_terms || "",
       notes: supplier.notes || "",
       is_active: supplier.is_active,
@@ -384,11 +387,19 @@ export default function SuppliersPage() {
             </Field>
           </div>
 
-          <Field label="Address">
-            <Input placeholder="e.g. 12 Main Street, Kingston"
-              value={form.address}
-              onChange={e => setForm(f => ({ ...f, address: e.target.value }))}/>
-          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_12rem] gap-4">
+            <Field label="Address">
+              <Input placeholder="e.g. 12 Main Street, May Pen"
+                value={form.address}
+                onChange={e => setForm(f => ({ ...f, address: e.target.value }))}/>
+            </Field>
+            <Field label="Parish">
+              <Select value={form.parish} onChange={e => setForm(f => ({ ...f, parish: e.target.value }))}>
+                <option value="">Choose parish</option>
+                {PARISHES.map(p => <option key={p} value={p}>{p}</option>)}
+              </Select>
+            </Field>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="Payment Terms">

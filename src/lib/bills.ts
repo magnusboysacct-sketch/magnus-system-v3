@@ -8,7 +8,7 @@ import { privatePath, safeUploadName, uploadPrivate } from "./storageRefs";
 const errText = (e: unknown): string =>
   e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string" ? (e as { message: string }).message : "Something went wrong.";
 
-export interface SupplierOption { id: string; name: string }
+export interface SupplierOption { id: string; name: string; workerId?: string | null }
 export interface CostAccount { id: string; code: string; name: string; type: string }
 export interface NewBillLine { item_name: string; chart_account_id: string; amount: number }
 export interface NewBill {
@@ -17,11 +17,30 @@ export interface NewBill {
 }
 
 export async function fetchSuppliers(companyId: string): Promise<SupplierOption[]> {
-  const { data, error } = await supabase.from("suppliers").select("id, supplier_name, is_active")
+  const { data, error } = await supabase.from("suppliers").select("id, supplier_name, is_active, worker_id")
     .eq("company_id", companyId).order("supplier_name");
   if (error) throw new Error(errText(error));
-  return ((data || []) as { id: string; supplier_name: string; is_active: boolean | null }[])
-    .filter((s) => s.is_active !== false).map((s) => ({ id: s.id, name: s.supplier_name }));
+  return ((data || []) as { id: string; supplier_name: string; is_active: boolean | null; worker_id: string | null }[])
+    .filter((s) => s.is_active !== false).map((s) => ({ id: s.id, name: s.supplier_name, workerId: s.worker_id }));
+}
+
+export interface WorkerOption { id: string; name: string; type: string }
+
+/** Active workers, subcontractors and crew leads: a bill can be from them too. */
+export async function fetchWorkerChoices(companyId: string): Promise<WorkerOption[]> {
+  const { data, error } = await supabase.from("workers").select("id, first_name, last_name, worker_type, status")
+    .eq("company_id", companyId).order("first_name");
+  if (error) throw new Error(errText(error));
+  return ((data || []) as { id: string; first_name: string | null; last_name: string | null; worker_type: string; status: string | null }[])
+    .filter((w) => w.status !== "terminated" && w.status !== "inactive")
+    .map((w) => ({ id: w.id, name: `${w.first_name ?? ""} ${w.last_name ?? ""}`.trim() || "Worker", type: w.worker_type }));
+}
+
+/** The supplier record for a worker (made the first time they are chosen on a bill). */
+export async function supplierForWorker(workerId: string): Promise<string> {
+  const { data, error } = await supabase.rpc("supplier_for_worker", { p_worker: workerId });
+  if (error) throw new Error(errText(error));
+  return data as string;
 }
 
 /** Quick add from the bill form (e.g. a mason or subcontractor who bills you). */

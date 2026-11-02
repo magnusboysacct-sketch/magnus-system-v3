@@ -7,6 +7,7 @@ import { useProjectContext } from "../context/ProjectContext";
 import { canManageWorkers, canManageWorkerPortal } from "../lib/permissions";
 import WorkerPortalAccessCard from "../components/WorkerPortalAccessCard";
 import { WORKER_SAFE_COLUMNS } from "../lib/workers";
+import { PARISHES } from "../lib/jamaica";
 import { NO_FILTERS, buildCategoryOptions, buildTypeOptions, filterWorkers, filtersActive } from "../lib/workerFilters";
 import { privatePath, safeUploadName, toStoredRef, withResolvedUrls } from "../lib/storageRefs";
 import EditableDropdown from "../components/common/EditableDropdown";
@@ -42,6 +43,7 @@ type Worker = {
   phone?: string | null;
   address?: string | null;
   city?: string | null;
+  parish?: string | null;
   state?: string | null;
   hire_date?: string | null;
   id_expiry_date?: string | null;
@@ -77,7 +79,7 @@ const TYPE_BG: Record<WorkerType, string> = {
 
 const EMPTY_FORM = {
   first_name: "", last_name: "", email: "", phone: "",
-  address: "", city: "", hire_date: "",
+  address: "", city: "", parish: "", hire_date: "",
   id_expiry_date: "",
   worker_type: "employee" as WorkerType,
   job_title: "",
@@ -223,7 +225,7 @@ function WorkerCard({ worker, onEdit, onDelete, onView, onIdCard }: {
 
       <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-white/[0.05]">
         <Badge color={STATUS_COLOR[worker.status]} dot>{worker.status}</Badge>
-        {worker.city && <span className="text-[9px] text-slate-700">{worker.city}</span>}
+        {(worker.city || worker.parish) && <span className="text-[9px] text-slate-700">{[worker.city, worker.parish].filter(Boolean).join(", ")}</span>}
       </div>
     </Card>
   );
@@ -578,6 +580,7 @@ export default function WorkersPage() {
         phone: form.phone.trim() || null,
         address: form.address.trim() || null,
         city: form.city.trim() || null,
+        parish: form.parish || null,
         hire_date: form.hire_date || null,
         id_expiry_date: form.id_expiry_date || null,
         worker_type: form.worker_type,
@@ -660,6 +663,7 @@ export default function WorkersPage() {
       phone: worker.phone || "",
       address: worker.address || "",
       city: worker.city || "",
+      parish: worker.parish || "",
       hire_date: worker.hire_date || "",
       id_expiry_date: worker.id_expiry_date || "",
       worker_type: worker.worker_type,
@@ -1052,9 +1056,15 @@ export default function WorkersPage() {
           </div>
 
           <div className="grid grid-cols-3 gap-4">
-            <Field label="City">
-              <Input placeholder="Kingston" value={form.city}
+            <Field label="Town / district">
+              <Input placeholder="e.g. May Pen" value={form.city}
                 onChange={e => setForm(f => ({ ...f, city: e.target.value }))}/>
+            </Field>
+            <Field label="Parish">
+              <Select value={form.parish} onChange={e => setForm(f => ({ ...f, parish: e.target.value }))}>
+                <option value="">Choose parish</option>
+                {PARISHES.map(p => <option key={p} value={p}>{p}</option>)}
+              </Select>
             </Field>
             <Field label="Hire Date">
               <Input type="date" value={form.hire_date}
@@ -1201,7 +1211,8 @@ export default function WorkersPage() {
                   { label:"Phone",       value: selectedWorker.phone },
                   { label:"Email",       value: selectedWorker.email },
                   { label:"Address",     value: selectedWorker.address },
-                  { label:"City",        value: selectedWorker.city },
+                  { label:"Town",        value: selectedWorker.city },
+                  { label:"Parish",      value: selectedWorker.parish },
                   { label:"Pay Rate",    value: selectedWorker.pay_rate ? `${selectedWorker.pay_rate}/hr` : null },
                   { label:"Hire Date",   value: selectedWorker.hire_date ? fmtDate(selectedWorker.hire_date) : null },
                   { label:"ID Expiry",   value: selectedWorker.id_expiry_date ? fmtDate(selectedWorker.id_expiry_date) : null },

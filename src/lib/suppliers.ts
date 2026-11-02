@@ -8,6 +8,7 @@ export interface Supplier {
   email: string | null;
   phone: string | null;
   address: string | null;
+  parish?: string | null;
   payment_terms: string | null;
   notes: string | null;
   is_active: boolean;
@@ -21,6 +22,7 @@ export type CreateSupplierInput = {
   email?: string | null;
   phone?: string | null;
   address?: string | null;
+  parish?: string | null;
   payment_terms?: string | null;
   notes?: string | null;
   is_active?: boolean;

@@ -7,8 +7,8 @@ import { Plus, Trash2 } from "lucide-react";
 import { Modal, Field, Input, Select, Btn, Textarea } from "./ui";
 import { supabase } from "../lib/supabase";
 import {
-  addSupplier, createBill, fetchCostAccounts, fetchSuppliers, GCT_RATE,
-  type CostAccount, type SupplierOption,
+  addSupplier, createBill, fetchCostAccounts, fetchSuppliers, fetchWorkerChoices, GCT_RATE, supplierForWorker,
+  type CostAccount, type SupplierOption, type WorkerOption,
 } from "../lib/bills";
 
 const jmd = (n: number) => new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", maximumFractionDigits: 2 }).format(n || 0);
@@ -34,6 +34,8 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
   onDone: (message: string) => void;
 }) {
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
+  const [workers, setWorkers] = useState<WorkerOption[]>([]);
+  const [linking, setLinking] = useState(false);
   const [accounts, setAccounts] = useState<CostAccount[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [form, setForm] = useState({ supplierId: "", number: "", date: today(), due: plusDays(today(), 30), projectId: "", retention: "", gct: "", notes: "" });
@@ -52,10 +54,12 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
     Promise.all([
       fetchSuppliers(companyId),
       fetchCostAccounts(companyId),
+      fetchWorkerChoices(companyId).catch(() => [] as WorkerOption[]),
       supabase.from("projects").select("id, name, status").eq("company_id", companyId).order("name"),
-    ]).then(([s, a, pr]) => {
+    ]).then(([s, a, w, pr]) => {
       if (!alive) return;
       setSuppliers(s);
+      setWorkers(w);
       setAccounts(a);
       setProjects(((pr.data || []) as { id: string; name: string; status: string }[]).filter((p) => p.status !== "cancelled"));
     }).catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : "Could not load the form."); });
@@ -72,6 +76,29 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
   function setLine(key: number, patch: Partial<Line>) {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
+
+  // A worker / subcontractor was chosen: use (or make) their supplier record.
+  async function chooseFrom(value: string) {
+    setError(null);
+    if (!value.startsWith("w:")) { setForm((f) => ({ ...f, supplierId: value })); return; }
+    const w = workers.find((x) => x.id === value.slice(2));
+    if (!w) return;
+    setLinking(true);
+    try {
+      const id = await supplierForWorker(w.id);
+      setSuppliers((list) => list.some((s) => s.id === id) ? list
+        : [...list, { id, name: w.name, workerId: w.id }].sort((a, b) => a.name.localeCompare(b.name)));
+      setForm((f) => ({ ...f, supplierId: id }));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not use that worker.");
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  const linkedWorkers = new Set(suppliers.map((s) => s.workerId).filter(Boolean));
+  const unlinkedWorkers = workers.filter((w) => !linkedWorkers.has(w.id));
+  const workerTypeLabel = (t: string) => t === "subcontractor" ? "subcontractor" : t === "crew_lead" ? "crew lead" : "worker";
 
   async function saveSupplier() {
     if (!companyId || !adding || !adding.name.trim()) return;
@@ -147,9 +174,18 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
             </div>
           ) : (
             <div className="flex gap-2">
-              <Select value={form.supplierId} onChange={(e) => setForm((f) => ({ ...f, supplierId: e.target.value }))}>
-                <option value="">Choose</option>
-                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              <Select value={form.supplierId} disabled={linking} onChange={(e) => { void chooseFrom(e.target.value); }}>
+                <option value="">{linking ? "Loading..." : suppliers.length + unlinkedWorkers.length === 0 ? "Nobody yet - tap New" : "Choose"}</option>
+                {suppliers.length > 0 && (
+                  <optgroup label="Suppliers and contractors">
+                    {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </optgroup>
+                )}
+                {unlinkedWorkers.length > 0 && (
+                  <optgroup label="From your Workers list">
+                    {unlinkedWorkers.map((w) => <option key={w.id} value={`w:${w.id}`}>{w.name} ({workerTypeLabel(w.type)})</option>)}
+                  </optgroup>
+                )}
               </Select>
               <Btn variant="ghost" size="sm" icon={<Plus size={13} />} onClick={() => setAdding({ name: "", phone: "" })}>New</Btn>
             </div>
