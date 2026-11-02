@@ -115,15 +115,18 @@ export interface BillPayment {
   signature_data: string | null;
   signed_at: string | null;
   proof_path: string | null;
+  is_advance: boolean;
+  applied_from_payment_id: string | null;
+  applied_on: string | null;
 }
 
-/** Cash handed over with no signature and no photo yet. */
-export const needsProof = (p: { payment_method: string | null; signed_at: string | null; proof_path: string | null }) =>
-  p.payment_method === "cash" && !p.signed_at && !p.proof_path;
+/** Cash handed over with no signature and no photo yet. (A part used from an advance carries no proof: the advance does.) */
+export const needsProof = (p: { payment_method: string | null; signed_at: string | null; proof_path: string | null; applied_from_payment_id?: string | null }) =>
+  p.payment_method === "cash" && !p.signed_at && !p.proof_path && !p.applied_from_payment_id;
 
 export async function fetchBillPayments(billId: string): Promise<BillPayment[]> {
   const { data, error } = await supabase.from("supplier_payments")
-    .select("id, payment_number, payment_date, amount, payment_method, reference_number, is_retention_release, paid_from_account_id, gl_transaction_id, ledger_note, received_by_name, signature_data, signed_at, proof_path")
+    .select("id, payment_number, payment_date, amount, payment_method, reference_number, is_retention_release, paid_from_account_id, gl_transaction_id, ledger_note, received_by_name, signature_data, signed_at, proof_path, is_advance, applied_from_payment_id, applied_on")
     .eq("invoice_id", billId).order("payment_date").order("created_at");
   if (error) throw new Error(errText(error));
   return ((data || []) as BillPayment[]).map((p) => ({ ...p, amount: Number(p.amount) }));
@@ -178,6 +181,7 @@ export async function fetchUnsignedCashPayments(companyId: string): Promise<Unsi
   const { data, error } = await supabase.from("supplier_payments")
     .select("id, amount, payment_date, invoice_id, supplier_invoices(invoice_number), suppliers(supplier_name)")
     .eq("company_id", companyId).eq("payment_method", "cash").is("signed_at", null).is("proof_path", null)
+    .is("applied_from_payment_id", null)
     .order("payment_date");
   if (error) throw new Error(errText(error));
   type Row = { id: string; amount: number; payment_date: string; invoice_id: string | null;
@@ -229,4 +233,74 @@ export function guessCostAccount(description: string, accounts: CostAccount[], c
   ];
   for (const [words, acct] of rules) if (words.test(d)) { const id = find(acct); if (id) return id; }
   return contractor ? find(/subcontract/) || find(/labou?r/) : find(/material/);
+}
+
+// ── Banking Step 4b-3: advances to suppliers and contractors (migration 20260980) ──
+// Giving an advance: DEBIT Advances to Suppliers and Subcontractors, CREDIT bank/cash. Using it on their bill moves
+// that part onto the bill (Advances down, what you owe down, bank unchanged).
+
+export async function giveAdvance(p: {
+  supplierId: string; projectId: string | null; amount: number; date: string; paidFrom: string; method: PayMethod; reference: string;
+  receivedBy?: string; signature?: string | null; proofPath?: string | null;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc("pay_supplier_advance", {
+    p_supplier: p.supplierId, p_project: p.projectId, p_amount: p.amount, p_date: p.date, p_paid_from: p.paidFrom,
+    p_method: p.method, p_reference: p.reference.trim() || null,
+    p_received_by: p.receivedBy?.trim() || null, p_signature: p.signature || null, p_proof_path: p.proofPath || null,
+  });
+  if (error) throw new Error(errText(error));
+  return data as string;
+}
+
+export async function applyAdvance(advanceId: string, billId: string, amount: number, date: string): Promise<string> {
+  const { data, error } = await supabase.rpc("apply_supplier_advance", { p_advance: advanceId, p_bill: billId, p_amount: amount, p_date: date });
+  if (error) throw new Error(errText(error));
+  return data as string;
+}
+
+export interface SupplierAdvance {
+  id: string;
+  payment_number: string | null;
+  payment_date: string;
+  supplier_id: string | null;
+  supplier: string;
+  project: string | null;
+  /** What is still left to use on bills. */
+  left: number;
+  /** What was given (left + what is used on bills). */
+  given: number;
+  payment_method: string | null;
+  reference_number: string | null;
+  received_by_name: string | null;
+  signature_data: string | null;
+  signed_at: string | null;
+  proof_path: string | null;
+  gl_transaction_id: string | null;
+  ledger_note: string | null;
+}
+
+/** Advances given (optionally for one supplier). With openOnly, only those with money left or still waiting for proof. */
+export async function fetchAdvances(companyId: string, opts: { supplierId?: string; openOnly?: boolean } = {}): Promise<SupplierAdvance[]> {
+  let q = supabase.from("supplier_payments")
+    .select("id, payment_number, payment_date, amount, supplier_id, payment_method, reference_number, received_by_name, signature_data, signed_at, proof_path, gl_transaction_id, ledger_note, suppliers(supplier_name), projects(name)")
+    .eq("company_id", companyId).eq("is_advance", true).is("invoice_id", null)
+    .order("payment_date", { ascending: false });
+  if (opts.supplierId) q = q.eq("supplier_id", opts.supplierId);
+  const { data, error } = await q;
+  if (error) throw new Error(errText(error));
+  type Row = Omit<SupplierAdvance, "supplier" | "project" | "left" | "given"> & { amount: number;
+    suppliers: { supplier_name: string } | null; projects: { name: string } | null };
+  const rows = (data || []) as unknown as Row[];
+  const used = new Map<string, number>();
+  if (rows.length > 0) {
+    const { data: parts } = await supabase.from("supplier_payments").select("applied_from_payment_id, amount")
+      .in("applied_from_payment_id", rows.map((r) => r.id));
+    for (const p of (parts || []) as { applied_from_payment_id: string; amount: number }[]) {
+      used.set(p.applied_from_payment_id, (used.get(p.applied_from_payment_id) || 0) + Number(p.amount));
+    }
+  }
+  return rows.map(({ suppliers, projects, amount, ...r }) => ({
+    ...r, supplier: suppliers?.supplier_name ?? "Supplier", project: projects?.name ?? null,
+    left: Number(amount), given: Math.round((Number(amount) + (used.get(r.id) || 0)) * 100) / 100,
+  })).filter((a) => !opts.openOnly || a.left > 0 || needsProof({ ...a, applied_from_payment_id: null }));
 }

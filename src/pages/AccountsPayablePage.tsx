@@ -18,11 +18,12 @@ import { fetchSupplierInvoiceLineItems } from "../lib/finance";
 import { NewBillModal } from "../components/NewBillModal";
 import { PayBillModal } from "../components/PayBillModal";
 import { AddProofModal } from "../components/BillPaymentProof";
+import { ApplyAdvanceModal, GiveAdvanceModal } from "../components/AdvanceModals";
 import { showBillReceipt } from "../lib/billReceipt";
 import { resolveFileUrl } from "../lib/storageRefs";
 import {
-  approveBill, disputeBill, setBillFile, uploadBillFile, fetchBillPayments, fetchCostAccounts, fetchUnsignedCashPayments, needsProof, undoBillPayment, PAY_METHODS,
-  type BillPayment, type CostAccount, type UnsignedPayment,
+  approveBill, disputeBill, setBillFile, uploadBillFile, fetchAdvances, fetchBillPayments, fetchCostAccounts, fetchUnsignedCashPayments, needsProof, undoBillPayment, PAY_METHODS,
+  type BillPayment, type CostAccount, type SupplierAdvance, type UnsignedPayment,
 } from "../lib/bills";
 import type { SupplierInvoiceLineItem } from "../lib/finance";
 import {
@@ -31,7 +32,7 @@ import {
   Spinner, cn
 } from "../components/ui";
 import {
-  Search, RefreshCw, Landmark, Package, Plus, CheckCircle2, AlertTriangle, Banknote, Undo2, PenTool, Printer, Image as ImageIcon, ScanLine,
+  Search, RefreshCw, Landmark, Package, Plus, CheckCircle2, AlertTriangle, Banknote, Undo2, PenTool, Printer, Image as ImageIcon, ScanLine, HandCoins,
 } from "lucide-react";
 
 interface SupplierInvoiceRow {
@@ -101,7 +102,10 @@ export default function AccountsPayablePage() {
   const canApprove = ["director", "admin", "office_user"].includes(role);
   const [payments, setPayments] = useState<BillPayment[]>([]);
   const [paying, setPaying] = useState<null | "bill" | "retention">(null);
-  const [proofFor, setProofFor] = useState<BillPayment | null>(null);
+  const [proofFor, setProofFor] = useState<{ id: string; amount: number; signed: boolean; hasPhoto: boolean; name: string } | null>(null);
+  const [advances, setAdvances] = useState<SupplierAdvance[]>([]);
+  const [showGive, setShowGive] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [unsigned, setUnsigned] = useState<UnsignedPayment[]>([]);
   const [companyName, setCompanyName] = useState("");
 
@@ -117,6 +121,7 @@ export default function AccountsPayablePage() {
       setRole(profile.role || "");
       fetchCostAccounts(profile.company_id).then(setCostAccounts).catch(() => setCostAccounts([]));
       fetchUnsignedCashPayments(profile.company_id).then(setUnsigned).catch(() => setUnsigned([]));
+      fetchAdvances(profile.company_id, { openOnly: true }).then(setAdvances).catch(() => setAdvances([]));
       const { data: co } = await supabase.from("companies").select("name").eq("id", profile.company_id).maybeSingle();
       setCompanyName((co as { name?: string } | null)?.name || "");
     })();
@@ -172,7 +177,33 @@ export default function AccountsPayablePage() {
       .eq("id", id).single();
     if (data) setSelectedBill(data as unknown as SupplierInvoiceRow);
     setPayments(await fetchBillPayments(id).catch(() => [] as BillPayment[]));
-    if (companyId) fetchUnsignedCashPayments(companyId).then(setUnsigned).catch(() => undefined);
+    refreshSide();
+  }
+
+  function refreshSide() {
+    if (!companyId) return;
+    fetchUnsignedCashPayments(companyId).then(setUnsigned).catch(() => undefined);
+    fetchAdvances(companyId, { openOnly: true }).then(setAdvances).catch(() => undefined);
+  }
+
+  function printAdvanceReceipt(a: SupplierAdvance) {
+    showBillReceipt({
+      company: companyName, receiptNumber: a.payment_number || "Advance", date: a.payment_date, amount: a.given,
+      method: a.payment_method, reference: a.reference_number, retention: false, supplier: a.supplier, billNumber: "",
+      project: a.project, receivedBy: a.received_by_name, signature: a.signature_data, signedAt: a.signed_at,
+    });
+  }
+
+  async function undoAdvance(a: SupplierAdvance) {
+    if (acting) return;
+    if (!window.confirm(`Undo the advance of ${fmt(a.given)} to ${a.supplier}? It comes out of the books.`)) return;
+    setActing(true); setError(null);
+    try {
+      await undoBillPayment(a.id);
+      setNotice(`Advance to ${a.supplier} undone.`);
+      refreshSide();
+    } catch (e: unknown) { setError(msg(e)); }
+    finally { setActing(false); }
   }
 
   function printReceipt(p: BillPayment) {
@@ -213,11 +244,13 @@ export default function AccountsPayablePage() {
 
   async function handleUndoPayment(p: BillPayment) {
     if (!selectedBill || acting) return;
-    if (!window.confirm(`Undo the payment of ${fmt(p.amount)} on ${fmtDate(p.payment_date)}? It comes out of the books and goes back on the bill.`)) return;
+    if (!window.confirm(p.applied_from_payment_id
+      ? `Take ${fmt(p.amount)} off this bill? It goes back to the advance, to use later.`
+      : `Undo the payment of ${fmt(p.amount)} on ${fmtDate(p.payment_date)}? It comes out of the books and goes back on the bill.`)) return;
     setActing(true); setActionError(null);
     try {
       await undoBillPayment(p.id);
-      setNotice(`Payment of ${fmt(p.amount)} undone.`);
+      setNotice(p.applied_from_payment_id ? `${fmt(p.amount)} went back to the advance.` : `Payment of ${fmt(p.amount)} undone.`);
       await refreshSelected(selectedBill.id);
     } catch (e: unknown) { setActionError(msg(e)); }
     finally { setActing(false); }
@@ -288,6 +321,7 @@ export default function AccountsPayablePage() {
             <Btn variant="ghost" size="sm"
               icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>}
               onClick={loadBills}/>
+            {canApprove && <Btn variant="ghost" size="sm" icon={<HandCoins size={13}/>} onClick={() => setShowGive(true)} disabled={!companyId}>Give advance</Btn>}
             <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => setShowNew(true)} disabled={!companyId}>New bill</Btn>
           </div>
         }
@@ -303,13 +337,49 @@ export default function AccountsPayablePage() {
               {unsigned.map(u => {
                 const b = bills.find(x => x.id === u.invoice_id);
                 return (
-                  <button key={u.id} type="button" className="underline hover:no-underline text-left" disabled={!b} onClick={() => { if (b) void openDetail(b); }}>
-                    {u.supplier || "Supplier"} · {fmt(u.amount)} · {fmtDate(u.payment_date)}{u.invoice_number ? ` · bill ${u.invoice_number}` : ""}
+                  <button key={u.id} type="button" className="underline hover:no-underline text-left"
+                    onClick={() => { if (b) void openDetail(b); else setProofFor({ id: u.id, amount: u.amount, signed: false, hasPhoto: false, name: u.supplier || "" }); }}>
+                    {u.supplier || "Supplier"} · {fmt(u.amount)} · {fmtDate(u.payment_date)}{u.invoice_number ? ` · bill ${u.invoice_number}` : " · advance"}
                   </button>
                 );
               })}
             </div>
           </div>
+        )}
+
+        {advances.length > 0 && (
+          <Card padding={false}>
+            <div className="px-4 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5 border-b border-slate-200 dark:border-white/[0.06]">
+              <HandCoins size={13}/> Advances not used up yet · {fmt(advances.reduce((t, a) => t + a.left, 0))}
+            </div>
+            <div className="divide-y divide-slate-200 dark:divide-white/[0.06]">
+              {advances.map(a => (
+                <div key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-slate-800 dark:text-slate-200">
+                      {a.supplier} · {a.payment_number} · {fmtDate(a.payment_date)}{a.project ? ` · ${a.project}` : ""}
+                    </div>
+                    <div className="text-[10px] text-slate-500">
+                      Given {fmt(a.given)} · <span className="font-semibold text-slate-700 dark:text-slate-300">{fmt(a.left)} left</span> to use on their bills
+                      {a.signed_at ? ` · signed by ${a.received_by_name}` : ""}
+                    </div>
+                    {needsProof({ ...a, applied_from_payment_id: null }) && <div className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">Not signed yet</div>}
+                    {a.ledger_note && a.left > 0 && <div className="text-[10px] text-amber-600 dark:text-amber-400">{a.ledger_note}</div>}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    <Btn variant="ghost" size="sm" icon={<Printer size={12}/>} onClick={() => printAdvanceReceipt(a)}>Receipt</Btn>
+                    {(!a.signed_at || !a.proof_path) && (
+                      <Btn variant="ghost" size="sm" icon={<PenTool size={12}/>}
+                        onClick={() => setProofFor({ id: a.id, amount: a.given, signed: !!a.signed_at, hasPhoto: !!a.proof_path, name: a.supplier })}>
+                        {!a.signed_at ? "Sign / add photo" : "Add photo"}
+                      </Btn>
+                    )}
+                    {canApprove && <Btn variant="ghost" size="sm" icon={<Undo2 size={12}/>} onClick={() => { void undoAdvance(a); }} disabled={acting}>Undo</Btn>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
         )}
 
         <Tabs
@@ -499,7 +569,7 @@ export default function AccountsPayablePage() {
                     <div key={p.id} className="flex items-center gap-3 px-3 py-2 text-xs">
                       <div className="min-w-0 flex-1">
                         <div className="text-slate-800 dark:text-slate-200 font-medium">
-                          {fmtDate(p.payment_date)} · {p.is_retention_release ? "Retention paid" : (PAY_METHODS.find(m => m.value === p.payment_method)?.label || "Payment")}
+                          {fmtDate(p.applied_on || p.payment_date)} · {p.applied_from_payment_id ? `From advance ${(p.payment_number || "").split("-").slice(0, 2).join("-")}` : p.is_retention_release ? "Retention paid" : (PAY_METHODS.find(m => m.value === p.payment_method)?.label || "Payment")}
                           {p.reference_number ? ` · ${p.reference_number}` : ""}
                         </div>
                         {p.ledger_note
@@ -509,15 +579,18 @@ export default function AccountsPayablePage() {
                           ? <div className="text-[10px] text-emerald-600 dark:text-emerald-400">Signed by {p.received_by_name} · {fmtDate(p.signed_at)}</div>
                           : needsProof(p) && <div className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">Not signed yet</div>}
                         <div className="flex flex-wrap gap-1 mt-1">
-                          <Btn variant="ghost" size="sm" icon={<Printer size={12}/>} onClick={() => printReceipt(p)}>Receipt</Btn>
+                          {!p.applied_from_payment_id && <Btn variant="ghost" size="sm" icon={<Printer size={12}/>} onClick={() => printReceipt(p)}>Receipt</Btn>}
                           {p.proof_path && <Btn variant="ghost" size="sm" icon={<ImageIcon size={12}/>} onClick={() => { void viewPhoto(p); }}>Photo</Btn>}
-                          {(!p.signed_at || !p.proof_path) && (
-                            <Btn variant={needsProof(p) ? "primary" : "ghost"} size="sm" icon={<PenTool size={12}/>} onClick={() => setProofFor(p)}>
+                          {!p.applied_from_payment_id && (!p.signed_at || !p.proof_path) && (
+                            <Btn variant={needsProof(p) ? "primary" : "ghost"} size="sm" icon={<PenTool size={12}/>}
+                              onClick={() => setProofFor({ id: p.id, amount: p.amount, signed: !!p.signed_at, hasPhoto: !!p.proof_path, name: selectedBill.suppliers?.supplier_name || "" })}>
                               {!p.signed_at ? "Sign / add photo" : "Add photo"}
                             </Btn>
                           )}
                           {canApprove && (
-                            <Btn variant="ghost" size="sm" icon={<Undo2 size={12}/>} onClick={() => { void handleUndoPayment(p); }} disabled={acting}>Undo</Btn>
+                            <Btn variant="ghost" size="sm" icon={<Undo2 size={12}/>} onClick={() => { void handleUndoPayment(p); }} disabled={acting}>
+                              {p.applied_from_payment_id ? "Unapply" : "Undo"}
+                            </Btn>
                           )}
                         </div>
                       </div>
@@ -543,6 +616,9 @@ export default function AccountsPayablePage() {
               {canPay && disputing === null && owedNow > 0 && (
                 <Btn variant="primary" size="sm" icon={<Banknote size={13}/>} onClick={() => setPaying("bill")} disabled={acting}>Pay bill</Btn>
               )}
+              {canPay && disputing === null && owedNow > 0 && advances.some(a => a.supplier_id === selectedBill.supplier_id && a.left > 0) && (
+                <Btn variant="secondary" size="sm" icon={<HandCoins size={13}/>} onClick={() => setApplying(true)} disabled={acting}>Use advance</Btn>
+              )}
               {canPay && disputing === null && retentionHeld > 0 && (
                 <Btn variant={owedNow > 0 ? "secondary" : "primary"} size="sm" onClick={() => setPaying("retention")} disabled={acting}>Pay retention</Btn>
               )}
@@ -559,8 +635,14 @@ export default function AccountsPayablePage() {
       </Modal>
 
       <AddProofModal open={!!proofFor} onClose={() => setProofFor(null)} companyId={companyId}
-        payment={proofFor ? { id: proofFor.id, amount: proofFor.amount, signed: !!proofFor.signed_at, hasPhoto: !!proofFor.proof_path } : null}
-        defaultName={selectedBill?.suppliers?.supplier_name || ""}
+        payment={proofFor} defaultName={proofFor?.name || ""}
+        onDone={m => { setNotice(m); if (selectedBill) void refreshSelected(selectedBill.id); else refreshSide(); }}/>
+
+      <GiveAdvanceModal open={showGive} onClose={() => setShowGive(false)} companyId={companyId}
+        onDone={m => { setNotice(m); refreshSide(); }}/>
+
+      <ApplyAdvanceModal open={applying} onClose={() => setApplying(false)} companyId={companyId} owed={owedNow}
+        bill={selectedBill ? { id: selectedBill.id, invoice_number: selectedBill.invoice_number, supplier_id: selectedBill.supplier_id, supplier: selectedBill.suppliers?.supplier_name || "the supplier" } : null}
         onDone={m => { setNotice(m); if (selectedBill) void refreshSelected(selectedBill.id); }}/>
 
       <PayBillModal open={paying !== null} onClose={() => setPaying(null)} retention={paying === "retention"} companyId={companyId}

@@ -153,3 +153,20 @@ A name not in the list gets "Add as a supplier / a contractor". If the paper tot
 The picture is filed in the monthly receipts folder (receipts/<year>/<month of the bill date>/) and kept with the bill:
 the bill detail has **View bill**, or **Attach bill picture** for bills entered without one.
 If scanning is off for the company or the picture can't be read, the bill is typed in and the picture is still saved.
+
+## Step 4b-3: advances to suppliers and contractors (done)
+
+Migration `20260980000000_supplier_advances.sql`:
+- Giving an advance: DR Advances to Suppliers and Subcontractors (asset, made under 1300 Prepaid Expenses the first time,
+  code 1330+) / CR bank, cash or card. Not a cost until it is used on their bill.
+- supplier_payments: is_advance, project_id, applied_from_payment_id, applied_on.
+- pay_supplier_advance(): with proof (signature / photo) like a bill payment; double saves refused.
+- apply_supplier_advance(advance, bill, amount, date): same supplier only, bill approved, never more than is left on the advance
+  or owed on the bill (less retention). The advance is split: the part used becomes a payment on the bill (DR Payables / CR bank),
+  the advance goes down (its entry re-posts) - net: Advances down, Payables down, bank unchanged.
+- Unapply (undo on the bill) gives the amount back to the advance (trigger). An advance partly used must be unapplied before undo.
+
+Screens: Payables header **Give advance**; an "Advances not used up yet" card (Receipt, Sign / add photo, Undo);
+bill detail **Use advance** (when that supplier has an advance left); parts used show "From advance ADV-0001" with **Unapply**.
+
+Next: 4c bill from a received Purchase Order.

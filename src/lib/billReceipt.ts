@@ -44,7 +44,7 @@ export function billReceiptHtml(r: BillReceiptData): string {
 <div class="amt">${escapeHtml(jmd(r.amount))}</div>
 <table>
 ${row("Paid to", r.supplier)}
-${row("For", (r.retention ? "Retention held on bill " : "Bill ") + r.billNumber)}
+${row("For", r.retention ? "Retention held on bill " + r.billNumber : r.billNumber ? "Bill " + r.billNumber : "Advance (paid before the bill)")}
 ${r.project ? row("Project", r.project) : ""}
 ${row("Date paid", day(r.date))}
 ${row("How", how + (r.reference ? ` (${r.reference})` : ""))}
