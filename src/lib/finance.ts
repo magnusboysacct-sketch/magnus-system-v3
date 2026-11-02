@@ -67,6 +67,10 @@ export interface ClientPayment {
   notes?: string | null;
   created_at?: string;
   created_by?: string | null;
+  /** Banking step 3b: "Deposited to" (a bank / cash account in the chart; empty = primary bank), the books entry, or why it isn't in the books. */
+  deposit_account_id?: string | null;
+  gl_transaction_id?: string | null;
+  ledger_note?: string | null;
 }
 
 export interface SupplierInvoice {
@@ -386,6 +390,7 @@ export async function recordAdvancePayment(input: {
   method: ClientPayment["payment_method"];
   referenceNumber?: string | null;
   notes?: string | null;
+  depositAccountId?: string | null;
 }): Promise<ClientPayment> {
   if (!input.companyId) throw new Error("Your company could not be determined.");
   if (!input.projectId) throw new Error("Choose a project.");
@@ -408,6 +413,7 @@ export async function recordAdvancePayment(input: {
       payment_method: input.method,
       reference_number: input.referenceNumber?.trim() || null,
       notes: input.notes?.trim() || null,
+      deposit_account_id: input.depositAccountId || null,
     });
   } catch (e: any) {
     if (isMissingProjectIdColumn(e)) throw new Error(ADVANCE_NOT_ENABLED_MESSAGE);

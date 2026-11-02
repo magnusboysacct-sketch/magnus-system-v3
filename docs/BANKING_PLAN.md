@@ -18,7 +18,7 @@ Goal: work the standard way (QuickBooks / Xero / Sage / Viewpoint), not around h
 | 1 | One list: bank_accounts.chart_account_id; new bank accounts create / link their chart account; page shows books balance | done (20260969) |
 | 2 | Transfer money (from, to, amount, date, note, optional project) -> posted journal | done (20260970) |
 | 3a | Books start date + invoices to the books (AR / revenue / GCT) + opening receivables | done (20260972) |
-| 3b | Client payments: "Deposited to" + post (bank / AR), advances (bank / Client Advances) | |
+| 3b | Client payments: "Deposited to" + post (bank / AR), advances (bank / Client Advances) | done (20260973) |
 | 4 | Supplier payments: "Paid from" + post to the books | |
 | 5 | Bank statements: fix posting (placeholder accounts today), match lines to the books | |
 | 6 | Account history + reconcile (bank says X, books say Y) | |
@@ -69,3 +69,14 @@ Goal: work the standard way (QuickBooks / Xero / Sage / Viewpoint), not around h
   - Fix: credit cards / lines of credit filed under the chart's credit card heading by name (standard chart: 2500),
     never 2400 "Client Advances and Deposits".
 - UI: Bank Accounts -> "Books start date" card; Accounts Receivable list shows "In the books" or the note.
+
+## Step 3b notes
+- Migration `20260973000000_client_payments_to_books.sql`: client_payments.deposit_account_id / gl_transaction_id /
+  ledger_note / ledger_signature; BEFORE INSERT/UPDATE/DELETE trigger `client_payment_to_books`:
+  invoice payment DR deposit / CR AR; advance (project, no invoice) DR deposit / CR Client Advances; neither -> CR AR
+  (payment on account). Applying an advance (invoice_id set) re-posts it as an invoice payment. Empty deposit ->
+  primary bank account's chart account, else Undeposited Funds. Only manages its own entries; never blocks saving.
+  set_books_start_date also locks on payments and touches payments after the date; companies with a start date
+  already set get their payments brought in by the migration.
+- UI: "Deposited to" on Record Payment and Record Advance (Accounts Receivable). EstimatesPage / BOQ invoice paths
+  use the automatic default.

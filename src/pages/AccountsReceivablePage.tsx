@@ -16,6 +16,26 @@ import {
   fetchUnappliedAdvances
 } from "../lib/finance";
 import type { ClientInvoice, ClientInvoiceLineItem, ClientPayment } from "../lib/finance";
+import { fetchMoneyAccounts, type MoneyAccount } from "../lib/banking";
+
+// Banking step 3b: which bank / cash account a client payment went into. Empty = the primary bank account
+// (or Undeposited Funds when there is none), chosen by the database, so every way of recording a payment is in the books.
+function DepositedToSelect({ value, onChange, accounts }: { value: string; onChange: (v: string) => void; accounts: MoneyAccount[] }) {
+  const banks = accounts.filter(a => a.type === "asset" && a.isBank);
+  const other = accounts.filter(a => a.type === "asset" && !a.isBank);
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Deposited to</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100">
+        <option value="">My primary bank account (automatic)</option>
+        {banks.length > 0 && <optgroup label="Bank accounts">{banks.map(a => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}</optgroup>}
+        {other.length > 0 && <optgroup label="Cash, petty cash and funds">{other.map(a => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}</optgroup>}
+      </select>
+      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Where the money went. It goes into your books straight away.</p>
+    </div>
+  );
+}
 import ContractProgressBilling from "../components/ContractProgressBilling";
 import { useFinanceAccess } from "../hooks/useFinanceAccess";
 import { FinanceAccessDenied } from "../components/FinanceAccessDenied";
@@ -85,7 +105,9 @@ export default function AccountsReceivablePage() {
     payment_method: "check" as ClientPayment["payment_method"],
     reference_number: "",
     notes: "",
+    deposit_account_id: "",
   });
+  const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
 
   const [formData, setFormData] = useState({
     invoice_number: "",
@@ -108,6 +130,7 @@ export default function AccountsReceivablePage() {
     payment_method: "check" as const,
     reference_number: "",
     notes: "",
+    deposit_account_id: "",
   });
 
   const [editingInvoice, setEditingInvoice] = useState<ClientInvoice | null>(null);
@@ -136,6 +159,10 @@ export default function AccountsReceivablePage() {
     if (inv) openDetailModal(inv);
     setSearchParams({}, { replace: true });
   }, [deepLinkInvoiceId, loading, invoices]);
+
+  useEffect(() => {
+    if (companyId) fetchMoneyAccounts().then(setMoneyAccounts).catch(() => setMoneyAccounts([]));
+  }, [companyId]);
 
   useEffect(() => {
     if (companyId) loadAdvances();
@@ -439,6 +466,7 @@ export default function AccountsReceivablePage() {
       payment_method: "check",
       reference_number: "",
       notes: "",
+      deposit_account_id: "",
     });
     setAdvanceError("");
     setShowAdvanceModal(true);
@@ -462,6 +490,7 @@ export default function AccountsReceivablePage() {
         method: advanceForm.payment_method,
         referenceNumber: advanceForm.reference_number,
         notes: advanceForm.notes,
+        depositAccountId: advanceForm.deposit_account_id || null,
       });
       setShowAdvanceModal(false);
       await loadAdvances();
@@ -480,6 +509,7 @@ export default function AccountsReceivablePage() {
       payment_method: "check",
       reference_number: "",
       notes: "",
+      deposit_account_id: "",
     });
     setShowPaymentModal(true);
   }
@@ -500,6 +530,7 @@ export default function AccountsReceivablePage() {
         payment_method: paymentData.payment_method,
         reference_number: paymentData.reference_number || null,
         notes: paymentData.notes || null,
+        deposit_account_id: paymentData.deposit_account_id || null,
       });
 
       await updateInvoiceAfterPayment(selectedInvoice.id);
@@ -1529,6 +1560,9 @@ export default function AccountsReceivablePage() {
                 </select>
               </div>
 
+              <DepositedToSelect value={paymentData.deposit_account_id} accounts={moneyAccounts}
+                onChange={(v) => setPaymentData({ ...paymentData, deposit_account_id: v })} />
+
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Reference Number</label>
                 <input
@@ -1651,6 +1685,9 @@ export default function AccountsReceivablePage() {
                       <option value="other">Other</option>
                     </select>
                   </div>
+
+                  <DepositedToSelect value={advanceForm.deposit_account_id} accounts={moneyAccounts}
+                    onChange={(v) => setAdvanceForm({ ...advanceForm, deposit_account_id: v })} />
 
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Reference Number</label>
