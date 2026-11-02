@@ -13,7 +13,8 @@ import {
   updateInvoiceAfterPayment,
   updateClientInvoice,
   recordAdvancePayment,
-  fetchUnappliedAdvances
+  fetchUnappliedAdvances,
+  applyAdvanceToInvoice
 } from "../lib/finance";
 import type { ClientInvoice, ClientInvoiceLineItem, ClientPayment } from "../lib/finance";
 import { fetchMoneyAccounts, type MoneyAccount } from "../lib/banking";
@@ -109,6 +110,11 @@ export default function AccountsReceivablePage() {
   });
   const [moneyAccounts, setMoneyAccounts] = useState<MoneyAccount[]>([]);
   const [savingPayment, setSavingPayment] = useState(false);
+  // Banking step 3c: "Apply to invoice" on an unapplied advance.
+  const [applying, setApplying] = useState<ClientPayment | null>(null);
+  const [applyForm, setApplyForm] = useState({ invoiceId: "", amount: "", date: new Date().toISOString().split("T")[0] });
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyError, setApplyError] = useState("");
   const [paymentError, setPaymentError] = useState("");
 
   const [formData, setFormData] = useState({
@@ -517,6 +523,46 @@ export default function AccountsReceivablePage() {
     setShowPaymentModal(true);
   }
 
+  // Invoices an advance can be applied to: same client, issued, something still owed, same project (or none).
+  function invoicesForAdvance(adv: ClientPayment) {
+    return invoices.filter((inv: ClientInvoice & { client_id?: string | null; project_id?: string | null }) =>
+      ["sent", "partial", "overdue"].includes(inv.status) && Number(inv.balance_due || 0) > 0
+      && (!adv.client_id || !inv.client_id || inv.client_id === adv.client_id)
+      && (!inv.project_id || inv.project_id === adv.project_id));
+  }
+
+  function openApply(adv: ClientPayment) {
+    const options = invoicesForAdvance(adv);
+    const first = options[0];
+    setApplyForm({
+      invoiceId: first?.id || "",
+      amount: first ? String(Math.min(Number(adv.amount), Number(first.balance_due || 0))) : "",
+      date: new Date().toISOString().split("T")[0],
+    });
+    setApplyError("");
+    setApplying(adv);
+  }
+
+  async function handleApplySubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!applying || applyBusy) return;
+    const amount = Math.round(parseFloat(applyForm.amount) * 100) / 100;
+    if (!applyForm.invoiceId) { setApplyError("Choose the invoice."); return; }
+    if (!(amount > 0)) { setApplyError("Type an amount above zero."); return; }
+    setApplyBusy(true);
+    setApplyError("");
+    try {
+      await applyAdvanceToInvoice(applying.id, applyForm.invoiceId, amount, applyForm.date);
+      setApplying(null);
+      await loadAdvances();
+      loadInvoices();
+    } catch (err: unknown) {
+      setApplyError(err instanceof Error ? err.message : "The advance was not applied.");
+    } finally {
+      setApplyBusy(false);
+    }
+  }
+
   async function handlePaymentSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (savingPayment) return;   // a second click / Enter while saving would record the payment twice
@@ -828,7 +874,7 @@ export default function AccountsReceivablePage() {
               </div>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-              Money received for a project before it was invoiced. Tick an advance when you generate an invoice from a BOQ to credit it against that invoice.
+              Money received for a project before it was invoiced. Tick an advance when you generate an invoice from a BOQ, or use "Apply to invoice" for an invoice you already sent (all of it, or part of it on each progress invoice).
             </p>
             <div className="space-y-1.5">
               {advances.map((a) => (
@@ -842,7 +888,13 @@ export default function AccountsReceivablePage() {
                       {a.payment_date} · {String(a.payment_method).replace("_", " ")}{a.reference_number ? ` - ${a.reference_number}` : ""}
                     </div>
                   </div>
-                  <div className="font-semibold text-slate-900 dark:text-slate-100">{fmtAdvance(Number(a.amount))}</div>
+                  <div className="flex items-center gap-3">
+                    <div className="font-semibold text-slate-900 dark:text-slate-100">{fmtAdvance(Number(a.amount))}</div>
+                    <button type="button" onClick={() => openApply(a)}
+                      className="rounded-lg border border-amber-300 dark:border-amber-500/40 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/10">
+                      Apply to invoice
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1630,6 +1682,95 @@ export default function AccountsReceivablePage() {
       )}
 
       {/* Record Advance Payment Modal */}
+      {applying && (() => {
+        const options = invoicesForAdvance(applying);
+        const inv = options.find((o) => o.id === applyForm.invoiceId);
+        const amt = Number(applyForm.amount) || 0;
+        const left = Number(applying.amount) - amt;
+        const field = "w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100";
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-xl">
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Apply advance to an invoice</h2>
+                <button onClick={() => setApplying(null)} className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                  <X size={24} />
+                </button>
+              </div>
+              <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+                {projects.find(p => p.id === applying.project_id)?.name || "Project"} · advance of {fmtAdvance(Number(applying.amount))} received {applying.payment_date}.
+                Use all of it, or part of it on each progress invoice. What you don't use stays as an advance.
+              </p>
+              <form onSubmit={handleApplySubmit} className="space-y-4">
+                {applyError && (
+                  <div className="rounded-lg border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-300">{applyError}</div>
+                )}
+                {options.length === 0 ? (
+                  <div className="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+                    There is no issued invoice for this client and project with money still owed. Create and send the invoice first.
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Invoice *</label>
+                      <select value={applyForm.invoiceId} className={field}
+                        onChange={(e) => {
+                          const o = options.find((x) => x.id === e.target.value);
+                          setApplyForm({ ...applyForm, invoiceId: e.target.value,
+                            amount: o ? String(Math.min(Number(applying.amount), Number(o.balance_due || 0))) : applyForm.amount });
+                        }}>
+                        {options.map((o) => (
+                          <option key={o.id} value={o.id}>{o.invoice_number} · {o.invoice_date} · still owed {fmtAdvance(Number(o.balance_due || 0))}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Amount to apply *</label>
+                        <input type="number" step="0.01" min="0" value={applyForm.amount} className={field}
+                          onChange={(e) => setApplyForm({ ...applyForm, amount: e.target.value })} />
+                        {inv && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {[10, 20, 25, 50].map((pct) => {
+                              const v = Math.min(Number(applying.amount), Number(inv.balance_due || 0), Math.round(Number(inv.total_amount || 0) * pct) / 100);
+                              return (
+                                <button key={pct} type="button" onClick={() => setApplyForm({ ...applyForm, amount: String(v) })}
+                                  className="rounded border border-slate-300 dark:border-slate-700 px-1.5 py-0.5 text-[11px] text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                  {pct}% of invoice
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-500 dark:text-slate-400">Date applied</label>
+                        <input type="date" value={applyForm.date} className={field}
+                          onChange={(e) => setApplyForm({ ...applyForm, date: e.target.value })} />
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
+                      {inv && <>Invoice {inv.invoice_number} still owed after this: <b>{fmtAdvance(Math.max(Number(inv.balance_due || 0) - amt, 0))}</b><br /></>}
+                      Left on the advance after this: <b>{fmtAdvance(Math.max(left, 0))}</b>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => setApplying(null)}
+                    className="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={applyBusy || options.length === 0}
+                    className="rounded-lg bg-slate-800 dark:bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {applyBusy ? "Applying..." : "Apply"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
       {showAdvanceModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-xl">
@@ -1640,7 +1781,7 @@ export default function AccountsReceivablePage() {
               </button>
             </div>
             <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-              Money received for a project before it has been invoiced. You can credit it against an invoice later, when you generate one from the project's BOQ.
+              Money received for a project before it has been invoiced. You can credit it against an invoice later: tick it when you generate the invoice from the BOQ, or use "Apply to invoice" (all of it, or part on each progress invoice).
             </p>
 
             {(() => {

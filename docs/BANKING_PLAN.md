@@ -80,3 +80,13 @@ Goal: work the standard way (QuickBooks / Xero / Sage / Viewpoint), not around h
   already set get their payments brought in by the migration.
 - UI: "Deposited to" on Record Payment and Record Advance (Accounts Receivable). EstimatesPage / BOQ invoice paths
   use the automatic default.
+
+## Step 3c - apply an advance to an invoice (full or part)
+- Migration `20260974000000_apply_advance_to_invoice.sql`: client_payments.applied_from_payment_id / applied_on;
+  `apply_advance(advance, invoice, amount, date)` splits the advance: a new payment row on the invoice (advance's
+  date / bank / method, applied_on = date), the advance's amount reduced. Books via the 3b payment rule: Client
+  Advances down, AR down, bank unchanged; totals of money received never double count. Checks: same company & client,
+  invoice issued, same project (or none), not above what is owed / left. AFTER DELETE trigger gives a deleted applied
+  part back to its advance. fetchUnappliedAdvances skips advances at 0.
+- UI: "Apply to invoice" on each unapplied advance (Accounts Receivable), with 10/20/25/50% of invoice shortcuts.
+- Also: Record Payment saves once (button disabled while saving) and never above what is owed.

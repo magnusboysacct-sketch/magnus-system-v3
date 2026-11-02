@@ -429,6 +429,7 @@ export async function fetchUnappliedAdvances(opts: { companyId?: string; project
     .select("*")
     .is("invoice_id", null)
     .not("project_id", "is", null)
+    .gt("amount", 0)   // an advance fully applied to invoices keeps its row at 0 (Banking step 3c)
     .order("payment_date", { ascending: true })
     .order("created_at", { ascending: true });
   if (opts.companyId) query = query.eq("company_id", opts.companyId);
@@ -439,6 +440,15 @@ export async function fetchUnappliedAdvances(opts: { companyId?: string; project
     throw error;
   }
   return (data || []) as ClientPayment[];
+}
+
+/** Banking step 3c: apply part (or all) of an unapplied advance to an issued invoice. What is left stays an advance.
+ *  The database checks client / project / what is owed / what is left; the invoice's paid amount is then recalculated. */
+export async function applyAdvanceToInvoice(advanceId: string, invoiceId: string, amount: number, date: string): Promise<number> {
+  const { data, error } = await supabase.rpc("apply_advance", { p_advance: advanceId, p_invoice: invoiceId, p_amount: amount, p_date: date });
+  if (error) throw new Error(error.message);
+  await updateInvoiceAfterPayment(invoiceId);
+  return Number((data as { left_on_advance: number }).left_on_advance);
 }
 
 export async function updateInvoiceAfterPayment(invoiceId: string) {
