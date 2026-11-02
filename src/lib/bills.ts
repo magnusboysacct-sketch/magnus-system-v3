@@ -3,6 +3,7 @@
 // (cost on the job, GCT Input Credit, Supplier Payables, retention held) - see migration 20260975.
 
 import { supabase } from "./supabase";
+import { privatePath, safeUploadName, uploadPrivate } from "./storageRefs";
 
 const errText = (e: unknown): string =>
   e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string" ? (e as { message: string }).message : "Something went wrong.";
@@ -84,11 +85,19 @@ export interface BillPayment {
   paid_from_account_id: string | null;
   gl_transaction_id: string | null;
   ledger_note: string | null;
+  received_by_name: string | null;
+  signature_data: string | null;
+  signed_at: string | null;
+  proof_path: string | null;
 }
+
+/** Cash handed over with no signature and no photo yet. */
+export const needsProof = (p: { payment_method: string | null; signed_at: string | null; proof_path: string | null }) =>
+  p.payment_method === "cash" && !p.signed_at && !p.proof_path;
 
 export async function fetchBillPayments(billId: string): Promise<BillPayment[]> {
   const { data, error } = await supabase.from("supplier_payments")
-    .select("id, payment_number, payment_date, amount, payment_method, reference_number, is_retention_release, paid_from_account_id, gl_transaction_id, ledger_note")
+    .select("id, payment_number, payment_date, amount, payment_method, reference_number, is_retention_release, paid_from_account_id, gl_transaction_id, ledger_note, received_by_name, signature_data, signed_at, proof_path")
     .eq("invoice_id", billId).order("payment_date").order("created_at");
   if (error) throw new Error(errText(error));
   return ((data || []) as BillPayment[]).map((p) => ({ ...p, amount: Number(p.amount) }));
@@ -96,10 +105,12 @@ export async function fetchBillPayments(billId: string): Promise<BillPayment[]> 
 
 export async function payBill(p: {
   billId: string; amount: number; date: string; paidFrom: string; method: PayMethod; reference: string; retention: boolean;
+  receivedBy?: string; signature?: string | null; proofPath?: string | null;
 }): Promise<string> {
   const { data, error } = await supabase.rpc("pay_bill", {
     p_bill: p.billId, p_amount: p.amount, p_date: p.date, p_paid_from: p.paidFrom,
     p_method: p.method, p_reference: p.reference.trim() || null, p_retention: p.retention,
+    p_received_by: p.receivedBy?.trim() || null, p_signature: p.signature || null, p_proof_path: p.proofPath || null,
   });
   if (error) throw new Error(errText(error));
   return data as string;
@@ -108,4 +119,45 @@ export async function payBill(p: {
 export async function undoBillPayment(id: string): Promise<void> {
   const { error } = await supabase.rpc("undo_bill_payment", { p_id: id });
   if (error) throw new Error(errText(error));
+}
+
+// ── Banking Step 4b-2: proof of payment (migration 20260977) ──
+
+export interface ProofValue { receivedBy: string; signature: string | null; photo: File | null }
+export const emptyProof = (name = ""): ProofValue => ({ receivedBy: name, signature: null, photo: null });
+
+/** Upload a proof photo (signed receipt, the person / their ID, or a transfer screenshot). Returns the stored path. */
+export async function uploadBillProof(companyId: string, file: File): Promise<string> {
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  const { path, error } = await uploadPrivate(privatePath(companyId, "finance/bill-payments", safeUploadName("proof", ext)), file,
+    { contentType: file.type || "image/jpeg" });
+  if (error || !path) throw new Error(error || "The photo was not saved.");
+  return path;
+}
+
+export async function addBillPaymentProof(id: string, receivedBy: string, signature: string | null, proofPath: string | null): Promise<void> {
+  const { error } = await supabase.rpc("add_bill_payment_proof", {
+    p_id: id, p_received_by: receivedBy.trim() || null, p_signature: signature, p_proof_path: proofPath,
+  });
+  if (error) throw new Error(errText(error));
+}
+
+export interface UnsignedPayment {
+  id: string; amount: number; payment_date: string; invoice_id: string | null;
+  invoice_number: string | null; supplier: string | null;
+}
+
+/** Cash bill payments still waiting for a signature or photo. */
+export async function fetchUnsignedCashPayments(companyId: string): Promise<UnsignedPayment[]> {
+  const { data, error } = await supabase.from("supplier_payments")
+    .select("id, amount, payment_date, invoice_id, supplier_invoices(invoice_number), suppliers(supplier_name)")
+    .eq("company_id", companyId).eq("payment_method", "cash").is("signed_at", null).is("proof_path", null)
+    .order("payment_date");
+  if (error) throw new Error(errText(error));
+  type Row = { id: string; amount: number; payment_date: string; invoice_id: string | null;
+    supplier_invoices: { invoice_number: string } | null; suppliers: { supplier_name: string } | null };
+  return ((data || []) as unknown as Row[]).map((r) => ({
+    id: r.id, amount: Number(r.amount), payment_date: r.payment_date, invoice_id: r.invoice_id,
+    invoice_number: r.supplier_invoices?.invoice_number ?? null, supplier: r.suppliers?.supplier_name ?? null,
+  }));
 }

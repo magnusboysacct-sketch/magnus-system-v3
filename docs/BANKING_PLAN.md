@@ -121,3 +121,18 @@ Screens: the bill detail has **Pay bill** (src/components/PayBillModal.tsx), **P
 Partly paid bills with only retention left show "Retention held" in the list.
 
 Next: 4c bill from a received Purchase Order.
+
+## Step 4b-2: proof of payment (done)
+
+Migration `20260977000000_bill_payment_proof.sql`:
+- supplier_payments: received_by_name, signature_data (PNG signed on the phone), signed_at, proof_path (photo in private-files
+  under <company>/finance/bill-payments/: full finance access or the uploader can open it).
+- pay_bill() takes the proof in the same step (the old 7-argument version is dropped). add_bill_payment_proof() adds it later
+  (director, admin, office user, supervisor).
+- A cash payment with no signature and no photo shows "Not signed yet" (banner on Payables) until proof is added.
+- A signed receipt can't be changed and a proof photo can't be swapped (trigger). A payment with proof can only be undone by a director or admin.
+
+Screens: Pay bill has the proof section (name, sign box, photo). Each payment has Receipt (print / save as PDF, with the
+signature), Photo, Sign / add photo. Shared sign box: src/components/SignBox.tsx.
+
+Next: 4b-3 supplier advances, then 4c bill from a received Purchase Order.

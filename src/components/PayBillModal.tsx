@@ -4,7 +4,8 @@
 import { useEffect, useState } from "react";
 import { Modal, Field, Input, Select, Btn } from "./ui";
 import { fetchMoneyAccounts, type MoneyAccount } from "../lib/banking";
-import { payBill, PAY_METHODS, type PayMethod } from "../lib/bills";
+import { emptyProof, payBill, PAY_METHODS, uploadBillProof, type PayMethod, type ProofValue } from "../lib/bills";
+import { ProofFields } from "./BillPaymentProof";
 
 const jmd = (n: number) => new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", maximumFractionDigits: 2 }).format(n || 0);
 const today = () => {
@@ -12,8 +13,9 @@ const today = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-export function PayBillModal({ open, onClose, bill, owed, retention, onDone }: {
+export function PayBillModal({ open, onClose, bill, owed, retention, companyId, onDone }: {
   open: boolean;
+  companyId: string | null;
   onClose: () => void;
   bill: { id: string; invoice_number: string; supplier: string } | null;
   /** What can be paid now: the bill less retention less what is paid (or, for retention, what is still held). */
@@ -23,6 +25,8 @@ export function PayBillModal({ open, onClose, bill, owed, retention, onDone }: {
 }) {
   const [accounts, setAccounts] = useState<MoneyAccount[]>([]);
   const [form, setForm] = useState({ amount: "", date: today(), from: "", method: "wire" as PayMethod, reference: "" });
+  const [proof, setProof] = useState<ProofValue>(emptyProof());
+  const [proofKey, setProofKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +34,8 @@ export function PayBillModal({ open, onClose, bill, owed, retention, onDone }: {
     if (!open) return;
     let alive = true;
     setForm({ amount: owed > 0 ? String(owed) : "", date: today(), from: "", method: "wire", reference: "" });
+    setProof(emptyProof(bill?.supplier ?? ""));
+    setProofKey((k) => k + 1);
     setError(null);
     fetchMoneyAccounts().then((a) => {
       if (!alive) return;
@@ -38,7 +44,7 @@ export function PayBillModal({ open, onClose, bill, owed, retention, onDone }: {
       if (bank) setForm((f) => ({ ...f, from: f.from || bank.id }));
     }).catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : "Could not load your accounts."); });
     return () => { alive = false; };
-  }, [open, owed]);
+  }, [open, owed, bill?.supplier]);
 
   const amount = Number(form.amount);
   const from = accounts.find((a) => a.id === form.from);
@@ -49,10 +55,17 @@ export function PayBillModal({ open, onClose, bill, owed, retention, onDone }: {
     if (!form.from) { setError("Choose where the money was paid from."); return; }
     if (!(amount > 0)) { setError("Type an amount above zero."); return; }
     if (amount > owed + 0.001) { setError(`Only ${jmd(owed)} can be paid on this bill now.`); return; }
+    if (proof.signature && !proof.receivedBy.trim()) { setError("Type the name of the person who signed."); return; }
     setSaving(true);
     try {
-      await payBill({ billId: bill.id, amount, date: form.date, paidFrom: form.from, method: form.method, reference: form.reference, retention });
-      onDone(`${retention ? "Retention" : "Payment"} of ${jmd(amount)} to ${bill.supplier} saved from ${from?.code} ${from?.name}.`);
+      const proofPath = proof.photo && companyId ? await uploadBillProof(companyId, proof.photo) : null;
+      await payBill({
+        billId: bill.id, amount, date: form.date, paidFrom: form.from, method: form.method, reference: form.reference, retention,
+        receivedBy: proof.signature ? proof.receivedBy : "", signature: proof.signature, proofPath,
+      });
+      const unsigned = form.method === "cash" && !proof.signature && !proofPath;
+      onDone(`${retention ? "Retention" : "Payment"} of ${jmd(amount)} to ${bill.supplier} saved from ${from?.code} ${from?.name}.`
+        + (unsigned ? " It shows as \"Not signed yet\" until you add a signature or photo." : ""));
       onClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "The payment was not saved.");
@@ -111,6 +124,12 @@ export function PayBillModal({ open, onClose, bill, owed, retention, onDone }: {
             <Input value={form.reference} placeholder="e.g. transfer number" onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} />
           </Field>
         </div>
+        <ProofFields key={proofKey} value={proof} onChange={setProof} cash={form.method === "cash"} />
+        {form.method === "cash" && !proof.signature && !proof.photo && (
+          <div className="text-[11px] text-amber-600 dark:text-amber-400">
+            No signature or photo: you can still save it, but it shows as "Not signed yet" until the proof is added.
+          </div>
+        )}
         {from && from.type === "asset" && amount > from.current_balance && (
           <div className="text-[11px] text-amber-600 dark:text-amber-400">
             {from.code} {from.name} only shows {jmd(from.current_balance)} in your books. You can still save it if the books are not up to date yet.
