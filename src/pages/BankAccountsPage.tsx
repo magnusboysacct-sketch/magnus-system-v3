@@ -22,11 +22,11 @@ import { fetchBankAccounts, deactivateBankAccount, updateBankAccount, fetchBankL
 import type { BankAccount, BankLedgerAccount } from "../lib/finance";
 import { AddBankAccountModal } from "../components/AddBankAccountModal";
 import { TransferMoneyModal } from "../components/TransferMoneyModal";
-import { fetchRecentTransfers, undoTransfer, fetchOpeningBalances, setOpeningBalance, fetchMoneyAccounts, setMoneyAccount, type TransferRow, type OpeningBalance, type MoneyAccount } from "../lib/banking";
+import { fetchRecentTransfers, undoTransfer, fetchOpeningBalances, setOpeningBalance, fetchMoneyAccounts, setMoneyAccount, fetchBooksSetup, fetchRevenueAccounts, setBooksStart, type TransferRow, type OpeningBalance, type MoneyAccount, type BooksSetup } from "../lib/banking";
 import {
   PageHeader, Card, Badge, Btn, Table, Th, Tr, Td, Empty, Modal, Field, Input
 } from "../components/ui";
-import { Plus, Pencil, Ban, Landmark, RefreshCw, RotateCcw, Link2, BookPlus, ArrowLeftRight, Undo2 } from "lucide-react";
+import { Plus, Pencil, Ban, Landmark, RefreshCw, RotateCcw, Link2, BookPlus, ArrowLeftRight, Undo2, CalendarDays } from "lucide-react";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
@@ -65,6 +65,11 @@ export default function BankAccountsPage() {
   const [openBusy, setOpenBusy] = useState(false);
   const [moneyAccts, setMoneyAccts] = useState<MoneyAccount[]>([]);
   const [addMoneyId, setAddMoneyId] = useState("");
+  const [books, setBooks] = useState<BooksSetup>({ startDate: null, revenueAccountId: null });
+  const [booksOpen, setBooksOpen] = useState(false);
+  const [booksForm, setBooksForm] = useState({ date: "", revenueId: "" });
+  const [revenueAccts, setRevenueAccts] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [booksBusy, setBooksBusy] = useState(false);
   const [undoReason, setUndoReason] = useState("");
   const [undoBusy, setUndoBusy] = useState(false);
 
@@ -93,6 +98,7 @@ export default function BankAccountsPage() {
       setTransfers(await fetchRecentTransfers(companyId).catch(() => []));
       setOpenings(await fetchOpeningBalances(companyId).catch(() => new Map<string, OpeningBalance>()));
       setMoneyAccts(await fetchMoneyAccounts().catch(() => []));
+      setBooks(await fetchBooksSetup(companyId));
     } catch (e: unknown) {
       setError(errText(e) || "Failed to load bank accounts");
     } finally {
@@ -177,11 +183,34 @@ export default function BankAccountsPage() {
     }
   }
 
+  async function openBooks() {
+    setBooksForm({ date: books.startDate || "", revenueId: books.revenueAccountId || "" });
+    setBooksOpen(true);
+    if (companyId) setRevenueAccts(await fetchRevenueAccounts(companyId).catch(() => []));
+  }
+
+  async function saveBooks() {
+    setBooksBusy(true);
+    setError(null);
+    try {
+      const r = await setBooksStart(booksForm.date, booksForm.revenueId || null);
+      setNotice(r.openingInvoices > 0
+        ? `Books start on ${booksForm.date}. ${r.openingInvoices} unpaid invoice(s) from before that date came in as opening receivables (${fmt(r.openingTotal)}).`
+        : `Books start on ${booksForm.date}.`);
+      setBooksOpen(false);
+      await loadAccounts();
+    } catch (e: unknown) {
+      setError(errText(e) || "Could not save the books start date");
+    } finally {
+      setBooksBusy(false);
+    }
+  }
+
   function openOpening(a: BankAccount) {
     const d = new Date();
     setOpenForm({
       amount: a.current_balance ? String(a.current_balance) : "",
-      date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+      date: books.startDate || `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
     });
     setOpening(a);
   }
@@ -331,6 +360,27 @@ export default function BankAccountsPage() {
             <span>{notice}</span>
             <button onClick={() => setNotice(null)} className="text-emerald-600 hover:text-emerald-800" aria-label="Close">✕</button>
           </div>
+        )}
+
+        {!loading && (
+          <Card>
+            <div className="flex flex-wrap items-center gap-3">
+              <CalendarDays size={18} className={books.startDate ? "text-cyan-600" : "text-amber-500"}/>
+              <div className="flex-1 min-w-[220px]">
+                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Books start date: {books.startDate ? books.startDate : <span className="text-amber-600">not set</span>}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {books.startDate
+                    ? "Issued invoices from this date go into your books automatically. Unpaid older invoices came in as opening receivables."
+                    : "Choose the day your books start in Magnus. From then on, issued invoices go into the books automatically."}
+                </div>
+              </div>
+              <Btn size="sm" variant={books.startDate ? "secondary" : "primary"} onClick={() => { void openBooks(); }}>
+                {books.startDate ? "Change" : "Set start date"}
+              </Btn>
+            </div>
+          </Card>
         )}
 
         <Card padding={false}>
@@ -536,6 +586,34 @@ export default function BankAccountsPage() {
             <Btn variant="ghost" size="sm" onClick={() => setOpening(null)} disabled={openBusy}>Cancel</Btn>
             <Btn variant="primary" size="sm" onClick={() => { void saveOpening(); }} disabled={openBusy || !openForm.date || !Number(openForm.amount)}>
               {openBusy ? "Saving..." : "Save opening balance"}
+            </Btn>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={booksOpen} onClose={() => { if (!booksBusy) setBooksOpen(false); }} title="Books start date"
+        subtitle="The day your books start in Magnus. Nothing older is re-entered.">
+        <div className="space-y-3">
+          <Field label="Books start on">
+            <Input type="date" value={booksForm.date} onChange={e => setBooksForm(f => ({ ...f, date: e.target.value }))}/>
+          </Field>
+          <Field label="Invoices go to this revenue account" hint="You can still choose another one on a single invoice later.">
+            <select value={booksForm.revenueId} onChange={e => setBooksForm(f => ({ ...f, revenueId: e.target.value }))}
+              className="w-full text-sm rounded-lg border border-slate-300 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] px-3 py-2 text-slate-900 dark:text-slate-200">
+              <option value="">The first revenue account in my chart</option>
+              {revenueAccts.map(r => <option key={r.id} value={r.id}>{r.code} - {r.name}</option>)}
+            </select>
+          </Field>
+          <ul className="text-[11px] text-slate-500 list-disc pl-4 space-y-1">
+            <li>Use the date of a bank statement you have, e.g. the last day of last month. Set each bank's opening balance on the same date.</li>
+            <li>Invoices you issue (sent) on or after this date go into the books: client owes you, income earned, GCT payable.</li>
+            <li>Invoices from before this date that were still unpaid on that day come in once, as opening receivables.</li>
+            <li>The date can be changed until invoices after it are in the books.</li>
+          </ul>
+          <div className="flex justify-end gap-2">
+            <Btn variant="ghost" size="sm" onClick={() => setBooksOpen(false)} disabled={booksBusy}>Cancel</Btn>
+            <Btn variant="primary" size="sm" onClick={() => { void saveBooks(); }} disabled={booksBusy || !booksForm.date}>
+              {booksBusy ? "Saving..." : "Save"}
             </Btn>
           </div>
         </div>

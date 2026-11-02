@@ -116,3 +116,32 @@ export async function fetchRecentTransfers(companyId: string, limit = 15): Promi
 export function looksForeign(name: string): boolean {
   return /(^|[^A-Za-z])(USD|US\$|GBP|CAD|EUR)(?![A-Za-z])/i.test(name);
 }
+
+// ── Books setup (Banking Step 3a) ─────────────────────────────────────────────
+
+export interface BooksSetup { startDate: string | null; revenueAccountId: string | null }
+
+export async function fetchBooksSetup(companyId: string): Promise<BooksSetup> {
+  const { data, error } = await supabase.from("company_settings")
+    .select("books_start_date, default_revenue_account_id").eq("company_id", companyId).maybeSingle();
+  if (error) return { startDate: null, revenueAccountId: null };   // before the migration: just "not set"
+  const d = (data || {}) as { books_start_date?: string | null; default_revenue_account_id?: string | null };
+  return { startDate: d.books_start_date ?? null, revenueAccountId: d.default_revenue_account_id ?? null };
+}
+
+export async function fetchRevenueAccounts(companyId: string): Promise<{ id: string; code: string; name: string }[]> {
+  const { data, error } = await supabase.from("chart_of_accounts")
+    .select("id, code, name, parent_id, is_active").eq("company_id", companyId).eq("type", "revenue").order("code");
+  if (error) throw new Error(errText(error));
+  const rows = (data || []) as { id: string; code: string; name: string; parent_id: string | null; is_active: boolean | null }[];
+  const parents = new Set(rows.map((r) => r.parent_id).filter(Boolean));
+  return rows.filter((r) => r.is_active !== false && !parents.has(r.id));
+}
+
+/** Sets the books start date (and default revenue account). Brings in opening receivables. */
+export async function setBooksStart(date: string, revenueAccountId: string | null): Promise<{ openingInvoices: number; openingTotal: number }> {
+  const { data, error } = await supabase.rpc("set_books_start_date", { p_date: date, p_revenue_account: revenueAccountId });
+  if (error) throw new Error(errText(error));
+  const d = data as { opening_invoices: number; opening_total: number };
+  return { openingInvoices: Number(d.opening_invoices || 0), openingTotal: Number(d.opening_total || 0) };
+}

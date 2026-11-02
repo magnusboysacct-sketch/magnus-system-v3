@@ -851,6 +851,10 @@ export default function AccountsReceivablePage() {
                       <FileText size={16} className="text-slate-600 dark:text-slate-400" />
                       <span className="font-mono text-sm font-medium text-slate-900 dark:text-slate-100">{inv.invoice_number}</span>
                     </div>
+                    {/* Banking step 3a: is this invoice in the books (receivable + income), and if not, why. */}
+                    {inv.gl_transaction_id
+                      ? <div className="mt-0.5 text-[10px] text-emerald-600 dark:text-emerald-400">In the books</div>
+                      : inv.ledger_note && <div className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400 max-w-[220px]">{inv.ledger_note}</div>}
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{inv.clients?.name || "-"}</div>

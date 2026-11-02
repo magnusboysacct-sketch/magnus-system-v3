@@ -17,7 +17,8 @@ Goal: work the standard way (QuickBooks / Xero / Sage / Viewpoint), not around h
 |---|---|---|
 | 1 | One list: bank_accounts.chart_account_id; new bank accounts create / link their chart account; page shows books balance | done (20260969) |
 | 2 | Transfer money (from, to, amount, date, note, optional project) -> posted journal | done (20260970) |
-| 3 | Client payments: "Deposited to" + post to the books (start date + opening balances decided here) | |
+| 3a | Books start date + invoices to the books (AR / revenue / GCT) + opening receivables | done (20260972) |
+| 3b | Client payments: "Deposited to" + post (bank / AR), advances (bank / Client Advances) | |
 | 4 | Supplier payments: "Paid from" + post to the books | |
 | 5 | Bank statements: fix posting (placeholder accounts today), match lines to the books | |
 | 6 | Account history + reconcile (bank says X, books say Y) | |
@@ -51,3 +52,20 @@ Goal: work the standard way (QuickBooks / Xero / Sage / Viewpoint), not around h
   - Chart accounts made from a bank account are named "Bank - Name ••1234"; step-1 ones renamed (only if unchanged).
 - UI: Bank Accounts -> "Set opening balance" under each linked bank, "Cash, petty cash and fund accounts" section
   (add any asset from the chart = mark as Bank; remove = back to current asset).
+
+## Step 3a notes
+- Working company for testing: "Veron" (sandbox). The real Magnus Boy's company has Zoho-imported entries in the books;
+  the rules below never reverse or duplicate entries they didn't make (they only manage client_invoices.gl_transaction_id).
+- Migration `20260972000000_books_start_invoices_to_books.sql`:
+  - company_settings.books_start_date / default_revenue_account_id; client_invoices.revenue_account_id /
+    gl_transaction_id / ledger_note / ledger_signature.
+  - `_gl_post(...)` (header -> lines -> posted) and `_gl_reverse(id, reason)` shared helpers.
+  - BEFORE INSERT/UPDATE/DELETE trigger `invoice_to_books`: issued (sent/partial/paid/overdue) on/after the start date ->
+    DR AR total / CR revenue (total - GCT) / CR GCT Payable; change of total/GCT/date/project/revenue account -> reverse +
+    repost; draft/cancelled/deleted -> reverse. Errors never block the invoice: they go to ledger_note.
+  - `set_books_start_date(date, revenue)` (director/admin): opening receivables per unpaid pre-start invoice
+    (total - payments before the date) DR AR / CR Opening Balance Equity at the start date; changeable until invoices
+    after it are in the books.
+  - Fix: credit cards / lines of credit filed under the chart's credit card heading by name (standard chart: 2500),
+    never 2400 "Client Advances and Deposits".
+- UI: Bank Accounts -> "Books start date" card; Accounts Receivable list shows "In the books" or the note.

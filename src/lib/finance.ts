@@ -23,6 +23,9 @@ export interface ClientInvoice {
   created_at?: string;
   updated_at?: string;
   created_by?: string | null;
+  /** Banking step 3a: the books entry for this invoice, or why it isn't in the books yet. */
+  gl_transaction_id?: string | null;
+  ledger_note?: string | null;
 }
 
 export interface ClientInvoiceLineItem {
