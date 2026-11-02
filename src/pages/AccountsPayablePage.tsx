@@ -19,6 +19,8 @@ import { NewBillModal } from "../components/NewBillModal";
 import { PayBillModal } from "../components/PayBillModal";
 import { AddProofModal } from "../components/BillPaymentProof";
 import { ApplyAdvanceModal, GiveAdvanceModal } from "../components/AdvanceModals";
+import { BillFromPOModal } from "../components/BillFromPOModal";
+import { useSearchParams } from "react-router-dom";
 import { showBillReceipt } from "../lib/billReceipt";
 import { resolveFileUrl } from "../lib/storageRefs";
 import {
@@ -32,7 +34,7 @@ import {
   Spinner, cn
 } from "../components/ui";
 import {
-  Search, RefreshCw, Landmark, Package, Plus, CheckCircle2, AlertTriangle, Banknote, Undo2, PenTool, Printer, Image as ImageIcon, ScanLine, HandCoins,
+  Search, RefreshCw, Landmark, Package, Plus, CheckCircle2, AlertTriangle, Banknote, Undo2, PenTool, Printer, Image as ImageIcon, ScanLine, HandCoins, ClipboardList,
 } from "lucide-react";
 
 interface SupplierInvoiceRow {
@@ -106,6 +108,18 @@ export default function AccountsPayablePage() {
   const [advances, setAdvances] = useState<SupplierAdvance[]>([]);
   const [showGive, setShowGive] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const [fromPO, setFromPO] = useState<{ open: boolean; poId: string | null }>({ open: false, poId: null });
+
+  // Opened from a Purchase Order ("Enter supplier bill"): /accounts-payable?po=<id>
+  useEffect(() => {
+    const po = params.get("po");
+    if (!po) return;
+    setFromPO({ open: true, poId: po });
+    const next = new URLSearchParams(params);
+    next.delete("po");
+    setParams(next, { replace: true });
+  }, [params, setParams]);
   const [unsigned, setUnsigned] = useState<UnsignedPayment[]>([]);
   const [companyName, setCompanyName] = useState("");
 
@@ -322,6 +336,7 @@ export default function AccountsPayablePage() {
               icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>}
               onClick={loadBills}/>
             {canApprove && <Btn variant="ghost" size="sm" icon={<HandCoins size={13}/>} onClick={() => setShowGive(true)} disabled={!companyId}>Give advance</Btn>}
+            <Btn variant="ghost" size="sm" icon={<ClipboardList size={13}/>} onClick={() => setFromPO({ open: true, poId: null })} disabled={!companyId}>From a PO</Btn>
             <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => setShowNew(true)} disabled={!companyId}>New bill</Btn>
           </div>
         }
@@ -544,7 +559,12 @@ export default function AccountsPayablePage() {
                       {lineItems.map(li => (
                         <Tr key={li.id}>
                           <Td muted>{li.line_no}</Td>
-                          <Td>{li.item_name}</Td>
+                          <Td>
+                            {li.item_name}
+                            {li.match_status && li.match_status !== "matched" && li.match_status !== "pending" && (
+                              <div className="text-[10px] text-amber-600 dark:text-amber-400">{li.match_notes || li.match_status.replace("_", " ")}</div>
+                            )}
+                          </Td>
                           <Td muted>{(() => { const a = costAccounts.find(c => c.id === li.chart_account_id); return a ? `${a.code} ${a.name}` : "—"; })()}</Td>
                           <Td right>{li.quantity}</Td>
                           <Td right>{fmt(li.unit_cost)}</Td>
@@ -649,6 +669,9 @@ export default function AccountsPayablePage() {
         owed={paying === "retention" ? retentionHeld : owedNow}
         bill={selectedBill ? { id: selectedBill.id, invoice_number: selectedBill.invoice_number, supplier: selectedBill.suppliers?.supplier_name || "the supplier" } : null}
         onDone={m => { setNotice(m); if (selectedBill) void refreshSelected(selectedBill.id); }}/>
+
+      <BillFromPOModal open={fromPO.open} presetPoId={fromPO.poId} onClose={() => setFromPO({ open: false, poId: null })}
+        companyId={companyId} canApprove={canApprove} onDone={m => { setNotice(m); loadBills(); }}/>
 
       <NewBillModal open={showNew} onClose={() => setShowNew(false)} companyId={companyId} canApprove={canApprove}
         onDone={msg => { setNotice(msg); loadBills(); }}/>

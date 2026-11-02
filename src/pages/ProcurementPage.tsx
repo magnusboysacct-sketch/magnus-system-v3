@@ -2240,6 +2240,7 @@ function PurchaseOrderDocumentView({
   const [tempValue, setTempValue] = useState<string>("");
   const [receivingMode, setReceivingMode] = useState(false);
   const [deliveryQuantities, setDeliveryQuantities] = useState<Record<string, number>>({});
+  const navigateToBill = useNavigate();
 
   function getStatusLabel(status: PurchaseOrderStatus): string {
     switch (status) {
@@ -2361,6 +2362,14 @@ function PurchaseOrderDocumentView({
                 >
                   Print PO
                 </button>
+                {["issued", "part_delivered", "delivered"].includes(purchaseOrder.status) && (
+                  <button
+                    onClick={() => navigateToBill(`/accounts-payable?po=${purchaseOrder.id}`)}
+                    className="px-3 py-2 rounded-xl bg-cyan-100 dark:bg-cyan-900/30 hover:bg-cyan-200 dark:hover:bg-cyan-900/50 border border-cyan-300 dark:border-cyan-900/50 text-cyan-700 dark:text-cyan-300 text-sm"
+                  >
+                    Enter supplier bill
+                  </button>
+                )}
                 <select
                   value={purchaseOrder.status}
                   onChange={(e) =>

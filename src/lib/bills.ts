@@ -304,3 +304,43 @@ export async function fetchAdvances(companyId: string, opts: { supplierId?: stri
     left: Number(amount), given: Math.round((Number(amount) + (used.get(r.id) || 0)) * 100) / 100,
   })).filter((a) => !opts.openOnly || a.left > 0 || needsProof({ ...a, applied_from_payment_id: null }));
 }
+
+// ── Banking Step 4c: a bill from a Purchase Order (migration 20260981) ──
+
+export interface BillablePO { id: string; po_number: string; title: string; supplier: string; project: string | null; status: string }
+export interface POLine {
+  id: string; material_name: string; description: string | null; unit: string | null;
+  ordered: number; received: number; billed: number; left_to_bill: number; rate: number;
+}
+
+/** Issued / part-delivered / delivered purchase orders. */
+export async function fetchBillablePOs(companyId: string): Promise<BillablePO[]> {
+  const { data, error } = await supabase.from("purchase_orders")
+    .select("id, po_number, title, status, supplier_name, suppliers(supplier_name), projects(name)")
+    .eq("company_id", companyId).in("status", ["issued", "part_delivered", "delivered"])
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(errText(error));
+  type Row = { id: string; po_number: string; title: string; status: string; supplier_name: string | null;
+    suppliers: { supplier_name: string } | null; projects: { name: string } | null };
+  return ((data || []) as unknown as Row[]).map((r) => ({
+    id: r.id, po_number: r.po_number, title: r.title, status: r.status,
+    supplier: r.suppliers?.supplier_name ?? r.supplier_name ?? "Supplier", project: r.projects?.name ?? null,
+  }));
+}
+
+export async function fetchPOLines(poId: string): Promise<POLine[]> {
+  const { data, error } = await supabase.rpc("po_lines_to_bill", { p_po: poId });
+  if (error) throw new Error(errText(error));
+  return ((data || []) as POLine[]).map((l) => ({
+    ...l, ordered: Number(l.ordered), received: Number(l.received), billed: Number(l.billed),
+    left_to_bill: Number(l.left_to_bill), rate: Number(l.rate),
+  }));
+}
+
+export async function createBillFromPO(poId: string, bill: {
+  invoice_number: string; invoice_date: string; due_date: string; tax_amount: number; retention_percent: number; notes: string;
+}, lines: { po_item_id: string; quantity: number; unit_cost: number; chart_account_id: string }[], approve: boolean): Promise<string> {
+  const { data, error } = await supabase.rpc("create_bill_from_po", { p_po: poId, p_bill: bill, p_lines: lines, p_approve: approve });
+  if (error) throw new Error(errText(error));
+  return data as string;
+}

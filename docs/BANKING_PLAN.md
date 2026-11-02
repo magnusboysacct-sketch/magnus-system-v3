@@ -170,3 +170,21 @@ Screens: Payables header **Give advance**; an "Advances not used up yet" card (R
 bill detail **Use advance** (when that supplier has an advance left); parts used show "From advance ADV-0001" with **Unapply**.
 
 Next: 4c bill from a received Purchase Order.
+
+## Step 4c: bill from a Purchase Order (done)
+
+Migration `20260981000000_bill_from_purchase_order.sql`:
+- po_lines_to_bill(po): each PO line - ordered, received (delivered_qty), already billed (not counting disputed bills),
+  left to bill, PO price.
+- create_bill_from_po(po, bill, lines, approve): links the bill to the PO and each line to its PO line; three-way match per line
+  (price vs PO, quantity vs received and not billed yet, nothing received) into match_status / match_notes, and on the bill
+  (three_way_match_status matched / discrepancy, po_matched, receiving_matched). A bill that doesn't match can't be approved in
+  the same step: it is saved waiting for approval for a director to check (approve_bill as usual).
+- The PO's supplier is used; a PO with only a typed supplier name links to (or adds) that supplier.
+- The old automatic matcher triggers on supplier_invoice_line_items (20260315172743) are dropped: they checked PO statuses
+  Magnus doesn't use, could approve bills by themselves and wrote values the table refuses. Nothing in the app called them.
+
+Screens: Payables **From a PO** (src/components/BillFromPOModal.tsx), and **Enter supplier bill** on an issued /
+delivered Purchase Order (opens /accounts-payable?po=<id>). Flags show on the bill's lines.
+
+Next: Step 5 - bank statements and matching.
