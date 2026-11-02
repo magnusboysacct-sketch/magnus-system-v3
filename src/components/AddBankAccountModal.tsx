@@ -21,10 +21,23 @@
 // (which never pass `account`) keep behaving exactly as before, still
 // always in create mode.
 
-import React, { useEffect, useState } from "react";
-import { createBankAccount, updateBankAccount } from "../lib/finance";
-import type { BankAccount } from "../lib/finance";
+//
+// Banking Step 1: every bank account is an account in the Chart of Accounts. "In your books" picks which one:
+// a new account created automatically (the default), or an existing bank / cash account that isn't linked yet
+// (e.g. 1710 Current Account JMD). Credit cards and lines of credit link to liability accounts. The balance typed
+// here is the BANK's figure (for checking against the books later); the books balance comes from what is recorded.
+
+import { useEffect, useState } from "react";
+import { createBankAccount, updateBankAccount, fetchBankLedgerAccounts } from "../lib/finance";
+import type { BankAccount, BankLedgerAccount } from "../lib/finance";
+import { supabase } from "../lib/supabase";
 import { Modal, Field, Input, Select, Btn } from "../components/ui";
+
+/** The message from a thrown Error or a Supabase error object. */
+const errText = (e: unknown): string =>
+  e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string" ? (e as { message: string }).message : "";
+
+const ledgerTypeFor = (t: BankAccount["account_type"]) => (t === "credit" || t === "line_of_credit" ? "liability" : "asset");
 
 const blankForm = {
   account_name: "",
@@ -32,6 +45,7 @@ const blankForm = {
   bank_name: "",
   account_number_last_4: "",
   current_balance: "",
+  chart_account_id: "",
 };
 
 export interface AddBankAccountModalProps {
@@ -55,6 +69,31 @@ export function AddBankAccountModal({ open, onClose, onCreated, onUpdated, accou
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEdit = !!account;
+  const [ledger, setLedger] = useState<BankLedgerAccount[]>([]);
+  const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set());
+
+  // The chart accounts that can be picked, and which are already linked to another bank account.
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { data: profile } = await supabase.from("user_profiles").select("company_id").eq("id", user?.id ?? "").maybeSingle();
+        if (!profile?.company_id) return;
+        const [accts, banks] = await Promise.all([
+          fetchBankLedgerAccounts(profile.company_id),
+          supabase.from("bank_accounts").select("id, chart_account_id").eq("company_id", profile.company_id),
+        ]);
+        if (!alive) return;
+        setLedger(accts);
+        setLinkedIds(new Set((banks.data || [])
+          .filter((b: { id: string; chart_account_id: string | null }) => b.chart_account_id && b.id !== account?.id)
+          .map((b: { chart_account_id: string | null }) => b.chart_account_id as string)));
+      } catch { /* the list just stays empty: "create new" still works */ }
+    })();
+    return () => { alive = false; };
+  }, [open, account]);
 
   // Re-initialize the form every time the modal opens — from the target
   // account's current values in edit mode, or blank in create mode. Keyed
@@ -71,6 +110,7 @@ export function AddBankAccountModal({ open, onClose, onCreated, onUpdated, accou
         bank_name: account.bank_name || "",
         account_number_last_4: account.account_number_last_4 || "",
         current_balance: String(account.current_balance ?? ""),
+        chart_account_id: account.chart_account_id || "",
       });
     } else {
       setForm(blankForm);
@@ -105,6 +145,8 @@ export function AddBankAccountModal({ open, onClose, onCreated, onUpdated, accou
           bank_name: form.bank_name.trim() || null,
           account_number_last_4: form.account_number_last_4.trim() || null,
           current_balance: balance,
+          // Leaving "create new" on an unlinked account keeps it unlinked here; the page's "Create in chart" button does that.
+          ...(form.chart_account_id ? { chart_account_id: form.chart_account_id } : {}),
         });
         onUpdated?.(updated);
       } else {
@@ -115,12 +157,13 @@ export function AddBankAccountModal({ open, onClose, onCreated, onUpdated, accou
           account_number_last_4: form.account_number_last_4.trim() || undefined,
           current_balance: balance,
           available_balance: balance,
+          chart_account_id: form.chart_account_id || null,
         });
         onCreated?.(created);
       }
       onClose();
-    } catch (e: any) {
-      setError(e.message || `Failed to ${isEdit ? "update" : "create"} account`);
+    } catch (e: unknown) {
+      setError(errText(e) || `Failed to ${isEdit ? "update" : "create"} account`);
     } finally {
       setSaving(false);
     }
@@ -152,7 +195,23 @@ export function AddBankAccountModal({ open, onClose, onCreated, onUpdated, accou
           <Input placeholder="e.g. 4821" maxLength={4} value={form.account_number_last_4}
             onChange={e => setForm(s => ({ ...s, account_number_last_4: e.target.value.replace(/\D/g, "") }))}/>
         </Field>
-        <Field label={isEdit ? "Current Balance" : "Opening Balance"}>
+        {(() => {
+          const kind = ledgerTypeFor(form.account_type);
+          const options = ledger.filter(a => a.type === kind && (a.is_active !== false) && (!linkedIds.has(a.id) || a.id === form.chart_account_id));
+          return (
+            <Field label="In your books (Chart of Accounts)"
+              hint={kind === "asset"
+                ? "Pick the bank account that is already in your chart, or let Magnus add a new one. This is what you choose in \"Paid from\" and transfers."
+                : "Credit cards and lines of credit are money owed, so they are liability accounts in your chart."}>
+              <Select value={form.chart_account_id} onChange={e => setForm(s => ({ ...s, chart_account_id: e.target.value }))}>
+                <option value="">{isEdit && account?.chart_account_id ? "(keep as it is)" : "Add a new account to my chart (recommended)"}</option>
+                {options.map(a => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}
+              </Select>
+            </Field>
+          );
+        })()}
+        <Field label="Balance on the bank statement (optional)"
+          hint="What the bank says today. It is only used to check your books against the bank; your books balance comes from what you record.">
           <Input type="number" placeholder="0.00" value={form.current_balance}
             onChange={e => setForm(s => ({ ...s, current_balance: e.target.value }))}/>
         </Field>

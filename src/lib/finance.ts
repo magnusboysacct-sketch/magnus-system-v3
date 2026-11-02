@@ -171,6 +171,8 @@ export interface BankAccount {
   available_balance: number;
   is_primary: boolean;
   is_active: boolean;
+  /** The Chart of Accounts account this bank account is in the books (migration 20260969). */
+  chart_account_id?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -727,6 +729,7 @@ export async function createBankAccount(account: {
   current_balance?: number;
   available_balance?: number;
   is_primary?: boolean;
+  chart_account_id?: string | null;
 }) {
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -753,6 +756,8 @@ export async function createBankAccount(account: {
         available_balance: account.available_balance ?? account.current_balance ?? 0,
         is_primary: account.is_primary ?? false,
         is_active: true,
+        // Empty = the database creates its account in the Chart of Accounts automatically.
+        chart_account_id: account.chart_account_id || null,
       },
     ])
     .select()
@@ -784,6 +789,27 @@ export async function deactivateBankAccount(id: string) {
 
   if (error) throw error;
   return data as BankAccount;
+}
+
+/** The bank / cash (asset) and credit (liability) accounts in the chart, with their books balance, for linking bank accounts. */
+export interface BankLedgerAccount { id: string; code: string; name: string; type: string; is_active: boolean | null; current_balance: number | null }
+
+export async function fetchBankLedgerAccounts(companyId: string): Promise<BankLedgerAccount[]> {
+  const { data, error } = await supabase
+    .from("chart_of_accounts")
+    .select("id, code, name, type, is_active, current_balance")
+    .eq("company_id", companyId)
+    .in("type", ["asset", "liability"])
+    .order("code");
+  if (error) throw error;
+  return (data || []) as BankLedgerAccount[];
+}
+
+/** "Create in chart" for a bank account that isn't in the books yet. Returns the new account's id. */
+export async function createChartAccountForBank(bankAccountId: string): Promise<string> {
+  const { data, error } = await supabase.rpc("bank_account_create_chart_account", { p_bank: bankAccountId });
+  if (error) throw error;
+  return data as string;
 }
 
 export async function fetchBankAccounts(companyId: string) {

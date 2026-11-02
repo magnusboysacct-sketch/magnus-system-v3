@@ -11,21 +11,30 @@
 // for both Add and Edit, rather than a second, duplicate form — passing an
 // `account` puts it in edit mode.
 
-import React, { useEffect, useState } from "react";
+//
+// Banking Step 1: each bank account is an account in the Chart of Accounts. "In your books" shows which one and its
+// books balance (from what is recorded); "Bank statement" is the figure typed from the bank, for checking. A bank
+// account not in the books yet gets "Create in chart" / "Link" buttons.
+
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { fetchBankAccounts, deactivateBankAccount, updateBankAccount } from "../lib/finance";
-import type { BankAccount } from "../lib/finance";
+import { fetchBankAccounts, deactivateBankAccount, updateBankAccount, fetchBankLedgerAccounts, createChartAccountForBank } from "../lib/finance";
+import type { BankAccount, BankLedgerAccount } from "../lib/finance";
 import { AddBankAccountModal } from "../components/AddBankAccountModal";
 import {
   PageHeader, Card, Badge, Btn, Table, Th, Tr, Td, Empty
 } from "../components/ui";
-import { Plus, Pencil, Ban, Landmark, RefreshCw, RotateCcw } from "lucide-react";
+import { Plus, Pencil, Ban, Landmark, RefreshCw, RotateCcw, Link2, BookPlus } from "lucide-react";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency", currency: "JMD", maximumFractionDigits: 2
   }).format(n);
 }
+
+/** The message from a thrown Error or a Supabase error object. */
+const errText = (e: unknown): string =>
+  e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string" ? (e as { message: string }).message : "";
 
 const ACCOUNT_TYPE_LABEL: Record<string, string> = {
   checking: "Checking", savings: "Savings",
@@ -42,6 +51,8 @@ export default function BankAccountsPage() {
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
+  const [ledger, setLedger] = useState<Map<string, BankLedgerAccount>>(new Map());
+  const [creatingId, setCreatingId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -51,7 +62,7 @@ export default function BankAccountsPage() {
     });
   }, []);
 
-  useEffect(() => { if (companyId) loadAccounts(); }, [companyId]);
+  useEffect(() => { if (companyId) loadAccounts(); }, [companyId]); // eslint-disable-line react-hooks/exhaustive-deps -- loads once per company
 
   // fetchBankAccounts() itself has no is_active filter (confirmed reading
   // lib/finance.ts directly) — it returns every row for the company, so
@@ -62,10 +73,11 @@ export default function BankAccountsPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchBankAccounts(companyId);
+      const [data, accts] = await Promise.all([fetchBankAccounts(companyId), fetchBankLedgerAccounts(companyId)]);
       setAccounts(data || []);
-    } catch (e: any) {
-      setError(e.message || "Failed to load bank accounts");
+      setLedger(new Map(accts.map(a => [a.id, a])));
+    } catch (e: unknown) {
+      setError(errText(e) || "Failed to load bank accounts");
     } finally {
       setLoading(false);
     }
@@ -94,8 +106,8 @@ export default function BankAccountsPage() {
     try {
       await deactivateBankAccount(account.id);
       await loadAccounts();
-    } catch (e: any) {
-      setError(e.message || "Failed to deactivate account");
+    } catch (e: unknown) {
+      setError(errText(e) || "Failed to deactivate account");
     } finally {
       setDeactivatingId(null);
     }
@@ -111,10 +123,23 @@ export default function BankAccountsPage() {
     try {
       await updateBankAccount(account.id, { is_active: true });
       await loadAccounts();
-    } catch (e: any) {
-      setError(e.message || "Failed to reactivate account");
+    } catch (e: unknown) {
+      setError(errText(e) || "Failed to reactivate account");
     } finally {
       setReactivatingId(null);
+    }
+  }
+
+  async function handleCreateInChart(account: BankAccount) {
+    setCreatingId(account.id);
+    setError(null);
+    try {
+      await createChartAccountForBank(account.id);
+      await loadAccounts();
+    } catch (e: unknown) {
+      setError(errText(e) || "Failed to add it to the chart");
+    } finally {
+      setCreatingId(null);
     }
   }
 
@@ -134,9 +159,33 @@ export default function BankAccountsPage() {
         <Td muted className={`font-mono text-[10px] ${dim || ""}`}>
           {a.account_number_last_4 ? `•••• ${a.account_number_last_4}` : "—"}
         </Td>
-        <Td right className={dim}>
-          <span className="font-semibold text-slate-800 dark:text-slate-200">{fmt(a.current_balance)}</span>
+        <Td className={dim}>
+          {(() => {
+            const l = a.chart_account_id ? ledger.get(a.chart_account_id) : undefined;
+            if (l) {
+              return (
+                <div>
+                  <div className="text-xs text-slate-700 dark:text-slate-300">{l.code} - {l.name}</div>
+                  <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{fmt(Number(l.current_balance ?? 0))}</div>
+                </div>
+              );
+            }
+            return (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge color="amber">Not in your books</Badge>
+                {!inactive && (
+                  <>
+                    <Btn size="sm" icon={<BookPlus size={12}/>} disabled={creatingId === a.id} onClick={() => handleCreateInChart(a)}>
+                      {creatingId === a.id ? "Adding..." : "Create in chart"}
+                    </Btn>
+                    <Btn size="sm" variant="ghost" icon={<Link2 size={12}/>} onClick={() => openEdit(a)}>Link</Btn>
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </Td>
+        <Td right muted className={dim}>{fmt(a.current_balance)}</Td>
         <Td className={dim}>
           <Badge color={inactive ? "slate" : "green"} dot>{inactive ? "Inactive" : "Active"}</Badge>
         </Td>
@@ -170,7 +219,7 @@ export default function BankAccountsPage() {
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
       <PageHeader
         title="Bank Accounts"
-        subtitle="Manage the accounts used for statement uploads and transfers"
+        subtitle="Each bank account is an account in your Chart of Accounts. Its books balance comes from what you record."
         actions={
           <>
             <Btn variant="ghost" size="sm" icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>} onClick={loadAccounts}/>
@@ -206,7 +255,8 @@ export default function BankAccountsPage() {
                   <Th>Type</Th>
                   <Th>Bank</Th>
                   <Th>Last 4</Th>
-                  <Th right>Balance</Th>
+                  <Th>In your books</Th>
+                  <Th right>Bank statement</Th>
                   <Th>Status</Th>
                   <Th>Actions</Th>
                 </tr>
@@ -236,7 +286,8 @@ export default function BankAccountsPage() {
                   <Th>Type</Th>
                   <Th>Bank</Th>
                   <Th>Last 4</Th>
-                  <Th right>Balance</Th>
+                  <Th>In your books</Th>
+                  <Th right>Bank statement</Th>
                   <Th>Status</Th>
                   <Th>Actions</Th>
                 </tr>
