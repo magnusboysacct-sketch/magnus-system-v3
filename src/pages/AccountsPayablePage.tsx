@@ -21,7 +21,7 @@ import { AddProofModal } from "../components/BillPaymentProof";
 import { showBillReceipt } from "../lib/billReceipt";
 import { resolveFileUrl } from "../lib/storageRefs";
 import {
-  approveBill, disputeBill, fetchBillPayments, fetchCostAccounts, fetchUnsignedCashPayments, needsProof, undoBillPayment, PAY_METHODS,
+  approveBill, disputeBill, setBillFile, uploadBillFile, fetchBillPayments, fetchCostAccounts, fetchUnsignedCashPayments, needsProof, undoBillPayment, PAY_METHODS,
   type BillPayment, type CostAccount, type UnsignedPayment,
 } from "../lib/bills";
 import type { SupplierInvoiceLineItem } from "../lib/finance";
@@ -31,7 +31,7 @@ import {
   Spinner, cn
 } from "../components/ui";
 import {
-  Search, RefreshCw, Landmark, Package, Plus, CheckCircle2, AlertTriangle, Banknote, Undo2, PenTool, Printer, Image as ImageIcon,
+  Search, RefreshCw, Landmark, Package, Plus, CheckCircle2, AlertTriangle, Banknote, Undo2, PenTool, Printer, Image as ImageIcon, ScanLine,
 } from "lucide-react";
 
 interface SupplierInvoiceRow {
@@ -49,6 +49,7 @@ interface SupplierInvoiceRow {
   retention_amount: number | null;
   gl_transaction_id: string | null;
   ledger_note: string | null;
+  bill_file_path: string | null;
 }
 
 type StatusFilter = "all" | "pending" | "approved" | "partial" | "paid" | "disputed";
@@ -136,7 +137,7 @@ export default function AccountsPayablePage() {
       for (let guard = 0; guard < 200; guard++) {
         const { data: page, error: e } = await supabase
           .from("supplier_invoices")
-          .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, retention_amount, gl_transaction_id, ledger_note, suppliers(supplier_name), projects(name)")
+          .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, retention_amount, gl_transaction_id, ledger_note, bill_file_path, suppliers(supplier_name), projects(name)")
           .order("due_date", { ascending: true })
           .range(from, from + PAGE - 1);
         if (e) throw e;
@@ -167,7 +168,7 @@ export default function AccountsPayablePage() {
   async function refreshSelected(id: string) {
     await loadBills();
     const { data } = await supabase.from("supplier_invoices")
-      .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, retention_amount, gl_transaction_id, ledger_note, suppliers(supplier_name), projects(name)")
+      .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, retention_amount, gl_transaction_id, ledger_note, bill_file_path, suppliers(supplier_name), projects(name)")
       .eq("id", id).single();
     if (data) setSelectedBill(data as unknown as SupplierInvoiceRow);
     setPayments(await fetchBillPayments(id).catch(() => [] as BillPayment[]));
@@ -182,6 +183,25 @@ export default function AccountsPayablePage() {
       supplier: selectedBill.suppliers?.supplier_name || "", billNumber: selectedBill.invoice_number, project: selectedBill.projects?.name || null,
       receivedBy: p.received_by_name, signature: p.signature_data, signedAt: p.signed_at,
     });
+  }
+
+  async function viewBillFile() {
+    if (!selectedBill?.bill_file_path) return;
+    const tab = window.open("", "_blank");
+    const url = await resolveFileUrl(selectedBill.bill_file_path).catch(() => null);
+    if (url && tab) tab.location.href = url;
+    else { tab?.close(); setActionError("The bill picture could not be opened. Only people with full finance access, or whoever added it, can see it."); }
+  }
+
+  async function attachBillFile(f: File) {
+    if (!selectedBill || !companyId || acting) return;
+    setActing(true); setActionError(null);
+    try {
+      await setBillFile(selectedBill.id, await uploadBillFile(companyId, f, selectedBill.invoice_date));
+      setNotice(`Bill picture saved in the receipts folder for ${selectedBill.invoice_date.slice(0, 7)}.`);
+      await refreshSelected(selectedBill.id);
+    } catch (e: unknown) { setActionError(msg(e)); }
+    finally { setActing(false); }
   }
 
   async function viewPhoto(p: BillPayment) {
@@ -416,6 +436,18 @@ export default function AccountsPayablePage() {
                 {retentionHeld > 0 ? ` - ${fmt(retentionHeld)} still held (paid when the work is accepted)` : " - paid"}
               </div>
             )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedBill.bill_file_path ? (
+                <Btn variant="ghost" size="sm" icon={<ImageIcon size={13}/>} onClick={() => { void viewBillFile(); }}>View bill</Btn>
+              ) : (
+                <label className={cn("inline-flex items-center gap-1.5 text-xs font-semibold text-cyan-600 dark:text-cyan-400", acting ? "opacity-50" : "cursor-pointer hover:underline")}>
+                  <ScanLine size={13}/> Attach bill picture
+                  <input type="file" accept="image/*,application/pdf" className="hidden" disabled={acting}
+                    onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void attachBillFile(f); }}/>
+                </label>
+              )}
+            </div>
 
             {selectedBill.projects?.name && (
               <div className="text-xs text-slate-500 dark:text-slate-600">Project: <span className="text-slate-700 dark:text-slate-300 font-medium">{selectedBill.projects.name}</span></div>

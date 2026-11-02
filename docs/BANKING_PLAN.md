@@ -136,3 +136,20 @@ Screens: Pay bill has the proof section (name, sign box, photo). Each payment ha
 signature), Photo, Sign / add photo. Shared sign box: src/components/SignBox.tsx.
 
 Next: 4b-3 supplier advances, then 4c bill from a received Purchase Order.
+
+## Parish dropdowns, workers on bills (done)
+
+Migration `20260978000000_parish_and_worker_suppliers.sql`: workers.parish (with its column grant), suppliers.parish,
+suppliers.worker_id, supplier_for_worker(). New bill's "From" lists suppliers and the Workers list.
+
+## Scan a bill (done)
+
+Migration `20260979000000_bill_scan.sql`: supplier_invoices.bill_file_path (must be in <company>/receipts/...),
+suppliers.supplier_type (supplier / contractor), supplier_for_worker() marks contractors.
+
+New bill → **Scan the bill** (camera or a picture): the existing magnus-ai "scan_invoice" reading (magnusAI.scanBill) fills
+in who it is from (matched to suppliers, then the Workers list), the number, dates, lines (with a guessed cost account) and GCT.
+A name not in the list gets "Add as a supplier / a contractor". If the paper total differs from the lines + GCT, it warns.
+The picture is filed in the monthly receipts folder (receipts/<year>/<month of the bill date>/) and kept with the bill:
+the bill detail has **View bill**, or **Attach bill picture** for bills entered without one.
+If scanning is off for the company or the picture can't be read, the bill is typed in and the picture is still saved.

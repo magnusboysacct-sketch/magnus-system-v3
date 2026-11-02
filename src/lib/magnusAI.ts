@@ -34,6 +34,18 @@ export interface ReceiptScanResult {
   aiPowered:     boolean;
 }
 
+export interface BillScanResult {
+  vendor:        string;
+  vendorAddress: string;
+  invoiceNumber: string;
+  date:          string;
+  dueDate:       string;
+  amount:        number;
+  tax:           number;
+  lineItems:     { description: string; quantity: number; unitPrice: number; amount: number }[];
+  confidence:    number;
+}
+
 export interface PaymentSuggestion {
   suggestions:    { type: string; message: string }[];
   suggestedRate:  number;
@@ -178,6 +190,32 @@ class MagnusAIProvider {
       paymentMethod: data.paymentMethod || "",
       confidence:    data.confidence    || 0.9,
       aiPowered:     true,
+    };
+  }
+
+  // ── Scan a supplier / contractor bill (same "scan_invoice" reading, keeping every field) ──────────────────
+
+  async scanBill(file: File): Promise<BillScanResult> {
+    const imageBase64 = await this.fileToBase64(file);
+    const data = await this.call("scan_invoice", { imageBase64 });
+    const num = (v: unknown) => { const n = parseFloat(String(v ?? "").replace(/[^0-9.-]/g, "")); return Number.isFinite(n) ? n : 0; };
+    const day = (v: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(v ?? "")) ? String(v) : "";
+    const lines = Array.isArray(data.lineItems) ? data.lineItems : [];
+    return {
+      vendor:        String(data.vendor ?? "").trim(),
+      vendorAddress: String(data.vendorAddress ?? "").trim(),
+      invoiceNumber: String(data.invoiceNumber ?? "").trim(),
+      date:          day(data.date),
+      dueDate:       day(data.dueDate),
+      amount:        num(data.amount),
+      tax:           num(data.tax),
+      lineItems:     lines.map((l: Record<string, unknown>) => ({
+        description: String(l.description ?? "").trim(),
+        quantity:    num(l.quantity) || 1,
+        unitPrice:   num(l.unitPrice),
+        amount:      num(l.amount) || num(l.quantity) * num(l.unitPrice),
+      })).filter((l: { description: string; amount: number }) => l.description || l.amount),
+      confidence:    num(data.confidence) || 0.9,
     };
   }
 

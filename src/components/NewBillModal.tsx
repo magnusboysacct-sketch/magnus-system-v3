@@ -1,15 +1,19 @@
 // src/components/NewBillModal.tsx — Banking Step 4a: enter a bill from a supplier, subcontractor or workman.
 // Each line is charged to a cost account. Retention (e.g. 10% held back until the work is accepted) and GCT are optional.
 // "Save and approve" puts it in the books straight away; "Save - waiting for approval" leaves it out until approved.
+// Scan the bill: the AI reads who it is from, the number, dates, lines and GCT; the picture is filed in the monthly
+// receipts folder (same as expense receipts) and kept with the bill. Someone not in the list can be added on the spot.
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Camera, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { Modal, Field, Input, Select, Btn, Textarea } from "./ui";
 import { supabase } from "../lib/supabase";
 import {
-  addSupplier, createBill, fetchCostAccounts, fetchSuppliers, fetchWorkerChoices, GCT_RATE, supplierForWorker,
-  type CostAccount, type SupplierOption, type WorkerOption,
+  addSupplier, createBill, fetchCostAccounts, fetchSuppliers, fetchWorkerChoices, GCT_RATE, guessCostAccount, matchName,
+  setBillFile, supplierForWorker, uploadBillFile,
+  type CostAccount, type SupplierOption, type SupplierType, type WorkerOption,
 } from "../lib/bills";
+import { magnusAI } from "../lib/magnusAI";
 
 const jmd = (n: number) => new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", maximumFractionDigits: 2 }).format(n || 0);
 const today = () => {
@@ -40,7 +44,13 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [form, setForm] = useState({ supplierId: "", number: "", date: today(), due: plusDays(today(), 30), projectId: "", retention: "", gct: "", notes: "" });
   const [lines, setLines] = useState<Line[]>([blankLine(1)]);
-  const [adding, setAdding] = useState<{ name: string; phone: string } | null>(null);
+  const [adding, setAdding] = useState<{ name: string; phone: string; type: SupplierType; address: string } | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanNote, setScanNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [notFound, setNotFound] = useState<{ name: string; address: string } | null>(null);
+  const [paperTotal, setPaperTotal] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +61,10 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
     setLines([blankLine(1)]);
     setAdding(null);
     setError(null);
+    setFile(null);
+    setScanNote(null);
+    setNotFound(null);
+    setPaperTotal(null);
     Promise.all([
       fetchSuppliers(companyId),
       fetchCostAccounts(companyId),
@@ -65,6 +79,61 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
     }).catch((e: unknown) => { if (alive) setError(e instanceof Error ? e.message : "Could not load the form."); });
     return () => { alive = false; };
   }, [open, companyId]);
+
+  // Show the picture while the form is open.
+  useEffect(() => {
+    if (!file) { setPreview(null); return; }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  async function scan(f: File) {
+    setFile(f);
+    setError(null);
+    setScanNote(null);
+    setNotFound(null);
+    setPaperTotal(null);
+    setScanning(true);
+    try {
+      const r = await magnusAI.scanBill(f);
+      // Who it is from: a supplier, or someone on the Workers list, or offer to add them.
+      let supplierId = "";
+      let contractor = false;
+      if (r.vendor) {
+        const s = matchName(r.vendor, suppliers);
+        if (s) { supplierId = s.id; contractor = s.type === "contractor"; }
+        else {
+          const w = matchName(r.vendor, workers.filter((x) => !suppliers.some((s2) => s2.workerId === x.id)));
+          if (w) { await chooseFrom(`w:${w.id}`); contractor = true; }
+          else setNotFound({ name: r.vendor, address: r.vendorAddress });
+        }
+      }
+      setForm((f0) => ({
+        ...f0,
+        supplierId: supplierId || f0.supplierId,
+        number: r.invoiceNumber || f0.number,
+        date: r.date || f0.date,
+        due: r.dueDate && r.dueDate >= (r.date || f0.date) ? r.dueDate : plusDays(r.date || f0.date, 30),
+        gct: r.tax > 0 ? String(r2(r.tax)) : f0.gct,
+      }));
+      const read = r.lineItems.length > 0 ? r.lineItems
+        : r.amount > 0 ? [{ description: r.vendor ? `Bill from ${r.vendor}` : "Bill", quantity: 1, unitPrice: r.amount - r.tax, amount: r.amount - r.tax }] : [];
+      if (read.length > 0) {
+        setLines(read.map((l, i) => {
+          const qty = l.quantity && l.quantity !== 1 ? ` (${l.quantity} x ${jmd(l.unitPrice)})` : "";
+          return { key: i + 1, item: `${l.description || "Item"}${qty}`.slice(0, 200), amount: l.amount > 0 ? String(r2(l.amount)) : "",
+                   accountId: guessCostAccount(l.description, accounts, contractor) };
+        }));
+      }
+      setPaperTotal(r.amount > 0 ? r2(r.amount) : null);
+      setScanNote({ ok: true, text: `Filled in from the scan${r.vendor ? ` (${r.vendor})` : ""}. Check every line and cost account before saving.` });
+    } catch (e: unknown) {
+      setScanNote({ ok: false, text: `${e instanceof Error ? e.message : "The bill could not be read."} Type it in below. The picture is still saved with the bill.` });
+    } finally {
+      setScanning(false);
+    }
+  }
 
   const subtotal = useMemo(() => r2(lines.reduce((s, l) => s + (Number(l.amount) > 0 ? Number(l.amount) : 0), 0)), [lines]);
   const gct = Number(form.gct) > 0 ? r2(Number(form.gct)) : 0;
@@ -104,10 +173,16 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
     if (!companyId || !adding || !adding.name.trim()) return;
     setError(null);
     try {
-      const s = await addSupplier(companyId, adding.name, adding.phone);
+      const s = await addSupplier(companyId, adding.name, adding.phone, adding.type, adding.address);
       setSuppliers((list) => [...list, s].sort((a, b) => a.name.localeCompare(b.name)));
       setForm((f) => ({ ...f, supplierId: s.id }));
       setAdding(null);
+      setNotFound(null);
+      if (s.type === "contractor") {
+        // Lines the scan guessed as materials are more likely the contractor's work: re-guess the ones still on materials.
+        setLines((ls) => ls.map((l) => (l.item && l.accountId === guessCostAccount(l.item, accounts, false)
+          ? { ...l, accountId: guessCostAccount(l.item, accounts, true) } : l)));
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "The supplier was not saved.");
     }
@@ -136,7 +211,7 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
     setSaving(true);
     try {
       const used = lines.filter((l) => l.item.trim());
-      await createBill(
+      const billId = await createBill(
         {
           supplier_id: form.supplierId, project_id: form.projectId || null, invoice_number: form.number.trim(),
           invoice_date: form.date, due_date: form.due, tax_amount: gct, retention_percent: retPct, notes: form.notes.trim(),
@@ -144,10 +219,20 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
         used.map((l) => ({ item_name: l.item.trim(), chart_account_id: l.accountId, amount: r2(Number(l.amount)) })),
         approve,
       );
+      // File the picture in the monthly receipts folder and keep it with the bill.
+      let fileNote = "";
+      if (file && companyId) {
+        try {
+          await setBillFile(billId, await uploadBillFile(companyId, file, form.date));
+          fileNote = " The picture is filed in the receipts folder.";
+        } catch (e: unknown) {
+          fileNote = ` The bill is saved, but the picture was not (${e instanceof Error ? e.message : "upload failed"}): open the bill and tap "Attach bill picture".`;
+        }
+      }
       const who = suppliers.find((s) => s.id === form.supplierId)?.name ?? "the supplier";
-      onDone(approve
+      onDone((approve
         ? `Bill ${form.number.trim()} from ${who} saved and approved (${jmd(total)}). It is in the books.`
-        : `Bill ${form.number.trim()} from ${who} saved (${jmd(total)}). It goes in the books when it is approved.`);
+        : `Bill ${form.number.trim()} from ${who} saved (${jmd(total)}). It goes in the books when it is approved.`) + fileNote);
       onClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "The bill was not saved.");
@@ -162,15 +247,69 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
       <div className="space-y-3">
         {error && <div className="text-xs text-red-500 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</div>}
 
+        <div className="rounded-lg border border-dashed border-cyan-500/40 bg-cyan-500/5 px-3 py-2.5">
+          {file ? (
+            <div className="flex items-start gap-3">
+              {preview && <img src={preview} alt="The bill" className="w-16 h-20 object-cover rounded border border-slate-200 dark:border-white/10 flex-shrink-0" />}
+              <div className="min-w-0 flex-1 text-xs">
+                <div className="font-semibold text-slate-700 dark:text-slate-300 truncate">{file.name}</div>
+                {scanning
+                  ? <div className="text-cyan-600 dark:text-cyan-400 mt-1">Reading the bill...</div>
+                  : scanNote && <div className={scanNote.ok ? "text-emerald-600 dark:text-emerald-400 mt-1" : "text-amber-600 dark:text-amber-400 mt-1"}>{scanNote.text}</div>}
+                <div className="text-[10px] text-slate-500 mt-1">Saved with the bill, in the receipts folder for {form.date.slice(0, 7)}.</div>
+              </div>
+              <Btn variant="ghost" size="sm" icon={<X size={13} />} disabled={scanning} onClick={() => { setFile(null); setScanNote(null); }} />
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex items-center gap-1.5 cursor-pointer rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold px-3 py-1.5">
+                <ScanLine size={14} /> Scan the bill
+                <input type="file" accept="image/*" capture="environment" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void scan(f); }} />
+              </label>
+              <label className="inline-flex items-center gap-1.5 cursor-pointer text-xs text-slate-600 dark:text-slate-400 hover:text-cyan-600">
+                <Camera size={13} /> or choose a picture
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void scan(f); }} />
+              </label>
+              <span className="text-[11px] text-slate-500 w-full">Take a photo of their bill: the AI fills in the form and the picture goes in your receipts folder.</span>
+            </div>
+          )}
+        </div>
+
+        {notFound && !adding && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-800 dark:text-amber-200 space-y-2">
+            <div><b>{notFound.name}</b> is not in your list yet. Add them as:</div>
+            <div className="flex flex-wrap gap-2">
+              <Btn variant="primary" size="sm" onClick={() => setAdding({ name: notFound.name, phone: "", type: "supplier", address: notFound.address })}>A supplier (materials, rentals)</Btn>
+              <Btn variant="primary" size="sm" onClick={() => setAdding({ name: notFound.name, phone: "", type: "contractor", address: notFound.address })}>A contractor (does the work)</Btn>
+              <Btn variant="ghost" size="sm" onClick={() => setNotFound(null)}>No, choose from the list</Btn>
+            </div>
+          </div>
+        )}
+
         <Field label="From (supplier, subcontractor or workman)">
           {adding ? (
-            <div className="grid grid-cols-1 sm:grid-cols-[1fr_10rem_auto_auto] gap-2">
-              <Input autoFocus placeholder="Name, e.g. John Brown (mason)" value={adding.name}
-                onChange={(e) => setAdding({ ...adding, name: e.target.value })} />
-              <Input placeholder="Phone (optional)" value={adding.phone}
-                onChange={(e) => setAdding({ ...adding, phone: e.target.value })} />
-              <Btn variant="primary" size="sm" onClick={() => { void saveSupplier(); }} disabled={!adding.name.trim()}>Add</Btn>
-              <Btn variant="ghost" size="sm" onClick={() => setAdding(null)}>Cancel</Btn>
+            <div className="space-y-2 rounded-lg border border-slate-200 dark:border-white/[0.07] p-2.5">
+              <div className="flex gap-1.5">
+                {(["supplier", "contractor"] as SupplierType[]).map((t) => (
+                  <Btn key={t} size="sm" variant={adding.type === t ? "primary" : "ghost"} onClick={() => setAdding({ ...adding, type: t })}>
+                    {t === "supplier" ? "Supplier" : "Contractor"}
+                  </Btn>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_10rem] gap-2">
+                <Input autoFocus placeholder={adding.type === "contractor" ? "Name, e.g. John Brown (mason)" : "Name, e.g. ABC Hardware"} value={adding.name}
+                  onChange={(e) => setAdding({ ...adding, name: e.target.value })} />
+                <Input placeholder="Phone (optional)" value={adding.phone}
+                  onChange={(e) => setAdding({ ...adding, phone: e.target.value })} />
+              </div>
+              <Input placeholder="Address (optional)" value={adding.address}
+                onChange={(e) => setAdding({ ...adding, address: e.target.value })} />
+              <div className="flex justify-end gap-2">
+                <Btn variant="ghost" size="sm" onClick={() => setAdding(null)}>Cancel</Btn>
+                <Btn variant="primary" size="sm" onClick={() => { void saveSupplier(); }} disabled={!adding.name.trim()}>Add {adding.type}</Btn>
+              </div>
             </div>
           ) : (
             <div className="flex gap-2">
@@ -187,7 +326,7 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
                   </optgroup>
                 )}
               </Select>
-              <Btn variant="ghost" size="sm" icon={<Plus size={13} />} onClick={() => setAdding({ name: "", phone: "" })}>New</Btn>
+              <Btn variant="ghost" size="sm" icon={<Plus size={13} />} onClick={() => setAdding({ name: "", phone: "", type: "supplier", address: "" })}>New</Btn>
             </div>
           )}
         </Field>
@@ -260,6 +399,9 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
           <div className="flex justify-between"><span className="text-slate-500">Work / goods</span><span>{jmd(subtotal)}</span></div>
           {gct > 0 && <div className="flex justify-between"><span className="text-slate-500">GCT</span><span>{jmd(gct)}</span></div>}
           <div className="flex justify-between font-semibold"><span>Bill total</span><span>{jmd(total)}</span></div>
+          {paperTotal !== null && Math.abs(paperTotal - total) > 0.5 && (
+            <div className="text-amber-600 dark:text-amber-400">The bill on paper says {jmd(paperTotal)}. Check the lines and GCT.</div>
+          )}
           {retention > 0 && (
             <>
               <div className="flex justify-between text-amber-600 dark:text-amber-400"><span>Retention held back ({retPct}%)</span><span>-{jmd(retention)}</span></div>

@@ -8,7 +8,7 @@ import { privatePath, safeUploadName, uploadPrivate } from "./storageRefs";
 const errText = (e: unknown): string =>
   e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string" ? (e as { message: string }).message : "Something went wrong.";
 
-export interface SupplierOption { id: string; name: string; workerId?: string | null }
+export interface SupplierOption { id: string; name: string; workerId?: string | null; type?: "supplier" | "contractor" }
 export interface CostAccount { id: string; code: string; name: string; type: string }
 export interface NewBillLine { item_name: string; chart_account_id: string; amount: number }
 export interface NewBill {
@@ -17,11 +17,12 @@ export interface NewBill {
 }
 
 export async function fetchSuppliers(companyId: string): Promise<SupplierOption[]> {
-  const { data, error } = await supabase.from("suppliers").select("id, supplier_name, is_active, worker_id")
+  const { data, error } = await supabase.from("suppliers").select("id, supplier_name, is_active, worker_id, supplier_type")
     .eq("company_id", companyId).order("supplier_name");
   if (error) throw new Error(errText(error));
-  return ((data || []) as { id: string; supplier_name: string; is_active: boolean | null; worker_id: string | null }[])
-    .filter((s) => s.is_active !== false).map((s) => ({ id: s.id, name: s.supplier_name, workerId: s.worker_id }));
+  return ((data || []) as { id: string; supplier_name: string; is_active: boolean | null; worker_id: string | null; supplier_type: SupplierType | null }[])
+    .filter((s) => s.is_active !== false)
+    .map((s) => ({ id: s.id, name: s.supplier_name, workerId: s.worker_id, type: s.supplier_type ?? "supplier" }));
 }
 
 export interface WorkerOption { id: string; name: string; type: string }
@@ -43,14 +44,20 @@ export async function supplierForWorker(workerId: string): Promise<string> {
   return data as string;
 }
 
-/** Quick add from the bill form (e.g. a mason or subcontractor who bills you). */
-export async function addSupplier(companyId: string, name: string, phone: string): Promise<SupplierOption> {
+export type SupplierType = "supplier" | "contractor";
+
+/** Quick add from the bill form: a supplier (materials, rentals) or a contractor (subcontractor, mason, workman). */
+export async function addSupplier(companyId: string, name: string, phone: string, type: SupplierType = "supplier", address = ""): Promise<SupplierOption> {
   const { data, error } = await supabase.from("suppliers")
-    .insert({ company_id: companyId, supplier_name: name.trim(), phone: phone.trim() || null, is_active: true })
-    .select("id, supplier_name").single();
-  if (error) throw new Error(errText(error));
-  const d = data as { id: string; supplier_name: string };
-  return { id: d.id, name: d.supplier_name };
+    .insert({ company_id: companyId, supplier_name: name.trim(), phone: phone.trim() || null, address: address.trim() || null,
+              supplier_type: type, is_active: true })
+    .select("id, supplier_name, supplier_type").single();
+  if (error) {
+    if (/duplicate|unique/i.test(errText(error))) throw new Error(`"${name.trim()}" is already in your suppliers list. Choose it from the list.`);
+    throw new Error(errText(error));
+  }
+  const d = data as { id: string; supplier_name: string; supplier_type: SupplierType };
+  return { id: d.id, name: d.supplier_name, type: d.supplier_type };
 }
 
 /** Accounts a bill line can be charged to: active expense accounts that are not headings. */
@@ -179,4 +186,47 @@ export async function fetchUnsignedCashPayments(companyId: string): Promise<Unsi
     id: r.id, amount: Number(r.amount), payment_date: r.payment_date, invoice_id: r.invoice_id,
     invoice_number: r.supplier_invoices?.invoice_number ?? null, supplier: r.suppliers?.supplier_name ?? null,
   }));
+}
+
+// ── Scan a bill (migration 20260979) ──
+
+/** File the bill picture in the monthly receipts folder (same as expense receipts): <company>/receipts/<year>/<month>/. */
+export async function uploadBillFile(companyId: string, file: File, billDate: string): Promise<string> {
+  const d = /^\d{4}-\d{2}/.test(billDate) ? billDate : new Date().toISOString();
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  const { path, error } = await uploadPrivate(privatePath(companyId, `receipts/${d.slice(0, 4)}/${d.slice(5, 7)}`, safeUploadName("bill", ext)), file,
+    { contentType: file.type || "image/jpeg" });
+  if (error || !path) throw new Error(error || "The bill picture was not saved.");
+  return path;
+}
+
+export async function setBillFile(billId: string, path: string): Promise<void> {
+  const { error } = await supabase.from("supplier_invoices").update({ bill_file_path: path }).eq("id", billId);
+  if (error) throw new Error(errText(error));
+}
+
+const squash = (t: string) => t.toLowerCase().replace(/\b(ltd|limited|co|company|inc|the|and|&)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+
+/** The supplier (or worker) whose name matches the name read off the bill, if any. */
+export function matchName<T extends { name: string }>(read: string, list: T[]): T | null {
+  const r = squash(read);
+  if (!r) return null;
+  return list.find((x) => squash(x.name) === r)
+    ?? list.find((x) => { const n = squash(x.name); return n.length > 2 && (r.includes(n) || n.includes(r)); })
+    ?? null;
+}
+
+/** A first guess at the cost account for a bill line, from its words. The user checks it. */
+export function guessCostAccount(description: string, accounts: CostAccount[], contractor: boolean): string {
+  const d = description.toLowerCase();
+  const find = (re: RegExp) => accounts.find((a) => re.test(a.name.toLowerCase()))?.id ?? "";
+  const rules: [RegExp, RegExp][] = [
+    [/(rent|rental|hire|excavator|backhoe|mixer|scaffold|equipment|tool)/, /(equipment|rental)/],
+    [/(fuel|gas|diesel|petrol)/, /(fuel|vehicle)/],
+    [/(truck|haul|transport|delivery|freight)/, /(transport|freight|haul|delivery)/],
+    [/(labour|labor|work|install|block ?work|masonry|plaster|tiling|paint(ing)?|carpentry|steel ?work|stage|day ?work)/, /(subcontract|labou?r)/],
+    [/(cement|block|sand|steel|rebar|lumber|board|ply|nail|zinc|gravel|stone|marl|aggregate|pipe|wire|paint|tile|material)/, /material/],
+  ];
+  for (const [words, acct] of rules) if (words.test(d)) { const id = find(acct); if (id) return id; }
+  return contractor ? find(/subcontract/) || find(/labou?r/) : find(/material/);
 }
