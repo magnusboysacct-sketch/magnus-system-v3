@@ -105,3 +105,19 @@ Migration `20260975000000_bills_to_books.sql`:
 Screens: Payables has **New bill** (src/components/NewBillModal.tsx, src/lib/bills.ts), with lines charged to cost accounts, GCT (15% button) and retention %. The detail shows "In the books", the cost account per line, retention held, and Approve / Dispute.
 
 Next: 4b Pay bill (Paid from, part payments, retention release), then 4c bill from a received Purchase Order.
+
+## Step 4b: paying bills (done)
+
+Migration `20260976000000_bill_payments_to_books.sql`:
+- Paying a bill: DR Supplier Payables / CR the bank, cash or card it was paid from. Paying out retention: DR Retention Payable / CR bank.
+- `pay_bill(bill, amount, date, paid_from, method, reference, retention)`: director, admin or office user; the bill must be approved;
+  never more than is owed now (bill total less retention less what is paid), retention only up to what is still held;
+  "Paid from" must be a money account; the same payment saved twice within 2 minutes is refused.
+- `undo_bill_payment(id)`: deletes the payment; the entry is reversed and the amount goes back on the bill.
+- The bill's amount paid, balance and status (approved / partial / paid) are kept by a database trigger.
+- Payments dated before the books start date stay out; the start date also locks once bill payments are in the books.
+
+Screens: the bill detail has **Pay bill** (src/components/PayBillModal.tsx), **Pay retention**, and a Payments list with Undo.
+Partly paid bills with only retention left show "Retention held" in the list.
+
+Next: 4c bill from a received Purchase Order.

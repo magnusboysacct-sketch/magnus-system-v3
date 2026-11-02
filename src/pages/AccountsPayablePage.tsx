@@ -16,7 +16,11 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { fetchSupplierInvoiceLineItems } from "../lib/finance";
 import { NewBillModal } from "../components/NewBillModal";
-import { approveBill, disputeBill, fetchCostAccounts, type CostAccount } from "../lib/bills";
+import { PayBillModal } from "../components/PayBillModal";
+import {
+  approveBill, disputeBill, fetchBillPayments, fetchCostAccounts, undoBillPayment, PAY_METHODS,
+  type BillPayment, type CostAccount,
+} from "../lib/bills";
 import type { SupplierInvoiceLineItem } from "../lib/finance";
 import {
   PageHeader, Card, Badge, Btn, Input,
@@ -24,7 +28,7 @@ import {
   Spinner, cn
 } from "../components/ui";
 import {
-  Search, RefreshCw, Landmark, Package, Plus, CheckCircle2, AlertTriangle,
+  Search, RefreshCw, Landmark, Package, Plus, CheckCircle2, AlertTriangle, Banknote, Undo2,
 } from "lucide-react";
 
 interface SupplierInvoiceRow {
@@ -91,6 +95,8 @@ export default function AccountsPayablePage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [disputing, setDisputing] = useState<string | null>(null);
   const canApprove = ["director", "admin", "office_user"].includes(role);
+  const [payments, setPayments] = useState<BillPayment[]>([]);
+  const [paying, setPaying] = useState<null | "bill" | "retention">(null);
 
   useEffect(() => { loadBills(); }, []);
 
@@ -139,8 +145,9 @@ export default function AccountsPayablePage() {
     setLoadingLineItems(true);
     setLineItemsError(null);
     try {
-      const items = await fetchSupplierInvoiceLineItems(bill.id);
+      const [items, pays] = await Promise.all([fetchSupplierInvoiceLineItems(bill.id), fetchBillPayments(bill.id)]);
       setLineItems(items);
+      setPayments(pays);
     } catch (e: unknown) {
       setLineItemsError(msg(e));
     } finally {
@@ -154,6 +161,19 @@ export default function AccountsPayablePage() {
       .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, retention_amount, gl_transaction_id, ledger_note, suppliers(supplier_name), projects(name)")
       .eq("id", id).single();
     if (data) setSelectedBill(data as unknown as SupplierInvoiceRow);
+    setPayments(await fetchBillPayments(id).catch(() => [] as BillPayment[]));
+  }
+
+  async function handleUndoPayment(p: BillPayment) {
+    if (!selectedBill || acting) return;
+    if (!window.confirm(`Undo the payment of ${fmt(p.amount)} on ${fmtDate(p.payment_date)}? It comes out of the books and goes back on the bill.`)) return;
+    setActing(true); setActionError(null);
+    try {
+      await undoBillPayment(p.id);
+      setNotice(`Payment of ${fmt(p.amount)} undone.`);
+      await refreshSelected(selectedBill.id);
+    } catch (e: unknown) { setActionError(msg(e)); }
+    finally { setActing(false); }
   }
 
   async function handleApprove() {
@@ -181,12 +201,17 @@ export default function AccountsPayablePage() {
   }
 
   function closeDetail() {
+    setPayments([]);
     setActionError(null);
     setDisputing(null);
     setSelectedBill(null);
     setLineItems([]);
     setLineItemsError(null);
   }
+
+  const retentionHeld = selectedBill ? Math.round(((selectedBill.retention_amount || 0) - payments.filter(p => p.is_retention_release).reduce((t, p) => t + p.amount, 0)) * 100) / 100 : 0;
+  const owedNow = selectedBill ? Math.round(((selectedBill.total_amount || 0) - (selectedBill.retention_amount || 0) - payments.filter(p => !p.is_retention_release).reduce((t, p) => t + p.amount, 0)) * 100) / 100 : 0;
+  const canPay = canApprove && !!selectedBill && ["approved", "partial", "paid"].includes(selectedBill.status);
 
   // One combined search box covering invoice_number + supplier + project,
   // matching the same OR-across-fields shape used elsewhere (Clients'
@@ -288,7 +313,12 @@ export default function AccountsPayablePage() {
                       {fmtDate(b.due_date)}
                     </Td>
                     <Td right>{fmt(b.total_amount)}</Td>
-                    <Td right><span className={b.balance_due > 0 ? "text-red-400 font-semibold" : "text-slate-600"}>{fmt(b.balance_due)}</span></Td>
+                    <Td right>
+                      <span className={b.balance_due > 0 ? "text-red-400 font-semibold" : "text-slate-600"}>{fmt(b.balance_due)}</span>
+                      {b.status === "partial" && (b.retention_amount || 0) > 0 && b.balance_due <= (b.retention_amount || 0) && (
+                        <div className="text-[10px] text-amber-600 dark:text-amber-400">Retention held</div>
+                      )}
+                    </Td>
                     <Td><Badge color={STATUS_COLOR[b.status] || "slate"} dot>{b.status}</Badge></Td>
                   </Tr>
                 ))}
@@ -339,7 +369,10 @@ export default function AccountsPayablePage() {
             ) : null}
 
             {(selectedBill.retention_amount || 0) > 0 && (
-              <div className="text-xs text-slate-500">Retention held back: <span className="font-medium text-slate-700 dark:text-slate-300">{fmt(selectedBill.retention_amount || 0)}</span> (paid when the work is accepted)</div>
+              <div className="text-xs text-slate-500">
+                Retention: <span className="font-medium text-slate-700 dark:text-slate-300">{fmt(selectedBill.retention_amount || 0)}</span>
+                {retentionHeld > 0 ? ` - ${fmt(retentionHeld)} still held (paid when the work is accepted)` : " - paid"}
+              </div>
             )}
 
             {selectedBill.projects?.name && (
@@ -380,6 +413,35 @@ export default function AccountsPayablePage() {
               )}
             </div>
 
+            <div>
+              <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-1.5">
+                <Banknote size={13}/> Payments
+              </div>
+              {payments.length === 0 ? (
+                <div className="text-xs text-slate-500">No payments yet.</div>
+              ) : (
+                <div className="rounded-lg border border-slate-200 dark:border-white/[0.07] divide-y divide-slate-200 dark:divide-white/[0.06]">
+                  {payments.map(p => (
+                    <div key={p.id} className="flex items-center gap-3 px-3 py-2 text-xs">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-slate-800 dark:text-slate-200 font-medium">
+                          {fmtDate(p.payment_date)} · {p.is_retention_release ? "Retention paid" : (PAY_METHODS.find(m => m.value === p.payment_method)?.label || "Payment")}
+                          {p.reference_number ? ` · ${p.reference_number}` : ""}
+                        </div>
+                        {p.ledger_note
+                          ? <div className="text-[10px] text-amber-600 dark:text-amber-400">{p.ledger_note}</div>
+                          : p.gl_transaction_id && <div className="text-[10px] text-emerald-600 dark:text-emerald-400">In the books</div>}
+                      </div>
+                      <div className="font-semibold text-slate-800 dark:text-slate-200">{fmt(p.amount)}</div>
+                      {canApprove && (
+                        <Btn variant="ghost" size="sm" icon={<Undo2 size={12}/>} onClick={() => { void handleUndoPayment(p); }} disabled={acting}>Undo</Btn>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {disputing !== null && (
               <div className="space-y-2">
                 <Input autoFocus placeholder="What is wrong with the bill? e.g. wrong amount, work not done" value={disputing}
@@ -392,10 +454,16 @@ export default function AccountsPayablePage() {
             )}
 
             <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
+              {canPay && disputing === null && owedNow > 0 && (
+                <Btn variant="primary" size="sm" icon={<Banknote size={13}/>} onClick={() => setPaying("bill")} disabled={acting}>Pay bill</Btn>
+              )}
+              {canPay && disputing === null && retentionHeld > 0 && (
+                <Btn variant={owedNow > 0 ? "secondary" : "primary"} size="sm" onClick={() => setPaying("retention")} disabled={acting}>Pay retention</Btn>
+              )}
               {canApprove && disputing === null && ["pending", "disputed"].includes(selectedBill.status) && (
                 <Btn variant="primary" size="sm" onClick={handleApprove} disabled={acting}>{acting ? "Saving..." : "Approve"}</Btn>
               )}
-              {canApprove && disputing === null && ["pending", "approved"].includes(selectedBill.status) && (
+              {canApprove && disputing === null && ["pending", "approved"].includes(selectedBill.status) && payments.length === 0 && (
                 <Btn variant="ghost" size="sm" onClick={() => setDisputing("")} disabled={acting}>Dispute</Btn>
               )}
               <Btn variant="ghost" onClick={closeDetail}>Close</Btn>
@@ -403,6 +471,11 @@ export default function AccountsPayablePage() {
           </div>
         )}
       </Modal>
+
+      <PayBillModal open={paying !== null} onClose={() => setPaying(null)} retention={paying === "retention"}
+        owed={paying === "retention" ? retentionHeld : owedNow}
+        bill={selectedBill ? { id: selectedBill.id, invoice_number: selectedBill.invoice_number, supplier: selectedBill.suppliers?.supplier_name || "the supplier" } : null}
+        onDone={m => { setNotice(m); if (selectedBill) void refreshSelected(selectedBill.id); }}/>
 
       <NewBillModal open={showNew} onClose={() => setShowNew(false)} companyId={companyId} canApprove={canApprove}
         onDone={msg => { setNotice(msg); loadBills(); }}/>

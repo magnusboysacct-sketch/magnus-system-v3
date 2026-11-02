@@ -60,3 +60,52 @@ export async function disputeBill(id: string, reason: string): Promise<void> {
 }
 
 export const GCT_RATE = 0.15;
+
+// ── Banking Step 4b: paying bills (migration 20260976). Paying: DEBIT Supplier Payables, CREDIT the bank/cash/card.
+// Paying out retention: DEBIT Retention Payable, CREDIT the bank/cash/card.
+
+export type PayMethod = "wire" | "cash" | "check" | "credit_card" | "other";
+export const PAY_METHODS: { value: PayMethod; label: string }[] = [
+  { value: "wire", label: "Bank transfer" },
+  { value: "cash", label: "Cash" },
+  { value: "check", label: "Cheque" },
+  { value: "credit_card", label: "Card" },
+  { value: "other", label: "Other (e.g. Lynk)" },
+];
+
+export interface BillPayment {
+  id: string;
+  payment_number: string | null;
+  payment_date: string;
+  amount: number;
+  payment_method: string | null;
+  reference_number: string | null;
+  is_retention_release: boolean;
+  paid_from_account_id: string | null;
+  gl_transaction_id: string | null;
+  ledger_note: string | null;
+}
+
+export async function fetchBillPayments(billId: string): Promise<BillPayment[]> {
+  const { data, error } = await supabase.from("supplier_payments")
+    .select("id, payment_number, payment_date, amount, payment_method, reference_number, is_retention_release, paid_from_account_id, gl_transaction_id, ledger_note")
+    .eq("invoice_id", billId).order("payment_date").order("created_at");
+  if (error) throw new Error(errText(error));
+  return ((data || []) as BillPayment[]).map((p) => ({ ...p, amount: Number(p.amount) }));
+}
+
+export async function payBill(p: {
+  billId: string; amount: number; date: string; paidFrom: string; method: PayMethod; reference: string; retention: boolean;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc("pay_bill", {
+    p_bill: p.billId, p_amount: p.amount, p_date: p.date, p_paid_from: p.paidFrom,
+    p_method: p.method, p_reference: p.reference.trim() || null, p_retention: p.retention,
+  });
+  if (error) throw new Error(errText(error));
+  return data as string;
+}
+
+export async function undoBillPayment(id: string): Promise<void> {
+  const { error } = await supabase.rpc("undo_bill_payment", { p_id: id });
+  if (error) throw new Error(errText(error));
+}
