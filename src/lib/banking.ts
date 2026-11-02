@@ -31,21 +31,46 @@ export interface TransferRow {
 const errText = (e: unknown): string =>
   e && typeof e === "object" && "message" in e && typeof (e as { message: unknown }).message === "string" ? (e as { message: string }).message : "Something went wrong.";
 
-/** Accounts money can move between: active asset accounts, and credit cards / lines of credit linked to a bank account. */
-export async function fetchMoneyAccounts(companyId: string): Promise<MoneyAccount[]> {
-  const [accts, banks] = await Promise.all([
-    supabase.from("chart_of_accounts").select("id, code, name, type, is_active, current_balance")
-      .eq("company_id", companyId).in("type", ["asset", "liability"]).order("code"),
-    supabase.from("bank_accounts").select("chart_account_id").eq("company_id", companyId),
-  ]);
-  if (accts.error) throw new Error(errText(accts.error));
-  const linked = new Set((banks.data || []).map((b: { chart_account_id: string | null }) => b.chart_account_id).filter(Boolean) as string[]);
-  return (accts.data || [])
-    .filter((a: { is_active: boolean | null; type: string; id: string }) => a.is_active !== false && (a.type === "asset" || linked.has(a.id)))
-    .map((a: { id: string; code: string; name: string; type: string; current_balance: number | null }) => ({
-      id: a.id, code: a.code, name: a.name, type: a.type as MoneyAccount["type"],
-      current_balance: Number(a.current_balance ?? 0), isBank: linked.has(a.id),
-    }));
+/** Accounts money can move between (the standard "Bank" accounts): marked Bank in the chart, linked to a bank account, or
+ *  petty cash / cash on hand / undeposited funds; plus credit cards / lines of credit linked to a bank account.
+ *  The rule lives in the database (money_accounts / _is_money_account, migration 20260971) so the screen and the save agree. */
+export async function fetchMoneyAccounts(): Promise<MoneyAccount[]> {
+  const { data, error } = await supabase.rpc("money_accounts");
+  if (error) throw new Error(errText(error));
+  return ((data || []) as { id: string; code: string; name: string; type: string; current_balance: number | null; is_bank: boolean }[]).map((a) => ({
+    id: a.id, code: a.code, name: a.name, type: a.type as MoneyAccount["type"],
+    current_balance: Number(a.current_balance ?? 0), isBank: !!a.is_bank,
+  }));
+}
+
+/** Mark (or unmark) an asset account as a money account ("Bank" in the chart), so it can be used in transfers. */
+export async function setMoneyAccount(accountId: string, on: boolean): Promise<void> {
+  const { error } = await supabase.from("chart_of_accounts").update({ subtype: on ? "bank" : "current_asset" }).eq("id", accountId).eq("type", "asset");
+  if (error) throw new Error(errText(error));
+}
+
+export interface OpeningBalance { id: string; amount: number; date: string; number: string }
+
+/** The live opening balance of each bank account (bank account id -> entry). */
+export async function fetchOpeningBalances(companyId: string): Promise<Map<string, OpeningBalance>> {
+  const { data, error } = await supabase
+    .from("gl_transactions")
+    .select("id, source_id, total_amount, transaction_date, transaction_number")
+    .eq("company_id", companyId)
+    .eq("source_type", "opening_balance")
+    .eq("status", "posted");
+  if (error) throw new Error(errText(error));
+  const m = new Map<string, OpeningBalance>();
+  for (const r of (data || []) as { id: string; source_id: string | null; total_amount: number; transaction_date: string; transaction_number: string }[]) {
+    if (r.source_id) m.set(r.source_id, { id: r.id, amount: Number(r.total_amount), date: r.transaction_date, number: r.transaction_number });
+  }
+  return m;
+}
+
+export async function setOpeningBalance(bankAccountId: string, amount: number, date: string): Promise<string> {
+  const { data, error } = await supabase.rpc("bank_account_set_opening_balance", { p_bank: bankAccountId, p_amount: amount, p_date: date });
+  if (error) throw new Error(errText(error));
+  return (data as { number: string }).number;
 }
 
 export async function transferMoney(t: { fromId: string; toId: string; amount: number; date: string; note: string; projectId: string | null }): Promise<string> {

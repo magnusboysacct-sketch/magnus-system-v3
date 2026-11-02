@@ -22,7 +22,7 @@ import { fetchBankAccounts, deactivateBankAccount, updateBankAccount, fetchBankL
 import type { BankAccount, BankLedgerAccount } from "../lib/finance";
 import { AddBankAccountModal } from "../components/AddBankAccountModal";
 import { TransferMoneyModal } from "../components/TransferMoneyModal";
-import { fetchRecentTransfers, undoTransfer, type TransferRow } from "../lib/banking";
+import { fetchRecentTransfers, undoTransfer, fetchOpeningBalances, setOpeningBalance, fetchMoneyAccounts, setMoneyAccount, type TransferRow, type OpeningBalance, type MoneyAccount } from "../lib/banking";
 import {
   PageHeader, Card, Badge, Btn, Table, Th, Tr, Td, Empty, Modal, Field, Input
 } from "../components/ui";
@@ -58,7 +58,13 @@ export default function BankAccountsPage() {
   const [showTransfer, setShowTransfer] = useState(false);
   const [transfers, setTransfers] = useState<TransferRow[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
-  const [undoing, setUndoing] = useState<TransferRow | null>(null);
+  const [undoing, setUndoing] = useState<{ id: string; number: string; what: "transfer" | "opening balance" } | null>(null);
+  const [openings, setOpenings] = useState<Map<string, OpeningBalance>>(new Map());
+  const [opening, setOpening] = useState<BankAccount | null>(null);
+  const [openForm, setOpenForm] = useState({ amount: "", date: "" });
+  const [openBusy, setOpenBusy] = useState(false);
+  const [moneyAccts, setMoneyAccts] = useState<MoneyAccount[]>([]);
+  const [addMoneyId, setAddMoneyId] = useState("");
   const [undoReason, setUndoReason] = useState("");
   const [undoBusy, setUndoBusy] = useState(false);
 
@@ -85,6 +91,8 @@ export default function BankAccountsPage() {
       setAccounts(data || []);
       setLedger(new Map(accts.map(a => [a.id, a])));
       setTransfers(await fetchRecentTransfers(companyId).catch(() => []));
+      setOpenings(await fetchOpeningBalances(companyId).catch(() => new Map<string, OpeningBalance>()));
+      setMoneyAccts(await fetchMoneyAccounts().catch(() => []));
     } catch (e: unknown) {
       setError(errText(e) || "Failed to load bank accounts");
     } finally {
@@ -158,7 +166,7 @@ export default function BankAccountsPage() {
     setError(null);
     try {
       const n = await undoTransfer(undoing.id, undoReason.trim());
-      setNotice(`Transfer ${undoing.number} undone (reversing entry ${n}).`);
+      setNotice(`${undoing.what === "transfer" ? "Transfer" : "Opening balance"} ${undoing.number} undone (reversing entry ${n}).`);
       setUndoing(null);
       setUndoReason("");
       await loadAccounts();
@@ -166,6 +174,42 @@ export default function BankAccountsPage() {
       setError(errText(e) || "Could not undo the transfer");
     } finally {
       setUndoBusy(false);
+    }
+  }
+
+  function openOpening(a: BankAccount) {
+    const d = new Date();
+    setOpenForm({
+      amount: a.current_balance ? String(a.current_balance) : "",
+      date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
+    });
+    setOpening(a);
+  }
+
+  async function saveOpening() {
+    if (!opening) return;
+    setOpenBusy(true);
+    setError(null);
+    try {
+      const n = await setOpeningBalance(opening.id, Number(openForm.amount), openForm.date);
+      setNotice(`Opening balance for ${opening.account_name} is in the books (${n}).`);
+      setOpening(null);
+      await loadAccounts();
+    } catch (e: unknown) {
+      setError(errText(e) || "Could not save the opening balance");
+    } finally {
+      setOpenBusy(false);
+    }
+  }
+
+  async function toggleMoney(id: string, on: boolean) {
+    setError(null);
+    try {
+      await setMoneyAccount(id, on);
+      setAddMoneyId("");
+      await loadAccounts();
+    } catch (e: unknown) {
+      setError(errText(e) || "Could not change the account");
     }
   }
 
@@ -198,6 +242,24 @@ export default function BankAccountsPage() {
                 <div>
                   <div className="text-xs text-slate-700 dark:text-slate-300">{l.code} - {l.name}</div>
                   <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{fmt(Number(l.current_balance ?? 0))}</div>
+                  {(() => {
+                    const ob = openings.get(a.id);
+                    if (ob) {
+                      return (
+                        <div className="text-[10px] text-slate-500 mt-0.5">
+                          Opening {fmt(ob.amount)} on {ob.date} ·{" "}
+                          <button className="underline hover:text-slate-700 dark:hover:text-slate-300"
+                            onClick={() => { setUndoReason(""); setUndoing({ id: ob.id, number: ob.number, what: "opening balance" }); }}>undo</button>
+                        </div>
+                      );
+                    }
+                    return !inactive && (
+                      <button onClick={() => openOpening(a)}
+                        className="mt-1 text-[10px] font-semibold text-cyan-700 dark:text-cyan-300 hover:underline">
+                        Set opening balance
+                      </button>
+                    );
+                  })()}
                 </div>
               );
             }
@@ -336,6 +398,56 @@ export default function BankAccountsPage() {
             </Table>
           </Card>
         )}
+        {!loading && (() => {
+          // Cash, petty cash and fund accounts: money accounts that are not a bank account above.
+          const funds = moneyAccts.filter(m => !m.isBank && m.type === "asset");
+          const moneyIds = new Set(moneyAccts.map(m => m.id));
+          const parentIds = new Set([...ledger.values()].map(l => l.parent_id).filter(Boolean));
+          const candidates = [...ledger.values()]
+            .filter(l => l.type === "asset" && l.is_active !== false && !moneyIds.has(l.id) && !parentIds.has(l.id)
+              && !/(receivable|inventory|prepaid|deposit paid|retainage|advance tax|input credit)/i.test(l.name))
+            .sort((a, b) => a.code.localeCompare(b.code));
+          return (
+            <Card padding={false}>
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">Cash, petty cash and fund accounts</div>
+                  <div className="text-[11px] text-slate-500">Money held outside the bank, e.g. petty cash or a job fund for a partner or supervisor. They can be used in transfers and "Paid from".</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select value={addMoneyId} onChange={e => setAddMoneyId(e.target.value)}
+                    className="text-xs rounded-lg border border-slate-300 dark:border-white/[0.08] bg-white dark:bg-white/[0.04] px-2 py-1.5 text-slate-700 dark:text-slate-300 max-w-[240px]">
+                    <option value="">Add an account from your chart…</option>
+                    {candidates.map(c => <option key={c.id} value={c.id}>{c.code} - {c.name}</option>)}
+                  </select>
+                  <Btn size="sm" disabled={!addMoneyId} onClick={() => { void toggleMoney(addMoneyId, true); }}>Add</Btn>
+                </div>
+              </div>
+              {funds.length === 0 ? (
+                <div className="px-4 py-5 text-xs text-slate-500">None yet. Add your petty cash or a job fund from your chart above.</div>
+              ) : (
+                <Table>
+                  <thead><tr><Th>Account</Th><Th right>In your books</Th><Th>{""}</Th></tr></thead>
+                  <tbody>
+                    {funds.map(f => (
+                      <Tr key={f.id}>
+                        <Td><span className="text-slate-800 dark:text-slate-200">{f.code} - {f.name}</span></Td>
+                        <Td right><span className="font-semibold text-slate-800 dark:text-slate-200">{fmt(f.current_balance)}</span></Td>
+                        <Td>
+                          {ledger.get(f.id)?.subtype === "bank" && (
+                            <button onClick={() => { void toggleMoney(f.id, false); }} title="Stop using it as a money account"
+                              className="text-[11px] text-slate-400 hover:text-red-500">Remove</button>
+                          )}
+                        </Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </Card>
+          );
+        })()}
+
         {!loading && (
           <Card padding={false}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
@@ -372,7 +484,7 @@ export default function BankAccountsPage() {
                         {t.status === "voided"
                           ? <Badge color="slate">Undone</Badge>
                           : t.status === "posted" && (
-                            <Btn size="sm" variant="ghost" icon={<Undo2 size={12}/>} onClick={() => { setUndoReason(""); setUndoing(t); }}>Undo</Btn>
+                            <Btn size="sm" variant="ghost" icon={<Undo2 size={12}/>} onClick={() => { setUndoReason(""); setUndoing({ id: t.id, number: t.number, what: "transfer" }); }}>Undo</Btn>
                           )}
                       </Td>
                     </Tr>
@@ -387,8 +499,8 @@ export default function BankAccountsPage() {
       <TransferMoneyModal open={showTransfer} onClose={() => setShowTransfer(false)} companyId={companyId}
         onDone={(m) => { setNotice(m); void loadAccounts(); }} />
 
-      <Modal open={!!undoing} onClose={() => { if (!undoBusy) setUndoing(null); }} title={`Undo transfer ${undoing?.number ?? ""}?`}
-        subtitle="The money goes back to where it came from. The transfer stays in the books, marked undone, with a reversing entry.">
+      <Modal open={!!undoing} onClose={() => { if (!undoBusy) setUndoing(null); }} title={`Undo ${undoing?.what ?? ""} ${undoing?.number ?? ""}?`}
+        subtitle="It is reversed with a new entry. The original stays in the books, marked undone.">
         <div className="space-y-3">
           <Field label="Why are you undoing it?">
             <Input value={undoReason} onChange={e => setUndoReason(e.target.value)} placeholder="e.g. wrong amount" autoFocus/>
@@ -396,7 +508,34 @@ export default function BankAccountsPage() {
           <div className="flex justify-end gap-2">
             <Btn variant="ghost" size="sm" onClick={() => setUndoing(null)} disabled={undoBusy}>Cancel</Btn>
             <Btn variant="danger" size="sm" onClick={() => { void confirmUndo(); }} disabled={undoBusy || undoReason.trim().length < 3}>
-              {undoBusy ? "Undoing..." : "Undo transfer"}
+              {undoBusy ? "Undoing..." : `Undo ${undoing?.what ?? ""}`}
+            </Btn>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!opening} onClose={() => { if (!openBusy) setOpening(null); }} title={`Opening balance: ${opening?.account_name ?? ""}`}
+        subtitle="The standard first step for a bank account in your books: what the bank statement said on the day your books start.">
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Books start on">
+              <Input type="date" value={openForm.date} onChange={e => setOpenForm(f => ({ ...f, date: e.target.value }))}/>
+            </Field>
+            <Field label="Balance on that day (J$)">
+              <Input type="number" inputMode="decimal" step="0.01" value={openForm.amount}
+                onChange={e => setOpenForm(f => ({ ...f, amount: e.target.value }))}/>
+            </Field>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            {opening && (opening.account_type === "credit" || opening.account_type === "line_of_credit")
+              ? "For a credit card or line of credit, type what you OWED on that day. "
+              : "Type a minus amount if the account was overdrawn. "}
+            Everything after this date is recorded in Magnus (transfers, payments, expenses). It goes against "Opening Balance Equity" in your chart, which Magnus adds if you don't have it.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Btn variant="ghost" size="sm" onClick={() => setOpening(null)} disabled={openBusy}>Cancel</Btn>
+            <Btn variant="primary" size="sm" onClick={() => { void saveOpening(); }} disabled={openBusy || !openForm.date || !Number(openForm.amount)}>
+              {openBusy ? "Saving..." : "Save opening balance"}
             </Btn>
           </div>
         </div>

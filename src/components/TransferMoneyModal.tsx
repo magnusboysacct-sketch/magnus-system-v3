@@ -54,7 +54,7 @@ export function TransferMoneyModal({ open, onClose, companyId, onDone }: {
     setForm({ fromId: "", toId: "", amount: "", date: today(), note: "", projectId: "" });
     setError(null);
     Promise.all([
-      fetchMoneyAccounts(companyId),
+      fetchMoneyAccounts(),
       supabase.from("projects").select("id, name, status").eq("company_id", companyId).order("name"),
     ]).then(([accts, pr]) => {
       if (!alive) return;

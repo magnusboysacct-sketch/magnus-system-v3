@@ -792,12 +792,12 @@ export async function deactivateBankAccount(id: string) {
 }
 
 /** The bank / cash (asset) and credit (liability) accounts in the chart, with their books balance, for linking bank accounts. */
-export interface BankLedgerAccount { id: string; code: string; name: string; type: string; is_active: boolean | null; current_balance: number | null }
+export interface BankLedgerAccount { id: string; code: string; name: string; type: string; is_active: boolean | null; current_balance: number | null; subtype?: string | null; parent_id?: string | null }
 
 export async function fetchBankLedgerAccounts(companyId: string): Promise<BankLedgerAccount[]> {
   const { data, error } = await supabase
     .from("chart_of_accounts")
-    .select("id, code, name, type, is_active, current_balance")
+    .select("id, code, name, type, is_active, current_balance, subtype, parent_id")
     .eq("company_id", companyId)
     .in("type", ["asset", "liability"])
     .order("code");

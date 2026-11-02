@@ -39,3 +39,15 @@ Goal: work the standard way (QuickBooks / Xero / Sage / Viewpoint), not around h
   account. Runs as the user (RLS + existing ledger triggers apply).
 - UI: Bank Accounts page -> "Transfer money" button + "Recent transfers" (Zoho-imported transfers show too) with Undo.
   `src/lib/banking.ts`, `src/components/TransferMoneyModal.tsx`.
+
+## Step 2b notes (from testing)
+- Migration `20260971000000_money_accounts_opening_balances.sql`:
+  - `_is_money_account(a)` (never NULL) / `money_accounts()`: active, non-header assets marked Bank (subtype 'bank'),
+    linked to a bank account, or named petty cash / cash on hand / undeposited / job fund (receivable, inventory,
+    prepaid etc. excluded); plus liabilities linked to a bank account. `money_transfer` uses the same rule.
+  - `bank_account_set_opening_balance(bank, amount, date)`: one posted 'opening_balance' entry (source_id = bank id)
+    against "Opening Balance Equity" (found by name, else created at 3900-3999 under 3000). Undo via
+    `money_transfer_undo` (now accepts opening balances).
+  - Chart accounts made from a bank account are named "Bank - Name ••1234"; step-1 ones renamed (only if unchanged).
+- UI: Bank Accounts -> "Set opening balance" under each linked bank, "Cash, petty cash and fund accounts" section
+  (add any asset from the chart = mark as Bank; remove = back to current asset).
