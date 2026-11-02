@@ -1513,3 +1513,11 @@ export async function withdrawFunds(params: {
 
   return txn;
 }
+
+/** Money received on client invoices since a date (part payments and advances used on invoices included). */
+export async function fetchPaidOnInvoicesSince(companyId: string, since: string): Promise<number> {
+  const { data, error } = await supabase.from("client_payments").select("amount")
+    .eq("company_id", companyId).not("invoice_id", "is", null).gte("payment_date", since);
+  if (error) throw error;
+  return ((data || []) as { amount: number | null }[]).reduce((t, p) => t + Number(p.amount || 0), 0);
+}

@@ -18,6 +18,7 @@ import {
 } from "../lib/finance";
 import type { ClientInvoice, ClientInvoiceLineItem, ClientPayment } from "../lib/finance";
 import { fetchMoneyAccounts, type MoneyAccount } from "../lib/banking";
+import { fetchPaidOnInvoicesSince } from "../lib/finance";
 
 // Banking step 3b: which bank / cash account a client payment went into. Empty = the primary bank account
 // (or Undeposited Funds when there is none), chosen by the database, so every way of recording a payment is in the books.
@@ -89,6 +90,14 @@ export default function AccountsReceivablePage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [contracts, setContracts] = useState<any[]>([]);
   const [companyId, setCompanyId] = useState<string>("");
+  const [paidYtd, setPaidYtd] = useState(0);
+  useEffect(() => {
+    if (!companyId) return;
+    let alive = true;
+    const start = `${new Date().getFullYear()}-01-01`;
+    fetchPaidOnInvoicesSince(companyId, start).then((n) => { if (alive) setPaidYtd(n); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [companyId, invoices]);
   const [showProgressBilling, setShowProgressBilling] = useState(false);
   const [selectedContract, setSelectedContract] = useState<any>(null);
   const [showSendModal, setShowSendModal] = useState(false);
@@ -760,7 +769,9 @@ export default function AccountsReceivablePage() {
   const summary = {
     total: invoices.filter((i) => i.status !== "cancelled").reduce((sum, i) => sum + Number(i.balance_due), 0),
     overdue: invoices.filter((i) => i.status === "overdue").reduce((sum, i) => sum + Number(i.balance_due), 0),
-    paid: invoices.filter((i) => i.status === "paid").reduce((sum, i) => sum + Number(i.total_amount), 0),
+    // Paid (YTD): money received on invoices since 1 January (part payments and advances used on invoices count too).
+    // It used to add up only invoices marked fully "paid", over all years, so part-paid invoices showed $0.
+    paid: paidYtd,
   };
 
   const totals = calculateTotals();

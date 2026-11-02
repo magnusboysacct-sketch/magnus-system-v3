@@ -209,3 +209,27 @@ The Transactions page's old Post / Accept / Bulk post / Auto-post buttons posted
 "expense", "revenue") and never worked: they now open Bank review for that bank account.
 
 Not yet: credit card statement lines; reconciliation (Step 6).
+
+## Step 6: reconcile, account history, Paid (YTD) (done)
+
+Migration `20260983000000_bank_reconcile.sql`:
+- bank_reconciliations (RLS: company members read; director / admin / office user change; company write guard trigger):
+  one per statement, open -> done, one open at a time per account, each statement date after the last finished one.
+  gl_entries.reconciliation_id = the statement an entry was ticked on.
+- reconcile_start(bank, statement date, ending balance): opening = last finished statement's balance (0 for the first);
+  ticks the entries Bank review matched / added to statement lines up to that date. reconcile_items(rec): entries up to the
+  date not reconciled before, ticked balance, difference, lines still to review. reconcile_tick(rec, entries, on).
+  reconcile_finish(rec): only at difference 0.00; marks gl_entries.reconciled / reconciled_date / reconciled_by and the
+  matched statement lines 'reconciled' (Bank review can't undo them). reconcile_cancel (open), reconcile_undo (latest done only).
+  Undone pairs (voided original + "VOID:" reversal) are left out together unless the original was already reconciled.
+  Card (liability) accounts count in the statement's direction (less owed = +).
+- account_history(account, from, to): opening, every entry (undone ones shown dimmed, they net to zero), running balance, closing.
+
+Screens: **Reconcile** (/finance/reconcile, src/pages/ReconcilePage.tsx): Reconcile tab (start with date + ending balance,
+Money in / Money out lists with ticks, Difference, Finish / Cancel, statements reconciled with Undo on the latest) and
+Account history tab. Bank review has a Reconcile button.
+AR "Paid (YTD)" now = money received on invoices since 1 January (fetchPaidOnInvoicesSince); it used to add up only
+fully paid invoices over all years.
+
+Banking plan steps 1-6 are done. Still open: credit card statement lines on Bank review; pension deductions; supplier
+statement matching.

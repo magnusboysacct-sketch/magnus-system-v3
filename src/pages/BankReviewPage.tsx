@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Check, Link2, Plus, RefreshCw, Undo2, Upload, Wand2, X } from "lucide-react";
+import { Check, ClipboardCheck, Link2, Plus, RefreshCw, Undo2, Upload, Wand2, X } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { PageHeader, Card, Btn, Input, Select, Alert, Tabs, Empty, Spinner, cn } from "../components/ui";
 import {
@@ -203,6 +203,7 @@ export default function BankReviewPage() {
           <div className="flex gap-2">
             <Btn variant="ghost" size="sm" icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""} />} onClick={() => { void load(); }} />
             <Btn variant="ghost" size="sm" icon={<Upload size={13} />} onClick={() => navigate("/finance/upload-statement")}>Upload statement</Btn>
+            <Btn variant="ghost" size="sm" icon={<ClipboardCheck size={13} />} onClick={() => navigate(bankId ? `/finance/reconcile?account=${bankId}` : "/finance/reconcile")}>Reconcile</Btn>
           </div>
         } />
 
