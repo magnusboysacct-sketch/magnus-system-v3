@@ -90,3 +90,18 @@ Goal: work the standard way (QuickBooks / Xero / Sage / Viewpoint), not around h
   part back to its advance. fetchUnappliedAdvances skips advances at 0.
 - UI: "Apply to invoice" on each unapplied advance (Accounts Receivable), with 10/20/25/50% of invoice shortcuts.
 - Also: Record Payment saves once (button disabled while saving) and never above what is owed.
+
+## Step 4a: bills into the books (done)
+
+Migration `20260975000000_bills_to_books.sql`:
+- A bill (supplier, subcontractor or workman) posts when it is **approved** (also partial / paid), dated on or after the books start date:
+  DR each line's cost account, DR GCT Input Credit, CR Supplier Payables (bill total less retention), CR Retention Payable.
+- Pending (waiting for approval) and disputed bills are out of the books.
+- `create_bill(p_bill, p_lines, p_approve)` saves the bill and its lines in one step; refuses a duplicate bill number from the same supplier.
+- `approve_bill(id)`, `dispute_bill(id, reason)`: director, admin or office user only. A bill with payments can't be disputed.
+- Bills dated before the start date go in as opening payables (DR Opening Balance Equity / CR Supplier Payables) when the start date is set.
+- Error-handler fix for invoices, client payments and bills: if a change can't be posted, the old entry stays in the books and the row says "Your last change is not in the books yet".
+
+Screens: Payables has **New bill** (src/components/NewBillModal.tsx, src/lib/bills.ts), with lines charged to cost accounts, GCT (15% button) and retention %. The detail shows "In the books", the cost account per line, retention held, and Approve / Dispute.
+
+Next: 4b Pay bill (Paid from, part payments, retention release), then 4c bill from a received Purchase Order.

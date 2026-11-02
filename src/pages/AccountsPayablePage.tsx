@@ -1,8 +1,8 @@
 // src/pages/AccountsPayablePage.tsx
 //
-// Bills / Accounts Payable — browse/verify only this round, no create-new-
-// bill form (bills currently arrive via the Import Wizard, not manual
-// entry — a create flow is a separate, later addition if wanted). Mirrors
+// Bills / Accounts Payable. Banking Step 4a added "New bill" (NewBillModal ->
+// create_bill RPC) and Approve / Dispute in the detail modal; an approved bill
+// goes in the books (migration 20260975). Mirrors
 // AccountsReceivablePage.tsx's list-plus-detail-modal shape: click a row to
 // open a modal that fetches that bill's line items on demand, rather than a
 // separate detail route.
@@ -15,6 +15,8 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { fetchSupplierInvoiceLineItems } from "../lib/finance";
+import { NewBillModal } from "../components/NewBillModal";
+import { approveBill, disputeBill, fetchCostAccounts, type CostAccount } from "../lib/bills";
 import type { SupplierInvoiceLineItem } from "../lib/finance";
 import {
   PageHeader, Card, Badge, Btn, Input,
@@ -22,7 +24,7 @@ import {
   Spinner, cn
 } from "../components/ui";
 import {
-  Search, RefreshCw, Landmark, Package,
+  Search, RefreshCw, Landmark, Package, Plus, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 
 interface SupplierInvoiceRow {
@@ -37,6 +39,9 @@ interface SupplierInvoiceRow {
   project_id: string | null;
   suppliers: { supplier_name: string } | null;
   projects: { name: string } | null;
+  retention_amount: number | null;
+  gl_transaction_id: string | null;
+  ledger_note: string | null;
 }
 
 type StatusFilter = "all" | "pending" | "approved" | "partial" | "paid" | "disputed";
@@ -45,7 +50,7 @@ type StatusFilter = "all" | "pending" | "approved" | "partial" | "paid" | "dispu
 // underlying vocabulary, kept in sync intentionally rather than imported
 // (FinancePage's map also covers client_invoices' separate draft/sent/
 // overdue/cancelled values, which don't apply here).
-const STATUS_COLOR: Record<string, any> = {
+const STATUS_COLOR: Record<string, "amber" | "cyan" | "green" | "red"> = {
   pending: "amber", approved: "cyan", partial: "amber",
   paid: "green", disputed: "red",
 };
@@ -54,6 +59,10 @@ function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency", currency: "JMD", maximumFractionDigits: 0
   }).format(n || 0);
+}
+
+function msg(e: unknown): string {
+  return e && typeof e === "object" && "message" in e ? String((e as { message: unknown }).message) : "Something went wrong.";
 }
 
 function fmtDate(d: string) {
@@ -73,7 +82,29 @@ export default function AccountsPayablePage() {
   const [loadingLineItems, setLoadingLineItems] = useState(false);
   const [lineItemsError, setLineItemsError] = useState<string | null>(null);
 
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [role, setRole] = useState<string>("");
+  const [costAccounts, setCostAccounts] = useState<CostAccount[]>([]);
+  const [showNew, setShowNew] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [acting, setActing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [disputing, setDisputing] = useState<string | null>(null);
+  const canApprove = ["director", "admin", "office_user"].includes(role);
+
   useEffect(() => { loadBills(); }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase.from("user_profiles").select("company_id, role").eq("id", user.id).single();
+      if (!profile?.company_id) return;
+      setCompanyId(profile.company_id);
+      setRole(profile.role || "");
+      fetchCostAccounts(profile.company_id).then(setCostAccounts).catch(() => setCostAccounts([]));
+    })();
+  }, []);
 
   async function loadBills() {
     setLoading(true);
@@ -90,16 +121,16 @@ export default function AccountsPayablePage() {
       for (let guard = 0; guard < 200; guard++) {
         const { data: page, error: e } = await supabase
           .from("supplier_invoices")
-          .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, suppliers(supplier_name), projects(name)")
+          .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, retention_amount, gl_transaction_id, ledger_note, suppliers(supplier_name), projects(name)")
           .order("due_date", { ascending: true })
           .range(from, from + PAGE - 1);
         if (e) throw e;
-        all = all.concat((page as any) || []);
+        all = all.concat((page as unknown as SupplierInvoiceRow[]) || []);
         if (!page || page.length < PAGE) break;
         from += PAGE;
       }
       setBills(all);
-    } catch (e: any) { setError(e.message); }
+    } catch (e: unknown) { setError(msg(e)); }
     finally { setLoading(false); }
   }
 
@@ -110,14 +141,48 @@ export default function AccountsPayablePage() {
     try {
       const items = await fetchSupplierInvoiceLineItems(bill.id);
       setLineItems(items);
-    } catch (e: any) {
-      setLineItemsError(e.message);
+    } catch (e: unknown) {
+      setLineItemsError(msg(e));
     } finally {
       setLoadingLineItems(false);
     }
   }
 
+  async function refreshSelected(id: string) {
+    await loadBills();
+    const { data } = await supabase.from("supplier_invoices")
+      .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, supplier_id, project_id, retention_amount, gl_transaction_id, ledger_note, suppliers(supplier_name), projects(name)")
+      .eq("id", id).single();
+    if (data) setSelectedBill(data as unknown as SupplierInvoiceRow);
+  }
+
+  async function handleApprove() {
+    if (!selectedBill || acting) return;
+    setActing(true); setActionError(null);
+    try {
+      await approveBill(selectedBill.id);
+      setNotice(`Bill ${selectedBill.invoice_number} approved.`);
+      await refreshSelected(selectedBill.id);
+    } catch (e: unknown) { setActionError(msg(e)); }
+    finally { setActing(false); }
+  }
+
+  async function handleDispute() {
+    if (!selectedBill || acting || disputing === null) return;
+    if (disputing.trim().length < 3) { setActionError("Write what is wrong with the bill."); return; }
+    setActing(true); setActionError(null);
+    try {
+      await disputeBill(selectedBill.id, disputing.trim());
+      setDisputing(null);
+      setNotice(`Bill ${selectedBill.invoice_number} marked disputed. It is out of the books until it is approved again.`);
+      await refreshSelected(selectedBill.id);
+    } catch (e: unknown) { setActionError(msg(e)); }
+    finally { setActing(false); }
+  }
+
   function closeDetail() {
+    setActionError(null);
+    setDisputing(null);
     setSelectedBill(null);
     setLineItems([]);
     setLineItemsError(null);
@@ -147,14 +212,18 @@ export default function AccountsPayablePage() {
         title="Payables"
         subtitle={`${stats.total} bills · ${fmt(stats.outstanding)} outstanding`}
         actions={
-          <Btn variant="ghost" size="sm"
-            icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>}
-            onClick={loadBills}/>
+          <div className="flex gap-2">
+            <Btn variant="ghost" size="sm"
+              icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>}
+              onClick={loadBills}/>
+            <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={() => setShowNew(true)} disabled={!companyId}>New bill</Btn>
+          </div>
         }
       />
 
       <div className="p-6 space-y-5">
         {error && <Alert type="error" onClose={() => setError(null)}>{error}</Alert>}
+        {notice && <Alert type="success" onClose={() => setNotice(null)}>{notice}</Alert>}
 
         <Tabs
           tabs={[
@@ -183,7 +252,7 @@ export default function AccountsPayablePage() {
           <Empty
             icon={<Landmark size={20}/>}
             title={search || statusFilter !== "all" ? "No bills match" : "No bills yet"}
-            body={search || statusFilter !== "all" ? "Try a different search or filter." : "Bills imported via the Import Wizard will appear here."}
+            body={search || statusFilter !== "all" ? "Try a different search or filter." : "Tap New bill to enter a bill from a supplier, subcontractor or workman."}
             action={
               (search || statusFilter !== "all")
                 ? <Btn variant="ghost" onClick={() => { setSearch(""); setStatusFilter("all"); }}>Clear filters</Btn>
@@ -207,7 +276,12 @@ export default function AccountsPayablePage() {
               <tbody>
                 {filtered.map(b => (
                   <Tr key={b.id} onClick={() => openDetail(b)}>
-                    <Td><span className="font-mono text-xs text-slate-300">{b.invoice_number}</span></Td>
+                    <Td>
+                      <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{b.invoice_number}</span>
+                      {b.ledger_note
+                        ? <div className="text-[10px] text-amber-600 dark:text-amber-400 max-w-[14rem] truncate" title={b.ledger_note}>{b.ledger_note}</div>
+                        : b.gl_transaction_id && <div className="text-[10px] text-emerald-600 dark:text-emerald-400">In the books</div>}
+                    </Td>
                     <Td><span className="font-medium text-slate-800 dark:text-slate-200">{b.suppliers?.supplier_name || "—"}</span></Td>
                     <Td muted>{b.projects?.name || "—"}</Td>
                     <Td muted className={new Date(b.due_date) < new Date() && b.status !== "paid" ? "text-red-400" : ""}>
@@ -252,6 +326,22 @@ export default function AccountsPayablePage() {
               </div>
             </div>
 
+            {actionError && <Alert type="error" onClose={() => setActionError(null)}>{actionError}</Alert>}
+
+            {selectedBill.ledger_note ? (
+              <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0"/> {selectedBill.ledger_note}
+              </div>
+            ) : selectedBill.gl_transaction_id ? (
+              <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-300">
+                <CheckCircle2 size={14}/> In the books
+              </div>
+            ) : null}
+
+            {(selectedBill.retention_amount || 0) > 0 && (
+              <div className="text-xs text-slate-500">Retention held back: <span className="font-medium text-slate-700 dark:text-slate-300">{fmt(selectedBill.retention_amount || 0)}</span> (paid when the work is accepted)</div>
+            )}
+
             {selectedBill.projects?.name && (
               <div className="text-xs text-slate-500 dark:text-slate-600">Project: <span className="text-slate-700 dark:text-slate-300 font-medium">{selectedBill.projects.name}</span></div>
             )}
@@ -271,13 +361,14 @@ export default function AccountsPayablePage() {
                 <div className="rounded-lg border border-slate-200 dark:border-white/[0.07] overflow-hidden">
                   <Table>
                     <thead>
-                      <tr><Th>#</Th><Th>Item</Th><Th right>Qty</Th><Th right>Rate</Th><Th right>Amount</Th></tr>
+                      <tr><Th>#</Th><Th>Item</Th><Th>Cost account</Th><Th right>Qty</Th><Th right>Rate</Th><Th right>Amount</Th></tr>
                     </thead>
                     <tbody>
                       {lineItems.map(li => (
                         <Tr key={li.id}>
                           <Td muted>{li.line_no}</Td>
                           <Td>{li.item_name}</Td>
+                          <Td muted>{(() => { const a = costAccounts.find(c => c.id === li.chart_account_id); return a ? `${a.code} ${a.name}` : "—"; })()}</Td>
                           <Td right>{li.quantity}</Td>
                           <Td right>{fmt(li.unit_cost)}</Td>
                           <Td right>{fmt(li.total_amount)}</Td>
@@ -289,12 +380,32 @@ export default function AccountsPayablePage() {
               )}
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-white/[0.06]">
+            {disputing !== null && (
+              <div className="space-y-2">
+                <Input autoFocus placeholder="What is wrong with the bill? e.g. wrong amount, work not done" value={disputing}
+                  onChange={e => setDisputing(e.target.value)}/>
+                <div className="flex justify-end gap-2">
+                  <Btn variant="ghost" size="sm" onClick={() => setDisputing(null)} disabled={acting}>Cancel</Btn>
+                  <Btn variant="danger" size="sm" onClick={handleDispute} disabled={acting}>{acting ? "Saving..." : "Mark disputed"}</Btn>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
+              {canApprove && disputing === null && ["pending", "disputed"].includes(selectedBill.status) && (
+                <Btn variant="primary" size="sm" onClick={handleApprove} disabled={acting}>{acting ? "Saving..." : "Approve"}</Btn>
+              )}
+              {canApprove && disputing === null && ["pending", "approved"].includes(selectedBill.status) && (
+                <Btn variant="ghost" size="sm" onClick={() => setDisputing("")} disabled={acting}>Dispute</Btn>
+              )}
               <Btn variant="ghost" onClick={closeDetail}>Close</Btn>
             </div>
           </div>
         )}
       </Modal>
+
+      <NewBillModal open={showNew} onClose={() => setShowNew(false)} companyId={companyId} canApprove={canApprove}
+        onDone={msg => { setNotice(msg); loadBills(); }}/>
     </div>
   );
 }

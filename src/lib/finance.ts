@@ -104,6 +104,7 @@ export interface SupplierInvoiceLineItem {
   id?: string;
   supplier_invoice_id: string;
   purchase_order_item_id?: string | null;
+  chart_account_id?: string | null;
   line_no: number;
   item_name: string;
   description?: string | null;
