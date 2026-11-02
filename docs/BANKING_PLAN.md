@@ -16,7 +16,7 @@ Goal: work the standard way (QuickBooks / Xero / Sage / Viewpoint), not around h
 | Step | What | Status |
 |---|---|---|
 | 1 | One list: bank_accounts.chart_account_id; new bank accounts create / link their chart account; page shows books balance | done (20260969) |
-| 2 | Transfer money (from, to, amount, date, note, optional project) -> posted journal | |
+| 2 | Transfer money (from, to, amount, date, note, optional project) -> posted journal | done (20260970) |
 | 3 | Client payments: "Deposited to" + post to the books (start date + opening balances decided here) | |
 | 4 | Supplier payments: "Paid from" + post to the books | |
 | 5 | Bank statements: fix posting (placeholder accounts today), match lines to the books | |
@@ -30,3 +30,12 @@ Goal: work the standard way (QuickBooks / Xero / Sage / Viewpoint), not around h
   exact name match; the rest show "Create in chart" / "Link". Runs as the user (RLS applies), no security definer.
 - `bank_accounts.current_balance` is now labelled "Bank statement" (the bank's figure, for reconciling in step 6);
   the books balance is `chart_of_accounts.current_balance`.
+
+## Step 2 notes
+- Migration `20260970000000_money_transfer.sql`: `money_transfer(from, to, amount, date, note, project)` saves header +
+  2 lines + posts in one transaction (DEBIT to, CREDIT from; source_type 'fund_transfer', currency JMD, number
+  GL-YYYY-MM-DD-NNNN under an advisory lock). `money_transfer_undo(id, reason)` posts a reversing 'adjustment' entry
+  and marks the original voided (posted_at cleared). Allowed accounts: active assets, and liabilities linked to a bank
+  account. Runs as the user (RLS + existing ledger triggers apply).
+- UI: Bank Accounts page -> "Transfer money" button + "Recent transfers" (Zoho-imported transfers show too) with Undo.
+  `src/lib/banking.ts`, `src/components/TransferMoneyModal.tsx`.

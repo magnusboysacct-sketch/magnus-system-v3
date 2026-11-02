@@ -21,10 +21,12 @@ import { supabase } from "../lib/supabase";
 import { fetchBankAccounts, deactivateBankAccount, updateBankAccount, fetchBankLedgerAccounts, createChartAccountForBank } from "../lib/finance";
 import type { BankAccount, BankLedgerAccount } from "../lib/finance";
 import { AddBankAccountModal } from "../components/AddBankAccountModal";
+import { TransferMoneyModal } from "../components/TransferMoneyModal";
+import { fetchRecentTransfers, undoTransfer, type TransferRow } from "../lib/banking";
 import {
-  PageHeader, Card, Badge, Btn, Table, Th, Tr, Td, Empty
+  PageHeader, Card, Badge, Btn, Table, Th, Tr, Td, Empty, Modal, Field, Input
 } from "../components/ui";
-import { Plus, Pencil, Ban, Landmark, RefreshCw, RotateCcw, Link2, BookPlus } from "lucide-react";
+import { Plus, Pencil, Ban, Landmark, RefreshCw, RotateCcw, Link2, BookPlus, ArrowLeftRight, Undo2 } from "lucide-react";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", {
@@ -53,6 +55,12 @@ export default function BankAccountsPage() {
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
   const [ledger, setLedger] = useState<Map<string, BankLedgerAccount>>(new Map());
   const [creatingId, setCreatingId] = useState<string | null>(null);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transfers, setTransfers] = useState<TransferRow[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [undoing, setUndoing] = useState<TransferRow | null>(null);
+  const [undoReason, setUndoReason] = useState("");
+  const [undoBusy, setUndoBusy] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -76,6 +84,7 @@ export default function BankAccountsPage() {
       const [data, accts] = await Promise.all([fetchBankAccounts(companyId), fetchBankLedgerAccounts(companyId)]);
       setAccounts(data || []);
       setLedger(new Map(accts.map(a => [a.id, a])));
+      setTransfers(await fetchRecentTransfers(companyId).catch(() => []));
     } catch (e: unknown) {
       setError(errText(e) || "Failed to load bank accounts");
     } finally {
@@ -142,6 +151,28 @@ export default function BankAccountsPage() {
       setCreatingId(null);
     }
   }
+
+  async function confirmUndo() {
+    if (!undoing) return;
+    setUndoBusy(true);
+    setError(null);
+    try {
+      const n = await undoTransfer(undoing.id, undoReason.trim());
+      setNotice(`Transfer ${undoing.number} undone (reversing entry ${n}).`);
+      setUndoing(null);
+      setUndoReason("");
+      await loadAccounts();
+    } catch (e: unknown) {
+      setError(errText(e) || "Could not undo the transfer");
+    } finally {
+      setUndoBusy(false);
+    }
+  }
+
+  const acctLabel = (id: string | null) => {
+    const l = id ? ledger.get(id) : undefined;
+    return l ? `${l.code} ${l.name}` : "—";
+  };
 
   const activeAccounts = accounts.filter(a => a.is_active);
   const inactiveAccounts = accounts.filter(a => !a.is_active);
@@ -223,6 +254,7 @@ export default function BankAccountsPage() {
         actions={
           <>
             <Btn variant="ghost" size="sm" icon={<RefreshCw size={13} className={loading ? "animate-spin" : ""}/>} onClick={loadAccounts}/>
+            <Btn size="sm" icon={<ArrowLeftRight size={13}/>} onClick={() => setShowTransfer(true)}>Transfer money</Btn>
             <Btn variant="primary" size="sm" icon={<Plus size={13}/>} onClick={openAdd}>Add Bank Account</Btn>
           </>
         }
@@ -231,6 +263,12 @@ export default function BankAccountsPage() {
       <div className="p-6 space-y-5">
         {error && (
           <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</div>
+        )}
+        {notice && (
+          <div className="flex items-start justify-between gap-3 text-xs text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+            <span>{notice}</span>
+            <button onClick={() => setNotice(null)} className="text-emerald-600 hover:text-emerald-800" aria-label="Close">✕</button>
+          </div>
         )}
 
         <Card padding={false}>
@@ -298,7 +336,71 @@ export default function BankAccountsPage() {
             </Table>
           </Card>
         )}
+        {!loading && (
+          <Card padding={false}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Recent transfers</span>
+              <Btn size="sm" variant="ghost" icon={<ArrowLeftRight size={12}/>} onClick={() => setShowTransfer(true)}>Transfer money</Btn>
+            </div>
+            {transfers.length === 0 ? (
+              <div className="px-4 py-6 text-xs text-slate-500">No transfers yet. Use "Transfer money" to move money between your bank, cash and fund accounts.</div>
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Date</Th>
+                    <Th>From</Th>
+                    <Th>To</Th>
+                    <Th right>Amount</Th>
+                    <Th>Note</Th>
+                    <Th>Entry</Th>
+                    <Th>{""}</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transfers.map(t => (
+                    <Tr key={t.id}>
+                      <Td muted className={t.status === "voided" ? "line-through opacity-60" : undefined}>{t.date}</Td>
+                      <Td className={t.status === "voided" ? "line-through opacity-60" : undefined}>{acctLabel(t.fromId)}</Td>
+                      <Td className={t.status === "voided" ? "line-through opacity-60" : undefined}>{acctLabel(t.toId)}</Td>
+                      <Td right className={t.status === "voided" ? "line-through opacity-60" : undefined}>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{fmt(t.amount)}</span>
+                      </Td>
+                      <Td muted className="max-w-[220px] truncate">{t.note || ""}</Td>
+                      <Td muted className="font-mono text-[10px]">{t.number}</Td>
+                      <Td>
+                        {t.status === "voided"
+                          ? <Badge color="slate">Undone</Badge>
+                          : t.status === "posted" && (
+                            <Btn size="sm" variant="ghost" icon={<Undo2 size={12}/>} onClick={() => { setUndoReason(""); setUndoing(t); }}>Undo</Btn>
+                          )}
+                      </Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Card>
+        )}
       </div>
+
+      <TransferMoneyModal open={showTransfer} onClose={() => setShowTransfer(false)} companyId={companyId}
+        onDone={(m) => { setNotice(m); void loadAccounts(); }} />
+
+      <Modal open={!!undoing} onClose={() => { if (!undoBusy) setUndoing(null); }} title={`Undo transfer ${undoing?.number ?? ""}?`}
+        subtitle="The money goes back to where it came from. The transfer stays in the books, marked undone, with a reversing entry.">
+        <div className="space-y-3">
+          <Field label="Why are you undoing it?">
+            <Input value={undoReason} onChange={e => setUndoReason(e.target.value)} placeholder="e.g. wrong amount" autoFocus/>
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Btn variant="ghost" size="sm" onClick={() => setUndoing(null)} disabled={undoBusy}>Cancel</Btn>
+            <Btn variant="danger" size="sm" onClick={() => { void confirmUndo(); }} disabled={undoBusy || undoReason.trim().length < 3}>
+              {undoBusy ? "Undoing..." : "Undo transfer"}
+            </Btn>
+          </div>
+        </div>
+      </Modal>
 
       <AddBankAccountModal
         open={showModal}
