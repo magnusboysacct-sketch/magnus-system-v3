@@ -580,7 +580,7 @@ export default function FinanceTransactionsPage() {
   // could never post correctly, so these buttons now open Bank review for that bank account.
   function openBankReview(transaction?: CombinedTransaction) {
     if (transaction && transaction.type === "credit") {
-      setError("Credit card lines can't be posted from here yet. Bank lines are matched on Bank review.");
+      setError("These lines come from the old card import. Add the card on Bank Accounts (type Credit Card), upload its statement there, then match the lines on Bank review.");
       return;
     }
     const account = transaction?.bank_account_id;

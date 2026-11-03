@@ -22,6 +22,7 @@ type BankAccount = {
   id: string;
   account_name: string;
   bank_name?: string | null;
+  account_type?: string | null;
 };
 
 type Stage = "select" | "scanning" | "preview" | "saving" | "done";
@@ -65,6 +66,7 @@ export default function UploadStatementPage() {
   const [extracted, setExtracted] = useState<StatementTransaction[]>([]);
   const [statementMeta, setStatementMeta] = useState<{ period: string; last4: string } | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // "Add Bank Account" — the account picker below has no path to
   // populate itself otherwise: bank_accounts had 0 real rows for this
@@ -87,7 +89,7 @@ export default function UploadStatementPage() {
   // account is created (see handleAccountCreated below) without a page
   // reload.
   function loadAccounts(cid: string) {
-    supabase.from("bank_accounts").select("id, account_name, bank_name")
+    supabase.from("bank_accounts").select("id, account_name, bank_name, account_type")
       .eq("company_id", cid).eq("is_active", true)
       .then(({ data }) => setAccounts(data || []));
   }
@@ -171,7 +173,31 @@ export default function UploadStatementPage() {
         statementPeriod: statementMeta?.period,
       });
 
-      const parsed = extracted.map((t) => ({
+      // Lines already uploaded for this account (the same statement uploaded twice, or two statements that overlap) are
+      // skipped, so nothing is in Bank review twice. Same date, amount, direction and description = the same line;
+      // two identical lines on one statement are both kept (counted, not just compared).
+      const key = (date: string, amount: number, credit: boolean, desc: string) =>
+        `${date}|${Math.abs(amount).toFixed(2)}|${credit ? "in" : "out"}|${desc.trim().toLowerCase().replace(/\s+/g, " ")}`;
+      const dates = extracted.map((t) => t.date).filter(Boolean).sort();
+      const already = new Map<string, number>();
+      if (dates.length > 0) {
+        const { data: existing } = await supabase.from("bank_transactions")
+          .select("transaction_date, amount, transaction_type, description")
+          .eq("bank_account_id", accountId).gte("transaction_date", dates[0]).lte("transaction_date", dates[dates.length - 1]);
+        for (const r of (existing || []) as { transaction_date: string; amount: number; transaction_type: string | null; description: string }[]) {
+          const k = key(r.transaction_date, Number(r.amount), r.transaction_type === "credit" || r.transaction_type === "transfer_in", r.description);
+          already.set(k, (already.get(k) || 0) + 1);
+        }
+      }
+      const fresh = extracted.filter((t) => {
+        const k = key(t.date, t.amount, t.type === "credit", t.description);
+        const n = already.get(k) || 0;
+        if (n > 0) { already.set(k, n - 1); return false; }
+        return true;
+      });
+      setSkipped(extracted.length - fresh.length);
+
+      const parsed = fresh.map((t) => ({
         date: t.date,
         description: t.description,
         amount: t.type === "debit" ? -Math.abs(t.amount) : Math.abs(t.amount),
@@ -179,7 +205,7 @@ export default function UploadStatementPage() {
         raw_line: `${t.date} ${t.description}`,
       }));
 
-      const result = await storeBankTransactions(statement.id, parsed);
+      const result = parsed.length > 0 ? await storeBankTransactions(statement.id, parsed) : { success: true, stored: 0, errors: [] as string[] };
 
       if (!result.success) {
         setError(`Saved statement, but some transactions failed to store: ${result.errors.join("; ")}`);
@@ -194,6 +220,13 @@ export default function UploadStatementPage() {
 
   const totalCredits = extracted.filter(t => t.type === "credit").reduce((s, t) => s + t.amount, 0);
   const totalDebits = extracted.filter(t => t.type === "debit").reduce((s, t) => s + t.amount, 0);
+  // A credit card or line of credit: a purchase is a charge (money out), a payment to the card is money in.
+  const isCard = ["credit", "line_of_credit"].includes(accounts.find(a => a.id === accountId)?.account_type || "");
+  const inLabel = isCard ? "Payment" : "Money in";
+  const outLabel = isCard ? "Charge" : "Money out";
+  function flip(i: number) {
+    setExtracted(list => list.map((t, j) => j === i ? { ...t, type: t.type === "credit" ? "debit" : "credit" } : t));
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
@@ -292,11 +325,11 @@ export default function UploadStatementPage() {
                 <div className="text-xl font-bold text-slate-800 dark:text-slate-200">{extracted.length}</div>
               </Card>
               <Card>
-                <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1">Total Credits</div>
+                <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1">{isCard ? "Payments and refunds" : "Money in"}</div>
                 <div className="text-xl font-bold text-emerald-400">{fmt(totalCredits)}</div>
               </Card>
               <Card>
-                <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1">Total Debits</div>
+                <div className="text-[10px] uppercase tracking-wide text-slate-600 mb-1">{isCard ? "Charges" : "Money out"}</div>
                 <div className="text-xl font-bold text-red-400">{fmt(totalDebits)}</div>
               </Card>
             </div>
@@ -315,7 +348,7 @@ export default function UploadStatementPage() {
             <Card padding={false}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/[0.06]">
                 <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Review before saving</span>
-                <span className="text-xs text-slate-600">Check this looks right — these will be added as unmatched transactions</span>
+                <span className="text-xs text-slate-600">Check each line. Tap {inLabel} / {outLabel} to swap it if it was read the wrong way round.</span>
               </div>
               <div className="max-h-96 overflow-y-auto">
                 <Table>
@@ -334,10 +367,12 @@ export default function UploadStatementPage() {
                         <Td muted>{t.date}</Td>
                         <Td><span className="text-slate-800 dark:text-slate-200">{t.description}</span></Td>
                         <Td>
-                          <Badge color={t.type === "credit" ? "green" : "red"} dot>
-                            {t.type === "credit" ? <ArrowUpRight size={10}/> : <ArrowDownRight size={10}/>}
-                            {t.type}
-                          </Badge>
+                          <button type="button" onClick={() => flip(i)} title="Tap to swap">
+                            <Badge color={t.type === "credit" ? "green" : "red"} dot>
+                              {t.type === "credit" ? <ArrowUpRight size={10}/> : <ArrowDownRight size={10}/>}
+                              {t.type === "credit" ? inLabel : outLabel}
+                            </Badge>
+                          </button>
                         </Td>
                         <Td right>
                           <span className={cn("font-semibold", t.type === "credit" ? "text-emerald-400" : "text-red-400")}>
@@ -373,7 +408,7 @@ export default function UploadStatementPage() {
         {stage === "done" && (
           <Card>
             <Empty icon={<Check size={20} className="text-emerald-400"/>} title="Statement uploaded"
-              body={`${extracted.length} transactions were added. Now match each line to your books on Bank review.`}
+              body={`${extracted.length - skipped} line${extracted.length - skipped === 1 ? " was" : "s were"} added.${skipped > 0 ? ` ${skipped} line${skipped === 1 ? " was" : "s were"} already uploaded before and skipped.` : ""} Now match each line to your books on Bank review.`}
               action={
                 <div className="flex gap-2">
                   <Btn variant="primary" size="sm" onClick={() => navigate(`/finance/bank-review?account=${accountId}`)}>Review the lines</Btn>

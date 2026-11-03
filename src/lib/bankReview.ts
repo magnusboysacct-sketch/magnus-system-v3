@@ -26,20 +26,22 @@ export interface Suggestion {
   id: string; transaction_number: string; transaction_date: string; description: string; source_type: string; amount: number; days_apart: number;
 }
 
-export interface ReviewBank { id: string; name: string; chart_account_id: string | null; books_balance: number | null }
+/** isCard: a credit card or line of credit - money owed. A charge is money out, a payment to the card is money in. */
+export interface ReviewBank { id: string; name: string; chart_account_id: string | null; books_balance: number | null; isCard: boolean }
 
 export async function fetchReviewBanks(companyId: string): Promise<ReviewBank[]> {
   const { data, error } = await supabase.from("bank_accounts")
-    .select("id, account_name, bank_name, account_number_last_4, chart_account_id, chart_of_accounts(current_balance)")
+    .select("id, account_name, bank_name, account_number_last_4, account_type, chart_account_id, chart_of_accounts(current_balance, type)")
     .eq("company_id", companyId).eq("is_active", true).order("account_name");
   if (error) throw new Error(errText(error));
-  type Row = { id: string; account_name: string; bank_name: string | null; account_number_last_4: string | null; chart_account_id: string | null;
-    chart_of_accounts: { current_balance: number | null } | null };
+  type Row = { id: string; account_name: string; bank_name: string | null; account_number_last_4: string | null; account_type: string | null;
+    chart_account_id: string | null; chart_of_accounts: { current_balance: number | null; type: string | null } | null };
   return ((data || []) as unknown as Row[]).map((r) => ({
     id: r.id,
     name: [r.bank_name, r.account_name].filter(Boolean).join(" - ") + (r.account_number_last_4 ? ` ••${r.account_number_last_4}` : ""),
     chart_account_id: r.chart_account_id,
     books_balance: r.chart_of_accounts ? Number(r.chart_of_accounts.current_balance ?? 0) : null,
+    isCard: ["credit", "line_of_credit"].includes(r.account_type || "") || r.chart_of_accounts?.type === "liability",
   }));
 }
 

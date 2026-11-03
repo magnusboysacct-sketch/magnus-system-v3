@@ -233,3 +233,14 @@ fully paid invoices over all years.
 
 Banking plan steps 1-6 are done. Still open: credit card statement lines on Bank review; pension deductions; supplier
 statement matching.
+
+## Credit card statements (done, no migration)
+
+Cards are bank_accounts with account_type credit / line_of_credit, linked to a liability chart account, so the Step 5 / 6
+rules already post them correctly: a charge (money out) = DR cost / CR card (owe more); a payment to the card (money in)
+= DR card, matched to the Transfer money from the bank. Reconcile counts in "owed" terms.
+Screens: Upload Statement says Charge / Payment for a card, lets you tap a line to swap its direction, and skips lines
+already uploaded for that account (same date, amount, direction, description - counted, so two identical lines on one
+statement both stay). Bank review and Reconcile use card wording ("Card says you owe", Charges / Payments and refunds) and
+point card payments to Transfer money. The old credit_card_accounts / credit_card_transactions tables (no screen creates
+them) are left alone; their lines on the Transactions page now say to add the card on Bank Accounts.

@@ -19,8 +19,9 @@ const day = (d: string) => new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateSt
 const msg = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.");
 const TYPE_LABEL: Record<string, string> = { expense: "Costs and expenses", revenue: "Income", asset: "Assets", liability: "Liabilities", equity: "Equity" };
 
-function LineEditor({ line, accounts, projects, onDone, onError }: {
+function LineEditor({ line, isCard, accounts, projects, onDone, onError }: {
   line: BankLine;
+  isCard: boolean;
   accounts: PostAccount[];
   projects: { id: string; name: string }[];
   onDone: (message: string) => void;
@@ -49,7 +50,11 @@ function LineEditor({ line, accounts, projects, onDone, onError }: {
     <div className="mt-2 space-y-2 rounded-lg border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-3">
       <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">Already in your books?</div>
       {suggestions === null ? <div className="text-xs text-slate-500"><Spinner size={12} /> Looking...</div>
-        : suggestions.length === 0 ? <div className="text-xs text-slate-500">Nothing in the books with this amount within 10 days. Add it below, or record it first (Record Payment, Pay bill, Transfer money) and come back.</div>
+        : suggestions.length === 0 ? <div className="text-xs text-slate-500">
+            {isCard && line.moneyIn
+              ? "Nothing in the books with this amount within 10 days. A payment to the card is a transfer: record it with Transfer money (Bank Accounts page, from your bank to this card), then Match it here."
+              : "Nothing in the books with this amount within 10 days. Add it below, or record it first (Record Payment, Pay bill, Transfer money) and come back."}
+          </div>
         : suggestions.map((s) => (
           <div key={s.id} className="flex flex-wrap items-center gap-2 text-xs">
             <span className="flex-1 min-w-0 text-slate-700 dark:text-slate-300">
@@ -73,7 +78,9 @@ function LineEditor({ line, accounts, projects, onDone, onError }: {
       {mode === "add" && (
         <div className="grid grid-cols-1 sm:grid-cols-[1fr_12rem] gap-2">
           <Select value={form.accountId} onChange={(e) => setForm((f) => ({ ...f, accountId: e.target.value }))}>
-            <option value="">{line.moneyIn ? "What was this money? (e.g. Interest Income)" : "What was this for? (e.g. Bank Charges)"}</option>
+            <option value="">{isCard
+              ? (line.moneyIn ? "What was this credit? (e.g. a refund: the cost account it came back to)" : "What was this charge for? (e.g. Materials, Fuel, Interest)")
+              : (line.moneyIn ? "What was this money? (e.g. Interest Income)" : "What was this for? (e.g. Bank Charges)")}</option>
             {order.map((t) => {
               const list = accounts.filter((a) => a.type === t);
               return list.length ? (
@@ -215,19 +222,19 @@ export default function BankReviewPage() {
         <Card>
           <div className="flex flex-wrap items-end gap-4">
             <div className="min-w-[16rem] flex-1">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Bank account</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Bank or card account</div>
               <Select value={bankId} onChange={(e) => chooseBank(e.target.value)}>
                 {banks.length === 0 && <option value="">No bank accounts yet</option>}
                 {banks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </Select>
             </div>
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">In your books</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{bank?.isCard ? "Owed in your books" : "In your books"}</div>
               <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{bank?.books_balance == null ? "Not linked" : jmd(bank.books_balance)}</div>
             </div>
             {latestStatement && (
               <div>
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Bank says ({day(latestStatement.transaction_date)})</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{bank?.isCard ? "Card says you owe" : "Bank says"} ({day(latestStatement.transaction_date)})</div>
                 <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{jmd(latestStatement.balance_after ?? 0)}</div>
               </div>
             )}
@@ -276,14 +283,16 @@ export default function BankReviewPage() {
                       {l.review_action === "excluded" && <div className="text-[11px] text-slate-500">Excluded{l.notes ? `: ${l.notes}` : ""}</div>}
                     </div>
                     <div className={cn("text-sm font-semibold w-32 text-right", l.moneyIn ? "text-emerald-600 dark:text-emerald-400" : "text-slate-800 dark:text-slate-200")}>
-                      {l.moneyIn ? "+" : "-"}{jmd(l.amount)}
+                      {bank?.isCard
+                        ? <><span className="block text-[9px] font-bold uppercase tracking-wide text-slate-500">{l.moneyIn ? "Payment" : "Charge"}</span>{jmd(l.amount)}</>
+                        : <>{l.moneyIn ? "+" : "-"}{jmd(l.amount)}</>}
                     </div>
                     {tab !== "review" && canReview && (
                       <Btn variant="ghost" size="sm" icon={<Undo2 size={12} />} disabled={busy} onClick={() => { void handleUndo(l); }}>Undo</Btn>
                     )}
                   </div>
                   {open === l.id && (
-                    <LineEditor line={l} accounts={accounts.filter((a) => a.id !== bank?.chart_account_id)} projects={projects}
+                    <LineEditor line={l} isCard={!!bank?.isCard} accounts={accounts.filter((a) => a.id !== bank?.chart_account_id)} projects={projects}
                       onDone={(m) => { void afterAction(m); }} onError={setError} />
                   )}
                 </div>

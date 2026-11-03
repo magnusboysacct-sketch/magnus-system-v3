@@ -135,14 +135,16 @@ function ReconcileTab({ banks, canReconcile, onError, onNotice }: {
       {loading ? <div className="flex justify-center py-10"><Spinner /></div> : !rec ? (
         <Card>
           <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">Reconcile a statement</div>
-          <p className="text-xs text-slate-500 mb-3">Take the bank statement. Type its end date and the ending balance printed on it.</p>
+          <p className="text-xs text-slate-500 mb-3">{bank?.isCard
+            ? "Take the card statement. Type its end date and the new balance you owe, as printed on it."
+            : "Take the bank statement. Type its end date and the ending balance printed on it."}</p>
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Statement end date</div>
               <Input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} />
             </div>
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Ending balance (J$)</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{bank?.isCard ? "Amount owed on the statement (J$)" : "Ending balance (J$)"}</div>
               <Input type="number" inputMode="decimal" step="0.01" placeholder="e.g. 125000.00" value={form.balance}
                 onChange={(e) => setForm((f) => ({ ...f, balance: e.target.value }))} />
             </div>
@@ -158,7 +160,7 @@ function ReconcileTab({ banks, canReconcile, onError, onNotice }: {
             <Stat label="Statement end" value={day(rec.statement_date)} />
             <Stat label="Starting balance" value={jmd(rec.opening_balance)} />
             <Stat label="Ticked balance" value={jmd(rec.cleared_balance)} />
-            <Stat label="Statement says" value={jmd(rec.statement_balance)} />
+            <Stat label={bank?.isCard ? "Statement says you owe" : "Statement says"} value={jmd(rec.statement_balance)} />
             <Stat label="Difference" value={jmd(rec.difference)} tone={balanced ? "good" : "bad"} />
           </div>
           {rec.lines_to_review > 0 && (
@@ -168,8 +170,8 @@ function ReconcileTab({ banks, canReconcile, onError, onNotice }: {
             </Alert>
           )}
           <Card padding={false}>
-            {list("Money in", moneyIn)}
-            {list("Money out", moneyOut)}
+            {/* For a card the amounts are in "owed" terms: + is a charge (owe more), - a payment or refund (owe less). */}
+            {bank?.isCard ? <>{list("Charges", moneyIn)}{list("Payments and refunds", moneyOut)}</> : <>{list("Money in", moneyIn)}{list("Money out", moneyOut)}</>}
           </Card>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <span className="text-xs text-slate-500 mr-auto">
