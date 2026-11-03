@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import FieldOfficerPortalCard from "../components/FieldOfficerPortalCard";
 import CopyMilestoneForBasesModal from "../components/CopyMilestoneForBasesModal";
-import { SaveAsTemplateModal, MilestoneTemplatesModal, TemplateAddedModal } from "../components/MilestoneTemplates";
+import { SaveAsTemplateModal, MilestoneTemplatesModal } from "../components/MilestoneTemplates";
 import BoqToMilestonesModal from "../components/BoqToMilestonesModal";
 import {
   Ruler, ShoppingCart, Wallet, FileText, BarChart3,
@@ -106,7 +106,8 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   const [showTplPicker, setShowTplPicker] = useState(false);
   const [showBoqPicker, setShowBoqPicker] = useState(false);
   const [boqNote, setBoqNote] = useState<string|null>(null);
-  const [addedTpl, setAddedTpl] = useState<{milestone:any;taskCount:number;name:string}|null>(null);
+  // Task templates: the milestone the template's tasks go into (null = just manage the templates)
+  const [tplTarget, setTplTarget] = useState<{id:string;milestone_name:string}|null>(null);
 
   // Task form
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -761,9 +762,9 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Project Milestones</span>
               <div className="flex items-center gap-2">
-                <button onClick={()=>setShowTplPicker(true)}
+                <button onClick={()=>{ setTplTarget(null); setShowTplPicker(true); }}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-white/[0.09] transition">
-                  <LayoutTemplate size={12}/> Add from template
+                  <LayoutTemplate size={12}/> Task templates
                 </button>
                 <button onClick={()=>setShowBoqPicker(true)}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-white/[0.09] transition">
@@ -800,20 +801,17 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
             {showTplPicker&&(
               <MilestoneTemplatesModal
                 projectId={projectId||""}
-                onClose={()=>setShowTplPicker(false)}
-                onApplied={async(milestone,taskCount,name)=>{
-                  setShowTplPicker(false);
-                  await loadMilestones(); await loadTasks();
-                  setAddedTpl({milestone,taskCount,name});
+                milestone={tplTarget}
+                existingTaskNames={tplTarget?tasks.filter(t=>t.milestone_id===tplTarget.id).map(t=>String(t.task_name||"")):[]}
+                onClose={()=>{ setShowTplPicker(false); setTplTarget(null); }}
+                onApplied={async(added,skipped,name)=>{
+                  const into=tplTarget?.milestone_name||"the milestone";
+                  setShowTplPicker(false); setTplTarget(null);
+                  await loadTasks(); await loadMilestones();
+                  setBoqNote(added>0
+                    ? `${added} task${added===1?"":"s"} from "${name}" added to "${into}".${skipped>0?` ${skipped} already there ${skipped===1?"was":"were"} skipped.`:""}`
+                    : `Nothing added: all ${skipped} task${skipped===1?"":"s"} from "${name}" ${skipped===1?"is":"are"} already in "${into}".`);
                 }}
-              />
-            )}
-            {addedTpl&&(
-              <TemplateAddedModal
-                name={addedTpl.name}
-                taskCount={addedTpl.taskCount}
-                onNotNow={()=>setAddedTpl(null)}
-                onCopyForBases={()=>{ const m=addedTpl.milestone; setAddedTpl(null); setCopyMS(m); }}
               />
             )}
             {copyMS&&(
@@ -990,9 +988,13 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                             className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/20 transition">
                             <Plus size={10}/> Task
                           </button>
-                          <button onClick={()=>setSaveTplMS(ms)} title="Save as template"
+                          <button onClick={()=>{ setTplTarget({id:ms.id,milestone_name:ms.milestone_name}); setShowTplPicker(true); }} title="Add tasks from a task template"
+                            className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-[10px] font-semibold hover:bg-cyan-500/20 transition">
+                            <LayoutTemplate size={10}/> Tasks from template
+                          </button>
+                          <button onClick={()=>setSaveTplMS(ms)} title="Save this milestone's tasks as a task template"
                             className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 text-[10px] font-semibold hover:bg-slate-200 dark:hover:bg-white/[0.09] transition">
-                            <BookmarkPlus size={10}/> Save as template
+                            <BookmarkPlus size={10}/> Save tasks as template
                           </button>
                           <button onClick={()=>setCopyMS(ms)} title="Copy for bases…"
                             className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-600 dark:text-slate-300 text-[10px] font-semibold hover:bg-slate-200 dark:hover:bg-white/[0.09] transition">

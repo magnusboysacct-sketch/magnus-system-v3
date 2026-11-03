@@ -274,3 +274,15 @@ Project Finance (FinancePage) "Total Expenses" added only the 10 most recent exp
 Payable only the first 20 invoices); it now totals all rows. Project dashboard "Spent" counted pending and rejected; now the
 same as its Spend breakdown. Expenses page "Total" no longer counts rejected, "Approved & paid" includes reimbursed, and the
 date filter starts on All Time.
+
+## Milestones: Add from BOQ, task templates (done, no migration)
+
+- **Add from BOQ** (src/components/BoqToMilestonesModal.tsx): tick lines of the project's latest BOQ (assemblies as one line;
+  lines whose name is already a milestone / task marked "already added") and add them as one milestone per line, one new
+  milestone with the lines as tasks, or tasks in an existing milestone. The BOQ amount (client price) goes on the milestone's
+  payment amount; tasks get qty + unit, the worker rate is left empty (the BOQ price is noted in the task). The old BOQ link
+  columns on project_tasks may be missing in the live database: tasks are saved without them then.
+- **Task templates**: the milestone templates are now used for their TASKS. Each milestone has "Tasks from template" (adds a
+  template's tasks into it, skipping names already there; takeoff-linked tasks start at 0 so Takeoff fills them) and "Save
+  tasks as template"; "Task templates" on the Milestones tab manages them (view, remove a task, rename, delete). The old
+  "Add from template" (whole milestone) button is gone. Takeoff -> milestone is unchanged.

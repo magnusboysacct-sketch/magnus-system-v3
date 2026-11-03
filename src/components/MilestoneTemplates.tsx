@@ -1,9 +1,12 @@
 // src/components/MilestoneTemplates.tsx
 //
-// Milestone templates: save a milestone with its tasks once and add it to any future project (see migration 20260938000000_milestone_templates.sql).
-//   SaveAsTemplateModal      - asks for a name and calls save_milestone_as_template
-//   MilestoneTemplatesModal  - "Add from template" picker (search, task counts) with a "Manage templates" view (list, view tasks, rename, delete)
-//   TemplateAddedModal       - after adding: offer "Copy for bases now?"
+// Task templates (stored as milestone_templates + milestone_template_tasks, migration 20260938000000): save a milestone's TASKS once
+// and add them into any milestone - e.g. one made from the BOQ - instead of adding a whole milestone.
+//   SaveAsTemplateModal      - asks for a name and calls save_milestone_as_template (saves the milestone's tasks)
+//   MilestoneTemplatesModal  - with a milestone: "Add tasks from template" into it (tasks with the same name already in that milestone
+//                              are skipped); without one: "Task templates" manager (view tasks, remove a task, rename, delete)
+//   TemplateAddedModal       - (older whole-milestone flow, no longer opened)
+// Tasks keep their takeoff links (linked assembly / item), so Takeoff measurements made with that milestone active still add to them.
 // Access is company-scoped by the database (row-level security); renaming and deleting are plain updates/deletes.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { BookmarkPlus, ChevronDown, ChevronLeft, ChevronRight, Copy, LayoutTemplate, Pencil, Plus, Search, Trash2, X } from "lucide-react";
@@ -49,14 +52,14 @@ export function SaveAsTemplateModal({ milestone, taskCount, onClose, onSaved }: 
       <div className={card}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
           <div className="min-w-0">
-            <div className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2"><BookmarkPlus size={14} className="text-cyan-500" /> Save as template</div>
+            <div className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2"><BookmarkPlus size={14} className="text-cyan-500" /> Save tasks as template</div>
             <div className="text-[11px] text-slate-500 truncate">{milestone.milestone_name} · {taskCount} task{taskCount === 1 ? "" : "s"}</div>
           </div>
           <button onClick={onClose} disabled={busy} className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/[0.06] text-slate-500"><X size={14} /></button>
         </div>
         <div className="p-5 space-y-3">
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Saves this milestone and its tasks (names, quantities, units, rates, crew, durations, planned costs, payment amount) so you can add it to other projects.
+            Saves this milestone's tasks (names, quantities, units, worker rates, crew, durations, takeoff links) as a task template, so you can add them into any milestone, in this project or another.
             Dates, BOQ links and progress are not saved.
           </p>
           <div>
@@ -82,20 +85,38 @@ export function SaveAsTemplateModal({ milestone, taskCount, onClose, onSaved }: 
 interface TemplateRow { id: string; name: string; description: string | null; payment_amount: number | null; taskCount: number; }
 interface TemplateTask { id: string; task_name: string; quantity: number | null; unit: string | null; rate_per_unit: number | null; trade_type: string | null; }
 
-export function MilestoneTemplatesModal({ projectId, onClose, onApplied }: {
+// Copy a template task into a project task. Columns some databases don't have yet are dropped and the insert is retried.
+async function insertTasksTolerant(rows: Record<string, unknown>[]): Promise<void> {
+  let list = rows;
+  for (let tries = 0; tries < 12; tries++) {
+    const { error } = await supabase.from("project_tasks").insert(list);
+    if (!error) return;
+    const m = error.message.match(/'([a-z_]+)' column|column "?([a-z_]+)"? (?:of relation "project_tasks" )?does not exist/i);
+    const col = m?.[1] || m?.[2];
+    if (!col || !(col in (list[0] || {}))) throw new Error(error.message);
+    list = list.map((r) => { const c = { ...r }; delete c[col]; return c; });
+  }
+  throw new Error("The tasks could not be saved.");
+}
+
+const taskKey = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+export function MilestoneTemplatesModal({ projectId, milestone, existingTaskNames = [], onClose, onApplied }: {
   projectId: string;
+  /** The milestone the tasks go into. Without one, the window only manages the templates. */
+  milestone?: { id: string; milestone_name: string } | null;
+  /** Task names already in that milestone: tasks with the same name are skipped. */
+  existingTaskNames?: string[];
   onClose: () => void;
-  // the new project_milestones row and how many tasks the template had
-  onApplied: (milestone: Record<string, unknown>, taskCount: number, templateName: string) => void | Promise<void>;
+  onApplied?: (added: number, skipped: number, templateName: string) => void | Promise<void>;
 }) {
-  const [mode, setMode] = useState<"pick" | "manage">("pick");
+  const [mode, setMode] = useState<"pick" | "manage">(milestone ? "pick" : "manage");
   const [rows, setRows] = useState<TemplateRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  // manage view
   const [openId, setOpenId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Record<string, TemplateTask[] | "loading">>({});
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -123,14 +144,36 @@ export function MilestoneTemplatesModal({ projectId, onClose, onApplied }: {
   }, [rows, search]);
 
   async function apply(t: TemplateRow) {
+    if (!milestone) return;
     setBusyId(t.id); setError("");
     try {
-      const { data, error: rpcError } = await supabase.rpc("apply_milestone_template", { p_template_id: t.id, p_project_id: projectId });
-      if (rpcError) throw rpcError;
-      const milestone = Array.isArray(data) ? data[0] : data;
-      await onApplied(milestone, t.taskCount, t.name);
+      const { data, error: qError } = await supabase.from("milestone_template_tasks").select("*").eq("template_id", t.id).order("sort_order", { ascending: true });
+      if (qError) throw qError;
+      const have = new Set(existingTaskNames.map(taskKey));
+      const list = (data || []) as Record<string, unknown>[];
+      const fresh = list.filter((k) => !have.has(taskKey(String(k.task_name || ""))));
+      if (fresh.length > 0) {
+        const base = Date.now();
+        await insertTasksTolerant(fresh.map((k, i) => ({
+          project_id: projectId, milestone_id: milestone.id, task_name: k.task_name, task_description: k.task_description ?? null,
+          trade_type: k.trade_type ?? null, status: "planned", percent_complete: 0,
+          // A task linked to a takeoff item starts at 0: Takeoff ADDS its measurements to the quantity, so the old project's measured
+          // amount saved in the template must not be kept. Other tasks keep the template's quantity.
+          quantity: (k.linked_assembly_id || k.linked_item_id) ? 0 : (k.quantity ?? null), unit: k.unit ?? null, rate_per_unit: k.rate_per_unit ?? null,
+          crew_size: k.crew_size ?? null, production_rate_per_day: k.production_rate_per_day ?? null,
+          weather_impact_factor: k.weather_impact_factor ?? null, labor_cost_per_day: k.labor_cost_per_day ?? null,
+          equipment_cost_per_day: k.equipment_cost_per_day ?? null, material_cost_total: k.material_cost_total ?? null,
+          // takeoff links: measurements of the same assembly / item in this milestone add to these tasks
+          linked_assembly_id: k.linked_assembly_id ?? null, linked_item_id: k.linked_item_id ?? null,
+          linked_assembly_name: k.linked_assembly_name ?? null, linked_item_name: k.linked_item_name ?? null,
+          // keeps the template's order
+          created_at: new Date(base + i).toISOString(),
+        })));
+      }
+      setBusyId(null);
+      await onApplied?.(fresh.length, list.length - fresh.length, t.name);
     } catch (e) {
-      setError(errText(e) || "Could not add the template.");
+      setError(errText(e) || "Could not add the tasks.");
       setBusyId(null);
     }
   }
@@ -146,6 +189,16 @@ export function MilestoneTemplatesModal({ projectId, onClose, onApplied }: {
     setTasks((m) => ({ ...m, [id]: (data || []) as TemplateTask[] }));
   }
 
+  async function removeTask(templateId: string, k: TemplateTask) {
+    if (!confirm(`Remove "${k.task_name}" from this template?\n\nTasks already added to milestones are not affected.`)) return;
+    setBusyId(templateId); setError("");
+    const { error: dError } = await supabase.from("milestone_template_tasks").delete().eq("id", k.id);
+    setBusyId(null);
+    if (dError) { setError(errText(dError) || "Could not remove the task."); return; }
+    setTasks((m) => ({ ...m, [templateId]: ((m[templateId] as TemplateTask[]) || []).filter((x) => x.id !== k.id) }));
+    setRows((r) => r.map((x) => (x.id === templateId ? { ...x, taskCount: Math.max(0, x.taskCount - 1) } : x)));
+  }
+
   async function rename(t: TemplateRow) {
     const name = renameValue.trim();
     if (!name) { setError("Give the template a name."); return; }
@@ -159,7 +212,7 @@ export function MilestoneTemplatesModal({ projectId, onClose, onApplied }: {
   }
 
   async function remove(t: TemplateRow) {
-    if (!confirm(`Delete the template "${t.name}" and its ${t.taskCount} task${t.taskCount === 1 ? "" : "s"}?\n\nMilestones already created from it are not affected.`)) return;
+    if (!confirm(`Delete the template "${t.name}" and its ${t.taskCount} task${t.taskCount === 1 ? "" : "s"}?\n\nTasks already added to milestones are not affected.`)) return;
     setBusyId(t.id); setError("");
     const { error: dError } = await supabase.from("milestone_templates").delete().eq("id", t.id);
     setBusyId(null);
@@ -168,16 +221,40 @@ export function MilestoneTemplatesModal({ projectId, onClose, onApplied }: {
     await load();
   }
 
+  const showTaskList = (t: TemplateRow) => openId === t.id && (
+    <div className="border-t border-slate-100 dark:border-white/[0.05] px-3 py-2 bg-slate-50 dark:bg-white/[0.02]">
+      {tasks[t.id] === "loading" ? <p className="text-xs text-slate-500">Loading…</p>
+        : (tasks[t.id] as TemplateTask[] | undefined)?.length ? (
+          <ol className="space-y-1">
+            {(tasks[t.id] as TemplateTask[]).map((k, i) => (
+              <li key={k.id} className="flex items-baseline gap-2 text-xs text-slate-700 dark:text-slate-300">
+                <span className="text-slate-400 w-4 text-right">{i + 1}.</span>
+                <span className="flex-1 min-w-0 truncate">{k.task_name}</span>
+                <span className="text-slate-500 flex-shrink-0">{k.quantity != null ? `${Number(k.quantity)} ${k.unit || ""}` : ""}{k.rate_per_unit ? ` @ ${fmtJMD(Number(k.rate_per_unit))}` : ""}</span>
+                {mode === "manage" && (
+                  <button onClick={() => removeTask(t.id, k)} disabled={busyId === t.id} title="Remove this task from the template"
+                    className="p-0.5 rounded text-slate-400 hover:text-red-500"><Trash2 size={11} /></button>
+                )}
+              </li>
+            ))}
+          </ol>
+        ) : <p className="text-xs text-slate-500">This template has no tasks.</p>}
+    </div>
+  );
+
   return (
     <div className={shell}>
       <div className={card}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
           <div className="flex items-center gap-2 min-w-0">
-            {mode === "manage" && (
+            {mode === "manage" && milestone && (
               <button onClick={() => { setMode("pick"); setError(""); }} className="p-1 rounded-lg hover:bg-slate-200 dark:hover:bg-white/[0.06] text-slate-500"><ChevronLeft size={16} /></button>
             )}
-            <div className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <LayoutTemplate size={14} className="text-cyan-500" /> {mode === "pick" ? "Add from template" : "Milestone templates"}
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <LayoutTemplate size={14} className="text-cyan-500" /> {mode === "pick" ? "Add tasks from template" : "Task templates"}
+              </div>
+              {mode === "pick" && milestone && <div className="text-[11px] text-slate-500 truncate">Into: {milestone.milestone_name}</div>}
             </div>
           </div>
           <button onClick={onClose} disabled={!!busyId} className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/[0.06] text-slate-500"><X size={14} /></button>
@@ -188,13 +265,16 @@ export function MilestoneTemplatesModal({ projectId, onClose, onApplied }: {
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search templates…" className={`${fieldCls} pl-8`} />
           </div>
+          {mode === "pick" && (
+            <p className="text-[11px] text-slate-500">The template's tasks are added into this milestone. Tasks with the same name already in it are skipped. Tasks linked to a takeoff item start at 0 and are filled from Takeoff (make this milestone the active one there).</p>
+          )}
 
           {loading ? (
             <p className="text-xs text-slate-500">Loading…</p>
           ) : loadError ? (
             <p className="text-xs text-red-500">{loadError}</p>
           ) : rows.length === 0 ? (
-            <p className="text-xs text-slate-500">No templates yet. Use "Save as template" on a milestone to make one.</p>
+            <p className="text-xs text-slate-500">No templates yet. Build the tasks in a milestone once, then use "Save tasks as template" on it.</p>
           ) : shown.length === 0 ? (
             <p className="text-xs text-slate-500">No template matches "{search}".</p>
           ) : (
@@ -213,44 +293,31 @@ export function MilestoneTemplatesModal({ projectId, onClose, onApplied }: {
                       ) : (
                         <>
                           <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{t.name}</div>
-                          <div className="text-[11px] text-slate-500">
-                            {t.taskCount} task{t.taskCount === 1 ? "" : "s"}{t.payment_amount ? ` · payment ${fmtJMD(Number(t.payment_amount))}` : ""}
-                          </div>
+                          <div className="text-[11px] text-slate-500">{t.taskCount} task{t.taskCount === 1 ? "" : "s"}</div>
                           {t.description && <div className="text-[11px] text-slate-400 truncate">{t.description}</div>}
                         </>
                       )}
                     </div>
-                    {mode === "pick" ? (
-                      <button onClick={() => apply(t)} disabled={!!busyId}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold disabled:opacity-40 transition flex-shrink-0">
-                        <Plus size={12} />{busyId === t.id ? "Adding…" : "Add"}
-                      </button>
-                    ) : renamingId === t.id ? null : (
+                    {renamingId === t.id && mode === "manage" ? null : (
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button onClick={() => toggleTasks(t.id)} title="View tasks" className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.06]">
                           {openId === t.id ? <ChevronDown size={11} /> : <ChevronRight size={11} />} Tasks
                         </button>
-                        <button onClick={() => { setRenamingId(t.id); setRenameValue(t.name); setError(""); }} title="Rename" className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-white/[0.06]"><Pencil size={12} /></button>
-                        <button onClick={() => remove(t)} disabled={busyId === t.id} title="Delete" className="p-1.5 rounded-lg text-slate-500 hover:text-red-500 hover:bg-red-500/10"><Trash2 size={12} /></button>
+                        {mode === "pick" ? (
+                          <button onClick={() => apply(t)} disabled={!!busyId || t.taskCount === 0}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold disabled:opacity-40 transition">
+                            <Plus size={12} />{busyId === t.id ? "Adding…" : "Add tasks"}
+                          </button>
+                        ) : (
+                          <>
+                            <button onClick={() => { setRenamingId(t.id); setRenameValue(t.name); setError(""); }} title="Rename" className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-white/[0.06]"><Pencil size={12} /></button>
+                            <button onClick={() => remove(t)} disabled={busyId === t.id} title="Delete" className="p-1.5 rounded-lg text-slate-500 hover:text-red-500 hover:bg-red-500/10"><Trash2 size={12} /></button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
-                  {mode === "manage" && openId === t.id && (
-                    <div className="border-t border-slate-100 dark:border-white/[0.05] px-3 py-2 bg-slate-50 dark:bg-white/[0.02]">
-                      {tasks[t.id] === "loading" ? <p className="text-xs text-slate-500">Loading…</p>
-                        : (tasks[t.id] as TemplateTask[] | undefined)?.length ? (
-                          <ol className="space-y-1">
-                            {(tasks[t.id] as TemplateTask[]).map((k, i) => (
-                              <li key={k.id} className="flex items-baseline gap-2 text-xs text-slate-700 dark:text-slate-300">
-                                <span className="text-slate-400 w-4 text-right">{i + 1}.</span>
-                                <span className="flex-1 min-w-0 truncate">{k.task_name}</span>
-                                <span className="text-slate-500 flex-shrink-0">{k.quantity != null ? `${Number(k.quantity)} ${k.unit || ""}` : ""}{k.rate_per_unit ? ` @ ${fmtJMD(Number(k.rate_per_unit))}` : ""}</span>
-                              </li>
-                            ))}
-                          </ol>
-                        ) : <p className="text-xs text-slate-500">This template has no tasks.</p>}
-                    </div>
-                  )}
+                  {showTaskList(t)}
                 </div>
               ))}
             </div>
@@ -260,7 +327,7 @@ export function MilestoneTemplatesModal({ projectId, onClose, onApplied }: {
         </div>
 
         <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-slate-200 dark:border-white/[0.07]">
-          {mode === "pick" ? (
+          {!milestone ? <span /> : mode === "pick" ? (
             <button onClick={() => { setMode("manage"); setError(""); }} className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">Manage templates</button>
           ) : (
             <button onClick={() => { setMode("pick"); setError(""); }} className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">Back to adding</button>
