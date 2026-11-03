@@ -14,6 +14,7 @@ import {
   type CostAccount, type SupplierOption, type SupplierType, type WorkerOption,
 } from "../lib/bills";
 import { magnusAI } from "../lib/magnusAI";
+import { describeDuplicate, useDuplicateCheck } from "../lib/duplicates";
 
 const jmd = (n: number) => new Intl.NumberFormat("en-JM", { style: "currency", currency: "JMD", maximumFractionDigits: 2 }).format(n || 0);
 const today = () => {
@@ -51,6 +52,9 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
   const [scanNote, setScanNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [notFound, setNotFound] = useState<{ name: string; address: string } | null>(null);
   const [paperTotal, setPaperTotal] = useState<number | null>(null);
+  // Same bill number from the same supplier (or already entered as an expense): shown as soon as it is typed or scanned.
+  const dups = useDuplicateCheck({ number: form.number, supplierId: form.supplierId || null }, open && !!form.supplierId && !!form.number.trim())
+    .filter((d) => d.exact);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,6 +209,7 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
 
   async function save(approve: boolean) {
     if (saving) return;
+    if (dups.length > 0) { setError(`Already exists: ${describeDuplicate(dups[0])}. It was not entered again.`); return; }
     const problem = check();
     if (problem) { setError(problem); return; }
     setError(null);
@@ -343,6 +348,12 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
           </Field>
         </div>
 
+        {dups.length > 0 && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+            <b>Already exists:</b> {describeDuplicate(dups[0])}. This bill can't be entered again.
+          </div>
+        )}
+
         <Field label="Project (optional)" hint="Pick the job so the cost shows on that job.">
           <Select value={form.projectId} onChange={(e) => setForm((f) => ({ ...f, projectId: e.target.value }))}>
             <option value="">No project</option>
@@ -412,11 +423,11 @@ export function NewBillModal({ open, onClose, companyId, canApprove, onDone }: {
 
         <div className="flex flex-wrap justify-end gap-2 pt-2">
           <Btn variant="ghost" size="sm" onClick={onClose} disabled={saving}>Cancel</Btn>
-          <Btn variant="secondary" size="sm" onClick={() => { void save(false); }} disabled={saving}>
+          <Btn variant="secondary" size="sm" onClick={() => { void save(false); }} disabled={saving || dups.length > 0}>
             {saving ? "Saving..." : "Save - waiting for approval"}
           </Btn>
           {canApprove && (
-            <Btn variant="primary" size="sm" onClick={() => { void save(true); }} disabled={saving}>
+            <Btn variant="primary" size="sm" onClick={() => { void save(true); }} disabled={saving || dups.length > 0}>
               {saving ? "Saving..." : "Save and approve"}
             </Btn>
           )}

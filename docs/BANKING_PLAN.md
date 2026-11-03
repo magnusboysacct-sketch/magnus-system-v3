@@ -254,3 +254,15 @@ refuses deleting an advance (no invoice, has a project) for other roles; server 
 Receivables: "Cancel advance" next to "Apply to invoice", shown to director / supervisor.
 Fix `20260985000000_fix_advance_delete_guard.sql`: the guard read platform_admins directly (closed to normal logins), so every
 cancel failed with "permission denied for table platform_admins"; it now uses is_platform_admin().
+
+## No duplicate receipts or bills (done)
+
+Migration `20260986000000_no_duplicate_receipts_or_bills.sql`: expenses.receipt_number; _doc_no() (letters and digits,
+capitals, no leading zeros in digit runs: "INV-0012" = "inv 12"), _vendor_key() / _same_vendor() ("Rapid True Value Ltd" =
+"RAPID TRUE VALUE"). Triggers refuse, on insert or when the number / vendor / supplier changes: an expense with the same
+number and vendor as another expense or as a supplier bill; a bill with the same number from the same supplier, or already
+entered as an expense. find_duplicate_documents() for live warnings (exact; or, with no number, same vendor + amount + day).
+Screens: Log Expense has Vendor and Receipt / bill # (filled by the scan) with a red "Already exists" (save blocked) or amber
+"looks like it is already entered" (tick "different purchase" to save); New bill and Bill from a PO show "Already exists" as
+soon as the number is typed or scanned. Field app expenses: fixed - they were sent with columns that don't exist
+(vendor_name, category) and the error was ignored, so they were not saved; the scan read the AI answer from the wrong place.

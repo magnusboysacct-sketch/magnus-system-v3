@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Camera, X } from "lucide-react";
 import { Modal, Field, Input, Select, Btn } from "./ui";
+import { describeDuplicate, useDuplicateCheck } from "../lib/duplicates";
 import {
   createBillFromPO, fetchBillablePOs, fetchCostAccounts, fetchPOLines, GCT_RATE, guessCostAccount, setBillFile, uploadBillFile,
   type BillablePO, type CostAccount, type POLine,
@@ -77,6 +78,7 @@ export function BillFromPOModal({ open, onClose, companyId, canApprove, presetPo
   }, [open, poId, accounts]);
 
   const po = pos.find((p) => p.id === poId);
+  const dups = useDuplicateCheck({ number: form.number, vendor: po?.supplier }, open && !!po && !!form.number.trim()).filter((d) => d.exact);
   const used = rows.filter((r) => r.use);
   const flag = (r: Row): string | null => {
     const q = Number(r.qty), p = Number(r.price);
@@ -100,6 +102,7 @@ export function BillFromPOModal({ open, onClose, companyId, canApprove, presetPo
     if (saving || !po) return;
     setError(null);
     if (!form.number.trim()) { setError("Type the bill number (the number on their bill)."); return; }
+    if (dups.length > 0) { setError(`Already exists: ${describeDuplicate(dups[0])}. It was not entered again.`); return; }
     if (used.length === 0) { setError("Tick at least one line to bill."); return; }
     for (const r of used) {
       if (!(Number(r.qty) > 0)) { setError(`Type the quantity billed for "${r.material_name}".`); return; }
@@ -157,6 +160,12 @@ export function BillFromPOModal({ open, onClose, companyId, canApprove, presetPo
                 <Input type="date" value={form.due} onChange={(e) => setForm((f) => ({ ...f, due: e.target.value }))} />
               </Field>
             </div>
+
+            {dups.length > 0 && (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                <b>Already exists:</b> {describeDuplicate(dups[0])}. This bill can't be entered again.
+              </div>
+            )}
 
             <div className="rounded-lg border border-slate-200 dark:border-white/[0.07] overflow-x-auto">
               {loadingLines ? <div className="p-3 text-xs text-slate-500">Loading the PO lines...</div> : (
@@ -236,9 +245,9 @@ export function BillFromPOModal({ open, onClose, companyId, canApprove, presetPo
 
         <div className="flex flex-wrap justify-end gap-2 pt-1">
           <Btn variant="ghost" size="sm" onClick={onClose} disabled={saving}>Cancel</Btn>
-          <Btn variant="secondary" size="sm" onClick={() => { void save(false); }} disabled={saving || !po}>{saving ? "Saving..." : "Save - waiting for approval"}</Btn>
+          <Btn variant="secondary" size="sm" onClick={() => { void save(false); }} disabled={saving || !po || dups.length > 0}>{saving ? "Saving..." : "Save - waiting for approval"}</Btn>
           {canApprove && (
-            <Btn variant="primary" size="sm" onClick={() => { void save(true); }} disabled={saving || !po || anyFlag}>{saving ? "Saving..." : "Save and approve"}</Btn>
+            <Btn variant="primary" size="sm" onClick={() => { void save(true); }} disabled={saving || !po || anyFlag || dups.length > 0}>{saving ? "Saving..." : "Save and approve"}</Btn>
           )}
         </div>
       </div>

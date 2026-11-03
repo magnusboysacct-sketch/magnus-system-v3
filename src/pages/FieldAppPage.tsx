@@ -634,7 +634,7 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [scanning, setScanning] = useState(false);
   const [expenses, setExpenses] = useState<any[]>([]);
-  const [form, setForm] = useState({ description:"", amount:"", vendor:"", category:"Materials", date:new Date().toISOString().slice(0,10), notes:"" });
+  const [form, setForm] = useState({ description:"", amount:"", vendor:"", receiptNo:"", category:"Materials", date:new Date().toISOString().slice(0,10), notes:"" });
   const [saving, setSaving] = useState(false);
   const [receiptUrl, setReceiptUrl] = useState<string|null>(null);          // the stored path
   const [receiptShown, setReceiptShown] = useState<string|null>(null);      // a short-lived signed URL, for the preview only
@@ -672,14 +672,16 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
         }
       });
 
-      if (aiData?.result) {
-        const r = aiData.result;
+      // magnus-ai answers { success, data } (it used to be read from .result, so a scan never filled the form)
+      const r = aiData?.data ?? aiData?.result;
+      if (r) {
         setForm(f=>({
           ...f,
-          description: r.description || r.items?.[0]?.description || f.description,
+          description: r.description || r.lineItems?.[0]?.description || r.items?.[0]?.description || (r.vendor ? `${r.vendor} - Receipt` : f.description),
           amount: r.total?.toString() || r.amount?.toString() || f.amount,
           vendor: r.vendor || r.supplier || f.vendor,
-          date: r.date || f.date,
+          receiptNo: r.receiptNumber || f.receiptNo,
+          date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || "") ? r.date : f.date,
         }));
         showToast("Receipt scanned! Check the details below.");
       }
@@ -690,15 +692,19 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
   async function saveExpense() {
     if(!form.description||!form.amount){alert("Description and amount required.");return;}
     setSaving(true);
-    await supabase.from("expenses").insert({
+    // expenses has "vendor" and "receipt_number" (it used to send vendor_name and category, columns that don't exist, and
+    // never looked at the error - so field expenses were silently not saved). The category goes in the notes for the
+    // office, which picks the expense account when it approves the expense.
+    const { error: insErr } = await supabase.from("expenses").insert({
       company_id:companyId, project_id:projectId||null,
       description:form.description, amount:parseFloat(form.amount),
-      vendor_name:form.vendor||null, category:form.category,
-      expense_date:form.date, notes:form.notes||null,
+      vendor:form.vendor.trim()||null, receipt_number:form.receiptNo.trim()||null,
+      expense_date:form.date, notes:[`Category: ${form.category}`, form.notes].filter(Boolean).join(" | "),
       receipt_url:receiptUrl||null, status:"pending",
     });
     setSaving(false);
-    setForm({ description:"", amount:"", vendor:"", category:"Materials", date:new Date().toISOString().slice(0,10), notes:"" });
+    if (insErr) { alert(insErr.message); return; }
+    setForm({ description:"", amount:"", vendor:"", receiptNo:"", category:"Materials", date:new Date().toISOString().slice(0,10), notes:"" });
     setReceiptUrl(null); setReceiptShown(null);
     showToast("Expense logged!");
     const {data} = await supabase.from("expenses").select("*").eq("company_id",companyId).order("created_at",{ascending:false}).limit(10);
@@ -751,6 +757,11 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
             style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"12px 14px",color:"#f1f5f9",fontSize:15,outline:"none"}}/>
         </div>
         <div>
+          <label style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:6}}>Receipt / bill #</label>
+          <input value={form.receiptNo} onChange={e=>setForm(f=>({...f,receiptNo:e.target.value}))} placeholder="The number printed on it"
+            style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"12px 14px",color:"#f1f5f9",fontSize:15,outline:"none"}}/>
+        </div>
+        <div>
           <label style={{fontSize:11,color:"#64748b",fontWeight:700,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:6}}>Category</label>
           <select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}
             style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:"12px 14px",color:"#f1f5f9",fontSize:15,outline:"none"}}>
@@ -770,7 +781,7 @@ function ExpensesScreen({ companyId, projectId, onBack, showToast }: any) {
             <div key={i} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
                 <div style={{fontSize:13,fontWeight:600,color:"#e2e8f0"}}>{e.description}</div>
-                <div style={{fontSize:10,color:"#475569",marginTop:2}}>{e.vendor_name||"—"} · {e.category}{e.receipt_url?" · 🧾":""}</div>
+                <div style={{fontSize:10,color:"#475569",marginTop:2}}>{e.vendor||"—"}{e.receipt_number?` · #${e.receipt_number}`:""}{e.receipt_url?" · 🧾":""}</div>
               </div>
               <div style={{fontSize:15,fontWeight:800,color:"#a78bfa"}}>{fmtJMD(Number(e.amount||0))}</div>
             </div>

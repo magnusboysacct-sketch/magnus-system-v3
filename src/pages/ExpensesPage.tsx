@@ -1,6 +1,7 @@
 ﻿// src/pages/ExpensesPage.tsx
 import { PRIVATE_FILES_BUCKET, resolveFileUrl, safeUploadName, toStoredRef, withResolvedUrls } from "../lib/storageRefs";
 import { fetchBillPictures, folderMonth, listReceiptFiles, type BillPicture, type FolderFile } from "../lib/receiptsFolder";
+import { describeDuplicate, useDuplicateCheck } from "../lib/duplicates";
 import React, { useEffect, useRef, useState } from "react";
 import { ReceiptScanner } from "../components/ReceiptScanner";
 import { supabase } from "../lib/supabase";
@@ -71,6 +72,8 @@ type Expense = {
   worker_id: string | null;
   status: string | null;
   receipt_url: string | null;
+  vendor?: string | null;
+  receipt_number?: string | null;
   paid_from_account_id: string | null;
   gl_transaction_id: string | null;
   created_at: string;
@@ -150,6 +153,9 @@ export default function ExpensesPage() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   // Shown when a just-saved expense would be hidden by the filters, so it never seems to "disappear".
   const [listNote, setListNote] = useState<string | null>(null);
+  // Duplicate check while typing: refused if the same receipt / bill number from the same vendor is already entered;
+  // a warning (tick to go ahead) if, with no number, the same vendor, amount and day is already there.
+  const [notDuplicate, setNotDuplicate] = useState(false);
   // Everything in the receipts folder (expense receipts, bill pictures, loose pictures) for the filing cabinet.
   const [folderFiles, setFolderFiles] = useState<FolderFile[] | null>(null);
   const [billPics, setBillPics] = useState<BillPicture[]>([]);
@@ -161,6 +167,8 @@ export default function ExpensesPage() {
     setForm(f => ({
       ...f,
       description: result.vendor ? `${result.vendor} - Receipt` : f.description,
+      vendor: result.vendor || f.vendor,
+      receipt_number: result.receiptNumber || f.receipt_number,
       amount:      result.amount ? result.amount.toString() : f.amount,
       expense_date: result.date || f.expense_date,
     }));
@@ -170,7 +178,13 @@ export default function ExpensesPage() {
   const [form, setForm] = useState({
     description: "", amount: "", expense_date: "",
     chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "",
+    vendor: "", receipt_number: "",
   });
+  const dupChecks = useDuplicateCheck({
+    vendor: form.vendor, number: form.receipt_number, amount: Number(form.amount) || null, date: form.expense_date || null, excludeId: editingExpense?.id,
+  }, showNew);
+  const exactDups = dupChecks.filter(d => d.exact);
+  const possibleDups = dupChecks.filter(d => !d.exact);
 
   // Load company ID
   useEffect(() => {
@@ -270,9 +284,10 @@ export default function ExpensesPage() {
     setAccounts((data || []) as LedgerAccount[]);
   }
 
-  const blankForm = { description: "", amount: "", expense_date: "", chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "" };
+  const blankForm = { description: "", amount: "", expense_date: "", chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "", vendor: "", receipt_number: "" };
 
   function openNew() {
+    setNotDuplicate(false);
     setReceiptFile(null);
     setEditingExpense(null);
     setForm(blankForm);
@@ -280,6 +295,7 @@ export default function ExpensesPage() {
   }
 
   function openEdit(exp: Expense) {
+    setNotDuplicate(false);
     setReceiptFile(null);
     setEditingExpense(exp);
     setForm({
@@ -292,11 +308,14 @@ export default function ExpensesPage() {
       status: exp.status || "pending",
       receipt_url: receiptRefs.current.get(exp.id) || "",
       paid_from_account_id: exp.paid_from_account_id || "",
+      vendor: exp.vendor || "",
+      receipt_number: exp.receipt_number || "",
     });
     setShowNew(true);
   }
 
   function closeModal() {
+    setNotDuplicate(false);
     setReceiptFile(null);
     setShowNew(false);
     setEditingExpense(null);
@@ -323,6 +342,8 @@ export default function ExpensesPage() {
   }
 
   async function saveExpense() {
+    if (exactDups.length > 0) { setError(`Already exists: ${describeDuplicate(exactDups[0])}. It was not entered again.`); return; }
+    if (possibleDups.length > 0 && !notDuplicate) { setError("This looks like an expense already entered (see the warning). Tick \"This is a different purchase\" to save it anyway."); return; }
     setSaving(true); setError(null);
     try {
       // The category IS the expense account. The older category_id is left alone when the account didn't change, and otherwise follows
@@ -349,6 +370,8 @@ export default function ExpensesPage() {
         status: form.status,
         receipt_url: receiptRef,
         paid_from_account_id: form.paid_from_account_id || null,
+        vendor: form.vendor.trim() || null,
+        receipt_number: form.receipt_number.trim() || null,
       };
       // Once an expense is on the ledger, what the entry was built from can't be changed here (that would leave the books wrong).
       if (editingExpense?.gl_transaction_id) {
@@ -823,6 +846,30 @@ export default function ExpensesPage() {
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))} autoFocus/>
           </Field>
           <div className="grid grid-cols-2 gap-4">
+            <Field label="Vendor / shop">
+              <Input placeholder="e.g. Hardware Plus" value={form.vendor}
+                onChange={e => { setNotDuplicate(false); setForm(f => ({ ...f, vendor: e.target.value })); }}/>
+            </Field>
+            <Field label="Receipt / bill #" hint="The number printed on it. Stops it being entered twice.">
+              <Input placeholder="e.g. 004512" value={form.receipt_number}
+                onChange={e => { setNotDuplicate(false); setForm(f => ({ ...f, receipt_number: e.target.value })); }}/>
+            </Field>
+          </div>
+          {exactDups.length > 0 && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+              <b>Already exists:</b> {describeDuplicate(exactDups[0])}. This receipt can't be entered again.
+            </div>
+          )}
+          {exactDups.length === 0 && possibleDups.length > 0 && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 space-y-1.5">
+              <div><b>This looks like it is already entered:</b> {describeDuplicate(possibleDups[0])}{possibleDups.length > 1 ? ` and ${possibleDups.length - 1} more` : ""}.</div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={notDuplicate} onChange={e => setNotDuplicate(e.target.checked)}/>
+                This is a different purchase - save it anyway
+              </label>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-4">
             <Field label="Amount ($)">
               <Input type="number" placeholder="0.00" value={form.amount}
                 onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}/>
@@ -908,7 +955,7 @@ export default function ExpensesPage() {
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-white/[0.06]">
             <Btn variant="ghost" onClick={closeModal}>Cancel</Btn>
             <Btn variant="primary" onClick={saveExpense}
-              disabled={!form.description.trim() || !form.amount || saving}>
+              disabled={!form.description.trim() || !form.amount || saving || exactDups.length > 0 || (possibleDups.length > 0 && !notDuplicate)}>
               {saving ? "Saving..." : editingExpense ? "Save Changes" : "Log Expense"}
             </Btn>
           </div>
