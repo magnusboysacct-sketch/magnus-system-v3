@@ -118,6 +118,20 @@ export default function BoqToMilestonesModal({ open, onClose, projectId, company
     };
   }
 
+  // The BOQ link columns on tasks (boq_section_id, boq_item_id, quantity_source_*) are from an older update that not every
+  // database has. If they are missing, the tasks are saved without them (the link is only a note; nothing needs it).
+  async function insertTasks(list: ReturnType<typeof taskPayload>[]) {
+    const first = await supabase.from("project_tasks").insert(list);
+    if (!first.error) return;
+    if (!/(boq_|quantity_source).*(schema cache|does not exist)|(schema cache|does not exist).*(boq_|quantity_source)/i.test(first.error.message)) {
+      throw new Error(first.error.message);
+    }
+    const linkCols = ["boq_section_id", "boq_item_id", "quantity_source_type", "quantity_source_value"];
+    const plain = list.map((t) => Object.fromEntries(Object.entries(t).filter(([k]) => !linkCols.includes(k))));
+    const second = await supabase.from("project_tasks").insert(plain);
+    if (second.error) throw new Error(second.error.message);
+  }
+
   async function addMilestone(name: string, description: string, payment: number, no: number): Promise<string> {
     const { data, error: e } = await supabase.from("project_milestones").insert({
       project_id: projectId, company_id: companyId, milestone_name: name.slice(0, 200), description, status: "planned",
@@ -141,8 +155,7 @@ export default function BoqToMilestonesModal({ open, onClose, projectId, company
       if (mode === "each") {
         for (const r of chosen) {
           const id = await addMilestone(r.name, `From the BOQ (${r.section})${r.qty ? `: ${qtyText(r.qty)} ${r.unit}` : ""}. BOQ amount ${jmd(r.amount)}.`, r.amount, no++);
-          const { error: e } = await supabase.from("project_tasks").insert(taskPayload(r, id));
-          if (e) throw new Error(e.message);
+          await insertTasks([taskPayload(r, id)]);
           made++;
         }
         onDone(`${made} milestone${made === 1 ? "" : "s"} added from the BOQ (each with its task).`);
@@ -150,8 +163,7 @@ export default function BoqToMilestonesModal({ open, onClose, projectId, company
         const milestoneId = mode === "one"
           ? await addMilestone(newName.trim(), `From the BOQ: ${chosen.length} line${chosen.length === 1 ? "" : "s"}, BOQ amount ${jmd(chosenTotal)}.`, chosenTotal, no)
           : targetId;
-        const { error: e } = await supabase.from("project_tasks").insert(chosen.map((r) => taskPayload(r, milestoneId)));
-        if (e) throw new Error(e.message);
+        await insertTasks(chosen.map((r) => taskPayload(r, milestoneId)));
         made = chosen.length;
         const target = mode === "one" ? newName.trim() : milestones.find((m) => m.id === targetId)?.milestone_name;
         onDone(`${made} task${made === 1 ? "" : "s"} from the BOQ added to "${target}".`);
