@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabase";
 import FieldOfficerPortalCard from "../components/FieldOfficerPortalCard";
 import CopyMilestoneForBasesModal from "../components/CopyMilestoneForBasesModal";
 import { SaveAsTemplateModal, MilestoneTemplatesModal, TemplateAddedModal } from "../components/MilestoneTemplates";
+import BoqToMilestonesModal from "../components/BoqToMilestonesModal";
 import {
   Ruler, ShoppingCart, Wallet, FileText, BarChart3,
   ArrowRight, DollarSign, Users, Package, Receipt,
@@ -103,6 +104,8 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   // Milestone templates: "Save as template" (the milestone being saved), the "Add from template" picker, and the "Copy for bases now?" offer after adding
   const [saveTplMS, setSaveTplMS] = useState<any|null>(null);
   const [showTplPicker, setShowTplPicker] = useState(false);
+  const [showBoqPicker, setShowBoqPicker] = useState(false);
+  const [boqNote, setBoqNote] = useState<string|null>(null);
   const [addedTpl, setAddedTpl] = useState<{milestone:any;taskCount:number;name:string}|null>(null);
 
   // Task form
@@ -762,6 +765,10 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-white/[0.09] transition">
                   <LayoutTemplate size={12}/> Add from template
                 </button>
+                <button onClick={()=>setShowBoqPicker(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-white/[0.09] transition">
+                  <FileText size={12}/> Add from BOQ
+                </button>
                 <button onClick={openNewMS}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition">
                   <Plus size={12}/> Add Milestone
@@ -781,6 +788,15 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                 }}
               />
             )}
+            {boqNote&&(
+              <div className="flex items-start justify-between gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
+                <span>{boqNote}</span>
+                <button onClick={()=>setBoqNote(null)} className="text-emerald-700 dark:text-emerald-300">✕</button>
+              </div>
+            )}
+            <BoqToMilestonesModal open={showBoqPicker} onClose={()=>setShowBoqPicker(false)} projectId={projectId||""} companyId={companyId||null}
+              milestones={milestones} existingNames={[...milestones.map(m=>String(m.milestone_name||"")),...tasks.map(t=>String(t.task_name||""))]}
+              onDone={async(msg)=>{ setBoqNote(msg); await loadMilestones(); await loadTasks(); }}/>
             {showTplPicker&&(
               <MilestoneTemplatesModal
                 projectId={projectId||""}
