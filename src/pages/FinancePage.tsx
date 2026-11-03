@@ -41,7 +41,7 @@ export default function FinancePage() {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalReceivable: 0, totalPayable: 0,
-    overdueInvoices: 0, totalExpenses: 0,
+    overdueInvoices: 0, totalExpenses: 0, pendingExpenses: 0,
     clientInvoices: [] as any[],
     supplierInvoices: [] as any[],
     recentExpenses: [] as any[],
@@ -63,7 +63,10 @@ export default function FinancePage() {
     const scoped = <T,>(q: T): T => (projectId ? (q as any).eq("project_id", projectId) : q);
     setLoading(true);
     try {
-      const [ciRes, siRes, expRes] = await Promise.all([
+      // Totals come from ALL rows (the lists below only show the latest few). Expenses: approved + paid (reimbursed) are
+      // the cost; pending is shown as "waiting for approval"; rejected never counts. (The total used to add up only the
+      // 10 most recent expenses of any status, rejected included, so it never matched the Expenses page.)
+      const [ciRes, siRes, expRes, ciAll, siAll, expAll] = await Promise.all([
         // Client invoices — confirmed columns
         scoped(supabase.from("client_invoices")
           .select("id, invoice_number, invoice_date, due_date, total_amount, balance_due, status, project_id, client_id, clients(name), projects(name)")
@@ -88,6 +91,9 @@ export default function FinancePage() {
           .eq("company_id", companyId!))
           .order("created_at", { ascending: false })
           .limit(10),
+        scoped(supabase.from("client_invoices").select("balance_due, status, due_date").eq("company_id", companyId!)),
+        scoped(supabase.from("supplier_invoices").select("balance_due, status").eq("company_id", companyId!)),
+        scoped(supabase.from("expenses").select("amount, status").eq("company_id", companyId!)),
       ]);
 
       const clientInvoices = ciRes.data || [];
@@ -102,21 +108,26 @@ export default function FinancePage() {
       }
       const expenses = rawExpenses.map((e) => ({ ...e, category_name: (e.chart_account_id && accountNames.get(e.chart_account_id)) || e.expense_categories?.name || "" }));
 
-      const totalReceivable = clientInvoices
-        .filter(i => !["paid", "cancelled"].includes(i.status))
-        .reduce((s: number, i: any) => s + (i.balance_due || 0), 0);
+      type Inv = { balance_due: number | null; status: string; due_date?: string | null };
+      const allClient = (ciAll.data || []) as Inv[];
+      const allSupplier = (siAll.data || []) as Inv[];
+      const allExpenses = (expAll.data || []) as { amount: number | null; status: string | null }[];
+      const totalReceivable = allClient
+        .filter(i => !["paid", "cancelled", "draft"].includes(i.status))
+        .reduce((s: number, i) => s + Number(i.balance_due || 0), 0);
 
-      const totalPayable = supplierInvoices
-        .filter(i => !["paid"].includes(i.status))
-        .reduce((s: number, i: any) => s + (i.balance_due || 0), 0);
+      const totalPayable = allSupplier
+        .filter(i => !["paid", "disputed"].includes(i.status))
+        .reduce((s: number, i) => s + Number(i.balance_due || 0), 0);
 
-      const overdueInvoices = clientInvoices
-        .filter(i => i.status === "overdue" || (i.status !== "paid" && new Date(i.due_date) < new Date())).length;
+      const overdueInvoices = allClient
+        .filter(i => i.status === "overdue" || (!["paid", "cancelled", "draft"].includes(i.status) && i.due_date && new Date(i.due_date) < new Date())).length;
 
-      const totalExpenses = expenses.reduce((s: number, e: any) => s + (e.amount || 0), 0);
+      const totalExpenses = allExpenses.filter(e => ["approved", "reimbursed"].includes(e.status || "")).reduce((s: number, e) => s + Number(e.amount || 0), 0);
+      const pendingExpenses = allExpenses.filter(e => e.status === "pending").reduce((s: number, e) => s + Number(e.amount || 0), 0);
 
       if (seq !== loadSeq.current) return;
-      setStats({ totalReceivable, totalPayable, overdueInvoices, totalExpenses, clientInvoices, supplierInvoices, recentExpenses: expenses });
+      setStats({ totalReceivable, totalPayable, overdueInvoices, totalExpenses, pendingExpenses, clientInvoices, supplierInvoices, recentExpenses: expenses });
     } catch (e: any) { console.error(e); }
     finally { if (seq === loadSeq.current) setLoading(false); }
   }
@@ -162,7 +173,7 @@ export default function FinancePage() {
                 sub="Require immediate attention"/>
               <StatCard label="Total Expenses" value={fmt(stats.totalExpenses)}
                 icon={<DollarSign size={15}/>} color="text-amber-300"
-                sub="Recent period"/>
+                sub={stats.pendingExpenses > 0 ? `Approved and paid · ${fmt(stats.pendingExpenses)} waiting for approval` : "Approved and paid"}/>
             </div>
 
             {/* Quick links */}

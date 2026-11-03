@@ -77,7 +77,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
   const [client, setClient] = useState<any>(null);
   const [companyId, setCompanyId] = useState<string>("");
   const [stats, setStats] = useState({
-    totalExpenses:0, openPOs:0, totalPOValue:0, activeWorkers:0,
+    totalExpenses:0, pendingExpenses:0, openPOs:0, totalPOValue:0, activeWorkers:0,
   });
   const [activity, setActivity] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
@@ -203,7 +203,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
       }
 
       const [expRes,poRes,workerRes,msRes,taskRes,msgRes,contractRes,invoicesRes,fieldPmtRes,poItemsRes,expApprovedRes,cpWorkersRes,csRes,cpBudgetRes]=await Promise.allSettled([
-        supabase.from("expenses").select("amount,description,created_at").eq("project_id",projectId!),
+        supabase.from("expenses").select("amount,description,created_at,status").eq("project_id",projectId!),
         supabase.from("purchase_orders").select("id,status,created_at,supplier_name").eq("project_id",projectId!),
         supabase.from("workers").select("id,first_name,last_name,worker_type,status").eq("company_id",proj.company_id||"").eq("status","active").limit(30),
         supabase.from("project_milestones").select("*").eq("project_id",projectId!).order("milestone_no",{ascending:true}),
@@ -290,7 +290,10 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
       setUnreadCount(msgList.filter((m:any)=>m.sender_type==="client"&&!m.read_at).length);
 
       setStats({
-        totalExpenses:expenses.reduce((s:number,e:any)=>s+(Number(e.amount)||0),0),
+        // Approved + paid (reimbursed) only, the same as the Spend breakdown; pending shown apart; rejected never counts.
+        // (It used to add up every expense, pending and rejected included.)
+        totalExpenses:(expenses as {amount:number|null;status:string|null}[]).filter(e=>["approved","reimbursed"].includes(e.status||"")).reduce((s,e)=>s+(Number(e.amount)||0),0),
+        pendingExpenses:(expenses as {amount:number|null;status:string|null}[]).filter(e=>e.status==="pending").reduce((s,e)=>s+(Number(e.amount)||0),0),
         openPOs:pos.filter((p:any)=>["pending","submitted","approved"].includes(p.status)).length,
         totalPOValue:0,
         activeWorkers:workerList.length,
@@ -593,7 +596,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
               {[
                 {label:"Milestones",  value:`${msComplete}/${milestones.length}`, sub:"completed", color:"text-cyan-400",    bg:"bg-cyan-500/10",    border:"border-cyan-500/20",    icon:<Flag size={14}/>},
                 {label:"Tasks",       value:tasks.length,                          sub:`${tasks.filter(t=>t.status==="complete").length} done`, color:"text-violet-400", bg:"bg-violet-500/10", border:"border-violet-500/20", icon:<ListTodo size={14}/>},
-                {label:"Spent",       value:fmtShort(spent),                       sub:"total expenses", color:"text-amber-400",  bg:"bg-amber-500/10",   border:"border-amber-500/20",   icon:<Receipt size={14}/>},
+                {label:"Spent",       value:fmtShort(spent),                       sub:stats.pendingExpenses>0?`approved expenses · ${fmtShort(stats.pendingExpenses)} waiting`:"approved expenses", color:"text-amber-400",  bg:"bg-amber-500/10",   border:"border-amber-500/20",   icon:<Receipt size={14}/>},
                 {label:"Team Size",   value:stats.activeWorkers,                   sub:"active workers", color:"text-emerald-400",bg:"bg-emerald-500/10", border:"border-emerald-500/20", icon:<Users size={14}/>},
               ].map(card=>(
                 <div key={card.label} className={`rounded-xl border ${card.border} ${card.bg} p-4`}>

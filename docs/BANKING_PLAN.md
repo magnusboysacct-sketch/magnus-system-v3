@@ -266,3 +266,11 @@ Screens: Log Expense has Vendor and Receipt / bill # (filled by the scan) with a
 "looks like it is already entered" (tick "different purchase" to save); New bill and Bill from a PO show "Already exists" as
 soon as the number is typed or scanned. Field app expenses: fixed - they were sent with columns that don't exist
 (vendor_name, category) and the error was ignored, so they were not saved; the scan read the AI answer from the wrong place.
+
+## Expense totals agree everywhere (done, no migration)
+
+One rule on every screen: cost = approved + paid (reimbursed); pending shown as "waiting for approval"; rejected never counts.
+Project Finance (FinancePage) "Total Expenses" added only the 10 most recent expenses of any status (and Receivable /
+Payable only the first 20 invoices); it now totals all rows. Project dashboard "Spent" counted pending and rejected; now the
+same as its Spend breakdown. Expenses page "Total" no longer counts rejected, "Approved & paid" includes reimbursed, and the
+date filter starts on All Time.

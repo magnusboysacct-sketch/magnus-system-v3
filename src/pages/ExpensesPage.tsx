@@ -136,7 +136,7 @@ export default function ExpensesPage() {
   const [projectFilter, setProjectFilter] = useState("");
   // Defaults to "month", matching ReportsPage.tsx's own default — no
   // reason found to differ for this page.
-  const [dateRange, setDateRange] = useState<DateRange>("month");
+  const [dateRange, setDateRange] = useState<DateRange>("all");   // all dates by default, so every expense shows and totals match Project Finance
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -541,9 +541,11 @@ export default function ExpensesPage() {
   const expenseReceipts = expenses.filter(e => !!e.receipt_url);
   const cabinetCount = expenseReceipts.length + billPics.length + looseFiles.length;
 
-  const totalAll = projectDateFiltered.reduce((s, e) => s + (e.amount || 0), 0);
+  // Rejected expenses never count; "Approved" includes paid (reimbursed) ones - the same rule as Project Finance and the
+  // project dashboard. (Total used to include rejected, and Approved left out reimbursed.)
+  const totalAll = projectDateFiltered.filter(e => e.status !== "rejected").reduce((s, e) => s + (e.amount || 0), 0);
   const totalPending = projectDateFiltered.filter(e => e.status === "pending").reduce((s, e) => s + (e.amount || 0), 0);
-  const totalApproved = projectDateFiltered.filter(e => e.status === "approved").reduce((s, e) => s + (e.amount || 0), 0);
+  const totalApproved = projectDateFiltered.filter(e => e.status === "approved" || e.status === "reimbursed").reduce((s, e) => s + (e.amount || 0), 0);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#080b10]">
@@ -564,7 +566,7 @@ export default function ExpensesPage() {
           {[
             { label: "Total Expenses", value: fmt(totalAll),     color: "text-slate-800 dark:text-slate-200" },
             { label: "Pending",        value: fmt(totalPending),  color: "text-amber-400" },
-            { label: "Approved",       value: fmt(totalApproved), color: "text-emerald-400" },
+            { label: "Approved & paid", value: fmt(totalApproved), color: "text-emerald-400" },
           ].map(s => (
             <Card key={s.label} className="min-w-0">
               <div className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2">{s.label}</div>
