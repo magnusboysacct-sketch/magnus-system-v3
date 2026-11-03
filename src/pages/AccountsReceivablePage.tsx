@@ -18,7 +18,7 @@ import {
 } from "../lib/finance";
 import type { ClientInvoice, ClientInvoiceLineItem, ClientPayment } from "../lib/finance";
 import { fetchMoneyAccounts, type MoneyAccount } from "../lib/banking";
-import { fetchPaidOnInvoicesSince } from "../lib/finance";
+import { cancelClientAdvance, fetchPaidOnInvoicesSince } from "../lib/finance";
 
 // Banking step 3b: which bank / cash account a client payment went into. Empty = the primary bank account
 // (or Undeposited Funds when there is none), chosen by the database, so every way of recording a payment is in the books.
@@ -696,6 +696,22 @@ export default function AccountsReceivablePage() {
     }
   }
 
+  // Cancel a client advance: director or supervisor only (also checked in the database), with a reason that is kept
+  // on the reversal in the books. Refused while part of it is used on an invoice.
+  async function handleCancelAdvance(a: { id: string; amount: number | string; project_id?: string | null }) {
+    const projectName = projects.find(p => p.id === a.project_id)?.name || "this project";
+    const reason = window.prompt(`Cancel the advance of ${fmtAdvance(Number(a.amount))} for ${projectName}?\n\nIt comes out of the books. Type why:`);
+    if (reason === null) return;
+    if (reason.trim().length < 3) { alert("Type why the advance is being cancelled."); return; }
+    try {
+      await cancelClientAdvance(a.id, reason);
+      await loadAdvances();
+      await loadInvoices();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "The advance was not cancelled.");
+    }
+  }
+
   async function deletePayment(paymentId: string, invoiceId: string) {
     if (!window.confirm("Delete this payment record? This cannot be undone.")) return;
     try {
@@ -905,6 +921,12 @@ export default function AccountsReceivablePage() {
                       className="rounded-lg border border-amber-300 dark:border-amber-500/40 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/10">
                       Apply to invoice
                     </button>
+                    {(userRole === "director" || userRole === "supervisor") && (
+                      <button type="button" onClick={() => { void handleCancelAdvance(a); }}
+                        className="rounded-lg border border-red-300 dark:border-red-500/40 px-2.5 py-1 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10">
+                        Cancel advance
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

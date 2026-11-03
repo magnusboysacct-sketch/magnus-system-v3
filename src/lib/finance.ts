@@ -1521,3 +1521,9 @@ export async function fetchPaidOnInvoicesSince(companyId: string, since: string)
   if (error) throw error;
   return ((data || []) as { amount: number | null }[]).reduce((t, p) => t + Number(p.amount || 0), 0);
 }
+
+/** Cancel a client advance (director or supervisor only; refused while part of it is used on an invoice). Migration 20260984. */
+export async function cancelClientAdvance(advanceId: string, reason: string): Promise<void> {
+  const { error } = await supabase.rpc("cancel_client_advance", { p_id: advanceId, p_reason: reason.trim() });
+  if (error) throw new Error(error.message);
+}

@@ -244,3 +244,11 @@ already uploaded for that account (same date, amount, direction, description - c
 statement both stay). Bank review and Reconcile use card wording ("Card says you owe", Charges / Payments and refunds) and
 point card payments to Transfer money. The old credit_card_accounts / credit_card_transactions tables (no screen creates
 them) are left alone; their lines on the Transactions page now say to add the card on Bank Accounts.
+
+## Cancel a client advance (done)
+
+Migration `20260984000000_cancel_client_advance.sql`: cancel_client_advance(advance, reason) - director or supervisor only;
+refused while part of it is used on an invoice (delete that payment on the invoice first; it goes back to the advance).
+The entry is reversed and the reversal's notes keep who cancelled it and why. A BEFORE DELETE trigger on client_payments
+refuses deleting an advance (no invoice, has a project) for other roles; server jobs, the SQL Editor and HQ are not affected.
+Receivables: "Cancel advance" next to "Apply to invoice", shown to director / supervisor.
