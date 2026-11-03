@@ -1,5 +1,6 @@
 ﻿// src/pages/ExpensesPage.tsx
-import { safeUploadName, toStoredRef, withResolvedUrls } from "../lib/storageRefs";
+import { PRIVATE_FILES_BUCKET, resolveFileUrl, safeUploadName, toStoredRef, withResolvedUrls } from "../lib/storageRefs";
+import { fetchBillPictures, folderMonth, listReceiptFiles, type BillPicture, type FolderFile } from "../lib/receiptsFolder";
 import React, { useEffect, useRef, useState } from "react";
 import { ReceiptScanner } from "../components/ReceiptScanner";
 import { supabase } from "../lib/supabase";
@@ -23,10 +24,10 @@ import {
 type DateRange = "week" | "month" | "quarter" | "year" | "all" | "custom";
 
 const DATE_RANGES: { key: DateRange; label: string }[] = [
-  { key: "week", label: "This Week" },
-  { key: "month", label: "This Month" },
-  { key: "quarter", label: "This Quarter" },
-  { key: "year", label: "This Year" },
+  { key: "week", label: "Last 7 Days" },
+  { key: "month", label: "Last 30 Days" },
+  { key: "quarter", label: "Last 3 Months" },
+  { key: "year", label: "Last 12 Months" },
   { key: "all", label: "All Time" },
   { key: "custom", label: "Custom Range" },
 ];
@@ -144,11 +145,19 @@ export default function ExpensesPage() {
   // means the modal (if open) is in "create new" mode.
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const receiptRefs = useRef<Map<string, string | null>>(new Map());          // expense id -> the stored receipt path
+  // The scanned receipt photo waits here and is filed when the expense is SAVED (it used to upload in the background as
+  // soon as it was scanned: saving before that finished left the expense without its receipt and a loose photo in the folder).
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  // Shown when a just-saved expense would be hidden by the filters, so it never seems to "disappear".
+  const [listNote, setListNote] = useState<string | null>(null);
+  // Everything in the receipts folder (expense receipts, bill pictures, loose pictures) for the filing cabinet.
+  const [folderFiles, setFolderFiles] = useState<FolderFile[] | null>(null);
+  const [billPics, setBillPics] = useState<BillPicture[]>([]);
 
   function handleExpenseScan(result: any, receiptFile?: File) {
     setShowExpenseScanner(false);
     // the PATH is stored (not a long-lived URL); a short-lived signed URL is made when the receipt is shown
-    if(receiptFile&&companyId){const now=new Date();const p=companyId+"/receipts/"+now.getFullYear()+"/"+String(now.getMonth()+1).padStart(2,"0")+"/"+safeUploadName("receipt");supabase.storage.from("private-files").upload(p,receiptFile,{upsert:false,contentType:receiptFile.type||"image/jpeg"}).then(({error:ue})=>{if(!ue)setForm(f=>({...f,receipt_url:p}));});}
+    if (receiptFile) setReceiptFile(receiptFile);   // filed in the receipts folder when the expense is saved
     setForm(f => ({
       ...f,
       description: result.vendor ? `${result.vendor} - Receipt` : f.description,
@@ -173,8 +182,15 @@ export default function ExpensesPage() {
   }, []);
 
   useEffect(() => {
-    if (companyId) { loadExpenses(); loadCategories(); loadAccounts(); }
+    if (companyId) { loadExpenses(); loadCategories(); loadAccounts(); loadFolder(); }
   }, [companyId]);
+
+  async function loadFolder() {
+    if (!companyId) return;
+    fetchBillPictures(companyId).then(setBillPics).catch(() => setBillPics([]));
+    // Only people who may open finance files can list the folder; for others the cabinet shows expenses and bills only.
+    listReceiptFiles(companyId).then(setFolderFiles).catch(() => setFolderFiles(null));
+  }
 
   async function loadExpenses() {
     setLoading(true);
@@ -257,12 +273,14 @@ export default function ExpensesPage() {
   const blankForm = { description: "", amount: "", expense_date: "", chart_account_id: "", project_id: currentProject?.id || "", status: "pending", receipt_url: "", paid_from_account_id: "" };
 
   function openNew() {
+    setReceiptFile(null);
     setEditingExpense(null);
     setForm(blankForm);
     setShowNew(true);
   }
 
   function openEdit(exp: Expense) {
+    setReceiptFile(null);
     setEditingExpense(exp);
     setForm({
       description: exp.description || "",
@@ -279,6 +297,7 @@ export default function ExpensesPage() {
   }
 
   function closeModal() {
+    setReceiptFile(null);
     setShowNew(false);
     setEditingExpense(null);
     setError(null);
@@ -311,6 +330,15 @@ export default function ExpensesPage() {
       const accountId = form.chart_account_id || null;
       const accountUnchanged = !!editingExpense && accountId === effectiveAccountId(editingExpense);
       const linkedCategories = categories.filter(c => !!accountId && c.chart_account_id === accountId);
+      let receiptRef = toStoredRef(form.receipt_url);
+      if (receiptFile && companyId) {
+        const ym = (form.expense_date || new Date().toISOString()).slice(0, 7);
+        const ext = (receiptFile.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+        const path = `${companyId}/receipts/${ym.slice(0, 4)}/${ym.slice(5, 7)}/${safeUploadName("receipt", ext)}`;
+        const { error: ue } = await supabase.storage.from(PRIVATE_FILES_BUCKET).upload(path, receiptFile, { upsert: false, contentType: receiptFile.type || "image/jpeg" });
+        if (ue) throw new Error(`The receipt photo was not saved (${ue.message}). Nothing was saved: try again.`);
+        receiptRef = path;
+      }
       const payload = {
         description: form.description.trim(),
         amount: parseFloat(form.amount) || 0,
@@ -319,7 +347,7 @@ export default function ExpensesPage() {
         category_id: accountUnchanged ? (editingExpense!.category_id ?? null) : (linkedCategories.length === 1 ? linkedCategories[0].id : null),
         project_id: form.project_id || null,
         status: form.status,
-        receipt_url: toStoredRef(form.receipt_url),
+        receipt_url: receiptRef,
         paid_from_account_id: form.paid_from_account_id || null,
       };
       // Once an expense is on the ledger, what the entry was built from can't be changed here (that would leave the books wrong).
@@ -343,6 +371,16 @@ export default function ExpensesPage() {
       // Approved / paid: post to the ledger (does nothing if it's already posted). A problem here never undoes the save.
       if (savedId && POSTABLE_STATUSES.includes(payload.status)) await postAndReport(savedId, "Saved. ");
       await loadExpenses();
+      loadFolder();
+      // A saved expense must never seem to disappear: if the filters would hide it, show everything again and say why.
+      const effMs = new Date(payload.expense_date ? `${payload.expense_date}T12:00:00` : Date.now()).getTime();
+      const hiddenByDate = (dateStartMs !== null && effMs < dateStartMs) || (dateEndMs !== null && effMs > dateEndMs);
+      const hiddenByProject = projectFilter === NO_PROJECT_FILTER ? payload.project_id !== null : !!projectFilter && payload.project_id !== projectFilter;
+      const hiddenByTab = tab !== "all" && tab !== payload.status;
+      if (hiddenByDate || hiddenByProject || hiddenByTab || search) {
+        setDateRange("all"); setProjectFilter(""); setTab("all"); setSearch("");
+        setListNote(`Saved. It is dated ${payload.expense_date ? new Date(`${payload.expense_date}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "today"}, which the filters were hiding, so the list now shows all expenses. Check the date is right.`);
+      }
       closeModal();
     } catch (e: any) { setError(e.message); }
     finally { setSaving(false); }
@@ -362,6 +400,15 @@ export default function ExpensesPage() {
     const { error: e } = await supabase.from("expenses").delete().eq("id", exp.id);
     if (e) { setError(e.message); return; }
     setExpenses(prev => prev.filter(x => x.id !== exp.id));
+    // Its receipt picture goes with it (unless another expense uses the same picture).
+    const path = toStoredRef(receiptRefs.current.get(exp.id));
+    receiptRefs.current.delete(exp.id);
+    const sharedWithAnother = [...receiptRefs.current.values()].some(v => toStoredRef(v) === path);
+    if (path && !/^https?:/i.test(path) && !sharedWithAnother) {
+      const { error: re } = await supabase.storage.from(PRIVATE_FILES_BUCKET).remove([path]);
+      if (re) setLedgerNote({ kind: "warning", text: `Expense deleted, but its receipt picture could not be removed (${re.message}). It shows as "not attached" in the filing cabinet.` });
+    }
+    loadFolder();
   }
 
   // "Mark Paid" previously called updateStatus(id, "approved") — the same
@@ -460,6 +507,17 @@ export default function ExpensesPage() {
   // table itself already correctly applied search/tab/project/date via
   // `filtered`. Now derived from projectDateFiltered instead, so changing
   // the date range or project filter actually moves these numbers.
+  // The filing cabinet holds every picture in the receipts folder, whatever the filters: expense receipts, supplier bill
+  // pictures, and pictures not attached to anything. Its tab count is all of them (it used to count only receipts in the
+  // date filter, so it could say 1 while the cabinet showed 4).
+  const attachedPaths = new Set<string>([
+    ...[...receiptRefs.current.values()].map(v => toStoredRef(v)).filter((v): v is string => !!v),
+    ...billPics.map(b => b.path),
+  ]);
+  const looseFiles = (folderFiles || []).filter(f => !attachedPaths.has(f.path));
+  const expenseReceipts = expenses.filter(e => !!e.receipt_url);
+  const cabinetCount = expenseReceipts.length + billPics.length + looseFiles.length;
+
   const totalAll = projectDateFiltered.reduce((s, e) => s + (e.amount || 0), 0);
   const totalPending = projectDateFiltered.filter(e => e.status === "pending").reduce((s, e) => s + (e.amount || 0), 0);
   const totalApproved = projectDateFiltered.filter(e => e.status === "approved").reduce((s, e) => s + (e.amount || 0), 0);
@@ -498,7 +556,7 @@ export default function ExpensesPage() {
             { key: "all" as Tab,      label: "All",      count: projectDateFiltered.length },
             { key: "pending" as Tab,  label: "Pending",  count: projectDateFiltered.filter(e => e.status === "pending").length },
             { key: "approved" as Tab, label: "Approved", count: projectDateFiltered.filter(e => e.status === "approved").length },
-            { key: "filing" as Tab, label: "📁 Filing Cabinet", count: projectDateFiltered.filter(e=>!!e.receipt_url).length },
+            { key: "filing" as Tab, label: "📁 Filing Cabinet", count: cabinetCount },
           ]}
           active={tab}
           onChange={setTab}
@@ -527,9 +585,10 @@ export default function ExpensesPage() {
         </div>
 
         {ledgerNote && <Alert type={ledgerNote.kind} onClose={() => setLedgerNote(null)}>{ledgerNote.text}</Alert>}
+        {listNote && <Alert type="info" onClose={() => setListNote(null)}>{listNote}</Alert>}
 
-        {/* Table */}
-        <Card padding={false}>
+        {/* Table (the Filing Cabinet tab shows the cabinet instead) */}
+        {tab !== "filing" && <Card padding={false}>
           <Table>
             <thead>
               <tr>
@@ -614,71 +673,116 @@ export default function ExpensesPage() {
               ))}
             </tbody>
           </Table>
-        </Card>
+        </Card>}
       </div>
 
       {/* New Expense Modal */}
-      {/* Filing Cabinet */}
+      {/* Filing Cabinet: every picture in the receipts folder, by month. A picture attached to an expense or a bill can't be
+          deleted here (delete the expense and its picture goes with it); only loose pictures can be deleted, by a director. */}
       {tab==="filing"&&(
-        <div className="space-y-4">
+        <div className="px-6 pb-6 space-y-4">
           {(() => {
-            const withReceipts = expenses.filter(e=>e.receipt_url);
-            if(withReceipts.length===0) return (
+            type Item =
+              | { kind: "expense"; key: string; month: string; e: Expense }
+              | { kind: "bill"; key: string; month: string; b: BillPicture }
+              | { kind: "loose"; key: string; month: string; f: FolderFile };
+            const items: Item[] = [
+              ...expenseReceipts.map(e => ({ kind: "expense" as const, key: `e-${e.id}`, month: (e.expense_date || e.created_at || "").slice(0, 7), e })),
+              ...billPics.map(b => ({ kind: "bill" as const, key: `b-${b.id}`, month: (b.invoice_date || "").slice(0, 7), b })),
+              ...looseFiles.map(f => ({ kind: "loose" as const, key: `f-${f.path}`, month: folderMonth(f), f })),
+            ];
+            if (items.length === 0) return (
               <div className="text-center py-16 text-slate-600 text-sm">
                 <div className="text-4xl mb-3">📁</div>
                 <div>No receipts filed yet</div>
                 <div className="text-xs mt-1">Scan a receipt when logging an expense to file it here</div>
               </div>
             );
-            // Group by year/month
-            const grouped: Record<string, Expense[]> = {};
-            withReceipts.forEach(e=>{
-              const d = new Date(e.expense_date||e.created_at);
-              const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
-              if(!grouped[key]) grouped[key]=[];
-              grouped[key].push(e);
-            });
-            return Object.entries(grouped).sort((a,b)=>b[0].localeCompare(a[0])).map(([key, items])=>{
-              const [year, month] = key.split("-");
-              const monthName = new Date(Number(year), Number(month)-1).toLocaleString("en-US",{month:"long"});
-              return (
-                <div key={key} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
-                  <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05] flex items-center gap-2">
-                    <span>📁</span>
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{monthName} {year}</span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-600 ml-auto">{items.length} receipt{items.length!==1?"s":""}</span>
-                  </div>
-                  <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
-                    {items.map(e=>(
-                      <div key={e.id} className="flex items-center gap-3 px-4 py-3">
-                        <div className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] flex-shrink-0 cursor-pointer"
-                          onClick={()=>window.open(e.receipt_url!,"_blank")}>
-                          <img src={e.receipt_url!} className="w-full h-full object-cover"/>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{e.description||"Expense"}</div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-500">{e.expense_date?new Date(e.expense_date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):""}</div>
-                          <div className="text-[10px] text-slate-500 dark:text-slate-600">{e.projects?.name||"No project"}</div>
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <div className="text-sm font-bold text-emerald-400">JMD {(e.amount||0).toLocaleString()}</div>
-                          <div className="flex gap-1 mt-1">
-                            <button onClick={()=>window.open(e.receipt_url!,"_blank")}
-                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 text-[10px] transition">
-                              👁 View
-                            </button>
-                            <button onClick={()=>showPrintPreview(`<!DOCTYPE html><html><head><title>Receipt</title></head><body style="margin:0"><img src="${e.receipt_url}" style="max-width:100%"/></body></html>`)}
-                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 text-[10px] transition">
-                              🖨 Print
-                            </button>
-                          </div>
-                        </div>
+            const grouped: Record<string, Item[]> = {};
+            items.forEach(it => { (grouped[it.month || "0000-00"] ||= []).push(it); });
+            const openPath = async (path: string) => {
+              const tabWin = window.open("", "_blank");
+              const url = await resolveFileUrl(path).catch(() => null);
+              if (url && tabWin) tabWin.location.href = url;
+              else { tabWin?.close(); setLedgerNote({ kind: "error", text: "The picture could not be opened. Only people with full finance access, or whoever added it, can see it." }); }
+            };
+            const deleteLoose = async (f: FolderFile) => {
+              if (!window.confirm("Delete this picture? It is not attached to any expense or bill. This can't be undone.")) return;
+              const { error: re } = await supabase.storage.from(PRIVATE_FILES_BUCKET).remove([f.path]);
+              if (re) { setLedgerNote({ kind: "error", text: `The picture was not deleted: ${re.message}` }); return; }
+              setFolderFiles(list => (list || []).filter(x => x.path !== f.path));
+            };
+            const btn = "flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-slate-200 dark:hover:bg-white/[0.08] text-slate-600 dark:text-slate-400 text-[10px] transition";
+            return (
+              <>
+                {folderFiles === null && (
+                  <div className="text-[11px] text-slate-500">Showing expense receipts and bill pictures. Pictures not attached to anything are shown to people with full finance access.</div>
+                )}
+                {Object.entries(grouped).sort((a,b)=>b[0].localeCompare(a[0])).map(([key, list])=>{
+                  const [year, month] = key.split("-");
+                  const monthName = Number(month) ? new Date(Number(year), Number(month)-1).toLocaleString("en-US",{month:"long"}) : "No date";
+                  return (
+                    <div key={key} className="rounded-xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] overflow-hidden">
+                      <div className="px-4 py-2 border-b border-slate-100 dark:border-white/[0.05] flex items-center gap-2">
+                        <span>📁</span>
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{monthName} {Number(month) ? year : ""}</span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-600 ml-auto">{list.length} picture{list.length!==1?"s":""}</span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            });
+                      <div className="divide-y divide-slate-100 dark:divide-white/[0.04]">
+                        {list.map(it => (
+                          <div key={it.key} className="flex items-center gap-3 px-4 py-3">
+                            {it.kind === "expense" ? (
+                              <div className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.04] flex-shrink-0 cursor-pointer"
+                                onClick={()=>window.open(it.e.receipt_url!,"_blank")}>
+                                <img src={it.e.receipt_url!} className="w-full h-full object-cover"/>
+                              </div>
+                            ) : (
+                              <div className="w-14 h-14 rounded-lg border border-slate-200 dark:border-white/[0.08] bg-slate-100 dark:bg-white/[0.04] flex-shrink-0 flex items-center justify-center text-xl">
+                                {it.kind === "bill" ? "🧾" : "🖼️"}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              {it.kind === "expense" && <>
+                                <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{it.e.description||"Expense"}</div>
+                                <div className="text-[10px] text-slate-500">{it.e.expense_date?new Date(`${it.e.expense_date}T12:00:00`).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):""} · {it.e.projects?.name||"No project"}</div>
+                                <div className="text-[10px] text-slate-400">Attached to this expense. Delete the expense and its picture goes with it.</div>
+                              </>}
+                              {it.kind === "bill" && <>
+                                <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">Bill {it.b.invoice_number} · {it.b.supplier}</div>
+                                <div className="text-[10px] text-slate-500">{new Date(`${it.b.invoice_date}T12:00:00`).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
+                                <div className="text-[10px] text-slate-400">Attached to a supplier bill (Payables).</div>
+                              </>}
+                              {it.kind === "loose" && <>
+                                <div className="text-xs font-semibold text-amber-700 dark:text-amber-400">Not attached to any expense or bill</div>
+                                <div className="text-[10px] text-slate-500">Added {it.f.created_at ? new Date(it.f.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : ""}</div>
+                              </>}
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              {it.kind === "expense" && <div className="text-sm font-bold text-emerald-500">JMD {(it.e.amount||0).toLocaleString()}</div>}
+                              {it.kind === "bill" && <div className="text-sm font-bold text-slate-700 dark:text-slate-300">JMD {(it.b.total_amount||0).toLocaleString()}</div>}
+                              <div className="flex flex-wrap justify-end gap-1 mt-1">
+                                {it.kind === "expense" ? <>
+                                  <button onClick={()=>window.open(it.e.receipt_url!,"_blank")} className={btn}>👁 View</button>
+                                  <button onClick={()=>showPrintPreview(`<!DOCTYPE html><html><head><title>Receipt</title></head><body style="margin:0"><img src="${it.e.receipt_url}" style="max-width:100%"/></body></html>`)} className={btn}>🖨 Print</button>
+                                </> : it.kind === "bill" ? (
+                                  <button onClick={()=>{ void openPath(it.b.path); }} className={btn}>👁 View</button>
+                                ) : <>
+                                  <button onClick={()=>{ void openPath(it.f.path); }} className={btn}>👁 View</button>
+                                  <button onClick={()=>{ openNew(); setForm(f => ({ ...f, receipt_url: it.f.path })); }} className={btn}>➕ Log expense with it</button>
+                                  {userRole === "director" && (
+                                    <button onClick={()=>{ void deleteLoose(it.f); }} className={cn(btn, "text-red-600 dark:text-red-400")}>🗑 Delete</button>
+                                  )}
+                                </>}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            );
           })()}
         </div>
       )}
@@ -708,6 +812,12 @@ export default function ExpensesPage() {
             </button>
           )}
 
+          {receiptFile ? (
+            <div className="text-[11px] text-emerald-600 dark:text-emerald-400">Receipt photo ready: it is filed in the receipts folder when you save.</div>
+          ) : form.receipt_url ? (
+            <div className="text-[11px] text-slate-500">A receipt picture is attached to this expense.</div>
+          ) : null}
+
           <Field label="Description">
             <Input placeholder="e.g. Cement bags from Hardware Plus" value={form.description}
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))} autoFocus/>
@@ -720,6 +830,14 @@ export default function ExpensesPage() {
             <Field label="Date">
               <Input type="date" value={form.expense_date}
                 onChange={e => setForm(f => ({ ...f, expense_date: e.target.value }))}/>
+              {(() => {
+                // Scanned receipts sometimes come back with the wrong year: flag dates far from today.
+                if (!form.expense_date) return null;
+                const days = Math.round((Date.now() - new Date(`${form.expense_date}T12:00:00`).getTime()) / 86400000);
+                if (days < -1) return <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">This date is in the future. Check it.</div>;
+                if (days > 45) return <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">This date is {days > 400 ? `${Math.round(days / 365)} year(s)` : `${days} days`} ago. Check it is right.</div>;
+                return null;
+              })()}
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
