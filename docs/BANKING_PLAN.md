@@ -252,3 +252,5 @@ refused while part of it is used on an invoice (delete that payment on the invoi
 The entry is reversed and the reversal's notes keep who cancelled it and why. A BEFORE DELETE trigger on client_payments
 refuses deleting an advance (no invoice, has a project) for other roles; server jobs, the SQL Editor and HQ are not affected.
 Receivables: "Cancel advance" next to "Apply to invoice", shown to director / supervisor.
+Fix `20260985000000_fix_advance_delete_guard.sql`: the guard read platform_admins directly (closed to normal logins), so every
+cancel failed with "permission denied for table platform_admins"; it now uses is_platform_admin().
