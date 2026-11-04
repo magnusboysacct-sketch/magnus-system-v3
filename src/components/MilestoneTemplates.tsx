@@ -23,24 +23,100 @@ const shell = "fixed inset-0 z-50 flex items-center justify-center bg-black/60 b
 const card = "w-full max-w-lg rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0d1117] shadow-2xl max-h-[90vh] flex flex-col";
 
 // ── Save as template ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-export function SaveAsTemplateModal({ milestone, taskCount, onClose, onSaved }: {
+// The company of the signed-in user (templates are company-wide).
+async function myCompanyId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Sign in first.");
+  const { data } = await supabase.from("user_profiles").select("company_id").eq("id", user.id).maybeSingle();
+  const id = (data as { company_id?: string } | null)?.company_id;
+  if (!id) throw new Error("Your company was not found.");
+  return id;
+}
+
+// The template-task columns copied from a project task (only the ones the task has).
+const TEMPLATE_TASK_FIELDS = ["task_name", "task_description", "trade_type", "quantity", "unit", "rate_per_unit", "crew_size", "production_rate_per_day",
+  "planned_duration_days", "weather_impact_factor", "labor_cost_per_day", "equipment_cost_per_day", "material_cost_total",
+  "linked_assembly_id", "linked_item_id", "linked_assembly_name", "linked_item_name"];
+
+// Insert template tasks; a column this database doesn't have is dropped and the insert retried.
+async function insertTemplateTasks(rows: Record<string, unknown>[]): Promise<void> {
+  let list = rows;
+  for (let tries = 0; tries < 12; tries++) {
+    const { error } = await supabase.from("milestone_template_tasks").insert(list);
+    if (!error) return;
+    const m = error.message.match(/'([a-z_]+)' column|column "?([a-z_]+)"? (?:of relation "milestone_template_tasks" )?does not exist/i);
+    const col = m?.[1] || m?.[2];
+    if (!col || !(col in (list[0] || {}))) throw new Error(error.message);
+    list = list.map((r) => { const c = { ...r }; delete c[col]; return c; });
+  }
+  throw new Error("The template tasks could not be saved.");
+}
+
+// ── Save tasks as template ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Lists the milestone's tasks with tick boxes; saves the ticked ones as a NEW task template, or adds them to an EXISTING one
+// (names already in it are skipped).
+export function SaveAsTemplateModal({ milestone, onClose, onSaved }: {
   milestone: { id: string; milestone_name: string };
-  taskCount: number;
+  taskCount?: number;
   onClose: () => void;
   onSaved: (name: string) => void | Promise<void>;
 }) {
+  const [tasks, setTasks] = useState<Record<string, unknown>[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [target, setTarget] = useState<"new" | string>("new");
+  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
   const [name, setName] = useState(milestone.milestone_name || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      supabase.from("project_tasks").select("*").eq("milestone_id", milestone.id).order("created_at", { ascending: true }),
+      supabase.from("milestone_templates").select("id,name").order("name", { ascending: true }),
+    ]).then(([t, tp]) => {
+      if (!alive) return;
+      const list = (t.data || []) as Record<string, unknown>[];
+      setTasks(list);
+      setPicked(new Set(list.map((x) => String(x.id))));
+      setTemplates((tp.data || []) as { id: string; name: string }[]);
+      if (t.error) setError(errText(t.error));
+    });
+    return () => { alive = false; };
+  }, [milestone.id]);
+
   async function save() {
+    const chosen = (tasks || []).filter((t) => picked.has(String(t.id)));
+    if (chosen.length === 0) { setError("Tick at least one task."); return; }
     const clean = name.trim();
-    if (!clean) { setError("Give the template a name."); return; }
+    if (target === "new" && !clean) { setError("Give the template a name."); return; }
     setBusy(true); setError("");
     try {
-      const { error: rpcError } = await supabase.rpc("save_milestone_as_template", { p_milestone_id: milestone.id, p_name: clean });
-      if (rpcError) throw rpcError;
-      await onSaved(clean);
+      let templateId = target;
+      let templateName = templates.find((t) => t.id === target)?.name || clean;
+      let startOrder = 0;
+      let have = new Set<string>();
+      if (target === "new") {
+        const { data, error: e } = await supabase.from("milestone_templates")
+          .insert({ company_id: await myCompanyId(), name: clean, description: `Tasks from "${milestone.milestone_name}"` }).select("id").single();
+        if (e) throw new Error(/duplicate key|unique/i.test(e.message) ? `A template named "${clean}" already exists. Pick it under "Add to a template I have", or use another name.` : e.message);
+        templateId = (data as { id: string }).id;
+        templateName = clean;
+      } else {
+        const { data } = await supabase.from("milestone_template_tasks").select("task_name, sort_order").eq("template_id", target);
+        const rows = (data || []) as { task_name: string; sort_order: number | null }[];
+        have = new Set(rows.map((r) => taskKey(r.task_name)));
+        startOrder = rows.reduce((m, r) => Math.max(m, Number(r.sort_order || 0)), 0) + 1;
+      }
+      const fresh = chosen.filter((t) => !have.has(taskKey(String(t.task_name || ""))));
+      if (fresh.length > 0) {
+        await insertTemplateTasks(fresh.map((t, i) => {
+          const row: Record<string, unknown> = { template_id: templateId, sort_order: startOrder + i };
+          for (const f of TEMPLATE_TASK_FIELDS) if (f in t) row[f] = t[f];
+          return row;
+        }));
+      }
+      await onSaved(fresh.length === chosen.length ? templateName : `${templateName} (${chosen.length - fresh.length} already in it, skipped)`);
     } catch (e) {
       setError(errText(e) || "Could not save the template.");
       setBusy(false);
@@ -53,27 +129,60 @@ export function SaveAsTemplateModal({ milestone, taskCount, onClose, onSaved }: 
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-white/[0.07]">
           <div className="min-w-0">
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2"><BookmarkPlus size={14} className="text-cyan-500" /> Save tasks as template</div>
-            <div className="text-[11px] text-slate-500 truncate">{milestone.milestone_name} · {taskCount} task{taskCount === 1 ? "" : "s"}</div>
+            <div className="text-[11px] text-slate-500 truncate">From: {milestone.milestone_name}</div>
           </div>
           <button onClick={onClose} disabled={busy} className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-white/[0.06] text-slate-500"><X size={14} /></button>
         </div>
-        <div className="p-5 space-y-3">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Saves this milestone's tasks (names, quantities, units, worker rates, crew, durations, takeoff links) as a task template, so you can add them into any milestone, in this project or another.
-            Dates, BOQ links and progress are not saved.
-          </p>
+        <div className="p-5 space-y-3 overflow-y-auto">
           <div>
-            <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600 block mb-1">Template name</label>
-            <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
-              placeholder="e.g. Water tank" className={fieldCls} disabled={busy} />
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[9px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-600">Tasks to save</label>
+              {tasks && tasks.length > 0 && (
+                <button onClick={() => setPicked(picked.size === tasks.length ? new Set() : new Set(tasks.map((t) => String(t.id))))}
+                  className="text-[10px] font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">{picked.size === tasks.length ? "Untick all" : "Tick all"}</button>
+              )}
+            </div>
+            {tasks === null ? <p className="text-xs text-slate-500">Loading…</p>
+              : tasks.length === 0 ? <p className="text-xs text-slate-500">This milestone has no tasks yet. Add tasks to it first (+ Task, Add from BOQ or Tasks from template).</p>
+              : (
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 dark:border-white/[0.07]">
+                  {tasks.map((t) => (
+                    <label key={String(t.id)} className="flex items-center gap-2 px-3 py-1.5 text-xs border-b border-slate-100 dark:border-white/[0.04] cursor-pointer">
+                      <input type="checkbox" checked={picked.has(String(t.id))}
+                        onChange={() => setPicked((p) => { const n = new Set(p); const k = String(t.id); if (n.has(k)) n.delete(k); else n.add(k); return n; })} />
+                      <span className="flex-1 min-w-0 truncate text-slate-800 dark:text-slate-200">{String(t.task_name || "")}</span>
+                      <span className="text-slate-500 flex-shrink-0">{t.quantity != null ? `${Number(t.quantity)} ${String(t.unit || "")}` : ""}{t.rate_per_unit ? ` @ ${fmtJMD(Number(t.rate_per_unit))}` : ""}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
           </div>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="radio" checked={target === "new"} onChange={() => setTarget("new")} /> <span className="font-medium text-slate-800 dark:text-slate-200">A new template</span>
+            </label>
+            {target === "new" && (
+              <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void save(); }}
+                placeholder="e.g. Water harvesting" className={fieldCls} disabled={busy} />
+            )}
+            <label className={`flex items-center gap-2 text-xs ${templates.length ? "cursor-pointer" : "opacity-50"}`}>
+              <input type="radio" disabled={templates.length === 0} checked={target !== "new"} onChange={() => setTarget(templates[0]?.id || "new")} />
+              <span className="font-medium text-slate-800 dark:text-slate-200">Add to a template I have</span>
+            </label>
+            {target !== "new" && (
+              <select value={target} onChange={(e) => setTarget(e.target.value)} className={fieldCls} disabled={busy}>
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500">Saved for each task: name, quantity, unit, worker rate, crew, duration and takeoff link. Dates and progress are not saved.</p>
           {error && <div className="text-xs text-red-500 break-words">{error}</div>}
         </div>
         <div className="flex gap-2 px-5 py-4 border-t border-slate-200 dark:border-white/[0.07]">
           <button onClick={onClose} disabled={busy} className="px-4 py-2 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-sm text-slate-600 dark:text-slate-400 transition">Cancel</button>
-          <button onClick={save} disabled={busy || !name.trim()}
+          <button onClick={save} disabled={busy || picked.size === 0 || (target === "new" && !name.trim())}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold disabled:opacity-40 transition">
-            <BookmarkPlus size={13} />{busy ? "Saving…" : "Save template"}
+            <BookmarkPlus size={13} />{busy ? "Saving…" : `Save ${picked.size} task${picked.size === 1 ? "" : "s"}`}
           </button>
         </div>
       </div>
@@ -121,6 +230,8 @@ export function MilestoneTemplatesModal({ projectId, milestone, existingTaskName
   const [tasks, setTasks] = useState<Record<string, TemplateTask[] | "loading">>({});
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [newTpl, setNewTpl] = useState<string | null>(null);   // the name being typed for a new empty template
+  const [addRow, setAddRow] = useState<{ name: string; qty: string; unit: string; rate: string }>({ name: "", qty: "1", unit: "", rate: "" });
 
   const load = useCallback(async () => {
     setLoading(true); setLoadError("");
@@ -199,6 +310,40 @@ export function MilestoneTemplatesModal({ projectId, milestone, existingTaskName
     setRows((r) => r.map((x) => (x.id === templateId ? { ...x, taskCount: Math.max(0, x.taskCount - 1) } : x)));
   }
 
+  async function createTemplate() {
+    const name = (newTpl || "").trim();
+    if (!name) { setError("Give the template a name."); return; }
+    setBusyId("new"); setError("");
+    try {
+      const { data, error: e } = await supabase.from("milestone_templates").insert({ company_id: await myCompanyId(), name }).select("id").single();
+      if (e) throw new Error(/duplicate key|unique/i.test(e.message) ? `A template named "${name}" already exists.` : e.message);
+      setNewTpl(null);
+      await load();
+      const id = (data as { id: string }).id;
+      setOpenId(id);
+      setTasks((m) => ({ ...m, [id]: [] }));
+      setAddRow({ name: "", qty: "1", unit: "", rate: "" });
+    } catch (e) { setError(errText(e)); } finally { setBusyId(null); }
+  }
+
+  async function addTask(t: TemplateRow) {
+    const name = addRow.name.trim();
+    if (!name) { setError("Type the task name."); return; }
+    const list = (tasks[t.id] as TemplateTask[] | undefined) || [];
+    if (list.some((k) => taskKey(k.task_name) === taskKey(name))) { setError(`"${name}" is already in this template.`); return; }
+    setBusyId(t.id); setError("");
+    try {
+      const { data, error: e } = await supabase.from("milestone_template_tasks").insert({
+        template_id: t.id, sort_order: list.length, task_name: name,
+        quantity: Number(addRow.qty) || 1, unit: addRow.unit.trim() || "unit", rate_per_unit: addRow.rate ? Number(addRow.rate) : null,
+      }).select("id,task_name,quantity,unit,rate_per_unit,trade_type").single();
+      if (e) throw new Error(e.message);
+      setTasks((m) => ({ ...m, [t.id]: [...list, data as TemplateTask] }));
+      setRows((r) => r.map((x) => (x.id === t.id ? { ...x, taskCount: x.taskCount + 1 } : x)));
+      setAddRow({ name: "", qty: "1", unit: addRow.unit, rate: "" });
+    } catch (e) { setError(errText(e)); } finally { setBusyId(null); }
+  }
+
   async function rename(t: TemplateRow) {
     const name = renameValue.trim();
     if (!name) { setError("Give the template a name."); return; }
@@ -238,7 +383,18 @@ export function MilestoneTemplatesModal({ projectId, milestone, existingTaskName
               </li>
             ))}
           </ol>
-        ) : <p className="text-xs text-slate-500">This template has no tasks.</p>}
+        ) : <p className="text-xs text-slate-500">This template has no tasks yet.</p>}
+      {mode === "manage" && tasks[t.id] !== "loading" && (
+        <div className="mt-2 grid grid-cols-[1fr_4rem_4.5rem_5.5rem_auto] gap-1.5 items-center">
+          <input value={addRow.name} onChange={(e) => setAddRow((r) => ({ ...r, name: e.target.value }))} placeholder="Add a task, e.g. Dig foundation"
+            onKeyDown={(e) => { if (e.key === "Enter") void addTask(t); }} className={`${fieldCls} py-1.5 text-xs`} />
+          <input value={addRow.qty} onChange={(e) => setAddRow((r) => ({ ...r, qty: e.target.value }))} placeholder="Qty" inputMode="decimal" className={`${fieldCls} py-1.5 text-xs`} />
+          <input value={addRow.unit} onChange={(e) => setAddRow((r) => ({ ...r, unit: e.target.value }))} placeholder="Unit" className={`${fieldCls} py-1.5 text-xs`} />
+          <input value={addRow.rate} onChange={(e) => setAddRow((r) => ({ ...r, rate: e.target.value }))} placeholder="Worker rate" inputMode="decimal" className={`${fieldCls} py-1.5 text-xs`} />
+          <button onClick={() => addTask(t)} disabled={busyId === t.id || !addRow.name.trim()}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-semibold disabled:opacity-40"><Plus size={11} />Add</button>
+        </div>
+      )}
     </div>
   );
 
@@ -265,6 +421,20 @@ export function MilestoneTemplatesModal({ projectId, milestone, existingTaskName
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search templates…" className={`${fieldCls} pl-8`} />
           </div>
+          {mode === "manage" && (newTpl === null ? (
+            <button onClick={() => { setNewTpl(""); setError(""); }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold transition">
+              <Plus size={12} /> New template
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <input autoFocus value={newTpl} onChange={(e) => setNewTpl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void createTemplate(); if (e.key === "Escape") setNewTpl(null); }}
+                placeholder="Template name, e.g. Water harvesting" className={fieldCls} />
+              <button onClick={createTemplate} disabled={busyId === "new" || !newTpl.trim()} className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold disabled:opacity-40">Create</button>
+              <button onClick={() => setNewTpl(null)} className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.07] text-xs text-slate-600 dark:text-slate-400">Cancel</button>
+            </div>
+          ))}
+          {mode === "manage" && <p className="text-[11px] text-slate-500">Open a template's Tasks to add or remove tasks. Old whole-milestone templates you no longer want: delete them with the bin.</p>}
           {mode === "pick" && (
             <p className="text-[11px] text-slate-500">The template's tasks are added into this milestone. Tasks with the same name already in it are skipped. Tasks linked to a takeoff item start at 0 and are filled from Takeoff (make this milestone the active one there).</p>
           )}

@@ -785,7 +785,7 @@ const UNITS = ["m²","m³","m","no.","bag","block","ton","kg","L","hr","day","ls
                 onClose={()=>setSaveTplMS(null)}
                 onSaved={(name)=>{
                   setSaveTplMS(null);
-                  alert(`Saved the template "${name}". Use "Add from template" in any project to reuse it.`);
+                  setBoqNote(`Saved to the task template "${name}". Use "Tasks from template" on any milestone to add these tasks.`);
                 }}
               />
             )}
